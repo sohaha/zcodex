@@ -1,26 +1,27 @@
 ---
 name: sync-openai-codex-pr
-description: Sync upstream openai/codex into this repo using a dedicated worktree branched from main. Resolve conflicts with local code priority; only block for user choice when two implementations provide the same feature and you must pick one. Push updates and require CI all-green before merge.
+description: 在独立 worktree（从 main 迁出）同步 openai/codex main 到当前仓库：本地优先解决冲突；先做 code-review 评估改动范围与冲突性质；只有遇到“同功能两套实现必须二选一”才在 PR comment 阻塞并请求选择；CI 全绿后才允许 merge。
 ---
 
-# Sync openai/codex → PR
+# sync-openai-codex-pr（上游同步 PR）
 
-## Objective
-Pull `openai/codex` `main` into the current repo, push to a new branch, and open/update a PR for review. This is a *sync* workflow: minimal diffs, local code priority, and CI must be green before merge.
+## 目标
+- 拉取 `https://github.com/openai/codex.git` 的 `main` 并同步到当前仓库。
+- 在独立 `git worktree` 内完成合并、修冲突、推送、创建/更新 PR；不污染当前分支/工作区。
+- 默认策略：**本地代码/行为优先**（除非你明确选择采纳上游实现）。
+- 门禁：**CI required checks 全绿** 才能合并。
 
-## Hard Rules
-- **Use a worktree**: do not contaminate the current branch; always branch from `main`.
-- **Local priority**: prefer the local repo’s behavior/architecture by default.
-- **Conflict policy**:
-  - If it’s a *simple merge conflict* (mechanical overlap, moved code, formatting, rename, import order): resolve directly with minimal, correct merging.
-  - If it’s a *real functional conflict* but not “same feature twice”: merge to preserve local behavior and incorporate upstream changes where safe.
-  - Only when it’s **the same feature implemented in two different ways and you must choose one**, do **not** decide silently: write a blocking PR comment and ask the user to choose local vs upstream.
-- **CI gate**: do not merge until required checks are all green.
+## 决策规则（先 code-review 再动手）
+- 先做**改动范围审计**：哪些目录/模块变了、风险点在哪（比如多 agent/agent teams、hooks/cleanup、TUI 命令 `/clear` `/theme` 等）。
+- 冲突分类（按优先级）：
+  1) **机械冲突**（format/import/rename/move/并行改同一段但语义一致）：直接合并，保持最小 diff。
+  2) **逻辑可融合**（两边改动互补，功能不重复）：融合到一个实现，默认保持本地行为不回退。
+  3) **同功能双实现（必须二选一）**：不要私自拍板；必须在 PR comment 里写清楚差异并 @你选择，然后**阻塞流程**等待决定。
 
-## Core Workflow
+## 工作流
 
-### 1) Create worktree from `main`
-From repo root:
+### 1) 从 `main` 创建 worktree（不污染当前分支）
+在仓库根目录执行：
 
 ```bash
 ts="$(date +%Y%m%d-%H%M%S)"
@@ -30,49 +31,66 @@ git fetch origin main
 git worktree add -b "$branch" "$path" origin/main
 ```
 
-Work inside the worktree:
+进入 worktree：
 
 ```bash
 cd "$path"
 ```
 
-### 2) Fetch upstream and merge
+### 2) 拉取上游并确认最新 commit（再合并）
 
 ```bash
 git remote add openai https://github.com/openai/codex.git 2>/dev/null || true
 git fetch openai main
+openai_sha="$(git rev-parse openai/main)"
+echo "openai/codex main: $openai_sha"
+```
+
+### 3) 先做改动范围审计（冲突前/后都做一次）
+
+```bash
+git diff --name-status origin/main...openai/main
+git diff --stat origin/main...openai/main
+```
+
+如果你怀疑某些用户可见能力被“同步时舍弃”，在这里就能直接定位文件范围（例如 `/clear`、`/theme`、agent teams 等）。
+
+### 4) 合并上游并处理冲突
+
+```bash
 git merge --no-edit openai/main
 ```
 
-If conflicts appear, *pause merge resolution* and do a quick code-review classification:
-- Identify whether the conflict is mechanical vs behavioral.
-- For behavioral conflicts, decide whether it’s “merge both” vs “same feature, must pick one”.
+如果出现冲突：
+1) 先列出冲突文件：`git status`  
+2) 对每个冲突做快速 code-review 分类（机械 / 逻辑可融合 / 同功能二选一）  
+3) 机械冲突、逻辑可融合：直接解决并继续  
+4) 只有“同功能二选一”才进入下一节的 PR comment 阻塞流程  
 
-### 3) Blocking PR comment only for “same feature, must pick one”
-When and only when you find two competing implementations of the same feature:
-- Add a PR comment with:
-  - Exact file paths + function names
-  - What each implementation does (behavioral delta)
-  - Pros/cons (correctness, complexity, performance, maintainability)
-  - What breaks if you pick the wrong one
-  - The decision needed: **keep local** or **take upstream**
-- Stop the flow until the user chooses.
+### 5) 仅在“同功能二选一”时写阻塞性 PR comment
+当且仅当你确认两边是**同一个功能**的两套实现，且无法合理融合：
+- 在 PR comment 里写清楚：
+  - 文件路径 + 关键函数/结构体
+  - 行为差异（接口、边界条件、失败模式）
+  - trade-off（复杂度、可维护性、性能、安全性、测试覆盖）
+  - 需要你拍板的选项：**保留本地** / **采用上游**
+- 在你选择前，停止继续推进（避免“默认本地优先”把上游同功能实现静默删掉）。
 
-### 4) Finish merge, format, and run targeted checks
-Rust (after Rust changes):
+### 6) 最小化修复 + 格式化 + 目标测试
+Rust（改 Rust 代码后）：
 
 ```bash
 cd codex-rs
 just fmt
 ```
 
-Run the narrowest relevant tests first (examples):
+优先跑最窄的相关测试（例）：
 
 ```bash
 cargo test -p codex-core
 ```
 
-If `Cargo.toml` / `Cargo.lock` changed:
+如果改了 `Cargo.toml` / `Cargo.lock`：
 
 ```bash
 cd ..
@@ -80,7 +98,7 @@ just bazel-lock-update
 just bazel-lock-check
 ```
 
-### 5) Commit + push
+### 7) 提交 + 推送
 
 ```bash
 git status
@@ -89,15 +107,20 @@ git commit -m "sync: openai/codex @ <sha>"
 git push -u origin HEAD
 ```
 
-### 6) Open or update PR
-Create PR:
+### 8) 创建/更新 PR
+创建 PR：
 
 ```bash
 gh pr create --base main --head "$branch" --title "sync: openai/codex @ <sha>" --body "Sync upstream openai/codex main. Local code prioritized; see commit(s) for conflict resolutions."
 ```
 
-If the PR already exists, pushing new commits is enough.
+PR 已存在时，直接 push 新 commit 即可触发更新。
 
-### 7) Monitor CI until green (required)
-Use `gh pr checks` and fix branch-related failures; retry likely flaky jobs up to 3 times. If user choice is required (same-feature conflict), block as described above.
+### 9) CI 门禁（必须）
+只在 required checks 全绿后才允许 merge：
 
+```bash
+gh pr checks --repo <owner/repo> --watch <PR>
+```
+
+如果出现同功能二选一的阻塞 comment：等你选择后再继续修复/重跑 CI。
