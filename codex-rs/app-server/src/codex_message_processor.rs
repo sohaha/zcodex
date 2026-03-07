@@ -42,7 +42,6 @@ use codex_app_server_protocol::CommandExecWriteParams;
 use codex_app_server_protocol::ConversationGitInfo;
 use codex_app_server_protocol::ConversationSummary;
 use codex_app_server_protocol::DynamicToolSpec as ApiDynamicToolSpec;
-use codex_app_server_protocol::ExecOneOffCommandResponse;
 use codex_app_server_protocol::ExperimentalFeature as ApiExperimentalFeature;
 use codex_app_server_protocol::ExperimentalFeatureListParams;
 use codex_app_server_protocol::ExperimentalFeatureListResponse;

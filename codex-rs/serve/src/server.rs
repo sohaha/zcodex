@@ -2835,12 +2835,22 @@ async fn terminal_ws_loop(
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
     let args: Vec<String> = Vec::new();
     let env: HashMap<String, String> = std::env::vars().collect();
-    let spawned = match codex_utils_pty::spawn_pty_process(&shell, &args, &cwd, &env, &None).await {
+    let spawned = match codex_utils_pty::spawn_pty_process(
+        &shell,
+        &args,
+        &cwd,
+        &env,
+        &None,
+        codex_utils_pty::TerminalSize::default(),
+    )
+    .await
+    {
         Ok(spawned) => spawned,
         Err(_) => return,
     };
     let session = spawned.session;
-    let mut output_rx = spawned.output_rx;
+    let mut output_rx =
+        codex_utils_pty::combine_output_receivers(spawned.stdout_rx, spawned.stderr_rx);
     let mut exit_rx = spawned.exit_rx;
 
     loop {
