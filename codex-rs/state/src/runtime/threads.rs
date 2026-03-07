@@ -736,7 +736,7 @@ mod tests {
         })];
 
         runtime
-            .apply_rollout_items(&builder, &items, None, None)
+            .apply_rollout_items(&builder, &items, None, None, None)
             .await
             .expect("apply_rollout_items should succeed");
 
@@ -794,7 +794,7 @@ mod tests {
         })];
 
         runtime
-            .apply_rollout_items(&builder, &items, None, None)
+            .apply_rollout_items(&builder, &items, None, None, None)
             .await
             .expect("apply_rollout_items should succeed");
 
