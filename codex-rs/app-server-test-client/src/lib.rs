@@ -521,11 +521,15 @@ async fn send_message(
         endpoint,
         config_overrides,
         user_message,
-        false,
-        None,
-        None,
-        &dynamic_tools,
+        SendMessagePolicies {
+            command_name: "send-message",
+            experimental_api: false,
+            approval_policy: None,
+            sandbox_policy: None,
+            dynamic_tools: &dynamic_tools,
+        },
     )
+    .await
 }
 
 pub async fn send_message_v2(
