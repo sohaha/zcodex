@@ -96,7 +96,6 @@ impl ToolsConfig {
             web_search_mode,
             session_source,
             scheduled_tasks_enabled,
-            scheduled_tasks_enabled: false,
         } = params;
         let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
         let include_js_repl = features.enabled(Feature::JsRepl);
