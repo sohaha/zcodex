@@ -16,8 +16,8 @@ use core_test_support::responses::mount_function_call_agent_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
-use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
+use core_test_support::wait_for_event_with_timeout;
 use core_test_support::zsh_fork::build_zsh_fork_test;
 use core_test_support::zsh_fork::restrictive_workspace_write_policy;
 use core_test_support::zsh_fork::zsh_fork_runtime;
@@ -139,9 +139,11 @@ async fn wait_for_exec_approval_request(test: &TestCodex) -> Option<ExecApproval
 }
 
 async fn wait_for_turn_complete(test: &TestCodex) {
-    wait_for_event(test.codex.as_ref(), |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
+    wait_for_event_with_timeout(
+        test.codex.as_ref(),
+        |event| matches!(event, EventMsg::TurnComplete(_)),
+        std::time::Duration::from_secs(30),
+    )
     .await;
 }
 
