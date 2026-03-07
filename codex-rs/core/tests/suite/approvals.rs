@@ -67,9 +67,14 @@ impl TargetPath {
                 (path, name.to_string())
             }
             TargetPath::OutsideWorkspace(name) => {
-                let path = env::current_dir()
-                    .expect("current dir should be available")
-                    .join(name);
+                let outside_root = PathBuf::from(
+                    env::var_os("HOME")
+                        .expect("HOME should be available for outside-workspace tests"),
+                )
+                .join(".codex-approval-tests");
+                fs::create_dir_all(&outside_root)
+                    .expect("outside-workspace test root should be creatable");
+                let path = outside_root.join(name);
                 (path.clone(), path.display().to_string())
             }
         }
@@ -1692,8 +1697,12 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
 
     let output_item = results_mock.single_request().function_call_output(call_id);
     let result = parse_result(&output_item);
-    scenario.expectation.verify(&test, &result)?;
+    let verify_result = scenario.expectation.verify(&test, &result);
 
+    test.codex.submit(Op::Shutdown).await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
+
+    verify_result?;
     Ok(())
 }
 

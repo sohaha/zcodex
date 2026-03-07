@@ -202,6 +202,9 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
     );
     assert_tool_names(&body1, &expected_tools_names);
 
+    codex.submit(Op::Shutdown).await?;
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
+
     Ok(())
 }
 
