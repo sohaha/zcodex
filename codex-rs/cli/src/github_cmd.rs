@@ -700,9 +700,7 @@ impl GithubApi {
 }
 
 fn default_listen_addr() -> SocketAddr {
-    DEFAULT_LISTEN_ADDR
-        .parse()
-        .expect("default listen addr must parse")
+    SocketAddr::from(([127, 0, 0, 1], 8787))
 }
 
 fn parse_min_permission_str(raw: &str) -> Result<MinPermission> {
@@ -1644,6 +1642,7 @@ fn parse_work_item_with_source(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_issue_comment(
     owner: &str,
     repo: &str,
@@ -1702,6 +1701,7 @@ fn parse_issue_comment(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_issue_event(
     owner: &str,
     repo: &str,
@@ -1751,6 +1751,7 @@ fn parse_issue_event(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_pull_request_event(
     owner: &str,
     repo: &str,
@@ -1805,6 +1806,7 @@ fn parse_pull_request_event(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_review_comment(
     owner: &str,
     repo: &str,
@@ -1860,6 +1862,7 @@ fn parse_review_comment(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_review(
     owner: &str,
     repo: &str,
@@ -1911,6 +1914,7 @@ fn parse_review(
     }))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn parse_push_event(
     owner: &str,
     repo: &str,
