@@ -42,6 +42,7 @@ use codex_app_server_protocol::CommandExecWriteParams;
 use codex_app_server_protocol::ConversationGitInfo;
 use codex_app_server_protocol::ConversationSummary;
 use codex_app_server_protocol::DynamicToolSpec as ApiDynamicToolSpec;
+use codex_app_server_protocol::ExecOneOffCommandResponse;
 use codex_app_server_protocol::ExperimentalFeature as ApiExperimentalFeature;
 use codex_app_server_protocol::ExperimentalFeatureListParams;
 use codex_app_server_protocol::ExperimentalFeatureListResponse;
@@ -82,6 +83,14 @@ use codex_app_server_protocol::MockExperimentalMethodParams;
 use codex_app_server_protocol::MockExperimentalMethodResponse;
 use codex_app_server_protocol::ModelListParams;
 use codex_app_server_protocol::ModelListResponse;
+use codex_app_server_protocol::PluginInstallParams;
+use codex_app_server_protocol::PluginInstallResponse;
+use codex_app_server_protocol::PluginInterface;
+use codex_app_server_protocol::PluginListParams;
+use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginMarketplaceEntry;
+use codex_app_server_protocol::PluginSource;
+use codex_app_server_protocol::PluginSummary;
 use codex_app_server_protocol::ProductSurface as ApiProductSurface;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ReviewDelivery as ApiReviewDelivery;
@@ -185,6 +194,8 @@ use codex_core::config::edit::ConfigEdit;
 use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::types::McpServerTransportConfig;
 use codex_core::config_loader::CloudRequirementsLoader;
+use codex_core::connectors::filter_disallowed_connectors;
+use codex_core::connectors::merge_plugin_apps;
 use codex_core::default_client::set_default_client_residency_requirement;
 use codex_core::error::CodexErr;
 use codex_core::exec::ExecExpiration;
@@ -828,6 +839,18 @@ impl CodexMessageProcessor {
             }
             ClientRequest::OneOffCommandExec { request_id, params } => {
                 self.exec_one_off_command(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::CommandExecWrite { request_id, params } => {
+                self.command_exec_write(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::CommandExecResize { request_id, params } => {
+                self.command_exec_resize(to_connection_request_id(request_id), params)
+                    .await;
+            }
+            ClientRequest::CommandExecTerminate { request_id, params } => {
+                self.command_exec_terminate(to_connection_request_id(request_id), params)
                     .await;
             }
             ClientRequest::ConfigRead { .. }
@@ -1657,37 +1680,96 @@ impl CodexMessageProcessor {
         let sandbox_cwd = self.config.cwd.clone();
         let started_network_proxy_for_task = started_network_proxy;
         let use_linux_sandbox_bwrap = self.config.features.enabled(Feature::UseLinuxSandboxBwrap);
+        let size = match size.map(crate::command_exec::terminal_size_from_protocol) {
+            Some(Ok(size)) => Some(size),
+            Some(Err(error)) => {
+                self.outgoing.send_error(request, error).await;
+                return;
+            }
+            None => None,
+        };
 
-        tokio::spawn(async move {
-            let _started_network_proxy = started_network_proxy_for_task;
-            match codex_core::exec::process_exec_tool_call(
-                exec_params,
-                &effective_policy,
-                sandbox_cwd.as_path(),
-                &codex_linux_sandbox_exe,
-                use_linux_sandbox_bwrap,
-                None,
-            )
-            .await
-            {
-                Ok(output) => {
-                    let response = ExecOneOffCommandResponse {
-                        exit_code: output.exit_code,
-                        stdout: output.stdout.text,
-                        stderr: output.stderr.text,
-                    };
-                    outgoing.send_response(request_for_task, response).await;
-                }
-                Err(err) => {
-                    let error = JSONRPCErrorError {
-                        code: INTERNAL_ERROR_CODE,
-                        message: format!("exec failed: {err}"),
-                        data: None,
-                    };
-                    outgoing.send_error(request_for_task, error).await;
+        match codex_core::exec::build_exec_request(
+            exec_params,
+            &effective_policy,
+            sandbox_cwd.as_path(),
+            &codex_linux_sandbox_exe,
+            use_linux_sandbox_bwrap,
+        ) {
+            Ok(exec_request) => {
+                if let Err(error) = self
+                    .command_exec_manager
+                    .start(StartCommandExecParams {
+                        outgoing,
+                        request_id: request_for_task,
+                        process_id,
+                        exec_request,
+                        started_network_proxy: started_network_proxy_for_task,
+                        tty,
+                        stream_stdin,
+                        stream_stdout_stderr,
+                        output_bytes_cap,
+                        size,
+                    })
+                    .await
+                {
+                    self.outgoing.send_error(request, error).await;
                 }
             }
-        });
+            Err(err) => {
+                let error = JSONRPCErrorError {
+                    code: INTERNAL_ERROR_CODE,
+                    message: format!("exec failed: {err}"),
+                    data: None,
+                };
+                self.outgoing.send_error(request, error).await;
+            }
+        }
+    }
+
+    async fn command_exec_write(
+        &self,
+        request_id: ConnectionRequestId,
+        params: CommandExecWriteParams,
+    ) {
+        match self
+            .command_exec_manager
+            .write(request_id.clone(), params)
+            .await
+        {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
+    async fn command_exec_resize(
+        &self,
+        request_id: ConnectionRequestId,
+        params: CommandExecResizeParams,
+    ) {
+        match self
+            .command_exec_manager
+            .resize(request_id.clone(), params)
+            .await
+        {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
+    }
+
+    async fn command_exec_terminate(
+        &self,
+        request_id: ConnectionRequestId,
+        params: CommandExecTerminateParams,
+    ) {
+        match self
+            .command_exec_manager
+            .terminate(request_id.clone(), params)
+            .await
+        {
+            Ok(response) => self.outgoing.send_response(request_id, response).await,
+            Err(error) => self.outgoing.send_error(request_id, error).await,
+        }
     }
 
     async fn thread_start(&self, request_id: ConnectionRequestId, params: ThreadStartParams) {
@@ -4442,6 +4524,30 @@ impl CodexMessageProcessor {
         self.outgoing.send_error(request_id, error).await;
     }
 
+    async fn send_marketplace_error(
+        &self,
+        request_id: ConnectionRequestId,
+        err: MarketplaceError,
+        action: &str,
+    ) {
+        match err {
+            MarketplaceError::MarketplaceNotFound { .. } => {
+                self.send_invalid_request_error(request_id, err.to_string())
+                    .await;
+            }
+            MarketplaceError::Io { .. } => {
+                self.send_internal_error(request_id, format!("failed to {action}: {err}"))
+                    .await;
+            }
+            MarketplaceError::InvalidMarketplaceFile { .. }
+            | MarketplaceError::PluginNotFound { .. }
+            | MarketplaceError::InvalidPlugin(_) => {
+                self.send_invalid_request_error(request_id, err.to_string())
+                    .await;
+            }
+        }
+    }
+
     async fn wait_for_thread_shutdown(thread: &Arc<CodexThread>) -> ThreadShutdownResult {
         match thread.submit(Op::Shutdown).await {
             Ok(_) => {
@@ -5260,6 +5366,137 @@ impl CodexMessageProcessor {
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
+            }
+        }
+    }
+
+    async fn plugin_install(&self, request_id: ConnectionRequestId, params: PluginInstallParams) {
+        let PluginInstallParams {
+            marketplace_path,
+            plugin_name,
+        } = params;
+        let config_cwd = marketplace_path.as_path().parent().map(Path::to_path_buf);
+
+        let plugins_manager = self.thread_manager.plugins_manager();
+        let request = PluginInstallRequest {
+            plugin_name,
+            marketplace_path,
+        };
+
+        match plugins_manager.install_plugin(request).await {
+            Ok(result) => {
+                let config = match self.load_latest_config(config_cwd).await {
+                    Ok(config) => config,
+                    Err(err) => {
+                        warn!(
+                            "failed to reload config after plugin install, using current config: {err:?}"
+                        );
+                        self.config.as_ref().clone()
+                    }
+                };
+                let plugin_apps = load_plugin_apps(result.installed_path.as_path());
+                let apps_needing_auth = if plugin_apps.is_empty()
+                    || !config.features.enabled(Feature::Apps)
+                {
+                    Vec::new()
+                } else {
+                    let (all_connectors_result, accessible_connectors_result) = tokio::join!(
+                        connectors::list_all_connectors_with_options(&config, true),
+                        connectors::list_accessible_connectors_from_mcp_tools_with_options_and_status(
+                            &config, true
+                        ),
+                    );
+
+                    let all_connectors = match all_connectors_result {
+                        Ok(connectors) => filter_disallowed_connectors(merge_plugin_apps(
+                            connectors,
+                            plugin_apps.clone(),
+                        )),
+                        Err(err) => {
+                            warn!(
+                                plugin = result.plugin_id.as_key(),
+                                "failed to load app metadata after plugin install: {err:#}"
+                            );
+                            filter_disallowed_connectors(merge_plugin_apps(
+                                connectors::list_cached_all_connectors(&config)
+                                    .await
+                                    .unwrap_or_default(),
+                                plugin_apps.clone(),
+                            ))
+                        }
+                    };
+                    let (accessible_connectors, codex_apps_ready) =
+                        match accessible_connectors_result {
+                            Ok(status) => (status.connectors, status.codex_apps_ready),
+                            Err(err) => {
+                                warn!(
+                                    plugin = result.plugin_id.as_key(),
+                                    "failed to load accessible apps after plugin install: {err:#}"
+                                );
+                                (
+                                    connectors::list_cached_accessible_connectors_from_mcp_tools(
+                                        &config,
+                                    )
+                                    .await
+                                    .unwrap_or_default(),
+                                    false,
+                                )
+                            }
+                        };
+                    if !codex_apps_ready {
+                        warn!(
+                            plugin = result.plugin_id.as_key(),
+                            "codex_apps MCP not ready after plugin install; skipping appsNeedingAuth check"
+                        );
+                    }
+
+                    Self::plugin_apps_needing_auth(
+                        &all_connectors,
+                        &accessible_connectors,
+                        &plugin_apps,
+                        codex_apps_ready,
+                    )
+                };
+
+                self.clear_plugin_related_caches();
+                self.outgoing
+                    .send_response(request_id, PluginInstallResponse { apps_needing_auth })
+                    .await;
+            }
+            Err(err) => {
+                if err.is_invalid_request() {
+                    self.send_invalid_request_error(request_id, err.to_string())
+                        .await;
+                    return;
+                }
+
+                match err {
+                    CorePluginInstallError::Marketplace(err) => {
+                        self.send_marketplace_error(request_id, err, "install plugin")
+                            .await;
+                    }
+                    CorePluginInstallError::Config(err) => {
+                        self.send_internal_error(
+                            request_id,
+                            format!("failed to persist installed plugin config: {err}"),
+                        )
+                        .await;
+                    }
+                    CorePluginInstallError::Join(err) => {
+                        self.send_internal_error(
+                            request_id,
+                            format!("failed to install plugin: {err}"),
+                        )
+                        .await;
+                    }
+                    CorePluginInstallError::Store(err) => {
+                        self.send_internal_error(
+                            request_id,
+                            format!("failed to install plugin: {err}"),
+                        )
+                        .await;
+                    }
+                }
             }
         }
     }

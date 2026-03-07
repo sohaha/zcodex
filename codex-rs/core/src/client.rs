@@ -1018,9 +1018,14 @@ impl ModelClientSession {
                 )
                 .await
             }
-            WireApi::Anthropic => Err(CodexErr::Fatal(
-                "Anthropic wire API streaming is not implemented in this sync branch".to_string(),
-            )),
+            WireApi::Anthropic => {
+                crate::client_anthropic::stream_anthropic(
+                    &self.client.state.provider,
+                    prompt,
+                    model_info,
+                )
+                .await
+            }
         }
     }
 

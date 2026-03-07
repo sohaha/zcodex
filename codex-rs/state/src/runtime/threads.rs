@@ -436,7 +436,7 @@ ON CONFLICT(thread_id, position) DO NOTHING
         items: &[RolloutItem],
         otel: Option<&SessionTelemetry>,
         new_thread_memory_mode: Option<&str>,
-        updated_at_override: Option<DateTime<Utc>>,
+        _updated_at_override: Option<DateTime<Utc>>,
     ) -> anyhow::Result<()> {
         if items.is_empty() {
             return Ok(());
