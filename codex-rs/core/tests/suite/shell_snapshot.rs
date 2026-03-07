@@ -88,6 +88,23 @@ async fn wait_for_file_contents(path: &Path) -> Result<String> {
     }
 }
 
+async fn wait_for_path_removed(path: &Path) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match fs::metadata(path).await {
+            Ok(_) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(err) => return Err(err.into()),
+        }
+
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for file removal {}", path.display());
+        }
+
+        sleep(Duration::from_millis(25)).await;
+    }
+}
+
 fn policy_set_path_for_test() -> HashMap<String, String> {
     HashMap::from([("PATH".to_string(), POLICY_PATH_FOR_TEST.to_string())])
 }
@@ -601,13 +618,7 @@ async fn shell_snapshot_deleted_after_shutdown_with_skills() -> Result<()> {
 
     drop(codex);
     drop(harness);
-    sleep(Duration::from_millis(150)).await;
-
-    assert_eq!(
-        snapshot_path.exists(),
-        false,
-        "snapshot should be removed after shutdown"
-    );
+    wait_for_path_removed(&snapshot_path).await?;
 
     Ok(())
 }
