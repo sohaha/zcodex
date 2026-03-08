@@ -51,23 +51,27 @@ dir = "{{config_root}}/codex-rs"
 run = "cargo build --release"
 
 [tasks.build-macos-arm64]
+depends = ["deps-macos-arm64"]
 description = "交叉编译 macOS ARM64 开发版"
 dir = "{{config_root}}/codex-rs"
 env = { PATH = "/opt/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-ar" }
 run = "cargo build --target aarch64-apple-darwin"
 
 [tasks.release-macos-arm64]
-description = "交叉编译 macOS ARM64 正式版（最小体积）"
+depends = ["deps-macos-arm64"]
+description = "交叉编译 macOS ARM64 正式版"
 dir = "{{config_root}}/codex-rs"
 env = { PATH = "/opt/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-ar" }
 run = "cargo build --target aarch64-apple-darwin --release"
 
 [tasks.build-win-amd64]
+depends = ["deps-win-amd64"]
 description = "交叉编译 Windows AMD64 开发版"
 dir = "{{config_root}}/codex-rs"
 run = "cargo zigbuild --target x86_64-pc-windows-gnu"
 
 [tasks.release-win-amd64]
-description = "交叉编译 Windows AMD64 正式版（最小体积）"
+depends = ["deps-win-amd64"]
+description = "交叉编译 Windows AMD64 正式版"
 dir = "{{config_root}}/codex-rs"
 run = "cargo zigbuild --target x86_64-pc-windows-gnu --release"
