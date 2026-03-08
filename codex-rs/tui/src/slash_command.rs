@@ -30,6 +30,7 @@ pub enum SlashCommand {
     Init,
     Compact,
     Plan,
+    Loop,
     Collab,
     Agent,
     // Undo,
@@ -90,11 +91,12 @@ impl SlashCommand {
             SlashCommand::MemoryDrop => "DO NOT USE",
             SlashCommand::MemoryUpdate => "DO NOT USE",
             SlashCommand::Model => "choose what model and reasoning effort to use",
-            SlashCommand::Fast => "toggle Fast mode to enable fastest inference at 2X plan usage",
+            SlashCommand::Fast => "toggle Fast mode for supported models",
             SlashCommand::Personality => "choose a communication style for Codex",
             SlashCommand::Realtime => "toggle realtime voice mode (experimental)",
             SlashCommand::Settings => "configure realtime microphone/speaker",
             SlashCommand::Plan => "switch to Plan mode",
+            SlashCommand::Loop => "schedule a recurring prompt",
             SlashCommand::Collab => "change collaboration mode (experimental)",
             SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
             SlashCommand::Approvals => "choose what Codex is allowed to do",
@@ -125,6 +127,7 @@ impl SlashCommand {
             SlashCommand::Review
                 | SlashCommand::Rename
                 | SlashCommand::Plan
+                | SlashCommand::Loop
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
         )
@@ -156,6 +159,7 @@ impl SlashCommand {
             SlashCommand::Diff
             | SlashCommand::Copy
             | SlashCommand::Rename
+            | SlashCommand::Loop
             | SlashCommand::Mention
             | SlashCommand::Skills
             | SlashCommand::Status

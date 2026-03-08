@@ -5,6 +5,7 @@ In the codex-rs folder where the rust code lives:
 - Crate names are prefixed with `codex-`. For example, the `core` folder's crate is named `codex-core`
 - When using format! and you can inline variables into {}, always do that.
 - Install any commands the repo relies on (for example `just`, `rg`, or `cargo-insta`) if they aren't already available before running instructions here.
+- For release CLI builds, always use `make release-codex` or `just release-codex` from repo root instead of raw `cargo build --release`. These targets clear `CARGO_PROFILE_RELEASE_LTO`, `CARGO_PROFILE_RELEASE_CODEGEN_UNITS`, `CARGO_PROFILE_RELEASE_DEBUG`, and `CARGO_PROFILE_RELEASE_STRIP` before build, then install to `/Users/chenwenjie/bin/codex` by default.
 - Never add or modify any code related to `CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR` or `CODEX_SANDBOX_ENV_VAR`.
   - You operate in a sandbox where `CODEX_SANDBOX_NETWORK_DISABLED=1` will be set whenever you use the `shell` tool. Any existing code that uses `CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR` was authored with this fact in mind. It is often used to early exit out of tests that the author knew you would not be able to run given your sandbox limitations.
   - Similarly, when you spawn a process using Seatbelt (`/usr/bin/sandbox-exec`), `CODEX_SANDBOX=seatbelt` will be set on the child process. Integration tests that want to run Seatbelt themselves cannot be run under Seatbelt, so checks for `CODEX_SANDBOX=seatbelt` are also often used to early exit out of tests, as appropriate.
@@ -55,31 +56,16 @@ See `codex-rs/tui/styles.md`.
 
 ### Text wrapping
 
-- Always use textwrap::wrap to wrap plain strings.
-- If you have a ratatui Line and you want to wrap it, use the helpers in tui/src/wrapping.rs, e.g. word_wrap_lines / word_wrap_line.
-- If you need to indent wrapped lines, use the initial_indent / subsequent_indent options from RtOptions if you can, rather than writing custom logic.
-- If you have a list of lines and you need to prefix them all with some prefix (optionally different on the first vs subsequent lines), use the `prefix_lines` helper from line_utils.
-
-## Tests
+- Use `textwrap::wrap` for plain strings.
+- If you need to wrap a `Line`, use helpers in `tui/src/wrapping.rs`, e.g. `word_wrap_line` / `word_wrap_lines` with `RtOptions`.
+- For indenting wrapped lines, prefer `initial_indent` / `subsequent_indent` on `RtOptions` instead of custom logic.
+- If you need to truncate a list of lines to a max height, prefer the file-local truncation helpers already used by that widget; there is no shared `truncate_lines` helper.
 
 ### Snapshot tests
 
-This repo uses snapshot tests (via `insta`), especially in `codex-rs/tui`, to validate rendered output.
-
-**Requirement:** any change that affects user-visible UI (including adding new UI) must include
-corresponding `insta` snapshot coverage (add a new snapshot test if one doesn't exist yet, or
-update the existing snapshot). Review and accept snapshot updates as part of the PR so UI impact
-is easy to review and future diffs stay visual.
-
-When UI or text output changes intentionally, update the snapshots as follows:
-
-- Run tests to generate any updated snapshots:
+- This repository uses snapshot tests (via `insta`) in `codex-rs/tui` to verify rendered output.
+- When intentionally changing rendered output, update snapshots with:
   - `cargo test -p codex-tui`
-- Check what’s pending:
-  - `cargo insta pending-snapshots -p codex-tui`
-- Review changes by reading the generated `*.snap.new` files directly in the repo, or preview a specific file:
-  - `cargo insta show -p codex-tui path/to/file.snap.new`
-- Only if you intend to accept all new snapshots in this crate, run:
   - `cargo insta accept -p codex-tui`
 
 If you don’t have the tool:
@@ -171,3 +157,10 @@ These guidelines apply to app-server protocol work in `codex-rs`, especially:
 - Validate with `cargo test -p codex-app-server-protocol`.
 - Avoid boilerplate tests that only assert experimental field markers for individual
   request fields in `common.rs`; rely on schema generation/tests and behavioral coverage instead.
+
+## GitHub Workflow Experiments
+
+- The stable current `codex github` behavior is documented in `codex-rs/docs/github-webhook.md`.
+- Experimental GitHub-triggered orchestration guidance lives in `docs/github-outcome-first-overlay.md`.
+- There is intentionally no active root `WORKFLOW.md` contract for GitHub orchestration in this repository yet.
+- Do not assume the experimental overlay describes current native `codex github` behavior unless the current session explicitly instructs the agent to use that overlay and references `docs/github-outcome-first-overlay.md`, or a higher-level orchestrator/runtime explicitly activates it with an equivalent instruction.

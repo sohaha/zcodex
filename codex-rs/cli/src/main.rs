@@ -22,6 +22,7 @@ use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
+use codex_serve::Cli as ServeCli;
 use codex_state::StateRuntime;
 use codex_state::state_db_path;
 use codex_tui::AppExitInfo;
@@ -38,10 +39,12 @@ use supports_color::Stream;
 mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
+mod github_cmd;
 mod mcp_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
+use crate::github_cmd::GithubCommand;
 use crate::mcp_cmd::McpCli;
 
 use codex_core::config::Config;
@@ -86,6 +89,12 @@ enum Subcommand {
     /// Run Codex non-interactively.
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
+
+    /// Run a local GitHub webhook listener that delegates work to Codex.
+    Github(GithubCommand),
+
+    /// Start Codex as a Web UI server (HTTP+SSE).
+    Serve(ServeCli),
 
     /// Run a code review non-interactively.
     Review(ReviewArgs),
@@ -584,6 +593,16 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 root_config_overrides.clone(),
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
+        }
+        Some(Subcommand::Github(cmd)) => {
+            github_cmd::run_main(cmd, root_config_overrides).await?;
+        }
+        Some(Subcommand::Serve(mut serve_cli)) => {
+            prepend_config_flags(
+                &mut serve_cli.config_overrides,
+                root_config_overrides.clone(),
+            );
+            codex_serve::run_main(serve_cli, arg0_paths.codex_linux_sandbox_exe.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
             let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
@@ -1101,6 +1120,13 @@ mod tests {
     use codex_protocol::ThreadId;
     use codex_protocol::protocol::TokenUsage;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn github_subcommand_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "github"].as_ref())
+            .expect("parse should succeed");
+        assert_matches!(cli.subcommand, Some(Subcommand::Github(_)));
+    }
 
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");

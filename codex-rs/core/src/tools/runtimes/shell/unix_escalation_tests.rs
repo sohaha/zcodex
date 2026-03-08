@@ -21,6 +21,7 @@ use crate::sandboxing::SandboxPermissions;
 #[cfg(target_os = "macos")]
 use crate::seatbelt::MACOS_PATH_TO_SEATBELT_EXECUTABLE;
 use crate::skills::SkillMetadata;
+use crate::skills::permissions::compile_permission_profile;
 use codex_execpolicy::Decision;
 use codex_execpolicy::Evaluation;
 use codex_execpolicy::PolicyParser;
@@ -302,23 +303,49 @@ fn skill_escalation_execution_uses_additional_permissions() {
         ..Default::default()
     };
 
+    let compiled_permissions =
+        compile_permission_profile(Some(requested_permissions)).expect("compiled permissions");
+
     assert_eq!(
         CoreShellActionProvider::skill_escalation_execution(&test_skill_metadata(Some(
-            requested_permissions.clone(),
+            PermissionProfile {
+                file_system: Some(FileSystemPermissions {
+                    read: None,
+                    write: Some(vec![
+                        AbsolutePathBuf::from_absolute_path("/tmp/output").unwrap(),
+                    ]),
+                }),
+                ..Default::default()
+            },
         ))),
-        EscalationExecution::Permissions(EscalationPermissions::PermissionProfile(
-            requested_permissions,
+        EscalationExecution::Permissions(EscalationPermissions::Permissions(
+            EscalatedPermissions {
+                sandbox_policy: compiled_permissions.sandbox_policy.get().clone(),
+                macos_seatbelt_profile_extensions: compiled_permissions
+                    .macos_seatbelt_profile_extensions
+                    .clone(),
+            },
         )),
     );
 }
 
 #[test]
 fn skill_escalation_execution_ignores_empty_permissions() {
+    let compiled_permissions = compile_permission_profile(Some(PermissionProfile::default()))
+        .expect("compiled permissions");
+
     assert_eq!(
         CoreShellActionProvider::skill_escalation_execution(&test_skill_metadata(Some(
             PermissionProfile::default(),
         ))),
-        EscalationExecution::TurnDefault,
+        EscalationExecution::Permissions(EscalationPermissions::Permissions(
+            EscalatedPermissions {
+                sandbox_policy: compiled_permissions.sandbox_policy.get().clone(),
+                macos_seatbelt_profile_extensions: compiled_permissions
+                    .macos_seatbelt_profile_extensions
+                    .clone(),
+            },
+        )),
     );
     assert_eq!(
         CoreShellActionProvider::skill_escalation_execution(&test_skill_metadata(None)),

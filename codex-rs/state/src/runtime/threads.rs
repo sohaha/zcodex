@@ -278,19 +278,6 @@ ON CONFLICT(id) DO NOTHING
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn touch_thread_updated_at(
-        &self,
-        thread_id: ThreadId,
-        updated_at: DateTime<Utc>,
-    ) -> anyhow::Result<bool> {
-        let result = sqlx::query("UPDATE threads SET updated_at = ? WHERE id = ?")
-            .bind(datetime_to_epoch_seconds(updated_at))
-            .bind(thread_id.to_string())
-            .execute(self.pool.as_ref())
-            .await?;
-        Ok(result.rows_affected() > 0)
-    }
-
     pub async fn update_thread_git_info(
         &self,
         thread_id: ThreadId,
@@ -448,7 +435,7 @@ ON CONFLICT(thread_id, position) DO NOTHING
         builder: &ThreadMetadataBuilder,
         items: &[RolloutItem],
         new_thread_memory_mode: Option<&str>,
-        updated_at_override: Option<DateTime<Utc>>,
+        _updated_at_override: Option<DateTime<Utc>>,
     ) -> anyhow::Result<()> {
         if items.is_empty() {
             return Ok(());
@@ -464,11 +451,7 @@ ON CONFLICT(thread_id, position) DO NOTHING
         if let Some(existing_metadata) = existing_metadata.as_ref() {
             metadata.prefer_existing_git_info(existing_metadata);
         }
-        let updated_at = match updated_at_override {
-            Some(updated_at) => Some(updated_at),
-            None => file_modified_time_utc(builder.rollout_path.as_path()).await,
-        };
-        if let Some(updated_at) = updated_at {
+        if let Some(updated_at) = file_modified_time_utc(builder.rollout_path.as_path()).await {
             metadata.updated_at = updated_at;
         }
         // Keep the thread upsert before dynamic tools to satisfy the foreign key constraint:
@@ -655,7 +638,6 @@ mod tests {
     use super::*;
     use crate::runtime::test_support::test_thread_metadata;
     use crate::runtime::test_support::unique_temp_dir;
-    use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::GitInfo;
     use codex_protocol::protocol::SessionMeta;
     use codex_protocol::protocol::SessionMetaLine;

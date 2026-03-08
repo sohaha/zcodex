@@ -9,6 +9,7 @@ use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::plugins::PluginsManager;
 use async_channel::unbounded;
 pub use codex_app_server_protocol::AppBranding;
 pub use codex_app_server_protocol::AppInfo;
@@ -35,7 +36,6 @@ use crate::mcp::with_codex_apps_mcp;
 use crate::mcp_connection_manager::McpConnectionManager;
 use crate::mcp_connection_manager::codex_apps_tools_cache_key;
 use crate::plugins::AppConnectorId;
-use crate::plugins::PluginsManager;
 use crate::token_data::TokenData;
 
 pub const CONNECTORS_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -820,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_connectors_replaces_plugin_placeholder_name_with_accessible_name() {
+    fn merge_connectors_replaces_plugin_placeholder_name_with_manual_accessible_name() {
         let plugin = plugin_app_to_app_info(AppConnectorId("calendar".to_string()));
         let accessible = google_calendar_accessible_connector(&[]);
 
@@ -930,6 +930,48 @@ mod tests {
                 plugin_display_names: plugin_names(&["alpha", "beta", "sample"]),
             }]
         );
+    }
+
+    #[test]
+    fn merge_connectors_replaces_plugin_placeholder_name_with_accessible_name() {
+        let plugin = plugin_app_to_app_info(AppConnectorId("calendar".to_string()));
+        let accessible = AppInfo {
+            id: "calendar".to_string(),
+            name: "Google Calendar".to_string(),
+            description: Some("Plan events".to_string()),
+            logo_url: Some("https://example.com/logo.png".to_string()),
+            logo_url_dark: Some("https://example.com/logo-dark.png".to_string()),
+            distribution_channel: Some("workspace".to_string()),
+            branding: None,
+            app_metadata: None,
+            labels: None,
+            install_url: None,
+            is_accessible: true,
+            is_enabled: true,
+            plugin_display_names: Vec::new(),
+        };
+
+        let merged = merge_connectors(vec![plugin], vec![accessible]);
+
+        assert_eq!(
+            merged,
+            vec![AppInfo {
+                id: "calendar".to_string(),
+                name: "Google Calendar".to_string(),
+                description: Some("Plan events".to_string()),
+                logo_url: Some("https://example.com/logo.png".to_string()),
+                logo_url_dark: Some("https://example.com/logo-dark.png".to_string()),
+                distribution_channel: Some("workspace".to_string()),
+                branding: None,
+                app_metadata: None,
+                labels: None,
+                install_url: Some(connector_install_url("calendar", "calendar")),
+                is_accessible: true,
+                is_enabled: true,
+                plugin_display_names: Vec::new(),
+            }]
+        );
+        assert_eq!(connector_mention_slug(&merged[0]), "google-calendar");
     }
 
     #[test]

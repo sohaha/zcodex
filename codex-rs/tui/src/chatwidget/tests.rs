@@ -124,11 +124,15 @@ use toml::Value as TomlValue;
 async fn test_config() -> Config {
     // Use base defaults to avoid depending on host state.
     let codex_home = std::env::temp_dir();
-    ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .codex_home(codex_home.clone())
         .build()
         .await
-        .expect("config")
+        .expect("config");
+    if config.model_provider.is_openai() {
+        config.model_provider.base_url = None;
+    }
+    config
 }
 
 fn invalid_value(candidate: impl Into<String>, allowed: impl Into<String>) -> ConstraintError {
@@ -4192,73 +4196,6 @@ async fn item_completed_pops_pending_steer_with_local_image_and_text_elements() 
     assert!(stored_remote_image_urls.is_empty());
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn submit_user_message_emits_structured_plugin_mentions_from_bindings() {
-    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
-    let conversation_id = ThreadId::new();
-    let rollout_file = NamedTempFile::new().unwrap();
-    let configured = codex_protocol::protocol::SessionConfiguredEvent {
-        session_id: conversation_id,
-        forked_from_id: None,
-        thread_name: None,
-        model: "test-model".to_string(),
-        model_provider_id: "test-provider".to_string(),
-        service_tier: None,
-        approval_policy: AskForApproval::Never,
-        sandbox_policy: SandboxPolicy::new_read_only_policy(),
-        cwd: PathBuf::from("/home/user/project"),
-        reasoning_effort: Some(ReasoningEffortConfig::default()),
-        history_log_id: 0,
-        history_entry_count: 0,
-        initial_messages: None,
-        network_proxy: None,
-        rollout_path: Some(rollout_file.path().to_path_buf()),
-    };
-    chat.handle_codex_event(Event {
-        id: "initial".into(),
-        msg: EventMsg::SessionConfigured(configured),
-    });
-    chat.set_feature_enabled(Feature::Plugins, true);
-    chat.bottom_pane.set_plugin_mentions(Some(vec![
-        codex_core::plugins::PluginCapabilitySummary {
-            config_name: "sample@test".to_string(),
-            display_name: "Sample Plugin".to_string(),
-            description: None,
-            has_skills: true,
-            mcp_server_names: Vec::new(),
-            app_connector_ids: Vec::new(),
-        },
-    ]));
-
-    chat.submit_user_message(UserMessage {
-        text: "$sample".to_string(),
-        local_images: Vec::new(),
-        remote_image_urls: Vec::new(),
-        text_elements: Vec::new(),
-        mention_bindings: vec![MentionBinding {
-            mention: "sample".to_string(),
-            path: "plugin://sample@test".to_string(),
-        }],
-    });
-
-    let Op::UserTurn { items, .. } = next_submit_op(&mut op_rx) else {
-        panic!("expected Op::UserTurn");
-    };
-    assert_eq!(
-        items,
-        vec![
-            UserInput::Text {
-                text: "$sample".to_string(),
-                text_elements: Vec::new(),
-            },
-            UserInput::Mention {
-                name: "Sample Plugin".to_string(),
-                path: "plugin://sample@test".to_string(),
-            },
-        ]
-    );
-}
-
 #[tokio::test]
 async fn steer_enter_during_final_stream_preserves_follow_up_prompts_in_order() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
@@ -5395,6 +5332,168 @@ async fn plan_slash_command_with_args_submits_prompt_in_plan_mode() {
         }
     );
     assert_eq!(chat.active_collaboration_mode_kind(), ModeKind::Plan);
+}
+
+#[test]
+fn parse_loop_args_detects_explicit_interval() {
+    let input = "15m check build status";
+    let parsed = parse_loop_args(input).expect("loop args");
+
+    assert_eq!(parsed.interval, "15m");
+    assert_eq!(&input[parsed.prompt_range], "check build status");
+}
+
+#[test]
+fn parse_loop_args_detects_trailing_every_clause() {
+    let input = "check build status every 2 hours";
+    let parsed = parse_loop_args(input).expect("loop args");
+
+    assert_eq!(parsed.interval, "2h");
+    assert_eq!(&input[parsed.prompt_range], "check build status");
+}
+
+#[test]
+fn parse_loop_args_accepts_seconds_unit() {
+    let input = "30s check alerts";
+    let parsed = parse_loop_args(input).expect("loop args");
+
+    assert_eq!(parsed.interval, "30s");
+    assert_eq!(&input[parsed.prompt_range], "check alerts");
+}
+
+#[test]
+fn parse_loop_args_defaults_when_no_interval_is_present() {
+    let input = "check build status";
+    let parsed = parse_loop_args(input).expect("loop args");
+
+    assert_eq!(parsed.interval, "10m");
+    assert_eq!(&input[parsed.prompt_range], input);
+}
+
+#[test]
+fn build_loop_user_message_rebases_text_elements() {
+    let placeholder = "$build";
+    let prompt = format!("{placeholder} check build status");
+    let message = UserMessage {
+        text: prompt.clone(),
+        local_images: Vec::new(),
+        remote_image_urls: Vec::new(),
+        text_elements: vec![TextElement::new(
+            (0..placeholder.len()).into(),
+            Some(placeholder.to_string()),
+        )],
+        mention_bindings: vec![MentionBinding {
+            mention: "build".to_string(),
+            path: "skill:///tmp/build/SKILL.md".to_string(),
+        }],
+    };
+
+    let loop_message = build_loop_user_message("15m", message);
+    let prefix_len = loop_message.text.len() - prompt.len();
+
+    assert_eq!(
+        loop_message.text_elements,
+        vec![TextElement::new(
+            (prefix_len..prefix_len + placeholder.len()).into(),
+            Some(placeholder.to_string()),
+        )]
+    );
+    assert_eq!(
+        loop_message.mention_bindings,
+        vec![MentionBinding {
+            mention: "build".to_string(),
+            path: "skill:///tmp/build/SKILL.md".to_string(),
+        }]
+    );
+    assert!(loop_message.text.contains("15m"));
+    assert!(
+        loop_message
+            .text
+            .contains("round it up to the nearest minute")
+    );
+    assert!(
+        loop_message
+            .text
+            .contains("mention the final cadence you picked")
+    );
+    assert!(
+        loop_message
+            .text
+            .contains("reply briefly with the scheduled cadence")
+    );
+    assert!(loop_message.text.ends_with(&prompt));
+}
+
+#[tokio::test]
+async fn loop_slash_command_disabled_in_config_shows_guidance() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.disable_cron = true;
+    chat.bottom_pane.set_scheduled_tasks_enabled(false);
+
+    chat.dispatch_command_with_args(
+        SlashCommand::Loop,
+        "10m check build status".to_string(),
+        Vec::new(),
+    );
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Scheduled tasks are disabled."),
+        "info message should explain why /loop is unavailable: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("Set disable_cron = false in config.toml to use /loop."),
+        "info message should explain how to re-enable /loop: {rendered:?}"
+    );
+}
+#[tokio::test]
+async fn loop_slash_command_with_default_interval_submits_scheduled_task_prompt() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    let configured = codex_protocol::protocol::SessionConfiguredEvent {
+        session_id: ThreadId::new(),
+        forked_from_id: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        service_tier: None,
+        approval_policy: AskForApproval::Never,
+        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        cwd: PathBuf::from("/home/user/project"),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        history_log_id: 0,
+        history_entry_count: 0,
+        initial_messages: None,
+        network_proxy: None,
+        rollout_path: None,
+    };
+    chat.handle_codex_event(Event {
+        id: "configured".into(),
+        msg: EventMsg::SessionConfigured(configured),
+    });
+
+    chat.bottom_pane.set_composer_text(
+        "/loop check build status".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    let items = match next_submit_op(&mut op_rx) {
+        Op::UserTurn { items, .. } => items,
+        other => panic!("expected Op::UserTurn, got {other:?}"),
+    };
+    assert_eq!(items.len(), 1);
+    let expected = build_loop_user_message("10m", UserMessage::from("check build status"));
+    assert_eq!(
+        items[0],
+        UserInput::Text {
+            text: expected.text,
+            text_elements: expected.text_elements,
+        }
+    );
 }
 
 #[tokio::test]
@@ -7438,12 +7537,7 @@ async fn feedback_upload_consent_popup_snapshot() {
         chat.app_event_tx.clone(),
         crate::app_event::FeedbackCategory::Bug,
         chat.current_rollout_path.clone(),
-        &codex_feedback::feedback_diagnostics::FeedbackDiagnostics::new(vec![
-            codex_feedback::feedback_diagnostics::FeedbackDiagnostic {
-                headline: "OPENAI_BASE_URL is set and may affect connectivity.".to_string(),
-                details: vec!["OPENAI_BASE_URL = hello".to_string()],
-            },
-        ]),
+        true,
     ));
 
     let popup = render_bottom_popup(&chat, 80);
@@ -7458,12 +7552,7 @@ async fn feedback_good_result_consent_popup_includes_connectivity_diagnostics_fi
         chat.app_event_tx.clone(),
         crate::app_event::FeedbackCategory::GoodResult,
         chat.current_rollout_path.clone(),
-        &codex_feedback::feedback_diagnostics::FeedbackDiagnostics::new(vec![
-            codex_feedback::feedback_diagnostics::FeedbackDiagnostic {
-                headline: "OPENAI_BASE_URL is set and may affect connectivity.".to_string(),
-                details: vec!["OPENAI_BASE_URL = hello".to_string()],
-            },
-        ]),
+        true,
     ));
 
     let popup = render_bottom_popup(&chat, 80);
@@ -7614,26 +7703,6 @@ async fn user_turn_carries_service_tier_after_fast_toggle() {
         } => {}
         other => panic!("expected Op::UserTurn with fast service tier, got {other:?}"),
     }
-}
-
-#[tokio::test]
-async fn fast_status_indicator_requires_chatgpt_auth() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
-    chat.set_service_tier(Some(ServiceTier::Fast));
-
-    assert!(!chat.should_show_fast_status(chat.current_service_tier()));
-
-    set_chatgpt_auth(&mut chat);
-
-    assert!(chat.should_show_fast_status(chat.current_service_tier()));
-}
-
-#[tokio::test]
-async fn fast_status_indicator_is_hidden_when_fast_mode_is_off() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
-    set_chatgpt_auth(&mut chat);
-
-    assert!(!chat.should_show_fast_status(chat.current_service_tier()));
 }
 
 #[tokio::test]

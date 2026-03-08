@@ -2,6 +2,7 @@ use std::ffi::OsString;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 pub use runfiles;
 
@@ -43,6 +44,88 @@ pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
             return resolve_bin_from_env(key, value);
         }
     }
+
+    let mut cargo_build_failure = None;
+    if !runfiles_available() {
+        match repo_root() {
+            Ok(repo_root) => {
+                let workspace_root = repo_root.join("codex-rs");
+                let target_dir = match std::env::var_os("CARGO_TARGET_DIR") {
+                    Some(path) => {
+                        let path = PathBuf::from(path);
+                        if path.is_absolute() {
+                            path
+                        } else {
+                            workspace_root.join(path)
+                        }
+                    }
+                    None => workspace_root.join("target"),
+                };
+                let file_name = format!("{name}{}", std::env::consts::EXE_SUFFIX);
+
+                // Under `cargo test` / `cargo nextest`, the test binary lives under
+                // `<target-dir>/<...>/<profile>/deps/<test-binary>`. Prefer resolving binaries
+                // relative to that directory so custom profiles and `--target` layouts work.
+                if let Ok(exe) = std::env::current_exe()
+                    && let Some(profile_dir) = exe.parent().and_then(|parent| parent.parent())
+                {
+                    let path = profile_dir.join(&file_name);
+                    if path.exists() {
+                        return Ok(path);
+                    }
+                }
+
+                let profile_dir = if cfg!(debug_assertions) {
+                    "debug"
+                } else {
+                    "release"
+                };
+                let path = target_dir.join(profile_dir).join(&file_name);
+                if path.exists() {
+                    return Ok(path);
+                }
+
+                let mut cmd = Command::new("cargo");
+                cmd.arg("build")
+                    .arg("--quiet")
+                    .arg("--bin")
+                    .arg(name)
+                    .current_dir(&workspace_root);
+                if !cfg!(debug_assertions) {
+                    cmd.arg("--release");
+                }
+
+                match cmd.output() {
+                    Ok(output) => {
+                        if output.status.success() && path.exists() {
+                            return Ok(path);
+                        }
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        let status = output.status;
+                        if status.success() {
+                            let path_display = path.display();
+                            cargo_build_failure = Some(format!(
+                                "cargo build --bin {name} succeeded ({status}), but binary not found at: {path_display}\n{stderr}{stdout}"
+                            ));
+                        } else {
+                            cargo_build_failure = Some(format!(
+                                "cargo build --bin {name} failed ({status}):\n{stderr}{stdout}"
+                            ));
+                        }
+                    }
+                    Err(err) => {
+                        cargo_build_failure =
+                            Some(format!("cargo build --bin {name} failed: {err}"));
+                    }
+                }
+            }
+            Err(err) => {
+                cargo_build_failure = Some(format!("repo_root() failed: {err}"));
+            }
+        }
+    }
+
     match assert_cmd::Command::cargo_bin(name) {
         Ok(cmd) => {
             let mut path = PathBuf::from(cmd.get_program());
@@ -63,7 +146,12 @@ pub fn cargo_bin(name: &str) -> Result<PathBuf, CargoBinError> {
         Err(err) => Err(CargoBinError::NotFound {
             name: name.to_owned(),
             env_keys,
-            fallback: format!("assert_cmd fallback failed: {err}"),
+            fallback: match cargo_build_failure {
+                Some(cargo_build_failure) => {
+                    format!("{cargo_build_failure}\nassert_cmd fallback failed: {err}")
+                }
+                None => format!("assert_cmd fallback failed: {err}"),
+            },
         }),
     }
 }

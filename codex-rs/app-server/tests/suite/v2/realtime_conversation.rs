@@ -196,12 +196,6 @@ async fn realtime_conversation_streams_v2_notifications() -> Result<()> {
         connection[0].body_json()["type"].as_str(),
         Some("session.update")
     );
-    assert!(
-        connection[0].body_json()["session"]["instructions"]
-            .as_str()
-            .context("expected startup context instructions")?
-            .contains(STARTUP_CONTEXT_HEADER)
-    );
     let mut request_types = [
         connection[1].body_json()["type"]
             .as_str()

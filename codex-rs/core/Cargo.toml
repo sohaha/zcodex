@@ -18,10 +18,10 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+anthropic-sdk-rs = { workspace = true }
 arc-swap = "1.8.2"
 async-channel = { workspace = true }
 async-trait = { workspace = true }
-askama = { workspace = true }
 base64 = { workspace = true }
 bm25 = { workspace = true }
 chardetng = { workspace = true }
@@ -42,7 +42,8 @@ codex-hooks = { workspace = true }
 codex-keyring-store = { workspace = true }
 codex-network-proxy = { workspace = true }
 codex-otel = { workspace = true }
-codex-artifacts = { workspace = true }
+codex-artifact-presentation = { workspace = true }
+codex-artifact-spreadsheet = { workspace = true }
 codex-protocol = { workspace = true }
 codex-rmcp-client = { workspace = true }
 codex-state = { workspace = true }
@@ -67,6 +68,7 @@ http = { workspace = true }
 iana-time-zone = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "webp"] }
 indexmap = { workspace = true }
+jsonschema = { workspace = true }
 keyring = { workspace = true, features = ["crypto-rust"] }
 libc = { workspace = true }
 notify = { workspace = true }

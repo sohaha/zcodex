@@ -1232,9 +1232,6 @@ function normalizeEmitImageUrl(value) {
   if (typeof value !== "string" || !value) {
     throw new Error("codex.emitImage expected a non-empty image_url");
   }
-  if (!/^data:/i.test(value)) {
-    throw new Error("codex.emitImage only accepts data URLs");
-  }
   return value;
 }
 

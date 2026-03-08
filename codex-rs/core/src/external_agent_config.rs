@@ -1057,33 +1057,4 @@ mod tests {
             "Codex guidance"
         );
     }
-
-    #[test]
-    fn migration_metric_tags_for_skills_include_skills_count() {
-        assert_eq!(
-            migration_metric_tags(ExternalAgentConfigMigrationItemType::Skills, Some(3)),
-            vec![
-                ("migration_type", "skills".to_string()),
-                ("skills_count", "3".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn import_skills_returns_only_new_skill_directory_count() {
-        let (_root, claude_home, codex_home) = fixture_paths();
-        let agents_skills = codex_home
-            .parent()
-            .map(|parent| parent.join(".agents").join("skills"))
-            .unwrap_or_else(|| PathBuf::from(".agents").join("skills"));
-        fs::create_dir_all(claude_home.join("skills").join("skill-a")).expect("create source a");
-        fs::create_dir_all(claude_home.join("skills").join("skill-b")).expect("create source b");
-        fs::create_dir_all(agents_skills.join("skill-a")).expect("create existing target");
-
-        let copied_count = service_for_paths(claude_home, codex_home)
-            .import_skills(None)
-            .expect("import skills");
-
-        assert_eq!(copied_count, 1);
-    }
 }

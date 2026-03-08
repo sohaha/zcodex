@@ -129,6 +129,7 @@ def codex_rust_crate(
             deps = all_crate_deps(normal = True, normal_dev = True) + maybe_deps + deps_extra,
             rustc_flags = rustc_flags_extra,
             rustc_env = rustc_env,
+            compile_data = compile_data,
             data = test_data_extra,
             tags = test_tags,
         )

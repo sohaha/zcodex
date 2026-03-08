@@ -2319,48 +2319,6 @@ mod tests {
     }
 
     #[test]
-    fn build_schema_bundle_rejects_conflicting_duplicate_definitions() {
-        let err = build_schema_bundle(vec![
-            GeneratedSchema {
-                namespace: Some("v2".to_string()),
-                logical_name: "First".to_string(),
-                in_v1_dir: false,
-                value: serde_json::json!({
-                    "title": "First",
-                    "type": "object",
-                    "definitions": {
-                        "Shared": {
-                            "title": "SharedString",
-                            "type": "string"
-                        }
-                    }
-                }),
-            },
-            GeneratedSchema {
-                namespace: Some("v2".to_string()),
-                logical_name: "Second".to_string(),
-                in_v1_dir: false,
-                value: serde_json::json!({
-                    "title": "Second",
-                    "type": "object",
-                    "definitions": {
-                        "Shared": {
-                            "title": "SharedInteger",
-                            "type": "integer"
-                        }
-                    }
-                }),
-            },
-        ])
-        .expect_err("conflicting schema definitions should be rejected");
-
-        assert_eq!(
-            err.to_string(),
-            "schema definition collision in namespace `v2`: Shared (existing title: SharedString, new title: SharedInteger); use #[schemars(rename = \"...\")] to rename one of the conflicting schema definitions"
-        );
-    }
-
-    #[test]
     fn build_flat_v2_schema_keeps_shared_root_schemas_and_dependencies() -> Result<()> {
         let bundle = serde_json::json!({
             "$schema": "http://json-schema.org/draft-07/schema#",

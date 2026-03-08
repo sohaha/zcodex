@@ -174,6 +174,9 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
     expected_tools_names.extend([
         "update_plan",
         "request_user_input",
+        "CronCreate",
+        "CronList",
+        "CronDelete",
         "apply_patch",
         "web_search",
         "view_image",
@@ -198,6 +201,9 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
         serde_json::json!(expected_instructions),
     );
     assert_tool_names(&body1, &expected_tools_names);
+
+    codex.submit(Op::Shutdown).await?;
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::ShutdownComplete)).await;
 
     Ok(())
 }

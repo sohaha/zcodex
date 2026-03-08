@@ -13,6 +13,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::fmt;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::time::Duration;
 use wildmatch::WildMatchPattern;
@@ -41,6 +42,53 @@ pub enum WindowsSandboxModeToml {
 #[schemars(deny_unknown_fields)]
 pub struct WindowsToml {
     pub sandbox: Option<WindowsSandboxModeToml>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum GithubWebhookAuthModeToml {
+    #[default]
+    Auto,
+    Token,
+    GithubApp,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum GithubWebhookSourceToml {
+    Repo,
+    Organization,
+    GithubApp,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct GithubWebhookEventsToml {
+    pub issue_comment: Option<bool>,
+    pub issues: Option<bool>,
+    pub pull_request: Option<bool>,
+    pub pull_request_review: Option<bool>,
+    pub pull_request_review_comment: Option<bool>,
+    pub push: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct GithubWebhookToml {
+    pub enabled: Option<bool>,
+    pub listen: Option<SocketAddr>,
+    pub webhook_secret_env: Option<String>,
+    pub github_token_env: Option<String>,
+    pub github_app_id_env: Option<String>,
+    pub github_app_private_key_env: Option<String>,
+    pub auth_mode: Option<GithubWebhookAuthModeToml>,
+    pub min_permission: Option<String>,
+    pub allow_repos: Option<Vec<String>>,
+    pub command_prefix: Option<String>,
+    pub delivery_ttl_days: Option<u64>,
+    pub repo_ttl_days: Option<u64>,
+    pub sources: Option<Vec<GithubWebhookSourceToml>>,
+    pub events: Option<GithubWebhookEventsToml>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -379,6 +427,7 @@ pub struct MemoriesToml {
     /// When `false`, skip injecting memory usage instructions into developer prompts.
     pub use_memories: Option<bool>,
     /// Maximum number of recent raw memories retained for global consolidation.
+    #[serde(alias = "max_raw_memories_for_global")]
     pub max_raw_memories_for_consolidation: Option<usize>,
     /// Maximum number of days since a memory was last used before it becomes ineligible for phase 2 selection.
     pub max_unused_days: Option<i64>,
@@ -389,8 +438,10 @@ pub struct MemoriesToml {
     /// Minimum idle time between last thread activity and memory creation (hours). > 12h recommended.
     pub min_rollout_idle_hours: Option<i64>,
     /// Model used for thread summarisation.
+    #[serde(alias = "phase_1_model")]
     pub extract_model: Option<String>,
     /// Model used for memory consolidation.
+    #[serde(alias = "phase_2_model")]
     pub consolidation_model: Option<String>,
 }
 

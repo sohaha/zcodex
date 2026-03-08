@@ -14,6 +14,7 @@ use crate::sandboxing::ExecRequest;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::ShellType;
 use crate::skills::SkillMetadata;
+use crate::skills::permissions::compile_permission_profile;
 use crate::tools::runtimes::ExecveSessionApproval;
 use crate::tools::runtimes::build_command_spec;
 use crate::tools::sandboxing::SandboxAttempt;
@@ -356,14 +357,18 @@ impl CoreShellActionProvider {
     }
 
     fn skill_escalation_execution(skill: &SkillMetadata) -> EscalationExecution {
-        let permission_profile = skill.permission_profile.clone().unwrap_or_default();
-        if permission_profile.is_empty() {
-            EscalationExecution::TurnDefault
-        } else {
-            EscalationExecution::Permissions(EscalationPermissions::PermissionProfile(
-                permission_profile,
-            ))
-        }
+        compile_permission_profile(skill.permission_profile.clone())
+            .map(|permissions| {
+                EscalationExecution::Permissions(EscalationPermissions::Permissions(
+                    EscalatedPermissions {
+                        sandbox_policy: permissions.sandbox_policy.get().clone(),
+                        macos_seatbelt_profile_extensions: permissions
+                            .macos_seatbelt_profile_extensions
+                            .clone(),
+                    },
+                ))
+            })
+            .unwrap_or(EscalationExecution::TurnDefault)
     }
 
     async fn prompt(

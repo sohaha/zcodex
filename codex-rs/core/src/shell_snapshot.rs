@@ -180,17 +180,6 @@ impl ShellSnapshot {
     }
 }
 
-impl Drop for ShellSnapshot {
-    fn drop(&mut self) {
-        if let Err(err) = std::fs::remove_file(&self.path) {
-            tracing::warn!(
-                "Failed to delete shell snapshot at {:?}: {err:?}",
-                self.path
-            );
-        }
-    }
-}
-
 async fn write_shell_snapshot(
     shell_type: ShellType,
     output_path: &Path,
@@ -711,7 +700,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn try_new_creates_and_deletes_snapshot_file() -> Result<()> {
+    async fn try_new_refresh_does_not_delete_latest_snapshot_file() -> Result<()> {
         let dir = tempdir()?;
         let shell = Shell {
             shell_type: ShellType::Bash,
@@ -719,16 +708,25 @@ mod tests {
             shell_snapshot: crate::shell::empty_shell_snapshot_receiver(),
         };
 
-        let snapshot = ShellSnapshot::try_new(dir.path(), ThreadId::new(), dir.path(), &shell)
+        let session_id = ThreadId::new();
+        let snapshot_1 = ShellSnapshot::try_new(dir.path(), session_id, dir.path(), &shell)
             .await
             .expect("snapshot should be created");
-        let path = snapshot.path.clone();
+        let path = snapshot_1.path.clone();
         assert!(path.exists());
-        assert_eq!(snapshot.cwd, dir.path().to_path_buf());
+        assert_eq!(snapshot_1.cwd, dir.path().to_path_buf());
 
-        drop(snapshot);
+        let snapshot_2 = ShellSnapshot::try_new(dir.path(), session_id, dir.path(), &shell)
+            .await
+            .expect("snapshot should be created");
+        assert_eq!(snapshot_2.path, path);
 
-        assert!(!path.exists());
+        drop(snapshot_1);
+
+        assert!(
+            path.exists(),
+            "new snapshot should not be removed by previous snapshot drop"
+        );
 
         Ok(())
     }
@@ -822,7 +820,20 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn macos_zsh_snapshot_includes_sections() -> Result<()> {
-        let snapshot = get_snapshot(ShellType::Zsh).await?;
+        let dir = tempdir()?;
+        let home = dir.path();
+        fs::write(home.join(".zshrc"), "# test rc\n").await?;
+
+        let shell = get_shell(ShellType::Zsh, None).context("zsh available")?;
+        let home_display = home.display();
+        let script = format!(
+            "HOME=\"{home_display}\"; ZDOTDIR=\"{home_display}\"; export HOME ZDOTDIR; {}",
+            zsh_snapshot_script()
+        );
+        let snapshot = run_script_with_timeout(&shell, &script, SNAPSHOT_TIMEOUT, true, home)
+            .await
+            .context("run zsh snapshot command")?;
+        let snapshot = strip_snapshot_preamble(&snapshot)?;
         assert_posix_snapshot_sections(&snapshot);
         Ok(())
     }

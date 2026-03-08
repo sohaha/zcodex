@@ -14,6 +14,7 @@ use serde::Serialize;
 use strum_macros::Display;
 
 pub use crate::events::session_telemetry::SessionTelemetry;
+pub use crate::events::session_telemetry::SessionTelemetry as OtelManager;
 pub use crate::events::session_telemetry::SessionTelemetryMetadata;
 pub use crate::metrics::runtime_metrics::RuntimeMetricTotals;
 pub use crate::metrics::runtime_metrics::RuntimeMetricsSummary;

@@ -6,7 +6,7 @@ $:
   push:
     sync_github:
       env:
-        BRANCHS: main
+        BRANCHS: master
   tag_push:
     - services:
         - docker

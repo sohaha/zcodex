@@ -297,6 +297,9 @@
         "chatgpt_base_url": {
           "type": "string"
         },
+        "disable_cron": {
+          "type": "boolean"
+        },
         "experimental_compact_prompt_file": {
           "$ref": "#/definitions/AbsolutePathBuf"
         },
@@ -618,6 +621,104 @@
           "description": "Exclude untracked files larger than this many bytes from ghost snapshots.",
           "format": "int64",
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "GithubWebhookAuthModeToml": {
+      "enum": [
+        "auto",
+        "token",
+        "github-app"
+      ],
+      "type": "string"
+    },
+    "GithubWebhookEventsToml": {
+      "additionalProperties": false,
+      "properties": {
+        "issue_comment": {
+          "type": "boolean"
+        },
+        "issues": {
+          "type": "boolean"
+        },
+        "pull_request": {
+          "type": "boolean"
+        },
+        "pull_request_review": {
+          "type": "boolean"
+        },
+        "pull_request_review_comment": {
+          "type": "boolean"
+        },
+        "push": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "GithubWebhookSourceToml": {
+      "enum": [
+        "repo",
+        "organization",
+        "github-app"
+      ],
+      "type": "string"
+    },
+    "GithubWebhookToml": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_repos": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "auth_mode": {
+          "$ref": "#/definitions/GithubWebhookAuthModeToml"
+        },
+        "command_prefix": {
+          "type": "string"
+        },
+        "delivery_ttl_days": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "events": {
+          "$ref": "#/definitions/GithubWebhookEventsToml"
+        },
+        "github_app_id_env": {
+          "type": "string"
+        },
+        "github_app_private_key_env": {
+          "type": "string"
+        },
+        "github_token_env": {
+          "type": "string"
+        },
+        "listen": {
+          "type": "string"
+        },
+        "min_permission": {
+          "type": "string"
+        },
+        "repo_ttl_days": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/definitions/GithubWebhookSourceToml"
+          },
+          "type": "array"
+        },
+        "webhook_secret_env": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -1657,6 +1758,13 @@
             "responses"
           ],
           "type": "string"
+        },
+        {
+          "description": "The Anthropic Messages API exposed at `/v1/messages`.",
+          "enum": [
+            "anthropic"
+          ],
+          "type": "string"
         }
       ]
     }
@@ -1748,6 +1856,10 @@
       "default": null,
       "description": "Developer instructions inserted as a `developer` role message.",
       "type": "string"
+    },
+    "disable_cron": {
+      "description": "When `true`, disables scheduled-task tools and the `/loop` command.",
+      "type": "boolean"
     },
     "disable_paste_burst": {
       "description": "When true, disables burst-paste detection for typed input entirely. All characters are inserted as they are received, and no buffering or placeholder replacement will occur for fast keypress bursts.",
@@ -1983,6 +2095,14 @@
       ],
       "default": null,
       "description": "Settings for ghost snapshots (used for undo)."
+    },
+    "github_webhook": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/GithubWebhookToml"
+        }
+      ],
+      "description": "Settings for the `codex github` webhook server."
     },
     "hide_agent_reasoning": {
       "description": "When set to `true`, `AgentReasoning` events will be hidden from the UI/output. Defaults to `false`.",
@@ -2240,7 +2360,7 @@
           "$ref": "#/definitions/ServiceTier"
         }
       ],
-      "description": "Optional explicit service tier preference for new turns (`fast` or `flex`)."
+      "description": "Optional explicit service tier preference for new turns."
     },
     "shell_environment_policy": {
       "allOf": [

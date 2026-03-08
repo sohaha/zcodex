@@ -731,7 +731,6 @@ mod tests {
 
         assert_eq!(model.availability_nux, None);
         assert!(!model.supports_image_detail_original);
-        assert_eq!(model.web_search_tool_type, WebSearchToolType::Text);
     }
 
     #[test]

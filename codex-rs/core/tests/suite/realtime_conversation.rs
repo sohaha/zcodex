@@ -38,14 +38,6 @@ const STARTUP_CONTEXT_HEADER: &str = "Startup context from Codex.";
 const MEMORY_PROMPT_PHRASE: &str =
     "You have access to a memory folder with guidance from prior runs.";
 
-fn websocket_request_text(
-    request: &core_test_support::responses::WebSocketRequest,
-) -> Option<String> {
-    request.body_json()["item"]["content"][0]["text"]
-        .as_str()
-        .map(str::to_owned)
-}
-
 fn websocket_request_instructions(
     request: &core_test_support::responses::WebSocketRequest,
 ) -> Option<String> {
@@ -178,6 +170,11 @@ async fn conversation_start_audio_text_close_round_trip() -> Result<()> {
     let initial_instructions = websocket_request_instructions(&connection[0])
         .expect("initial session update instructions");
     assert!(initial_instructions.starts_with("backend prompt"));
+    assert!(
+        connection[0].body_json()["session"]["instructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.starts_with("backend prompt"))
+    );
     assert_eq!(
         server.handshakes()[1]
             .header("x-session-id")
@@ -507,6 +504,11 @@ async fn conversation_second_start_replaces_runtime() -> Result<()> {
     let old_instructions =
         websocket_request_instructions(&connections[1][0]).expect("old session instructions");
     assert!(old_instructions.starts_with("old"));
+    assert!(
+        connections[1][0].body_json()["session"]["instructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.starts_with("old"))
+    );
     assert_eq!(
         server.handshakes()[1].header("x-session-id").as_deref(),
         Some("conv_old")
@@ -515,6 +517,11 @@ async fn conversation_second_start_replaces_runtime() -> Result<()> {
     let new_instructions =
         websocket_request_instructions(&connections[2][0]).expect("new session instructions");
     assert!(new_instructions.starts_with("new"));
+    assert!(
+        connections[2][0].body_json()["session"]["instructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.starts_with("new"))
+    );
     assert_eq!(
         server.handshakes()[2].header("x-session-id").as_deref(),
         Some("conv_new")
@@ -831,16 +838,6 @@ async fn conversation_startup_context_falls_back_to_workspace_map() -> Result<()
         }))
         .await?;
 
-    wait_for_event_match(&test.codex, |msg| match msg {
-        EventMsg::RealtimeConversationRealtime(RealtimeConversationRealtimeEvent {
-            payload: RealtimeEvent::SessionUpdated { session_id, .. },
-        }) if session_id == "sess_workspace" => Some(Ok(())),
-        EventMsg::Error(err) => Some(Err(err.clone())),
-        _ => None,
-    })
-    .await
-    .unwrap_or_else(|err: ErrorEvent| panic!("conversation start failed: {err:?}"));
-
     let startup_context_request = server.wait_for_request(1, 0).await;
     let startup_context = websocket_request_instructions(&startup_context_request)
         .expect("startup context request should contain instructions");
@@ -907,9 +904,10 @@ async fn conversation_startup_context_is_truncated_and_sent_once_per_start() -> 
 
     let explicit_text_request = server.wait_for_request(1, 1).await;
     assert_eq!(
-        websocket_request_text(&explicit_text_request),
-        Some("hello".to_string())
+        explicit_text_request.body_json()["type"].as_str(),
+        Some("conversation.item.create")
     );
+    assert!(explicit_text_request.body_json().get("session").is_none());
 
     server.shutdown().await;
     Ok(())
@@ -1251,7 +1249,7 @@ async fn inbound_handoff_request_starts_turn() -> Result<()> {
     assert!(
         user_texts
             .iter()
-            .any(|text| text == "user: text from realtime")
+            .any(|text| text.contains("text from realtime"))
     );
 
     realtime_server.shutdown().await;
@@ -1322,8 +1320,11 @@ async fn inbound_handoff_request_uses_all_messages() -> Result<()> {
 
     let request = response_mock.single_request();
     let user_texts = request.message_input_texts("user");
-    assert!(user_texts.iter().any(|text| text
-        == "assistant: assistant context\nuser: delegated query\nassistant: assist confirm"));
+    assert!(
+        user_texts
+            .iter()
+            .any(|text| text == "assistant context\ndelegated query\nassist confirm")
+    );
 
     realtime_server.shutdown().await;
     Ok(())
@@ -1804,17 +1805,25 @@ async fn inbound_handoff_request_steers_active_turn() -> Result<()> {
     let first_texts = message_input_texts(&first_body, "user");
     let second_texts = message_input_texts(&second_body, "user");
 
-    assert!(first_texts.iter().any(|text| text == "first prompt"));
+    assert!(
+        first_texts
+            .iter()
+            .any(|text| text.starts_with("first prompt"))
+    );
     assert!(
         !first_texts
             .iter()
-            .any(|text| text == "user: steer via realtime")
+            .any(|text| text.contains("steer via realtime"))
     );
-    assert!(second_texts.iter().any(|text| text == "first prompt"));
     assert!(
         second_texts
             .iter()
-            .any(|text| text == "user: steer via realtime")
+            .any(|text| text.starts_with("first prompt"))
+    );
+    assert!(
+        second_texts
+            .iter()
+            .any(|text| text.contains("steer via realtime"))
     );
 
     realtime_server.shutdown().await;
@@ -1923,8 +1932,7 @@ async fn inbound_handoff_request_starts_turn_and_does_not_block_realtime_audio()
     assert_eq!(requests.len(), 1);
     let first_body: Value = serde_json::from_slice(&requests[0]).expect("parse first request");
     let first_texts = message_input_texts(&first_body, "user");
-    let expected_text = format!("user: {delegated_text}");
-    assert!(first_texts.iter().any(|text| text == &expected_text));
+    assert!(first_texts.iter().any(|text| text.contains(delegated_text)));
 
     realtime_server.shutdown().await;
     api_server.shutdown().await;

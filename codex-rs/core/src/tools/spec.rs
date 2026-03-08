@@ -7,6 +7,9 @@ use crate::features::Feature;
 use crate::features::Features;
 use crate::mcp_connection_manager::ToolInfo;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use crate::tools::handlers::CRON_CREATE_TOOL_NAME;
+use crate::tools::handlers::CRON_DELETE_TOOL_NAME;
+use crate::tools::handlers::CRON_LIST_TOOL_NAME;
 use crate::tools::handlers::PLAN_TOOL;
 use crate::tools::handlers::SEARCH_TOOL_BM25_DEFAULT_LIMIT;
 use crate::tools::handlers::SEARCH_TOOL_BM25_TOOL_NAME;
@@ -65,6 +68,7 @@ pub(crate) struct ToolsConfig {
     pub agent_roles: BTreeMap<String, AgentRoleConfig>,
     pub search_tool: bool,
     pub request_permission_enabled: bool,
+    pub scheduled_tasks_enabled: bool,
     pub js_repl_enabled: bool,
     pub js_repl_tools_only: bool,
     pub collab_tools: bool,
@@ -81,6 +85,7 @@ pub(crate) struct ToolsConfigParams<'a> {
     pub(crate) features: &'a Features,
     pub(crate) web_search_mode: Option<WebSearchMode>,
     pub(crate) session_source: SessionSource,
+    pub(crate) scheduled_tasks_enabled: bool,
 }
 
 impl ToolsConfig {
@@ -90,6 +95,7 @@ impl ToolsConfig {
             features,
             web_search_mode,
             session_source,
+            scheduled_tasks_enabled,
         } = params;
         let include_apply_patch_tool = features.enabled(Feature::ApplyPatchFreeform);
         let include_js_repl = features.enabled(Feature::JsRepl);
@@ -100,11 +106,15 @@ impl ToolsConfig {
         let include_default_mode_request_user_input =
             include_request_user_input && features.enabled(Feature::DefaultModeRequestUserInput);
         let include_search_tool = features.enabled(Feature::Apps);
-        let include_artifact_tools =
-            features.enabled(Feature::Artifact) && codex_artifacts::can_manage_artifact_runtime();
+        let include_artifact_tools = features.enabled(Feature::Artifact);
         let include_image_gen_tool =
             features.enabled(Feature::ImageGeneration) && supports_image_generation(model_info);
-        let include_agent_jobs = include_collab_tools;
+        let include_sqlite = features.enabled(Feature::Sqlite);
+        let is_agent_job_worker = matches!(
+            session_source,
+            SessionSource::SubAgent(SubAgentSource::Other(label)) if label.starts_with("agent_job:")
+        );
+        let include_agent_jobs = include_collab_tools && include_sqlite;
         let request_permission_enabled = features.enabled(Feature::RequestPermissions);
         let shell_command_backend =
             if features.enabled(Feature::ShellTool) && features.enabled(Feature::ShellZshFork) {
@@ -146,12 +156,10 @@ impl ToolsConfig {
             }
         };
 
-        let agent_jobs_worker_tools = include_agent_jobs
-            && matches!(
-                session_source,
-                SessionSource::SubAgent(SubAgentSource::Other(label))
-                    if label.starts_with("agent_job:")
-            );
+        let agent_jobs_tools = include_agent_jobs && !is_agent_job_worker;
+        // Agent job workers may run with collab tools disabled (e.g. due to agent depth), but still
+        // need to report results back to the parent.
+        let agent_jobs_worker_tools = include_sqlite && is_agent_job_worker;
 
         Self {
             shell_type,
@@ -166,6 +174,7 @@ impl ToolsConfig {
             agent_roles: BTreeMap::new(),
             search_tool: include_search_tool,
             request_permission_enabled,
+            scheduled_tasks_enabled: *scheduled_tasks_enabled,
             js_repl_enabled: include_js_repl,
             js_repl_tools_only: include_js_repl_tools_only,
             collab_tools: include_collab_tools,
@@ -173,7 +182,7 @@ impl ToolsConfig {
             request_user_input: include_request_user_input,
             default_mode_request_user_input: include_default_mode_request_user_input,
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
-            agent_jobs_tools: include_agent_jobs,
+            agent_jobs_tools,
             agent_jobs_worker_tools,
         }
     }
@@ -666,6 +675,97 @@ fn create_view_image_tool() -> ToolSpec {
     })
 }
 
+fn create_presentation_artifact_tool() -> ToolSpec {
+    let action_step_schema = JsonSchema::Object {
+        properties: BTreeMap::from([
+            (
+                "action".to_string(),
+                JsonSchema::String {
+                    description: Some("Action name to run for this step.".to_string()),
+                },
+            ),
+            (
+                "args".to_string(),
+                JsonSchema::Object {
+                    properties: BTreeMap::new(),
+                    required: None,
+                    additional_properties: Some(true.into()),
+                },
+            ),
+        ]),
+        required: Some(vec!["action".to_string(), "args".to_string()]),
+        additional_properties: Some(false.into()),
+    };
+    let properties = BTreeMap::from([
+        (
+            "artifact_id".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Artifact id returned by an earlier presentation_artifact call.".to_string(),
+                ),
+            },
+        ),
+        (
+            "actions".to_string(),
+            JsonSchema::Array {
+                items: Box::new(action_step_schema),
+                description: Some(
+                    "Array of `(action, args)` steps to execute sequentially.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "presentation_artifact".to_string(),
+        description: "Create or edit a presentation artifact for the current thread.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["actions".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_spreadsheet_artifact_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "artifact_id".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Artifact id returned by an earlier spreadsheet_artifact call.".to_string(),
+                ),
+            },
+        ),
+        (
+            "action".to_string(),
+            JsonSchema::String {
+                description: Some("Action name to run for this request.".to_string()),
+            },
+        ),
+        (
+            "args".to_string(),
+            JsonSchema::Object {
+                properties: BTreeMap::new(),
+                required: None,
+                additional_properties: Some(true.into()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "spreadsheet_artifact".to_string(),
+        description: "Create or edit a spreadsheet artifact for the current thread.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["action".to_string(), "args".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_collab_input_items_schema() -> JsonSchema {
     let properties = BTreeMap::from([
         (
@@ -1122,6 +1222,481 @@ fn create_close_agent_tool() -> ToolSpec {
     })
 }
 
+fn create_spawn_team_tool(config: &ToolsConfig) -> ToolSpec {
+    let member_properties = BTreeMap::from([
+        (
+            "name".to_string(),
+            JsonSchema::String {
+                description: Some("Unique member name within the team.".to_string()),
+            },
+        ),
+        (
+            "task".to_string(),
+            JsonSchema::String {
+                description: Some("Initial task for this member.".to_string()),
+            },
+        ),
+        (
+            "agent_type".to_string(),
+            JsonSchema::String {
+                description: Some(crate::agent::role::spawn_tool_spec::build(
+                    &config.agent_roles,
+                )),
+            },
+        ),
+        (
+            "model_provider".to_string(),
+            JsonSchema::String {
+                description: Some("Optional model provider id override for this member.".to_string()),
+            },
+        ),
+        (
+            "model".to_string(),
+            JsonSchema::String {
+                description: Some("Optional model override for this member.".to_string()),
+            },
+        ),
+        (
+            "worktree".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, spawn this member in a dedicated git worktree.".to_string(),
+                ),
+            },
+        ),
+        (
+            "background".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, mark this member as background work (informational) and auto-close it once it reaches a final status.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional stable team id. Auto-generated when omitted.".to_string(),
+                ),
+            },
+        ),
+        (
+            "members".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::Object {
+                    properties: member_properties,
+                    required: Some(vec!["name".to_string(), "task".to_string()]),
+                    additional_properties: Some(false.into()),
+                }),
+                description: Some(
+                    "Team members to spawn. Each member receives its own task.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "spawn_team".to_string(),
+        description: "Spawn a group of sub-agents for parallel task execution and register them under a team id. Limitations: teammates cannot spawn nested teams.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["members".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_wait_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "mode".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Wait mode: `all` (default) waits for every member, `any` returns after the first completed member."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "timeout_ms".to_string(),
+            JsonSchema::Number {
+                description: Some(format!(
+                    "Optional timeout in milliseconds. Defaults to {DEFAULT_WAIT_TIMEOUT_MS}, min {MIN_WAIT_TIMEOUT_MS}, max {MAX_WAIT_TIMEOUT_MS}. Prefer longer waits (minutes) to avoid busy polling."
+                )),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "wait_team".to_string(),
+        description:
+            "Wait for team members to reach final states, with support for all/any completion semantics."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_close_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "members".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Optional member names to close. Omit to close all team members.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "close_team".to_string(),
+        description: "Close one or more team members and remove them from the team registry."
+            .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_task_list_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_id".to_string(),
+        JsonSchema::String {
+            description: Some("Team id returned by spawn_team.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_task_list".to_string(),
+        description: "List persisted tasks for a team.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_task_claim_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "task_id".to_string(),
+            JsonSchema::String {
+                description: Some("Task id returned by team_task_list.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_task_claim".to_string(),
+        description: "Claim a specific team task when dependencies are satisfied.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string(), "task_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_task_claim_next_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "member_name".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional member name to restrict claims to a specific assignee.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_task_claim_next".to_string(),
+        description:
+            "Claim the next pending claimable task, optionally scoped to a specific team member."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_task_complete_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "task_id".to_string(),
+            JsonSchema::String {
+                description: Some("Task id returned by team_task_list.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_task_complete".to_string(),
+        description: "Mark a team task as completed.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string(), "task_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_message_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "member_name".to_string(),
+            JsonSchema::String {
+                description: Some("Target member name in the team.".to_string()),
+            },
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Legacy plain-text message to send to the member. Use either message or items."
+                        .to_string(),
+                ),
+            },
+        ),
+        ("items".to_string(), create_collab_input_items_schema()),
+        (
+            "interrupt".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, stop the member's current task and handle this immediately."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_message".to_string(),
+        description: "Send a message to one member in a team.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string(), "member_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_broadcast_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Legacy plain-text message to send to every member. Use either message or items."
+                        .to_string(),
+                ),
+            },
+        ),
+        ("items".to_string(), create_collab_input_items_schema()),
+        (
+            "interrupt".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, stop each member's current task before sending input.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_broadcast".to_string(),
+        description: "Broadcast one message to every member in a team.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_ask_lead_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "message".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Legacy plain-text message to send to the lead. Use either message or items."
+                        .to_string(),
+                ),
+            },
+        ),
+        ("items".to_string(), create_collab_input_items_schema()),
+        (
+            "interrupt".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "When true, stop the lead's current task before sending input.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_ask_lead".to_string(),
+        description: "Send a message to the team lead.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_inbox_pop_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "limit".to_string(),
+            JsonSchema::Number {
+                description: Some("Maximum number of messages to return (1-500).".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_inbox_pop".to_string(),
+        description: "Pop messages from the caller's durable team inbox.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_inbox_ack_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_id".to_string(),
+            JsonSchema::String {
+                description: Some("Team id returned by spawn_team.".to_string()),
+            },
+        ),
+        (
+            "ack_token".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Ack token returned by team_inbox_pop. Empty string is treated as no-op."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_inbox_ack".to_string(),
+        description: "Acknowledge previously popped inbox messages.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string(), "ack_token".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_team_cleanup_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_id".to_string(),
+        JsonSchema::String {
+            description: Some("Team id returned by spawn_team.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "team_cleanup".to_string(),
+        description: "Remove shared team resources (team config, tasks, inbox). Must be run by the lead and fails if any teammates are still running; shut them down first with close_team.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_test_sync_tool() -> ToolSpec {
     let barrier_properties = BTreeMap::from([
         (
@@ -1235,6 +1810,79 @@ fn create_grep_files_tool() -> ToolSpec {
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["pattern".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_cron_create_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "schedule".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional recurring schedule as a 5-field numeric cron expression in the local timezone: minute hour day-of-month month day-of-week. Example: `0 17 * * 1-5`. Provide either `schedule` or `run_at`.".to_string(),
+                ),
+            },
+        ),
+        (
+            "run_at".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional one-shot run time as an RFC3339 timestamp. Provide either `schedule` or `run_at`.".to_string(),
+                ),
+            },
+        ),
+        (
+            "prompt".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "The prompt text to enqueue when the scheduled task fires. Scheduled tasks are session-scoped and do not survive process exit.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: CRON_CREATE_TOOL_NAME.to_string(),
+        description: "Create a session-scoped scheduled task. The scheduler checks roughly once per second, only fires between turns, skips missed backlogs instead of replaying every missed run, and drops runs that are more than three days overdue.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["prompt".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_cron_list_tool() -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: CRON_LIST_TOOL_NAME.to_string(),
+        description: "List session-scoped scheduled tasks that are still active.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties: BTreeMap::new(),
+            required: Some(Vec::new()),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+fn create_cron_delete_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "id".to_string(),
+        JsonSchema::String {
+            description: Some("Identifier returned by CronCreate or CronList.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: CRON_DELETE_TOOL_NAME.to_string(),
+        description: "Delete a session-scoped scheduled task by id.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["id".to_string()]),
             additional_properties: Some(false.into()),
         },
     })
@@ -1457,33 +2105,6 @@ JS_SOURCE: /(?:\s*)(?:[^\s{\"`]|`[^`]|``[^`])[\s\S]*/
             r#type: "grammar".to_string(),
             syntax: "lark".to_string(),
             definition: JS_REPL_FREEFORM_GRAMMAR.to_string(),
-        },
-    })
-}
-
-fn create_artifacts_tool() -> ToolSpec {
-    const ARTIFACTS_FREEFORM_GRAMMAR: &str = r#"
-start: pragma_source | plain_source
-
-pragma_source: PRAGMA_LINE NEWLINE js_source
-plain_source: PLAIN_JS_SOURCE
-
-js_source: JS_SOURCE
-
-PRAGMA_LINE: /[ \t]*\/\/ codex-artifacts:[^\r\n]*/ | /[ \t]*\/\/ codex-artifact-tool:[^\r\n]*/
-NEWLINE: /\r?\n/
-PLAIN_JS_SOURCE: /(?:\s*)(?:[^\s{\"`]|`[^`]|``[^`])[\s\S]*/
-JS_SOURCE: /(?:\s*)(?:[^\s{\"`]|`[^`]|``[^`])[\s\S]*/
-"#;
-
-    ToolSpec::Freeform(FreeformTool {
-        name: "artifacts".to_string(),
-        description: "Runs raw JavaScript against the preinstalled Codex @oai/artifact-tool runtime for creating presentations or spreadsheets. This is plain JavaScript executed by a local Node-compatible runtime with top-level await, not TypeScript: do not use type annotations, `interface`, `type`, or `import type`. Author code the same way you would for `import { Presentation, Workbook, PresentationFile, SpreadsheetFile, FileBlob, ... } from \"@oai/artifact-tool\"`, but omit that import line because the package surface is already preloaded. Named exports are available directly on `globalThis`, and the full module is available as `globalThis.artifactTool` (also aliased as `globalThis.artifacts` and `globalThis.codexArtifacts`). Node built-ins such as `node:fs/promises` may still be imported when needed for saving preview bytes. This is a freeform tool: send raw JavaScript source text, optionally with a first-line pragma like `// codex-artifacts: timeout_ms=15000` or `// codex-artifact-tool: timeout_ms=15000`; do not send JSON/quotes/markdown fences."
-            .to_string(),
-        format: FreeformToolFormat {
-            r#type: "grammar".to_string(),
-            syntax: "lark".to_string(),
-            definition: ARTIFACTS_FREEFORM_GRAMMAR.to_string(),
         },
     })
 }
@@ -1808,7 +2429,9 @@ pub(crate) fn build_specs(
     dynamic_tools: &[DynamicToolSpec],
 ) -> ToolRegistryBuilder {
     use crate::tools::handlers::ApplyPatchHandler;
-    use crate::tools::handlers::ArtifactsHandler;
+    use crate::tools::handlers::CronCreateHandler;
+    use crate::tools::handlers::CronDeleteHandler;
+    use crate::tools::handlers::CronListHandler;
     use crate::tools::handlers::DynamicToolHandler;
     use crate::tools::handlers::GrepFilesHandler;
     use crate::tools::handlers::JsReplHandler;
@@ -1818,11 +2441,13 @@ pub(crate) fn build_specs(
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::MultiAgentHandler;
     use crate::tools::handlers::PlanHandler;
+    use crate::tools::handlers::PresentationArtifactHandler;
     use crate::tools::handlers::ReadFileHandler;
     use crate::tools::handlers::RequestUserInputHandler;
     use crate::tools::handlers::SearchToolBm25Handler;
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
+    use crate::tools::handlers::SpreadsheetArtifactHandler;
     use crate::tools::handlers::TestSyncHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
@@ -1834,6 +2459,9 @@ pub(crate) fn build_specs(
     let unified_exec_handler = Arc::new(UnifiedExecHandler);
     let plan_handler = Arc::new(PlanHandler);
     let apply_patch_handler = Arc::new(ApplyPatchHandler);
+    let cron_create_handler = Arc::new(CronCreateHandler);
+    let cron_list_handler = Arc::new(CronListHandler);
+    let cron_delete_handler = Arc::new(CronDeleteHandler);
     let dynamic_tool_handler = Arc::new(DynamicToolHandler);
     let view_image_handler = Arc::new(ViewImageHandler);
     let mcp_handler = Arc::new(McpHandler);
@@ -1845,7 +2473,8 @@ pub(crate) fn build_specs(
     let search_tool_handler = Arc::new(SearchToolBm25Handler);
     let js_repl_handler = Arc::new(JsReplHandler);
     let js_repl_reset_handler = Arc::new(JsReplResetHandler);
-    let artifacts_handler = Arc::new(ArtifactsHandler);
+    let presentation_artifact_handler = Arc::new(PresentationArtifactHandler);
+    let spreadsheet_artifact_handler = Arc::new(SpreadsheetArtifactHandler);
     let request_permission_enabled = config.request_permission_enabled;
 
     match &config.shell_type {
@@ -1910,6 +2539,18 @@ pub(crate) fn build_specs(
             default_mode_request_user_input: config.default_mode_request_user_input,
         }));
         builder.register_handler("request_user_input", request_user_input_handler);
+    }
+
+    if config.scheduled_tasks_enabled {
+        builder.push_spec(create_cron_create_tool());
+        builder.push_spec(create_cron_list_tool());
+        builder.push_spec(create_cron_delete_tool());
+        builder.register_handler(CRON_CREATE_TOOL_NAME, cron_create_handler.clone());
+        builder.register_handler("cron_create", cron_create_handler);
+        builder.register_handler(CRON_LIST_TOOL_NAME, cron_list_handler.clone());
+        builder.register_handler("cron_list", cron_list_handler);
+        builder.register_handler(CRON_DELETE_TOOL_NAME, cron_delete_handler.clone());
+        builder.register_handler("cron_delete", cron_delete_handler);
     }
 
     if config.search_tool
@@ -2013,28 +2654,58 @@ pub(crate) fn build_specs(
     builder.register_handler("view_image", view_image_handler);
 
     if config.artifact_tools {
-        builder.push_spec(create_artifacts_tool());
-        builder.register_handler("artifacts", artifacts_handler);
+        builder.push_spec(create_presentation_artifact_tool());
+        builder.push_spec(create_spreadsheet_artifact_tool());
+        builder.register_handler("presentation_artifact", presentation_artifact_handler);
+        builder.register_handler("spreadsheet_artifact", spreadsheet_artifact_handler);
     }
 
     if config.collab_tools {
         let multi_agent_handler = Arc::new(MultiAgentHandler);
-        builder.push_spec(create_spawn_agent_tool(config));
-        builder.push_spec(create_send_input_tool());
-        builder.push_spec(create_resume_agent_tool());
-        builder.push_spec(create_wait_tool());
-        builder.push_spec(create_close_agent_tool());
+        builder.push_spec_with_parallel_support(create_spawn_agent_tool(config), true);
+        builder.push_spec_with_parallel_support(create_send_input_tool(), true);
+        builder.push_spec_with_parallel_support(create_resume_agent_tool(), true);
+        builder.push_spec_with_parallel_support(create_wait_tool(), true);
+        builder.push_spec_with_parallel_support(create_close_agent_tool(), true);
+        builder.push_spec_with_parallel_support(create_spawn_team_tool(config), true);
+        builder.push_spec_with_parallel_support(create_wait_team_tool(), true);
+        builder.push_spec_with_parallel_support(create_close_team_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_task_list_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_task_claim_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_task_claim_next_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_task_complete_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_message_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_broadcast_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_ask_lead_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_inbox_pop_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_inbox_ack_tool(), true);
+        builder.push_spec_with_parallel_support(create_team_cleanup_tool(), true);
         builder.register_handler("spawn_agent", multi_agent_handler.clone());
         builder.register_handler("send_input", multi_agent_handler.clone());
         builder.register_handler("resume_agent", multi_agent_handler.clone());
         builder.register_handler("wait", multi_agent_handler.clone());
-        builder.register_handler("close_agent", multi_agent_handler);
+        builder.register_handler("close_agent", multi_agent_handler.clone());
+        builder.register_handler("spawn_team", multi_agent_handler.clone());
+        builder.register_handler("wait_team", multi_agent_handler.clone());
+        builder.register_handler("close_team", multi_agent_handler.clone());
+        builder.register_handler("team_task_list", multi_agent_handler.clone());
+        builder.register_handler("team_task_claim", multi_agent_handler.clone());
+        builder.register_handler("team_task_claim_next", multi_agent_handler.clone());
+        builder.register_handler("team_task_complete", multi_agent_handler.clone());
+        builder.register_handler("team_message", multi_agent_handler.clone());
+        builder.register_handler("team_broadcast", multi_agent_handler.clone());
+        builder.register_handler("team_ask_lead", multi_agent_handler.clone());
+        builder.register_handler("team_inbox_pop", multi_agent_handler.clone());
+        builder.register_handler("team_inbox_ack", multi_agent_handler.clone());
+        builder.register_handler("team_cleanup", multi_agent_handler);
     }
 
-    if config.agent_jobs_tools {
+    if config.agent_jobs_tools || config.agent_jobs_worker_tools {
         let agent_jobs_handler = Arc::new(BatchJobHandler);
-        builder.push_spec(create_spawn_agents_on_csv_tool());
-        builder.register_handler("spawn_agents_on_csv", agent_jobs_handler.clone());
+        if config.agent_jobs_tools {
+            builder.push_spec(create_spawn_agents_on_csv_tool());
+            builder.register_handler("spawn_agents_on_csv", agent_jobs_handler.clone());
+        }
         if config.agent_jobs_worker_tools {
             builder.push_spec(create_report_agent_job_result_tool());
             builder.register_handler("report_agent_job_result", agent_jobs_handler);
@@ -2257,6 +2928,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&config, None, None, &[]).build();
 
@@ -2283,6 +2955,9 @@ mod tests {
             create_write_stdin_tool(),
             PLAN_TOOL.clone(),
             create_request_user_input_tool(CollaborationModesConfig::default()),
+            create_cron_create_tool(),
+            create_cron_list_tool(),
+            create_cron_delete_tool(),
             create_apply_patch_freeform_tool(),
             ToolSpec::WebSearch {
                 external_web_access: Some(true),
@@ -2323,6 +2998,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         assert_contains_tool_names(
@@ -2339,9 +3015,7 @@ mod tests {
 
     #[test]
     fn test_build_specs_artifact_tool_enabled() {
-        let mut config = test_config();
-        let runtime_root = tempfile::TempDir::new().expect("create temp codex home");
-        config.codex_home = runtime_root.path().to_path_buf();
+        let config = test_config();
         let model_info =
             ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
         let mut features = Features::with_defaults();
@@ -2351,9 +3025,10 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-        assert_contains_tool_names(&tools, &["artifacts"]);
+        assert_contains_tool_names(&tools, &["presentation_artifact", "spreadsheet_artifact"]);
     }
 
     #[test]
@@ -2371,21 +3046,39 @@ mod tests {
             session_source: SessionSource::SubAgent(SubAgentSource::Other(
                 "agent_job:test".to_string(),
             )),
+
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
-        assert_contains_tool_names(
-            &tools,
-            &[
-                "spawn_agent",
-                "send_input",
-                "resume_agent",
-                "wait",
-                "close_agent",
-                "spawn_agents_on_csv",
-                "report_agent_job_result",
-            ],
+        assert_contains_tool_names(&tools, &["report_agent_job_result"]);
+        assert!(
+            !tools
+                .iter()
+                .any(|t| tool_name(&t.spec) == "spawn_agents_on_csv"),
+            "agent job worker should not have spawn_agents_on_csv"
         );
         assert_lacks_tool_name(&tools, "request_user_input");
+    }
+
+    #[test]
+    fn test_build_specs_agent_job_worker_tools_enabled_without_collab() {
+        let config = test_config();
+        let model_info =
+            ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+        let mut features = Features::with_defaults();
+        features.enable(Feature::Sqlite);
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            features: &features,
+            web_search_mode: Some(WebSearchMode::Cached),
+            session_source: SessionSource::SubAgent(SubAgentSource::Other(
+                "agent_job:test".to_string(),
+            )),
+
+            scheduled_tasks_enabled: true,
+        });
+        let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
+        assert_contains_tool_names(&tools, &["report_agent_job_result"]);
     }
 
     #[test]
@@ -2399,6 +3092,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         let request_user_input_tool = find_tool(&tools, "request_user_input");
@@ -2413,6 +3107,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         let request_user_input_tool = find_tool(&tools, "request_user_input");
@@ -2436,6 +3131,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         assert!(
@@ -2456,6 +3152,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -2482,6 +3179,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         assert_contains_tool_names(&tools, &["js_repl", "js_repl_reset"]);
@@ -2504,6 +3202,7 @@ mod tests {
             features: &default_features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: false,
         });
         let (default_tools, _) = build_specs(&default_tools_config, None, None, &[]).build();
         assert!(
@@ -2518,6 +3217,7 @@ mod tests {
             features: &image_generation_features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: false,
         });
         let (supported_tools, _) = build_specs(&supported_tools_config, None, None, &[]).build();
         assert_contains_tool_names(&supported_tools, &["image_generation"]);
@@ -2535,6 +3235,7 @@ mod tests {
             features: &image_generation_features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: false,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         assert!(
@@ -2573,6 +3274,7 @@ mod tests {
             features,
             web_search_mode,
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
         let tool_names = tools.iter().map(|t| t.spec.name()).collect::<Vec<_>>();
@@ -2607,6 +3309,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -2635,6 +3338,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -2676,6 +3380,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: false,
         })
         .with_web_search_config(Some(web_search_config.clone()));
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
@@ -2706,6 +3411,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: false,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -2738,6 +3444,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -2761,6 +3468,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
@@ -2785,6 +3493,9 @@ mod tests {
             &[
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2803,6 +3514,9 @@ mod tests {
             &[
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2823,6 +3537,9 @@ mod tests {
                 "write_stdin",
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2843,6 +3560,9 @@ mod tests {
                 "write_stdin",
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2861,6 +3581,9 @@ mod tests {
             &[
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2879,6 +3602,9 @@ mod tests {
             &[
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2897,6 +3623,9 @@ mod tests {
             &[
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "web_search",
                 "view_image",
             ],
@@ -2914,6 +3643,9 @@ mod tests {
             &[
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2934,6 +3666,9 @@ mod tests {
                 "write_stdin",
                 "update_plan",
                 "request_user_input",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "apply_patch",
                 "web_search",
                 "view_image",
@@ -2952,6 +3687,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, Some(HashMap::new()), None, &[]).build();
 
@@ -2976,6 +3712,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         assert_eq!(tools_config.shell_type, ConfigShellToolType::ShellCommand);
@@ -3002,6 +3739,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -3028,6 +3766,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
 
@@ -3060,6 +3799,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Live),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(
             &tools_config,
@@ -3147,6 +3887,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         // Intentionally construct a map with keys that would sort alphabetically.
@@ -3193,6 +3934,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         let (tools, _) = build_specs(
@@ -3263,6 +4005,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         let (tools, _) = build_specs(
@@ -3318,6 +4061,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         let (tools, _) = build_specs(
@@ -3370,6 +4114,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         let (tools, _) = build_specs(
@@ -3424,6 +4169,7 @@ mod tests {
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
 
         let (tools, _) = build_specs(
@@ -3569,6 +4315,7 @@ Examples of valid command strings:
             features: &features,
             web_search_mode: Some(WebSearchMode::Cached),
             session_source: SessionSource::Cli,
+            scheduled_tasks_enabled: true,
         });
         let (tools, _) = build_specs(
             &tools_config,

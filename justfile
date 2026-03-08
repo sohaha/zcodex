@@ -37,6 +37,13 @@ install:
     rustup show active-toolchain
     cargo fetch
 
+# Rebuild the Web UI and sync it into the embedded `codex serve` assets.
+[no-cd]
+write-serve-web-assets:
+    cd web && npm ci && npm run build
+    rm -rf codex-rs/serve/assets/web
+    cp -R web/dist codex-rs/serve/assets/web
+
 # Run `cargo nextest` since it's faster than `cargo test`, though including
 # --no-fail-fast is important to ensure all tests are run.
 #
@@ -69,6 +76,16 @@ bazel-remote-test:
 
 build-for-release:
     bazel build //codex-rs/cli:release_binaries --config=remote
+
+[no-cd]
+release-codex out="/Users/chenwenjie/bin/codex":
+    env -u CARGO_PROFILE_RELEASE_LTO \
+        -u CARGO_PROFILE_RELEASE_CODEGEN_UNITS \
+        -u CARGO_PROFILE_RELEASE_DEBUG \
+        -u CARGO_PROFILE_RELEASE_STRIP \
+        sh -c 'cd codex-rs && cargo build -p codex-cli --bin codex --release'
+    mkdir -p "$(dirname "{{out}}")"
+    install -m 755 codex-rs/target/release/codex "{{out}}"
 
 # Run the MCP server
 mcp-server-run *args:

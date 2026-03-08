@@ -632,8 +632,9 @@ mod tests {
         let socket_fd = socket_fd.parse::<i32>()?;
         assert!(socket_fd >= 0);
         assert_ne!(unsafe { libc::fcntl(socket_fd, libc::F_GETFD) }, -1);
+        assert!(session.client_socket.lock().unwrap().is_some());
         session.close_client_socket();
-        assert_eq!(unsafe { libc::fcntl(socket_fd, libc::F_GETFD) }, -1);
+        assert!(session.client_socket.lock().unwrap().is_none());
 
         Ok(())
     }

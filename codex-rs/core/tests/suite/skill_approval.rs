@@ -499,8 +499,6 @@ async fn shell_zsh_fork_skill_without_permissions_inherits_turn_sandbox() -> Res
         "expected permissionless skill script to skip exec approval"
     );
 
-    wait_for_turn_complete(&test).await;
-
     let first_output = first_mocks
         .completion
         .single_request()
@@ -561,7 +559,7 @@ async fn shell_zsh_fork_skill_without_permissions_inherits_turn_sandbox() -> Res
 }
 
 /// Empty skill permissions should behave like no skill override and inherit the
-/// turn sandbox without prompting.
+/// turn sandbox instead of forcing an explicit read-only skill sandbox.
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_zsh_fork_skill_with_empty_permissions_inherits_turn_sandbox() -> Result<()> {
@@ -602,7 +600,7 @@ async fn shell_zsh_fork_skill_with_empty_permissions_inherits_turn_sandbox() -> 
     )
     .await?;
 
-    let (_, command) = skill_script_command(&test, "sandboxed.sh")?;
+    let (_script_path_str, command) = skill_script_command(&test, "sandboxed.sh")?;
 
     let first_call_id = "zsh-fork-skill-empty-permissions-1";
     let first_arguments = shell_command_arguments(&command)?;
@@ -622,13 +620,11 @@ async fn shell_zsh_fork_skill_with_empty_permissions_inherits_turn_sandbox() -> 
     )
     .await?;
 
-    let first_approval = wait_for_exec_approval_request(&test).await;
+    let approval = wait_for_exec_approval_request(&test).await;
     assert!(
-        first_approval.is_none(),
-        "expected empty skill permissions to skip exec approval"
+        approval.is_none(),
+        "expected empty-permissions skill to inherit the full-access turn sandbox without prompting"
     );
-
-    wait_for_turn_complete(&test).await;
 
     let first_output = first_mocks
         .completion
@@ -666,7 +662,7 @@ async fn shell_zsh_fork_skill_with_empty_permissions_inherits_turn_sandbox() -> 
     let cached_approval = wait_for_exec_approval_request(&test).await;
     assert!(
         cached_approval.is_none(),
-        "expected empty-permissions skill rerun to continue skipping exec approval"
+        "expected second run to reuse the cached session approval"
     );
 
     let second_output = second_mocks

@@ -924,7 +924,10 @@ async fn test_login(endpoint: &Endpoint, config_overrides: &[String]) -> Result<
         let LoginAccountResponse::Chatgpt { login_id, auth_url } = login_response else {
             bail!("expected chatgpt login response");
         };
-        println!("Open the following URL in your browser to continue:\n{auth_url}");
+        println!(
+            "Open the following URL in your browser to continue:
+{auth_url}"
+        );
 
         let completion = client.wait_for_account_login_completion(&login_id)?;
         println!("< account/login/completed notification: {completion:?}");
@@ -1074,6 +1077,8 @@ struct CodexClient {
     command_approval_item_ids: Vec<String>,
     command_execution_statuses: Vec<CommandExecutionStatus>,
     last_turn_status: Option<TurnStatus>,
+    trace_id: String,
+    trace_root_span_id: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1133,6 +1138,8 @@ impl CodexClient {
             command_approval_item_ids: Vec::new(),
             command_execution_statuses: Vec::new(),
             last_turn_status: None,
+            trace_id: generate_trace_id(),
+            trace_root_span_id: generate_parent_span_id(),
         })
     }
 
@@ -1154,6 +1161,8 @@ impl CodexClient {
             command_approval_item_ids: Vec::new(),
             command_execution_statuses: Vec::new(),
             last_turn_status: None,
+            trace_id: generate_trace_id(),
+            trace_root_span_id: generate_parent_span_id(),
         })
     }
 
@@ -1390,14 +1399,25 @@ impl CodexClient {
     }
 
     fn write_request(&mut self, request: &ClientRequest) -> Result<()> {
-        let request_value = serde_json::to_value(request)?;
-        let mut request: JSONRPCRequest = serde_json::from_value(request_value)
-            .context("client request was not a valid JSON-RPC request")?;
-        request.trace = current_span_w3c_trace_context();
+        let request = self.jsonrpc_request_with_trace(request)?;
         let request_json = serde_json::to_string(&request)?;
         let request_pretty = serde_json::to_string_pretty(&request)?;
         print_multiline_with_prefix("> ", &request_pretty);
         self.write_payload(&request_json)
+    }
+
+    fn jsonrpc_request_with_trace(&self, request: &ClientRequest) -> Result<JSONRPCRequest> {
+        let request_value = serde_json::to_value(request)?;
+        let mut request: JSONRPCRequest = serde_json::from_value(request_value)
+            .context("client request was not a valid JSON-RPC request")?;
+        request.trace = Some(W3cTraceContext {
+            traceparent: Some(format!(
+                "00-{}-{}-01",
+                self.trace_id, self.trace_root_span_id
+            )),
+            tracestate: None,
+        });
+        Ok(request)
     }
 
     fn wait_for_response<T>(&mut self, request_id: RequestId, method: &str) -> Result<T>
@@ -1663,6 +1683,15 @@ impl CodexClient {
             },
         }
     }
+}
+
+fn generate_trace_id() -> String {
+    Uuid::new_v4().simple().to_string()
+}
+
+fn generate_parent_span_id() -> String {
+    let uuid = Uuid::new_v4().simple().to_string();
+    uuid[..16].to_string()
 }
 
 fn print_multiline_with_prefix(prefix: &str, payload: &str) {

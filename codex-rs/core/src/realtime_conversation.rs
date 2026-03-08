@@ -397,7 +397,7 @@ fn realtime_text_from_handoff_request(handoff: &RealtimeHandoffRequested) -> Opt
     let messages = handoff
         .messages
         .iter()
-        .map(|message| format!("{}: {}", message.role, message.text))
+        .map(|message| message.text.as_str())
         .collect::<Vec<_>>()
         .join("\n");
     (!messages.is_empty()).then_some(messages).or_else(|| {
@@ -626,7 +626,7 @@ mod tests {
         };
         assert_eq!(
             realtime_text_from_handoff_request(&handoff),
-            Some("user: hello\nassistant: hi there".to_string())
+            Some("hello\nhi there".to_string())
         );
     }
 

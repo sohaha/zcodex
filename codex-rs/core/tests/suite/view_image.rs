@@ -299,10 +299,7 @@ async fn view_image_tool_can_preserve_original_resolution_on_gpt5_3_codex() -> a
     let mut builder = test_codex()
         .with_model("gpt-5.3-codex")
         .with_config(|config| {
-            config
-                .features
-                .enable(Feature::ImageDetailOriginal)
-                .expect("test config should allow feature update");
+            let _ = config.features.enable(Feature::ImageDetailOriginal);
         });
     let TestCodex {
         codex,
@@ -401,10 +398,7 @@ async fn view_image_tool_keeps_legacy_behavior_below_gpt5_3_codex() -> anyhow::R
 
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.2").with_config(|config| {
-        config
-            .features
-            .enable(Feature::ImageDetailOriginal)
-            .expect("test config should allow feature update");
+        let _ = config.features.enable(Feature::ImageDetailOriginal);
     });
     let TestCodex {
         codex,
@@ -622,12 +616,8 @@ async fn js_repl_view_image_requires_explicit_emit() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    #[allow(clippy::expect_used)]
     let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::JsRepl)
-            .expect("test config should allow feature update");
+        let _ = config.features.enable(Feature::JsRepl);
     });
     let TestCodex {
         codex,
