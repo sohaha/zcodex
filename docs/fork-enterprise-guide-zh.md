@@ -198,4 +198,34 @@ command_prefix = "/codex"
 - [ ] webhook 事件范围、权限范围、仓库白名单已确认  
 - [ ] 审计日志可检索且可追溯到 commit/PR  
 
+## 11. 一键配置巡检脚本
+
+仓库内置了一个运维巡检脚本：`scripts/check-fork-config.py`，用于检查关键配置项是否齐全。
+
+默认检查（读取 `~/.codex/config.toml`）：
+
+```bash
+python3 scripts/check-fork-config.py
+```
+
+严格模式（有 WARN 即返回非 0，适合 CI）：
+
+```bash
+python3 scripts/check-fork-config.py --strict
+```
+
+指定配置文件：
+
+```bash
+python3 scripts/check-fork-config.py --config /path/to/config.toml --strict
+```
+
+脚本会检查：
+
+- `model_provider` / `model` / `[model_providers.*]`
+- `disable_cron`
+- `[hooks].pre_tool_use`
+- `[github_webhook]` 及关键字段
+- 被配置引用的环境变量是否在当前 shell 可见
+
 如果你希望，我可以基于你当前团队的真实流程（GitHub/GitLab、单仓/多仓、是否有 VPN/堡垒机）再给一份“可直接执行”的企业配置模板。 

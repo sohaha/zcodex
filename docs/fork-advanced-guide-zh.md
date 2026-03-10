@@ -244,6 +244,12 @@ codex github
 - Hook 没触发：检查 matcher 是否匹配事件字符串，检查脚本路径和可执行权限。
 - `/loop` 不可见：检查 `disable_cron` 是否设成了 `true` 或被 profile 覆盖。
 
+上线前可执行一次巡检：
+
+```bash
+python3 scripts/check-fork-config.py --strict
+```
+
 ---
 
 ## 8. 迁移建议（上游 -> 本 fork）
