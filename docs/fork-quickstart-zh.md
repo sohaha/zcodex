@@ -4,8 +4,10 @@
 
 如果你想看完整能力，请继续阅读：
 
+- `docs/fork-docs-index-zh.md`
 - `docs/fork-usage-guide-zh.md`
 - `docs/fork-advanced-guide-zh.md`
+- `docs/fork-enterprise-guide-zh.md`
 
 ---
 
@@ -101,3 +103,4 @@ disable_cron = false
 - 想快速跑通：当前文档
 - 想看完整能力与场景：`docs/fork-usage-guide-zh.md`
 - 想直接抄配置模板（Hooks/GitHub Webhook/多角色模型）：`docs/fork-advanced-guide-zh.md`
+- 想按团队落地与安全治理实施：`docs/fork-enterprise-guide-zh.md`

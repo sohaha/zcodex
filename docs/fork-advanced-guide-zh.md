@@ -4,8 +4,10 @@
 
 配套阅读：
 
+- 中文索引：`docs/fork-docs-index-zh.md`
 - 快速上手：`docs/fork-quickstart-zh.md`
 - 全量说明：`docs/fork-usage-guide-zh.md`
+- 企业落地：`docs/fork-enterprise-guide-zh.md`
 - 差异总览：`docs/fork-vs-upstream-codex.md`
 
 ---

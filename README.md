@@ -48,10 +48,12 @@ codex serve
 - [**Contributing**](./docs/contributing.md)
 - [**Installing & building**](./docs/install.md)
 - [**Open source fund**](./docs/open-source-fund.md)
+- [**Fork docs index (ZH)**](./docs/fork-docs-index-zh.md)
 - [**Fork vs upstream Codex**](./docs/fork-vs-upstream-codex.md)
 - [**Fork usage guide (ZH)**](./docs/fork-usage-guide-zh.md)
 - [**Fork quickstart (ZH)**](./docs/fork-quickstart-zh.md)
 - [**Fork advanced guide (ZH)**](./docs/fork-advanced-guide-zh.md)
+- [**Fork enterprise guide (ZH)**](./docs/fork-enterprise-guide-zh.md)
 
 ## Acknowledgements
 

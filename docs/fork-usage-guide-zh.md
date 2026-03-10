@@ -6,8 +6,10 @@
 
 配套文档：
 
+- 中文索引：`docs/fork-docs-index-zh.md`
 - 快速上手（5~10 分钟）：`docs/fork-quickstart-zh.md`
 - 进阶实战（可复制模板）：`docs/fork-advanced-guide-zh.md`
+- 企业落地（团队/权限/审计）：`docs/fork-enterprise-guide-zh.md`
 - 差异总览：`docs/fork-vs-upstream-codex.md`
 
 目录：
