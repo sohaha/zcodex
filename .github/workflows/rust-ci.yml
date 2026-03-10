@@ -348,8 +348,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --target ${{ matrix.target }} --release --timings --bin codex --bin codex-responses-api-proxy
-          for bin in target/${{ matrix.target }}/release/codex target/${{ matrix.target }}/release/codex-responses-api-proxy; do
+          cargo build --target ${{ matrix.target }} --release --timings --bin codex --bin codex-responses-api-proxy --bin codex-serve
+          for bin in target/${{ matrix.target }}/release/codex target/${{ matrix.target }}/release/codex-responses-api-proxy target/${{ matrix.target }}/release/codex-serve; do
             file "$bin"
             if file "$bin" | grep -q 'dynamically linked'; then
               echo "❌ $bin is still dynamically linked" >&2
@@ -362,6 +362,7 @@ jobs:
           done
           target/${{ matrix.target }}/release/codex --version
           target/${{ matrix.target }}/release/codex-responses-api-proxy --help >/dev/null
+          target/${{ matrix.target }}/release/codex-serve --help >/dev/null
 
       - name: Upload Cargo timings (clippy)
         if: always()

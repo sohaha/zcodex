@@ -61,6 +61,16 @@ The TUI defaults to `RUST_LOG=codex_core=info,codex_tui=info,codex_rmcp_client=i
 tail -F ~/.codex/log/codex-tui.log
 ```
 
+To also log model API request/response bodies for debugging, set `CODEX_LOG_API_BODIES=1`. Codex will redact common secret-bearing fields such as auth headers, API keys, turn-state tokens, and turn metadata headers before writing them to the normal TUI log.
+
+This is only for local debugging. Request bodies, model outputs, and tool outputs may still contain sensitive user or workspace content and will be written to the log file when this mode is enabled.
+
+```bash
+CODEX_LOG_API_BODIES=1 \
+RUST_LOG='codex_core=info,codex_tui=info,codex_rmcp_client=info' \
+codex
+```
+
 By comparison, the non-interactive mode (`codex exec`) defaults to `RUST_LOG=error`, but messages are printed inline, so there is no need to monitor a separate file.
 
 See the Rust documentation on [`RUST_LOG`](https://docs.rs/env_logger/latest/env_logger/#enabling-logging) for more information on the configuration options.

@@ -87,6 +87,22 @@ release-codex out="/Users/chenwenjie/bin/codex":
     mkdir -p "$(dirname "{{out}}")"
     install -m 755 codex-rs/target/release/codex "{{out}}"
 
+[no-cd]
+release-codex-serve out="/Users/chenwenjie/bin/codex-serve":
+    env -u CARGO_PROFILE_RELEASE_LTO \
+        -u CARGO_PROFILE_RELEASE_CODEGEN_UNITS \
+        -u CARGO_PROFILE_RELEASE_DEBUG \
+        -u CARGO_PROFILE_RELEASE_STRIP \
+        sh -c 'cd codex-rs && cargo build -p codex-serve --bin codex-serve --release'
+    mkdir -p "$(dirname "{{out}}")"
+    install -m 755 codex-rs/target/release/codex-serve "{{out}}"
+
+[no-cd]
+release-codex-web out="/Users/chenwenjie/bin/codex" serve_out="/Users/chenwenjie/bin/codex-serve":
+    just write-serve-web-assets
+    just release-codex out={{out}}
+    just release-codex-serve out={{serve_out}}
+
 # Run the MCP server
 mcp-server-run *args:
     cargo run -p codex-mcp-server -- "$@"

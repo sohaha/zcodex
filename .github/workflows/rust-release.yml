@@ -223,7 +223,7 @@ jobs:
         shell: bash
         run: |
           echo "CARGO_PROFILE_RELEASE_LTO: ${CARGO_PROFILE_RELEASE_LTO}"
-          cargo build --target ${{ matrix.target }} --release --timings --bin codex --bin codex-responses-api-proxy
+          cargo build --target ${{ matrix.target }} --release --timings --bin codex --bin codex-responses-api-proxy --bin codex-serve
 
       - name: Upload Cargo timings
         continue-on-error: true
@@ -270,6 +270,7 @@ jobs:
           # signed binaries into a dmg.
           codex_binary_path="${release_dir}/codex"
           proxy_binary_path="${release_dir}/codex-responses-api-proxy"
+          serve_binary_path="${release_dir}/codex-serve"
 
           rm -rf "$dmg_root"
           mkdir -p "$dmg_root"
@@ -282,9 +283,14 @@ jobs:
             echo "Binary $proxy_binary_path not found"
             exit 1
           fi
+          if [[ ! -f "$serve_binary_path" ]]; then
+            echo "Binary $serve_binary_path not found"
+            exit 1
+          fi
 
           ditto "$codex_binary_path" "${dmg_root}/codex"
           ditto "$proxy_binary_path" "${dmg_root}/codex-responses-api-proxy"
+          ditto "$serve_binary_path" "${dmg_root}/codex-serve"
 
           rm -f "$dmg_path"
           hdiutil create \
@@ -320,10 +326,12 @@ jobs:
 
           cp target/${{ matrix.target }}/release/codex "$dest/codex-${{ matrix.target }}"
           cp target/${{ matrix.target }}/release/codex-responses-api-proxy "$dest/codex-responses-api-proxy-${{ matrix.target }}"
+          cp target/${{ matrix.target }}/release/codex-serve "$dest/codex-serve-${{ matrix.target }}"
 
           if [[ "${{ matrix.target }}" == *linux* ]]; then
             cp target/${{ matrix.target }}/release/codex.sigstore "$dest/codex-${{ matrix.target }}.sigstore"
             cp target/${{ matrix.target }}/release/codex-responses-api-proxy.sigstore "$dest/codex-responses-api-proxy-${{ matrix.target }}.sigstore"
+            cp target/${{ matrix.target }}/release/codex-serve.sigstore "$dest/codex-serve-${{ matrix.target }}.sigstore"
           fi
 
           if [[ "${{ matrix.target }}" == *apple-darwin ]]; then
@@ -564,14 +572,14 @@ jobs:
       - name: Cargo build
         shell: bash
         run: |
-          cargo build --target "${TARGET}" --release --timings --bin codex --bin codex-responses-api-proxy
+          cargo build --target "${TARGET}" --release --timings --bin codex --bin codex-responses-api-proxy --bin codex-serve
 
       - if: ${{ env.LEGACY_MUSL == 'true' }}
         name: Smoke-test legacy musl binaries
         shell: bash
         run: |
           set -euo pipefail
-          for bin in "target/${TARGET}/release/codex" "target/${TARGET}/release/codex-responses-api-proxy"; do
+          for bin in "target/${TARGET}/release/codex" "target/${TARGET}/release/codex-responses-api-proxy" "target/${TARGET}/release/codex-serve"; do
             file "$bin"
             if file "$bin" | grep -q 'dynamically linked'; then
               echo "❌ $bin is still dynamically linked" >&2
@@ -584,6 +592,7 @@ jobs:
           done
           target/${TARGET}/release/codex --version
           target/${TARGET}/release/codex-responses-api-proxy --help >/dev/null
+          target/${TARGET}/release/codex-serve --help >/dev/null
 
       - name: Verify GLIBC requirements (Ubuntu 22.04)
         if: ${{ runner.os == 'Linux' && env.TARGET == 'x86_64-unknown-linux-gnu' }}
@@ -626,6 +635,7 @@ jobs:
 
           require_max_glibc "target/${TARGET}/release/codex"
           require_max_glibc "target/${TARGET}/release/codex-responses-api-proxy"
+          require_max_glibc "target/${TARGET}/release/codex-serve"
           echo "✅ GLIBC requirements <= ${limit}"
 
       - name: Upload Cargo timings
@@ -648,6 +658,7 @@ jobs:
           mkdir -p "$dest"
           cp "target/${TARGET}/release/codex${ext}" "$dest/codex-${TARGET}${ASSET_SUFFIX}${ext}"
           cp "target/${TARGET}/release/codex-responses-api-proxy${ext}" "$dest/codex-responses-api-proxy-${TARGET}${ASSET_SUFFIX}${ext}"
+          cp "target/${TARGET}/release/codex-serve${ext}" "$dest/codex-serve-${TARGET}${ASSET_SUFFIX}${ext}"
 
       - name: Compress artifacts
         shell: bash
