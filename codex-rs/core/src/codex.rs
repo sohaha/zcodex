@@ -153,6 +153,8 @@ use tracing::trace_span;
 use tracing::warn;
 use uuid::Uuid;
 
+const RTK_PREFERENCE_PROMPT: &str = include_str!("../rtk_preference_prompt.md");
+
 fn command_hooks_for_config(config: &crate::config::Config) -> CommandHooksConfig {
     match crate::config::hooks::command_hooks_from_layer_stack(&config.config_layer_stack) {
         Ok(command_hooks) => command_hooks,
@@ -160,6 +162,14 @@ fn command_hooks_for_config(config: &crate::config::Config) -> CommandHooksConfi
             warn!(%error, "failed to parse config.toml [hooks]; ignoring");
             CommandHooksConfig::default()
         }
+    }
+}
+
+pub(crate) fn with_rtk_preference_prompt(base_instructions: String) -> String {
+    if base_instructions.contains("codex rtk") {
+        base_instructions
+    } else {
+        format!("{base_instructions}\n\n{RTK_PREFERENCE_PROMPT}")
     }
 }
 
@@ -470,6 +480,7 @@ impl Codex {
             .clone()
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
+        let base_instructions = with_rtk_preference_prompt(base_instructions);
 
         // Respect thread-start tools. When missing (resumed/forked threads), read from the db
         // first, then fall back to rollout-file tools.
@@ -8762,6 +8773,8 @@ mod tests {
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.permissions.approval_policy.clone(),
             sandbox_policy: config.permissions.sandbox_policy.clone(),
+            file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
@@ -8857,6 +8870,8 @@ mod tests {
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.permissions.approval_policy.clone(),
             sandbox_policy: config.permissions.sandbox_policy.clone(),
+            file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
@@ -9198,6 +9213,8 @@ mod tests {
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.permissions.approval_policy.clone(),
             sandbox_policy: config.permissions.sandbox_policy.clone(),
+            file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
@@ -9254,6 +9271,8 @@ mod tests {
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.permissions.approval_policy.clone(),
             sandbox_policy: config.permissions.sandbox_policy.clone(),
+            file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
@@ -9346,6 +9365,8 @@ mod tests {
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.permissions.approval_policy.clone(),
             sandbox_policy: config.permissions.sandbox_policy.clone(),
+            file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),
@@ -9598,6 +9619,8 @@ mod tests {
             compact_prompt: config.compact_prompt.clone(),
             approval_policy: config.permissions.approval_policy.clone(),
             sandbox_policy: config.permissions.sandbox_policy.clone(),
+            file_system_sandbox_policy: config.permissions.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: config.permissions.network_sandbox_policy,
             windows_sandbox_level: WindowsSandboxLevel::from_config(&config),
             cwd: config.cwd.clone(),
             codex_home: config.codex_home.clone(),

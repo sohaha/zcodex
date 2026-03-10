@@ -2,11 +2,172 @@ include:
   - https://cnb.cool/zls-tools/vm/-/blob/main/ide.yml
   - https://cnb.cool/zls-tools/vm/-/blob/main/tools/sync-github-sohaha.yml
 
+dev:
+  push:
+    - name: node-ci
+      docker:
+        image: node:22
+        volumes:
+          - /root/.pnpm-store:copy-on-write
+          - node_modules:copy-on-write
+      stages:
+        - name: system-deps
+          script:
+            - apt-get update
+            - apt-get install -y python3
+        - name: install
+          script:
+            - corepack enable
+            - corepack prepare pnpm@10.29.3 --activate
+            - pnpm install --frozen-lockfile
+        - name: format
+          script:
+            - pnpm run format
+        - name: readme-checks
+          script:
+            - python3 scripts/asciicheck.py README.md
+            - python3 scripts/readme_toc.py README.md
+            - python3 scripts/asciicheck.py codex-cli/README.md
+            - python3 scripts/readme_toc.py codex-cli/README.md
+    - name: rust-ci
+      docker:
+        image: rust:1.93.0
+        volumes:
+          - /root/.cargo:copy-on-write
+          - codex-rs/target:copy-on-write
+      stages:
+        - name: release-entrypoints
+          script:
+            - bash .github/scripts/check-release-build-config.sh
+        - name: rustfmt
+          script:
+            - rustup component add rustfmt
+            - cargo fmt --manifest-path codex-rs/Cargo.toml -- --config imports_granularity=Item --check
+        - name: cargo-shear
+          script:
+            - cargo install cargo-shear --locked --version 1.5.1
+            - cargo shear --manifest-path codex-rs/Cargo.toml
+    - name: installer-smoke
+      ifModify:
+        - .github/workflows/ci.yml
+        - README.md
+        - scripts/install.ps1
+        - scripts/install.sh
+      docker:
+        image: ubuntu:24.04
+      stages:
+        - name: smoke-install-sh
+          script:
+            - apt-get update
+            - apt-get install -y bash python3 curl
+            - tmp="$(mktemp -d)"
+            - install_dir="${tmp}/bin"
+            - server_root="${tmp}/server"
+            - mkdir -p "$server_root"
+            - cp scripts/install.sh "${server_root}/install.sh"
+            - printf '#!/usr/bin/env bash\necho dummy\n' > "${server_root}/codex-x86_64-unknown-linux-gnu"
+            - chmod +x "${server_root}/codex-x86_64-unknown-linux-gnu"
+            - port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+            - python3 -m http.server "$port" --bind 127.0.0.1 --directory "$server_root" >/dev/null 2>&1 &
+            - pid=$!
+            - trap 'kill "$pid" || true' EXIT
+            - export CODEX_BASE_URL="http://127.0.0.1:$port"
+            - export INSTALL_DIR="$install_dir"
+            - bash "${server_root}/install.sh"
+            - test -x "${install_dir}/codex"
+  pull_request:
+    - name: node-ci
+      lock:
+        key: pr-node-ci
+        cancel-in-progress: true
+      docker:
+        image: node:22
+        volumes:
+          - /root/.pnpm-store:copy-on-write
+          - node_modules:copy-on-write
+      stages:
+        - name: system-deps
+          script:
+            - apt-get update
+            - apt-get install -y python3
+        - name: install
+          script:
+            - corepack enable
+            - corepack prepare pnpm@10.29.3 --activate
+            - pnpm install --frozen-lockfile
+        - name: format
+          script:
+            - pnpm run format
+        - name: readme-checks
+          script:
+            - python3 scripts/asciicheck.py README.md
+            - python3 scripts/readme_toc.py README.md
+            - python3 scripts/asciicheck.py codex-cli/README.md
+            - python3 scripts/readme_toc.py codex-cli/README.md
+    - name: rust-ci
+      lock:
+        key: pr-rust-ci
+        cancel-in-progress: true
+      docker:
+        image: rust:1.93.0
+        volumes:
+          - /root/.cargo:copy-on-write
+          - codex-rs/target:copy-on-write
+      stages:
+        - name: release-entrypoints
+          script:
+            - bash .github/scripts/check-release-build-config.sh
+        - name: rustfmt
+          script:
+            - rustup component add rustfmt
+            - cargo fmt --manifest-path codex-rs/Cargo.toml -- --config imports_granularity=Item --check
+        - name: cargo-shear
+          script:
+            - cargo install cargo-shear --locked --version 1.5.1
+            - cargo shear --manifest-path codex-rs/Cargo.toml
+    - name: installer-smoke
+      lock:
+        key: pr-installer-smoke
+        cancel-in-progress: true
+      ifModify:
+        - .github/workflows/ci.yml
+        - README.md
+        - scripts/install.ps1
+        - scripts/install.sh
+      docker:
+        image: ubuntu:24.04
+      stages:
+        - name: smoke-install-sh
+          script:
+            - apt-get update
+            - apt-get install -y bash python3 curl
+            - tmp="$(mktemp -d)"
+            - install_dir="${tmp}/bin"
+            - server_root="${tmp}/server"
+            - mkdir -p "$server_root"
+            - cp scripts/install.sh "${server_root}/install.sh"
+            - printf '#!/usr/bin/env bash\necho dummy\n' > "${server_root}/codex-x86_64-unknown-linux-gnu"
+            - chmod +x "${server_root}/codex-x86_64-unknown-linux-gnu"
+            - port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+            - python3 -m http.server "$port" --bind 127.0.0.1 --directory "$server_root" >/dev/null 2>&1 &
+            - pid=$!
+            - trap 'kill "$pid" || true' EXIT
+            - export CODEX_BASE_URL="http://127.0.0.1:$port"
+            - export INSTALL_DIR="$install_dir"
+            - bash "${server_root}/install.sh"
+            - test -x "${install_dir}/codex"
+
 $:
   push:
     sync_github:
       env:
         BRANCHS: master
+    release_entrypoints:
+      stages:
+        - name: Verify Release Entrypoints
+          image: rust:1.93.0
+          script:
+            - bash .github/scripts/check-release-build-config.sh
   tag_push:
     - services:
         - docker

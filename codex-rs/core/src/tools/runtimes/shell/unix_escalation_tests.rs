@@ -321,6 +321,8 @@ fn skill_escalation_execution_uses_additional_permissions() {
         EscalationExecution::Permissions(EscalationPermissions::Permissions(
             EscalatedPermissions {
                 sandbox_policy: compiled_permissions.sandbox_policy.get().clone(),
+                file_system_sandbox_policy: compiled_permissions.file_system_sandbox_policy.clone(),
+                network_sandbox_policy: compiled_permissions.network_sandbox_policy,
                 macos_seatbelt_profile_extensions: compiled_permissions
                     .macos_seatbelt_profile_extensions
                     .clone(),
@@ -341,6 +343,8 @@ fn skill_escalation_execution_ignores_empty_permissions() {
         EscalationExecution::Permissions(EscalationPermissions::Permissions(
             EscalatedPermissions {
                 sandbox_policy: compiled_permissions.sandbox_policy.get().clone(),
+                file_system_sandbox_policy: compiled_permissions.file_system_sandbox_policy.clone(),
+                network_sandbox_policy: compiled_permissions.network_sandbox_policy,
                 macos_seatbelt_profile_extensions: compiled_permissions
                     .macos_seatbelt_profile_extensions
                     .clone(),

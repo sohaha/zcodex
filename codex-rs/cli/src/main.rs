@@ -41,11 +41,13 @@ mod app_cmd;
 mod desktop_app;
 mod github_cmd;
 mod mcp_cmd;
+mod rtk_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
 use crate::github_cmd::GithubCommand;
 use crate::mcp_cmd::McpCli;
+use crate::rtk_cmd::RtkCommand;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -95,7 +97,6 @@ enum Subcommand {
 
     /// Start Codex as a Web UI server (HTTP+SSE).
     Serve(ServeCli),
-
     /// Run a code review non-interactively.
     Review(ReviewArgs),
 
@@ -107,6 +108,9 @@ enum Subcommand {
 
     /// Manage external MCP servers for Codex.
     Mcp(McpCli),
+
+    /// Run built-in RTK output reduction helpers.
+    Rtk(RtkCommand),
 
     /// Start Codex as an MCP server (stdio).
     McpServer,
@@ -621,6 +625,12 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
         }
+        Some(Subcommand::Rtk(rtk_cli)) => {
+            let exit_code = rtk_cmd::run_main(rtk_cli)?;
+            if exit_code != 0 {
+                std::process::exit(exit_code);
+            }
+        }
         Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
             None => {
                 let transport = app_server_cli.listen;
@@ -1126,6 +1136,20 @@ mod tests {
         let cli = MultitoolCli::try_parse_from(["codex", "github"].as_ref())
             .expect("parse should succeed");
         assert_matches!(cli.subcommand, Some(Subcommand::Github(_)));
+    }
+
+    #[test]
+    fn rtk_subcommand_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "rtk", "git", "status"].as_ref())
+            .expect("parse should succeed");
+        assert_matches!(cli.subcommand, Some(Subcommand::Rtk(_)));
+    }
+
+    #[test]
+    fn serve_subcommand_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "serve"].as_ref())
+            .expect("parse should succeed");
+        assert_matches!(cli.subcommand, Some(Subcommand::Serve(_)));
     }
 
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {

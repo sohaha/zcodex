@@ -362,6 +362,8 @@ impl CoreShellActionProvider {
                 EscalationExecution::Permissions(EscalationPermissions::Permissions(
                     EscalatedPermissions {
                         sandbox_policy: permissions.sandbox_policy.get().clone(),
+                        file_system_sandbox_policy: permissions.file_system_sandbox_policy.clone(),
+                        network_sandbox_policy: permissions.network_sandbox_policy,
                         macos_seatbelt_profile_extensions: permissions
                             .macos_seatbelt_profile_extensions
                             .clone(),

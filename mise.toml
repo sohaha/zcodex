@@ -16,21 +16,22 @@ run = "cargo install cargo-zigbuild"
 [tasks.deps-macos-arm64]
 description = "安装 macOS ARM64 交叉编译依赖（osxcross + rust target）"
 run = """
-apt-get update -qq && apt-get install -y \
-  clang cmake git patch python3 \
+sudo apt-get update -qq && sudo apt-get install -y \
+  clang cmake git patch python3 lld \
   libssl-dev libxml2-dev liblzma-dev zlib1g-dev
 
-[ -d /opt/osxcross ] || git clone https://github.com/tpoechtrager/osxcross /opt/osxcross
-mkdir -p /opt/osxcross/tarballs
+OSXCROSS_ROOT="{{config_root}}/.cache/osxcross"
+[ -d "$OSXCROSS_ROOT" ] || git clone https://github.com/tpoechtrager/osxcross "$OSXCROSS_ROOT"
+mkdir -p "$OSXCROSS_ROOT/tarballs"
 
 # 若没有 SDK tarball，自动下载 MacOSX11.3 SDK（phracker/MacOSX-SDKs）
-if ! ls /opt/osxcross/tarballs/*.sdk.tar.* 2>/dev/null; then
+if ! ls "$OSXCROSS_ROOT/tarballs/"*.sdk.tar.* 2>/dev/null; then
   curl -L https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.3.sdk.tar.xz \
-    -o /opt/osxcross/tarballs/MacOSX11.3.sdk.tar.xz
+    -o "$OSXCROSS_ROOT/tarballs/MacOSX11.3.sdk.tar.xz"
 fi
 
-[ -d /opt/osxcross/target ] || \
-  (cd /opt/osxcross && SDK_VERSION=11.3 OSX_VERSION_MIN=11.0 UNATTENDED=1 bash build.sh)
+[ -d "$OSXCROSS_ROOT/target" ] || \
+  (cd "$OSXCROSS_ROOT" && SDK_VERSION=11.3 OSX_VERSION_MIN=11.0 UNATTENDED=1 bash build.sh)
 
 rustup target add aarch64-apple-darwin
 """
@@ -46,22 +47,29 @@ dir = "{{config_root}}/codex-rs"
 run = "cargo build"
 
 [tasks.release]
-description = "编译当前系统正式版"
-dir = "{{config_root}}/codex-rs"
-run = "cargo build --release"
+description = "编译当前系统正式版（codex CLI）"
+run = "just release-codex {{config_root}}/dist/codex"
+
+[tasks.release-serve]
+description = "编译当前系统正式版（codex-serve）"
+run = "just release-codex-serve {{config_root}}/dist/codex-serve"
+
+[tasks.release-web]
+description = "编译当前系统正式版（codex + codex-serve，含 Web 资源）"
+run = "just release-codex-web {{config_root}}/dist/codex {{config_root}}/dist/codex-serve"
 
 [tasks.build-macos-arm64]
 depends = ["deps-macos-arm64"]
 description = "交叉编译 macOS ARM64 开发版"
 dir = "{{config_root}}/codex-rs"
-env = { PATH = "/opt/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-ar" }
+env = { PATH = "{{config_root}}/.cache/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-ar", CFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", CXXFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", LDFLAGS_aarch64_apple_darwin = "-fuse-ld=lld" }
 run = "cargo build --target aarch64-apple-darwin"
 
 [tasks.release-macos-arm64]
 depends = ["deps-macos-arm64"]
 description = "交叉编译 macOS ARM64 正式版"
 dir = "{{config_root}}/codex-rs"
-env = { PATH = "/opt/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "/opt/osxcross/target/bin/aarch64-apple-darwin20.4-ar" }
+env = { PATH = "{{config_root}}/.cache/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-ar", CFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", CXXFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", LDFLAGS_aarch64_apple_darwin = "-fuse-ld=lld" }
 run = "cargo build --target aarch64-apple-darwin --release"
 
 [tasks.build-win-amd64]

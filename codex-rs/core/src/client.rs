@@ -24,6 +24,7 @@
 //! fails, normal stream retry/fallback logic handles recovery on the same turn.
 
 use std::collections::HashMap;
+use std::env;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
@@ -74,12 +75,16 @@ use http::HeaderMap as ApiHeaderMap;
 use http::HeaderValue;
 use http::StatusCode as HttpStatusCode;
 use reqwest::StatusCode;
+use serde::Serialize;
+use serde_json::Map;
+use serde_json::Value;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio_tungstenite::tungstenite::Error;
 use tokio_tungstenite::tungstenite::Message;
+use tracing::info;
 use tracing::trace;
 use tracing::warn;
 
@@ -104,6 +109,8 @@ pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
+const CODEX_LOG_API_BODIES_ENV_VAR: &str = "CODEX_LOG_API_BODIES";
+const REDACTED_VALUE: &str = "[REDACTED]";
 
 pub fn ws_version_from_features(config: &Config) -> bool {
     config
@@ -112,6 +119,201 @@ pub fn ws_version_from_features(config: &Config) -> bool {
         || config
             .features
             .enabled(crate::features::Feature::ResponsesWebsocketsV2)
+}
+
+fn api_body_logging_enabled() -> bool {
+    env::var(CODEX_LOG_API_BODIES_ENV_VAR)
+        .ok()
+        .is_some_and(|value| {
+            let value = value.trim();
+            !value.is_empty()
+                && !value.eq_ignore_ascii_case("0")
+                && !value.eq_ignore_ascii_case("false")
+                && !value.eq_ignore_ascii_case("off")
+                && !value.eq_ignore_ascii_case("no")
+        })
+}
+
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized = key
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    normalized == "authorization"
+        || normalized == "cookie"
+        || normalized == "setcookie"
+        || normalized == "xcodexturnstate"
+        || normalized == "xcodexturnmetadata"
+        || normalized.contains("apikey")
+        || normalized.contains("accesstoken")
+        || normalized.contains("refreshtoken")
+        || normalized.contains("idtoken")
+        || normalized.contains("bearertoken")
+        || normalized.contains("password")
+        || normalized.contains("secret")
+}
+
+fn sanitize_json_value(value: Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .into_iter()
+                .map(|(key, value)| {
+                    let sanitized = if is_sensitive_key(&key) {
+                        Value::String(REDACTED_VALUE.to_string())
+                    } else {
+                        sanitize_json_value(value)
+                    };
+                    (key, sanitized)
+                })
+                .collect::<Map<String, Value>>(),
+        ),
+        Value::Array(values) => Value::Array(values.into_iter().map(sanitize_json_value).collect()),
+        other => other,
+    }
+}
+
+fn headers_log_value(headers: &ApiHeaderMap) -> Value {
+    Value::Object(
+        headers
+            .iter()
+            .map(|(name, value)| {
+                let key = name.as_str().to_string();
+                let value = if is_sensitive_key(&key) {
+                    REDACTED_VALUE.to_string()
+                } else {
+                    value.to_str().unwrap_or("<non-utf8>").to_string()
+                };
+                (key, Value::String(value))
+            })
+            .collect::<Map<String, Value>>(),
+    )
+}
+
+fn to_log_payload<T: Serialize>(payload: &T) -> Value {
+    serde_json::to_value(payload)
+        .map(sanitize_json_value)
+        .unwrap_or_else(|error| Value::String(format!("<failed to serialize payload: {error}>")))
+}
+
+fn render_log_value(value: &Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_else(|error| {
+        format!(
+            "{{\"serializationError\":\"{}\"}}",
+            error.to_string().replace('"', "\\\"")
+        )
+    })
+}
+
+fn log_api_request<T: Serialize>(
+    api: &str,
+    transport: &str,
+    payload: &T,
+    headers: Option<&ApiHeaderMap>,
+) {
+    if !api_body_logging_enabled() {
+        return;
+    }
+
+    let mut log_entry = Map::new();
+    log_entry.insert("api".to_string(), Value::String(api.to_string()));
+    log_entry.insert(
+        "transport".to_string(),
+        Value::String(transport.to_string()),
+    );
+    log_entry.insert("payload".to_string(), to_log_payload(payload));
+    if let Some(headers) = headers {
+        log_entry.insert("headers".to_string(), headers_log_value(headers));
+    }
+
+    let body = render_log_value(&Value::Object(log_entry));
+    info!(api = api, transport = transport, body = %body, "api request body");
+}
+
+fn response_event_log_value(event: &ResponseEvent) -> Value {
+    match event {
+        ResponseEvent::Created => serde_json::json!({
+            "type": "created",
+        }),
+        ResponseEvent::OutputItemDone(item) => serde_json::json!({
+            "type": "output_item_done",
+            "item": to_log_payload(item),
+        }),
+        ResponseEvent::OutputItemAdded(item) => serde_json::json!({
+            "type": "output_item_added",
+            "item": to_log_payload(item),
+        }),
+        ResponseEvent::ServerModel(model) => serde_json::json!({
+            "type": "server_model",
+            "model": model,
+        }),
+        ResponseEvent::ServerReasoningIncluded(included) => serde_json::json!({
+            "type": "server_reasoning_included",
+            "included": included,
+        }),
+        ResponseEvent::Completed {
+            response_id,
+            token_usage,
+        } => serde_json::json!({
+            "type": "completed",
+            "response_id": response_id,
+            "token_usage": token_usage,
+        }),
+        ResponseEvent::OutputTextDelta(delta) => serde_json::json!({
+            "type": "output_text_delta",
+            "delta": delta,
+        }),
+        ResponseEvent::ReasoningSummaryDelta {
+            delta,
+            summary_index,
+        } => serde_json::json!({
+            "type": "reasoning_summary_delta",
+            "delta": delta,
+            "summary_index": summary_index,
+        }),
+        ResponseEvent::ReasoningContentDelta {
+            delta,
+            content_index,
+        } => serde_json::json!({
+            "type": "reasoning_content_delta",
+            "delta": delta,
+            "content_index": content_index,
+        }),
+        ResponseEvent::ReasoningSummaryPartAdded { summary_index } => serde_json::json!({
+            "type": "reasoning_summary_part_added",
+            "summary_index": summary_index,
+        }),
+        ResponseEvent::RateLimits(snapshot) => serde_json::json!({
+            "type": "rate_limits",
+            "snapshot": snapshot,
+        }),
+        ResponseEvent::ModelsEtag(etag) => serde_json::json!({
+            "type": "models_etag",
+            "etag": etag,
+        }),
+    }
+}
+
+fn log_api_response_event(event: &ResponseEvent) {
+    if !api_body_logging_enabled() {
+        return;
+    }
+
+    let body = render_log_value(&response_event_log_value(event));
+    info!(body = %body, "api response event");
+}
+
+fn log_api_response_error(error: &CodexErr) {
+    if !api_body_logging_enabled() {
+        return;
+    }
+
+    let body = render_log_value(&serde_json::json!({
+        "type": "error",
+        "error": error.to_string(),
+    }));
+    info!(body = %body, "api response event");
 }
 
 /// Session-scoped state shared by all [`ModelClient`] clones.
@@ -304,10 +506,16 @@ impl ModelClient {
         extra_headers.extend(build_conversation_headers(Some(
             self.state.conversation_id.to_string(),
         )));
-        client
+        log_api_request("compact", "http", &payload, Some(&extra_headers));
+        let response = client
             .compact_input(&payload, extra_headers)
             .await
-            .map_err(map_api_error)
+            .map_err(map_api_error)?;
+        if api_body_logging_enabled() {
+            let body = render_log_value(&to_log_payload(&response));
+            info!(api = "compact", transport = "http", body = %body, "api response body");
+        }
+        Ok(response)
     }
 
     /// Builds memory summaries for each provided normalized raw memory.
@@ -343,10 +551,32 @@ impl ModelClient {
             }),
         };
 
-        client
-            .summarize_input(&payload, self.build_subagent_headers())
+        let headers = self.build_subagent_headers();
+        log_api_request("memories.trace_summarize", "http", &payload, Some(&headers));
+        let response = client
+            .summarize_input(&payload, headers)
             .await
-            .map_err(map_api_error)
+            .map_err(map_api_error)?;
+        if api_body_logging_enabled() {
+            let body = render_log_value(&serde_json::json!(
+                response
+                    .iter()
+                    .map(|item| {
+                        serde_json::json!({
+                            "raw_memory": item.raw_memory,
+                            "memory_summary": item.memory_summary,
+                        })
+                    })
+                    .collect::<Vec<Value>>()
+            ));
+            info!(
+                api = "memories.trace_summarize",
+                transport = "http",
+                body = %body,
+                "api response body"
+            );
+        }
+        Ok(response)
     }
 
     fn build_subagent_headers(&self) -> ApiHeaderMap {
@@ -788,6 +1018,7 @@ impl ModelClientSession {
                 summary,
                 service_tier,
             )?;
+            log_api_request("responses", "http", &request, Some(&options.extra_headers));
             let client = ApiResponsesClient::new(
                 transport,
                 client_setup.api_provider,
@@ -877,6 +1108,12 @@ impl ModelClientSession {
             }
 
             let ws_request = self.prepare_websocket_request(ws_payload, &request);
+            log_api_request(
+                "responses",
+                "websocket",
+                &ws_request,
+                Some(&options.extra_headers),
+            );
             self.websocket_session.last_request = Some(request);
             let stream_result = self
                 .websocket_session
@@ -1126,6 +1363,7 @@ where
         while let Some(event) = api_stream.next().await {
             match event {
                 Ok(ResponseEvent::OutputItemDone(item)) => {
+                    log_api_response_event(&ResponseEvent::OutputItemDone(item.clone()));
                     items_added.push(item.clone());
                     if tx_event
                         .send(Ok(ResponseEvent::OutputItemDone(item)))
@@ -1139,6 +1377,10 @@ where
                     response_id,
                     token_usage,
                 }) => {
+                    log_api_response_event(&ResponseEvent::Completed {
+                        response_id: response_id.clone(),
+                        token_usage: token_usage.clone(),
+                    });
                     if let Some(usage) = &token_usage {
                         session_telemetry.sse_event_completed(
                             usage.input_tokens,
@@ -1166,12 +1408,14 @@ where
                     }
                 }
                 Ok(event) => {
+                    log_api_response_event(&event);
                     if tx_event.send(Ok(event)).await.is_err() {
                         return;
                     }
                 }
                 Err(err) => {
                     let mapped = map_api_error(err);
+                    log_api_response_error(&mapped);
                     if !logged_error {
                         session_telemetry.see_event_completed_failed(&mapped);
                         logged_error = true;
@@ -1268,7 +1512,7 @@ impl WebsocketTelemetry for ApiTelemetry {
 
 #[cfg(test)]
 mod tests {
-    use super::ModelClient;
+    use super::*;
     use codex_otel::SessionTelemetry;
     use codex_protocol::ThreadId;
     use codex_protocol::openai_models::ModelInfo;
@@ -1350,6 +1594,64 @@ mod tests {
             .get("x-openai-subagent")
             .and_then(|value| value.to_str().ok());
         assert_eq!(value, Some("memory_consolidation"));
+    }
+
+    #[test]
+    fn sanitize_json_value_redacts_sensitive_keys_recursively() {
+        let sanitized = sanitize_json_value(json!({
+            "authorization": "Bearer secret",
+            "nested": {
+                "api_key": "abc123",
+                "safe": "ok"
+            },
+            "items": [
+                {
+                    "refresh_token": "refresh-secret"
+                }
+            ]
+        }));
+        assert_eq!(
+            sanitized,
+            json!({
+                "authorization": REDACTED_VALUE,
+                "nested": {
+                    "api_key": REDACTED_VALUE,
+                    "safe": "ok"
+                },
+                "items": [
+                    {
+                        "refresh_token": REDACTED_VALUE
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn headers_log_value_redacts_turn_state_and_auth_headers() {
+        let mut headers = ApiHeaderMap::new();
+        headers.insert("authorization", HeaderValue::from_static("Bearer secret"));
+        headers.insert(
+            X_CODEX_TURN_STATE_HEADER,
+            HeaderValue::from_static("sticky-token"),
+        );
+        headers.insert(
+            X_CODEX_TURN_METADATA_HEADER,
+            HeaderValue::from_static(
+                "{\"cwd\":\"/tmp/project\",\"remote\":\"https://user:pass@example.com/repo.git\"}",
+            ),
+        );
+        headers.insert("x-openai-subagent", HeaderValue::from_static("review"));
+
+        assert_eq!(
+            headers_log_value(&headers),
+            json!({
+                "authorization": REDACTED_VALUE,
+                "x-codex-turn-state": REDACTED_VALUE,
+                "x-codex-turn-metadata": REDACTED_VALUE,
+                "x-openai-subagent": "review"
+            })
+        );
     }
 
     #[tokio::test]

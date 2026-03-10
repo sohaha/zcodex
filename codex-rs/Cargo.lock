@@ -1653,6 +1653,7 @@ dependencies = [
  "codex-protocol",
  "codex-responses-api-proxy",
  "codex-rmcp-client",
+ "codex-serve",
  "codex-state",
  "codex-stdio-to-uds",
  "codex-tui",
