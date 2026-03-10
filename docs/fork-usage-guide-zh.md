@@ -4,6 +4,12 @@
 
 > 约定：以下所有命令默认你已经安装好本仓库构建的 `codex`，并能正常登录至少一个基础模型（例如 OpenAI）。
 
+配套文档：
+
+- 快速上手（5~10 分钟）：`docs/fork-quickstart-zh.md`
+- 进阶实战（可复制模板）：`docs/fork-advanced-guide-zh.md`
+- 差异总览：`docs/fork-vs-upstream-codex.md`
+
 目录：
 
 1. 多模型 / 自定义 Provider / Anthropic
