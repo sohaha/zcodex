@@ -5,6 +5,9 @@ bazelisk = "1.28.1"
 rust = "1.94.0"
 zig = "0.15.2"
 
+[env]
+CODEX_BUILD_TMP_ROOT = "/Volumes/V2/tmp"
+
 [tasks.deps-linux]
 description = "安装 Linux 系统依赖（pkg-config / openssl / libcap）"
 run = "apt-get update -qq && apt-get install -y pkg-config libssl-dev libcap-dev"
@@ -44,42 +47,138 @@ run = "rustup target add x86_64-pc-windows-gnu"
 [tasks.build]
 description = "编译当前系统开发版"
 dir = "{{config_root}}/codex-rs"
-run = "cargo build"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+cargo build
+"""
 
 [tasks.release]
 description = "编译当前系统正式版（codex CLI）"
-run = "just release-codex {{config_root}}/dist/codex"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+just release-codex {{config_root}}/dist/codex
+"""
 
 [tasks.release-serve]
 description = "编译当前系统正式版（codex-serve）"
-run = "just release-codex-serve {{config_root}}/dist/codex-serve"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+just release-codex-serve {{config_root}}/dist/codex-serve
+"""
 
 [tasks.release-web]
 description = "编译当前系统正式版（codex + codex-serve，含 Web 资源）"
-run = "just release-codex-web {{config_root}}/dist/codex {{config_root}}/dist/codex-serve"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+just release-codex-web {{config_root}}/dist/codex {{config_root}}/dist/codex-serve
+"""
 
 [tasks.build-macos-arm64]
 depends = ["deps-macos-arm64"]
 description = "交叉编译 macOS ARM64 开发版"
 dir = "{{config_root}}/codex-rs"
 env = { PATH = "{{config_root}}/.cache/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-ar", CFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", CXXFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", LDFLAGS_aarch64_apple_darwin = "-fuse-ld=lld" }
-run = "cargo build --target aarch64-apple-darwin"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+cargo build --target aarch64-apple-darwin
+"""
 
 [tasks.release-macos-arm64]
 depends = ["deps-macos-arm64"]
 description = "交叉编译 macOS ARM64 正式版"
 dir = "{{config_root}}/codex-rs"
 env = { PATH = "{{config_root}}/.cache/osxcross/target/bin:{{env.PATH}}", CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CC_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang", CXX_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-clang++", AR_aarch64_apple_darwin = "{{config_root}}/.cache/osxcross/target/bin/aarch64-apple-darwin20.4-ar", CFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", CXXFLAGS_aarch64_apple_darwin = "-fuse-ld=lld", LDFLAGS_aarch64_apple_darwin = "-fuse-ld=lld" }
-run = "cargo build --target aarch64-apple-darwin --release"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+cargo build --target aarch64-apple-darwin --release
+"""
 
 [tasks.build-win-amd64]
 depends = ["deps-win-amd64"]
 description = "交叉编译 Windows AMD64 开发版"
 dir = "{{config_root}}/codex-rs"
-run = "cargo zigbuild --target x86_64-pc-windows-gnu"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+cargo zigbuild --target x86_64-pc-windows-gnu
+"""
 
 [tasks.release-win-amd64]
 depends = ["deps-win-amd64"]
 description = "交叉编译 Windows AMD64 正式版"
 dir = "{{config_root}}/codex-rs"
-run = "cargo zigbuild --target x86_64-pc-windows-gnu --release"
+run = """
+TMP_ROOT="$CODEX_BUILD_TMP_ROOT"
+if [ ! -d "$TMP_ROOT" ] || [ ! -w "$TMP_ROOT" ]; then
+  TMP_ROOT="{{config_root}}/.cache/mise-tmp"
+  echo "[mise] build tmp root unavailable, fallback to $TMP_ROOT" >&2
+else
+  echo "[mise] build tmp root: $TMP_ROOT" >&2
+fi
+export CARGO_TARGET_DIR="$TMP_ROOT/zcodex-cargo-target"
+export TMPDIR="$TMP_ROOT/zcodex-tmp"
+mkdir -p "$CARGO_TARGET_DIR" "$TMPDIR"
+cargo zigbuild --target x86_64-pc-windows-gnu --release
+"""
