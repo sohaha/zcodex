@@ -153,8 +153,6 @@ use tracing::trace_span;
 use tracing::warn;
 use uuid::Uuid;
 
-const RTK_PREFERENCE_PROMPT: &str = include_str!("../rtk_preference_prompt.md");
-
 fn command_hooks_for_config(config: &crate::config::Config) -> CommandHooksConfig {
     match crate::config::hooks::command_hooks_from_layer_stack(&config.config_layer_stack) {
         Ok(command_hooks) => command_hooks,
@@ -162,14 +160,6 @@ fn command_hooks_for_config(config: &crate::config::Config) -> CommandHooksConfi
             warn!(%error, "failed to parse config.toml [hooks]; ignoring");
             CommandHooksConfig::default()
         }
-    }
-}
-
-pub(crate) fn with_rtk_preference_prompt(base_instructions: String) -> String {
-    if base_instructions.contains("codex rtk") {
-        base_instructions
-    } else {
-        format!("{base_instructions}\n\n{RTK_PREFERENCE_PROMPT}")
     }
 }
 
@@ -480,8 +470,6 @@ impl Codex {
             .clone()
             .or_else(|| conversation_history.get_base_instructions().map(|s| s.text))
             .unwrap_or_else(|| model_info.get_model_instructions(config.personality));
-        let base_instructions = with_rtk_preference_prompt(base_instructions);
-
         // Respect thread-start tools. When missing (resumed/forked threads), read from the db
         // first, then fall back to rollout-file tools.
         let persisted_tools = if dynamic_tools.is_empty() {
