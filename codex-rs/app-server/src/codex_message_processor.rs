@@ -1097,9 +1097,10 @@ impl CodexMessageProcessor {
                                 cloud_requirements.as_ref(),
                                 auth_manager.clone(),
                                 chatgpt_base_url,
-                                codex_home,
+                                codex_home.clone(),
                             );
                             sync_default_client_residency_requirement(
+                                &codex_home,
                                 &cli_overrides,
                                 cloud_requirements.as_ref(),
                             )
@@ -1252,6 +1253,7 @@ impl CodexMessageProcessor {
             self.config.codex_home.clone(),
         );
         sync_default_client_residency_requirement(
+            &self.config.codex_home,
             &self.cli_overrides,
             self.cloud_requirements.as_ref(),
         )
@@ -1879,6 +1881,7 @@ impl CodexMessageProcessor {
         experimental_raw_events: bool,
     ) {
         let config = match derive_config_from_params(
+            &listener_task_context.codex_home,
             &cli_overrides,
             config_overrides,
             typesafe_overrides,
@@ -3268,6 +3271,7 @@ impl CodexMessageProcessor {
         // Derive a Config using the same logic as new conversation, honoring overrides if provided.
         let cloud_requirements = self.current_cloud_requirements();
         let config = match derive_config_for_cwd(
+            &self.config.codex_home,
             &self.cli_overrides,
             request_overrides,
             typesafe_overrides,
@@ -3790,6 +3794,7 @@ impl CodexMessageProcessor {
         // Derive a Config using the same logic as new conversation, honoring overrides if provided.
         let cloud_requirements = self.current_cloud_requirements();
         let config = match derive_config_for_cwd(
+            &self.config.codex_home,
             &self.cli_overrides,
             request_overrides,
             typesafe_overrides,
@@ -6894,6 +6899,7 @@ impl CodexMessageProcessor {
 
         tokio::spawn(async move {
             let derived_config = derive_config_for_cwd(
+                &config.codex_home,
                 &cli_overrides,
                 None,
                 ConfigOverrides {
@@ -7364,6 +7370,7 @@ fn replace_cloud_requirements_loader(
 }
 
 async fn sync_default_client_residency_requirement(
+    codex_home: &Path,
     cli_overrides: &[(String, TomlValue)],
     cloud_requirements: &RwLock<CloudRequirementsLoader>,
 ) {
@@ -7372,6 +7379,7 @@ async fn sync_default_client_residency_requirement(
         .map(|guard| guard.clone())
         .unwrap_or_default();
     match codex_core::config::ConfigBuilder::default()
+        .codex_home(codex_home.to_path_buf())
         .cli_overrides(cli_overrides.to_vec())
         .cloud_requirements(loader)
         .build()
@@ -7396,6 +7404,7 @@ async fn sync_default_client_residency_requirement(
 ///   Because the overrides are defined explicitly in the `*Params`, this takes priority over
 ///   the more general "bag of config options" provided by `cli_overrides` and `request_overrides`.
 async fn derive_config_from_params(
+    codex_home: &Path,
     cli_overrides: &[(String, TomlValue)],
     request_overrides: Option<HashMap<String, serde_json::Value>>,
     typesafe_overrides: ConfigOverrides,
@@ -7413,6 +7422,7 @@ async fn derive_config_from_params(
         .collect::<Vec<_>>();
 
     codex_core::config::ConfigBuilder::default()
+        .codex_home(codex_home.to_path_buf())
         .cli_overrides(merged_cli_overrides)
         .harness_overrides(typesafe_overrides)
         .cloud_requirements(cloud_requirements.clone())
@@ -7421,6 +7431,7 @@ async fn derive_config_from_params(
 }
 
 async fn derive_config_for_cwd(
+    codex_home: &Path,
     cli_overrides: &[(String, TomlValue)],
     request_overrides: Option<HashMap<String, serde_json::Value>>,
     typesafe_overrides: ConfigOverrides,
@@ -7439,6 +7450,7 @@ async fn derive_config_for_cwd(
         .collect::<Vec<_>>();
 
     codex_core::config::ConfigBuilder::default()
+        .codex_home(codex_home.to_path_buf())
         .cli_overrides(merged_cli_overrides)
         .harness_overrides(typesafe_overrides)
         .fallback_cwd(cwd)

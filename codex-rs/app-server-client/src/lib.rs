@@ -608,24 +608,67 @@ mod tests {
     use codex_app_server_protocol::ThreadStartResponse;
     use codex_core::config::ConfigBuilder;
     use pretty_assertions::assert_eq;
+    use std::ops::Deref;
+    use std::path::PathBuf;
     use tokio::time::Duration;
     use tokio::time::timeout;
 
-    async fn build_test_config() -> Config {
-        match ConfigBuilder::default().build().await {
-            Ok(config) => config,
-            Err(_) => Config::load_default_with_cli_overrides(Vec::new())
-                .expect("default config should load"),
+    struct StartedTestClient {
+        client: Option<InProcessAppServerClient>,
+        _codex_home: PathBuf,
+    }
+
+    impl Deref for StartedTestClient {
+        type Target = InProcessAppServerClient;
+
+        fn deref(&self) -> &Self::Target {
+            self.client.as_ref().expect("client should be present")
         }
+    }
+
+    impl StartedTestClient {
+        async fn shutdown(mut self) -> IoResult<()> {
+            self.client
+                .take()
+                .expect("client should be present")
+                .shutdown()
+                .await
+        }
+    }
+
+    impl Drop for StartedTestClient {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self._codex_home);
+        }
+    }
+
+    fn create_test_codex_home() -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        let codex_home =
+            std::env::temp_dir().join(format!("codex-app-server-client-test-{unique}"));
+        std::fs::create_dir_all(&codex_home).expect("create temp codex home");
+        codex_home
+    }
+
+    async fn build_test_config(codex_home: &PathBuf) -> Config {
+        ConfigBuilder::default()
+            .codex_home(codex_home.clone())
+            .build()
+            .await
+            .expect("test config should load")
     }
 
     async fn start_test_client_with_capacity(
         session_source: SessionSource,
         channel_capacity: usize,
-    ) -> InProcessAppServerClient {
-        InProcessAppServerClient::start(InProcessClientStartArgs {
+    ) -> StartedTestClient {
+        let codex_home = create_test_codex_home();
+        let client = InProcessAppServerClient::start(InProcessClientStartArgs {
             arg0_paths: Arg0DispatchPaths::default(),
-            config: Arc::new(build_test_config().await),
+            config: Arc::new(build_test_config(&codex_home).await),
             cli_overrides: Vec::new(),
             loader_overrides: LoaderOverrides::default(),
             cloud_requirements: CloudRequirementsLoader::default(),
@@ -640,10 +683,14 @@ mod tests {
             channel_capacity,
         })
         .await
-        .expect("in-process app-server client should start")
+        .expect("in-process app-server client should start");
+        StartedTestClient {
+            client: Some(client),
+            _codex_home: codex_home,
+        }
     }
 
-    async fn start_test_client(session_source: SessionSource) -> InProcessAppServerClient {
+    async fn start_test_client(session_source: SessionSource) -> StartedTestClient {
         start_test_client_with_capacity(session_source, DEFAULT_IN_PROCESS_CHANNEL_CAPACITY).await
     }
 
