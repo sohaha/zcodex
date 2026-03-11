@@ -39,10 +39,12 @@ mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
 mod mcp_cmd;
+mod rtk_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
 use crate::mcp_cmd::McpCli;
+use crate::rtk_cmd::RtkCli;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -98,6 +100,9 @@ enum Subcommand {
 
     /// Manage external MCP servers for Codex.
     Mcp(McpCli),
+
+    /// Run token-optimized command wrappers.
+    Rtk(RtkCli),
 
     /// Start Codex as an MCP server (stdio).
     McpServer,
@@ -563,7 +568,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         feature_toggles,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = parse_multitool_cli_from_env();
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
@@ -601,6 +606,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             // Propagate any root-level config overrides (e.g. `-c key=value`).
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
+        }
+        Some(Subcommand::Rtk(rtk_cli)) => {
+            rtk_cmd::run(rtk_cli)?;
         }
         Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
             None => {
@@ -834,6 +842,23 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn parse_multitool_cli_from_env() -> MultitoolCli {
+    let raw_args = std::env::args_os().collect::<Vec<_>>();
+    if raw_args.is_empty() {
+        return MultitoolCli::parse();
+    }
+
+    if rtk_cmd::is_alias_invocation(&raw_args[0]) {
+        let mut injected_args = Vec::with_capacity(raw_args.len() + 1);
+        injected_args.push(raw_args[0].clone());
+        injected_args.push(rtk_cmd::alias_name().into());
+        injected_args.extend(raw_args.into_iter().skip(1));
+        MultitoolCli::parse_from(injected_args)
+    } else {
+        MultitoolCli::parse_from(raw_args)
+    }
 }
 
 async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {

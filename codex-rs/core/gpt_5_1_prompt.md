@@ -282,6 +282,7 @@ For casual greetings, acknowledgements, or other one-off conversational messages
 When using the shell, you must adhere to the following guidelines:
 
 - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
+- For common supported shell commands, prefer the built-in `rtk` wrapper to reduce noisy output and token usage. Use forms like `rtk git status`, `rtk rg pattern path`, `rtk ls`, `rtk read path/to/file`, or `rtk test cargo test`. Fall back to the raw command only when `rtk` does not support the task.
 - Do not use python scripts to attempt to output larger chunks of a file.
 
 ## apply_patch
