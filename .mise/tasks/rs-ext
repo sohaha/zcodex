@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -eq 0 ]; then
+  echo "usage: mise run rs-ext -- <command> [args...]" >&2
+  exit 2
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+codex_rs_dir="$repo_root/codex-rs"
+external_tmp_root="/Volumes/V2/tmp"
+external_target_dir="$external_tmp_root/zcodex-cargo-target"
+
+if [ -d /Volumes/V2 ]; then
+  mkdir -p "$external_tmp_root" "$external_target_dir"
+  export TMPDIR="$external_tmp_root"
+  export CARGO_TARGET_DIR="$external_target_dir"
+fi
+
+cd "$codex_rs_dir"
+exec "$@"
