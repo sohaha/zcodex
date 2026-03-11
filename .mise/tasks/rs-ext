@@ -10,7 +10,7 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
 external_volume="${EXTERNAL_VOLUME:-/Volumes/V2}"
 external_tmp_root="${EXTERNAL_TMP_ROOT:-$external_volume/tmp}"
-external_target_dir="$external_tmp_root/zcodex-cargo-target"
+external_target_dir="${EXTERNAL_TARGET_DIR:-$external_tmp_root/zcodex-cargo-target}"
 
 if [ -d /Volumes/V2 ]; then
   mkdir -p "$external_tmp_root" "$external_target_dir"
