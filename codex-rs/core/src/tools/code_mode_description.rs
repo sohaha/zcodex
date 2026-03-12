@@ -77,8 +77,17 @@ fn append_code_mode_sample(
     let reference = code_mode_tool_reference(tool_name);
     let local_name = code_mode_local_name(&reference.tool_key);
 
+    if local_name == reference.tool_key {
+        return format!(
+            "{description}\n\nCode mode declaration:\n```ts\nimport {{ {} }} from \"{}\";\ndeclare function {}({input_name}: {input_type}): Promise<{output_type}>;\n```",
+            reference.tool_key, reference.module_path, reference.tool_key
+        );
+    }
+
+    let tool_key = serde_json::to_string(&reference.tool_key)
+        .unwrap_or_else(|_| format!("\"{}\"", reference.tool_key.replace('"', "\\\"")));
     format!(
-        "{description}\n\nCode mode declaration:\n```ts\nimport {{ tools }} from \"{}\";\ndeclare function {local_name}({input_name}: {input_type}): Promise<{output_type}>;\n```",
+        "{description}\n\nCode mode declaration:\n```ts\nimport {{ tools }} from \"{}\";\nconst {local_name} = tools[{tool_key}] as ({input_name}: {input_type}) => Promise<{output_type}>;\n```",
         reference.module_path
     )
 }
@@ -310,6 +319,7 @@ fn render_json_schema_literal(value: &JsonValue) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::append_code_mode_sample;
     use super::render_json_schema_to_typescript;
     use pretty_assertions::assert_eq;
     use serde_json::json;
@@ -383,6 +393,20 @@ mod tests {
         assert_eq!(
             render_json_schema_to_typescript(&schema),
             "{\n  _meta?: string;\n  content: Array<string>;\n  isError?: boolean;\n  structuredContent?: string;\n}"
+        );
+    }
+
+    #[test]
+    fn append_code_mode_sample_uses_tools_namespace_for_invalid_identifiers() {
+        assert_eq!(
+            append_code_mode_sample(
+                "Example",
+                "foo-bar",
+                "args",
+                "string".to_string(),
+                "number".to_string(),
+            ),
+            "Example\n\nCode mode declaration:\n```ts\nimport { tools } from \"tools.js\";\nconst foo_bar = tools[\"foo-bar\"] as (args: string) => Promise<number>;\n```"
         );
     }
 }

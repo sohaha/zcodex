@@ -585,6 +585,7 @@ impl UnifiedExecProcessManager {
                 command: &request.command,
                 approval_policy: context.turn.approval_policy.value(),
                 sandbox_policy: context.turn.sandbox_policy.get(),
+                file_system_sandbox_policy: &context.turn.file_system_sandbox_policy,
                 sandbox_permissions: if request.additional_permissions_preapproved {
                     crate::sandboxing::SandboxPermissions::UseDefault
                 } else {
@@ -602,6 +603,8 @@ impl UnifiedExecProcessManager {
             tty: request.tty,
             sandbox_permissions: request.sandbox_permissions,
             additional_permissions: request.additional_permissions.clone(),
+            #[cfg(unix)]
+            additional_permissions_preapproved: request.additional_permissions_preapproved,
             justification: request.justification.clone(),
             exec_approval_requirement,
         };

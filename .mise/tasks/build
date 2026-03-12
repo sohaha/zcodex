@@ -2,5 +2,6 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 
-exec "$script_dir/rs-ext" cargo build "$@"
+exec "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"
