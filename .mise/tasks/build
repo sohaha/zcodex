@@ -15,4 +15,14 @@ elif [ -z "${RUSTFLAGS:-}" ] && command -v ld.lld >/dev/null 2>&1; then
   export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 fi
 
+codex_bin="./codex-rs/target/debug/codex"
+if [ -x "$codex_bin" ]; then
+  set +e
+  "$script_dir/rs-ext" "$codex_bin" rtk cargo build -p codex-cli --bin codex -j "$jobs" "$@"
+  status=$?
+  set -e
+  if [ "$status" -eq 0 ]; then
+    exit 0
+  fi
+fi
 exec "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"

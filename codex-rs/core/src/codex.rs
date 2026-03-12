@@ -3381,6 +3381,7 @@ impl Session {
             )
             .into_text(),
         );
+        developer_sections.push(crate::compact::RTK_INSTRUCTIONS.to_string());
         if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
             developer_sections.push(developer_instructions.to_string());
         }

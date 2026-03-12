@@ -3310,6 +3310,22 @@ async fn build_initial_context_restates_realtime_start_when_reference_context_is
 }
 
 #[tokio::test]
+async fn build_initial_context_includes_rtk_guidance() {
+    let (session, turn_context) = make_session_and_context().await;
+    let initial_context = session.build_initial_context(&turn_context).await;
+    let developer_texts = developer_input_texts(&initial_context);
+    let expected = crate::compact::RTK_INSTRUCTIONS
+        .lines()
+        .next()
+        .unwrap_or_default();
+
+    assert!(
+        developer_texts.iter().any(|text| text.contains(expected)),
+        "expected initial context to include RTK guidance, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
 async fn record_context_updates_and_set_reference_context_item_injects_full_context_when_baseline_missing()
  {
     let (session, turn_context) = make_session_and_context().await;
