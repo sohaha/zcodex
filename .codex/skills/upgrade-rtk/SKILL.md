@@ -9,16 +9,16 @@ Use this skill to upgrade the repository's embedded RTK baseline in a controlled
 
 ## Workflow
 
-1. Read `/Users/so/Code/zcodex/.version/rtk.toml` to confirm the current recorded upstream version, source, and reference PR.
+1. Read `/workspace/.version/rtk.toml` to confirm the current recorded upstream version, source, and reference PR.
 2. Inspect the current embedded implementation before touching code:
-   - `/Users/so/Code/zcodex/codex-rs/cli/src/rtk_cmd.rs`
-   - `/Users/so/Code/zcodex/codex-rs/cli/src/main.rs`
-   - `/Users/so/Code/zcodex/codex-rs/arg0/src/lib.rs`
-   - `/Users/so/Code/zcodex/codex-rs/cli/tests/rtk.rs`
-   - `/Users/so/Code/zcodex/codex-rs/core/prompt.md`
-   - `/Users/so/Code/zcodex/codex-rs/core/prompt_with_apply_patch_instructions.md`
-   - `/Users/so/Code/zcodex/codex-rs/core/gpt_5_1_prompt.md`
-   - `/Users/so/Code/zcodex/codex-rs/core/gpt_5_2_prompt.md`
+   - `/workspace/codex-rs/cli/src/rtk_cmd.rs`
+   - `/workspace/codex-rs/cli/src/main.rs`
+   - `/workspace/codex-rs/arg0/src/lib.rs`
+   - `/workspace/codex-rs/cli/tests/rtk.rs`
+   - `/workspace/codex-rs/core/prompt.md`
+   - `/workspace/codex-rs/core/prompt_with_apply_patch_instructions.md`
+   - `/workspace/codex-rs/core/gpt_5_1_prompt.md`
+   - `/workspace/codex-rs/core/gpt_5_2_prompt.md`
 3. Compare the target upstream RTK version or PR against the recorded baseline. Focus on:
    - supported commands
    - default argument changes
@@ -44,6 +44,12 @@ Treat these as the supported embedded commands unless the user expands scope:
 - `env`
 - `deps`
 
+Behavior details that should stay aligned with prompt guidance:
+
+- `err` keeps error and warning related lines with one line of context on each side, capped at 40 lines; if nothing matches, it falls back to the last 40 lines.
+- `log` keeps a broader set of log-worthy problem lines such as warnings, failures, timeouts, denials, and killed/refused events, capped at 80 lines; if nothing matches, it falls back to the last 40 lines.
+- `err`, `log`, and `test` execute programs directly rather than through a shell, so shell syntax like pipes or redirection only works when wrapped explicitly via something like `bash -lc`.
+
 When upstream changes behavior outside this set, ignore it unless it affects shared infrastructure or prompt wording.
 
 ## Required Updates
@@ -51,18 +57,18 @@ When upstream changes behavior outside this set, ignore it unless it affects sha
 When upgrading, update all applicable places together:
 
 1. Version tracking:
-   - `/Users/so/Code/zcodex/.version/rtk.toml`
+   - `/workspace/.version/rtk.toml`
 2. Runtime behavior:
-   - `/Users/so/Code/zcodex/codex-rs/cli/src/rtk_cmd.rs`
-   - `/Users/so/Code/zcodex/codex-rs/cli/src/main.rs`
-   - `/Users/so/Code/zcodex/codex-rs/arg0/src/lib.rs`
+   - `/workspace/codex-rs/cli/src/rtk_cmd.rs`
+   - `/workspace/codex-rs/cli/src/main.rs`
+   - `/workspace/codex-rs/arg0/src/lib.rs`
 3. Prompt guidance:
-   - `/Users/so/Code/zcodex/codex-rs/core/prompt.md`
-   - `/Users/so/Code/zcodex/codex-rs/core/prompt_with_apply_patch_instructions.md`
-   - `/Users/so/Code/zcodex/codex-rs/core/gpt_5_1_prompt.md`
-   - `/Users/so/Code/zcodex/codex-rs/core/gpt_5_2_prompt.md`
+   - `/workspace/codex-rs/core/prompt.md`
+   - `/workspace/codex-rs/core/prompt_with_apply_patch_instructions.md`
+   - `/workspace/codex-rs/core/gpt_5_1_prompt.md`
+   - `/workspace/codex-rs/core/gpt_5_2_prompt.md`
 4. Regression tests:
-   - `/Users/so/Code/zcodex/codex-rs/cli/tests/rtk.rs`
+   - `/workspace/codex-rs/cli/tests/rtk.rs`
 
 ## Upgrade Rules
 
@@ -77,13 +83,13 @@ When upgrading, update all applicable places together:
 Always run these after changes:
 
 ```bash
-cd /Users/so/Code/zcodex/codex-rs
+cd /workspace/codex-rs
 just fmt
 cargo test -p codex-cli
 ```
 
-If you add or change `rtk` command behavior, extend `/Users/so/Code/zcodex/codex-rs/cli/tests/rtk.rs` so the upgraded behavior is locked in.
+If you add or change `rtk` command behavior, extend `/workspace/codex-rs/cli/tests/rtk.rs` so the upgraded behavior is locked in.
 
 ## Review Checklist
 
-Read `/Users/so/Code/zcodex/.codex/skills/upgrade-rtk/references/checklist.md` before finalizing to make sure you did not miss prompt files, alias routing, or regression coverage.
+Read `/workspace/.codex/skills/upgrade-rtk/references/checklist.md` before finalizing to make sure you did not miss prompt files, alias routing, or regression coverage.
