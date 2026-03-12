@@ -282,7 +282,6 @@ For casual greetings, acknowledgements, or other one-off conversational messages
 When using the shell, you must adhere to the following guidelines:
 
 - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
-- For common supported shell commands, prefer the built-in `rtk` wrapper to reduce noisy output and token usage. Use forms like `rtk git status`, `rtk rg pattern path`, `rtk ls`, `rtk read path/to/file`, `rtk err cargo test -p codex-tui`, `rtk log journalctl -u service -n 200`, or `rtk test cargo test`. `rtk err` keeps error and warning lines with nearby context; `rtk log` keeps log-worthy warning and failure lines. Wrapper commands execute programs directly rather than via a shell, so use `bash -lc` on Unix or `powershell.exe -Command` / `cmd /C` on Windows only when you explicitly need shell features like pipes, `&&`, or redirection. Fall back to the raw command only when `rtk` does not support the task.
 - Do not use python scripts to attempt to output larger chunks of a file.
 
 ## apply_patch

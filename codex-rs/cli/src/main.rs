@@ -22,6 +22,8 @@ use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
+use codex_rtk::alias_name as rtk_alias_name;
+use codex_rtk::is_alias_invocation as is_rtk_alias_invocation;
 use codex_state::StateRuntime;
 use codex_state::state_db_path;
 use codex_tui::AppExitInfo;
@@ -39,12 +41,10 @@ mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
 mod mcp_cmd;
-mod rtk_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
 use crate::mcp_cmd::McpCli;
-use crate::rtk_cmd::RtkCli;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -102,7 +102,7 @@ enum Subcommand {
     Mcp(McpCli),
 
     /// Run token-optimized command wrappers.
-    Rtk(RtkCli),
+    Rtk(RtkArgs),
 
     /// Start Codex as an MCP server (stdio).
     McpServer,
@@ -158,6 +158,12 @@ struct CompletionCommand {
     /// Shell to generate completions for
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
+}
+
+#[derive(Debug, Args)]
+struct RtkArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<std::ffi::OsString>,
 }
 
 #[derive(Debug, Parser)]
@@ -608,7 +614,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             mcp_cli.run().await?;
         }
         Some(Subcommand::Rtk(rtk_cli)) => {
-            rtk_cmd::run(rtk_cli)?;
+            codex_rtk::run_from_os_args(rtk_cli.args)?;
         }
         Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
             None => {
@@ -850,10 +856,10 @@ fn parse_multitool_cli_from_env() -> MultitoolCli {
         return MultitoolCli::parse();
     }
 
-    if rtk_cmd::is_alias_invocation(&raw_args[0]) {
+    if is_rtk_alias_invocation(&raw_args[0]) {
         let mut injected_args = Vec::with_capacity(raw_args.len() + 1);
         injected_args.push(raw_args[0].clone());
-        injected_args.push(rtk_cmd::alias_name().into());
+        injected_args.push(rtk_alias_name().into());
         injected_args.extend(raw_args.into_iter().skip(1));
         MultitoolCli::parse_from(injected_args)
     } else {

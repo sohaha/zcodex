@@ -7,3 +7,9 @@ $:
     sync_github:
       env:
           BRANCHS: main
+    vscode:
+        clouddev:
+            imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
+            runner:
+                tags: cnb:arch:amd64
+                cpus: 10

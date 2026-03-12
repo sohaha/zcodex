@@ -1655,6 +1655,7 @@ dependencies = [
  "codex-protocol",
  "codex-responses-api-proxy",
  "codex-rmcp-client",
+ "codex-rtk",
  "codex-state",
  "codex-stdio-to-uds",
  "codex-tui",
@@ -2360,6 +2361,23 @@ dependencies = [
  "urlencoding",
  "webbrowser",
  "which",
+]
+
+[[package]]
+name = "codex-rtk"
+version = "0.28.2"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dirs",
+ "ignore",
+ "lazy_static",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "walkdir",
 ]
 
 [[package]]

@@ -3,5 +3,16 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
+export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+
+if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
+  export RUSTC_WRAPPER="$(command -v sccache)"
+fi
+
+if [ -z "${RUSTFLAGS:-}" ] && command -v mold >/dev/null 2>&1; then
+  export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+elif [ -z "${RUSTFLAGS:-}" ] && command -v ld.lld >/dev/null 2>&1; then
+  export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+fi
 
 exec "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"

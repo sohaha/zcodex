@@ -39,6 +39,7 @@ members = [
     "protocol",
     "rmcp-client",
     "responses-api-proxy",
+    "rtk",
     "stdio-to-uds",
     "otel",
     "tui",
@@ -121,6 +122,7 @@ codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-rmcp-client = { path = "rmcp-client" }
+codex-rtk = { path = "rtk" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
@@ -171,6 +173,7 @@ chardetng = "0.1.17"
 chrono = "0.4.43"
 clap = "4"
 clap_complete = "4"
+colored = "2"
 color-eyre = "0.6.3"
 crossbeam-channel = "0.5.15"
 crossterm = "0.28.1"
@@ -235,6 +238,7 @@ regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = "0.12"
 rmcp = { version = "0.15.0", default-features = false }
+rusqlite = "0.32"
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
@@ -302,6 +306,7 @@ unicode-segmentation = "1.12.0"
 unicode-width = "0.2"
 url = "2"
 urlencoding = "2.1"
+ureq = "2"
 uuid = "1"
 vt100 = "0.16.2"
 walkdir = "2.5.0"

@@ -19,6 +19,13 @@ fn run_command(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
+fn command_exists(program: &str) -> bool {
+    Command::new(program)
+        .arg("--version")
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 #[cfg(unix)]
 fn shell_args(script: &str) -> [&str; 3] {
     ["sh", "-c", script]
@@ -92,6 +99,25 @@ fn rtk_alias_routes_to_rtk_parser() -> Result<()> {
 }
 
 #[test]
+fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "--help"]).assert().success().stdout(
+        contains("golangci-lint")
+            .and(contains("cargo"))
+            .and(contains("summary"))
+            .and(contains("  init ").not())
+            .and(contains("  gain ").not())
+            .and(contains("discover").not())
+            .and(contains("rewrite").not())
+            .and(contains("verify").not()),
+    );
+
+    Ok(())
+}
+
+#[test]
 fn rtk_deps_summarizes_cargo_manifest() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
@@ -157,6 +183,24 @@ fn rtk_rg_adds_filename_and_line_number() -> Result<()> {
 }
 
 #[test]
+fn rtk_grep_handles_recursive_flag_without_replace_mode() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let workspace = codex_home.path().join("search");
+    std::fs::create_dir(&workspace)?;
+    std::fs::create_dir(workspace.join("nested"))?;
+    std::fs::write(workspace.join("nested").join("sample.txt"), "alpha\nneedle here\nomega\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&workspace)
+        .args(["rtk", "grep", "-r", "needle", "."])
+        .assert()
+        .success()
+        .stdout(contains("sample.txt:2:needle here"));
+
+    Ok(())
+}
+
+#[test]
 fn rtk_log_keeps_interesting_lines() -> Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -167,6 +211,25 @@ fn rtk_log_keeps_interesting_lines() -> Result<()> {
         .assert()
         .success()
         .stdout(contains("warning: heads up").and(contains("error: boom")));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_log_falls_back_to_last_40_lines_without_matches() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let shell = shell_args("for i in $(seq 1 50); do echo line-$i; done");
+    cmd.args(["rtk", "log"])
+        .args(shell)
+        .assert()
+        .success()
+        .stdout(
+            contains("line-11")
+                .and(contains("line-50"))
+                .and(predicates::str::is_match("line-10").unwrap().not()),
+        );
 
     Ok(())
 }
@@ -190,6 +253,26 @@ fn rtk_test_filters_failure_output_and_keeps_exit_code() -> Result<()> {
 
 #[cfg(unix)]
 #[test]
+fn rtk_err_keeps_one_line_of_context_on_each_side() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "rtk",
+        "err",
+        "sh",
+        "-c",
+        "printf 'before\\nwarning: boom\\nafter\\n'",
+    ])
+    .assert()
+    .success()
+    .stdout(contains("before").and(contains("warning: boom")).and(contains("after")));
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn rtk_err_preserves_non_zero_exit_code() -> Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -198,6 +281,56 @@ fn rtk_err_preserves_non_zero_exit_code() -> Result<()> {
         .assert()
         .code(7)
         .stderr(contains("boom"));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_tree_ignores_noise_dirs_by_default() -> Result<()> {
+    if !command_exists("tree") {
+        return Ok(());
+    }
+
+    let codex_home = TempDir::new()?;
+    let workspace = codex_home.path().join("tree-workspace");
+    std::fs::create_dir(&workspace)?;
+    std::fs::create_dir(workspace.join("src"))?;
+    std::fs::create_dir_all(workspace.join("node_modules").join("pkg"))?;
+    std::fs::write(workspace.join("src").join("main.rs"), "fn main() {}\n")?;
+    std::fs::write(
+        workspace.join("node_modules").join("pkg").join("index.js"),
+        "console.log('noise')\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "tree", workspace.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("src").and(predicates::str::contains("node_modules").not()));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_tree_respects_all_flag() -> Result<()> {
+    if !command_exists("tree") {
+        return Ok(());
+    }
+
+    let codex_home = TempDir::new()?;
+    let workspace = codex_home.path().join("tree-workspace");
+    std::fs::create_dir(&workspace)?;
+    std::fs::create_dir_all(workspace.join("node_modules").join("pkg"))?;
+    std::fs::write(
+        workspace.join("node_modules").join("pkg").join("index.js"),
+        "console.log('noise')\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "tree", "-a", workspace.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("node_modules"));
 
     Ok(())
 }

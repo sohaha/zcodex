@@ -1,4 +1,3 @@
 version = "0.28.2"
 source = "https://github.com/rtk-ai/rtk"
-integration_mode = "practical-subset"
-
+integration_mode = "codex-curated"
