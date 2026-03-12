@@ -17,7 +17,7 @@ impl FromStr for FilterLevel {
             "none" => Ok(FilterLevel::None),
             "minimal" => Ok(FilterLevel::Minimal),
             "aggressive" => Ok(FilterLevel::Aggressive),
-            _ => Err(format!("Unknown filter level: {}", s)),
+            _ => Err(format!("Unknown filter level: {s}")),
         }
     }
 }
@@ -192,17 +192,17 @@ impl FilterStrategy for MinimalFilter {
             }
 
             // Skip single-line comments (but keep doc comments)
-            if let Some(line_comment) = patterns.line {
-                if trimmed.starts_with(line_comment) {
-                    // Keep doc comments
-                    if let Some(doc) = patterns.doc_line {
-                        if trimmed.starts_with(doc) {
-                            result.push_str(line);
-                            result.push('\n');
-                        }
-                    }
-                    continue;
+            if let Some(line_comment) = patterns.line
+                && trimmed.starts_with(line_comment)
+            {
+                // Keep doc comments
+                if let Some(doc) = patterns.doc_line
+                    && trimmed.starts_with(doc)
+                {
+                    result.push_str(line);
+                    result.push('\n');
                 }
+                continue;
             }
 
             // Skip empty lines at this point, we'll normalize later

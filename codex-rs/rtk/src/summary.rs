@@ -1,15 +1,17 @@
 use crate::tracking;
 use crate::utils::truncate;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
-use std::process::{Command, Stdio};
+use std::process::Command;
+use std::process::Stdio;
 
 /// Run a command and provide a heuristic summary
 pub fn run(command: &str, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Running and summarizing: {}", command);
+        eprintln!("Running and summarizing: {command}");
     }
 
     let output = if cfg!(target_os = "windows") {
@@ -29,10 +31,10 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let summary = summarize_output(&raw, command, output.status.success());
-    println!("{}", summary);
+    println!("{summary}");
     timer.track(command, "rtk summary", &raw, &summary);
     Ok(())
 }
@@ -133,20 +135,19 @@ fn summarize_tests(output: &str, result: &mut Vec<String>) {
                 failures.push(line.to_string());
             }
         }
-        if lower.contains("skipped") || lower.contains("ignored") {
-            if let Some(n) = extract_number(&lower, "skipped").or(extract_number(&lower, "ignored"))
-            {
-                skipped = n;
-            }
+        if (lower.contains("skipped") || lower.contains("ignored"))
+            && let Some(n) = extract_number(&lower, "skipped").or(extract_number(&lower, "ignored"))
+        {
+            skipped = n;
         }
     }
 
-    result.push(format!("   ✅ {} passed", passed));
+    result.push(format!("   ✅ {passed} passed"));
     if failed > 0 {
-        result.push(format!("   ❌ {} failed", failed));
+        result.push(format!("   ❌ {failed} failed"));
     }
     if skipped > 0 {
-        result.push(format!("   ⏭️  {} skipped", skipped));
+        result.push(format!("   ⏭️  {skipped} skipped"));
     }
 
     if !failures.is_empty() {
@@ -183,13 +184,13 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
     }
 
     if compiled > 0 {
-        result.push(format!("   📦 {} crates/files compiled", compiled));
+        result.push(format!("   📦 {compiled} crates/files compiled"));
     }
     if errors > 0 {
-        result.push(format!("   ❌ {} errors", errors));
+        result.push(format!("   ❌ {errors} errors"));
     }
     if warnings > 0 {
-        result.push(format!("   ⚠️  {} warnings", warnings));
+        result.push(format!("   ⚠️  {warnings} warnings"));
     }
     if errors == 0 && warnings == 0 {
         result.push("   ✅ Build successful".to_string());
@@ -222,9 +223,9 @@ fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
         }
     }
 
-    result.push(format!("   ❌ {} errors", errors));
-    result.push(format!("   ⚠️  {} warnings", warnings));
-    result.push(format!("   ℹ️  {} info", info));
+    result.push(format!("   ❌ {errors} errors"));
+    result.push(format!("   ⚠️  {warnings} warnings"));
+    result.push(format!("   ℹ️  {info} info"));
 }
 
 fn summarize_list(output: &str, result: &mut Vec<String>) {
@@ -251,7 +252,7 @@ fn summarize_json(output: &str, result: &mut Vec<String>) {
             serde_json::Value::Object(obj) => {
                 result.push(format!("   Object with {} keys:", obj.len()));
                 for key in obj.keys().take(10) {
-                    result.push(format!("   • {}", key));
+                    result.push(format!("   • {key}"));
                 }
                 if obj.len() > 10 {
                     result.push(format!("   ... +{} more keys", obj.len() - 10));
@@ -290,7 +291,7 @@ fn summarize_generic(output: &str, result: &mut Vec<String>) {
 }
 
 fn extract_number(text: &str, after: &str) -> Option<usize> {
-    let re = Regex::new(&format!(r"(\d+)\s*{}", after)).ok()?;
+    let re = Regex::new(&format!(r"(\d+)\s*{after}")).ok()?;
     re.captures(text)
         .and_then(|c| c.get(1))
         .and_then(|m| m.as_str().parse().ok())

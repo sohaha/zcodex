@@ -1,6 +1,7 @@
 use crate::tracking;
 use crate::utils::truncate;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use std::process::Command;
 
 #[derive(Debug, PartialEq)]
@@ -49,7 +50,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_pytest_output(&stdout);
 
@@ -58,9 +59,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .code()
         .unwrap_or(if output.status.success() { 0 } else { 1 });
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "pytest", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     // Include stderr if present (import errors, etc.)
@@ -180,7 +181,7 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     let (passed, failed, skipped) = parse_summary_line(summary);
 
     if failed == 0 && passed > 0 {
-        return format!("✓ Pytest: {} passed", passed);
+        return format!("✓ Pytest: {passed} passed");
     }
 
     if passed == 0 && failed == 0 {
@@ -188,9 +189,9 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Pytest: {} passed, {} failed", passed, failed));
+    result.push_str(&format!("Pytest: {passed} passed, {failed} failed"));
     if skipped > 0 {
-        result.push_str(&format!(", {} skipped", skipped));
+        result.push_str(&format!(", {skipped} skipped"));
     }
     result.push('\n');
     result.push_str("═══════════════════════════════════════\n");
@@ -274,10 +275,10 @@ fn parse_summary_line(summary: &str) -> (usize, usize, usize) {
                     if let Ok(n) = words[i - 1].parse::<usize>() {
                         failed = n;
                     }
-                } else if word.contains("skipped") {
-                    if let Ok(n) = words[i - 1].parse::<usize>() {
-                        skipped = n;
-                    }
+                } else if word.contains("skipped")
+                    && let Ok(n) = words[i - 1].parse::<usize>()
+                {
+                    skipped = n;
                 }
             }
         }

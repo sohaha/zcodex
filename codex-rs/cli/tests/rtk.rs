@@ -118,6 +118,21 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
 }
 
 #[test]
+fn rtk_removed_meta_commands_fail_instead_of_falling_through() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    for command_name in ["init", "gain", "discover", "rewrite", "verify"] {
+        let mut cmd = codex_command(codex_home.path())?;
+        cmd.args(["rtk", command_name])
+            .assert()
+            .failure()
+            .stderr(contains("unrecognized subcommand"));
+    }
+
+    Ok(())
+}
+
+#[test]
 fn rtk_deps_summarizes_cargo_manifest() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
@@ -188,7 +203,10 @@ fn rtk_grep_handles_recursive_flag_without_replace_mode() -> Result<()> {
     let workspace = codex_home.path().join("search");
     std::fs::create_dir(&workspace)?;
     std::fs::create_dir(workspace.join("nested"))?;
-    std::fs::write(workspace.join("nested").join("sample.txt"), "alpha\nneedle here\nomega\n")?;
+    std::fs::write(
+        workspace.join("nested").join("sample.txt"),
+        "alpha\nneedle here\nomega\n",
+    )?;
 
     let mut cmd = codex_command(codex_home.path())?;
     cmd.current_dir(&workspace)
@@ -266,7 +284,11 @@ fn rtk_err_keeps_one_line_of_context_on_each_side() -> Result<()> {
     ])
     .assert()
     .success()
-    .stdout(contains("before").and(contains("warning: boom")).and(contains("after")));
+    .stdout(
+        contains("before")
+            .and(contains("warning: boom"))
+            .and(contains("after")),
+    );
 
     Ok(())
 }

@@ -43,11 +43,14 @@ mod vitest_cmd;
 mod wc_cmd;
 mod wget_cmd;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
+use clap::Parser;
+use clap::Subcommand;
 use clap::error::ErrorKind;
-use clap::{Parser, Subcommand};
 use std::ffi::OsString;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::path::PathBuf;
 
 const RTK_ALIAS_NAME: &str = "rtk";
 
@@ -452,7 +455,6 @@ enum Commands {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-
 }
 
 #[derive(Subcommand)]
@@ -1383,8 +1385,8 @@ fn run_cli(cli: Cli) -> Result<()> {
                                 let status = cmd.status().context("Failed to run npx prisma")?;
                                 let args_str = args.join(" ");
                                 timer.track_passthrough(
-                                    &format!("npx {}", args_str),
-                                    &format!("rtk npx {} (passthrough)", args_str),
+                                    &format!("npx {args_str}"),
+                                    &format!("rtk npx {args_str} (passthrough)"),
                                 );
                                 if !status.success() {
                                     std::process::exit(status.code().unwrap_or(1));
@@ -1663,5 +1665,4 @@ mod tests {
             }
         }
     }
-
 }

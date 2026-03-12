@@ -14,7 +14,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
 
     let content1 = fs::read_to_string(file1)?;
     let content2 = fs::read_to_string(file2)?;
-    let raw = format!("{}\n---\n{}", content1, content2);
+    let raw = format!("{content1}\n---\n{content2}");
 
     let lines1: Vec<&str> = content1.lines().collect();
     let lines2: Vec<&str> = content2.lines().collect();
@@ -23,7 +23,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
 
     if diff.added == 0 && diff.removed == 0 {
         rtk.push_str("✅ Files are identical");
-        println!("{}", rtk);
+        println!("{rtk}");
         timer.track(
             &format!("diff {} {}", file1.display(), file2.display()),
             "rtk diff",
@@ -55,7 +55,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
         rtk.push_str(&format!("... +{} more changes", diff.changes.len() - 50));
     }
 
-    print!("{}", rtk);
+    print!("{rtk}");
     timer.track(
         &format!("diff {} {}", file1.display(), file2.display()),
         "rtk diff",
@@ -67,7 +67,8 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
 
 /// Run diff from stdin (piped command output)
 pub fn run_stdin(_verbose: u8) -> Result<()> {
-    use std::io::{self, Read};
+    use std::io::Read;
+    use std::io::{self};
     let timer = tracking::TimedExecution::start();
 
     let mut input = String::new();
@@ -75,7 +76,7 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
 
     // Parse unified diff format
     let condensed = condense_unified_diff(&input);
-    println!("{}", condensed);
+    println!("{condensed}");
 
     timer.track("diff (stdin)", "rtk diff (stdin)", &input, &condensed);
 
@@ -168,9 +169,9 @@ fn condense_unified_diff(diff: &str) -> String {
             // File header
             if line.starts_with("+++ ") {
                 if !current_file.is_empty() && (added > 0 || removed > 0) {
-                    result.push(format!("📄 {} (+{} -{})", current_file, added, removed));
+                    result.push(format!("📄 {current_file} (+{added} -{removed})"));
                     for c in changes.iter().take(10) {
-                        result.push(format!("  {}", c));
+                        result.push(format!("  {c}"));
                     }
                     if changes.len() > 10 {
                         result.push(format!("  ... +{} more", changes.len() - 10));
@@ -199,9 +200,9 @@ fn condense_unified_diff(diff: &str) -> String {
 
     // Last file
     if !current_file.is_empty() && (added > 0 || removed > 0) {
-        result.push(format!("📄 {} (+{} -{})", current_file, added, removed));
+        result.push(format!("📄 {current_file} (+{added} -{removed})"));
         for c in changes.iter().take(10) {
-            result.push(format!("  {}", c));
+            result.push(format!("  {c}"));
         }
         if changes.len() > 10 {
             result.push(format!("  ... +{} more", changes.len() - 10));

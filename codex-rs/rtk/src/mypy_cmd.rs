@@ -1,6 +1,8 @@
 use crate::tracking;
-use crate::utils::{strip_ansi, truncate};
-use anyhow::{Context, Result};
+use crate::utils::strip_ansi;
+use crate::utils::truncate;
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
 use std::collections::HashMap;
 use std::process::Command;
@@ -30,12 +32,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
     let clean = strip_ansi(&raw);
 
     let filtered = filter_mypy_output(&clean);
 
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track(
         &format!("mypy {}", args.join(" ")),
@@ -106,12 +108,12 @@ pub fn filter_mypy_output(output: &str) -> String {
 
             if severity == "note" {
                 // Attach note to preceding error if same file and line
-                if let Some(last) = errors.last_mut() {
-                    if last.file == file {
-                        last.context_lines.push(message);
-                        i += 1;
-                        continue;
-                    }
+                if let Some(last) = errors.last_mut()
+                    && last.file == file
+                {
+                    last.context_lines.push(message);
+                    i += 1;
+                    continue;
                 }
                 // Standalone note with no parent -- display as fileless
                 fileless_lines.push(line.to_string());
@@ -130,13 +132,14 @@ pub fn filter_mypy_output(output: &str) -> String {
             // Capture continuation note lines
             i += 1;
             while i < lines.len() {
-                if let Some(next_caps) = MYPY_DIAG.captures(lines[i]) {
-                    if &next_caps[3] == "note" && next_caps[1] == err.file {
-                        let note_msg = next_caps[4].to_string();
-                        err.context_lines.push(note_msg);
-                        i += 1;
-                        continue;
-                    }
+                if let Some(next_caps) = MYPY_DIAG.captures(lines[i])
+                    && &next_caps[3] == "note"
+                    && next_caps[1] == err.file
+                {
+                    let note_msg = next_caps[4].to_string();
+                    err.context_lines.push(note_msg);
+                    i += 1;
+                    continue;
                 }
                 break;
             }
@@ -200,7 +203,7 @@ pub fn filter_mypy_output(output: &str) -> String {
             let codes_str: Vec<String> = code_counts
                 .iter()
                 .take(5)
-                .map(|(code, count)| format!("{} ({}x)", code, count))
+                .map(|(code, count)| format!("{code} ({count}x)"))
                 .collect();
             result.push_str(&format!("Top codes: {}\n\n", codes_str.join(", ")));
         }
@@ -371,8 +374,7 @@ Found 1 error in 1 file
         let mut output = String::new();
         for i in 1..=15 {
             output.push_str(&format!(
-                "src/file{}.py:{}: error: Error in file {}.  [assignment]\n",
-                i, i, i
+                "src/file{i}.py:{i}: error: Error in file {i}.  [assignment]\n"
             ));
         }
         output.push_str("Found 15 errors in 15 files\n");
@@ -380,9 +382,8 @@ Found 1 error in 1 file
         assert!(result.contains("15 errors in 15 files"));
         for i in 1..=15 {
             assert!(
-                result.contains(&format!("file{}.py", i)),
-                "file{}.py missing from output",
-                i
+                result.contains(&format!("file{i}.py")),
+                "file{i}.py missing from output"
             );
         }
     }

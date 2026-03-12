@@ -1,13 +1,21 @@
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::parser::{
-    emit_degradation_warning, emit_passthrough_warning, extract_json_object, truncate_output,
-    FormatMode, OutputParser, ParseResult, TestFailure, TestResult, TokenFormatter,
-};
+use crate::parser::FormatMode;
+use crate::parser::OutputParser;
+use crate::parser::ParseResult;
+use crate::parser::TestFailure;
+use crate::parser::TestResult;
+use crate::parser::TokenFormatter;
+use crate::parser::emit_degradation_warning;
+use crate::parser::emit_passthrough_warning;
+use crate::parser::extract_json_object;
+use crate::parser::truncate_output;
 use crate::tracking;
-use crate::utils::{package_manager_exec, strip_ansi};
+use crate::utils::package_manager_exec;
+use crate::utils::strip_ansi;
 
 /// Vitest JSON output structures (tool-specific format)
 #[derive(Debug, Deserialize)]
@@ -235,7 +243,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let output = cmd.output().context("Failed to run vitest")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{}{}", stdout, stderr);
+    let combined = format!("{stdout}{stderr}");
 
     // Parse output using VitestParser
     let parse_result = VitestParser::parse(&stdout);
@@ -262,9 +270,9 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
 
     let exit_code = output.status.code().unwrap_or(1);
     if let Some(hint) = crate::tee::tee_and_hint(&combined, "vitest_run", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track("vitest run", "rtk vitest run", &combined, &filtered);

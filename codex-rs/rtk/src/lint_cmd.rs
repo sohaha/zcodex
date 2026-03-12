@@ -1,10 +1,12 @@
 use crate::mypy_cmd;
 use crate::ruff_cmd;
 use crate::tracking;
-use crate::utils::{package_manager_exec, truncate};
-use anyhow::{Context, Result};
-use regex::Regex;
-use serde::{Deserialize, Serialize};
+use crate::utils::package_manager_exec;
+use crate::utils::truncate;
+use anyhow::Context;
+use anyhow::Result;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Command;
 
@@ -160,12 +162,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: {} with structured output", linter);
+        eprintln!("Running: {linter} with structured output");
     }
 
     let output = cmd.output().context(format!(
-        "Failed to run {}. Is it installed? Try: pip install {} (or npm/pnpm for JS linters)",
-        linter, linter
+        "Failed to run {linter}. Is it installed? Try: pip install {linter} (or npm/pnpm for JS linters)"
     ))?;
 
     // Check if process was killed by signal (SIGABRT, SIGKILL, etc.)
@@ -183,7 +184,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     // Dispatch to appropriate filter based on linter
     let filtered = match linter {
@@ -206,9 +207,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .code()
         .unwrap_or(if output.status.success() { 0 } else { 1 });
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "lint", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track(
@@ -271,8 +272,7 @@ fn filter_eslint_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "ESLint: {} errors, {} warnings in {} files\n",
-        total_errors, total_warnings, total_files
+        "ESLint: {total_errors} errors, {total_warnings} warnings in {total_files} files\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -283,7 +283,7 @@ fn filter_eslint_json(output: &str) -> String {
     if !rule_counts.is_empty() {
         result.push_str("Top rules:\n");
         for (rule, count) in rule_counts.iter().take(10) {
-            result.push_str(&format!("  {} ({}x)\n", rule, count));
+            result.push_str(&format!("  {rule} ({count}x)\n"));
         }
         result.push('\n');
     }
@@ -292,7 +292,7 @@ fn filter_eslint_json(output: &str) -> String {
     result.push_str("Top files:\n");
     for (file_result, count) in by_file.iter().take(10) {
         let short_path = compact_path(&file_result.file_path);
-        result.push_str(&format!("  {} ({} issues)\n", short_path, count));
+        result.push_str(&format!("  {short_path} ({count} issues)\n"));
 
         // Show top 3 rules in this file
         let mut file_rules: HashMap<String, usize> = HashMap::new();
@@ -306,7 +306,7 @@ fn filter_eslint_json(output: &str) -> String {
         file_rule_counts.sort_by(|a, b| b.1.cmp(a.1));
 
         for (rule, count) in file_rule_counts.iter().take(3) {
-            result.push_str(&format!("    {} ({})\n", rule, count));
+            result.push_str(&format!("    {rule} ({count})\n"));
         }
     }
 
@@ -382,11 +382,10 @@ fn filter_pylint_json(output: &str) -> String {
     ));
 
     if errors > 0 || warnings > 0 {
-        result.push_str(&format!("  {} errors, {} warnings", errors, warnings));
+        result.push_str(&format!("  {errors} errors, {warnings} warnings"));
         if conventions > 0 || refactors > 0 {
             result.push_str(&format!(
-                ", {} conventions, {} refactors",
-                conventions, refactors
+                ", {conventions} conventions, {refactors} refactors"
             ));
         }
         result.push('\n');
@@ -401,7 +400,7 @@ fn filter_pylint_json(output: &str) -> String {
     if !symbol_counts.is_empty() {
         result.push_str("Top rules:\n");
         for (symbol, count) in symbol_counts.iter().take(10) {
-            result.push_str(&format!("  {} ({}x)\n", symbol, count));
+            result.push_str(&format!("  {symbol} ({count}x)\n"));
         }
         result.push('\n');
     }
@@ -410,7 +409,7 @@ fn filter_pylint_json(output: &str) -> String {
     result.push_str("Top files:\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
-        result.push_str(&format!("  {} ({} issues)\n", short_path, count));
+        result.push_str(&format!("  {short_path} ({count} issues)\n"));
 
         // Show top 3 rules in this file
         let mut file_symbols: HashMap<String, usize> = HashMap::new();
@@ -423,7 +422,7 @@ fn filter_pylint_json(output: &str) -> String {
         file_symbol_counts.sort_by(|a, b| b.1.cmp(a.1));
 
         for (symbol, count) in file_symbol_counts.iter().take(3) {
-            result.push_str(&format!("    {} ({})\n", symbol, count));
+            result.push_str(&format!("    {symbol} ({count})\n"));
         }
     }
 
@@ -457,7 +456,7 @@ fn filter_generic_lint(output: &str) -> String {
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Lint: {} errors, {} warnings\n", errors, warnings));
+    result.push_str(&format!("Lint: {errors} errors, {warnings} warnings\n"));
     result.push_str("═══════════════════════════════════════\n");
 
     for issue in issues.iter().take(20) {

@@ -1,6 +1,9 @@
-use crate::filter::{self, FilterLevel, Language};
+use crate::filter::FilterLevel;
+use crate::filter::Language;
+use crate::filter::{self};
 use crate::tracking;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
@@ -29,7 +32,7 @@ pub fn run(
         .unwrap_or(Language::Unknown);
 
     if verbose > 1 {
-        eprintln!("Detected language: {:?}", lang);
+        eprintln!("Detected language: {lang:?}");
     }
 
     // Apply filter
@@ -44,10 +47,7 @@ pub fn run(
         } else {
             0.0
         };
-        eprintln!(
-            "Lines: {} -> {} ({:.1}% reduction)",
-            original_lines, filtered_lines, reduction
-        );
+        eprintln!("Lines: {original_lines} -> {filtered_lines} ({reduction:.1}% reduction)");
     }
 
     // Apply smart truncation if max_lines is set
@@ -58,9 +58,9 @@ pub fn run(
     let rtk_output = if line_numbers {
         format_with_line_numbers(&filtered)
     } else {
-        filtered.clone()
+        filtered
     };
-    println!("{}", rtk_output);
+    println!("{rtk_output}");
     timer.track(
         &format!("cat {}", file.display()),
         "rtk read",
@@ -76,12 +76,13 @@ pub fn run_stdin(
     line_numbers: bool,
     verbose: u8,
 ) -> Result<()> {
-    use std::io::{self, Read as IoRead};
+    use std::io::Read as IoRead;
+    use std::io::{self};
 
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Reading from stdin (filter: {})", level);
+        eprintln!("Reading from stdin (filter: {level})");
     }
 
     // Read from stdin
@@ -95,7 +96,7 @@ pub fn run_stdin(
     let lang = Language::Unknown;
 
     if verbose > 1 {
-        eprintln!("Language: {:?} (stdin has no extension)", lang);
+        eprintln!("Language: {lang:?} (stdin has no extension)");
     }
 
     // Apply filter
@@ -110,10 +111,7 @@ pub fn run_stdin(
         } else {
             0.0
         };
-        eprintln!(
-            "Lines: {} -> {} ({:.1}% reduction)",
-            original_lines, filtered_lines, reduction
-        );
+        eprintln!("Lines: {original_lines} -> {filtered_lines} ({reduction:.1}% reduction)");
     }
 
     // Apply smart truncation if max_lines is set
@@ -124,9 +122,9 @@ pub fn run_stdin(
     let rtk_output = if line_numbers {
         format_with_line_numbers(&filtered)
     } else {
-        filtered.clone()
+        filtered
     };
-    println!("{}", rtk_output);
+    println!("{rtk_output}");
 
     timer.track("cat - (stdin)", "rtk read -", &content, &rtk_output);
     Ok(())

@@ -1,13 +1,20 @@
 use crate::tracking;
-use crate::utils::{detect_package_manager, strip_ansi};
-use anyhow::{Context, Result};
+use crate::utils::detect_package_manager;
+use crate::utils::strip_ansi;
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
 use serde::Deserialize;
 
-use crate::parser::{
-    emit_degradation_warning, emit_passthrough_warning, truncate_output, FormatMode, OutputParser,
-    ParseResult, TestFailure, TestResult, TokenFormatter,
-};
+use crate::parser::FormatMode;
+use crate::parser::OutputParser;
+use crate::parser::ParseResult;
+use crate::parser::TestFailure;
+use crate::parser::TestResult;
+use crate::parser::TokenFormatter;
+use crate::parser::emit_degradation_warning;
+use crate::parser::emit_passthrough_warning;
+use crate::parser::truncate_output;
 
 /// Matches real Playwright JSON reporter output (suites → specs → tests → results)
 #[derive(Debug, Deserialize)]
@@ -289,7 +296,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     // Parse output using PlaywrightParser
     let parse_result = PlaywrightParser::parse(&stdout);
@@ -314,7 +321,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
     };
 
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track(
         &format!("playwright {}", args.join(" ")),

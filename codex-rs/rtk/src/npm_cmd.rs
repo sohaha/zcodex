@@ -1,5 +1,6 @@
 use crate::tracking;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use std::process::Command;
 
 pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
@@ -9,7 +10,7 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
     cmd.arg("run");
 
     // Strip leading "run" to avoid doubling (rtk npm run build → npm run build, not npm run run build)
-    let effective_args = if args.first().map(|s| s.as_str()) == Some("run") {
+    let effective_args = if args.first().map(std::string::String::as_str) == Some("run") {
         &args[1..]
     } else {
         args
@@ -30,10 +31,10 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
     let output = cmd.output().context("Failed to run npm run")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_npm_output(&raw);
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track(
         &format!("npm run {}", effective_args.join(" ")),
@@ -112,7 +113,7 @@ npm notice
         // When user runs `rtk npm run build`, args = ["run", "build"]
         // The "run" should be stripped since cmd.arg("run") already adds it
         let args: Vec<String> = vec!["run".into(), "build".into()];
-        let effective_args = if args.first().map(|s| s.as_str()) == Some("run") {
+        let effective_args = if args.first().map(std::string::String::as_str) == Some("run") {
             &args[1..]
         } else {
             &args[..]
@@ -122,7 +123,7 @@ npm notice
         // When user runs `rtk npm build`, args = ["build"]
         // No stripping needed
         let args2: Vec<String> = vec!["build".into()];
-        let effective_args2 = if args2.first().map(|s| s.as_str()) == Some("run") {
+        let effective_args2 = if args2.first().map(std::string::String::as_str) == Some("run") {
             &args2[1..]
         } else {
             &args2[..]
@@ -132,7 +133,7 @@ npm notice
         // When user runs `rtk npm run`, args = ["run"]
         // Strip "run" → empty args (npm run with no script)
         let args3: Vec<String> = vec!["run".into()];
-        let effective_args3 = if args3.first().map(|s| s.as_str()) == Some("run") {
+        let effective_args3 = if args3.first().map(std::string::String::as_str) == Some("run") {
             &args3[1..]
         } else {
             &args3[..]

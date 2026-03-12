@@ -1,6 +1,8 @@
 use crate::tracking;
-use crate::utils::{strip_ansi, truncate};
-use anyhow::{Context, Result};
+use crate::utils::strip_ansi;
+use crate::utils::truncate;
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
 use std::process::Command;
 
@@ -30,7 +32,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if verbose > 0 {
         let tool = if next_exists { "next" } else { "npx next" };
-        eprintln!("Running: {} build", tool);
+        eprintln!("Running: {tool} build");
     }
 
     let output = cmd
@@ -38,11 +40,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .context("Failed to run next build (try: npm install -g next)")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_next_build(&raw);
 
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track("next build", "rtk next build", &raw, &filtered);
 
@@ -116,10 +118,10 @@ fn filter_next_build(output: &str) -> String {
         }
 
         // Extract build time
-        if line.contains("Compiled") || line.contains("in") {
-            if let Some(time_match) = extract_time(line) {
-                build_time = time_match;
-            }
+        if (line.contains("Compiled") || line.contains("in"))
+            && let Some(time_match) = extract_time(line)
+        {
+            build_time = time_match;
         }
     }
 
@@ -137,8 +139,7 @@ fn filter_next_build(output: &str) -> String {
         result.push_str("✓ Already built (using cache)\n\n");
     } else if routes_total > 0 {
         result.push_str(&format!(
-            "✓ {} routes ({} static, {} dynamic)\n\n",
-            routes_total, routes_static, routes_dynamic
+            "✓ {routes_total} routes ({routes_static} static, {routes_dynamic} dynamic)\n\n"
         ));
     }
 
@@ -151,7 +152,7 @@ fn filter_next_build(output: &str) -> String {
         for (route, size, pct_change) in bundles.iter().take(10) {
             let warning_marker = if let Some(pct) = pct_change {
                 if *pct > 10.0 {
-                    format!(" ⚠️ (+{:.0}%)", pct)
+                    format!(" ⚠️ (+{pct:.0}%)")
                 } else {
                     String::new()
                 }
@@ -176,10 +177,10 @@ fn filter_next_build(output: &str) -> String {
 
     // Show build time and status
     if !build_time.is_empty() {
-        result.push_str(&format!("Time: {} | ", build_time));
+        result.push_str(&format!("Time: {build_time} | "));
     }
 
-    result.push_str(&format!("Errors: {} | Warnings: {}\n", errors, warnings));
+    result.push_str(&format!("Errors: {errors} | Warnings: {warnings}\n"));
 
     result.trim().to_string()
 }

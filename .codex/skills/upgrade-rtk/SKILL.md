@@ -29,7 +29,6 @@ Use this skill to upgrade the repository's embedded RTK baseline in a controlled
 Treat these as the supported embedded commands unless the user expands scope:
 
 - `git`
-- `rg`
 - `grep`
 - `read`
 - `ls`
@@ -41,6 +40,10 @@ Treat these as the supported embedded commands unless the user expands scope:
 - `test`
 - `env`
 - `deps`
+
+Notes:
+
+- `rg` is still safe to use as `rtk rg ...`, but in the current curated integration it routes through fallback instead of a dedicated help-listed subcommand.
 
 This repo also embeds additional operational wrappers that are safe to keep aligned when useful, such as:
 

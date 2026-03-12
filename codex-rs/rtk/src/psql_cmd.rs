@@ -4,7 +4,8 @@
 //! and produces compact tab-separated or key=value output.
 
 use crate::tracking;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -39,7 +40,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let exit_code = output.status.code().unwrap_or(1);
 
     if !stderr.is_empty() {
-        eprint!("{}", stderr);
+        eprint!("{stderr}");
     }
 
     if exit_code != 0 {
@@ -49,9 +50,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let filtered = filter_psql_output(&stdout);
 
     if let Some(hint) = crate::tee::tee_and_hint(&stdout, "psql", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track(
@@ -127,7 +128,7 @@ fn filter_table(output: &str) -> String {
             }
 
             if data_rows <= MAX_TABLE_ROWS || total_rows == 1 {
-                let cols: Vec<&str> = trimmed.split('|').map(|c| c.trim()).collect();
+                let cols: Vec<&str> = trimmed.split('|').map(str::trim).collect();
                 result.push(cols.join("\t"));
             }
         } else {
@@ -174,7 +175,7 @@ fn filter_expanded(output: &str) -> String {
             if parts.len() == 2 {
                 let key = parts[0].trim();
                 let val = parts[1].trim();
-                current_pairs.push(format!("{}={}", key, val));
+                current_pairs.push(format!("{key}={val}"));
             }
         } else if trimmed.is_empty() {
             continue;
@@ -185,10 +186,10 @@ fn filter_expanded(output: &str) -> String {
     }
 
     // Flush last record
-    if let Some(rec) = current_record.take() {
-        if record_count <= MAX_EXPANDED_RECORDS {
-            result.push(format!("{} {}", rec, current_pairs.join(" ")));
-        }
+    if let Some(rec) = current_record.take()
+        && record_count <= MAX_EXPANDED_RECORDS
+    {
+        result.push(format!("{} {}", rec, current_pairs.join(" ")));
     }
 
     if record_count > MAX_EXPANDED_RECORDS {
@@ -264,7 +265,7 @@ mod tests {
     fn test_filter_table_overflow() {
         let mut lines = vec![" id | val".to_string(), "----+-----".to_string()];
         for i in 1..=40 {
-            lines.push(format!("  {} | row{}", i, i));
+            lines.push(format!("  {i} | row{i}"));
         }
         lines.push("(40 rows)".to_string());
         let input = lines.join("\n");
@@ -301,9 +302,9 @@ name | bob
     fn test_filter_expanded_overflow() {
         let mut lines = Vec::new();
         for i in 1..=25 {
-            lines.push(format!("-[ RECORD {} ]----", i));
-            lines.push(format!("id   | {}", i));
-            lines.push(format!("name | user{}", i));
+            lines.push(format!("-[ RECORD {i} ]----"));
+            lines.push(format!("id   | {i}"));
+            lines.push(format!("name | user{i}"));
         }
         let input = lines.join("\n");
 
@@ -361,8 +362,7 @@ name | bob
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 40.0,
-            "Table filter: expected >=40% savings, got {:.1}%",
-            savings
+            "Table filter: expected >=40% savings, got {savings:.1}%"
         );
     }
 
@@ -375,8 +375,7 @@ name | bob
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "Expanded filter: expected >=60% savings, got {:.1}%",
-            savings
+            "Expanded filter: expected >=60% savings, got {savings:.1}%"
         );
     }
 }

@@ -1,14 +1,16 @@
 use crate::tracking;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
-use std::process::{Command, Stdio};
+use std::process::Command;
+use std::process::Stdio;
 
 /// Run a command and filter output to show only errors/warnings
 pub fn run_err(command: &str, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Running: {}", command);
+        eprintln!("Running: {command}");
     }
 
     let output = if cfg!(target_os = "windows") {
@@ -28,7 +30,7 @@ pub fn run_err(command: &str, verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
     let filtered = filter_errors(&raw);
     let mut rtk = String::new();
 
@@ -42,7 +44,7 @@ pub fn run_err(command: &str, verbose: u8) -> Result<()> {
             ));
             let lines: Vec<&str> = raw.lines().collect();
             for line in lines.iter().rev().take(10).rev() {
-                rtk.push_str(&format!("  {}\n", line));
+                rtk.push_str(&format!("  {line}\n"));
             }
         }
     } else {
@@ -54,9 +56,9 @@ pub fn run_err(command: &str, verbose: u8) -> Result<()> {
         .code()
         .unwrap_or(if output.status.success() { 0 } else { 1 });
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "err", exit_code) {
-        println!("{}\n{}", rtk, hint);
+        println!("{rtk}\n{hint}");
     } else {
-        println!("{}", rtk);
+        println!("{rtk}");
     }
     timer.track(command, "rtk run-err", &raw, &rtk);
     Ok(())
@@ -67,7 +69,7 @@ pub fn run_test(command: &str, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Running tests: {}", command);
+        eprintln!("Running tests: {command}");
     }
 
     let output = if cfg!(target_os = "windows") {
@@ -87,7 +89,7 @@ pub fn run_test(command: &str, verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = output
         .status
@@ -95,9 +97,9 @@ pub fn run_test(command: &str, verbose: u8) -> Result<()> {
         .unwrap_or(if output.status.success() { 0 } else { 1 });
     let summary = extract_test_summary(&raw, command);
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "test", exit_code) {
-        println!("{}\n{}", summary, hint);
+        println!("{summary}\n{hint}");
     } else {
-        println!("{}", summary);
+        println!("{summary}");
     }
     timer.track(command, "rtk run-test", &raw, &summary);
     Ok(())
@@ -230,7 +232,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     if !failures.is_empty() {
         output.push_str("❌ FAILURES:\n");
         for f in failures.iter().take(10) {
-            output.push_str(&format!("  {}\n", f));
+            output.push_str(&format!("  {f}\n"));
         }
         if failures.len() > 10 {
             output.push_str(&format!("  ... +{} more failures\n", failures.len() - 10));
@@ -241,7 +243,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     if !result.is_empty() {
         output.push_str("📊 SUMMARY:\n");
         for r in &result {
-            output.push_str(&format!("  {}\n", r));
+            output.push_str(&format!("  {r}\n"));
         }
     } else {
         // Fallback: show last few lines
@@ -249,7 +251,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
         let start = lines.len().saturating_sub(5);
         for line in &lines[start..] {
             if !line.trim().is_empty() {
-                output.push_str(&format!("  {}\n", line));
+                output.push_str(&format!("  {line}\n"));
             }
         }
     }

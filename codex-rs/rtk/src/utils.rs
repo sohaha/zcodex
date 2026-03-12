@@ -5,7 +5,8 @@
 //! - Text truncation
 //! - Command execution with error context
 
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use regex::Regex;
 use std::process::Command;
 
@@ -71,7 +72,7 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
     let output = Command::new(cmd)
         .args(args)
         .output()
-        .context(format!("Failed to execute {}", cmd))?;
+        .context(format!("Failed to execute {cmd}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -101,7 +102,7 @@ pub fn format_tokens(n: usize) -> String {
     } else if n >= 1_000 {
         format!("{:.1}K", n as f64 / 1_000.0)
     } else {
-        format!("{}", n)
+        format!("{n}")
     }
 }
 
@@ -126,9 +127,9 @@ pub fn format_usd(amount: f64) -> String {
         return "$0.00".to_string();
     }
     if amount >= 0.01 {
-        format!("${:.2}", amount)
+        format!("${amount:.2}")
     } else {
-        format!("${:.4}", amount)
+        format!("${amount:.4}")
     }
 }
 
@@ -152,7 +153,7 @@ pub fn format_cpt(cpt: f64) -> String {
         return "$0.00/MTok".to_string();
     }
     let cpt_per_million = cpt * 1_000_000.0;
-    format!("${:.2}/MTok", cpt_per_million)
+    format!("${cpt_per_million:.2}/MTok")
 }
 
 /// Join items into a newline-separated string, appending an overflow hint when total > max.
@@ -182,11 +183,7 @@ pub fn join_with_overflow(items: &[String], total: usize, max: usize, label: &st
 /// assert_eq!(truncate_iso_date("short"), "short");
 /// ```
 pub fn truncate_iso_date(date: &str) -> &str {
-    if date.len() >= 10 {
-        &date[..10]
-    } else {
-        date
-    }
+    if date.len() >= 10 { &date[..10] } else { date }
 }
 
 /// Format a confirmation message: "ok \<action\> \<detail\>"
@@ -200,9 +197,9 @@ pub fn truncate_iso_date(date: &str) -> &str {
 /// ```
 pub fn ok_confirmation(action: &str, detail: &str) -> String {
     if detail.is_empty() {
-        format!("ok {}", action)
+        format!("ok {action}")
     } else {
-        format!("ok {} {}", action, detail)
+        format!("ok {action} {detail}")
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::tracking;
 use crate::utils::package_manager_exec;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
@@ -22,7 +23,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     // #221: If prettier is not installed or produced no meaningful output,
     // show stderr as-is instead of a misleading "All files formatted" message.
@@ -32,7 +33,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         if msg.is_empty() {
             eprintln!("Error: prettier not found or produced no output");
         } else {
-            eprintln!("{}", msg);
+            eprintln!("{msg}");
         }
         timer.track(
             &format!("prettier {}", args.join(" ")),
@@ -45,7 +46,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let filtered = filter_prettier_output(&raw);
 
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track(
         &format!("prettier {}", args.join(" ")),
@@ -101,12 +102,11 @@ pub fn filter_prettier_output(output: &str) -> String {
         }
 
         // Count total files checked
-        if trimmed.contains("All matched files use Prettier") {
-            if let Some(count_str) = trimmed.split_whitespace().next() {
-                if let Ok(count) = count_str.parse::<usize>() {
-                    files_checked = count;
-                }
-            }
+        if trimmed.contains("All matched files use Prettier")
+            && let Some(count_str) = trimmed.split_whitespace().next()
+            && let Ok(count) = count_str.parse::<usize>()
+        {
+            files_checked = count;
         }
     }
 
@@ -196,7 +196,7 @@ Code style issues found in the above file(s). Forgot to run Prettier?
     fn test_filter_many_files() {
         let mut output = String::from("Checking formatting...\n");
         for i in 0..15 {
-            output.push_str(&format!("src/file{}.ts\n", i));
+            output.push_str(&format!("src/file{i}.ts\n"));
         }
         let result = filter_prettier_output(&output);
         assert!(result.contains("15 files need formatting"));

@@ -1,5 +1,6 @@
 use crate::tracking;
-use anyhow::{Context, Result};
+use anyhow::Context;
+use anyhow::Result;
 use ignore::WalkBuilder;
 use std::collections::HashMap;
 use std::path::Path;
@@ -130,7 +131,7 @@ fn parse_native_find_args(args: &[String]) -> Result<FindArgs> {
                 }
             }
             flag if flag.starts_with('-') => {
-                eprintln!("rtk find: unknown flag '{}', ignored", flag);
+                eprintln!("rtk find: unknown flag '{flag}', ignored");
             }
             _ => {}
         }
@@ -203,7 +204,7 @@ pub fn run(
     let effective_pattern = if pattern == "." { "*" } else { pattern };
 
     if verbose > 0 {
-        eprintln!("find: {} in {}", effective_pattern, path);
+        eprintln!("find: {effective_pattern} in {path}");
     }
 
     let want_dirs = file_type == "d";
@@ -228,7 +229,7 @@ pub fn run(
         };
 
         let ft = entry.file_type();
-        let is_dir = ft.as_ref().is_some_and(|t| t.is_dir());
+        let is_dir = ft.as_ref().is_some_and(std::fs::FileType::is_dir);
 
         // Filter by type
         if want_dirs && !is_dir {
@@ -272,10 +273,10 @@ pub fn run(
     let raw_output = files.join("\n");
 
     if files.is_empty() {
-        let msg = format!("0 for '{}'", effective_pattern);
-        println!("{}", msg);
+        let msg = format!("0 for '{effective_pattern}'");
+        println!("{msg}");
         timer.track(
-            &format!("find {} -name '{}'", path, effective_pattern),
+            &format!("find {path} -name '{effective_pattern}'"),
             "rtk find",
             &raw_output,
             &msg,
@@ -305,7 +306,7 @@ pub fn run(
     let dirs_count = dirs.len();
     let total_files = files.len();
 
-    println!("📁 {}F {}D:", total_files, dirs_count);
+    println!("📁 {total_files}F {dirs_count}D:");
     println!();
 
     // Display with proper --max limiting (count individual files)
@@ -361,15 +362,15 @@ pub fn run(
         let ext_str: Vec<String> = exts
             .iter()
             .take(5)
-            .map(|(e, c)| format!(".{}({})", e, c))
+            .map(|(e, c)| format!(".{e}({c})"))
             .collect();
         ext_line = format!("ext: {}", ext_str.join(" "));
-        println!("{}", ext_line);
+        println!("{ext_line}");
     }
 
-    let rtk_output = format!("{}F {}D + {}", total_files, dirs_count, ext_line);
+    let rtk_output = format!("{total_files}F {dirs_count}D + {ext_line}");
     timer.track(
-        &format!("find {} -name '{}'", path, effective_pattern),
+        &format!("find {path} -name '{effective_pattern}'"),
         "rtk find",
         &raw_output,
         &rtk_output,
@@ -384,7 +385,10 @@ mod tests {
 
     /// Convert string slices to Vec<String> for test convenience.
     fn args(values: &[&str]) -> Vec<String> {
-        values.iter().map(|s| s.to_string()).collect()
+        values
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect()
     }
 
     // --- glob_match unit tests ---
