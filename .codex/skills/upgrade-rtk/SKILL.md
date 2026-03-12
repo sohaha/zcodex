@@ -48,7 +48,7 @@ Behavior details that should stay aligned with prompt guidance:
 
 - `err` keeps error and warning related lines with one line of context on each side, capped at 40 lines; if nothing matches, it falls back to the last 40 lines.
 - `log` keeps a broader set of log-worthy problem lines such as warnings, failures, timeouts, denials, and killed/refused events, capped at 80 lines; if nothing matches, it falls back to the last 40 lines.
-- `err`, `log`, and `test` execute programs directly rather than through a shell, so shell syntax like pipes or redirection only works when wrapped explicitly via something like `bash -lc`.
+- `err`, `log`, and `test` execute programs directly rather than through a shell, so shell syntax like pipes or redirection only works when wrapped explicitly via a real shell such as `bash -lc` on Unix or `powershell.exe -Command` / `cmd /C` on Windows.
 
 When upstream changes behavior outside this set, ignore it unless it affects shared infrastructure or prompt wording.
 
