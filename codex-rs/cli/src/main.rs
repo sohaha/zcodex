@@ -161,6 +161,7 @@ struct CompletionCommand {
 }
 
 #[derive(Debug, Args)]
+#[command(disable_help_flag = true, disable_version_flag = true)]
 struct RtkArgs {
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<std::ffi::OsString>,

@@ -314,20 +314,36 @@ pub fn get_filter(level: FilterLevel) -> Box<dyn FilterStrategy> {
     }
 }
 
-pub fn smart_truncate(content: &str, max_lines: usize, _lang: &Language) -> String {
+pub fn smart_truncate(content: &str, max_lines: usize, lang: &Language) -> String {
     let lines: Vec<&str> = content.lines().collect();
-    if lines.len() <= max_lines {
+    let total_lines = lines.len();
+    if total_lines <= max_lines {
         return content.to_string();
     }
 
-    let mut result = Vec::with_capacity(max_lines);
-    let mut kept_lines = 0;
-    let mut skipped_section = false;
+    if max_lines == 0 {
+        return format!("// ... {total_lines} more lines (total: {total_lines})");
+    }
+
+    if *lang == Language::Unknown {
+        let kept = lines.iter().take(max_lines).copied().collect::<Vec<_>>();
+        let mut result = kept.join("\n");
+        result.push('\n');
+        result.push_str(&format!(
+            "// ... {} more lines (total: {total_lines})",
+            total_lines - max_lines
+        ));
+        return result;
+    }
+
+    let mut result = Vec::with_capacity(max_lines + 1);
+    let mut head_lines = 0;
+    let mut kept_original_lines = 0;
+    let mut omitted_lines = 0;
 
     for line in &lines {
         let trimmed = line.trim();
 
-        // Always keep signatures and important structural elements
         let is_important = FUNC_SIGNATURE.is_match(trimmed)
             || IMPORT_PATTERN.is_match(trimmed)
             || trimmed.starts_with("pub ")
@@ -335,30 +351,25 @@ pub fn smart_truncate(content: &str, max_lines: usize, _lang: &Language) -> Stri
             || trimmed == "}"
             || trimmed == "{";
 
-        if is_important || kept_lines < max_lines / 2 {
-            if skipped_section {
-                result.push(format!(
-                    "    // ... {} lines omitted",
-                    lines.len() - kept_lines
-                ));
-                skipped_section = false;
+        if is_important || head_lines < max_lines / 2 {
+            if omitted_lines > 0 {
+                result.push(format!("    // ... {omitted_lines} lines omitted"));
+                omitted_lines = 0;
             }
             result.push((*line).to_string());
-            kept_lines += 1;
+            kept_original_lines += 1;
+            if head_lines < max_lines / 2 {
+                head_lines += 1;
+            }
         } else {
-            skipped_section = true;
-        }
-
-        if kept_lines >= max_lines - 1 {
-            break;
+            omitted_lines += 1;
         }
     }
 
-    if skipped_section || kept_lines < lines.len() {
+    let omitted_total = total_lines.saturating_sub(kept_original_lines);
+    if omitted_total > 0 {
         result.push(format!(
-            "// ... {} more lines (total: {})",
-            lines.len() - kept_lines,
-            lines.len()
+            "// ... {omitted_total} more lines (total: {total_lines})"
         ));
     }
 
@@ -401,5 +412,34 @@ fn main() {
         let result = filter.filter(code, &Language::Rust);
         assert!(!result.contains("// This is a comment"));
         assert!(result.contains("fn main()"));
+    }
+
+    #[test]
+    fn test_smart_truncate_keeps_requested_lines_for_plain_text() {
+        let content = "one\ntwo\nthree";
+
+        let result = smart_truncate(content, 2, &Language::Unknown);
+
+        assert_eq!(result, "one\ntwo\n// ... 1 more lines (total: 3)");
+    }
+
+    #[test]
+    fn test_smart_truncate_preserves_important_code_structure() {
+        let content = r#"fn main() {
+    println!("start");
+    println!("middle");
+    println!("end");
+}
+
+pub fn helper() {
+    println!("helper");
+}
+"#;
+
+        let result = smart_truncate(content, 4, &Language::Rust);
+
+        assert!(result.contains("fn main() {"));
+        assert!(result.contains("pub fn helper() {"));
+        assert!(result.contains("// ..."));
     }
 }

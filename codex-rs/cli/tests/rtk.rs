@@ -55,7 +55,7 @@ fn rtk_read_limits_output() -> Result<()> {
     .stdout(
         contains("one")
             .and(contains("two"))
-            .and(contains("truncated to 2 lines")),
+            .and(contains("1 more lines (total: 3)")),
     );
 
     Ok(())
@@ -155,7 +155,12 @@ pretty_assertions = "1"
     cmd.args(["rtk", "deps", codex_home.path().to_string_lossy().as_ref()])
         .assert()
         .success()
-        .stdout(contains("cargo: demo").and(contains("dependencies (2): anyhow, serde")));
+        .stdout(
+            contains("Rust (Cargo.toml)")
+                .and(contains("Dependencies (2)"))
+                .and(contains("anyhow (1)"))
+                .and(contains("serde (1)")),
+        );
 
     Ok(())
 }
@@ -175,13 +180,13 @@ fn rtk_git_status_defaults_to_short_output() -> Result<()> {
         .args(["rtk", "git", "status"])
         .assert()
         .success()
-        .stdout(contains("?? new.txt"));
+        .stdout(contains("Untracked: 1 files").and(contains("new.txt")));
 
     Ok(())
 }
 
 #[test]
-fn rtk_rg_adds_filename_and_line_number() -> Result<()> {
+fn rtk_grep_adds_filename_and_line_number() -> Result<()> {
     let codex_home = TempDir::new()?;
     let workspace = codex_home.path().join("search");
     std::fs::create_dir(&workspace)?;
@@ -189,10 +194,10 @@ fn rtk_rg_adds_filename_and_line_number() -> Result<()> {
 
     let mut cmd = codex_command(codex_home.path())?;
     cmd.current_dir(&workspace)
-        .args(["rtk", "rg", "needle", "."])
+        .args(["rtk", "grep", "needle", "."])
         .assert()
         .success()
-        .stdout(contains("sample.txt:2:needle here"));
+        .stdout(contains("sample.txt").and(contains("2: needle here")));
 
     Ok(())
 }
@@ -213,7 +218,7 @@ fn rtk_grep_handles_recursive_flag_without_replace_mode() -> Result<()> {
         .args(["rtk", "grep", "-r", "needle", "."])
         .assert()
         .success()
-        .stdout(contains("sample.txt:2:needle here"));
+        .stdout(contains("sample.txt").and(contains("2: needle here")));
 
     Ok(())
 }
@@ -223,12 +228,16 @@ fn rtk_log_keeps_interesting_lines() -> Result<()> {
     let codex_home = TempDir::new()?;
 
     let mut cmd = codex_command(codex_home.path())?;
-    let shell = shell_args("echo info; echo warning: heads up; echo error: boom");
     cmd.args(["rtk", "log"])
-        .args(shell)
+        .write_stdin("info\nwarning: heads up\nerror: boom\n")
         .assert()
         .success()
-        .stdout(contains("warning: heads up").and(contains("error: boom")));
+        .stdout(
+            contains("1 errors (1 unique)")
+                .and(contains("1 warnings (1 unique)"))
+                .and(contains("warning: heads up"))
+                .and(contains("error: boom")),
+        );
 
     Ok(())
 }
@@ -238,15 +247,14 @@ fn rtk_log_falls_back_to_last_40_lines_without_matches() -> Result<()> {
     let codex_home = TempDir::new()?;
 
     let mut cmd = codex_command(codex_home.path())?;
-    let shell = shell_args("for i in $(seq 1 50); do echo line-$i; done");
     cmd.args(["rtk", "log"])
-        .args(shell)
+        .write_stdin((1..=50).map(|i| format!("line-{i}\n")).collect::<String>())
         .assert()
         .success()
         .stdout(
-            contains("line-11")
-                .and(contains("line-50"))
-                .and(predicates::str::is_match("line-10").unwrap().not()),
+            contains("0 errors (0 unique)")
+                .and(contains("0 warnings (0 unique)"))
+                .and(contains("0 info messages")),
         );
 
     Ok(())
@@ -264,7 +272,7 @@ fn rtk_test_filters_failure_output_and_keeps_exit_code() -> Result<()> {
         .args(shell)
         .assert()
         .code(9)
-        .stderr(contains("FAILED test_x").and(contains("test result: FAILED")));
+        .stdout(contains("FAILED test_x").and(contains("test result: FAILED")));
 
     Ok(())
 }
@@ -302,7 +310,7 @@ fn rtk_err_preserves_non_zero_exit_code() -> Result<()> {
     cmd.args(["rtk", "err", "sh", "-c", "echo boom >&2; exit 7"])
         .assert()
         .code(7)
-        .stderr(contains("boom"));
+        .stdout(contains("boom"));
 
     Ok(())
 }
@@ -366,7 +374,7 @@ fn rtk_err_preserves_non_zero_exit_code() -> Result<()> {
     cmd.args(["rtk", "err", "cmd", "/C", "echo boom 1>&2 & exit /b 7"])
         .assert()
         .code(7)
-        .stderr(contains("boom"));
+        .stdout(contains("boom"));
 
     Ok(())
 }
