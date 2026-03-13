@@ -1046,9 +1046,10 @@ fn is_context_window_error_message(message: &str) -> bool {
     let normalized = message.to_ascii_lowercase();
     normalized.contains("context window")
         || normalized.contains("context length")
-        || normalized.contains("prompt is too long")
-        || normalized.contains("input is too long")
         || normalized.contains("exceed context limit")
+        || ((normalized.contains("prompt is too long") || normalized.contains("input is too long"))
+            && normalized.contains("token")
+            && (normalized.contains("max") || normalized.contains("context")))
 }
 
 fn map_stream_error(error: Option<AnthropicErrorPayload>) -> ApiError {
@@ -1331,6 +1332,20 @@ mod tests {
         assert_matches!(
             map_stream_error(Some(error)),
             ApiError::ContextWindowExceeded
+        );
+    }
+
+    #[test]
+    fn map_stream_error_keeps_regular_invalid_requests() {
+        let error = AnthropicErrorPayload {
+            error_type: Some("invalid_request_error".to_string()),
+            message: Some("prompt is too long for tool name validation".to_string()),
+        };
+
+        assert_matches!(
+            map_stream_error(Some(error)),
+            ApiError::InvalidRequest { message }
+                if message == "prompt is too long for tool name validation"
         );
     }
 

@@ -133,20 +133,26 @@ fn is_context_window_bad_request(body_text: &str) -> bool {
             .and_then(|error| error.get("message"))
             .and_then(Value::as_str)
         {
-            return is_context_window_message(message);
+            return is_structured_context_window_message(message);
         }
     }
 
-    is_context_window_message(body_text)
+    is_plaintext_context_window_message(body_text)
 }
 
-fn is_context_window_message(message: &str) -> bool {
+fn is_structured_context_window_message(message: &str) -> bool {
     let normalized = message.to_ascii_lowercase();
     normalized.contains("context window")
         || normalized.contains("context length")
-        || normalized.contains("prompt is too long")
-        || normalized.contains("input is too long")
         || normalized.contains("exceed context limit")
+        || ((normalized.contains("prompt is too long") || normalized.contains("input is too long"))
+            && normalized.contains("token")
+            && (normalized.contains("max") || normalized.contains("context")))
+}
+
+fn is_plaintext_context_window_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("context window") || normalized.contains("context length")
 }
 
 const ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";
