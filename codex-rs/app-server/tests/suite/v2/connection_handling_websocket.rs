@@ -385,6 +385,15 @@ pub(super) fn create_config_toml(
     server_uri: &str,
     approval_policy: &str,
 ) -> std::io::Result<()> {
+    create_config_toml_with_sandbox_mode(codex_home, server_uri, approval_policy, "read-only")
+}
+
+pub(super) fn create_config_toml_with_sandbox_mode(
+    codex_home: &Path,
+    server_uri: &str,
+    approval_policy: &str,
+    sandbox_mode: &str,
+) -> std::io::Result<()> {
     let config_toml = codex_home.join("config.toml");
     std::fs::write(
         config_toml,
@@ -392,7 +401,7 @@ pub(super) fn create_config_toml(
             r#"
 model = "mock-model"
 approval_policy = "{approval_policy}"
-sandbox_mode = "read-only"
+sandbox_mode = "{sandbox_mode}"
 
 model_provider = "mock_provider"
 

@@ -27,7 +27,7 @@ use tokio::time::timeout;
 use super::connection_handling_websocket::DEFAULT_READ_TIMEOUT;
 use super::connection_handling_websocket::assert_no_message;
 use super::connection_handling_websocket::connect_websocket;
-use super::connection_handling_websocket::create_config_toml;
+use super::connection_handling_websocket::create_config_toml_with_sandbox_mode;
 use super::connection_handling_websocket::read_jsonrpc_message;
 use super::connection_handling_websocket::send_initialize_request;
 use super::connection_handling_websocket::send_request;
@@ -37,7 +37,12 @@ use super::connection_handling_websocket::spawn_websocket_server;
 async fn command_exec_without_streams_can_be_terminated() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -86,7 +91,12 @@ async fn command_exec_without_streams_can_be_terminated() -> Result<()> {
 async fn command_exec_without_process_id_keeps_buffered_compatibility() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -133,7 +143,12 @@ async fn command_exec_env_overrides_merge_with_server_environment_and_support_un
 {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new_with_env(
         codex_home.path(),
         &[("COMMAND_EXEC_BASELINE", Some("server"))],
@@ -190,7 +205,12 @@ async fn command_exec_env_overrides_merge_with_server_environment_and_support_un
 async fn command_exec_rejects_disable_timeout_with_timeout_ms() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -227,7 +247,12 @@ async fn command_exec_rejects_disable_timeout_with_timeout_ms() -> Result<()> {
 async fn command_exec_rejects_disable_output_cap_with_output_bytes_cap() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -264,7 +289,12 @@ async fn command_exec_rejects_disable_output_cap_with_output_bytes_cap() -> Resu
 async fn command_exec_rejects_negative_timeout_ms() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -301,7 +331,12 @@ async fn command_exec_rejects_negative_timeout_ms() -> Result<()> {
 async fn command_exec_without_process_id_rejects_streaming() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -338,7 +373,12 @@ async fn command_exec_without_process_id_rejects_streaming() -> Result<()> {
 async fn command_exec_non_streaming_respects_output_cap() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -384,7 +424,12 @@ async fn command_exec_non_streaming_respects_output_cap() -> Result<()> {
 async fn command_exec_streaming_does_not_buffer_output() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -444,7 +489,12 @@ async fn command_exec_streaming_does_not_buffer_output() -> Result<()> {
 async fn command_exec_pipe_streams_output_and_accepts_write() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -535,7 +585,12 @@ async fn command_exec_pipe_streams_output_and_accepts_write() -> Result<()> {
 async fn command_exec_tty_implies_streaming_and_reports_pty_output() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -613,7 +668,12 @@ async fn command_exec_tty_implies_streaming_and_reports_pty_output() -> Result<(
 async fn command_exec_tty_supports_initial_size_and_resize() -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let mut mcp = McpProcess::new(codex_home.path()).await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
 
@@ -709,7 +769,12 @@ async fn command_exec_process_ids_are_connection_scoped_and_disconnect_terminate
 -> Result<()> {
     let server = create_mock_responses_server_sequence_unchecked(Vec::new()).await;
     let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), &server.uri(), "never")?;
+    create_config_toml_with_sandbox_mode(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        "danger-full-access",
+    )?;
     let marker = format!(
         "codex-command-exec-marker-{}",
         std::time::SystemTime::now()
@@ -733,9 +798,9 @@ async fn command_exec_process_ids_are_connection_scoped_and_disconnect_terminate
         101,
         Some(serde_json::json!({
             "command": [
-                "python3",
+                "/bin/sh",
                 "-c",
-                "import time; print('ready', flush=True); time.sleep(30)",
+                "printf 'ready\\n'; sleep 30",
                 marker,
             ],
             "processId": "shared-process",
