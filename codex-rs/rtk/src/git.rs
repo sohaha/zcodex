@@ -353,27 +353,31 @@ fn run_log(
         arg.starts_with("--oneline") || arg.starts_with("--pretty") || arg.starts_with("--format")
     });
 
-    // Check if user provided limit flag
-    let has_limit_flag = args
-        .iter()
-        .any(|arg| arg.starts_with('-') && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit()));
+    // Check if user provided limit flag (-N, -n N, --max-count=N, --max-count N)
+    let has_limit_flag = args.iter().any(|arg| {
+        (arg.starts_with('-') && arg.chars().nth(1).map_or(false, |c| c.is_ascii_digit()))
+            || arg == "-n"
+            || arg.starts_with("--max-count")
+    });
 
     // Apply RTK defaults only if user didn't specify them
     if !has_format_flag {
         cmd.args(["--pretty=format:%h %s (%ar) <%an>"]);
     }
 
-    let limit = if !has_limit_flag {
-        cmd.arg("-10");
-        10
+    // Determine limit: respect user's explicit -N flag, use sensible defaults otherwise
+    let (limit, user_set_limit) = if has_limit_flag {
+        // User explicitly passed -N / -n N / --max-count=N → respect their choice
+        let n = parse_user_limit(args).unwrap_or(10);
+        (n, true)
+    } else if has_format_flag {
+        // --oneline / --pretty without -N: user wants compact output, allow more
+        cmd.arg("-50");
+        (50, false)
     } else {
-        // Extract limit from args if provided
-        args.iter()
-            .find(|arg| {
-                arg.starts_with('-') && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
-            })
-            .and_then(|arg| arg[1..].parse::<usize>().ok())
-            .unwrap_or(10)
+        // No flags at all: default to 10
+        cmd.arg("-10");
+        (10, false)
     };
 
     // Only add --no-merges if user didn't explicitly request merge commits
@@ -404,8 +408,8 @@ fn run_log(
         eprintln!("Git log output:");
     }
 
-    // Post-process: truncate long messages, cap lines
-    let filtered = filter_log_output(&stdout, limit);
+    // Post-process: truncate long messages, cap lines only if RTK set the default
+    let filtered = filter_log_output(&stdout, limit, user_set_limit);
     println!("{filtered}");
 
     timer.track(
@@ -419,22 +423,78 @@ fn run_log(
 }
 
 /// Filter git log output: truncate long messages, cap lines
-fn filter_log_output(output: &str, limit: usize) -> String {
-    let lines: Vec<&str> = output.lines().collect();
-    let capped: Vec<String> = lines
-        .iter()
-        .take(limit)
-        .map(|line| {
-            if line.len() > 80 {
-                let truncated: String = line.chars().take(77).collect();
-                format!("{truncated}...")
-            } else {
-                line.to_string()
+/// Parse the user-specified limit from git log args.
+/// Handles: -20, -n 20, --max-count=20, --max-count 20
+fn parse_user_limit(args: &[String]) -> Option<usize> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        // -20 (combined digit form)
+        if arg.starts_with('-')
+            && arg.len() > 1
+            && arg.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
+        {
+            if let Ok(n) = arg[1..].parse::<usize>() {
+                return Some(n);
             }
-        })
-        .collect();
+        }
+        // -n 20 (two-token form)
+        if arg == "-n" {
+            if let Some(next) = iter.next() {
+                if let Ok(n) = next.parse::<usize>() {
+                    return Some(n);
+                }
+            }
+        }
+        // --max-count=20
+        if let Some(rest) = arg.strip_prefix("--max-count=") {
+            if let Ok(n) = rest.parse::<usize>() {
+                return Some(n);
+            }
+        }
+        // --max-count 20 (two-token form)
+        if arg == "--max-count" {
+            if let Some(next) = iter.next() {
+                if let Ok(n) = next.parse::<usize>() {
+                    return Some(n);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// When `user_set_limit` is true, the user explicitly passed `-N` to git log,
+/// so we skip line capping (git already returns exactly N commits) and use a
+/// wider truncation threshold (120 chars) to preserve commit context that LLMs
+/// need for rebase/squash operations.
+fn filter_log_output(output: &str, limit: usize, user_set_limit: bool) -> String {
+    let lines: Vec<&str> = output.lines().collect();
+
+    let truncate_width = if user_set_limit { 120 } else { 80 };
+
+    let iter = lines.iter();
+    let capped: Vec<String> = if user_set_limit {
+        // User chose the limit → git already returned the right number of commits
+        iter.map(|line| truncate_line(line, truncate_width))
+            .collect()
+    } else {
+        // RTK default → cap output lines
+        iter.take(limit)
+            .map(|line| truncate_line(line, truncate_width))
+            .collect()
+    };
 
     capped.join("\n").trim().to_string()
+}
+
+/// Truncate a single line to `width` characters, appending "..." if needed
+fn truncate_line(line: &str, width: usize) -> String {
+    if line.chars().count() > width {
+        let truncated: String = line.chars().take(width - 3).collect();
+        format!("{truncated}...")
+    } else {
+        line.to_string()
+    }
 }
 
 /// Format porcelain output into compact RTK status display

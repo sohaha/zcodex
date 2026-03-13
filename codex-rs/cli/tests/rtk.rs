@@ -61,6 +61,27 @@ fn rtk_read_limits_output() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn rtk_read_tail_lines() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args([
+        "rtk",
+        "read",
+        file.to_string_lossy().as_ref(),
+        "--tail-lines",
+        "1",
+    ])
+    .assert()
+    .success()
+    .stdout(contains("three").and(contains("one").not()));
+
+    Ok(())
+}
+
 #[cfg(unix)]
 fn make_rtk_alias(codex_home: &Path) -> Result<PathBuf> {
     let alias = codex_home.join("rtk");

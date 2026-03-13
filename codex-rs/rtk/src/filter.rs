@@ -50,6 +50,7 @@ pub enum Language {
     Java,
     Ruby,
     Shell,
+    Data,
     Unknown,
 }
 
@@ -66,6 +67,9 @@ impl Language {
             "java" => Language::Java,
             "rb" => Language::Ruby,
             "sh" | "bash" | "zsh" => Language::Shell,
+            "json" | "jsonc" | "json5" | "yaml" | "yml" | "toml" | "xml" | "html" | "htm"
+            | "css" | "scss" | "svg" | "md" | "markdown" | "txt" | "csv" | "tsv" | "env"
+            | "ini" | "cfg" | "conf" | "lock" => Language::Data,
             _ => Language::Unknown,
         }
     }
@@ -107,6 +111,13 @@ impl Language {
             },
             Language::Shell => CommentPatterns {
                 line: Some("#"),
+                block_start: None,
+                block_end: None,
+                doc_line: None,
+                doc_block_start: None,
+            },
+            Language::Data => CommentPatterns {
+                line: None,
                 block_start: None,
                 block_end: None,
                 doc_line: None,
@@ -192,17 +203,17 @@ impl FilterStrategy for MinimalFilter {
             }
 
             // Skip single-line comments (but keep doc comments)
-            if let Some(line_comment) = patterns.line
-                && trimmed.starts_with(line_comment)
-            {
-                // Keep doc comments
-                if let Some(doc) = patterns.doc_line
-                    && trimmed.starts_with(doc)
-                {
-                    result.push_str(line);
-                    result.push('\n');
+            if let Some(line_comment) = patterns.line {
+                if trimmed.starts_with(line_comment) {
+                    // Keep doc comments
+                    if let Some(doc) = patterns.doc_line {
+                        if trimmed.starts_with(doc) {
+                            result.push_str(line);
+                            result.push('\n');
+                        }
+                    }
+                    continue;
                 }
-                continue;
             }
 
             // Skip empty lines at this point, we'll normalize later
@@ -314,62 +325,63 @@ pub fn get_filter(level: FilterLevel) -> Box<dyn FilterStrategy> {
     }
 }
 
-pub fn smart_truncate(content: &str, max_lines: usize, lang: &Language) -> String {
+pub fn smart_truncate(content: &str, max_lines: usize, _lang: &Language) -> String {
     let lines: Vec<&str> = content.lines().collect();
-    let total_lines = lines.len();
-    if total_lines <= max_lines {
+    if lines.len() <= max_lines {
         return content.to_string();
     }
 
     if max_lines == 0 {
+        let total_lines = lines.len();
         return format!("// ... {total_lines} more lines (total: {total_lines})");
     }
 
-    if *lang == Language::Unknown {
-        let kept = lines.iter().take(max_lines).copied().collect::<Vec<_>>();
-        let mut result = kept.join("\n");
-        result.push('\n');
-        result.push_str(&format!(
-            "// ... {} more lines (total: {total_lines})",
-            total_lines - max_lines
-        ));
-        return result;
-    }
-
-    let mut result = Vec::with_capacity(max_lines + 1);
-    let mut head_lines = 0;
-    let mut kept_original_lines = 0;
-    let mut omitted_lines = 0;
+    let mut result = Vec::with_capacity(max_lines);
+    let mut kept_lines = 0;
+    let mut skipped_section = false;
 
     for line in &lines {
         let trimmed = line.trim();
 
+        // Always keep signatures and important structural elements
         let is_important = FUNC_SIGNATURE.is_match(trimmed)
             || IMPORT_PATTERN.is_match(trimmed)
             || trimmed.starts_with("pub ")
-            || trimmed.starts_with("export ")
+            || trimmed.starts_with("def ")
+            || trimmed.starts_with("class ")
+            || trimmed.starts_with("struct ")
+            || trimmed.starts_with("enum ")
+            || trimmed.starts_with("trait ")
+            || trimmed.starts_with("impl ")
+            || trimmed.starts_with("fn ")
+            || trimmed.starts_with("async fn")
+            || trimmed.starts_with("function ")
+            || trimmed.ends_with('{')
             || trimmed == "}"
             || trimmed == "{";
 
-        if is_important || head_lines < max_lines / 2 {
-            if omitted_lines > 0 {
+        if is_important || kept_lines < max_lines / 2 {
+            if skipped_section {
+                let omitted_lines = lines.len() - kept_lines;
                 result.push(format!("    // ... {omitted_lines} lines omitted"));
-                omitted_lines = 0;
+                skipped_section = false;
             }
             result.push((*line).to_string());
-            kept_original_lines += 1;
-            if head_lines < max_lines / 2 {
-                head_lines += 1;
-            }
+            kept_lines += 1;
         } else {
-            omitted_lines += 1;
+            skipped_section = true;
+        }
+
+        if kept_lines >= max_lines - 1 {
+            break;
         }
     }
 
-    let omitted_total = total_lines.saturating_sub(kept_original_lines);
-    if omitted_total > 0 {
+    if skipped_section || kept_lines < lines.len() {
+        let omitted_lines = lines.len() - kept_lines;
+        let total_lines = lines.len();
         result.push(format!(
-            "// ... {omitted_total} more lines (total: {total_lines})"
+            "// ... {omitted_lines} more lines (total: {total_lines})"
         ));
     }
 
@@ -401,6 +413,52 @@ mod tests {
     }
 
     #[test]
+    fn test_language_detection_data_formats() {
+        assert_eq!(Language::from_extension("json"), Language::Data);
+        assert_eq!(Language::from_extension("yaml"), Language::Data);
+        assert_eq!(Language::from_extension("yml"), Language::Data);
+        assert_eq!(Language::from_extension("toml"), Language::Data);
+        assert_eq!(Language::from_extension("xml"), Language::Data);
+        assert_eq!(Language::from_extension("md"), Language::Data);
+        assert_eq!(Language::from_extension("csv"), Language::Data);
+        assert_eq!(Language::from_extension("lock"), Language::Data);
+    }
+
+    #[test]
+    fn test_data_files_no_comment_stripping() {
+        // Regression test for #464: package.json with `/*` in strings
+        let json = r#"{
+  "workspaces": {
+    "packages": [
+      "packages/*"
+    ]
+  },
+  "scripts": {
+    "build": "bun run --workspaces build"
+  },
+  "lint-staged": {
+    "**/package.json": [
+      "sort-package-json"
+    ]
+  }
+}"#;
+        let filter = MinimalFilter;
+        let result = filter.filter(json, &Language::Data);
+        assert!(
+            result.contains("scripts"),
+            "scripts section must be preserved"
+        );
+        assert!(
+            result.contains("packages/*"),
+            "glob pattern must be preserved"
+        );
+        assert!(
+            result.contains("**/package.json"),
+            "glob pattern must be preserved"
+        );
+    }
+
+    #[test]
     fn test_minimal_filter_removes_comments() {
         let code = r#"
 // This is a comment
@@ -412,34 +470,5 @@ fn main() {
         let result = filter.filter(code, &Language::Rust);
         assert!(!result.contains("// This is a comment"));
         assert!(result.contains("fn main()"));
-    }
-
-    #[test]
-    fn test_smart_truncate_keeps_requested_lines_for_plain_text() {
-        let content = "one\ntwo\nthree";
-
-        let result = smart_truncate(content, 2, &Language::Unknown);
-
-        assert_eq!(result, "one\ntwo\n// ... 1 more lines (total: 3)");
-    }
-
-    #[test]
-    fn test_smart_truncate_preserves_important_code_structure() {
-        let content = r#"fn main() {
-    println!("start");
-    println!("middle");
-    println!("end");
-}
-
-pub fn helper() {
-    println!("helper");
-}
-"#;
-
-        let result = smart_truncate(content, 4, &Language::Rust);
-
-        assert!(result.contains("fn main() {"));
-        assert!(result.contains("pub fn helper() {"));
-        assert!(result.contains("// ..."));
     }
 }

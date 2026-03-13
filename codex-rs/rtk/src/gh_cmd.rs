@@ -123,7 +123,16 @@ fn extract_identifier_and_extra_args(args: &[String]) -> Option<(String, Vec<Str
     }
 
     // Known gh flags that take a value — skip these and their values
-    let flags_with_value = ["-R", "--repo", "-q", "--jq", "-t", "--template"];
+    let flags_with_value = [
+        "-R",
+        "--repo",
+        "-q",
+        "--jq",
+        "-t",
+        "--template",
+        "--job",
+        "--attempt",
+    ];
     let mut identifier = None;
     let mut extra = Vec::new();
     let mut skip_next = false;
