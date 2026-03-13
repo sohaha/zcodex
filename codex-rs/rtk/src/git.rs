@@ -1677,7 +1677,7 @@ M  file7.rs
     #[test]
     fn test_filter_log_output() {
         let output = "abc1234 This is a commit message (2 days ago) <author>\ndef5678 Another commit (1 week ago) <other>\n";
-        let result = filter_log_output(output, 10);
+        let result = filter_log_output(output, 10, false);
         assert!(result.contains("abc1234"));
         assert!(result.contains("def5678"));
         assert_eq!(result.lines().count(), 2);
@@ -1686,7 +1686,7 @@ M  file7.rs
     #[test]
     fn test_filter_log_output_truncate_long() {
         let long_line = "abc1234 ".to_string() + &"x".repeat(100) + " (2 days ago) <author>";
-        let result = filter_log_output(&long_line, 10);
+        let result = filter_log_output(&long_line, 10, false);
         assert!(result.len() < long_line.len());
         assert!(result.contains("..."));
         assert!(result.len() <= 80);
@@ -1698,7 +1698,7 @@ M  file7.rs
             .map(|i| format!("hash{i} message {i} (1 day ago) <author>"))
             .collect::<Vec<_>>()
             .join("\n");
-        let result = filter_log_output(&output, 5);
+        let result = filter_log_output(&output, 5, false);
         assert_eq!(result.lines().count(), 5);
     }
 
@@ -1735,7 +1735,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
     fn test_filter_log_output_multibyte() {
         // Thai characters: each is 3 bytes. A line with >80 bytes but few chars
         let thai_msg = format!("abc1234 {} (2 days ago) <author>", "ก".repeat(30));
-        let result = filter_log_output(&thai_msg, 10);
+        let result = filter_log_output(&thai_msg, 10, false);
         // Should not panic
         assert!(result.contains("abc1234"));
         // The line has 30 Thai chars (90 bytes) + other text, so > 80 bytes
@@ -1746,7 +1746,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
     #[test]
     fn test_filter_log_output_emoji() {
         let emoji_msg = "abc1234 🎉🎊🎈🎁🎂🎄🎃🎆🎇✨🎉🎊🎈🎁🎂🎄🎃🎆🎇✨ (1 day ago) <user>";
-        let result = filter_log_output(emoji_msg, 10);
+        let result = filter_log_output(emoji_msg, 10, false);
         // Should not panic, should have "..."
         assert!(result.contains("..."));
     }

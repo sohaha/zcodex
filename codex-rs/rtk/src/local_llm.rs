@@ -29,6 +29,7 @@ pub fn run(file: &Path, _model: &str, _force_download: bool, verbose: u8) -> Res
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
 struct CodeSummary {
     line1: String,
     line2: String,
@@ -130,6 +131,7 @@ fn lang_display_name(lang: &Language) -> &'static str {
         Language::Java => "Java",
         Language::Ruby => "Ruby",
         Language::Shell => "Shell",
+        Language::Data => "Data",
         Language::Unknown => "Code",
     }
 }
@@ -322,5 +324,21 @@ def load_config():
 "#;
         let summary = analyze_code(code, &Language::Python);
         assert!(summary.line1.contains("Python"));
+    }
+
+    #[test]
+    fn test_data_analysis() {
+        let content = r#"
+name = "demo"
+enabled = true
+"#;
+        let summary = analyze_code(content, &Language::Data);
+        assert_eq!(
+            summary,
+            CodeSummary {
+                line1: "Data code (3 lines)".to_string(),
+                line2: "General purpose code file".to_string(),
+            }
+        );
     }
 }
