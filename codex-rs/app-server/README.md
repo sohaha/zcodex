@@ -115,7 +115,7 @@ Example with notification opt-out:
     "capabilities": {
       "experimentalApi": true,
       "optOutNotificationMethods": [
-        "codex/event/session_configured",
+        "thread/started",
         "item/agentMessage/delta"
       ]
     }
@@ -157,13 +157,14 @@ Example with notification opt-out:
 - `experimentalFeature/list` — list feature flags with stage metadata (`beta`, `underDevelopment`, `stable`, etc.), enabled/default-enabled state, and cursor pagination. For non-beta flags, `displayName`/`description`/`announcement` are `null`.
 - `collaborationMode/list` — list available collaboration mode presets (experimental, no pagination). This response omits built-in developer instructions; clients should either pass `settings.developer_instructions: null` when setting a mode to use Codex's built-in instructions, or provide their own instructions explicitly.
 - `skills/list` — list skills for one or more `cwd` values (optional `forceReload`).
-- `plugin/list` — list discovered plugin marketplaces and plugin state. Pass `forceRemoteSync: true` to refresh curated plugin state before listing (**under development; do not call from production clients yet**).
+- `plugin/list` — list discovered plugin marketplaces and plugin state, including effective marketplace install/auth policy metadata. `interface.category` uses the marketplace category when present; otherwise it falls back to the plugin manifest category. Pass `forceRemoteSync: true` to refresh curated plugin state before listing (**under development; do not call from production clients yet**).
+- `plugin/read` — read one plugin by `marketplacePath` plus `pluginName`, returning marketplace info, a list-style `summary`, manifest descriptions/interface metadata, and bundled skills/apps/MCP server names (**under development; do not call from production clients yet**).
 - `skills/changed` — notification emitted when watched local skill files change.
 - `skills/remote/list` — list public remote skills (**under development; do not call from production clients yet**).
 - `skills/remote/export` — download a remote skill by `hazelnutId` into `skills` under `codex_home` (**under development; do not call from production clients yet**).
 - `app/list` — list available apps.
 - `skills/config/write` — write user-level skill config by path.
-- `plugin/install` — install a plugin from a discovered marketplace entry and return any apps that still need auth (**under development; do not call from production clients yet**).
+- `plugin/install` — install a plugin from a discovered marketplace entry, rejecting marketplace entries marked unavailable for install, and return the effective plugin auth policy plus any apps that still need auth (**under development; do not call from production clients yet**).
 - `plugin/uninstall` — uninstall a plugin by id by removing its cached files and clearing its user-level config entry (**under development; do not call from production clients yet**).
 - `mcpServer/oauth/login` — start an OAuth login for a configured MCP server; returns an `authorization_url` and later emits `mcpServer/oauthLogin/completed` once the browser flow finishes.
 - `tool/requestUserInput` — prompt the user with 1–3 short questions for a tool call and return their answers (experimental).
@@ -722,12 +723,12 @@ Clients can suppress specific notifications per connection by sending exact meth
 
 - Exact-match only: `item/agentMessage/delta` suppresses only that method.
 - Unknown method names are ignored.
-- Applies to both legacy (`codex/event/*`) and v2 (`thread/*`, `turn/*`, `item/*`, etc.) notifications.
+- Applies to app-server typed notifications such as `thread/*`, `turn/*`, `item/*`, and `rawResponseItem/*`.
 - Does not apply to requests/responses/errors.
 
 Examples:
 
-- Opt out of legacy session setup event: `codex/event/session_configured`
+- Opt out of thread lifecycle notifications: `thread/started`
 - Opt out of streamed agent text deltas: `item/agentMessage/delta`
 
 ### Fuzzy file search events (experimental)
@@ -928,7 +929,7 @@ Only the granted subset matters on the wire. Any permissions omitted from `resul
 
 Within the same turn, granted permissions are sticky: later shell-like tool calls can automatically reuse the granted subset without reissuing a separate permission request.
 
-If the session approval policy uses `Reject` with `request_permissions: true`, the server does not send `item/permissions/requestApproval` to the client. Instead, the tool is auto-denied and resolves with an empty granted-permissions payload.
+If the session approval policy uses `Granular` with `request_permissions: false`, standalone `request_permissions` tool calls are auto-denied and no `item/permissions/requestApproval` prompt is sent. Inline `with_additional_permissions` command requests remain controlled by `sandbox_approval`, and any previously granted permissions remain sticky for later shell-like calls in the same turn.
 
 ### Dynamic tool calls (experimental)
 
@@ -1319,7 +1320,7 @@ Examples of descriptor strings:
 
 - `mock/experimentalMethod` (method-level gate)
 - `thread/start.mockExperimentalField` (field-level gate)
-- `askForApproval.reject` (enum-variant gate, for `approvalPolicy: { "reject": ... }`)
+- `askForApproval.granular` (enum-variant gate, for `approvalPolicy: { "granular": ... }`)
 
 ### For maintainers: Adding experimental fields and methods
 
@@ -1341,8 +1342,8 @@ Enum variants can be gated too:
 ```rust
 #[derive(ExperimentalApi)]
 enum AskForApproval {
-    #[experimental("askForApproval.reject")]
-    Reject { /* ... */ },
+    #[experimental("askForApproval.granular")]
+    Granular { /* ... */ },
 }
 ```
 
