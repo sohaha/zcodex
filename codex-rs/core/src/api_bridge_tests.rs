@@ -136,3 +136,27 @@ fn map_api_error_does_not_fallback_limit_name_to_limit_id() {
         None
     );
 }
+
+#[test]
+fn anthropic_auth_provider_does_not_duplicate_api_key_as_bearer() {
+    let env_var = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let provider = ModelProviderInfo {
+        name: "Anthropic".to_string(),
+        base_url: Some("https://api.anthropic.com/v1".to_string()),
+        env_key: Some(env_var.to_string()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let auth = auth_provider_from_auth(None, &provider).expect("anthropic auth should build");
+    assert_eq!(codex_api::AuthProvider::bearer_token(&auth), None);
+}

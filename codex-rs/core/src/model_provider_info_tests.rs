@@ -155,3 +155,50 @@ fn anthropic_provider_honors_configured_base_url() {
         .expect("anthropic provider should build");
     assert_eq!(api_provider.base_url, "https://proxy.example/v1");
 }
+
+#[test]
+fn anthropic_provider_uses_x_api_key_without_authorization_header() {
+    let env_var = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: None,
+        env_key: Some(env_var.to_string()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+
+    assert_eq!(
+        api_provider
+            .headers
+            .get("anthropic-version")
+            .and_then(|value| value.to_str().ok()),
+        Some("2023-06-01")
+    );
+    assert_eq!(
+        api_provider
+            .headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok()),
+        std::env::var(env_var).ok().as_deref()
+    );
+    assert!(
+        api_provider
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .is_none(),
+        "anthropic env_key auth should use x-api-key only"
+    );
+}

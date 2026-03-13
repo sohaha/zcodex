@@ -1725,6 +1725,69 @@ fn responses_websocket_features_do_not_change_wire_api() -> std::io::Result<()> 
 }
 
 #[test]
+fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let cfg = ConfigToml {
+        model_provider: Some("anthropic".to_string()),
+        model_providers: HashMap::from([(
+            "anthropic".to_string(),
+            ModelProviderInfo {
+                name: "Anthropic via Proxy".to_string(),
+                base_url: Some("https://proxy.example/v1".to_string()),
+                env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                wire_api: crate::WireApi::Anthropic,
+                query_params: None,
+                http_headers: Some(HashMap::from([(
+                    "X-Proxy-Header".to_string(),
+                    "present".to_string(),
+                )])),
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.model_provider_id, "anthropic");
+    assert_eq!(config.model_provider.name, "Anthropic via Proxy");
+    assert_eq!(
+        config.model_provider.base_url.as_deref(),
+        Some("https://proxy.example/v1")
+    );
+    assert_eq!(
+        config.model_provider.env_key.as_deref(),
+        Some("CUSTOM_ANTHROPIC_KEY")
+    );
+    assert_eq!(
+        config
+            .model_provider
+            .http_headers
+            .as_ref()
+            .and_then(|headers| headers.get("X-Proxy-Header"))
+            .map(String::as_str),
+        Some("present")
+    );
+
+    Ok(())
+}
+
+#[test]
 fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {

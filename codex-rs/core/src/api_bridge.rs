@@ -185,6 +185,13 @@ pub(crate) fn auth_provider_from_auth(
     auth: Option<CodexAuth>,
     provider: &ModelProviderInfo,
 ) -> crate::error::Result<CoreAuthProvider> {
+    if provider.wire_api == crate::model_provider_info::WireApi::Anthropic {
+        return Ok(CoreAuthProvider {
+            token: None,
+            account_id: None,
+        });
+    }
+
     if let Some(api_key) = provider.api_key()? {
         return Ok(CoreAuthProvider {
             token: Some(api_key),

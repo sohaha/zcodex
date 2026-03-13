@@ -98,15 +98,19 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         options: ResponsesOptions,
     ) -> Result<ResponseStream, ApiError> {
         let ResponsesOptions {
-            conversation_id: _,
+            conversation_id,
             session_source,
             mut extra_headers,
             compression: _,
             turn_state,
         } = options;
 
+        if let Some(ref conv_id) = conversation_id {
+            insert_header(&mut extra_headers, "x-client-request-id", conv_id);
+        }
+        extra_headers.extend(build_conversation_headers(conversation_id));
         if let Some(subagent) = subagent_header(&session_source) {
-            insert_header(&mut extra_headers, "x-codex-subagent", &subagent);
+            insert_header(&mut extra_headers, "x-openai-subagent", &subagent);
         }
 
         let freeform_tool_names = anthropic::freeform_tool_names(&request.tools);
