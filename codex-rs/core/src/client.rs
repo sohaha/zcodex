@@ -104,8 +104,6 @@ pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
-const ANTHROPIC_COMPACT_UNSUPPORTED_ERROR: &str =
-    "conversation compaction is not supported for anthropic providers";
 const ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR: &str =
     "memory summarization is not supported for anthropic providers";
 
@@ -291,11 +289,6 @@ impl ModelClient {
     ) -> Result<Vec<ResponseItem>> {
         if prompt.input.is_empty() {
             return Ok(Vec::new());
-        }
-        if self.state.provider.wire_api == WireApi::Anthropic {
-            return Err(CodexErr::UnsupportedOperation(
-                ANTHROPIC_COMPACT_UNSUPPORTED_ERROR.to_string(),
-            ));
         }
         let client_setup = self.current_client_setup().await?;
         let transport = ReqwestTransport::new(build_reqwest_client());

@@ -38,6 +38,10 @@ const ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS: &str =
 const TOOL_INPUT_FIELD: &str = "input";
 
 pub(crate) fn build_request_body(request: &ResponsesApiRequest) -> Value {
+    build_request_body_with_stream(request, true)
+}
+
+pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stream: bool) -> Value {
     let mut messages = Vec::<Value>::new();
     let mut system_segments = vec![request.instructions.clone()];
     if let Some(output_schema) = output_schema(request) {
@@ -154,7 +158,7 @@ pub(crate) fn build_request_body(request: &ResponsesApiRequest) -> Value {
         "model": request.model,
         "max_tokens": ANTHROPIC_DEFAULT_MAX_TOKENS,
         "messages": messages,
-        "stream": true,
+        "stream": stream,
     });
     if let Some(object) = body.as_object_mut() {
         if !system.is_empty() {
