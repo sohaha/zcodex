@@ -106,6 +106,7 @@ use codex_protocol::protocol::TurnContextNetworkItem;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::request_permissions::PermissionGrantScope;
+use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsArgs;
 use codex_protocol::request_permissions::RequestPermissionsEvent;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
@@ -869,6 +870,8 @@ impl TurnContext {
             features: &features,
             web_search_mode: self.tools_config.web_search_mode,
             session_source: self.session_source.clone(),
+            sandbox_policy: self.sandbox_policy.get(),
+            windows_sandbox_level: self.windows_sandbox_level,
         })
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
@@ -1279,6 +1282,8 @@ impl Session {
             features: &per_turn_config.features,
             web_search_mode: Some(per_turn_config.web_search_mode.value()),
             session_source: session_source.clone(),
+            sandbox_policy: session_configuration.sandbox_policy.get(),
+            windows_sandbox_level: session_configuration.windows_sandbox_level,
         })
         .with_web_search_config(per_turn_config.web_search_config.clone())
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
@@ -2904,22 +2909,22 @@ impl Session {
         match turn_context.approval_policy.value() {
             AskForApproval::Never => {
                 return Some(RequestPermissionsResponse {
-                    permissions: PermissionProfile::default(),
+                    permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
                 });
             }
-            AskForApproval::Reject(reject_config)
-                if reject_config.rejects_request_permissions() =>
+            AskForApproval::Granular(granular_config)
+                if !granular_config.allows_request_permissions() =>
             {
                 return Some(RequestPermissionsResponse {
-                    permissions: PermissionProfile::default(),
+                    permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
                 });
             }
             AskForApproval::OnFailure
             | AskForApproval::OnRequest
             | AskForApproval::UnlessTrusted
-            | AskForApproval::Reject(_) => {}
+            | AskForApproval::Granular(_) => {}
         }
 
         let (tx_response, rx_response) = oneshot::channel();
@@ -3098,7 +3103,7 @@ impl Session {
                     if entry.is_some() && !response.permissions.is_empty() {
                         match response.scope {
                             PermissionGrantScope::Turn => {
-                                ts.record_granted_permissions(response.permissions.clone());
+                                ts.record_granted_permissions(response.permissions.clone().into());
                             }
                             PermissionGrantScope::Session => {
                                 granted_for_session = Some(response.permissions.clone());
@@ -3112,7 +3117,7 @@ impl Session {
         };
         if let Some(permissions) = granted_for_session {
             let mut state = self.state.lock().await;
-            state.record_granted_permissions(permissions);
+            state.record_granted_permissions(permissions.into());
         }
         match entry {
             Some(tx_response) => {
@@ -3377,7 +3382,9 @@ impl Session {
                 turn_context.approval_policy.value(),
                 self.services.exec_policy.current().as_ref(),
                 &turn_context.cwd,
-                turn_context.features.enabled(Feature::RequestPermissions),
+                turn_context
+                    .features
+                    .enabled(Feature::ExecPermissionApprovals),
             )
             .into_text(),
         );
@@ -5167,6 +5174,8 @@ async fn spawn_review_thread(
         features: &review_features,
         web_search_mode: Some(review_web_search_mode),
         session_source: parent_turn_context.session_source.clone(),
+        sandbox_policy: parent_turn_context.sandbox_policy.get(),
+        windows_sandbox_level: parent_turn_context.windows_sandbox_level,
     })
     .with_web_search_config(None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
@@ -5475,6 +5484,10 @@ pub(crate) async fn run_turn(
 
     let plugin_items =
         build_plugin_injections(&mentioned_plugins, &mcp_tools, &available_connectors);
+    let mentioned_plugin_metadata = mentioned_plugins
+        .iter()
+        .filter_map(crate::plugins::PluginCapabilitySummary::telemetry_metadata)
+        .collect::<Vec<_>>();
 
     let mut explicitly_enabled_connectors = collect_explicit_app_ids(&input);
     explicitly_enabled_connectors.extend(collect_explicit_app_ids_from_skill_items(
@@ -5513,6 +5526,11 @@ pub(crate) async fn run_turn(
     sess.services
         .analytics_events_client
         .track_app_mentioned(tracking.clone(), mentioned_app_invocations);
+    for plugin in mentioned_plugin_metadata {
+        sess.services
+            .analytics_events_client
+            .track_plugin_used(tracking.clone(), plugin);
+    }
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
         .await;
 
@@ -5560,7 +5578,7 @@ pub(crate) async fn run_turn(
                 AskForApproval::UnlessTrusted
                 | AskForApproval::OnFailure
                 | AskForApproval::OnRequest
-                | AskForApproval::Reject(_) => "default",
+                | AskForApproval::Granular(_) => "default",
             }
             .to_string();
             let session_start_request = codex_hooks::SessionStartRequest {
@@ -5689,17 +5707,17 @@ pub(crate) async fn run_turn(
 
                 // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
                 if token_limit_reached && needs_follow_up {
-                    if run_auto_compact(
+                    match try_run_auto_compact(
                         &sess,
                         &turn_context,
                         InitialContextInjection::BeforeLastUserMessage,
                     )
                     .await
-                    .is_err()
                     {
-                        return None;
+                        Ok(true) => continue,
+                        Ok(false) => {}
+                        Err(_) => return None,
                     }
-                    continue;
                 }
 
                 if !needs_follow_up {
@@ -5709,7 +5727,7 @@ pub(crate) async fn run_turn(
                         AskForApproval::UnlessTrusted
                         | AskForApproval::OnFailure
                         | AskForApproval::OnRequest
-                        | AskForApproval::Reject(_) => "default",
+                        | AskForApproval::Granular(_) => "default",
                     }
                     .to_string();
                     let stop_request = codex_hooks::StopRequest {
@@ -5855,7 +5873,7 @@ async fn run_pre_sampling_compact(
     turn_context: &Arc<TurnContext>,
 ) -> CodexResult<()> {
     let total_usage_tokens_before_compaction = sess.get_total_token_usage().await;
-    maybe_run_previous_model_inline_compact(
+    let _ = maybe_run_previous_model_inline_compact(
         sess,
         turn_context,
         total_usage_tokens_before_compaction,
@@ -5868,7 +5886,8 @@ async fn run_pre_sampling_compact(
         .unwrap_or(i64::MAX);
     // Compact if the total usage tokens are greater than the auto compact limit
     if total_usage_tokens >= auto_compact_limit {
-        run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
+        let _ =
+            try_run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
     }
     Ok(())
 }
@@ -5907,15 +5926,44 @@ async fn maybe_run_previous_model_inline_compact(
         && previous_model_turn_context.model_info.slug != turn_context.model_info.slug
         && old_context_window > new_context_window;
     if should_run {
-        run_auto_compact(
+        return try_run_auto_compact(
             sess,
             &previous_model_turn_context,
             InitialContextInjection::DoNotInject,
         )
-        .await?;
-        return Ok(true);
+        .await;
     }
     Ok(false)
+}
+
+async fn try_run_auto_compact(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    initial_context_injection: InitialContextInjection,
+) -> CodexResult<bool> {
+    match run_auto_compact(sess, turn_context, initial_context_injection).await {
+        Ok(()) => Ok(true),
+        Err(err) if should_continue_after_auto_compact_failure(turn_context) => {
+            warn!(
+                turn_id = %turn_context.sub_id,
+                error = %err,
+                "automatic claude compaction failed; continuing without compaction"
+            );
+            sess.send_event(
+                turn_context,
+                EventMsg::Warning(WarningEvent {
+                    message: "Automatic history compaction failed; continuing without compaction. The next request may still fail if the thread is too large.".to_string(),
+                }),
+            )
+            .await;
+            Ok(false)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn should_continue_after_auto_compact_failure(turn_context: &TurnContext) -> bool {
+    turn_context.model_info.slug.starts_with("claude-")
 }
 
 async fn run_auto_compact(
@@ -6151,10 +6199,26 @@ async fn run_sampling_request(
         turn_context.as_ref(),
         base_instructions,
     );
+    let tool_runtime = ToolCallRuntime::new(
+        Arc::clone(&router),
+        Arc::clone(&sess),
+        Arc::clone(&turn_context),
+        Arc::clone(&turn_diff_tracker),
+    );
+    let _code_mode_worker = sess
+        .services
+        .code_mode_service
+        .start_turn_worker(
+            &sess,
+            &turn_context,
+            Arc::clone(&router),
+            Arc::clone(&turn_diff_tracker),
+        )
+        .await;
     let mut retries = 0;
     loop {
         let err = match try_run_sampling_request(
-            Arc::clone(&router),
+            tool_runtime.clone(),
             Arc::clone(&sess),
             Arc::clone(&turn_context),
             client_session,
@@ -6909,7 +6973,7 @@ async fn drain_in_flight(
     )
 )]
 async fn try_run_sampling_request(
-    router: Arc<ToolRouter>,
+    tool_runtime: ToolCallRuntime,
     sess: Arc<Session>,
     turn_context: Arc<TurnContext>,
     client_session: &mut ModelClientSession,
@@ -6940,13 +7004,6 @@ async fn try_run_sampling_request(
         .instrument(trace_span!("stream_request"))
         .or_cancel(&cancellation_token)
         .await??;
-
-    let tool_runtime = ToolCallRuntime::new(
-        Arc::clone(&router),
-        Arc::clone(&sess),
-        Arc::clone(&turn_context),
-        Arc::clone(&turn_diff_tracker),
-    );
     let mut in_flight: FuturesOrdered<BoxFuture<'static, CodexResult<ResponseInputItem>>> =
         FuturesOrdered::new();
     let mut needs_follow_up = false;

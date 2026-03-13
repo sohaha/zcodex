@@ -2,84 +2,84 @@
 
 ## Golden Rule
 
-Prefer `rtk` for noisy shell output. When Codex embeds a dedicated wrapper, use it. Otherwise `rtk` may fall back to the underlying command, so avoid claiming special filtering unless the command below is explicitly listed.
+Prefer `codex rtk` for noisy shell output. When Codex embeds a dedicated wrapper, use it. Otherwise `codex rtk` may fall back to the underlying command, so avoid claiming special filtering unless the command below is explicitly listed.
 
 ## Build & Compile
 
-- `rtk cargo build`
-- `rtk cargo check`
-- `rtk cargo clippy`
-- `rtk tsc`
-- `rtk lint`
-- `rtk prettier --check`
-- `rtk next build`
-- `rtk go build`
-- `rtk go vet`
-- `rtk golangci-lint`
+- `codex rtk cargo build`
+- `codex rtk cargo check`
+- `codex rtk cargo clippy`
+- `codex rtk tsc`
+- `codex rtk lint`
+- `codex rtk prettier --check`
+- `codex rtk next build`
+- `codex rtk go build`
+- `codex rtk go vet`
+- `codex rtk golangci-lint`
 
 ## Test
 
-- `rtk cargo test`
-- `rtk vitest run`
-- `rtk playwright test`
-- `rtk pytest`
-- `rtk go test`
-- `rtk test <cmd>`
+- `codex rtk cargo test`
+- `codex rtk vitest run`
+- `codex rtk playwright test`
+- `codex rtk pytest`
+- `codex rtk go test`
+- `codex rtk test <cmd>`
 
 ## Git & Review
 
-- `rtk git status`
-- `rtk git log`
-- `rtk git diff`
-- `rtk git show`
-- `rtk git add`
-- `rtk git commit`
-- `rtk git push`
-- `rtk git pull`
-- `rtk git branch`
-- `rtk git fetch`
-- `rtk git stash`
-- `rtk git worktree`
-- `rtk gh ...`
-- `rtk gt ...`
+- `codex rtk git status`
+- `codex rtk git log`
+- `codex rtk git diff`
+- `codex rtk git show`
+- `codex rtk git add`
+- `codex rtk git commit`
+- `codex rtk git push`
+- `codex rtk git pull`
+- `codex rtk git branch`
+- `codex rtk git fetch`
+- `codex rtk git stash`
+- `codex rtk git worktree`
+- `codex rtk gh ...`
+- `codex rtk gt ...`
 
 ## Files & Search
 
-- `rtk read <file>`
-- `rtk ls <path>`
-- `rtk tree <path>`
-- `rtk find ...`
-- `rtk grep <pattern> <path>`
-- `rtk json <file>`
-- `rtk deps [path]`
-- `rtk env`
-- `rtk wc ...`
+- `codex rtk read <file>`
+- `codex rtk ls <path>`
+- `codex rtk tree <path>`
+- `codex rtk find ...`
+- `codex rtk grep <pattern> <path>`
+- `codex rtk json <file>`
+- `codex rtk deps [path]`
+- `codex rtk env`
+- `codex rtk wc ...`
 
 ## Packages & App Tooling
 
-- `rtk pnpm ...`
-- `rtk npm run <script>`
-- `rtk npx <cmd>`
-- `rtk prisma ...`
-- `rtk pip ...`
-- `rtk format ...`
-- `rtk ruff ...`
-- `rtk mypy ...`
+- `codex rtk pnpm ...`
+- `codex rtk npm run <script>`
+- `codex rtk npx <cmd>`
+- `codex rtk prisma ...`
+- `codex rtk pip ...`
+- `codex rtk format ...`
+- `codex rtk ruff ...`
+- `codex rtk mypy ...`
 
 ## Infra & Network
 
-- `rtk docker ...`
-- `rtk kubectl ...`
-- `rtk aws ...`
-- `rtk psql ...`
-- `rtk curl ...`
-- `rtk wget <url>`
+- `codex rtk docker ...`
+- `codex rtk kubectl ...`
+- `codex rtk aws ...`
+- `codex rtk psql ...`
+- `codex rtk curl ...`
+- `codex rtk wget <url>`
 
 ## Generic Noise Reduction
 
-- `rtk err <cmd>` for errors and warnings only
-- `rtk log [file]` for deduplicated interesting log lines
-- `rtk diff <file1> [file2]` for condensed diffs
-- `rtk summary <cmd>` for heuristic summaries
+- `codex rtk err <cmd>` for errors and warnings only
+- `codex rtk log [file]` for deduplicated interesting log lines
+- `codex rtk diff <file1> [file2]` for condensed diffs
+- `codex rtk summary <cmd>` for heuristic summaries
 
-Do not reference upstream RTK bootstrap, analytics, or hook-management commands such as `rtk init`, `rtk gain`, `rtk discover`, `rtk learn`, `rtk rewrite`, `rtk hook-audit`, or `rtk verify`; Codex does not embed them.
+Do not reference upstream RTK bootstrap, analytics, or hook-management commands such as `codex rtk init`, `codex rtk gain`, `codex rtk discover`, `codex rtk learn`, `codex rtk rewrite`, `codex rtk hook-audit`, or `codex rtk verify`; Codex does not embed them.

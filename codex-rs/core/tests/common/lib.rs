@@ -49,6 +49,14 @@ fn configure_insta_workspace_root_for_snapshot_tests() {
     }
 }
 
+#[ctor]
+fn configure_git_env_for_tests() {
+    unsafe {
+        std::env::set_var("GIT_CONFIG_GLOBAL", "/dev/null");
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+    }
+}
+
 #[track_caller]
 pub fn assert_regex_match<'s>(pattern: &str, actual: &'s str) -> regex_lite::Captures<'s> {
     let regex = Regex::new(pattern).unwrap_or_else(|err| {
@@ -261,6 +269,45 @@ pub fn sandbox_env_var() -> &'static str {
 
 pub fn sandbox_network_env_var() -> &'static str {
     codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR
+}
+
+pub fn unprivileged_userns_available() -> bool {
+    if !cfg!(target_os = "linux") {
+        return true;
+    }
+    let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex-linux-sandbox") else {
+        return false;
+    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let policy =
+        serde_json::to_string(&codex_protocol::protocol::SandboxPolicy::new_read_only_policy())
+            .unwrap_or_else(|_| "{}".to_string());
+    let output = std::process::Command::new(path)
+        .args([
+            "--sandbox-policy-cwd",
+            cwd.to_string_lossy().as_ref(),
+            "--sandbox-policy",
+            &policy,
+            "--",
+            "true",
+        ])
+        .output();
+    let Ok(output) = output else {
+        return false;
+    };
+    if output.status.success() {
+        return true;
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let blocked_snippets = [
+        "No permissions to create a new namespace",
+        "setting up uid map",
+        "error isolating Linux network namespace",
+        "build-time bubblewrap is not available",
+    ];
+    !blocked_snippets
+        .iter()
+        .any(|snippet| stderr.contains(snippet))
 }
 
 pub fn format_with_current_shell(command: &str) -> Vec<String> {

@@ -21,6 +21,10 @@ use serde_json::json;
 /// function call, then interrupt the session and expect TurnAborted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupt_long_running_tool_emits_turn_aborted() {
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping interrupt test");
+        return;
+    }
     let command = "sleep 60";
 
     let args = json!({
@@ -70,6 +74,10 @@ async fn interrupt_long_running_tool_emits_turn_aborted() {
 /// responses server, and ensures the model receives the synthesized abort.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupt_tool_records_history_entries() {
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping interrupt history test");
+        return;
+    }
     let command = "sleep 60";
     let call_id = "call-history";
 
@@ -168,6 +176,10 @@ async fn interrupt_tool_records_history_entries() {
 /// history. This test asserts that the marker is included in the next `/responses` request.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn interrupt_persists_turn_aborted_marker_in_next_request() {
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping abort marker test");
+        return;
+    }
     let command = "sleep 60";
     let call_id = "call-turn-aborted-marker";
 

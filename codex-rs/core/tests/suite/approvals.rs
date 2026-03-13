@@ -139,12 +139,8 @@ impl ActionKind {
                     .await;
 
                 let url = format!("{}{}", server.uri(), endpoint);
-                let escaped_url = url.replace('\'', "\\'");
-                let script = format!(
-                    "import sys\nimport urllib.request\nurl = '{escaped_url}'\ntry:\n    data = urllib.request.urlopen(url, timeout=2).read().decode()\n    print('OK:' + data.strip())\nexcept Exception as exc:\n    print('ERR:' + exc.__class__.__name__)\n    sys.exit(1)",
-                );
-
-                let command = format!("python3 -c \"{script}\"");
+                let command =
+                    format!("body=$(curl -sS --fail {url:?}) && printf 'OK:%s' \"$body\"");
                 let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
@@ -161,12 +157,9 @@ impl ActionKind {
                     .await;
 
                 let url = format!("{}{}", server.uri(), endpoint);
-                let escaped_url = url.replace('\'', "\\'");
-                let script = format!(
-                    "import sys\nimport urllib.request\nurl = '{escaped_url}'\nopener = urllib.request.build_opener(urllib.request.ProxyHandler({{}}))\ntry:\n    data = opener.open(url, timeout=2).read().decode()\n    print('OK:' + data.strip())\nexcept Exception as exc:\n    print('ERR:' + exc.__class__.__name__)\n    sys.exit(1)",
+                let command = format!(
+                    "body=$(curl -sS --fail --noproxy '*' {url:?}) && printf 'OK:%s' \"$body\""
                 );
-
-                let command = format!("python3 -c \"{script}\"");
                 let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
@@ -1577,6 +1570,10 @@ fn scenarios() -> Vec<ScenarioSpec> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn approval_matrix_covers_all_modes() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping approval matrix");
+        return Ok(());
+    }
 
     for scenario in scenarios() {
         run_scenario(&scenario).await?;
@@ -1701,6 +1698,10 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
 #[cfg(unix)]
 async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping apply_patch approval test");
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -1818,6 +1819,10 @@ async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() 
 #[tokio::test(flavor = "current_thread")]
 #[cfg(unix)]
 async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts() -> Result<()> {
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping execpolicy approval test");
+        return Ok(());
+    }
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::UnlessTrusted;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
@@ -2229,6 +2234,10 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
 async fn denying_network_policy_amendment_persists_policy_and_skips_future_network_prompt()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping network approval test");
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let home = Arc::new(TempDir::new()?);
