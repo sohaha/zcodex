@@ -145,7 +145,10 @@ overwrite_installed_codex_if_present() {
     return
   fi
 
-  cp "$built_codex_bin" "$installed_codex"
+  if ! cp "$built_codex_bin" "$installed_codex"; then
+    echo "[build] 无法覆盖 $installed_codex (可能正在运行)，已跳过覆盖" >&2
+    return
+  fi
   echo "[build] 已使用 $built_codex_bin 覆盖 $installed_codex" >&2
 }
 
