@@ -12,4 +12,4 @@ $:
             imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
             runner:
                 tags: cnb:arch:amd64
-                cpus: 10
+                cpus: 14
