@@ -1,6 +1,6 @@
 ---
 name: sync-openai-codex-pr
-description: 在独立 worktree（从 main 迁出）同步 openai/codex main 到当前仓库：本地优先解决冲突；先做 code-review 评估改动范围与冲突性质；只有遇到“同功能两套实现必须二选一”才在 PR comment 阻塞并请求选择；CI 全绿后才允许 merge。
+description: 在独立 worktree（从 web 迁出）同步 openai/codex main 到当前仓库：本地优先解决冲突；先做 code-review 评估改动范围与冲突性质；只有遇到“同功能两套实现必须二选一”才在 PR comment 阻塞并请求选择；CI 全绿后才允许 merge。
 ---
 
 # sync-openai-codex-pr（上游同步 PR）
@@ -20,15 +20,15 @@ description: 在独立 worktree（从 main 迁出）同步 openai/codex main 到
 
 ## 工作流
 
-### 1) 从 `main` 创建 worktree（不污染当前分支）
+### 1) 从 `web` 创建 worktree（不污染当前分支）
 在仓库根目录执行：
 
 ```bash
 ts="$(date +%Y%m%d-%H%M%S)"
 branch="sync/openai-codex-$ts"
 path=".worktrees/sync-openai-codex-$ts"
-git fetch origin main
-git worktree add -b "$branch" "$path" origin/main
+git fetch origin web
+git worktree add -b "$branch" "$path" origin/web
 ```
 
 进入 worktree：
@@ -49,8 +49,8 @@ echo "openai/codex main: $openai_sha"
 ### 3) 先做改动范围审计（冲突前/后都做一次）
 
 ```bash
-git diff --name-status origin/main...openai/main
-git diff --stat origin/main...openai/main
+git diff --name-status origin/web...openai/main
+git diff --stat origin/web...openai/main
 ```
 
 如果你怀疑某些用户可见能力被“同步时舍弃”，在这里就能直接定位文件范围（例如 `/clear`、`/theme`、agent teams 等）。
@@ -111,7 +111,7 @@ git push -u origin HEAD
 创建 PR：
 
 ```bash
-gh pr create --base main --head "$branch" --title "sync: openai/codex @ <sha>" --body "Sync upstream openai/codex main. Local code prioritized; see commit(s) for conflict resolutions."
+gh pr create --base web --head "$branch" --title "sync: openai/codex @ <sha>" --body "Sync upstream openai/codex main. Local code prioritized; see commit(s) for conflict resolutions."
 ```
 
 PR 已存在时，直接 push 新 commit 即可触发更新。
