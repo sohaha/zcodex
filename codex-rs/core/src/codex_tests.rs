@@ -154,6 +154,21 @@ fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
         .collect()
 }
 
+fn rtk_instruction_marker() -> &'static str {
+    crate::compact::RTK_INSTRUCTIONS
+        .lines()
+        .next()
+        .unwrap_or_default()
+}
+
+fn rtk_guidance_occurrences(items: &[ResponseItem]) -> usize {
+    let marker = rtk_instruction_marker();
+    developer_input_texts(items)
+        .into_iter()
+        .filter(|text| text.contains(marker))
+        .count()
+}
+
 fn default_image_save_developer_message_text() -> String {
     let image_output_dir = crate::stream_events_utils::default_image_generation_output_dir();
     format!(
@@ -1195,7 +1210,7 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
 
     assert_eq!(
         sess.clone_history().await.raw_items(),
-        vec![turn_one_user, turn_one_assistant]
+        vec![turn_one_user.clone(), turn_one_assistant.clone()]
     );
     assert_eq!(
         sess.previous_turn_settings().await,
@@ -1204,12 +1219,15 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
             realtime_active: Some(tc.realtime_active),
         })
     );
-    assert_eq!(
-        serde_json::to_value(sess.reference_context_item().await)
-            .expect("serialize replay reference context item"),
-        serde_json::to_value(Some(first_context_item))
-            .expect("serialize expected reference context item")
-    );
+    assert!(sess.reference_context_item().await.is_none());
+
+    sess.record_context_updates_and_set_reference_context_item(tc.as_ref())
+        .await;
+    let history = sess.clone_history().await;
+    let mut expected = vec![turn_one_user, turn_one_assistant];
+    expected.extend(sess.build_initial_context(tc.as_ref()).await);
+    assert_eq!(history.raw_items(), expected);
+    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
 }
 
 #[tokio::test]
@@ -3134,6 +3152,34 @@ async fn build_settings_update_items_uses_previous_turn_settings_for_realtime_en
 }
 
 #[tokio::test]
+async fn build_settings_update_items_does_not_include_rtk_guidance() {
+    let (session, previous_context) = make_session_and_context().await;
+    let mut current_context = previous_context
+        .with_model(
+            previous_context.model_info.slug.clone(),
+            &session.services.models_manager,
+        )
+        .await;
+    current_context.realtime_active = true;
+
+    let update_items = session
+        .build_settings_update_items(
+            Some(&previous_context.to_turn_context_item()),
+            &current_context,
+        )
+        .await;
+
+    let developer_texts = developer_input_texts(&update_items);
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("<realtime_conversation>")),
+        "expected a realtime diff update, got {developer_texts:?}"
+    );
+    assert_eq!(rtk_guidance_occurrences(&update_items), 0);
+}
+
+#[tokio::test]
 async fn build_initial_context_uses_previous_realtime_state() {
     let (session, mut turn_context) = make_session_and_context().await;
     turn_context.realtime_active = true;
@@ -3318,15 +3364,13 @@ async fn build_initial_context_includes_rtk_guidance() {
     let (session, turn_context) = make_session_and_context().await;
     let initial_context = session.build_initial_context(&turn_context).await;
     let developer_texts = developer_input_texts(&initial_context);
-    let expected = crate::compact::RTK_INSTRUCTIONS
-        .lines()
-        .next()
-        .unwrap_or_default();
+    let expected = rtk_instruction_marker();
 
     assert!(
         developer_texts.iter().any(|text| text.contains(expected)),
         "expected initial context to include RTK guidance, got {developer_texts:?}"
     );
+    assert_eq!(rtk_guidance_occurrences(&initial_context), 1);
 }
 
 #[tokio::test]
@@ -3383,6 +3427,35 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
     let mut expected_history = vec![compacted_summary];
     expected_history.extend(session.build_initial_context(&turn_context).await);
     assert_eq!(history.raw_items().to_vec(), expected_history);
+    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
+}
+
+#[tokio::test]
+async fn record_context_updates_and_set_reference_context_item_does_not_reemit_rtk_guidance() {
+    let (session, turn_context) = make_session_and_context().await;
+    session
+        .record_context_updates_and_set_reference_context_item(&turn_context)
+        .await;
+    let initial_history_len = session.clone_history().await.raw_items().len();
+
+    let mut updated_context = turn_context
+        .with_model(
+            turn_context.model_info.slug.clone(),
+            &session.services.models_manager,
+        )
+        .await;
+    updated_context.realtime_active = true;
+
+    session
+        .record_context_updates_and_set_reference_context_item(&updated_context)
+        .await;
+
+    let history = session.clone_history().await;
+    assert!(
+        history.raw_items().len() > initial_history_len,
+        "expected a steady-state diff item to be recorded"
+    );
+    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
 }
 
 #[tokio::test]

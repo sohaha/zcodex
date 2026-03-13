@@ -3299,6 +3299,23 @@ impl Session {
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
     ) {
+        // Replacement histories that omit the canonical RTK developer prefix must also clear the
+        // diff baseline so the next real turn fully reinjects stable initial context.
+        let reference_context_item = reference_context_item.filter(|_| {
+            let marker = crate::compact::RTK_INSTRUCTIONS
+                .lines()
+                .next()
+                .unwrap_or_default();
+            items.iter().any(|item| match item {
+                ResponseItem::Message { role, content, .. } if role == "developer" => {
+                    content.iter().any(|content_item| match content_item {
+                        ContentItem::InputText { text } => text.contains(marker),
+                        _ => false,
+                    })
+                }
+                _ => false,
+            })
+        });
         let mut state = self.state.lock().await;
         state.replace_history(items, reference_context_item);
     }
@@ -3388,6 +3405,9 @@ impl Session {
             )
             .into_text(),
         );
+        // Keep RTK guidance in the canonical initial developer prefix. Do not move this into
+        // steady-state per-turn diffs: provider-side prefix caching depends on ordinary turns
+        // reusing the same leading prompt bytes whenever the durable baseline is intact.
         developer_sections.push(crate::compact::RTK_INSTRUCTIONS.to_string());
         if let Some(developer_instructions) = turn_context.developer_instructions.as_deref() {
             developer_sections.push(developer_instructions.to_string());
@@ -3521,6 +3541,8 @@ impl Session {
         };
         let should_inject_full_context = reference_context_item.is_none();
         let context_items = if should_inject_full_context {
+            // Rebuild the canonical initial prefix only when the durable baseline is missing.
+            // This is the cache-safe place to restate RTK guidance after compaction/resume.
             self.build_initial_context(turn_context).await
         } else {
             // Steady-state path: append only context diffs to minimize token overhead.
