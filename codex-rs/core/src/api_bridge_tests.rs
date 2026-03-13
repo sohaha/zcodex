@@ -26,6 +26,26 @@ fn map_api_error_maps_server_overloaded_from_503_body() {
 }
 
 #[test]
+fn map_api_error_maps_anthropic_context_window_bad_request() {
+    let body = serde_json::json!({
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "message": "prompt is too long: 220000 tokens > 200000 max"
+        }
+    })
+    .to_string();
+    let err = map_api_error(ApiError::Transport(TransportError::Http {
+        status: http::StatusCode::BAD_REQUEST,
+        url: Some("http://example.com/v1/messages".to_string()),
+        headers: None,
+        body: Some(body),
+    }));
+
+    assert!(matches!(err, CodexErr::ContextWindowExceeded));
+}
+
+#[test]
 fn map_api_error_maps_usage_limit_limit_name_header() {
     let mut headers = HeaderMap::new();
     headers.insert(

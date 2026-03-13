@@ -105,3 +105,53 @@ wire_api = "chat"
     let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
     assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
 }
+
+#[test]
+fn anthropic_provider_defaults_to_official_base_url() {
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+    assert_eq!(api_provider.base_url, "https://api.anthropic.com/v1");
+}
+
+#[test]
+fn anthropic_provider_honors_configured_base_url() {
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: Some("https://proxy.example/v1".into()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+    assert_eq!(api_provider.base_url, "https://proxy.example/v1");
+}

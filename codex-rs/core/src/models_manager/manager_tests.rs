@@ -76,6 +76,25 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
     }
 }
 
+fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
+    ModelProviderInfo {
+        name: "mock-anthropic".into(),
+        base_url: Some(base_url),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(0),
+        stream_max_retries: Some(0),
+        stream_idle_timeout_ms: Some(5_000),
+        requires_openai_auth: false,
+        supports_websockets: false,
+    }
+}
+
 #[tokio::test]
 async fn get_model_info_tracks_fallback_usage() {
     let codex_home = tempdir().expect("temp dir");
@@ -526,6 +545,60 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
         models_mock.requests().len(),
         0,
         "no auth should avoid /models requests"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_provider_keeps_bundled_catalog() {
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    let remote_models = manager.get_remote_models().await;
+
+    assert!(
+        remote_models
+            .iter()
+            .all(|candidate| candidate.slug.starts_with("claude-")),
+        "anthropic provider should start from the bundled Claude catalog"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_provider_ignores_shared_models_cache() {
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+    manager
+        .cache_manager
+        .persist_cache(
+            &[remote_model("gpt-cached", "Cached GPT", 0)],
+            None,
+            crate::models_manager::client_version_to_whole(),
+        )
+        .await;
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("anthropic refresh should succeed");
+
+    let remote_models = manager.get_remote_models().await;
+    assert!(
+        remote_models
+            .iter()
+            .all(|candidate| candidate.slug.starts_with("claude-")),
+        "anthropic provider should ignore cached OpenAI models"
     );
 }
 

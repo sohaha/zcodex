@@ -7,6 +7,7 @@ use codex_api::rate_limits::parse_promo_message;
 use codex_api::rate_limits::parse_rate_limit_for_limit;
 use http::HeaderMap;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::auth::CodexAuth;
 use crate::error::CodexErr;
@@ -59,6 +60,8 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                         .contains("The image data you provided does not represent a valid image")
                     {
                         CodexErr::InvalidImageRequest()
+                    } else if is_context_window_bad_request(&body_text) {
+                        CodexErr::ContextWindowExceeded
                     } else {
                         CodexErr::InvalidRequest(body_text)
                     }
@@ -112,6 +115,38 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
         },
         ApiError::RateLimit(msg) => CodexErr::Stream(msg, None),
     }
+}
+
+fn is_context_window_bad_request(body_text: &str) -> bool {
+    if let Ok(value) = serde_json::from_str::<Value>(body_text) {
+        if value
+            .get("error")
+            .and_then(|error| error.get("code"))
+            .and_then(Value::as_str)
+            == Some("context_length_exceeded")
+        {
+            return true;
+        }
+
+        if let Some(message) = value
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+        {
+            return is_context_window_message(message);
+        }
+    }
+
+    is_context_window_message(body_text)
+}
+
+fn is_context_window_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("context window")
+        || normalized.contains("context length")
+        || normalized.contains("prompt is too long")
+        || normalized.contains("input is too long")
+        || normalized.contains("exceed context limit")
 }
 
 const ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";

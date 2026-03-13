@@ -104,6 +104,8 @@ pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
+const ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR: &str =
+    "memory summarize is not supported for Anthropic providers";
 
 pub fn ws_version_from_features(config: &Config) -> bool {
     config
@@ -346,6 +348,11 @@ impl ModelClient {
     ) -> Result<Vec<ApiMemorySummarizeOutput>> {
         if raw_memories.is_empty() {
             return Ok(Vec::new());
+        }
+        if self.state.provider.wire_api == WireApi::Anthropic {
+            return Err(CodexErr::UnsupportedOperation(
+                ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR.to_string(),
+            ));
         }
 
         let client_setup = self.current_client_setup().await?;

@@ -8,9 +8,19 @@ use pretty_assertions::assert_eq;
 use serde_json::json;
 
 fn test_model_client(session_source: SessionSource) -> ModelClient {
+    test_model_client_with_wire_api(
+        session_source,
+        crate::model_provider_info::WireApi::Responses,
+    )
+}
+
+fn test_model_client_with_wire_api(
+    session_source: SessionSource,
+    wire_api: crate::model_provider_info::WireApi,
+) -> ModelClient {
     let provider = crate::model_provider_info::create_oss_provider_with_base_url(
         "https://example.com/v1",
-        crate::model_provider_info::WireApi::Responses,
+        wire_api,
     );
     ModelClient::new(
         None,
@@ -93,4 +103,35 @@ async fn summarize_memories_returns_empty_for_empty_input() {
         .await
         .expect("empty summarize request should succeed");
     assert_eq!(output.len(), 0);
+}
+
+#[tokio::test]
+async fn summarize_memories_rejects_anthropic_provider() {
+    let client = test_model_client_with_wire_api(
+        SessionSource::Cli,
+        crate::model_provider_info::WireApi::Anthropic,
+    );
+    let model_info = test_model_info();
+    let session_telemetry = test_session_telemetry();
+
+    let err = client
+        .summarize_memories(
+            vec![codex_api::RawMemory {
+                id: "trace-1".to_string(),
+                metadata: codex_api::RawMemoryMetadata {
+                    source_path: "/tmp/trace.json".to_string(),
+                },
+                items: vec![json!({"type": "message", "role": "user", "content": []})],
+            }],
+            &model_info,
+            None,
+            &session_telemetry,
+        )
+        .await
+        .expect_err("anthropic summarize should be rejected");
+
+    assert_eq!(
+        err.to_string(),
+        "unsupported operation: memory summarize is not supported for Anthropic providers"
+    );
 }

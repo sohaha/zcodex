@@ -185,6 +185,28 @@ fn build_token_limited_compacted_history_appends_summary_message() {
     assert_eq!(summary, summary_text);
 }
 
+#[test]
+fn should_use_remote_compact_task_for_anthropic_provider() {
+    let provider = crate::model_provider_info::ModelProviderInfo {
+        name: "Anthropic".to_string(),
+        base_url: Some("https://anthropic.example/v1".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    assert!(should_use_remote_compact_task(&provider));
+}
+
 #[tokio::test]
 async fn process_compacted_history_replaces_developer_messages() {
     let compacted_history = vec![

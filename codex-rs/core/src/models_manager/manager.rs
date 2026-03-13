@@ -259,6 +259,10 @@ impl ModelsManager {
             return Ok(());
         }
 
+        if self.provider.wire_api == WireApi::Anthropic {
+            return Ok(());
+        }
+
         if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
             if matches!(
                 refresh_strategy,
@@ -324,7 +328,7 @@ impl ModelsManager {
 
     /// Replace the cached remote models and rebuild the derived presets list.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
+        let mut existing_models = Self::load_bundled_models(&self.provider);
         for model in models {
             if let Some(existing_index) = existing_models
                 .iter()
@@ -403,20 +407,13 @@ impl ModelsManager {
         auth_manager: Arc<AuthManager>,
         provider: ModelProviderInfo,
     ) -> Self {
-        let cache_path = codex_home.join(MODEL_CACHE_FILE);
-        let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
-        Self {
-            remote_models: RwLock::new(
-                Self::load_remote_models_from_file()
-                    .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
-            ),
-            catalog_mode: CatalogMode::Default,
-            collaboration_modes_config: CollaborationModesConfig::default(),
+        Self::with_provider(
+            codex_home,
             auth_manager,
-            etag: RwLock::new(None),
-            cache_manager,
+            None,
+            CollaborationModesConfig::default(),
             provider,
-        }
+        )
     }
 
     /// Get model identifier without consulting remote state or cache.
