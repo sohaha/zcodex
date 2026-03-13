@@ -33,6 +33,7 @@ fn provider(base_url: &str) -> Provider {
     Provider {
         name: "test".to_string(),
         base_url: base_url.to_string(),
+        wire_api: codex_api::provider::WireApi::Responses,
         query_params: None,
         headers: HeaderMap::new(),
         retry: RetryConfig {

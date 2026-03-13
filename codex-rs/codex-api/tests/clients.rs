@@ -124,6 +124,7 @@ fn provider(name: &str) -> Provider {
     Provider {
         name: name.to_string(),
         base_url: "https://example.com/v1".to_string(),
+        wire_api: codex_api::provider::WireApi::Responses,
         query_params: None,
         headers: HeaderMap::new(),
         retry: codex_api::provider::RetryConfig {

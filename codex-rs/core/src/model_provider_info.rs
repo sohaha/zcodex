@@ -9,6 +9,7 @@ use crate::auth::AuthMode;
 use crate::error::EnvVarError;
 use codex_api::Provider as ApiProvider;
 use codex_api::provider::RetryConfig as ApiRetryConfig;
+use codex_api::provider::WireApi as ApiWireApi;
 use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;
@@ -27,6 +28,8 @@ const MAX_STREAM_MAX_RETRIES: u64 = 100;
 const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
+const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
+const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub(crate) const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
@@ -38,6 +41,8 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// The Anthropic Messages API exposed at `/v1/messages`.
+    Anthropic,
 }
 
 impl<'de> Deserialize<'de> for WireApi {
@@ -48,8 +53,12 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
+            "anthropic" => Ok(Self::Anthropic),
             "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["responses", "anthropic"],
+            )),
         }
     }
 }
@@ -145,17 +154,50 @@ impl ModelProviderInfo {
         &self,
         auth_mode: Option<AuthMode>,
     ) -> crate::error::Result<ApiProvider> {
-        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-            "https://chatgpt.com/backend-api/codex"
-        } else {
-            "https://api.openai.com/v1"
+        let default_base_url = match self.wire_api {
+            WireApi::Responses if matches!(auth_mode, Some(AuthMode::Chatgpt)) => {
+                "https://chatgpt.com/backend-api/codex"
+            }
+            WireApi::Responses => "https://api.openai.com/v1",
+            WireApi::Anthropic => "https://api.anthropic.com/v1",
         };
         let base_url = self
             .base_url
             .clone()
             .unwrap_or_else(|| default_base_url.to_string());
 
-        let headers = self.build_header_map()?;
+        let mut headers = self.build_header_map()?;
+        if self.wire_api == WireApi::Anthropic {
+            headers.insert(
+                HeaderName::from_static("anthropic-version"),
+                HeaderValue::from_static(ANTHROPIC_API_VERSION),
+            );
+
+            match self.api_key() {
+                Ok(Some(api_key)) => {
+                    if let Ok(value) = HeaderValue::try_from(api_key) {
+                        headers.insert(HeaderName::from_static("x-api-key"), value);
+                    }
+                }
+                Ok(None) => {
+                    if let Some(token) = &self.experimental_bearer_token
+                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
+                    {
+                        headers.insert(http::header::AUTHORIZATION, value);
+                    }
+                }
+                Err(crate::error::CodexErr::EnvVar(_))
+                    if self.experimental_bearer_token.is_some() =>
+                {
+                    if let Some(token) = &self.experimental_bearer_token
+                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
+                    {
+                        headers.insert(http::header::AUTHORIZATION, value);
+                    }
+                }
+                Err(err) => return Err(err),
+            }
+        }
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
             base_delay: Duration::from_millis(200),
@@ -167,6 +209,10 @@ impl ModelProviderInfo {
         Ok(ApiProvider {
             name: self.name.clone(),
             base_url,
+            wire_api: match self.wire_api {
+                WireApi::Responses => ApiWireApi::Responses,
+                WireApi::Anthropic => ApiWireApi::Anthropic,
+            },
             query_params: self.query_params.clone(),
             headers,
             retry,
@@ -256,6 +302,27 @@ impl ModelProviderInfo {
         }
     }
 
+    pub fn create_anthropic_provider() -> ModelProviderInfo {
+        ModelProviderInfo {
+            name: ANTHROPIC_PROVIDER_NAME.into(),
+            base_url: std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            env_key: Some("ANTHROPIC_API_KEY".into()),
+            env_key_instructions: None,
+            experimental_bearer_token: None,
+            wire_api: WireApi::Anthropic,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        }
+    }
+
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
     }
@@ -271,12 +338,12 @@ pub const OLLAMA_OSS_PROVIDER_ID: &str = "ollama";
 pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
     use ModelProviderInfo as P;
 
-    // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI and
-    // open source ("oss") providers by default. Users are encouraged to add to
-    // `model_providers` in config.toml to add their own providers.
+    // We keep the built-in list intentionally small: first-party OpenAI,
+    // Anthropic, and the local OSS provider presets. Users are encouraged to
+    // add to `model_providers` in config.toml for anything else.
     [
         ("openai", P::create_openai_provider()),
+        ("anthropic", P::create_anthropic_provider()),
         (
             OLLAMA_OSS_PROVIDER_ID,
             create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
@@ -437,5 +504,61 @@ wire_api = "chat"
 
         let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
         assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
+    }
+
+    #[test]
+    fn test_deserialize_anthropic_wire_api() {
+        let provider_toml = r#"
+name = "Anthropic"
+base_url = "https://api.anthropic.com/v1"
+env_key = "ANTHROPIC_API_KEY"
+wire_api = "anthropic"
+        "#;
+
+        let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+        assert_eq!(provider.wire_api, WireApi::Anthropic);
+    }
+
+    #[test]
+    fn built_in_providers_include_anthropic() {
+        let providers = built_in_model_providers();
+        assert_eq!(
+            providers.get("anthropic"),
+            Some(&ModelProviderInfo::create_anthropic_provider())
+        );
+    }
+
+    #[test]
+    fn to_api_provider_sets_anthropic_headers() {
+        let provider = ModelProviderInfo {
+            name: "Anthropic".into(),
+            base_url: Some("https://api.anthropic.com/v1".into()),
+            env_key: None,
+            env_key_instructions: None,
+            experimental_bearer_token: Some("token".into()),
+            wire_api: WireApi::Anthropic,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        };
+
+        let api_provider = provider.to_api_provider(None).unwrap();
+        assert_eq!(api_provider.wire_api, ApiWireApi::Anthropic);
+        assert_eq!(
+            api_provider.headers.get("anthropic-version").unwrap(),
+            ANTHROPIC_API_VERSION
+        );
+        assert_eq!(
+            api_provider
+                .headers
+                .get(http::header::AUTHORIZATION)
+                .unwrap(),
+            "Bearer token"
+        );
     }
 }

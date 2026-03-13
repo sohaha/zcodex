@@ -104,6 +104,10 @@ pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
+const ANTHROPIC_COMPACT_UNSUPPORTED_ERROR: &str =
+    "conversation compaction is not supported for anthropic providers";
+const ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR: &str =
+    "memory summarization is not supported for anthropic providers";
 
 pub fn ws_version_from_features(config: &Config) -> bool {
     config
@@ -288,6 +292,11 @@ impl ModelClient {
         if prompt.input.is_empty() {
             return Ok(Vec::new());
         }
+        if self.state.provider.wire_api == WireApi::Anthropic {
+            return Err(CodexErr::UnsupportedOperation(
+                ANTHROPIC_COMPACT_UNSUPPORTED_ERROR.to_string(),
+            ));
+        }
         let client_setup = self.current_client_setup().await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
         let request_telemetry = Self::build_request_telemetry(session_telemetry);
@@ -346,6 +355,11 @@ impl ModelClient {
     ) -> Result<Vec<ApiMemorySummarizeOutput>> {
         if raw_memories.is_empty() {
             return Ok(Vec::new());
+        }
+        if self.state.provider.wire_api == WireApi::Anthropic {
+            return Err(CodexErr::UnsupportedOperation(
+                ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR.to_string(),
+            ));
         }
 
         let client_setup = self.current_client_setup().await?;
@@ -1060,6 +1074,18 @@ impl ModelClientSession {
                 )
                 .await
             }
+            WireApi::Anthropic => {
+                self.stream_responses_api(
+                    prompt,
+                    model_info,
+                    session_telemetry,
+                    effort,
+                    summary,
+                    service_tier,
+                    turn_metadata_header,
+                )
+                .await
+            }
         }
     }
 
@@ -1302,6 +1328,8 @@ impl WebsocketTelemetry for ApiTelemetry {
 
 #[cfg(test)]
 mod tests {
+    use super::ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR;
+    use super::ApiRawMemory;
     use super::ModelClient;
     use codex_otel::SessionTelemetry;
     use codex_protocol::ThreadId;
@@ -1320,6 +1348,20 @@ mod tests {
             None,
             ThreadId::new(),
             provider,
+            session_source,
+            None,
+            false,
+            false,
+            false,
+            None,
+        )
+    }
+
+    fn anthropic_test_model_client(session_source: SessionSource) -> ModelClient {
+        ModelClient::new(
+            None,
+            ThreadId::new(),
+            crate::model_provider_info::ModelProviderInfo::create_anthropic_provider(),
             session_source,
             None,
             false,
@@ -1397,5 +1439,33 @@ mod tests {
             .await
             .expect("empty summarize request should succeed");
         assert_eq!(output.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn summarize_memories_rejects_anthropic_provider() {
+        let client = anthropic_test_model_client(SessionSource::Cli);
+        let model_info = test_model_info();
+        let session_telemetry = test_session_telemetry();
+
+        let err = client
+            .summarize_memories(
+                vec![ApiRawMemory {
+                    id: "memory-1".to_string(),
+                    metadata: codex_api::RawMemoryMetadata {
+                        source_path: "trace.json".to_string(),
+                    },
+                    items: vec![json!({"type": "message"})],
+                }],
+                &model_info,
+                None,
+                &session_telemetry,
+            )
+            .await
+            .expect_err("anthropic memory summarize should fail fast");
+
+        assert_eq!(
+            err.to_string(),
+            format!("unsupported operation: {ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR}")
+        );
     }
 }

@@ -181,11 +181,12 @@ impl ThreadManager {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
-                models_manager: Arc::new(ModelsManager::new(
+                models_manager: Arc::new(ModelsManager::with_provider(
                     codex_home,
                     auth_manager.clone(),
                     config.model_catalog.clone(),
                     collaboration_modes_config,
+                    config.model_provider.clone(),
                 )),
                 skills_manager,
                 plugins_manager,

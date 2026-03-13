@@ -8,6 +8,7 @@ use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
 use crate::error::Result as CoreResult;
 use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::WireApi;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::models_manager::model_info;
@@ -75,6 +76,22 @@ impl ModelsManager {
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
+        Self::with_provider(
+            codex_home,
+            auth_manager,
+            model_catalog,
+            collaboration_modes_config,
+            ModelProviderInfo::create_openai_provider(),
+        )
+    }
+
+    pub fn with_provider(
+        codex_home: PathBuf,
+        auth_manager: Arc<AuthManager>,
+        model_catalog: Option<ModelsResponse>,
+        collaboration_modes_config: CollaborationModesConfig,
+        provider: ModelProviderInfo,
+    ) -> Self {
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         let catalog_mode = if model_catalog.is_some() {
@@ -84,10 +101,7 @@ impl ModelsManager {
         };
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| {
-                Self::load_remote_models_from_file()
-                    .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"))
-            });
+            .unwrap_or_else(|| Self::load_bundled_models(&provider));
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -95,7 +109,7 @@ impl ModelsManager {
             auth_manager,
             etag: RwLock::new(None),
             cache_manager,
-            provider: ModelProviderInfo::create_openai_provider(),
+            provider,
         }
     }
 
@@ -245,7 +259,9 @@ impl ModelsManager {
             return Ok(());
         }
 
-        if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
+        if self.provider.wire_api != WireApi::Responses
+            || self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt)
+        {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
@@ -330,6 +346,14 @@ impl ModelsManager {
         Ok(response.models)
     }
 
+    fn load_bundled_models(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+        match provider.wire_api {
+            WireApi::Responses => Self::load_remote_models_from_file()
+                .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
+            WireApi::Anthropic => model_info::anthropic_model_catalog(),
+        }
+    }
+
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
     async fn try_load_cache(&self) -> bool {
         let _timer =
@@ -381,20 +405,13 @@ impl ModelsManager {
         auth_manager: Arc<AuthManager>,
         provider: ModelProviderInfo,
     ) -> Self {
-        let cache_path = codex_home.join(MODEL_CACHE_FILE);
-        let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
-        Self {
-            remote_models: RwLock::new(
-                Self::load_remote_models_from_file()
-                    .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
-            ),
-            catalog_mode: CatalogMode::Default,
-            collaboration_modes_config: CollaborationModesConfig::default(),
+        Self::with_provider(
+            codex_home,
             auth_manager,
-            etag: RwLock::new(None),
-            cache_manager,
+            None,
+            CollaborationModesConfig::default(),
             provider,
-        }
+        )
     }
 
     /// Get model identifier without consulting remote state or cache.
@@ -964,6 +981,47 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn anthropic_provider_skips_network_refresh_even_with_chatgpt_auth() {
+        let server = MockServer::start().await;
+        let dynamic_slug = "claude-network-only";
+        let models_mock = mount_models_once(
+            &server,
+            ModelsResponse {
+                models: vec![remote_model(dynamic_slug, "Claude Network", 1)],
+            },
+        )
+        .await;
+
+        let codex_home = tempdir().expect("temp dir");
+        let mut provider = ModelProviderInfo::create_anthropic_provider();
+        provider.base_url = Some(server.uri());
+        let auth_manager =
+            AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+        let manager = ModelsManager::with_provider_for_tests(
+            codex_home.path().to_path_buf(),
+            auth_manager,
+            provider,
+        );
+
+        manager
+            .refresh_available_models(RefreshStrategy::Online)
+            .await
+            .expect("anthropic refresh should no-op");
+        let cached_remote = manager.get_remote_models().await;
+        assert!(
+            !cached_remote
+                .iter()
+                .any(|candidate| candidate.slug == dynamic_slug),
+            "anthropic bundled catalog should remain authoritative"
+        );
+        assert_eq!(
+            models_mock.requests().len(),
+            0,
+            "anthropic provider should avoid /models requests"
+        );
+    }
+
     #[test]
     fn build_available_models_picks_default_after_hiding_hidden_models() {
         let codex_home = tempdir().expect("temp dir");
@@ -986,6 +1044,31 @@ mod tests {
         let available = manager.build_available_models(vec![hidden_model, visible_model]);
 
         assert_eq!(available, vec![expected_hidden, expected_visible]);
+    }
+
+    #[tokio::test]
+    async fn anthropic_provider_uses_anthropic_bundled_catalog() {
+        let codex_home = tempdir().expect("temp dir");
+        let auth_manager =
+            AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+        let manager = ModelsManager::with_provider_for_tests(
+            codex_home.path().to_path_buf(),
+            auth_manager,
+            ModelProviderInfo::create_anthropic_provider(),
+        );
+
+        let available = manager.list_models(RefreshStrategy::Offline).await;
+        let default_model = manager
+            .get_default_model(&None, RefreshStrategy::Offline)
+            .await;
+
+        assert!(
+            available
+                .iter()
+                .all(|preset| preset.model.starts_with("claude-")),
+            "anthropic bundled catalog should only contain claude models"
+        );
+        assert!(default_model.starts_with("claude-"));
     }
 
     #[test]

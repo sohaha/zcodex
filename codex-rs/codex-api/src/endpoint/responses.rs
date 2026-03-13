@@ -1,9 +1,11 @@
+use crate::anthropic;
 use crate::auth::AuthProvider;
 use crate::common::ResponseStream;
 use crate::common::ResponsesApiRequest;
 use crate::endpoint::session::EndpointSession;
 use crate::error::ApiError;
 use crate::provider::Provider;
+use crate::provider::WireApi;
 use crate::requests::headers::build_conversation_headers;
 use crate::requests::headers::insert_header;
 use crate::requests::headers::subagent_header;
@@ -60,6 +62,10 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         request: ResponsesApiRequest,
         options: ResponsesOptions,
     ) -> Result<ResponseStream, ApiError> {
+        if self.session.provider().wire_api == WireApi::Anthropic {
+            return self.stream_anthropic_request(request, options).await;
+        }
+
         let ResponsesOptions {
             conversation_id,
             session_source,
@@ -84,6 +90,44 @@ impl<T: HttpTransport, A: AuthProvider> ResponsesClient<T, A> {
         }
 
         self.stream(body, headers, compression, turn_state).await
+    }
+
+    async fn stream_anthropic_request(
+        &self,
+        request: ResponsesApiRequest,
+        options: ResponsesOptions,
+    ) -> Result<ResponseStream, ApiError> {
+        let ResponsesOptions {
+            conversation_id: _,
+            session_source,
+            mut extra_headers,
+            compression: _,
+            turn_state,
+        } = options;
+
+        if let Some(subagent) = subagent_header(&session_source) {
+            insert_header(&mut extra_headers, "x-codex-subagent", &subagent);
+        }
+
+        let freeform_tool_names = anthropic::freeform_tool_names(&request.tools);
+        let body = anthropic::build_request_body(&request);
+        let stream_response = self
+            .session
+            .stream_with(Method::POST, "messages", extra_headers, Some(body), |req| {
+                req.headers.insert(
+                    http::header::ACCEPT,
+                    HeaderValue::from_static("text/event-stream"),
+                );
+            })
+            .await?;
+
+        Ok(anthropic::spawn_response_stream(
+            stream_response,
+            self.session.provider().stream_idle_timeout,
+            self.sse_telemetry.clone(),
+            turn_state,
+            freeform_tool_names,
+        ))
     }
 
     fn path() -> &'static str {

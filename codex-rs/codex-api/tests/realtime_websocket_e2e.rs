@@ -54,6 +54,7 @@ fn test_provider(base_url: String) -> Provider {
     Provider {
         name: "test".to_string(),
         base_url,
+        wire_api: codex_api::provider::WireApi::Responses,
         query_params: Some(HashMap::new()),
         headers: HeaderMap::new(),
         retry: RetryConfig {

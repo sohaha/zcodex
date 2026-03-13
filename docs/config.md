@@ -30,6 +30,15 @@ When Codex knows which client started the turn, the legacy notify JSON payload a
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.
 
+## Built-in model providers
+
+Codex ships with built-in `openai`, `anthropic`, `ollama`, and `lmstudio`
+model provider entries. For Anthropic-compatible setups, use
+`wire_api = "anthropic"` and provide credentials with `ANTHROPIC_API_KEY`
+unless you override the provider config. The built-in `anthropic` provider
+defaults to `https://api.anthropic.com/v1`, and you can override that with
+`ANTHROPIC_BASE_URL` or a custom `model_providers.<id>.base_url` entry.
+
 ## SQLite State DB
 
 Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the
