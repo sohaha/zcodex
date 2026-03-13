@@ -3975,6 +3975,32 @@ fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     Ok(())
 }
 
+fn anthropic_catalog() -> ModelsResponse {
+    ModelsResponse {
+        models: crate::models_manager::model_info::anthropic_model_catalog(),
+    }
+}
+
+fn anthropic_test_model(
+    slug: &str,
+    display_name: &str,
+) -> codex_protocol::openai_models::ModelInfo {
+    let mut model = crate::models_manager::model_info::anthropic_model_catalog()
+        .into_iter()
+        .next()
+        .expect("anthropic catalog should contain at least one model");
+    model.slug = slug.to_string();
+    model.display_name = display_name.to_string();
+    model
+}
+
+fn write_catalog(path: &std::path::Path, catalog: &ModelsResponse) -> std::io::Result<()> {
+    std::fs::write(
+        path,
+        serde_json::to_string(catalog).expect("serialize catalog"),
+    )
+}
+
 #[test]
 fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
@@ -3997,6 +4023,130 @@ fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     assert!(
         err.to_string().contains("must contain at least one model"),
         "unexpected error: {err}"
+    );
+    Ok(())
+}
+
+#[test]
+fn model_catalog_merge_json_merges_with_bundled_catalog() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let catalog_path = codex_home.path().join("catalog-merge.json");
+    let custom_model = anthropic_test_model("claude-proxy-custom", "Claude Proxy Custom");
+    let merge_catalog = ModelsResponse {
+        models: vec![custom_model.clone()],
+    };
+    write_catalog(&catalog_path, &merge_catalog)?;
+
+    let cfg = ConfigToml {
+        model_provider: Some("anthropic".to_string()),
+        model_catalog_merge_json: Some(AbsolutePathBuf::from_absolute_path(catalog_path)?),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    let merged_catalog = config.model_catalog.expect("merged catalog should load");
+    let bundled_catalog = anthropic_catalog();
+    assert_eq!(
+        merged_catalog.models.len(),
+        bundled_catalog.models.len() + 1
+    );
+    assert!(
+        merged_catalog
+            .models
+            .iter()
+            .any(|model| model.slug == custom_model.slug)
+    );
+    assert!(
+        merged_catalog
+            .models
+            .iter()
+            .any(|model| model.slug == bundled_catalog.models[0].slug)
+    );
+    Ok(())
+}
+
+#[test]
+fn model_catalog_merge_json_overrides_matching_bundled_slug() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let catalog_path = codex_home.path().join("catalog-merge.json");
+    let mut override_model = crate::models_manager::model_info::anthropic_model_catalog()
+        .into_iter()
+        .next()
+        .expect("anthropic catalog should contain at least one model");
+    override_model.display_name = "Claude Sonnet 4 via Proxy".to_string();
+    override_model.description = Some("proxy override".to_string());
+    let merge_catalog = ModelsResponse {
+        models: vec![override_model.clone()],
+    };
+    write_catalog(&catalog_path, &merge_catalog)?;
+
+    let cfg = ConfigToml {
+        model_provider: Some("anthropic".to_string()),
+        model_catalog_merge_json: Some(AbsolutePathBuf::from_absolute_path(catalog_path)?),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    let merged_catalog = config.model_catalog.expect("merged catalog should load");
+    let bundled_catalog = anthropic_catalog();
+    assert_eq!(merged_catalog.models.len(), bundled_catalog.models.len());
+    let merged_model = merged_catalog
+        .models
+        .iter()
+        .find(|model| model.slug == override_model.slug)
+        .expect("matching slug should exist");
+    assert_eq!(merged_model.display_name, override_model.display_name);
+    assert_eq!(merged_model.description, override_model.description);
+    Ok(())
+}
+
+#[test]
+fn model_catalog_merge_json_uses_custom_catalog_as_base_when_present() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let base_catalog_path = codex_home.path().join("catalog-base.json");
+    let merge_catalog_path = codex_home.path().join("catalog-merge.json");
+    let base_model = anthropic_test_model("claude-base-only", "Claude Base Only");
+    let merge_model = anthropic_test_model("claude-merge-only", "Claude Merge Only");
+    write_catalog(
+        &base_catalog_path,
+        &ModelsResponse {
+            models: vec![base_model.clone()],
+        },
+    )?;
+    write_catalog(
+        &merge_catalog_path,
+        &ModelsResponse {
+            models: vec![merge_model.clone()],
+        },
+    )?;
+
+    let cfg = ConfigToml {
+        model_provider: Some("anthropic".to_string()),
+        model_catalog_json: Some(AbsolutePathBuf::from_absolute_path(base_catalog_path)?),
+        model_catalog_merge_json: Some(AbsolutePathBuf::from_absolute_path(merge_catalog_path)?),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    let merged_catalog = config.model_catalog.expect("merged catalog should load");
+    assert_eq!(
+        merged_catalog.models,
+        vec![base_model.clone(), merge_model.clone()]
     );
     Ok(())
 }

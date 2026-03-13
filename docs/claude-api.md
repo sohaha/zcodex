@@ -40,6 +40,23 @@ export ANTHROPIC_BASE_URL="https://your-proxy.example.com/v1"
 base_url = "https://your-proxy.example.com/v1"
 ```
 
+## 自定义可用模型列表
+
+如果你的 Anthropic 中转暴露了内置目录之外的模型，可以在
+`~/.codex/config.toml` 中追加模型目录：
+
+```toml
+model_provider = "anthropic"
+model_catalog_merge_json = "/path/to/anthropic-models.json"
+```
+
+说明：
+
+- `model_catalog_merge_json` 会在当前 provider 的内置模型列表之上合并额外模型。
+- 如果同时设置 `model_catalog_json`，则先使用它作为基础列表，再叠加
+  `model_catalog_merge_json`。
+- 合并按模型 `slug` 匹配；相同 `slug` 时，以 merge 文件中的定义为准。
+
 ## 当前实现限制
 
 当前仓库对 Claude 的支持，主要是将对话请求适配到 Anthropic 的

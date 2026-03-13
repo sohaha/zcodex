@@ -48,6 +48,7 @@ use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use crate::model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
+use crate::models_manager::model_info;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
@@ -442,8 +443,12 @@ pub struct Config {
     /// Optional override to force-enable reasoning summaries for the configured model.
     pub model_supports_reasoning_summaries: Option<bool>,
 
-    /// Optional full model catalog loaded from `model_catalog_json`.
-    /// When set, this replaces the bundled catalog for the current process.
+    /// Optional resolved model catalog loaded from `model_catalog_json` and/or
+    /// `model_catalog_merge_json`.
+    ///
+    /// When `model_catalog_json` is set, it replaces the bundled catalog.
+    /// When only `model_catalog_merge_json` is set, the merge file is applied
+    /// on top of the bundled catalog for the active provider.
     pub model_catalog: Option<ModelsResponse>,
 
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
@@ -732,13 +737,13 @@ pub(crate) fn deserialize_config_toml_with_base(
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
-fn load_catalog_json(path: &AbsolutePathBuf) -> std::io::Result<ModelsResponse> {
+fn load_catalog_json(path: &AbsolutePathBuf, field_name: &str) -> std::io::Result<ModelsResponse> {
     let file_contents = std::fs::read_to_string(path)?;
     let catalog = serde_json::from_str::<ModelsResponse>(&file_contents).map_err(|err| {
         std::io::Error::new(
             ErrorKind::InvalidData,
             format!(
-                "failed to parse model_catalog_json path `{}` as JSON: {err}",
+                "failed to parse {field_name} path `{}` as JSON: {err}",
                 path.display()
             ),
         )
@@ -747,7 +752,7 @@ fn load_catalog_json(path: &AbsolutePathBuf) -> std::io::Result<ModelsResponse> 
         return Err(std::io::Error::new(
             ErrorKind::InvalidData,
             format!(
-                "model_catalog_json path `{}` must contain at least one model",
+                "{field_name} path `{}` must contain at least one model",
                 path.display()
             ),
         ));
@@ -756,11 +761,62 @@ fn load_catalog_json(path: &AbsolutePathBuf) -> std::io::Result<ModelsResponse> 
 }
 
 fn load_model_catalog(
+    provider: &ModelProviderInfo,
     model_catalog_json: Option<AbsolutePathBuf>,
+    model_catalog_merge_json: Option<AbsolutePathBuf>,
 ) -> std::io::Result<Option<ModelsResponse>> {
-    model_catalog_json
-        .map(|path| load_catalog_json(&path))
-        .transpose()
+    let base_catalog = model_catalog_json
+        .map(|path| load_catalog_json(&path, "model_catalog_json"))
+        .transpose()?;
+    let merge_catalog = model_catalog_merge_json
+        .map(|path| load_catalog_json(&path, "model_catalog_merge_json"))
+        .transpose()?;
+
+    match (base_catalog, merge_catalog) {
+        (None, None) => Ok(None),
+        (Some(base_catalog), None) => Ok(Some(base_catalog)),
+        (None, Some(merge_catalog)) => Ok(Some(merge_model_catalogs(
+            bundled_model_catalog(provider)?,
+            merge_catalog,
+        ))),
+        (Some(base_catalog), Some(merge_catalog)) => {
+            Ok(Some(merge_model_catalogs(base_catalog, merge_catalog)))
+        }
+    }
+}
+
+fn bundled_model_catalog(provider: &ModelProviderInfo) -> std::io::Result<ModelsResponse> {
+    match provider.wire_api {
+        crate::model_provider_info::WireApi::Responses => {
+            serde_json::from_str(include_str!("../../models.json")).map_err(|err| {
+                std::io::Error::new(
+                    ErrorKind::InvalidData,
+                    format!("failed to parse bundled models.json: {err}"),
+                )
+            })
+        }
+        crate::model_provider_info::WireApi::Anthropic => Ok(ModelsResponse {
+            models: model_info::anthropic_model_catalog(),
+        }),
+    }
+}
+
+fn merge_model_catalogs(
+    mut base_catalog: ModelsResponse,
+    merge_catalog: ModelsResponse,
+) -> ModelsResponse {
+    for model in merge_catalog.models {
+        if let Some(existing_index) = base_catalog
+            .models
+            .iter()
+            .position(|existing| existing.slug == model.slug)
+        {
+            base_catalog.models[existing_index] = model;
+        } else {
+            base_catalog.models.push(model);
+        }
+    }
+    base_catalog
 }
 
 fn filter_mcp_servers_by_requirements(
@@ -1216,6 +1272,9 @@ pub struct ConfigToml {
     /// Optional path to a JSON model catalog (applied on startup only).
     /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
     pub model_catalog_json: Option<AbsolutePathBuf>,
+    /// Optional path to a JSON model catalog overlay (applied on startup only).
+    /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
+    pub model_catalog_merge_json: Option<AbsolutePathBuf>,
 
     /// Optionally specify a personality for the model
     pub personality: Option<Personality>,
@@ -2274,10 +2333,15 @@ impl Config {
 
         let check_for_update_on_startup = cfg.check_for_update_on_startup.unwrap_or(true);
         let model_catalog = load_model_catalog(
+            &model_provider,
             config_profile
                 .model_catalog_json
                 .clone()
                 .or(cfg.model_catalog_json.clone()),
+            config_profile
+                .model_catalog_merge_json
+                .clone()
+                .or(cfg.model_catalog_merge_json.clone()),
         )?;
 
         let log_dir = cfg

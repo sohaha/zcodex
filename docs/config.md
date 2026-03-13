@@ -39,6 +39,20 @@ unless you override the provider config. The built-in `anthropic` provider
 defaults to `https://api.anthropic.com/v1`, and you can override that with
 `ANTHROPIC_BASE_URL` or a custom `model_providers.<id>.base_url` entry.
 
+## Custom model catalogs
+
+Codex supports two startup-only config keys for overriding available models:
+
+- `model_catalog_json` replaces the bundled catalog for the active provider.
+- `model_catalog_merge_json` merges additional models into the bundled catalog.
+
+If both are set, Codex uses `model_catalog_json` as the base catalog and then
+applies `model_catalog_merge_json` on top. Merge entries match by `slug`; when
+the same slug appears in both catalogs, the merge entry wins.
+
+This is especially useful for Anthropic-compatible proxies that expose model
+slugs not present in the built-in Claude catalog.
+
 ## SQLite State DB
 
 Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the
