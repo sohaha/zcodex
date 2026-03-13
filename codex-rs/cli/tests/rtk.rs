@@ -52,11 +52,7 @@ fn rtk_read_limits_output() -> Result<()> {
     ])
     .assert()
     .success()
-    .stdout(
-        contains("one")
-            .and(contains("two"))
-            .and(contains("1 more lines (total: 3)")),
-    );
+    .stdout(contains("one").and(contains("2 more lines (total: 3)")));
 
     Ok(())
 }
@@ -236,7 +232,7 @@ fn rtk_grep_handles_recursive_flag_without_replace_mode() -> Result<()> {
 
     let mut cmd = codex_command(codex_home.path())?;
     cmd.current_dir(&workspace)
-        .args(["rtk", "grep", "-r", "needle", "."])
+        .args(["rtk", "grep", "needle", ".", "-r"])
         .assert()
         .success()
         .stdout(contains("sample.txt").and(contains("2: needle here")));

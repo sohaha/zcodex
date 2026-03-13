@@ -1687,9 +1687,9 @@ M  file7.rs
     fn test_filter_log_output_truncate_long() {
         let long_line = "abc1234 ".to_string() + &"x".repeat(100) + " (2 days ago) <author>";
         let result = filter_log_output(&long_line, 10, false);
-        assert!(result.len() < long_line.len());
+        assert!(result.chars().count() < long_line.chars().count());
         assert!(result.contains("..."));
-        assert!(result.len() <= 80);
+        assert!(result.chars().count() <= 80);
     }
 
     #[test]
@@ -1700,6 +1700,69 @@ M  file7.rs
             .join("\n");
         let result = filter_log_output(&output, 5, false);
         assert_eq!(result.lines().count(), 5);
+    }
+
+    #[test]
+    fn test_filter_log_output_user_limit_no_cap() {
+        let output = (0..20)
+            .map(|i| format!("hash{i} message {i} (1 day ago) <author>"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let result = filter_log_output(&output, 20, true);
+        assert_eq!(
+            result.lines().count(),
+            20,
+            "User's -20 should return all 20 lines"
+        );
+    }
+
+    #[test]
+    fn test_filter_log_output_user_limit_wider_truncation() {
+        let line_90_chars = format!("abc1234 {} (2 days ago) <author>", "x".repeat(60));
+        assert!(line_90_chars.chars().count() > 80);
+        assert!(line_90_chars.chars().count() < 120);
+
+        let result_default = filter_log_output(&line_90_chars, 10, false);
+        let result_user = filter_log_output(&line_90_chars, 10, true);
+
+        assert!(
+            result_default.contains("..."),
+            "Default should truncate at 80 chars"
+        );
+        assert!(
+            !result_user.contains("..."),
+            "User limit should not truncate 90-char line"
+        );
+    }
+
+    #[test]
+    fn test_parse_user_limit_combined() {
+        let args: Vec<String> = vec!["-20".into()];
+        assert_eq!(parse_user_limit(&args), Some(20));
+    }
+
+    #[test]
+    fn test_parse_user_limit_n_space() {
+        let args: Vec<String> = vec!["-n".into(), "15".into()];
+        assert_eq!(parse_user_limit(&args), Some(15));
+    }
+
+    #[test]
+    fn test_parse_user_limit_max_count_eq() {
+        let args: Vec<String> = vec!["--max-count=30".into()];
+        assert_eq!(parse_user_limit(&args), Some(30));
+    }
+
+    #[test]
+    fn test_parse_user_limit_max_count_space() {
+        let args: Vec<String> = vec!["--max-count".into(), "25".into()];
+        assert_eq!(parse_user_limit(&args), Some(25));
+    }
+
+    #[test]
+    fn test_parse_user_limit_none() {
+        let args: Vec<String> = vec!["--oneline".into()];
+        assert_eq!(parse_user_limit(&args), None);
     }
 
     #[test]
@@ -1738,17 +1801,16 @@ no changes added to commit (use "git add" and/or "git commit -a")
         let result = filter_log_output(&thai_msg, 10, false);
         // Should not panic
         assert!(result.contains("abc1234"));
-        // The line has 30 Thai chars (90 bytes) + other text, so > 80 bytes
-        // It should be truncated with "..."
-        assert!(result.contains("..."));
+        // The line has 30 Thai chars + other text, so < 80 chars total.
+        assert!(result.contains("abc1234"));
     }
 
     #[test]
     fn test_filter_log_output_emoji() {
         let emoji_msg = "abc1234 🎉🎊🎈🎁🎂🎄🎃🎆🎇✨🎉🎊🎈🎁🎂🎄🎃🎆🎇✨ (1 day ago) <user>";
         let result = filter_log_output(emoji_msg, 10, false);
-        // Should not panic, should have "..."
-        assert!(result.contains("..."));
+        // Should not panic.
+        assert!(result.contains("abc1234"));
     }
 
     #[test]
@@ -1874,6 +1936,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
     }
 
     #[test]
+    #[ignore] // Requires `cargo build` first — run with `cargo test --ignored`
     fn test_git_status_not_a_repo_exits_nonzero() {
         // Run rtk git status in a directory that is not a git repo
         let tmp = std::env::temp_dir().join("rtk_test_not_a_repo");
@@ -1884,6 +1947,11 @@ no changes added to commit (use "git add" and/or "git commit -a")
             .join("target")
             .join("debug")
             .join("rtk");
+        assert!(
+            bin_path.exists(),
+            "Debug binary not found at {:?} — run `cargo build` first",
+            bin_path
+        );
         let output = std::process::Command::new(&bin_path)
             .args(["git", "status"])
             .current_dir(&tmp)

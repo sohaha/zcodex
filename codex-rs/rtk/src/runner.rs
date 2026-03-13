@@ -3,30 +3,19 @@ use anyhow::Context;
 use anyhow::Result;
 use regex::Regex;
 use std::process::Command;
+use std::process::Output;
 use std::process::Stdio;
 
 /// Run a command and filter output to show only errors/warnings
-pub fn run_err(command: &str, verbose: u8) -> Result<()> {
+pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
+    let command_display = command.join(" ");
 
     if verbose > 0 {
-        eprintln!("Running: {command}");
+        eprintln!("Running: {command_display}");
     }
 
-    let output = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", command])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-    } else {
-        Command::new("sh")
-            .args(["-c", command])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-    }
-    .context("Failed to execute command")?;
+    let output = execute_command(command).context("Failed to execute command")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -60,7 +49,7 @@ pub fn run_err(command: &str, verbose: u8) -> Result<()> {
     } else {
         println!("{rtk}");
     }
-    timer.track(command, "rtk run-err", &raw, &rtk);
+    timer.track(&command_display, "rtk run-err", &raw, &rtk);
     if exit_code != 0 {
         std::process::exit(exit_code);
     }
@@ -68,27 +57,15 @@ pub fn run_err(command: &str, verbose: u8) -> Result<()> {
 }
 
 /// Run tests and show only failures
-pub fn run_test(command: &str, verbose: u8) -> Result<()> {
+pub fn run_test(command: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
+    let command_display = command.join(" ");
 
     if verbose > 0 {
-        eprintln!("Running tests: {command}");
+        eprintln!("Running tests: {command_display}");
     }
 
-    let output = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", command])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-    } else {
-        Command::new("sh")
-            .args(["-c", command])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-    }
-    .context("Failed to execute test command")?;
+    let output = execute_command(command).context("Failed to execute test command")?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -98,17 +75,28 @@ pub fn run_test(command: &str, verbose: u8) -> Result<()> {
         .status
         .code()
         .unwrap_or(if output.status.success() { 0 } else { 1 });
-    let summary = extract_test_summary(&raw, command);
+    let summary = extract_test_summary(&raw, &command_display);
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "test", exit_code) {
         println!("{summary}\n{hint}");
     } else {
         println!("{summary}");
     }
-    timer.track(command, "rtk run-test", &raw, &summary);
+    timer.track(&command_display, "rtk run-test", &raw, &summary);
     if exit_code != 0 {
         std::process::exit(exit_code);
     }
     Ok(())
+}
+
+fn execute_command(command: &[String]) -> Result<Output> {
+    let (program, args) = command.split_first().context("No command provided")?;
+
+    Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .with_context(|| format!("Failed to spawn command: {program}"))
 }
 
 fn filter_errors(output: &str) -> String {
@@ -136,36 +124,27 @@ fn filter_errors(output: &str) -> String {
         ];
     }
 
-    let mut result = Vec::new();
-    let mut in_error_block = false;
-    let mut blank_count = 0;
+    let lines: Vec<&str> = output.lines().collect();
+    let mut include = vec![false; lines.len()];
 
-    for line in output.lines() {
-        let is_error_line = ERROR_PATTERNS.iter().any(|p| p.is_match(line));
-
-        if is_error_line {
-            in_error_block = true;
-            blank_count = 0;
-            result.push(line.to_string());
-        } else if in_error_block {
-            if line.trim().is_empty() {
-                blank_count += 1;
-                if blank_count >= 2 {
-                    in_error_block = false;
-                } else {
-                    result.push(line.to_string());
-                }
-            } else if line.starts_with(' ') || line.starts_with('\t') {
-                // Continuation of error
-                result.push(line.to_string());
-                blank_count = 0;
-            } else {
-                in_error_block = false;
+    for (idx, line) in lines.iter().enumerate() {
+        if ERROR_PATTERNS.iter().any(|p| p.is_match(line)) {
+            include[idx] = true;
+            if idx > 0 {
+                include[idx - 1] = true;
+            }
+            if idx + 1 < lines.len() {
+                include[idx + 1] = true;
             }
         }
     }
 
-    result.join("\n")
+    lines
+        .iter()
+        .zip(include)
+        .filter_map(|(line, keep)| keep.then(|| (*line).to_string()))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn extract_test_summary(output: &str, command: &str) -> String {
@@ -271,9 +250,10 @@ mod tests {
 
     #[test]
     fn test_filter_errors() {
-        let output = "info: compiling\nerror: something failed\n  at line 10\ninfo: done";
+        let output = "before\nwarning: boom\nafter";
         let filtered = filter_errors(output);
-        assert!(filtered.contains("error"));
-        assert!(!filtered.contains("info"));
+        assert!(filtered.contains("before"));
+        assert!(filtered.contains("warning: boom"));
+        assert!(filtered.contains("after"));
     }
 }
