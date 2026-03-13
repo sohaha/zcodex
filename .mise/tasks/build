@@ -52,6 +52,103 @@ target_requires_linux_build_deps() {
   return 1
 }
 
+resolve_build_target() {
+  local target="${CARGO_BUILD_TARGET:-}"
+  local previous_was_target=0
+
+  for arg in "$@"; do
+    if [ "$previous_was_target" -eq 1 ]; then
+      target="$arg"
+      break
+    fi
+
+    case "$arg" in
+      --target)
+        previous_was_target=1
+        ;;
+      --target=*)
+        target="${arg#--target=}"
+        break
+        ;;
+    esac
+  done
+
+  printf '%s\n' "$target"
+}
+
+resolve_build_profile_dir() {
+  local profile="debug"
+  local previous_was_profile=0
+
+  for arg in "$@"; do
+    if [ "$previous_was_profile" -eq 1 ]; then
+      profile="$arg"
+      break
+    fi
+
+    case "$arg" in
+      --release)
+        profile="release"
+        ;;
+      --profile)
+        previous_was_profile=1
+        ;;
+      --profile=*)
+        profile="${arg#--profile=}"
+        break
+        ;;
+    esac
+  done
+
+  if [ "$profile" = "dev" ]; then
+    profile="debug"
+  fi
+
+  printf '%s\n' "$profile"
+}
+
+resolve_codex_bin() {
+  local target_dir="${CARGO_TARGET_DIR:-$codex_rs_dir/target}"
+  local build_target
+  local profile_dir
+
+  build_target="$(resolve_build_target "$@")"
+  profile_dir="$(resolve_build_profile_dir "$@")"
+
+  if [ -n "$build_target" ]; then
+    printf '%s\n' "$target_dir/$build_target/$profile_dir/codex"
+    return
+  fi
+
+  printf '%s\n' "$target_dir/$profile_dir/codex"
+}
+
+overwrite_installed_codex_if_present() {
+  local built_codex_bin="$1"
+  local installed_codex
+  local built_codex_real
+  local installed_codex_real
+
+  installed_codex="$(command -v codex || true)"
+  if [ -z "$installed_codex" ]; then
+    return
+  fi
+
+  if [ ! -x "$built_codex_bin" ]; then
+    echo "[build] 构建成功，但未找到产物：$built_codex_bin" >&2
+    exit 1
+  fi
+
+  built_codex_real="$(realpath "$built_codex_bin")"
+  installed_codex_real="$(realpath "$installed_codex")"
+  if [ "$built_codex_real" = "$installed_codex_real" ]; then
+    return
+  fi
+
+  cp "$built_codex_bin" "$installed_codex"
+  echo "[build] 已使用 $built_codex_bin 覆盖 $installed_codex" >&2
+}
+
 ensure_linux_build_deps() {
   if ! target_requires_linux_build_deps "$@"; then
     return
@@ -70,6 +167,25 @@ ensure_linux_build_deps() {
   fi
 }
 
+run_build() {
+  local built_codex_bin="$1"
+  shift
+
+  if [ -x "$built_codex_bin" ]; then
+    set +e
+    "$script_dir/rs-ext" "$built_codex_bin" rtk cargo build -p codex-cli --bin codex -j "$jobs" "$@"
+    local status=$?
+    set -e
+    if [ "$status" -eq 0 ]; then
+      overwrite_installed_codex_if_present "$built_codex_bin"
+      return 0
+    fi
+  fi
+
+  "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"
+  overwrite_installed_codex_if_present "$built_codex_bin"
+}
+
 ensure_linux_build_deps "$@"
 
 if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
@@ -82,14 +198,5 @@ elif [ -z "${RUSTFLAGS:-}" ] && command -v ld.lld >/dev/null 2>&1; then
   export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
 fi
 
-codex_bin="./codex-rs/target/debug/codex"
-if [ -x "$codex_bin" ]; then
-  set +e
-  "$script_dir/rs-ext" "$codex_bin" rtk cargo build -p codex-cli --bin codex -j "$jobs" "$@"
-  status=$?
-  set -e
-  if [ "$status" -eq 0 ]; then
-    exit 0
-  fi
-fi
-exec "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"
+codex_bin="$(resolve_codex_bin "$@")"
+run_build "$codex_bin" "$@"
