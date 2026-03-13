@@ -2,8 +2,75 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+codex_rs_dir="$repo_root/codex-rs"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+
+target_requires_linux_build_deps() {
+  local target="${CARGO_BUILD_TARGET:-}"
+  local previous_was_target=0
+
+  for arg in "$@"; do
+    if [ "$previous_was_target" -eq 1 ]; then
+      target="$arg"
+      break
+    fi
+
+    case "$arg" in
+      --target)
+        previous_was_target=1
+        ;;
+      --target=*)
+        target="${arg#--target=}"
+        break
+        ;;
+    esac
+  done
+
+  if [ -z "$target" ]; then
+    [ "$(uname -s)" = "Linux" ]
+    return
+  fi
+
+  case "$target" in
+    *linux*)
+      return
+      ;;
+    *.json)
+      local target_path="$target"
+      if [ ! -f "$target_path" ] && [ -f "$codex_rs_dir/$target" ]; then
+        target_path="$codex_rs_dir/$target"
+      fi
+
+      if [ -f "$target_path" ] && grep -Eq '"os"[[:space:]]*:[[:space:]]*"linux"' "$target_path"; then
+        return
+      fi
+      ;;
+  esac
+
+  return 1
+}
+
+ensure_linux_build_deps() {
+  if ! target_requires_linux_build_deps "$@"; then
+    return
+  fi
+
+  if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libcap; then
+    return
+  fi
+
+  echo "[build] libcap 未就绪，先安装 Linux 构建依赖" >&2
+  "$script_dir/deps"
+
+  if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists libcap; then
+    echo "[build] libcap 仍不可用，请检查 pkg-config 和 libcap-dev 安装状态" >&2
+    exit 1
+  fi
+}
+
+ensure_linux_build_deps "$@"
 
 if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
   export RUSTC_WRAPPER="$(command -v sccache)"
