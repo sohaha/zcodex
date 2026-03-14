@@ -49,6 +49,26 @@ just test
 cargo test --all-features
 ```
 
+### Ubuntu cross-build to macOS arm64
+
+If you use `mise`, the repository also provides dedicated tasks for building the
+CLI from Ubuntu for Apple Silicon (`aarch64-apple-darwin`):
+
+```bash
+# Install Zig/cargo-zigbuild/Rust target, then provide a macOS SDK via either
+# an extracted SDK directory or a tarball exported from your own Apple SDK.
+MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run deps-macos-arm64
+# or:
+MACOS_SDK_TARBALL=/path/to/MacOSX.sdk.tar.xz mise run deps-macos-arm64
+
+# Build codex for macOS arm64 from Ubuntu.
+MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run build-macos-arm64 --release
+```
+
+The cross-build task intentionally does not download a macOS SDK on its own.
+You need to supply one locally because Apple SDK redistribution is license
+restricted.
+
 ## Tracing / verbose logging
 
 Codex is written in Rust, so it honors the `RUST_LOG` environment variable to configure its logging behavior.

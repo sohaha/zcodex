@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+sdk_archive="${MACOS_SDK_TARBALL:-}"
+sdk_path="${MACOS_SDK_PATH:-}"
+sdk_root="${MACOS_SDK_ROOT:-$repo_root/.cache/macos-sdk}"
+zig_version="${ZIG_VERSION:-0.14.0}"
+
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "[mise] deps-macos-arm64 目前只支持在 Linux 主机上运行" >&2
+  exit 1
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "[mise] 仅支持 apt-get 环境，请手动安装 curl、xz-utils、pkg-config、Rust 和 cargo-zigbuild" >&2
+  exit 1
+fi
+
+sudo_cmd=()
+if [ "${EUID}" -ne 0 ]; then
+  sudo_cmd=(sudo)
+fi
+
+"${sudo_cmd[@]}" apt-get update
+"${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl pkg-config xz-utils
+
+if ! command -v mise >/dev/null 2>&1; then
+  echo "[mise] 未找到 mise，无法安装 Zig" >&2
+  exit 1
+fi
+
+mise install -y "zig@${zig_version}"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "[mise] 未找到 cargo，请先安装 Rust 工具链" >&2
+  exit 1
+fi
+
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "[mise] 未找到 rustup，请先安装 Rust 工具链" >&2
+  exit 1
+fi
+
+if ! cargo zigbuild --help >/dev/null 2>&1; then
+  cargo install --locked cargo-zigbuild
+fi
+
+if ! rustup target list --installed | grep -Fxq 'aarch64-apple-darwin'; then
+  rustup target add aarch64-apple-darwin
+fi
+
+if [ -n "$sdk_archive" ] && [ -z "$sdk_path" ]; then
+  mkdir -p "$sdk_root"
+  tar -xf "$sdk_archive" -C "$sdk_root"
+
+  sdk_path="$({
+    find "$sdk_root" -type d -name 'MacOSX.sdk' -print
+    find "$sdk_root" -type d -name 'MacOSX*.sdk' -print
+  } | awk '!seen[$0]++' | sort | head -n 1)"
+
+  if [ -n "$sdk_path" ] && [ -d "$sdk_path" ] && [ "$sdk_path" != "$sdk_root/MacOSX.sdk" ]; then
+    ln -sfn "$sdk_path" "$sdk_root/MacOSX.sdk"
+    sdk_path="$sdk_root/MacOSX.sdk"
+  fi
+fi
+
+if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
+  echo "[mise] macOS SDK 已就绪: $sdk_path" >&2
+  echo "[mise] 运行构建时会自动使用 SDKROOT=$sdk_path" >&2
+  exit 0
+fi
+
+cat >&2 <<MSG
+[mise] 已安装 Zig、cargo-zigbuild 和 Rust target，但仍缺少 macOS SDK。
+[mise] 请执行以下任一方式后重试：
+[mise]   1. 传入 MACOS_SDK_TARBALL=/path/to/MacOSX*.sdk.tar.* 再运行本 task
+[mise]   2. 传入 MACOS_SDK_PATH=/path/to/MacOSX.sdk 再运行本 task
+[mise] 说明：由于 macOS SDK 授权限制，这里不会自动联网下载 SDK。
+MSG
+exit 1

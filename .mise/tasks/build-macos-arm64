@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+codex_rs_dir="$repo_root/codex-rs"
+target="aarch64-apple-darwin"
+jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
+sdk_path="${SDKROOT:-${MACOS_SDK_PATH:-$repo_root/.cache/macos-sdk/MacOSX.sdk}}"
+
+resolve_build_profile_dir() {
+  local profile="debug"
+  local previous_was_profile=0
+
+  for arg in "$@"; do
+    if [ "$previous_was_profile" -eq 1 ]; then
+      profile="$arg"
+      break
+    fi
+
+    case "$arg" in
+      --release)
+        profile="release"
+        ;;
+      --profile)
+        previous_was_profile=1
+        ;;
+      --profile=*)
+        profile="${arg#--profile=}"
+        break
+        ;;
+    esac
+  done
+
+  if [ "$profile" = "dev" ]; then
+    profile="debug"
+  fi
+
+  printf '%s\n' "$profile"
+}
+
+ensure_cross_deps() {
+  if [ "$(uname -s)" != "Linux" ]; then
+    echo "[build-macos-arm64] 该 task 仅用于 Linux -> macOS arm64 交叉编译" >&2
+    exit 1
+  fi
+
+  if [ ! -d "$sdk_path" ]; then
+    cat >&2 <<MSG
+[build-macos-arm64] 缺少 macOS SDK: $sdk_path
+[build-macos-arm64] 请先运行 `mise run deps-macos-arm64`，并通过 MACOS_SDK_PATH 或 MACOS_SDK_TARBALL 提供 SDK。
+MSG
+    exit 1
+  fi
+
+  if ! command -v cargo >/dev/null 2>&1 || ! command -v rustup >/dev/null 2>&1; then
+    echo "[build-macos-arm64] 缺少 Rust 工具链，请先安装 cargo/rustup" >&2
+    exit 1
+  fi
+
+  if ! cargo zigbuild --help >/dev/null 2>&1; then
+    echo "[build-macos-arm64] 缺少 cargo-zigbuild，请先运行 `mise run deps-macos-arm64`" >&2
+    exit 1
+  fi
+
+  if ! rustup target list --installed | grep -Fxq "$target"; then
+    echo "[build-macos-arm64] 缺少 Rust target $target，请先运行 `mise run deps-macos-arm64`" >&2
+    exit 1
+  fi
+}
+
+ensure_cross_deps "$@"
+
+export SDKROOT="$sdk_path"
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
+export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+
+profile_dir="$(resolve_build_profile_dir "$@")"
+output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
+
+mise exec -y "zig@${ZIG_VERSION:-0.14.0}" -- \
+  "$script_dir/rs-ext" cargo zigbuild -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
+
+echo "[build-macos-arm64] 构建完成: $output_bin" >&2
