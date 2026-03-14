@@ -129,6 +129,7 @@ overwrite_installed_codex_if_present() {
   local built_codex_real
   local installed_codex_real
   local installed_dir
+  local temp_installed_dir
   local temp_installed_codex
 
   installed_codex="$(command -v codex || true)"
@@ -148,24 +149,24 @@ overwrite_installed_codex_if_present() {
   fi
 
   installed_dir="$(dirname "$installed_codex_real")"
-  if ! temp_installed_codex="$(mktemp "$installed_dir/.codex.tmp.XXXXXX")"; then
-    echo "[build] 无法在 $installed_dir 创建临时文件，已跳过覆盖" >&2
+  if ! temp_installed_dir="$(mktemp -d "$installed_dir/.codex.tmp.XXXXXX")"; then
+    echo "[build] 无法在 $installed_dir 创建临时目录，已跳过覆盖" >&2
     return
   fi
+  temp_installed_codex="$temp_installed_dir/codex"
 
   if ! cp "$built_codex_bin" "$temp_installed_codex"; then
-    rm -f "$temp_installed_codex"
+    rm -rf "$temp_installed_dir"
     echo "[build] 无法写入临时 codex 文件，已跳过覆盖" >&2
     return
   fi
 
-  chmod --reference="$built_codex_bin" "$temp_installed_codex" 2>/dev/null || true
-
   if ! mv -f "$temp_installed_codex" "$installed_codex_real"; then
-    rm -f "$temp_installed_codex"
+    rm -rf "$temp_installed_dir"
     echo "[build] 无法原子替换 $installed_codex_real (可能正在运行)，已跳过覆盖" >&2
     return
   fi
+  rmdir "$temp_installed_dir" 2>/dev/null || true
   echo "[build] 已使用 $built_codex_bin 原子覆盖 $installed_codex_real" >&2
 }
 
