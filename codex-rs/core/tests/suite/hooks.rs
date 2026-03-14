@@ -18,21 +18,28 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
+use which::which;
 
 const FIRST_CONTINUATION_PROMPT: &str = "Retry with exactly the phrase meow meow meow.";
 const SECOND_CONTINUATION_PROMPT: &str = "Now tighten it to just: meow.";
 
 fn write_stop_hook(home: &Path, block_prompts: &[&str]) -> Result<()> {
-    let script_path = home.join("stop_hook.py");
     let log_path = home.join("stop_hook_log.jsonl");
     let prompts_json =
         serde_json::to_string(block_prompts).context("serialize stop hook prompts for test")?;
-    let script = format!(
-        r#"import json
+    let log_path_json =
+        serde_json::to_string(&log_path).context("serialize stop hook log path for test")?;
+    let (script_path, command, script) = if let Ok(python) =
+        which("python").or_else(|_| which("python3"))
+    {
+        let script_path = home.join("stop_hook.py");
+        let command = format!("{} {}", python.display(), script_path.display());
+        let script = format!(
+            r#"import json
 from pathlib import Path
 import sys
 
-log_path = Path(r"{log_path}")
+log_path = Path({log_path_json})
 block_prompts = {prompts_json}
 
 payload = json.load(sys.stdin)
@@ -49,15 +56,48 @@ if invocation_index < len(block_prompts):
 else:
     print(json.dumps({{"systemMessage": f"stop hook pass {{invocation_index + 1}} complete"}}))
 "#,
-        log_path = log_path.display(),
-        prompts_json = prompts_json,
+            log_path_json = log_path_json,
+            prompts_json = prompts_json,
+        );
+        (script_path, command, script)
+    } else {
+        let node = which("node").context("find python/python3/node for stop hook test fixture")?;
+        let script_path = home.join("stop_hook.mjs");
+        let command = format!("{} {}", node.display(), script_path.display());
+        let script = format!(
+            r#"import fs from "node:fs";
+
+const logPath = {log_path_json};
+const blockPrompts = {prompts_json};
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+const existing = fs.existsSync(logPath)
+    ? fs.readFileSync(logPath, "utf8").split(/\r?\n/).filter(line => line.trim())
+    : [];
+
+fs.appendFileSync(logPath, `${{JSON.stringify(payload)}}\n`, "utf8");
+
+const invocationIndex = existing.length;
+if (invocationIndex < blockPrompts.length) {{
+    console.log(JSON.stringify({{ decision: "block", reason: blockPrompts[invocationIndex] }}));
+}} else {{
+    console.log(
+        JSON.stringify({{
+            systemMessage: `stop hook pass ${{invocationIndex + 1}} complete`,
+        }})
     );
+}}
+"#,
+            log_path_json = log_path_json,
+            prompts_json = prompts_json,
+        );
+        (script_path, command, script)
+    };
     let hooks = serde_json::json!({
         "hooks": {
             "Stop": [{
                 "hooks": [{
                     "type": "command",
-                    "command": format!("python3 {}", script_path.display()),
+                    "command": command,
                     "statusMessage": "running stop hook",
                 }]
             }]

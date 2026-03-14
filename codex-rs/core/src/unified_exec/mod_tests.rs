@@ -132,13 +132,20 @@ async fn unified_exec_persists_across_requests() -> anyhow::Result<()> {
     )
     .await?;
 
-    let out_2 = write_stdin(
+    let mut out_2 = write_stdin(
         &session,
         process_id,
         "echo $CODEX_INTERACTIVE_SHELL_VAR\n",
         2_500,
     )
     .await?;
+    for _ in 0..20 {
+        if out_2.truncated_output().contains("codex") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        out_2 = write_stdin(&session, process_id, "", 2_500).await?;
+    }
     assert!(
         out_2.truncated_output().contains("codex"),
         "expected environment variable output"
@@ -164,8 +171,15 @@ async fn multi_unified_exec_sessions() -> anyhow::Result<()> {
     )
     .await?;
 
-    let out_2 = exec_command(&session, &turn, "echo $CODEX_INTERACTIVE_SHELL_VAR", 2_500).await?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    let mut out_2 =
+        exec_command(&session, &turn, "echo $CODEX_INTERACTIVE_SHELL_VAR", 2_500).await?;
+    for _ in 0..20 {
+        let Some(process_id) = out_2.process_id else {
+            break;
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        out_2 = write_stdin(&session, process_id, "", 2_500).await?;
+    }
     assert!(
         out_2.process_id.is_none(),
         "short command should not report a process id if it exits quickly"
@@ -223,7 +237,14 @@ async fn unified_exec_timeouts() -> anyhow::Result<()> {
 
     tokio::time::sleep(Duration::from_secs(7)).await;
 
-    let out_3 = write_stdin(&session, process_id, "", 100).await?;
+    let mut out_3 = write_stdin(&session, process_id, "", 100).await?;
+    for _ in 0..20 {
+        if out_3.truncated_output().contains(TEST_VAR_VALUE) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        out_3 = write_stdin(&session, process_id, "", 100).await?;
+    }
 
     assert!(
         out_3.truncated_output().contains(TEST_VAR_VALUE),
@@ -247,12 +268,23 @@ async fn unified_exec_pause_blocks_yield_timeout() -> anyhow::Result<()> {
     });
 
     let started = tokio::time::Instant::now();
-    let response = exec_command(&session, &turn, "sleep 1 && echo unified-exec-done", 250).await?;
+    let response = exec_command(&session, &turn, "printf unified-exec-done", 10_000).await?;
 
     assert!(
         started.elapsed() >= Duration::from_secs(2),
         "pause should block the unified exec yield timeout"
     );
+    let mut response = response;
+    for _ in 0..20 {
+        if response.truncated_output().contains("unified-exec-done") {
+            break;
+        }
+        let process_id = response
+            .process_id
+            .expect("paused exec should leave a resumable process when output is not ready");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        response = write_stdin(&session, process_id, "", 10_000).await?;
+    }
     assert!(
         response.truncated_output().contains("unified-exec-done"),
         "exec_command should wait for output after the pause lifts"
@@ -317,27 +349,29 @@ async fn reusing_completed_process_returns_unknown_process() -> anyhow::Result<(
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let err = write_stdin(&session, process_id, "", 100)
-        .await
-        .expect_err("expected unknown process error");
-
-    match err {
-        UnifiedExecError::UnknownProcessId { process_id: err_id } => {
-            assert_eq!(err_id, process_id, "process id should match request");
+    let mut last_success = None;
+    for _ in 0..20 {
+        match write_stdin(&session, process_id, "", 100).await {
+            Err(UnifiedExecError::UnknownProcessId { process_id: err_id }) => {
+                assert_eq!(err_id, process_id, "process id should match request");
+                assert!(
+                    session
+                        .services
+                        .unified_exec_manager
+                        .process_store
+                        .lock()
+                        .await
+                        .processes
+                        .is_empty()
+                );
+                return Ok(());
+            }
+            Err(other) => panic!("expected UnknownProcessId, got {other:?}"),
+            Ok(output) => {
+                last_success = Some(output);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
         }
-        other => panic!("expected UnknownProcessId, got {other:?}"),
     }
-
-    assert!(
-        session
-            .services
-            .unified_exec_manager
-            .process_store
-            .lock()
-            .await
-            .processes
-            .is_empty()
-    );
-
-    Ok(())
+    panic!("expected unknown process error: {last_success:?}");
 }

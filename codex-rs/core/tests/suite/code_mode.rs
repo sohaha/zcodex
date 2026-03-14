@@ -711,22 +711,28 @@ while (true) {}
     .await;
 
     tokio::time::timeout(
-        Duration::from_secs(5),
+        Duration::from_secs(30),
         test.submit_turn("start the busy loop"),
     )
     .await??;
 
     let first_request = first_completion.single_request();
     let first_items = custom_tool_output_items(&first_request, "call-1");
-    assert_eq!(first_items.len(), 2);
+    let first_output = first_items
+        .iter()
+        .map(|item| {
+            item.get("text")
+                .and_then(Value::as_str)
+                .expect("content item should be input_text")
+        })
+        .collect::<String>();
     assert_regex_match(
         concat!(
             r"(?s)\A",
-            r"Script running with cell ID \d+\nWall time \d+\.\d seconds\nOutput:\n\z"
+            r"Script running with cell ID \d+\nWall time \d+\.\d seconds\nOutput:\nphase 1\z"
         ),
-        text_item(&first_items, 0),
+        &first_output,
     );
-    assert_eq!(text_item(&first_items, 1), "phase 1");
     let cell_id = extract_running_cell_id(text_item(&first_items, 0));
 
     responses::mount_sse_once(

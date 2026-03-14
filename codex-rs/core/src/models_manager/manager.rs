@@ -139,25 +139,6 @@ impl ModelsManager {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_provider(
-        codex_home: PathBuf,
-        auth_manager: Arc<AuthManager>,
-        model_catalog: Option<ModelsResponse>,
-        model_catalog_merge: Option<ModelsResponse>,
-        collaboration_modes_config: CollaborationModesConfig,
-        provider: ModelProviderInfo,
-    ) -> Self {
-        Self::new_with_provider(
-            codex_home,
-            auth_manager,
-            model_catalog,
-            model_catalog_merge,
-            collaboration_modes_config,
-            provider,
-        )
-    }
-
     /// List all available models, refreshing according to the specified strategy.
     ///
     /// Returns model presets sorted by priority and filtered by auth mode and visibility.

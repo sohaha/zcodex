@@ -174,14 +174,6 @@ fn rtk_guidance_occurrences(items: &[ResponseItem]) -> usize {
         .count()
 }
 
-fn default_image_save_developer_message_text() -> String {
-    let image_output_dir = std::env::temp_dir();
-    format!(
-        "Generated images are saved to {} as {} by default.",
-        image_output_dir.display(),
-        image_output_dir.join("<image_id>.png").display(),
-    )
-}
 fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> ToolCallRuntime {
     let router = Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
