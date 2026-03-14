@@ -236,13 +236,13 @@ impl TestCodexBuilder {
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }
-        if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex") {
+        if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex-linux-sandbox") {
             config.codex_linux_sandbox_exe = Some(path);
         } else if let Ok(exe) = std::env::current_exe()
             && let Some(path) = exe
                 .parent()
                 .and_then(|parent| parent.parent())
-                .map(|parent| parent.join("codex"))
+                .map(|parent| parent.join("codex-linux-sandbox"))
             && path.is_file()
         {
             config.codex_linux_sandbox_exe = Some(path);
@@ -575,6 +575,7 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use tempfile::TempDir;
 
     #[test]
     fn custom_tool_call_output_text_returns_output_text() {
@@ -600,5 +601,28 @@ mod tests {
         })];
 
         let _ = custom_tool_call_output_text(&bodies, "call-2");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn prepare_config_keeps_linux_sandbox_binary() {
+        let home = TempDir::new().expect("tempdir");
+        let mut builder = test_codex();
+
+        let (config, _) = builder
+            .prepare_config("http://example.invalid/v1".to_string(), &home)
+            .await
+            .expect("prepare config");
+
+        let sandbox = config
+            .codex_linux_sandbox_exe
+            .expect("linux sandbox binary should be configured");
+        assert_eq!(
+            sandbox
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("sandbox file name"),
+            "codex-linux-sandbox"
+        );
     }
 }
