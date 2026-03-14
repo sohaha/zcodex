@@ -158,7 +158,7 @@ fn anthropic_provider_honors_configured_base_url() {
 
 #[test]
 fn anthropic_provider_uses_x_api_key_without_authorization_header() {
-    let env_var = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let env_var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
         base_url: None,
