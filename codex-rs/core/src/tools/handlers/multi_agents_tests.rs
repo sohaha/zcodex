@@ -9,6 +9,8 @@ use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::protocol::AskForApproval;
+use crate::protocol::FileSystemSandboxPolicy;
+use crate::protocol::NetworkSandboxPolicy;
 use crate::protocol::Op;
 use crate::protocol::SandboxPolicy;
 use crate::protocol::SessionSource;
@@ -59,7 +61,7 @@ fn function_payload(args: serde_json::Value) -> ToolPayload {
 fn thread_manager() -> ThreadManager {
     ThreadManager::with_models_provider_for_tests(
         CodexAuth::from_api_key("dummy"),
-        built_in_model_providers()["openai"].clone(),
+        built_in_model_providers(/* openai_base_url */ None)["openai"].clone(),
     )
 }
 
@@ -164,7 +166,7 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
     let mut config = (*turn.config).clone();
-    let provider = built_in_model_providers()["ollama"].clone();
+    let provider = built_in_model_providers(/* openai_base_url */ None)["ollama"].clone();
     config.model_provider_id = "ollama".to_string();
     config.model_provider = provider.clone();
     config
@@ -313,12 +315,17 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         &turn.config.permissions.sandbox_policy,
         turn.config.permissions.sandbox_policy.get().clone(),
     );
+    let expected_file_system_sandbox_policy =
+        FileSystemSandboxPolicy::from_legacy_sandbox_policy(&expected_sandbox, &turn.cwd);
+    let expected_network_sandbox_policy = NetworkSandboxPolicy::from(&expected_sandbox);
     turn.approval_policy
         .set(AskForApproval::OnRequest)
         .expect("approval policy should be set");
     turn.sandbox_policy
         .set(expected_sandbox.clone())
         .expect("sandbox policy should be set");
+    turn.file_system_sandbox_policy = expected_file_system_sandbox_policy.clone();
+    turn.network_sandbox_policy = expected_network_sandbox_policy;
     assert_ne!(
         expected_sandbox,
         turn.config.permissions.sandbox_policy.get().clone(),
@@ -357,6 +364,19 @@ async fn spawn_agent_reapplies_runtime_sandbox_after_role_config() {
         .await;
     assert_eq!(snapshot.sandbox_policy, expected_sandbox);
     assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
+    let child_thread = manager
+        .get_thread(agent_id)
+        .await
+        .expect("spawned agent thread should exist");
+    let child_turn = child_thread.codex.session.new_default_turn().await;
+    assert_eq!(
+        child_turn.file_system_sandbox_policy,
+        expected_file_system_sandbox_policy
+    );
+    assert_eq!(
+        child_turn.network_sandbox_policy,
+        expected_network_sandbox_policy
+    );
 }
 
 #[tokio::test]
@@ -793,18 +813,18 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
 }
 
 #[tokio::test]
-async fn wait_rejects_non_positive_timeout() {
+async fn wait_agent_rejects_non_positive_timeout() {
     let (session, turn) = make_session_and_context().await;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({
             "ids": [ThreadId::new().to_string()],
             "timeout_ms": 0
         })),
     );
-    let Err(err) = WaitHandler.handle(invocation).await else {
+    let Err(err) = WaitAgentHandler.handle(invocation).await else {
         panic!("non-positive timeout should be rejected");
     };
     assert_eq!(
@@ -814,15 +834,15 @@ async fn wait_rejects_non_positive_timeout() {
 }
 
 #[tokio::test]
-async fn wait_rejects_invalid_id() {
+async fn wait_agent_rejects_invalid_id() {
     let (session, turn) = make_session_and_context().await;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({"ids": ["invalid"]})),
     );
-    let Err(err) = WaitHandler.handle(invocation).await else {
+    let Err(err) = WaitAgentHandler.handle(invocation).await else {
         panic!("invalid id should be rejected");
     };
     let FunctionCallError::RespondToModel(msg) = err else {
@@ -832,15 +852,15 @@ async fn wait_rejects_invalid_id() {
 }
 
 #[tokio::test]
-async fn wait_rejects_empty_ids() {
+async fn wait_agent_rejects_empty_ids() {
     let (session, turn) = make_session_and_context().await;
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({"ids": []})),
     );
-    let Err(err) = WaitHandler.handle(invocation).await else {
+    let Err(err) = WaitAgentHandler.handle(invocation).await else {
         panic!("empty ids should be rejected");
     };
     assert_eq!(
@@ -850,7 +870,7 @@ async fn wait_rejects_empty_ids() {
 }
 
 #[tokio::test]
-async fn wait_returns_not_found_for_missing_agents() {
+async fn wait_agent_returns_not_found_for_missing_agents() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
@@ -859,22 +879,22 @@ async fn wait_returns_not_found_for_missing_agents() {
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({
             "ids": [id_a.to_string(), id_b.to_string()],
             "timeout_ms": 1000
         })),
     );
-    let output = WaitHandler
+    let output = WaitAgentHandler
         .handle(invocation)
         .await
-        .expect("wait should succeed");
+        .expect("wait_agent should succeed");
     let (content, success) = expect_text_output(output);
-    let result: wait::WaitResult =
-        serde_json::from_str(&content).expect("wait result should be json");
+    let result: wait::WaitAgentResult =
+        serde_json::from_str(&content).expect("wait_agent result should be json");
     assert_eq!(
         result,
-        wait::WaitResult {
+        wait::WaitAgentResult {
             status: HashMap::from([(id_a, AgentStatus::NotFound), (id_b, AgentStatus::NotFound),]),
             timed_out: false
         }
@@ -883,7 +903,7 @@ async fn wait_returns_not_found_for_missing_agents() {
 }
 
 #[tokio::test]
-async fn wait_times_out_when_status_is_not_final() {
+async fn wait_agent_times_out_when_status_is_not_final() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
@@ -893,22 +913,22 @@ async fn wait_times_out_when_status_is_not_final() {
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({
             "ids": [agent_id.to_string()],
             "timeout_ms": MIN_WAIT_TIMEOUT_MS
         })),
     );
-    let output = WaitHandler
+    let output = WaitAgentHandler
         .handle(invocation)
         .await
-        .expect("wait should succeed");
+        .expect("wait_agent should succeed");
     let (content, success) = expect_text_output(output);
-    let result: wait::WaitResult =
-        serde_json::from_str(&content).expect("wait result should be json");
+    let result: wait::WaitAgentResult =
+        serde_json::from_str(&content).expect("wait_agent result should be json");
     assert_eq!(
         result,
-        wait::WaitResult {
+        wait::WaitAgentResult {
             status: HashMap::new(),
             timed_out: true
         }
@@ -923,7 +943,7 @@ async fn wait_times_out_when_status_is_not_final() {
 }
 
 #[tokio::test]
-async fn wait_clamps_short_timeouts_to_minimum() {
+async fn wait_agent_clamps_short_timeouts_to_minimum() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
@@ -933,17 +953,21 @@ async fn wait_clamps_short_timeouts_to_minimum() {
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({
             "ids": [agent_id.to_string()],
             "timeout_ms": 10
         })),
     );
 
-    let early = timeout(Duration::from_millis(50), WaitHandler.handle(invocation)).await;
+    let early = timeout(
+        Duration::from_millis(50),
+        WaitAgentHandler.handle(invocation),
+    )
+    .await;
     assert!(
         early.is_err(),
-        "wait should not return before the minimum timeout clamp"
+        "wait_agent should not return before the minimum timeout clamp"
     );
 
     let _ = thread
@@ -954,7 +978,7 @@ async fn wait_clamps_short_timeouts_to_minimum() {
 }
 
 #[tokio::test]
-async fn wait_returns_final_status_without_timeout() {
+async fn wait_agent_returns_final_status_without_timeout() {
     let (mut session, turn) = make_session_and_context().await;
     let manager = thread_manager();
     session.services.agent_control = manager.agent_control();
@@ -979,22 +1003,22 @@ async fn wait_returns_final_status_without_timeout() {
     let invocation = invocation(
         Arc::new(session),
         Arc::new(turn),
-        "wait",
+        "wait_agent",
         function_payload(json!({
             "ids": [agent_id.to_string()],
             "timeout_ms": 1000
         })),
     );
-    let output = WaitHandler
+    let output = WaitAgentHandler
         .handle(invocation)
         .await
-        .expect("wait should succeed");
+        .expect("wait_agent should succeed");
     let (content, success) = expect_text_output(output);
-    let result: wait::WaitResult =
-        serde_json::from_str(&content).expect("wait result should be json");
+    let result: wait::WaitAgentResult =
+        serde_json::from_str(&content).expect("wait_agent result should be json");
     assert_eq!(
         result,
-        wait::WaitResult {
+        wait::WaitAgentResult {
             status: HashMap::from([(agent_id, AgentStatus::Shutdown)]),
             timed_out: false
         }
@@ -1072,9 +1096,14 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         &turn.config.permissions.sandbox_policy,
         turn.config.permissions.sandbox_policy.get().clone(),
     );
+    let file_system_sandbox_policy =
+        FileSystemSandboxPolicy::from_legacy_sandbox_policy(&sandbox_policy, &turn.cwd);
+    let network_sandbox_policy = NetworkSandboxPolicy::from(&sandbox_policy);
     turn.sandbox_policy
         .set(sandbox_policy)
         .expect("sandbox policy set");
+    turn.file_system_sandbox_policy = file_system_sandbox_policy.clone();
+    turn.network_sandbox_policy = network_sandbox_policy;
     turn.approval_policy
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
@@ -1101,6 +1130,8 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .sandbox_policy
         .set(turn.sandbox_policy.get().clone())
         .expect("sandbox policy set");
+    expected.permissions.file_system_sandbox_policy = file_system_sandbox_policy;
+    expected.permissions.network_sandbox_policy = network_sandbox_policy;
     assert_eq!(config, expected);
 }
 

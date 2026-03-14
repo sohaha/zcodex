@@ -168,6 +168,11 @@ impl ThreadManager {
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
         let codex_home = config.codex_home.clone();
+        let models_provider = config
+            .model_providers
+            .get(&config.model_provider_id)
+            .cloned()
+            .unwrap_or_else(|| config.model_provider.clone());
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new(codex_home.clone()));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
@@ -181,13 +186,13 @@ impl ThreadManager {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
-                models_manager: Arc::new(ModelsManager::with_provider(
+                models_manager: Arc::new(ModelsManager::new_with_provider(
                     codex_home,
                     auth_manager.clone(),
                     config.model_catalog.clone(),
                     config.model_catalog_merge.clone(),
                     collaboration_modes_config,
-                    config.model_provider.clone(),
+                    models_provider,
                 )),
                 skills_manager,
                 plugins_manager,

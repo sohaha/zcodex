@@ -49,6 +49,13 @@ fn developer_texts(input: &[Value]) -> Vec<String> {
         .collect()
 }
 
+fn developer_message_count(input: &[Value]) -> usize {
+    input
+        .iter()
+        .filter(|item| item.get("role").and_then(Value::as_str) == Some("developer"))
+        .count()
+}
+
 fn collab_xml(text: &str) -> String {
     format!("{COLLABORATION_MODE_OPEN_TAG}{text}{COLLABORATION_MODE_CLOSE_TAG}")
 }
@@ -82,11 +89,17 @@ async fn no_collaboration_instructions_by_default() -> Result<()> {
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let input = req.single_request().input();
+    assert_eq!(developer_message_count(&input), 1);
     let dev_texts = developer_texts(&input);
     assert!(
         dev_texts
             .iter()
-            .any(|text| text.contains("<permissions instructions>"))
+            .any(|text| text.contains("<permissions instructions>")),
+        "expected permissions instructions in developer messages, got {dev_texts:?}"
+    );
+    assert_eq!(
+        count_messages_containing(&dev_texts, COLLABORATION_MODE_OPEN_TAG),
+        0
     );
 
     Ok(())
@@ -111,6 +124,7 @@ async fn user_input_includes_collaboration_instructions_after_override() -> Resu
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -207,6 +221,7 @@ async fn override_then_next_turn_uses_updated_collaboration_instructions() -> Re
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -258,6 +273,7 @@ async fn user_turn_overrides_collaboration_instructions_after_override() -> Resu
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -327,6 +343,7 @@ async fn collaboration_mode_update_emits_new_instruction_message() -> Result<()>
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -353,6 +370,7 @@ async fn collaboration_mode_update_emits_new_instruction_message() -> Result<()>
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -408,6 +426,7 @@ async fn collaboration_mode_update_noop_does_not_append() -> Result<()> {
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -434,6 +453,7 @@ async fn collaboration_mode_update_noop_does_not_append() -> Result<()> {
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -488,6 +508,7 @@ async fn collaboration_mode_update_emits_new_instruction_message_when_mode_chang
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -517,6 +538,7 @@ async fn collaboration_mode_update_emits_new_instruction_message_when_mode_chang
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -575,6 +597,7 @@ async fn collaboration_mode_update_noop_does_not_append_when_mode_is_unchanged()
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -604,6 +627,7 @@ async fn collaboration_mode_update_noop_does_not_append_when_mode_is_unchanged()
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -668,6 +692,7 @@ async fn resume_replays_collaboration_instructions() -> Result<()> {
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -730,6 +755,7 @@ async fn empty_collaboration_instructions_are_ignored() -> Result<()> {
         .submit(Op::OverrideTurnContext {
             cwd: None,
             approval_policy: None,
+            approvals_reviewer: None,
             sandbox_policy: None,
             windows_sandbox_level: None,
             model: None,
@@ -760,6 +786,7 @@ async fn empty_collaboration_instructions_are_ignored() -> Result<()> {
     wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let input = req.single_request().input();
+    assert_eq!(developer_message_count(&input), 1);
     let dev_texts = developer_texts(&input);
     assert!(
         dev_texts

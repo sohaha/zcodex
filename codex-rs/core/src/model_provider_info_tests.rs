@@ -180,7 +180,6 @@ fn anthropic_provider_uses_x_api_key_without_authorization_header() {
         );
         return;
     }
-
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
         base_url: None,
