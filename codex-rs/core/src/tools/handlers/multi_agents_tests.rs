@@ -7,6 +7,7 @@ use crate::codex::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
+use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::protocol::AskForApproval;
 use crate::protocol::Op;
 use crate::protocol::SandboxPolicy;
@@ -19,6 +20,7 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::RolloutItem;
 use pretty_assertions::assert_eq;
@@ -207,6 +209,60 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         .await;
     assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
     assert_eq!(snapshot.model_provider_id, "ollama");
+}
+
+#[tokio::test]
+async fn spawn_agent_accepts_overlay_model() {
+    #[derive(Debug, Deserialize)]
+    struct SpawnAgentResult {
+        agent_id: String,
+        nickname: Option<String>,
+    }
+
+    let (mut session, mut turn) = make_session_and_context().await;
+    let mut config = (*turn.config).clone();
+    let mut overlay_model = turn.model_info.clone();
+    overlay_model.slug = "gpt-overlay-worker".to_string();
+    overlay_model.display_name = "GPT Overlay Worker".to_string();
+    config.model_catalog = None;
+    config.model_catalog_merge = Some(ModelsResponse {
+        models: vec![overlay_model.clone()],
+    });
+    let manager = ThreadManager::new(
+        &config,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+    );
+    session.services.agent_control = manager.agent_control();
+    session.services.models_manager = manager.get_models_manager();
+    turn.provider = config.model_provider.clone();
+    turn.config = Arc::new(config);
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "inspect this repo",
+            "model": overlay_model.slug
+        })),
+    );
+    let output = SpawnAgentHandler
+        .handle(invocation)
+        .await
+        .expect("spawn_agent should accept overlay models");
+    let (content, _) = expect_text_output(output);
+    let result: SpawnAgentResult =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+
+    assert!(agent_id(&result.agent_id).is_ok());
+    assert!(
+        result
+            .nickname
+            .as_deref()
+            .is_some_and(|nickname| !nickname.is_empty())
+    );
 }
 
 #[tokio::test]

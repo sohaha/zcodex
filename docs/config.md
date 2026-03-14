@@ -50,6 +50,10 @@ If both are set, Codex uses `model_catalog_json` as the base catalog and then
 applies `model_catalog_merge_json` on top. Merge entries match by `slug`; when
 the same slug appears in both catalogs, the merge entry wins.
 
+For Responses-based providers, `model_catalog_merge_json` does not disable
+remote `/models` refreshes; it overlays additional entries on top of the
+built-in/remote catalog snapshot instead.
+
 This is especially useful for Anthropic-compatible proxies that expose model
 slugs not present in the built-in Claude catalog.
 

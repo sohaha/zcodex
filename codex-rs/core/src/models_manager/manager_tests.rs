@@ -108,6 +108,7 @@ async fn get_model_info_tracks_fallback_usage() {
         codex_home.path().to_path_buf(),
         auth_manager,
         None,
+        None,
         CollaborationModesConfig::default(),
     );
     let known_slug = manager
@@ -147,6 +148,7 @@ async fn get_model_info_uses_custom_catalog() {
         Some(ModelsResponse {
             models: vec![overlay],
         }),
+        None,
         CollaborationModesConfig::default(),
     );
 
@@ -179,6 +181,7 @@ async fn get_model_info_matches_namespaced_suffix() {
         Some(ModelsResponse {
             models: vec![remote],
         }),
+        None,
         CollaborationModesConfig::default(),
     );
     let namespaced_model = "custom/gpt-image".to_string();
@@ -202,6 +205,7 @@ async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
     let manager = ModelsManager::new(
         codex_home.path().to_path_buf(),
         auth_manager,
+        None,
         None,
         CollaborationModesConfig::default(),
     );
@@ -549,6 +553,102 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
 }
 
 #[tokio::test]
+async fn overlay_catalog_keeps_remote_refresh_enabled() {
+    let server = MockServer::start().await;
+    let response_models = vec![remote_model("remote-only", "Remote Only", 1)];
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: response_models.clone(),
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let overlay_model = remote_model("overlay-only", "Overlay Only", 0);
+    let provider = provider_for(server.uri());
+    let manager = ModelsManager::with_provider(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        None,
+        Some(ModelsResponse {
+            models: vec![overlay_model.clone()],
+        }),
+        CollaborationModesConfig::default(),
+        provider,
+    );
+
+    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
+
+    assert!(
+        available.iter().any(|model| model.model == "remote-only"),
+        "remote model should still be discoverable"
+    );
+    assert!(
+        available
+            .iter()
+            .any(|model| model.model == overlay_model.slug),
+        "overlay model should be listed"
+    );
+    assert_eq!(
+        models_mock.requests().len(),
+        1,
+        "overlay-only config should not disable /models refresh"
+    );
+}
+
+#[tokio::test]
+async fn overlay_catalog_overrides_matching_remote_slug() {
+    let server = MockServer::start().await;
+    let response_models = vec![remote_model("shared-model", "Remote Shared", 1)];
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: response_models,
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let mut overlay_model = remote_model("shared-model", "Overlay Shared", 0);
+    overlay_model.supports_image_detail_original = true;
+    let provider = provider_for(server.uri());
+    let manager = ModelsManager::with_provider(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        None,
+        Some(ModelsResponse {
+            models: vec![overlay_model.clone()],
+        }),
+        CollaborationModesConfig::default(),
+        provider,
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("refresh succeeds");
+    let merged_model = manager
+        .get_remote_models()
+        .await
+        .into_iter()
+        .find(|model| model.slug == overlay_model.slug)
+        .expect("merged model should exist");
+
+    assert_eq!(merged_model.display_name, overlay_model.display_name);
+    assert!(merged_model.supports_image_detail_original);
+    assert_eq!(
+        models_mock.requests().len(),
+        1,
+        "refresh should still fetch /models before applying overlay"
+    );
+}
+
+#[tokio::test]
 async fn anthropic_provider_keeps_bundled_catalog() {
     let codex_home = tempdir().expect("temp dir");
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
@@ -599,6 +699,40 @@ async fn anthropic_provider_ignores_shared_models_cache() {
             .iter()
             .all(|candidate| candidate.slug.starts_with("claude-")),
         "anthropic provider should ignore cached OpenAI models"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_provider_applies_overlay_catalog() {
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
+    let overlay_model = remote_model("claude-proxy-custom", "Claude Proxy Custom", 0);
+    let manager = ModelsManager::with_provider(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        None,
+        Some(ModelsResponse {
+            models: vec![overlay_model.clone()],
+        }),
+        CollaborationModesConfig::default(),
+        provider,
+    );
+
+    let available = manager.list_models(RefreshStrategy::Offline).await;
+    let remote_models = manager.get_remote_models().await;
+
+    assert!(
+        available
+            .iter()
+            .any(|model| model.model == overlay_model.slug),
+        "overlay model should be exposed in picker presets"
+    );
+    assert!(
+        remote_models
+            .iter()
+            .any(|candidate| candidate.slug == overlay_model.slug),
+        "overlay model should be merged into the anthropic catalog"
     );
 }
 

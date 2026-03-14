@@ -3972,6 +3972,7 @@ fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     )?;
 
     assert_eq!(config.model_catalog, Some(catalog));
+    assert_eq!(config.model_catalog_merge, None);
     Ok(())
 }
 
@@ -4049,23 +4050,17 @@ fn model_catalog_merge_json_merges_with_bundled_catalog() -> std::io::Result<()>
         codex_home.path().to_path_buf(),
     )?;
 
-    let merged_catalog = config.model_catalog.expect("merged catalog should load");
+    assert_eq!(config.model_catalog, None);
+    let merged_catalog = config
+        .model_catalog_merge
+        .expect("merged catalog should load");
     let bundled_catalog = anthropic_catalog();
-    assert_eq!(
-        merged_catalog.models.len(),
-        bundled_catalog.models.len() + 1
-    );
+    assert_eq!(merged_catalog.models, vec![custom_model.clone()]);
     assert!(
-        merged_catalog
+        bundled_catalog
             .models
             .iter()
-            .any(|model| model.slug == custom_model.slug)
-    );
-    assert!(
-        merged_catalog
-            .models
-            .iter()
-            .any(|model| model.slug == bundled_catalog.models[0].slug)
+            .all(|model| model.slug != custom_model.slug)
     );
     Ok(())
 }
@@ -4097,9 +4092,11 @@ fn model_catalog_merge_json_overrides_matching_bundled_slug() -> std::io::Result
         codex_home.path().to_path_buf(),
     )?;
 
-    let merged_catalog = config.model_catalog.expect("merged catalog should load");
-    let bundled_catalog = anthropic_catalog();
-    assert_eq!(merged_catalog.models.len(), bundled_catalog.models.len());
+    assert_eq!(config.model_catalog, None);
+    let merged_catalog = config
+        .model_catalog_merge
+        .expect("merged catalog should load");
+    assert_eq!(merged_catalog.models.len(), 1);
     let merged_model = merged_catalog
         .models
         .iter()
@@ -4143,10 +4140,17 @@ fn model_catalog_merge_json_uses_custom_catalog_as_base_when_present() -> std::i
         codex_home.path().to_path_buf(),
     )?;
 
-    let merged_catalog = config.model_catalog.expect("merged catalog should load");
     assert_eq!(
-        merged_catalog.models,
-        vec![base_model.clone(), merge_model.clone()]
+        config.model_catalog,
+        Some(ModelsResponse {
+            models: vec![base_model]
+        })
+    );
+    assert_eq!(
+        config.model_catalog_merge,
+        Some(ModelsResponse {
+            models: vec![merge_model],
+        })
     );
     Ok(())
 }
@@ -4335,6 +4339,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             model_reasoning_summary: Some(ReasoningSummary::Detailed),
             model_supports_reasoning_summaries: None,
             model_catalog: None,
+            model_catalog_merge: None,
             model_verbosity: None,
             personality: Some(Personality::Pragmatic),
             chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -4471,6 +4476,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
         model_catalog: None,
+        model_catalog_merge: None,
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -4605,6 +4611,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
         model_catalog: None,
+        model_catalog_merge: None,
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -4725,6 +4732,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         model_reasoning_summary: Some(ReasoningSummary::Detailed),
         model_supports_reasoning_summaries: None,
         model_catalog: None,
+        model_catalog_merge: None,
         model_verbosity: Some(Verbosity::High),
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),

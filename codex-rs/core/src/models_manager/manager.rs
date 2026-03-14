@@ -57,6 +57,7 @@ enum CatalogMode {
 pub struct ModelsManager {
     remote_models: RwLock<Vec<ModelInfo>>,
     catalog_mode: CatalogMode,
+    catalog_overlay: Option<Vec<ModelInfo>>,
     collaboration_modes_config: CollaborationModesConfig,
     auth_manager: Arc<AuthManager>,
     etag: RwLock<Option<String>>,
@@ -74,12 +75,14 @@ impl ModelsManager {
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
+        model_catalog_merge: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
         Self::with_provider(
             codex_home,
             auth_manager,
             model_catalog,
+            model_catalog_merge,
             collaboration_modes_config,
             ModelProviderInfo::create_openai_provider(),
         )
@@ -89,6 +92,7 @@ impl ModelsManager {
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
+        model_catalog_merge: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
@@ -99,12 +103,15 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
+        let catalog_overlay = model_catalog_merge.map(|catalog| catalog.models);
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
             .unwrap_or_else(|| Self::load_bundled_models(&provider));
+        let remote_models = Self::apply_catalog_overlay(remote_models, catalog_overlay.as_deref());
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
+            catalog_overlay,
             collaboration_modes_config,
             auth_manager,
             etag: RwLock::new(None),
@@ -339,7 +346,8 @@ impl ModelsManager {
                 existing_models.push(model);
             }
         }
-        *self.remote_models.write().await = existing_models;
+        *self.remote_models.write().await =
+            Self::apply_catalog_overlay(existing_models, self.catalog_overlay.as_deref());
     }
 
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
@@ -354,6 +362,27 @@ impl ModelsManager {
                 .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
             WireApi::Anthropic => model_info::anthropic_model_catalog(),
         }
+    }
+
+    fn apply_catalog_overlay(
+        mut base_models: Vec<ModelInfo>,
+        overlay_models: Option<&[ModelInfo]>,
+    ) -> Vec<ModelInfo> {
+        let Some(overlay_models) = overlay_models else {
+            return base_models;
+        };
+
+        for model in overlay_models {
+            if let Some(existing_index) = base_models
+                .iter()
+                .position(|existing| existing.slug == model.slug)
+            {
+                base_models[existing_index] = model.clone();
+            } else {
+                base_models.push(model.clone());
+            }
+        }
+        base_models
     }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
@@ -411,6 +440,7 @@ impl ModelsManager {
             codex_home,
             auth_manager,
             None,
+            None,
             CollaborationModesConfig::default(),
             provider,
         )
@@ -437,12 +467,26 @@ impl ModelsManager {
         model: &str,
         config: &Config,
     ) -> ModelInfo {
-        let candidates: &[ModelInfo] = if let Some(model_catalog) = config.model_catalog.as_ref() {
-            &model_catalog.models
+        let candidates = if let Some(model_catalog) = config.model_catalog.as_ref() {
+            Self::apply_catalog_overlay(
+                model_catalog.models.clone(),
+                config
+                    .model_catalog_merge
+                    .as_ref()
+                    .map(|catalog| catalog.models.as_slice()),
+            )
+        } else if config.model_catalog_merge.is_some() {
+            Self::apply_catalog_overlay(
+                Self::load_bundled_models(&config.model_provider),
+                config
+                    .model_catalog_merge
+                    .as_ref()
+                    .map(|catalog| catalog.models.as_slice()),
+            )
         } else {
-            &[]
+            Vec::new()
         };
-        Self::construct_model_info_from_candidates(model, candidates, config)
+        Self::construct_model_info_from_candidates(model, &candidates, config)
     }
 }
 

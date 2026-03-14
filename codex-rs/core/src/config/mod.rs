@@ -48,7 +48,6 @@ use crate::model_provider_info::ModelProviderInfo;
 use crate::model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use crate::model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
-use crate::models_manager::model_info;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
@@ -443,13 +442,16 @@ pub struct Config {
     /// Optional override to force-enable reasoning summaries for the configured model.
     pub model_supports_reasoning_summaries: Option<bool>,
 
-    /// Optional resolved model catalog loaded from `model_catalog_json` and/or
+    /// Optional resolved model catalog loaded from `model_catalog_json`.
+    ///
+    /// When set, it replaces the bundled catalog and disables remote refreshes.
+    pub model_catalog: Option<ModelsResponse>,
+    /// Optional resolved model catalog overlay loaded from
     /// `model_catalog_merge_json`.
     ///
-    /// When `model_catalog_json` is set, it replaces the bundled catalog.
-    /// When only `model_catalog_merge_json` is set, the merge file is applied
-    /// on top of the bundled catalog for the active provider.
-    pub model_catalog: Option<ModelsResponse>,
+    /// When set without `model_catalog`, the overlay is applied on top of the
+    /// provider's bundled/remote catalog.
+    pub model_catalog_merge: Option<ModelsResponse>,
 
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
@@ -760,63 +762,20 @@ fn load_catalog_json(path: &AbsolutePathBuf, field_name: &str) -> std::io::Resul
     Ok(catalog)
 }
 
-fn load_model_catalog(
-    provider: &ModelProviderInfo,
+fn load_model_catalog_json(
     model_catalog_json: Option<AbsolutePathBuf>,
+) -> std::io::Result<Option<ModelsResponse>> {
+    model_catalog_json
+        .map(|path| load_catalog_json(&path, "model_catalog_json"))
+        .transpose()
+}
+
+fn load_model_catalog_merge_json(
     model_catalog_merge_json: Option<AbsolutePathBuf>,
 ) -> std::io::Result<Option<ModelsResponse>> {
-    let base_catalog = model_catalog_json
-        .map(|path| load_catalog_json(&path, "model_catalog_json"))
-        .transpose()?;
-    let merge_catalog = model_catalog_merge_json
+    model_catalog_merge_json
         .map(|path| load_catalog_json(&path, "model_catalog_merge_json"))
-        .transpose()?;
-
-    match (base_catalog, merge_catalog) {
-        (None, None) => Ok(None),
-        (Some(base_catalog), None) => Ok(Some(base_catalog)),
-        (None, Some(merge_catalog)) => Ok(Some(merge_model_catalogs(
-            bundled_model_catalog(provider)?,
-            merge_catalog,
-        ))),
-        (Some(base_catalog), Some(merge_catalog)) => {
-            Ok(Some(merge_model_catalogs(base_catalog, merge_catalog)))
-        }
-    }
-}
-
-fn bundled_model_catalog(provider: &ModelProviderInfo) -> std::io::Result<ModelsResponse> {
-    match provider.wire_api {
-        crate::model_provider_info::WireApi::Responses => {
-            serde_json::from_str(include_str!("../../models.json")).map_err(|err| {
-                std::io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!("failed to parse bundled models.json: {err}"),
-                )
-            })
-        }
-        crate::model_provider_info::WireApi::Anthropic => Ok(ModelsResponse {
-            models: model_info::anthropic_model_catalog(),
-        }),
-    }
-}
-
-fn merge_model_catalogs(
-    mut base_catalog: ModelsResponse,
-    merge_catalog: ModelsResponse,
-) -> ModelsResponse {
-    for model in merge_catalog.models {
-        if let Some(existing_index) = base_catalog
-            .models
-            .iter()
-            .position(|existing| existing.slug == model.slug)
-        {
-            base_catalog.models[existing_index] = model;
-        } else {
-            base_catalog.models.push(model);
-        }
-    }
-    base_catalog
+        .transpose()
 }
 
 fn filter_mcp_servers_by_requirements(
@@ -2332,12 +2291,13 @@ impl Config {
         let review_model = override_review_model.or(cfg.review_model);
 
         let check_for_update_on_startup = cfg.check_for_update_on_startup.unwrap_or(true);
-        let model_catalog = load_model_catalog(
-            &model_provider,
+        let model_catalog = load_model_catalog_json(
             config_profile
                 .model_catalog_json
                 .clone()
                 .or(cfg.model_catalog_json.clone()),
+        )?;
+        let model_catalog_merge = load_model_catalog_merge_json(
             config_profile
                 .model_catalog_merge_json
                 .clone()
@@ -2513,6 +2473,7 @@ impl Config {
                 .or(cfg.model_reasoning_summary),
             model_supports_reasoning_summaries: cfg.model_supports_reasoning_summaries,
             model_catalog,
+            model_catalog_merge,
             model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
             chatgpt_base_url: config_profile
                 .chatgpt_base_url

@@ -179,20 +179,21 @@ impl TestCodexBuilder {
         resume_from: Option<PathBuf>,
     ) -> anyhow::Result<TestCodex> {
         let auth = self.auth.clone();
-        let thread_manager = if config.model_catalog.is_some() {
-            ThreadManager::new(
-                &config,
-                codex_core::test_support::auth_manager_from_auth(auth.clone()),
-                SessionSource::Exec,
-                CollaborationModesConfig::default(),
-            )
-        } else {
-            codex_core::test_support::thread_manager_with_models_provider_and_home(
-                auth.clone(),
-                config.model_provider.clone(),
-                config.codex_home.clone(),
-            )
-        };
+        let thread_manager =
+            if config.model_catalog.is_some() || config.model_catalog_merge.is_some() {
+                ThreadManager::new(
+                    &config,
+                    codex_core::test_support::auth_manager_from_auth(auth.clone()),
+                    SessionSource::Exec,
+                    CollaborationModesConfig::default(),
+                )
+            } else {
+                codex_core::test_support::thread_manager_with_models_provider_and_home(
+                    auth.clone(),
+                    config.model_provider.clone(),
+                    config.codex_home.clone(),
+                )
+            };
         let thread_manager = Arc::new(thread_manager);
 
         let new_conversation = match resume_from {
@@ -265,9 +266,7 @@ impl TestCodexBuilder {
 }
 
 fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
-    if config.model.as_deref() != Some(TEST_MODEL_WITH_EXPERIMENTAL_TOOLS)
-        || config.model_catalog.is_some()
-    {
+    if config.model.as_deref() != Some(TEST_MODEL_WITH_EXPERIMENTAL_TOOLS) {
         return Ok(());
     }
 
@@ -296,7 +295,23 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
         "grep_files".to_string(),
         "list_dir".to_string(),
     ];
-    config.model_catalog = Some(ModelsResponse {
+    if let Some(catalog) = config.model_catalog_merge.as_mut() {
+        catalog
+            .models
+            .retain(|candidate| candidate.slug != model.slug);
+        catalog.models.push(model);
+        return Ok(());
+    }
+
+    if let Some(catalog) = config.model_catalog.as_mut() {
+        catalog
+            .models
+            .retain(|candidate| candidate.slug != model.slug);
+        catalog.models.push(model);
+        return Ok(());
+    }
+
+    config.model_catalog_merge = Some(ModelsResponse {
         models: vec![model],
     });
     Ok(())

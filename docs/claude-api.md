@@ -56,6 +56,8 @@ model_catalog_merge_json = "/path/to/anthropic-models.json"
 - 如果同时设置 `model_catalog_json`，则先使用它作为基础列表，再叠加
   `model_catalog_merge_json`。
 - 合并按模型 `slug` 匹配；相同 `slug` 时，以 merge 文件中的定义为准。
+- 对 Responses provider 来说，`model_catalog_merge_json` 不会关闭远端
+  `/models` 刷新；它只是在当前目录快照之上追加/覆盖条目。
 
 ## 当前实现限制
 
