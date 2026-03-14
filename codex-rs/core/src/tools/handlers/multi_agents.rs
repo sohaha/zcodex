@@ -47,6 +47,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::warn;
 
 pub(crate) use close_agent::Handler as CloseAgentHandler;
 pub(crate) use resume_agent::Handler as ResumeAgentHandler;
@@ -336,22 +337,44 @@ async fn apply_requested_spawn_agent_model_overrides(
             .models_manager
             .list_models(RefreshStrategy::Offline)
             .await;
-        let selected_model_name = find_spawn_agent_model_name(&available_models, requested_model)?;
+        let selected_model_name =
+            match find_spawn_agent_model_name(&available_models, requested_model) {
+                Ok(model) => model,
+                Err(_) => {
+                    warn!(
+                        requested_model,
+                        fallback_model = %turn.model_info.slug,
+                        "spawn_agent requested model unavailable; falling back to parent model"
+                    );
+                    return Ok(());
+                }
+            };
         let selected_model_info = session
             .services
             .models_manager
             .get_model_info(&selected_model_name, config)
             .await;
 
-        config.model = Some(selected_model_name.clone());
         if let Some(reasoning_effort) = requested_reasoning_effort {
-            validate_spawn_agent_reasoning_effort(
+            if validate_spawn_agent_reasoning_effort(
                 &selected_model_name,
                 &selected_model_info.supported_reasoning_levels,
                 reasoning_effort,
-            )?;
+            )
+            .is_err()
+            {
+                warn!(
+                    requested_model = %selected_model_name,
+                    requested_reasoning_effort = %reasoning_effort,
+                    fallback_model = %turn.model_info.slug,
+                    "spawn_agent requested reasoning effort is unsupported for the requested model; falling back to parent model"
+                );
+                return Ok(());
+            }
+            config.model = Some(selected_model_name);
             config.model_reasoning_effort = Some(reasoning_effort);
         } else {
+            config.model = Some(selected_model_name);
             config.model_reasoning_effort = selected_model_info.default_reasoning_level;
         }
 

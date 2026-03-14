@@ -23,6 +23,8 @@ use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::RolloutItem;
 use pretty_assertions::assert_eq;
@@ -265,6 +267,126 @@ async fn spawn_agent_accepts_overlay_model() {
             .as_deref()
             .is_some_and(|nickname| !nickname.is_empty())
     );
+}
+
+#[tokio::test]
+async fn spawn_agent_falls_back_to_parent_model_when_requested_model_is_unknown() {
+    #[derive(Debug, Deserialize)]
+    struct SpawnAgentResult {
+        agent_id: String,
+        nickname: Option<String>,
+    }
+
+    let (mut session, turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    session.services.agent_control = manager.agent_control();
+
+    let parent_model = turn.model_info.slug.clone();
+    let parent_reasoning_effort = turn.reasoning_effort;
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "inspect this repo",
+            "model": "missing-custom-model"
+        })),
+    );
+    let output = SpawnAgentHandler
+        .handle(invocation)
+        .await
+        .expect("spawn_agent should fall back to the parent model");
+    let (content, _) = expect_text_output(output);
+    let result: SpawnAgentResult =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+
+    assert!(agent_id(&result.agent_id).is_ok());
+    assert!(
+        result
+            .nickname
+            .as_deref()
+            .is_some_and(|nickname| !nickname.is_empty())
+    );
+
+    let snapshot = manager
+        .get_thread(agent_id(&result.agent_id).expect("agent_id should be valid"))
+        .await
+        .expect("spawned agent thread should exist")
+        .config_snapshot()
+        .await;
+    assert_eq!(snapshot.model, parent_model);
+    assert_eq!(snapshot.reasoning_effort, parent_reasoning_effort);
+}
+
+#[tokio::test]
+async fn spawn_agent_falls_back_to_parent_model_when_requested_reasoning_is_unsupported() {
+    #[derive(Debug, Deserialize)]
+    struct SpawnAgentResult {
+        agent_id: String,
+        nickname: Option<String>,
+    }
+
+    let (mut session, mut turn) = make_session_and_context().await;
+    let mut config = (*turn.config).clone();
+    let parent_model = turn.model_info.slug.clone();
+    let parent_reasoning_effort = turn.reasoning_effort;
+    let mut overlay_model = turn.model_info.clone();
+    overlay_model.slug = "gpt-overlay-low-only".to_string();
+    overlay_model.display_name = "GPT Overlay Low Only".to_string();
+    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
+    overlay_model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Low,
+        description: "Quick scan".to_string(),
+    }];
+    config.model_catalog = None;
+    config.model_catalog_merge = Some(ModelsResponse {
+        models: vec![overlay_model.clone()],
+    });
+    let manager = ThreadManager::new(
+        &config,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+    );
+    session.services.agent_control = manager.agent_control();
+    session.services.models_manager = manager.get_models_manager();
+    turn.provider = config.model_provider.clone();
+    turn.config = Arc::new(config);
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "inspect this repo",
+            "model": overlay_model.slug,
+            "reasoning_effort": "high"
+        })),
+    );
+    let output = SpawnAgentHandler
+        .handle(invocation)
+        .await
+        .expect("spawn_agent should fall back when requested reasoning is unsupported");
+    let (content, _) = expect_text_output(output);
+    let result: SpawnAgentResult =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+
+    assert!(agent_id(&result.agent_id).is_ok());
+    assert!(
+        result
+            .nickname
+            .as_deref()
+            .is_some_and(|nickname| !nickname.is_empty())
+    );
+
+    let snapshot = manager
+        .get_thread(agent_id(&result.agent_id).expect("agent_id should be valid"))
+        .await
+        .expect("spawned agent thread should exist")
+        .config_snapshot()
+        .await;
+    assert_eq!(snapshot.model, parent_model);
+    assert_eq!(snapshot.reasoning_effort, parent_reasoning_effort);
 }
 
 #[tokio::test]
