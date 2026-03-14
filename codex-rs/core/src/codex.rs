@@ -3294,14 +3294,11 @@ impl Session {
         true
     }
 
-    pub(crate) async fn replace_history(
-        &self,
-        items: Vec<ResponseItem>,
+    fn filter_reference_context_item_for_history(
+        items: &[ResponseItem],
         reference_context_item: Option<TurnContextItem>,
-    ) {
-        // Replacement histories that omit the canonical RTK developer prefix must also clear the
-        // diff baseline so the next real turn fully reinjects stable initial context.
-        let reference_context_item = reference_context_item.filter(|_| {
+    ) -> Option<TurnContextItem> {
+        reference_context_item.filter(|_| {
             let marker = crate::compact::RTK_INSTRUCTIONS
                 .lines()
                 .next()
@@ -3315,7 +3312,18 @@ impl Session {
                 }
                 _ => false,
             })
-        });
+        })
+    }
+
+    pub(crate) async fn replace_history(
+        &self,
+        items: Vec<ResponseItem>,
+        reference_context_item: Option<TurnContextItem>,
+    ) {
+        // Replacement histories that omit the canonical RTK developer prefix must also clear the
+        // diff baseline so the next real turn fully reinjects stable initial context.
+        let reference_context_item =
+            Self::filter_reference_context_item_for_history(&items, reference_context_item);
         let mut state = self.state.lock().await;
         state.replace_history(items, reference_context_item);
     }
@@ -3326,6 +3334,8 @@ impl Session {
         reference_context_item: Option<TurnContextItem>,
         compacted_item: CompactedItem,
     ) {
+        let reference_context_item =
+            Self::filter_reference_context_item_for_history(&items, reference_context_item);
         self.replace_history(items, reference_context_item.clone())
             .await;
 

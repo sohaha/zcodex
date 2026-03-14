@@ -3434,6 +3434,69 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
 }
 
 #[tokio::test]
+async fn replace_compacted_history_clears_persisted_reference_context_item_without_rtk_guidance() {
+    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
+    let rollout_path = attach_rollout_recorder(&session).await;
+    let compacted_summary = ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: format!("{}\nsummary", crate::compact::SUMMARY_PREFIX),
+        }],
+        end_turn: None,
+        phase: None,
+    };
+    session
+        .replace_compacted_history(
+            vec![compacted_summary.clone()],
+            Some(turn_context.to_turn_context_item()),
+            CompactedItem {
+                message: "summary".to_string(),
+                replacement_history: Some(vec![compacted_summary.clone()]),
+            },
+        )
+        .await;
+
+    assert!(session.reference_context_item().await.is_none());
+
+    let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
+        .await
+        .expect("read rollout history")
+    else {
+        panic!("expected resumed rollout history");
+    };
+    assert!(
+        !resumed
+            .history
+            .iter()
+            .any(|item| matches!(item, RolloutItem::TurnContext(_)))
+    );
+
+    let (resumed_session, resumed_turn_context, _rx) = make_session_and_context_with_rx().await;
+    let reconstructed = resumed_session
+        .reconstruct_history_from_rollout(&resumed_turn_context, &resumed.history)
+        .await;
+    assert!(reconstructed.reference_context_item.is_none());
+
+    resumed_session
+        .record_initial_history(InitialHistory::Resumed(resumed))
+        .await;
+
+    assert!(resumed_session.reference_context_item().await.is_none());
+
+    resumed_session
+        .record_context_updates_and_set_reference_context_item(&resumed_turn_context)
+        .await;
+
+    let history = resumed_session.clone_history().await;
+    let initial_context = resumed_session
+        .build_initial_context(&resumed_turn_context)
+        .await;
+    assert!(history.raw_items().ends_with(&initial_context));
+    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
+}
+
+#[tokio::test]
 async fn record_context_updates_and_set_reference_context_item_does_not_reemit_rtk_guidance() {
     let (session, turn_context) = make_session_and_context().await;
     session
