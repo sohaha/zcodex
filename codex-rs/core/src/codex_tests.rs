@@ -7,6 +7,7 @@ use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::NetworkConstraints;
 use crate::config_loader::RequirementSource;
 use crate::config_loader::Sourced;
+use crate::error::UnexpectedResponseError;
 use crate::exec::ExecToolCallOutput;
 use crate::function_tool::FunctionCallError;
 use crate::mcp_connection_manager::ToolInfo;
@@ -26,6 +27,7 @@ use codex_protocol::protocol::ReadOnlyAccess;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
+use http::StatusCode;
 use tracing::Span;
 
 use crate::protocol::CompactedItem;
@@ -1811,6 +1813,55 @@ async fn turn_context_with_model_updates_model_fields() {
         &updated.tool_call_gate,
         &turn_context.tool_call_gate
     ));
+}
+
+#[tokio::test]
+async fn turn_context_with_model_and_reasoning_effort_preserves_requested_effort() {
+    let (session, turn_context) = make_session_and_context().await;
+    let updated = turn_context
+        .with_model_and_reasoning_effort(
+            "gpt-5.1".to_string(),
+            Some(ReasoningEffortConfig::High),
+            &session.services.models_manager,
+        )
+        .await;
+
+    assert_eq!(updated.config.model.as_deref(), Some("gpt-5.1"));
+    assert_eq!(updated.reasoning_effort, Some(ReasoningEffortConfig::High));
+    assert_eq!(
+        updated.collaboration_mode.reasoning_effort(),
+        Some(ReasoningEffortConfig::High)
+    );
+    assert_eq!(
+        updated.config.model_reasoning_effort,
+        Some(ReasoningEffortConfig::High)
+    );
+}
+
+#[test]
+fn should_retry_subagent_with_parent_model_on_model_access_denied_403() {
+    let err = CodexErr::UnexpectedStatus(UnexpectedResponseError {
+        status: StatusCode::FORBIDDEN,
+        body: "Model `gpt-5.1` is unavailable because you do not have access.".to_string(),
+        url: None,
+        cf_ray: None,
+        request_id: None,
+    });
+
+    assert!(should_retry_subagent_with_parent_model(&err));
+}
+
+#[test]
+fn should_not_retry_subagent_with_parent_model_on_unrelated_403() {
+    let err = CodexErr::UnexpectedStatus(UnexpectedResponseError {
+        status: StatusCode::FORBIDDEN,
+        body: "Permission denied while reading rollout file.".to_string(),
+        url: None,
+        cf_ray: None,
+        request_id: None,
+    });
+
+    assert!(!should_retry_subagent_with_parent_model(&err));
 }
 
 #[test]

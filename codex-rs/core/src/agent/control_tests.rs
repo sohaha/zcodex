@@ -412,6 +412,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: None,
             })),
@@ -495,6 +496,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: None,
             })),
@@ -565,6 +567,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: None,
             })),
@@ -818,6 +821,7 @@ async fn spawn_child_completion_notifies_parent_history() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
             })),
@@ -849,6 +853,7 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
         Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id,
             depth: 1,
+            parent_model: None,
             agent_nickname: None,
             agent_role: Some("explorer".to_string()),
         })),
@@ -889,6 +894,7 @@ async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
             })),
@@ -906,6 +912,7 @@ async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
     let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: seen_parent_thread_id,
         depth,
+        parent_model: _,
         agent_nickname,
         agent_role,
     }) = snapshot.session_source
@@ -939,6 +946,7 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: Some("researcher".to_string()),
             })),
@@ -990,6 +998,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: Some("explorer".to_string()),
             })),
@@ -1058,6 +1067,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_nickname: None,
                 agent_role: None,
             }),
@@ -1076,6 +1086,7 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
     let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: resumed_parent_thread_id,
         depth: resumed_depth,
+        parent_model: _,
         agent_nickname: resumed_nickname,
         agent_role: resumed_role,
     }) = resumed_snapshot.session_source

@@ -111,6 +111,7 @@ impl AgentControl {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth,
+                parent_model,
                 agent_role,
                 ..
             })) => {
@@ -121,6 +122,7 @@ impl AgentControl {
                 Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                     parent_thread_id,
                     depth,
+                    parent_model,
                     agent_nickname: Some(agent_nickname),
                     agent_role,
                 }))
@@ -232,6 +234,7 @@ impl AgentControl {
             SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth,
+                parent_model,
                 ..
             }) => {
                 // Collab resume callers rebuild a placeholder ThreadSpawn source. Rehydrate the
@@ -261,6 +264,7 @@ impl AgentControl {
                 SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                     parent_thread_id,
                     depth,
+                    parent_model,
                     agent_nickname: reserved_agent_nickname,
                     agent_role: resumed_agent_role,
                 })

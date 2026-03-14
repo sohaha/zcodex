@@ -919,6 +919,24 @@ impl TurnContext {
         }
     }
 
+    pub(crate) async fn with_model_and_reasoning_effort(
+        &self,
+        model: String,
+        reasoning_effort: Option<ReasoningEffortConfig>,
+        models_manager: &ModelsManager,
+    ) -> Self {
+        let mut updated = self.with_model(model, models_manager).await;
+        let mut config = (*updated.config).clone();
+        config.model_reasoning_effort = reasoning_effort;
+        updated.config = Arc::new(config);
+        updated.reasoning_effort = reasoning_effort;
+        updated.collaboration_mode =
+            updated
+                .collaboration_mode
+                .with_updates(None, Some(reasoning_effort), None);
+        updated
+    }
+
     pub(crate) fn resolve_path(&self, path: Option<String>) -> PathBuf {
         path.as_ref()
             .map(PathBuf::from)
@@ -6456,6 +6474,10 @@ async fn run_sampling_request(
             Err(err) => err,
         };
 
+        if should_short_circuit_to_parent_model(&turn_context, &err) {
+            return Err(err);
+        }
+
         if !err.is_retryable() {
             return Err(err);
         }
@@ -6532,15 +6554,33 @@ fn is_model_request_failure_message(message: &str) -> bool {
 
 fn should_retry_subagent_with_parent_model(err: &CodexErr) -> bool {
     match err {
+        CodexErr::Stream(message, _) => is_model_request_failure_message(message),
         CodexErr::InvalidRequest(message) => is_model_request_failure_message(message),
         CodexErr::UnexpectedStatus(response) => {
             matches!(
                 response.status,
-                StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND
+                StatusCode::BAD_REQUEST | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
             ) && is_model_request_failure_message(&response.body)
         }
         _ => false,
     }
+}
+
+fn subagent_parent_model(turn_context: &TurnContext) -> Option<&str> {
+    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_model: Some(parent_model),
+        ..
+    }) = &turn_context.session_source
+    else {
+        return None;
+    };
+    Some(parent_model.as_str())
+}
+
+fn should_short_circuit_to_parent_model(turn_context: &TurnContext, err: &CodexErr) -> bool {
+    should_retry_subagent_with_parent_model(err)
+        && subagent_parent_model(turn_context)
+            .is_some_and(|parent_model| parent_model != turn_context.model_info.slug)
 }
 
 async fn maybe_retry_subagent_with_parent_model(
@@ -6553,24 +6593,39 @@ async fn maybe_retry_subagent_with_parent_model(
     }
 
     let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id, ..
+        parent_thread_id,
+        parent_model,
+        ..
     }) = &turn_context.session_source
     else {
         return None;
     };
 
-    let parent_snapshot = sess
-        .services
-        .agent_control
-        .get_thread_config_snapshot(*parent_thread_id)
-        .await?;
-    if parent_snapshot.model == turn_context.model_info.slug {
+    let (parent_model, parent_reasoning_effort) = if let Some(parent_model) = parent_model.as_ref()
+    {
+        let parent_reasoning_effort = sess
+            .services
+            .agent_control
+            .get_thread_config_snapshot(*parent_thread_id)
+            .await
+            .map(|snapshot| snapshot.reasoning_effort)
+            .unwrap_or(turn_context.reasoning_effort);
+        (parent_model.clone(), parent_reasoning_effort)
+    } else {
+        let parent_snapshot = sess
+            .services
+            .agent_control
+            .get_thread_config_snapshot(*parent_thread_id)
+            .await?;
+        (parent_snapshot.model, parent_snapshot.reasoning_effort)
+    };
+    if parent_model == turn_context.model_info.slug {
         return None;
     }
 
     warn!(
         child_model = %turn_context.model_info.slug,
-        parent_model = %parent_snapshot.model,
+        parent_model = %parent_model,
         error = %err,
         "subagent request failed with configured model; retrying once with parent model"
     );
@@ -6579,7 +6634,7 @@ async fn maybe_retry_subagent_with_parent_model(
         EventMsg::Warning(WarningEvent {
             message: format!(
                 "Spawned agent request with model `{}` failed. Retrying once with parent model `{}`.",
-                turn_context.model_info.slug, parent_snapshot.model
+                turn_context.model_info.slug, parent_model
             ),
         }),
     )
@@ -6587,7 +6642,11 @@ async fn maybe_retry_subagent_with_parent_model(
 
     Some(Arc::new(
         turn_context
-            .with_model(parent_snapshot.model, &sess.services.models_manager)
+            .with_model_and_reasoning_effort(
+                parent_model,
+                parent_reasoning_effort,
+                &sess.services.models_manager,
+            )
             .await,
     ))
 }

@@ -83,6 +83,7 @@ impl ToolHandler for Handler {
                 Some(thread_spawn_source(
                     session.conversation_id,
                     child_depth,
+                    Some(&turn.model_info.slug),
                     role_name,
                 )),
                 SpawnAgentOptions {

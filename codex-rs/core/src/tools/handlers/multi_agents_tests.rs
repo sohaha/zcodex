@@ -27,6 +27,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::RolloutItem;
+use core_test_support::responses::mount_models_once;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde_json::json;
@@ -36,6 +37,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
+use wiremock::MockServer;
 
 fn invocation(
     session: Arc<crate::codex::Session>,
@@ -266,6 +268,47 @@ async fn spawn_agent_accepts_overlay_model() {
             .nickname
             .as_deref()
             .is_some_and(|nickname| !nickname.is_empty())
+    );
+}
+
+#[tokio::test]
+async fn spawn_agent_refreshes_model_catalog_before_falling_back_to_parent_model() {
+    let server = MockServer::start().await;
+    let (mut session, mut turn) = make_session_and_context().await;
+    let mut config = (*turn.config).clone();
+    let mut remote_model = turn.model_info.clone();
+    remote_model.slug = "gpt-online-worker".to_string();
+    remote_model.display_name = "GPT Online Worker".to_string();
+    let _models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![remote_model.clone()],
+        },
+    )
+    .await;
+
+    let provider = built_in_model_providers(Some(server.uri()))["openai"].clone();
+    let manager = ThreadManager::with_models_provider_for_tests(
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        provider.clone(),
+    );
+    session.services.models_manager = manager.get_models_manager();
+    turn.provider = provider;
+
+    apply_requested_spawn_agent_model_overrides(
+        &session,
+        &turn,
+        &mut config,
+        Some(remote_model.slug.as_str()),
+        None,
+    )
+    .await
+    .expect("spawn_agent should refresh the model catalog before falling back");
+
+    assert_eq!(config.model.as_deref(), Some(remote_model.slug.as_str()));
+    assert_eq!(
+        config.model_reasoning_effort,
+        remote_model.default_reasoning_level
     );
 }
 
@@ -511,6 +554,7 @@ async fn spawn_agent_rejects_when_depth_limit_exceeded() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: session.conversation_id,
         depth: max_depth,
+        parent_model: None,
         agent_nickname: None,
         agent_role: None,
     });
@@ -550,6 +594,7 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: session.conversation_id,
         depth: DEFAULT_AGENT_MAX_DEPTH,
+        parent_model: None,
         agent_nickname: None,
         agent_role: None,
     });
@@ -913,6 +958,7 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: session.conversation_id,
         depth: max_depth,
+        parent_model: None,
         agent_nickname: None,
         agent_role: None,
     });

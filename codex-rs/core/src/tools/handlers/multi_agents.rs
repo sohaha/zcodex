@@ -181,11 +181,13 @@ fn collab_agent_error(agent_id: ThreadId, err: CodexErr) -> FunctionCallError {
 fn thread_spawn_source(
     parent_thread_id: ThreadId,
     depth: i32,
+    parent_model: Option<&str>,
     agent_role: Option<&str>,
 ) -> SessionSource {
     SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id,
         depth,
+        parent_model: parent_model.map(str::to_string),
         agent_nickname: None,
         agent_role: agent_role.map(str::to_string),
     })
@@ -332,23 +334,35 @@ async fn apply_requested_spawn_agent_model_overrides(
     }
 
     if let Some(requested_model) = requested_model {
-        let available_models = session
+        let offline_models = session
             .services
             .models_manager
             .list_models(RefreshStrategy::Offline)
             .await;
-        let selected_model_name =
-            match find_spawn_agent_model_name(&available_models, requested_model) {
-                Ok(model) => model,
-                Err(_) => {
-                    warn!(
-                        requested_model,
-                        fallback_model = %turn.model_info.slug,
-                        "spawn_agent requested model unavailable; falling back to parent model"
-                    );
-                    return Ok(());
+        let selected_model_name = match find_spawn_agent_model_name(
+            &offline_models,
+            requested_model,
+        ) {
+            Ok(model) => model,
+            Err(_) => {
+                let refreshed_models = session
+                    .services
+                    .models_manager
+                    .list_models(RefreshStrategy::Online)
+                    .await;
+                match find_spawn_agent_model_name(&refreshed_models, requested_model) {
+                    Ok(model) => model,
+                    Err(_) => {
+                        warn!(
+                            requested_model,
+                            fallback_model = %turn.model_info.slug,
+                            "spawn_agent requested model unavailable after refreshing model catalog; falling back to parent model"
+                        );
+                        return Ok(());
+                    }
                 }
-            };
+            }
+        };
         let selected_model_info = session
             .services
             .models_manager

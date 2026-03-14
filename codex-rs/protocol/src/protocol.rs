@@ -2275,6 +2275,8 @@ pub enum SubAgentSource {
         parent_thread_id: ThreadId,
         depth: i32,
         #[serde(default)]
+        parent_model: Option<String>,
+        #[serde(default)]
         agent_nickname: Option<String>,
         #[serde(default, alias = "agent_type")]
         agent_role: Option<String>,
