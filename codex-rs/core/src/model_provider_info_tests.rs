@@ -158,11 +158,33 @@ fn anthropic_provider_honors_configured_base_url() {
 
 #[test]
 fn anthropic_provider_uses_x_api_key_without_authorization_header() {
-    let env_var = if cfg!(windows) { "USERNAME" } else { "USER" };
+    const API_KEY_ENV: &str = "CODEX_TEST_ANTHROPIC_API_KEY";
+    const SUBPROCESS_ENV: &str = "CODEX_TEST_ANTHROPIC_PROVIDER_SUBPROCESS";
+
+    if std::env::var_os(SUBPROCESS_ENV).is_none() {
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("test binary path should resolve"),
+        )
+        .arg("--exact")
+        .arg("model_provider_info::tests::anthropic_provider_uses_x_api_key_without_authorization_header")
+        .env(SUBPROCESS_ENV, "1")
+        .env(API_KEY_ENV, "test-anthropic-api-key")
+        .output()
+        .expect("subprocess should run");
+
+        assert!(
+            output.status.success(),
+            "subprocess failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
         base_url: None,
-        env_key: Some(env_var.to_string()),
+        env_key: Some(API_KEY_ENV.to_string()),
         env_key_instructions: None,
         experimental_bearer_token: None,
         wire_api: WireApi::Anthropic,
@@ -192,7 +214,7 @@ fn anthropic_provider_uses_x_api_key_without_authorization_header() {
             .headers
             .get("x-api-key")
             .and_then(|value| value.to_str().ok()),
-        std::env::var(env_var).ok().as_deref()
+        Some("test-anthropic-api-key")
     );
     assert!(
         api_provider

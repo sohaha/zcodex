@@ -1978,6 +1978,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         config.codex_home.clone(),
         auth_manager.clone(),
         None,
+        None,
         CollaborationModesConfig::default(),
     ));
     let model = ModelsManager::get_model_offline_for_tests(config.model.as_deref());
@@ -2066,6 +2067,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let models_manager = Arc::new(ModelsManager::new(
         config.codex_home.clone(),
         auth_manager.clone(),
+        None,
         None,
         CollaborationModesConfig::default(),
     ));
@@ -2708,6 +2710,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let models_manager = Arc::new(ModelsManager::new(
         config.codex_home.clone(),
         auth_manager.clone(),
+        None,
         None,
         CollaborationModesConfig::default(),
     ));
