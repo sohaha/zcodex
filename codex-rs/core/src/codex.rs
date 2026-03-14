@@ -125,6 +125,7 @@ use futures::future::BoxFuture;
 use futures::future::Shared;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
+use http::StatusCode;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::PaginatedRequestParams;
@@ -5799,37 +5800,75 @@ pub(crate) async fn run_turn(
             }
         }
 
-        // Construct the input that we will send to the model.
-        let sampling_request_input: Vec<ResponseItem> = {
-            sess.clone_history()
+        let sampling_result = {
+            let mut sampling_turn_context = Arc::clone(&turn_context);
+            let mut attempted_parent_model_fallback = false;
+            loop {
+                // Construct the input that we will send to the model.
+                let sampling_request_input: Vec<ResponseItem> = {
+                    sess.clone_history()
+                        .await
+                        .for_prompt(&sampling_turn_context.model_info.input_modalities)
+                };
+
+                let sampling_request_input_messages = sampling_request_input
+                    .iter()
+                    .filter_map(|item| match parse_turn_item(item) {
+                        Some(TurnItem::UserMessage(user_message)) => Some(user_message),
+                        _ => None,
+                    })
+                    .map(|user_message| user_message.message())
+                    .collect::<Vec<String>>();
+                let turn_metadata_header = sampling_turn_context
+                    .turn_metadata_state
+                    .current_header_value();
+                match run_sampling_request(
+                    Arc::clone(&sess),
+                    Arc::clone(&sampling_turn_context),
+                    Arc::clone(&turn_diff_tracker),
+                    &mut client_session,
+                    turn_metadata_header.as_deref(),
+                    sampling_request_input,
+                    &turn_enabled_connectors,
+                    skills_outcome,
+                    &mut server_model_warning_emitted_for_turn,
+                    cancellation_token.child_token(),
+                )
                 .await
-                .for_prompt(&turn_context.model_info.input_modalities)
+                {
+                    Ok(output) => {
+                        break Ok((
+                            output,
+                            sampling_request_input_messages,
+                            Arc::clone(&sampling_turn_context),
+                        ));
+                    }
+                    Err(err) => {
+                        if !attempted_parent_model_fallback
+                            && let Some(fallback_turn_context) =
+                                maybe_retry_subagent_with_parent_model(
+                                    &sess,
+                                    &sampling_turn_context,
+                                    &err,
+                                )
+                                .await
+                        {
+                            attempted_parent_model_fallback = true;
+                            sampling_turn_context = fallback_turn_context;
+                            continue;
+                        }
+                        break Err((err, sampling_turn_context));
+                    }
+                }
+            }
         };
 
-        let sampling_request_input_messages = sampling_request_input
-            .iter()
-            .filter_map(|item| match parse_turn_item(item) {
-                Some(TurnItem::UserMessage(user_message)) => Some(user_message),
-                _ => None,
-            })
-            .map(|user_message| user_message.message())
-            .collect::<Vec<String>>();
-        let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
-        match run_sampling_request(
-            Arc::clone(&sess),
-            Arc::clone(&turn_context),
-            Arc::clone(&turn_diff_tracker),
-            &mut client_session,
-            turn_metadata_header.as_deref(),
-            sampling_request_input,
-            &turn_enabled_connectors,
-            skills_outcome,
-            &mut server_model_warning_emitted_for_turn,
-            cancellation_token.child_token(),
-        )
-        .await
-        {
-            Ok(sampling_request_output) => {
+        match sampling_result {
+            Ok((
+                sampling_request_output,
+                sampling_request_input_messages,
+                sampling_turn_context,
+            )) => {
                 let SamplingRequestResult {
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
@@ -5837,8 +5876,9 @@ pub(crate) async fn run_turn(
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
 
-                let estimated_token_count =
-                    sess.get_estimated_token_count(turn_context.as_ref()).await;
+                let estimated_token_count = sess
+                    .get_estimated_token_count(sampling_turn_context.as_ref())
+                    .await;
 
                 trace!(
                     turn_id = %turn_context.sub_id,
@@ -5854,7 +5894,7 @@ pub(crate) async fn run_turn(
                 if token_limit_reached && needs_follow_up {
                     match try_run_auto_compact(
                         &sess,
-                        &turn_context,
+                        &sampling_turn_context,
                         InitialContextInjection::BeforeLastUserMessage,
                     )
                     .await
@@ -5867,29 +5907,30 @@ pub(crate) async fn run_turn(
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
-                    let stop_hook_permission_mode = match turn_context.approval_policy.value() {
-                        AskForApproval::Never => "bypassPermissions",
-                        AskForApproval::UnlessTrusted
-                        | AskForApproval::OnFailure
-                        | AskForApproval::OnRequest
-                        | AskForApproval::Granular(_) => "default",
-                    }
-                    .to_string();
+                    let stop_hook_permission_mode =
+                        match sampling_turn_context.approval_policy.value() {
+                            AskForApproval::Never => "bypassPermissions",
+                            AskForApproval::UnlessTrusted
+                            | AskForApproval::OnFailure
+                            | AskForApproval::OnRequest
+                            | AskForApproval::Granular(_) => "default",
+                        }
+                        .to_string();
                     let stop_request = codex_hooks::StopRequest {
                         session_id: sess.conversation_id,
-                        turn_id: turn_context.sub_id.clone(),
-                        cwd: turn_context.cwd.clone(),
+                        turn_id: sampling_turn_context.sub_id.clone(),
+                        cwd: sampling_turn_context.cwd.clone(),
                         transcript_path: sess.current_rollout_path().await,
-                        model: turn_context.model_info.slug.clone(),
+                        model: sampling_turn_context.model_info.slug.clone(),
                         permission_mode: stop_hook_permission_mode,
                         stop_hook_active,
                         last_assistant_message: last_agent_message.clone(),
                     };
                     for run in sess.hooks().preview_stop(&stop_request) {
                         sess.send_event(
-                            &turn_context,
+                            &sampling_turn_context,
                             EventMsg::HookStarted(crate::protocol::HookStartedEvent {
-                                turn_id: Some(turn_context.sub_id.clone()),
+                                turn_id: Some(sampling_turn_context.sub_id.clone()),
                                 run,
                             }),
                         )
@@ -5897,7 +5938,7 @@ pub(crate) async fn run_turn(
                     }
                     let stop_outcome = sess.hooks().run_stop(stop_request).await;
                     for completed in stop_outcome.hook_events {
-                        sess.send_event(&turn_context, EventMsg::HookCompleted(completed))
+                        sess.send_event(&sampling_turn_context, EventMsg::HookCompleted(completed))
                             .await;
                     }
                     if stop_outcome.should_block {
@@ -5906,7 +5947,7 @@ pub(crate) async fn run_turn(
                             let developer_message: ResponseItem =
                                 DeveloperInstructions::new(continuation_prompt).into();
                             sess.record_conversation_items(
-                                &turn_context,
+                                &sampling_turn_context,
                                 std::slice::from_ref(&developer_message),
                             )
                             .await;
@@ -5914,7 +5955,7 @@ pub(crate) async fn run_turn(
                             continue;
                         } else {
                             sess.send_event(
-                                &turn_context,
+                                &sampling_turn_context,
                                 EventMsg::Warning(WarningEvent {
                                     message: "Stop hook requested continuation without a prompt; ignoring the block.".to_string(),
                                 }),
@@ -5929,13 +5970,13 @@ pub(crate) async fn run_turn(
                         .hooks()
                         .dispatch(HookPayload {
                             session_id: sess.conversation_id,
-                            cwd: turn_context.cwd.clone(),
-                            client: turn_context.app_server_client_name.clone(),
+                            cwd: sampling_turn_context.cwd.clone(),
+                            client: sampling_turn_context.app_server_client_name.clone(),
                             triggered_at: chrono::Utc::now(),
                             hook_event: HookEvent::AfterAgent {
                                 event: HookEventAfterAgent {
                                     thread_id: sess.conversation_id,
-                                    turn_id: turn_context.sub_id.clone(),
+                                    turn_id: sampling_turn_context.sub_id.clone(),
                                     input_messages: sampling_request_input_messages,
                                     last_assistant_message: last_agent_message.clone(),
                                 },
@@ -5950,7 +5991,7 @@ pub(crate) async fn run_turn(
                             HookResult::Success => {}
                             HookResult::FailedContinue(error) => {
                                 warn!(
-                                    turn_id = %turn_context.sub_id,
+                                    turn_id = %sampling_turn_context.sub_id,
                                     hook_name = %hook_name,
                                     error = %error,
                                     "after_agent hook failed; continuing"
@@ -5961,7 +6002,7 @@ pub(crate) async fn run_turn(
                                     "after_agent hook '{hook_name}' failed and aborted turn completion: {error}"
                                 );
                                 warn!(
-                                    turn_id = %turn_context.sub_id,
+                                    turn_id = %sampling_turn_context.sub_id,
                                     hook_name = %hook_name,
                                     error = %error,
                                     "after_agent hook failed; aborting operation"
@@ -5974,7 +6015,7 @@ pub(crate) async fn run_turn(
                     }
                     if let Some(message) = abort_message {
                         sess.send_event(
-                            &turn_context,
+                            &sampling_turn_context,
                             EventMsg::Error(ErrorEvent {
                                 message,
                                 codex_error_info: None,
@@ -5987,11 +6028,11 @@ pub(crate) async fn run_turn(
                 }
                 continue;
             }
-            Err(CodexErr::TurnAborted) => {
+            Err((CodexErr::TurnAborted, _)) => {
                 // Aborted turn is reported via a different event.
                 break;
             }
-            Err(CodexErr::InvalidImageRequest()) => {
+            Err((CodexErr::InvalidImageRequest(), failed_turn_context)) => {
                 let mut state = sess.state.lock().await;
                 error_or_panic(
                     "Invalid image detected; sanitizing tool output to prevent poisoning",
@@ -6004,13 +6045,13 @@ pub(crate) async fn run_turn(
                         .to_string(),
                     codex_error_info: Some(CodexErrorInfo::BadRequest),
                 });
-                sess.send_event(&turn_context, event).await;
+                sess.send_event(&failed_turn_context, event).await;
                 break;
             }
-            Err(e) => {
+            Err((e, failed_turn_context)) => {
                 info!("Turn error: {e:#}");
                 let event = EventMsg::Error(e.to_error_event(None));
-                sess.send_event(&turn_context, event).await;
+                sess.send_event(&failed_turn_context, event).await;
                 // let the user continue the conversation
                 break;
             }
@@ -6473,6 +6514,82 @@ async fn run_sampling_request(
             return Err(err);
         }
     }
+}
+
+fn is_model_request_failure_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("model")
+        && (normalized.contains("not found")
+            || normalized.contains("does not exist")
+            || normalized.contains("unsupported")
+            || normalized.contains("not supported")
+            || normalized.contains("not available")
+            || normalized.contains("unavailable")
+            || normalized.contains("invalid")
+            || normalized.contains("no access")
+            || normalized.contains("not have access"))
+}
+
+fn should_retry_subagent_with_parent_model(err: &CodexErr) -> bool {
+    match err {
+        CodexErr::InvalidRequest(message) => is_model_request_failure_message(message),
+        CodexErr::UnexpectedStatus(response) => {
+            matches!(
+                response.status,
+                StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND
+            ) && is_model_request_failure_message(&response.body)
+        }
+        _ => false,
+    }
+}
+
+async fn maybe_retry_subagent_with_parent_model(
+    sess: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    err: &CodexErr,
+) -> Option<Arc<TurnContext>> {
+    if !should_retry_subagent_with_parent_model(err) {
+        return None;
+    }
+
+    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id, ..
+    }) = &turn_context.session_source
+    else {
+        return None;
+    };
+
+    let parent_snapshot = sess
+        .services
+        .agent_control
+        .get_thread_config_snapshot(*parent_thread_id)
+        .await?;
+    if parent_snapshot.model == turn_context.model_info.slug {
+        return None;
+    }
+
+    warn!(
+        child_model = %turn_context.model_info.slug,
+        parent_model = %parent_snapshot.model,
+        error = %err,
+        "subagent request failed with configured model; retrying once with parent model"
+    );
+    sess.send_event(
+        turn_context,
+        EventMsg::Warning(WarningEvent {
+            message: format!(
+                "Spawned agent request with model `{}` failed. Retrying once with parent model `{}`.",
+                turn_context.model_info.slug, parent_snapshot.model
+            ),
+        }),
+    )
+    .await;
+
+    Some(Arc::new(
+        turn_context
+            .with_model(parent_snapshot.model, &sess.services.models_manager)
+            .await,
+    ))
 }
 
 pub(crate) async fn built_tools(

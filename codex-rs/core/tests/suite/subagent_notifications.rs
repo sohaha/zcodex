@@ -12,6 +12,7 @@ use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_response_once_match;
 use core_test_support::responses::mount_sse_once_match;
 use core_test_support::responses::sse;
+use core_test_support::responses::sse_failed;
 use core_test_support::responses::sse_response;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
@@ -55,6 +56,35 @@ fn body_contains(req: &wiremock::Request, text: &str) -> bool {
     bytes
         .and_then(|body| String::from_utf8(body).ok())
         .is_some_and(|body| body.contains(text))
+}
+
+fn request_body_json(req: &wiremock::Request) -> Option<serde_json::Value> {
+    let is_zstd = req
+        .headers
+        .get("content-encoding")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .any(|entry| entry.trim().eq_ignore_ascii_case("zstd"))
+        });
+    let bytes = if is_zstd {
+        zstd::stream::decode_all(std::io::Cursor::new(&req.body)).ok()
+    } else {
+        Some(req.body.clone())
+    }?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn request_targets_model(req: &wiremock::Request, model: &str) -> bool {
+    request_body_json(req)
+        .and_then(|body| {
+            body.get("model")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        })
+        .as_deref()
+        == Some(model)
 }
 
 fn has_subagent_notification(req: &ResponsesRequest) -> bool {
@@ -470,6 +500,106 @@ async fn spawn_agent_role_overrides_requested_model_and_reasoning_settings() -> 
 
     assert_eq!(child_snapshot.model, ROLE_MODEL);
     assert_eq!(child_snapshot.reasoning_effort, Some(ROLE_REASONING_EFFORT));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_agent_retries_failed_child_request_once_with_parent_model() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let spawn_args = serde_json::to_string(&json!({
+        "message": CHILD_PROMPT,
+        "model": REQUESTED_MODEL,
+    }))?;
+
+    let _turn1 = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
+        sse(vec![
+            ev_response_created("resp-turn1-1"),
+            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_completed("resp-turn1-1"),
+        ]),
+    )
+    .await;
+
+    let child_requested_model = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| {
+            body_contains(req, CHILD_PROMPT)
+                && !body_contains(req, SPAWN_CALL_ID)
+                && request_targets_model(req, REQUESTED_MODEL)
+        },
+        sse_failed(
+            "resp-child-fail-1",
+            "invalid_request_error",
+            "Model `gpt-5.1` is not available for this request.",
+        ),
+    )
+    .await;
+
+    let child_parent_model_retry = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| {
+            body_contains(req, CHILD_PROMPT)
+                && !body_contains(req, SPAWN_CALL_ID)
+                && request_targets_model(req, INHERITED_MODEL)
+        },
+        sse(vec![
+            ev_response_created("resp-child-retry-1"),
+            ev_assistant_message("msg-child-retry-1", "child done after fallback"),
+            ev_completed("resp-child-retry-1"),
+        ]),
+    )
+    .await;
+
+    let parent_followup = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
+        sse(vec![
+            ev_response_created("resp-turn1-2"),
+            ev_assistant_message("msg-turn1-2", "parent done"),
+            ev_completed("resp-turn1-2"),
+        ]),
+    )
+    .await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+            config.model = Some(INHERITED_MODEL.to_string());
+            config.model_reasoning_effort = Some(INHERITED_REASONING_EFFORT);
+        })
+        .build(&server)
+        .await?;
+
+    test.submit_turn(TURN_1_PROMPT).await?;
+
+    let _ = wait_for_requests(&child_requested_model).await?;
+    let _ = wait_for_requests(&child_parent_model_retry).await?;
+    let requested_model_request = child_requested_model.single_request();
+    let retry_model_request = child_parent_model_retry.single_request();
+    let _ = wait_for_requests(&parent_followup).await?;
+
+    assert_eq!(
+        requested_model_request
+            .body_json()
+            .get("model")
+            .and_then(serde_json::Value::as_str),
+        Some(REQUESTED_MODEL)
+    );
+    assert_eq!(
+        retry_model_request
+            .body_json()
+            .get("model")
+            .and_then(serde_json::Value::as_str),
+        Some(INHERITED_MODEL)
+    );
 
     Ok(())
 }
