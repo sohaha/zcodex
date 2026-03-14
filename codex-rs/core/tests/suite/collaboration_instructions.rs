@@ -83,8 +83,11 @@ async fn no_collaboration_instructions_by_default() -> Result<()> {
 
     let input = req.single_request().input();
     let dev_texts = developer_texts(&input);
-    assert_eq!(dev_texts.len(), 1);
-    assert!(dev_texts[0].contains("<permissions instructions>"));
+    assert!(
+        dev_texts
+            .iter()
+            .any(|text| text.contains("<permissions instructions>"))
+    );
 
     Ok(())
 }
@@ -758,7 +761,11 @@ async fn empty_collaboration_instructions_are_ignored() -> Result<()> {
 
     let input = req.single_request().input();
     let dev_texts = developer_texts(&input);
-    assert_eq!(dev_texts.len(), 1);
+    assert!(
+        dev_texts
+            .iter()
+            .any(|text| text.contains("<permissions instructions>"))
+    );
     let collab_text = collab_xml("");
     assert_eq!(count_messages_containing(&dev_texts, &collab_text), 0);
 

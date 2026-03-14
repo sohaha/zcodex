@@ -70,6 +70,7 @@ use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 use wiremock::matchers::body_string_contains;
+use wiremock::matchers::header;
 use wiremock::matchers::header_regex;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
@@ -1758,7 +1759,7 @@ async fn includes_developer_instructions_message_in_request() {
         developer_messages.iter().any(|item| {
             message_input_texts(item)
                 .iter()
-                .any(|text| text.contains("Prefer `rtk` for noisy shell output."))
+                .any(|text| text.contains("Prefer `codex rtk` for noisy shell output."))
         }),
         "expected RTK guidance in a developer message, got {:?}",
         request_body["input"]
@@ -2363,7 +2364,11 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_overrides_assign_properties_used_for_responses_url() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let existing_env_var_with_random_value = "PATH";
+    let expected_authorization = format!(
+        "Bearer {}",
+        std::env::var(existing_env_var_with_random_value).expect("PATH should be set in tests")
+    );
 
     // Mock server
     let server = MockServer::start().await;
@@ -2381,14 +2386,7 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         .and(path("/openai/responses"))
         .and(query_param("api-version", "2025-04-01-preview"))
         .and(header_regex("Custom-Header", "Value"))
-        .and(header_regex(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var(existing_env_var_with_random_value).unwrap()
-            )
-            .as_str(),
-        ))
+        .and(header("Authorization", expected_authorization.as_str()))
         .respond_with(first)
         .expect(1)
         .mount(&server)
@@ -2447,7 +2445,11 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn env_var_overrides_loaded_auth() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let existing_env_var_with_random_value = "PATH";
+    let expected_authorization = format!(
+        "Bearer {}",
+        std::env::var(existing_env_var_with_random_value).expect("PATH should be set in tests")
+    );
 
     // Mock server
     let server = MockServer::start().await;
@@ -2465,14 +2467,7 @@ async fn env_var_overrides_loaded_auth() {
         .and(path("/openai/responses"))
         .and(query_param("api-version", "2025-04-01-preview"))
         .and(header_regex("Custom-Header", "Value"))
-        .and(header_regex(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var(existing_env_var_with_random_value).unwrap()
-            )
-            .as_str(),
-        ))
+        .and(header("Authorization", expected_authorization.as_str()))
         .respond_with(first)
         .expect(1)
         .mount(&server)

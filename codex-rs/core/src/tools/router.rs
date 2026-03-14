@@ -49,6 +49,16 @@ pub(crate) struct ToolRouterParams<'a> {
 }
 
 impl ToolRouter {
+    fn parallel_shell_alias_supported(&self) -> bool {
+        self.specs.iter().any(|config| {
+            config.supports_parallel_tool_calls
+                && matches!(
+                    config.spec.name(),
+                    "shell" | "local_shell" | "shell_command" | "exec_command"
+                )
+        })
+    }
+
     pub fn from_config(config: &ToolsConfig, params: ToolRouterParams<'_>) -> Self {
         let ToolRouterParams {
             mcp_tools,
@@ -83,10 +93,19 @@ impl ToolRouter {
     }
 
     pub fn tool_supports_parallel(&self, tool_name: &str) -> bool {
-        self.specs
+        if self
+            .specs
             .iter()
             .filter(|config| config.supports_parallel_tool_calls)
             .any(|config| config.spec.name() == tool_name)
+        {
+            return true;
+        }
+
+        matches!(
+            tool_name,
+            "shell" | "container.exec" | "local_shell" | "shell_command"
+        ) && self.parallel_shell_alias_supported()
     }
 
     #[instrument(level = "trace", skip_all, err)]

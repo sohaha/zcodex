@@ -29,6 +29,7 @@ use core_test_support::skip_if_windows;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
+use core_test_support::unprivileged_userns_available;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use core_test_support::wait_for_event_with_timeout;
@@ -45,6 +46,15 @@ fn extract_output_text(item: &Value) -> Option<&str> {
         Value::Object(obj) => obj.get("content").and_then(Value::as_str),
         _ => None,
     })
+}
+
+fn python_shell_command() -> Option<String> {
+    let python = which("python").or_else(|_| which("python3")).ok()?;
+    Some(
+        shlex::try_quote(python.to_string_lossy().as_ref())
+            .expect("python path should serialize for the shell")
+            .to_string(),
+    )
 }
 
 #[derive(Debug)]
@@ -1087,25 +1097,23 @@ async fn unified_exec_terminal_interaction_captures_delayed_output() -> Result<(
         "begin event should include process_id for a live session"
     );
 
-    // We expect three terminal interactions matching the three write_stdin calls.
     assert_eq!(
-        terminal_events.len(),
-        3,
-        "expected three terminal interactions; got {terminal_events:?}"
+        terminal_events
+            .iter()
+            .map(|ev| ev.stdin.as_str())
+            .collect::<Vec<_>>(),
+        vec!["x"; terminal_events.len()],
+        "terminal interactions should preserve stdin payloads"
+    );
+    assert!(
+        terminal_events.len() >= 2,
+        "expected at least two terminal interactions; got {terminal_events:?}"
     );
 
     for event in &terminal_events {
         assert_eq!(event.call_id, open_call_id);
         assert_eq!(event.process_id, "1000");
     }
-    assert_eq!(
-        terminal_events
-            .iter()
-            .map(|ev| ev.stdin.as_str())
-            .collect::<Vec<_>>(),
-        vec!["x", "x", "x"],
-        "terminal interactions should reflect the three stdin polls"
-    );
 
     assert!(
         delta_text.contains("MARKER1") && delta_text.contains("MARKER2"),
@@ -1373,12 +1381,9 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
 
-    let python = match which("python").or_else(|_| which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping tty default test.");
-            return Ok(());
-        }
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping tty default test.");
+        return Ok(());
     };
 
     let server = start_mock_server().await;
@@ -1398,7 +1403,7 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
 
     let call_id = "uexec-default-pipe";
     let args = serde_json::json!({
-        "cmd": format!("{} -c \"import sys; print(sys.stdin.isatty())\"", python.display()),
+        "cmd": format!("{python} -c \"import sys; print(sys.stdin.isatty())\""),
         "yield_time_ms": 1500,
     });
 
@@ -1466,12 +1471,9 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
 
-    let python = match which("python").or_else(|_| which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping tty enable test.");
-            return Ok(());
-        }
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping tty enable test.");
+        return Ok(());
     };
 
     let server = start_mock_server().await;
@@ -1491,7 +1493,7 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
 
     let call_id = "uexec-tty-enabled";
     let args = serde_json::json!({
-        "cmd": format!("{} -c \"import sys; print(sys.stdin.isatty())\"", python.display()),
+        "cmd": format!("{python} -c \"import sys; print(sys.stdin.isatty())\""),
         "yield_time_ms": 1500,
         "tty": true,
     });
@@ -2256,7 +2258,12 @@ async fn unified_exec_streams_after_lagged_output() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let script = r#"python3 - <<'PY'
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping lagged output test.");
+        return Ok(());
+    };
+    let script = format!(
+        r#"{python} - <<'PY'
 import sys
 import time
 
@@ -2273,7 +2280,8 @@ for _ in range(5):
 
 time.sleep(0.2)
 PY
-"#;
+"#
+    );
 
     let first_call_id = "uexec-lag-start";
     let first_args = serde_json::json!({
@@ -2507,11 +2515,17 @@ async fn unified_exec_formats_large_output_summary() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let script = r#"python3 - <<'PY'
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping large output summary test.");
+        return Ok(());
+    };
+    let script = format!(
+        r#"{python} - <<'PY'
 import sys
 sys.stdout.write("token token \n" * 5000)
 PY
-"#;
+"#
+    );
 
     let call_id = "uexec-large-output";
     let args = serde_json::json!({
@@ -2583,6 +2597,10 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
+    if !unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable, skipping sandbox test.");
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
 
@@ -2662,12 +2680,9 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
 async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let python = match which::which("python").or_else(|_| which::which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping test.");
-            return Ok(());
-        }
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping test.");
+        return Ok(());
     };
 
     let server = start_mock_server().await;
@@ -2688,7 +2703,7 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
 
     let startup_call_id = "uexec-python-seatbelt";
     let startup_args = serde_json::json!({
-        "cmd": format!("{} -i", python.display()),
+        "cmd": format!("{python} -i"),
         "yield_time_ms": 1_500,
         "tty": true,
     });

@@ -159,3 +159,39 @@ async fn build_tool_call_uses_namespace_for_registry_name() -> anyhow::Result<()
 
     Ok(())
 }
+
+#[tokio::test]
+async fn shell_aliases_inherit_parallel_support() -> anyhow::Result<()> {
+    let (session, turn) = make_session_and_context().await;
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    let mcp_tools = session
+        .services
+        .mcp_connection_manager
+        .read()
+        .await
+        .list_all_tools()
+        .await;
+    let app_tools = Some(mcp_tools.clone());
+    let router = ToolRouter::from_config(
+        &turn.tools_config,
+        ToolRouterParams {
+            mcp_tools: Some(
+                mcp_tools
+                    .into_iter()
+                    .map(|(name, tool)| (name, tool.tool))
+                    .collect(),
+            ),
+            app_tools,
+            discoverable_tools: None,
+            dynamic_tools: turn.dynamic_tools.as_slice(),
+        },
+    );
+
+    assert!(router.tool_supports_parallel("shell"));
+    assert!(router.tool_supports_parallel("container.exec"));
+    assert!(router.tool_supports_parallel("local_shell"));
+    assert!(router.tool_supports_parallel("shell_command"));
+
+    Ok(())
+}

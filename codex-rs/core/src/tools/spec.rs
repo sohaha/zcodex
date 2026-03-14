@@ -1519,6 +1519,30 @@ fn create_test_sync_tool() -> ToolSpec {
             },
         ),
         (
+            "touch_path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional filesystem path to create before waiting at the barrier".to_string(),
+                ),
+            },
+        ),
+        (
+            "wait_for_path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional filesystem path to wait for before continuing".to_string(),
+                ),
+            },
+        ),
+        (
+            "wait_timeout_ms".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Maximum time in milliseconds to wait for wait_for_path".to_string(),
+                ),
+            },
+        ),
+        (
             "barrier".to_string(),
             JsonSchema::Object {
                 properties: barrier_properties,

@@ -24,7 +24,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
-use std::time::Instant;
 use wiremock::MockServer;
 
 fn custom_tool_output_items(req: &ResponsesRequest, call_id: &str) -> Vec<Value> {
@@ -306,20 +305,14 @@ text(JSON.stringify(results));
 
     test.submit_turn("warm up nested tools in parallel").await?;
 
-    let start = Instant::now();
     test.submit_turn("run nested tools in parallel").await?;
-    let duration = start.elapsed();
-
-    assert!(
-        duration < Duration::from_millis(1_600),
-        "expected nested tools to finish in parallel, got {duration:?}",
-    );
 
     let req = response_mock
         .last_request()
         .expect("parallel code mode run should send a completion request");
     let items = custom_tool_output_items(&req, "call-1");
     assert_eq!(items.len(), 2);
+    // test_sync_tool only returns ["ok","ok"] if both nested calls reached the barrier together.
     assert_eq!(text_item(&items, 1), "[\"ok\",\"ok\"]");
 
     Ok(())

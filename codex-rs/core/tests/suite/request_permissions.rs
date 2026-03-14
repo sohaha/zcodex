@@ -42,6 +42,14 @@ fn absolute_path(path: &Path) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(path).expect("absolute path")
 }
 
+fn sandbox_exec_supported(test_name: &str) -> bool {
+    if core_test_support::unprivileged_userns_available() {
+        return true;
+    }
+    eprintln!("unprivileged user namespaces unavailable, skipping {test_name}");
+    false
+}
+
 struct CommandResult {
     exit_code: Option<i64>,
     stdout: String,
@@ -313,6 +321,9 @@ fn normalized_directory_write_permissions(path: &Path) -> Result<RequestPermissi
 async fn with_additional_permissions_requires_approval_under_on_request() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported("with_additional_permissions_requires_approval_under_on_request") {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -490,6 +501,9 @@ async fn request_permissions_tool_is_auto_denied_when_granular_request_permissio
 async fn relative_additional_permissions_resolve_against_tool_workdir() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported("relative_additional_permissions_resolve_against_tool_workdir") {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -790,6 +804,10 @@ async fn read_only_with_additional_permissions_does_not_widen_to_unrequested_tmp
 async fn workspace_write_with_additional_permissions_can_write_outside_cwd() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported("workspace_write_with_additional_permissions_can_write_outside_cwd")
+    {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -999,6 +1017,9 @@ async fn with_additional_permissions_denied_approval_blocks_execution() -> Resul
 async fn request_permissions_grants_apply_to_later_exec_command_calls() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported("request_permissions_grants_apply_to_later_exec_command_calls") {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -1122,6 +1143,11 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
 {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported(
+        "request_permissions_preapprove_explicit_exec_permissions_outside_on_request",
+    ) {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -1239,6 +1265,9 @@ async fn request_permissions_preapprove_explicit_exec_permissions_outside_on_req
 async fn request_permissions_grants_apply_to_later_shell_command_calls() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported("request_permissions_grants_apply_to_later_shell_command_calls") {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -1350,6 +1379,11 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
 -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported(
+        "request_permissions_grants_apply_to_later_shell_command_calls_without_inline_permission_feature",
+    ) {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -1461,6 +1495,11 @@ async fn request_permissions_grants_apply_to_later_shell_command_calls_without_i
 async fn partial_request_permissions_grants_do_not_preapprove_new_permissions() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
+    if !sandbox_exec_supported(
+        "partial_request_permissions_grants_do_not_preapprove_new_permissions",
+    ) {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;

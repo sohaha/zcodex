@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::fs::File;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -43,6 +46,12 @@ struct TestSyncArgs {
     #[serde(default)]
     sleep_after_ms: Option<u64>,
     #[serde(default)]
+    touch_path: Option<PathBuf>,
+    #[serde(default)]
+    wait_for_path: Option<PathBuf>,
+    #[serde(default = "default_timeout_ms")]
+    wait_timeout_ms: u64,
+    #[serde(default)]
     barrier: Option<BarrierArgs>,
 }
 
@@ -82,6 +91,14 @@ impl ToolHandler for TestSyncHandler {
             sleep(Duration::from_millis(delay)).await;
         }
 
+        if let Some(path) = args.touch_path.as_deref() {
+            touch_path(path)?;
+        }
+
+        if let Some(path) = args.wait_for_path.as_deref() {
+            wait_for_path(path, args.wait_timeout_ms).await?;
+        }
+
         if let Some(barrier) = args.barrier {
             wait_on_barrier(barrier).await?;
         }
@@ -94,6 +111,38 @@ impl ToolHandler for TestSyncHandler {
 
         Ok(FunctionToolOutput::from_text("ok".to_string(), Some(true)))
     }
+}
+
+fn touch_path(path: &Path) -> Result<(), FunctionCallError> {
+    File::create(path).map_err(|err| {
+        FunctionCallError::RespondToModel(format!(
+            "test_sync_tool failed to create signal file {}: {err}",
+            path.display()
+        ))
+    })?;
+    Ok(())
+}
+
+async fn wait_for_path(path: &Path, timeout_ms: u64) -> Result<(), FunctionCallError> {
+    if timeout_ms == 0 {
+        return Err(FunctionCallError::RespondToModel(
+            "test_sync_tool wait timeout must be greater than zero".to_string(),
+        ));
+    }
+
+    let started = tokio::time::Instant::now();
+    let timeout = Duration::from_millis(timeout_ms);
+    while !path.exists() {
+        if started.elapsed() >= timeout {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "test_sync_tool timed out waiting for signal file {}",
+                path.display()
+            )));
+        }
+        sleep(Duration::from_millis(20)).await;
+    }
+
+    Ok(())
 }
 
 async fn wait_on_barrier(args: BarrierArgs) -> Result<(), FunctionCallError> {
