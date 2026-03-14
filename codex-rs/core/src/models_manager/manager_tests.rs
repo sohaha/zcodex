@@ -569,7 +569,7 @@ async fn overlay_catalog_keeps_remote_refresh_enabled() {
         AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
     let overlay_model = remote_model("overlay-only", "Overlay Only", 0);
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider(
+    let manager = ModelsManager::new_with_provider(
         codex_home.path().to_path_buf(),
         auth_manager,
         None,
@@ -617,7 +617,7 @@ async fn overlay_catalog_overrides_matching_remote_slug() {
     let mut overlay_model = remote_model("shared-model", "Overlay Shared", 0);
     overlay_model.supports_image_detail_original = true;
     let provider = provider_for(server.uri());
-    let manager = ModelsManager::with_provider(
+    let manager = ModelsManager::new_with_provider(
         codex_home.path().to_path_buf(),
         auth_manager,
         None,
@@ -708,7 +708,7 @@ async fn anthropic_provider_applies_overlay_catalog() {
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
     let overlay_model = remote_model("claude-proxy-custom", "Claude Proxy Custom", 0);
-    let manager = ModelsManager::with_provider(
+    let manager = ModelsManager::new_with_provider(
         codex_home.path().to_path_buf(),
         auth_manager,
         None,

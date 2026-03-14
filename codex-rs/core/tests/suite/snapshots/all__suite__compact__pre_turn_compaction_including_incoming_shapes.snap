@@ -1,6 +1,6 @@
 ---
 source: core/tests/suite/compact.rs
-assertion_line: 3048
+assertion_line: 3050
 expression: "format_labeled_requests_snapshot(\"Pre-turn auto-compaction with a context override emits the context diff in the compact request while the incoming user message is still excluded.\",\n&[(\"Local Compaction Request\", &requests[2]),\n(\"Local Post-Compaction History Layout\", &requests[3]),])"
 ---
 Scenario: Pre-turn auto-compaction with a context override emits the context diff in the compact request while the incoming user message is still excluded.
@@ -9,9 +9,7 @@ Scenario: Pre-turn auto-compaction with a context override emits the context dif
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
     [02] # RTK (Codex Curated) - Token-Optimized Commands\n\n## Golden Ru...
-01:message/user[2]:
-    [01] <AGENTS_MD>
-    [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
+01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:USER_ONE
 03:message/assistant:FIRST_REPLY
 04:message/user:USER_TWO
@@ -25,9 +23,7 @@ Scenario: Pre-turn auto-compaction with a context override emits the context dif
 03:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
     [02] # RTK (Codex Curated) - Token-Optimized Commands\n\n## Golden Ru...
-04:message/user[2]:
-    [01] <AGENTS_MD>
-    [02] <ENVIRONMENT_CONTEXT:cwd=PRETURN_CONTEXT_DIFF_CWD>
+04:message/user:<ENVIRONMENT_CONTEXT:cwd=PRETURN_CONTEXT_DIFF_CWD>
 05:message/user[4]:
     [01] <image>
     [02] <input_image:image_url>

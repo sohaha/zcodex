@@ -1,6 +1,6 @@
 ---
 source: core/tests/suite/compact_remote.rs
-assertion_line: 326
+assertion_line: 327
 expression: "format_labeled_requests_snapshot(\"Remote manual /compact where remote compact output is compaction-only: follow-up layout uses the returned compaction item plus new user message.\",\n&[(\"Remote Compaction Request\", &compact_request),\n(\"Remote Post-Compaction History Layout\", follow_up_request),])"
 ---
 Scenario: Remote manual /compact where remote compact output is compaction-only: follow-up layout uses the returned compaction item plus new user message.
@@ -9,9 +9,7 @@ Scenario: Remote manual /compact where remote compact output is compaction-only:
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
     [02] # RTK (Codex Curated) - Token-Optimized Commands\n\n## Golden Ru...
-01:message/user[2]:
-    [01] <AGENTS_MD>
-    [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
+01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:hello remote compact
 03:message/assistant:FIRST_REMOTE_REPLY
 
@@ -20,7 +18,5 @@ Scenario: Remote manual /compact where remote compact output is compaction-only:
 01:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
     [02] # RTK (Codex Curated) - Token-Optimized Commands\n\n## Golden Ru...
-02:message/user[2]:
-    [01] <AGENTS_MD>
-    [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
+02:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 03:message/user:after compact
