@@ -1,18 +1,23 @@
 ---
 source: core/tests/suite/model_visible_layout.rs
+assertion_line: 471
 expression: "format_labeled_requests_snapshot(\"First post-resume turn where pre-turn override sets model to rollout model; no model-switch update should appear.\",\n&[(\"Last Request Before Resume\", &initial_request),\n(\"First Request After Resume + Override\", &resumed_request),])"
 ---
 Scenario: First post-resume turn where pre-turn override sets model to rollout model; no model-switch update should appear.
 
 ## Last Request Before Resume
-00:message/developer:<PERMISSIONS_INSTRUCTIONS>
+00:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] # RTK (Codex Curated) - Token-Optimized Commands\n\n## Golden Rule\n\nPrefer `codex rtk` for noi...
 01:message/user[2]:
     [01] <AGENTS_MD>
     [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:seed resume history
 
 ## First Request After Resume + Override
-00:message/developer:<PERMISSIONS_INSTRUCTIONS>
+00:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] # RTK (Codex Curated) - Token-Optimized Commands\n\n## Golden Rule\n\nPrefer `codex rtk` for noi...
 01:message/user[2]:
     [01] <AGENTS_MD>
     [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
