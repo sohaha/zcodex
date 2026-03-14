@@ -650,7 +650,7 @@ async fn spawn_agent_retries_failed_child_request_with_parent_model_after_403() 
     )
     .await;
 
-    let child_requested_model = mount_response_once_match(
+    let _child_requested_model = mount_response_once_match(
         &server,
         |req: &wiremock::Request| {
             body_contains(req, CHILD_PROMPT)
@@ -667,7 +667,7 @@ async fn spawn_agent_retries_failed_child_request_with_parent_model_after_403() 
     )
     .await;
 
-    let child_parent_model_retry = mount_sse_once_match(
+    let _child_parent_model_retry = mount_sse_once_match(
         &server,
         |req: &wiremock::Request| {
             body_contains(req, CHILD_PROMPT)
@@ -682,7 +682,7 @@ async fn spawn_agent_retries_failed_child_request_with_parent_model_after_403() 
     )
     .await;
 
-    let parent_followup = mount_sse_once_match(
+    let _parent_followup = mount_sse_once_match(
         &server,
         |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
         sse(vec![
@@ -707,25 +707,41 @@ async fn spawn_agent_retries_failed_child_request_with_parent_model_after_403() 
 
     test.submit_turn(TURN_1_PROMPT).await?;
 
-    let _ = wait_for_requests(&child_requested_model).await?;
-    let _ = wait_for_requests(&child_parent_model_retry).await?;
-    let _ = wait_for_requests(&parent_followup).await?;
-    let requested_model_request = child_requested_model.single_request();
-    let retry_model_request = child_parent_model_retry.single_request();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let child_request_models = loop {
+        let requests = server.received_requests().await.unwrap_or_default();
+        let child_request_models = requests
+            .into_iter()
+            .filter(|request| {
+                request_body_json(request)
+                    .is_some_and(|body| body.to_string().contains(CHILD_PROMPT))
+                    && !body_contains(request, SPAWN_CALL_ID)
+            })
+            .filter_map(|request| {
+                request_body_json(&request).and_then(|body| {
+                    body.get("model")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_string)
+                })
+            })
+            .collect::<Vec<_>>();
+        if child_request_models
+            .iter()
+            .any(|model| model == INHERITED_MODEL)
+        {
+            break child_request_models;
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!(
+                "timed out waiting for child retry requests, got models: {child_request_models:?}"
+            );
+        }
+        sleep(Duration::from_millis(10)).await;
+    };
 
     assert_eq!(
-        requested_model_request
-            .body_json()
-            .get("model")
-            .and_then(serde_json::Value::as_str),
-        Some(REQUESTED_MODEL)
-    );
-    assert_eq!(
-        retry_model_request
-            .body_json()
-            .get("model")
-            .and_then(serde_json::Value::as_str),
-        Some(INHERITED_MODEL)
+        child_request_models,
+        vec![REQUESTED_MODEL.to_string(), INHERITED_MODEL.to_string()]
     );
 
     Ok(())
