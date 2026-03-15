@@ -55,19 +55,22 @@ If you use `mise`, the repository also provides dedicated tasks for building the
 CLI from Ubuntu for Apple Silicon (`aarch64-apple-darwin`):
 
 ```bash
-# Install Zig/cargo-zigbuild/Rust target, then provide a macOS SDK via either
-# an extracted SDK directory or a tarball exported from your own Apple SDK.
-MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run deps-macos-arm64
-# or:
-MACOS_SDK_TARBALL=/path/to/MacOSX.sdk.tar.xz mise run deps-macos-arm64
+# Install Zig/cargo-zigbuild/Rust target and automatically fetch a default
+# public macOS SDK into `.cache/macos-sdk`.
+mise run deps-ubuntu-macos-arm64
+
+# Optional overrides if you want to pin a specific SDK source:
+MACOS_SDK_URL=https://.../MacOSX.sdk.tar.xz mise run deps-ubuntu-macos-arm64
+MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run deps-ubuntu-macos-arm64
+MACOS_SDK_TARBALL=/path/to/MacOSX.sdk.tar.xz mise run deps-ubuntu-macos-arm64
 
 # Build codex for macOS arm64 from Ubuntu.
-MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run build-macos-arm64 --release
+mise run build-ubuntu-macos-arm64 --release
 ```
 
-The cross-build task intentionally does not download a macOS SDK on its own.
-You need to supply one locally because Apple SDK redistribution is license
-restricted.
+By default, the dependency task downloads a public prepackaged macOS SDK. If
+you need stricter provenance or a pinned SDK version, override the source with
+`MACOS_SDK_URL`, `MACOS_SDK_TARBALL`, or `MACOS_SDK_PATH`.
 
 ## Tracing / verbose logging
 

@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+sdk_archive="${MACOS_SDK_TARBALL:-}"
+sdk_path="${MACOS_SDK_PATH:-}"
+sdk_root="${MACOS_SDK_ROOT:-$repo_root/.cache/macos-sdk}"
+zig_version="${ZIG_VERSION:-0.14.0}"
+sdk_index_url="${MACOS_SDK_INDEX_URL:-https://raw.githubusercontent.com/joseluisq/macosx-sdks/refs/heads/master/macosx_sdks.json}"
+sdk_url="${MACOS_SDK_URL:-}"
+sdk_sha256="${MACOS_SDK_SHA256:-}"
+sdk_download_path="${MACOS_SDK_DOWNLOAD_PATH:-$sdk_root/macos-sdk.tar.xz}"
+
+if [ "$(uname -s)" != "Linux" ]; then
+  echo "[mise] deps-ubuntu-macos-arm64 目前只支持在 Linux 主机上运行" >&2
+  exit 1
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "[mise] 仅支持 apt-get 环境，请手动安装 curl、xz-utils、pkg-config、Rust 和 cargo-zigbuild" >&2
+  exit 1
+fi
+
+sudo_cmd=()
+if [ "${EUID}" -ne 0 ]; then
+  sudo_cmd=(sudo)
+fi
+
+"${sudo_cmd[@]}" apt-get update
+"${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl pkg-config xz-utils clang libclang-dev
+
+if ! command -v mise >/dev/null 2>&1; then
+  echo "[mise] 未找到 mise，无法安装 Zig" >&2
+  exit 1
+fi
+
+mise install -y "zig@${zig_version}"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "[mise] 未找到 cargo，请先安装 Rust 工具链" >&2
+  exit 1
+fi
+
+if ! command -v rustup >/dev/null 2>&1; then
+  echo "[mise] 未找到 rustup，请先安装 Rust 工具链" >&2
+  exit 1
+fi
+
+if ! cargo zigbuild --help >/dev/null 2>&1; then
+  cargo install --locked cargo-zigbuild
+fi
+
+if ! rustup target list --installed | grep -Fxq 'aarch64-apple-darwin'; then
+  rustup target add aarch64-apple-darwin
+fi
+
+ensure_sdk_path_alias() {
+  if [ -n "$sdk_path" ] && [ -d "$sdk_path" ] && [ "$sdk_path" != "$sdk_root/MacOSX.sdk" ]; then
+    mkdir -p "$sdk_root"
+    ln -sfn "$sdk_path" "$sdk_root/MacOSX.sdk"
+    sdk_path="$sdk_root/MacOSX.sdk"
+  fi
+}
+
+extract_sdk_archive() {
+  mkdir -p "$sdk_root"
+  tar -xf "$sdk_archive" -C "$sdk_root"
+
+  sdk_path="$({
+    find "$sdk_root" -type d -name 'MacOSX.sdk' -print
+    find "$sdk_root" -type d -name 'MacOSX*.sdk' -print
+  } | awk '!seen[$0]++' | sort | head -n 1)"
+
+  ensure_sdk_path_alias
+}
+
+resolve_default_sdk_source() {
+  local metadata
+
+  metadata="$(curl -fsSL "$sdk_index_url")"
+  sdk_url="$(printf '%s\n' "$metadata" | grep -m1 -oE '"github_download_url":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"/\1/')"
+  sdk_sha256="$(printf '%s\n' "$metadata" | grep -m1 -oE '"github_download_sha256sum":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"/\1/')"
+
+  if [ -z "$sdk_url" ] || [ -z "$sdk_sha256" ]; then
+    echo "[mise] 无法从默认 SDK 索引解析下载地址或校验值: $sdk_index_url" >&2
+    exit 1
+  fi
+}
+
+download_default_sdk_archive() {
+  if [ -z "$sdk_url" ] || [ -z "$sdk_sha256" ]; then
+    resolve_default_sdk_source
+  fi
+
+  mkdir -p "$sdk_root"
+  curl -fL "$sdk_url" -o "$sdk_download_path"
+  echo "$sdk_sha256  $sdk_download_path" | sha256sum -c -
+  sdk_archive="$sdk_download_path"
+}
+
+if [ -n "$sdk_archive" ] && [ -z "$sdk_path" ]; then
+  extract_sdk_archive
+fi
+
+if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
+  ensure_sdk_path_alias
+fi
+
+if [ -z "$sdk_path" ] || [ ! -d "$sdk_path" ]; then
+  download_default_sdk_archive
+  extract_sdk_archive
+fi
+
+if [ -n "$sdk_path" ] && [ -d "$sdk_path" ]; then
+  echo "[mise] macOS SDK 已就绪: $sdk_path" >&2
+  echo "[mise] 运行构建时会自动使用 SDKROOT=$sdk_path" >&2
+  exit 0
+fi
+
+cat >&2 <<MSG
+[mise] 已安装 Zig、cargo-zigbuild 和 Rust target，但仍缺少 macOS SDK。
+[mise] 已尝试默认公开 SDK 源，你也可以显式指定以下任一方式后重试：
+[mise]   1. 传入 MACOS_SDK_URL=https://.../MacOSX.sdk.tar.xz
+[mise]   2. 传入 MACOS_SDK_TARBALL=/path/to/MacOSX*.sdk.tar.*
+[mise]   3. 传入 MACOS_SDK_PATH=/path/to/MacOSX.sdk
+MSG
+exit 1
