@@ -1,58 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+source "$script_dir/lib-ubuntu-macos-arm64"
+
 sdk_archive="${MACOS_SDK_TARBALL:-}"
 sdk_path="${MACOS_SDK_PATH:-}"
 sdk_root="${MACOS_SDK_ROOT:-$repo_root/.cache/macos-sdk}"
-zig_version="${ZIG_VERSION:-0.14.0}"
 sdk_index_url="${MACOS_SDK_INDEX_URL:-https://raw.githubusercontent.com/joseluisq/macosx-sdks/refs/heads/master/macosx_sdks.json}"
 sdk_url="${MACOS_SDK_URL:-}"
 sdk_sha256="${MACOS_SDK_SHA256:-}"
 sdk_download_path="${MACOS_SDK_DOWNLOAD_PATH:-$sdk_root/macos-sdk.tar.xz}"
-
-if [ "$(uname -s)" != "Linux" ]; then
-  echo "[mise] deps-ubuntu-macos-arm64 目前只支持在 Linux 主机上运行" >&2
-  exit 1
-fi
-
-if ! command -v apt-get >/dev/null 2>&1; then
-  echo "[mise] 仅支持 apt-get 环境，请手动安装 curl、xz-utils、pkg-config、Rust 和 cargo-zigbuild" >&2
-  exit 1
-fi
-
-sudo_cmd=()
-if [ "${EUID}" -ne 0 ]; then
-  sudo_cmd=(sudo)
-fi
-
-"${sudo_cmd[@]}" apt-get update
-"${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl pkg-config xz-utils clang libclang-dev
-
-if ! command -v mise >/dev/null 2>&1; then
-  echo "[mise] 未找到 mise，无法安装 Zig" >&2
-  exit 1
-fi
-
-mise install -y "zig@${zig_version}"
-
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "[mise] 未找到 cargo，请先安装 Rust 工具链" >&2
-  exit 1
-fi
-
-if ! command -v rustup >/dev/null 2>&1; then
-  echo "[mise] 未找到 rustup，请先安装 Rust 工具链" >&2
-  exit 1
-fi
-
-if ! cargo zigbuild --help >/dev/null 2>&1; then
-  cargo install --locked cargo-zigbuild
-fi
-
-if ! rustup target list --installed | grep -Fxq 'aarch64-apple-darwin'; then
-  rustup target add aarch64-apple-darwin
-fi
 
 ensure_sdk_path_alias() {
   if [ -n "$sdk_path" ] && [ -d "$sdk_path" ] && [ "$sdk_path" != "$sdk_root/MacOSX.sdk" ]; then
@@ -77,13 +36,12 @@ extract_sdk_archive() {
 resolve_default_sdk_source() {
   local metadata
 
-  metadata="$(curl -fsSL "$sdk_index_url")"
+  metadata="$(curl_metadata "$sdk_index_url")"
   sdk_url="$(printf '%s\n' "$metadata" | grep -m1 -oE '"github_download_url":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"/\1/')"
   sdk_sha256="$(printf '%s\n' "$metadata" | grep -m1 -oE '"github_download_sha256sum":[[:space:]]*"[^"]+"' | sed -E 's/.*"([^"]+)"/\1/')"
 
   if [ -z "$sdk_url" ] || [ -z "$sdk_sha256" ]; then
-    echo "[mise] 无法从默认 SDK 索引解析下载地址或校验值: $sdk_index_url" >&2
-    exit 1
+    die "[mise] 无法从默认 SDK 索引解析下载地址或校验值: $sdk_index_url"
   fi
 }
 
@@ -93,12 +51,48 @@ download_default_sdk_archive() {
   fi
 
   mkdir -p "$sdk_root"
-  curl -fL "$sdk_url" -o "$sdk_download_path"
+  curl_download "$sdk_url" "$sdk_download_path" "macOS SDK"
   echo "$sdk_sha256  $sdk_download_path" | sha256sum -c -
   sdk_archive="$sdk_download_path"
 }
 
+if [ "$(uname -s)" != "Linux" ]; then
+  die "[mise] deps-ubuntu-macos-arm64 目前只支持在 Linux 主机上运行"
+fi
+
+if ! command -v apt-get >/dev/null 2>&1; then
+  die "[mise] 仅支持 apt-get 环境，请手动安装 curl、xz-utils、pkg-config、Rust 和 cargo-zigbuild"
+fi
+
+sudo_cmd=()
+if [ "${EUID}" -ne 0 ]; then
+  sudo_cmd=(sudo)
+fi
+
+"${sudo_cmd[@]}" apt-get update
+"${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl pkg-config xz-utils clang libclang-dev
+
+if ! command -v cargo >/dev/null 2>&1; then
+  die "[mise] 未找到 cargo，请先安装 Rust 工具链"
+fi
+
+if ! command -v rustup >/dev/null 2>&1; then
+  die "[mise] 未找到 rustup，请先安装 Rust 工具链"
+fi
+
+zig_bin="$(ensure_zig_binary)"
+echo "[mise] Zig 已就绪: $zig_bin" >&2
+
+if ! cargo zigbuild --help >/dev/null 2>&1; then
+  cargo install --locked cargo-zigbuild
+fi
+
+if ! rustup target list --installed | grep -Fxq 'aarch64-apple-darwin'; then
+  rustup target add aarch64-apple-darwin
+fi
+
 if [ -n "$sdk_archive" ] && [ -z "$sdk_path" ]; then
+  [ -f "$sdk_archive" ] || die "[mise] MACOS_SDK_TARBALL 不存在: $sdk_archive"
   extract_sdk_archive
 fi
 

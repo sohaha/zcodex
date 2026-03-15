@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="${REPO_ROOT_OVERRIDE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+zig_version="${ZIG_VERSION:-0.14.0}"
+zig_install_root="${ZIG_INSTALL_ROOT:-$repo_root/.cache/zig}"
+zig_download_root="${ZIG_DOWNLOAD_ROOT:-$zig_install_root/downloads}"
+download_connect_timeout="${DOWNLOAD_CONNECT_TIMEOUT:-30}"
+download_retry_count="${DOWNLOAD_RETRY_COUNT:-10}"
+download_retry_delay="${DOWNLOAD_RETRY_DELAY:-2}"
+download_max_time="${DOWNLOAD_MAX_TIME:-0}"
+download_metadata_max_time="${DOWNLOAD_METADATA_MAX_TIME:-120}"
+
+die() {
+  echo "$1" >&2
+  exit 1
+}
+
+curl_download() {
+  local url="$1"
+  local output="$2"
+  local label="$3"
+  local -a args
+
+  mkdir -p "$(dirname "$output")"
+  args=(
+    -fL
+    --retry "$download_retry_count"
+    --retry-delay "$download_retry_delay"
+    --retry-all-errors
+    --connect-timeout "$download_connect_timeout"
+  )
+
+  if [ "$download_max_time" != "0" ]; then
+    args+=(--max-time "$download_max_time")
+  fi
+
+  if [ -f "$output" ]; then
+    args+=(-C -)
+  fi
+
+  echo "[mise] 下载 $label: $url" >&2
+  curl "${args[@]}" -o "$output" "$url"
+}
+
+curl_metadata() {
+  local url="$1"
+  local -a args
+
+  args=(
+    -fsSL
+    --retry "$download_retry_count"
+    --retry-delay "$download_retry_delay"
+    --retry-all-errors
+    --connect-timeout "$download_connect_timeout"
+    --max-time "$download_metadata_max_time"
+  )
+
+  curl "${args[@]}" "$url"
+}
+
+resolve_zig_host_arch() {
+  case "$(uname -m)" in
+    x86_64 | amd64)
+      printf '%s\n' "x86_64"
+      ;;
+    aarch64 | arm64)
+      printf '%s\n' "aarch64"
+      ;;
+    *)
+      die "[mise] 不支持当前主机架构的 Zig 自动安装: $(uname -m)"
+      ;;
+  esac
+}
+
+resolve_zig_archive_name() {
+  local zig_host_arch
+
+  zig_host_arch="$(resolve_zig_host_arch)"
+  printf 'zig-linux-%s-%s.tar.xz\n' "$zig_host_arch" "$zig_version"
+}
+
+resolve_default_zig_url() {
+  local zig_archive_name
+  local zig_base_url
+
+  zig_archive_name="$(resolve_zig_archive_name)"
+  zig_base_url="${ZIG_BASE_URL:-https://ziglang.org/download}"
+  printf '%s/%s/%s\n' "${zig_base_url%/}" "$zig_version" "$zig_archive_name"
+}
+
+extract_zig_archive() {
+  local archive="$1"
+  local install_dir="$2"
+  local staging_root
+  local extracted_dir
+
+  if [ -x "$install_dir/zig" ]; then
+    return
+  fi
+
+  staging_root="$(mktemp -d "${TMPDIR:-/tmp}/zig-${zig_version}.XXXXXX")"
+  trap 'rm -rf "$staging_root"' RETURN
+  tar -xf "$archive" -C "$staging_root"
+
+  extracted_dir="$(find "$staging_root" -mindepth 1 -maxdepth 1 -type d | sort | head -n 1)"
+  if [ -z "$extracted_dir" ] || [ ! -x "$extracted_dir/zig" ]; then
+    die "[mise] 无法从 $archive 解析 Zig 可执行文件"
+  fi
+
+  mkdir -p "$(dirname "$install_dir")"
+  rm -rf "$install_dir"
+  mv "$extracted_dir" "$install_dir"
+  trap - RETURN
+  rm -rf "$staging_root"
+}
+
+ensure_zig_binary() {
+  local zig_bin_path="${ZIG_PATH:-}"
+  local zig_archive="${ZIG_TARBALL:-}"
+  local zig_archive_name
+  local zig_install_dir
+  local zig_url
+  local zig_sha256="${ZIG_SHA256:-}"
+
+  if [ -n "$zig_bin_path" ]; then
+    [ -x "$zig_bin_path" ] || die "[mise] ZIG_PATH 不存在或不可执行: $zig_bin_path"
+    printf '%s\n' "$zig_bin_path"
+    return
+  fi
+
+  zig_install_dir="$zig_install_root/$zig_version"
+  if [ -x "$zig_install_dir/zig" ]; then
+    printf '%s\n' "$zig_install_dir/zig"
+    return
+  fi
+
+  zig_archive_name="$(resolve_zig_archive_name)"
+  if [ -z "$zig_archive" ]; then
+    zig_url="${ZIG_URL:-$(resolve_default_zig_url)}"
+    zig_archive="$zig_download_root/$zig_archive_name"
+    curl_download "$zig_url" "$zig_archive" "Zig $zig_version"
+  else
+    [ -f "$zig_archive" ] || die "[mise] ZIG_TARBALL 不存在: $zig_archive"
+  fi
+
+  if [ -n "$zig_sha256" ]; then
+    echo "$zig_sha256  $zig_archive" | sha256sum -c -
+  fi
+
+  extract_zig_archive "$zig_archive" "$zig_install_dir"
+  printf '%s\n' "$zig_install_dir/zig"
+}

@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
+source "$script_dir/lib-ubuntu-macos-arm64"
 target="aarch64-apple-darwin"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 sdk_path="${SDKROOT:-${MACOS_SDK_PATH:-$repo_root/.cache/macos-sdk/MacOSX.sdk}}"
@@ -40,6 +41,8 @@ resolve_build_profile_dir() {
 }
 
 ensure_cross_deps() {
+  local zig_bin
+
   if [ "$(uname -s)" != "Linux" ]; then
     echo "[build-ubuntu-macos-arm64] 该 task 仅用于 Linux -> macOS arm64 交叉编译" >&2
     exit 1
@@ -67,6 +70,11 @@ MSG
     echo "[build-ubuntu-macos-arm64] 缺少 Rust target $target，请先运行 `mise run deps-ubuntu-macos-arm64`" >&2
     exit 1
   fi
+
+  zig_bin="$(ensure_zig_binary)"
+  export PATH
+  PATH="$(dirname "$zig_bin"):$PATH"
+  echo "[build-ubuntu-macos-arm64] 使用 Zig: $zig_bin" >&2
 }
 
 ensure_cross_deps "$@"
@@ -86,7 +94,6 @@ export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 profile_dir="$(resolve_build_profile_dir "$@")"
 output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
 
-mise exec -y "zig@${ZIG_VERSION:-0.14.0}" -- \
-  "$script_dir/rs-ext" cargo zigbuild -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
+"$script_dir/rs-ext" cargo zigbuild -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
 
 echo "[build-ubuntu-macos-arm64] 构建完成: $output_bin" >&2
