@@ -48,11 +48,9 @@ fn extract_output_text(item: &Value) -> Option<&str> {
 
 fn python_shell_command() -> Option<String> {
     let python = which("python").or_else(|_| which("python3")).ok()?;
-    Some(
-        shlex::try_quote(python.to_string_lossy().as_ref())
-            .expect("python path should serialize for the shell")
-            .to_string(),
-    )
+    shlex::try_quote(python.to_string_lossy().as_ref())
+        .ok()
+        .map(|quoted| quoted.to_string())
 }
 
 #[derive(Debug)]

@@ -56,8 +56,6 @@ if invocation_index < len(block_prompts):
 else:
     print(json.dumps({{"systemMessage": f"stop hook pass {{invocation_index + 1}} complete"}}))
 "#,
-            log_path_json = log_path_json,
-            prompts_json = prompts_json,
         );
         (script_path, command, script)
     } else {
@@ -87,8 +85,6 @@ if (invocationIndex < blockPrompts.length) {{
     );
 }}
 "#,
-            log_path_json = log_path_json,
-            prompts_json = prompts_json,
         );
         (script_path, command, script)
     };

@@ -2017,6 +2017,8 @@ fn should_retry_subagent_with_parent_model_on_model_access_denied_403() {
         url: None,
         cf_ray: None,
         request_id: None,
+        identity_authorization_error: None,
+        identity_error_code: None,
     });
 
     assert!(should_retry_subagent_with_parent_model(&err));
@@ -2030,6 +2032,8 @@ fn should_not_retry_subagent_with_parent_model_on_unrelated_403() {
         url: None,
         cf_ray: None,
         request_id: None,
+        identity_authorization_error: None,
+        identity_error_code: None,
     });
 
     assert!(!should_retry_subagent_with_parent_model(&err));

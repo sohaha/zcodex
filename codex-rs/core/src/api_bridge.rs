@@ -1,3 +1,4 @@
+use base64::Engine;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_api::AuthProvider as ApiAuthProvider;
@@ -31,6 +32,8 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
             url: None,
             cf_ray: None,
             request_id: None,
+            identity_authorization_error: None,
+            identity_error_code: None,
         }),
         ApiError::InvalidRequest { message } => CodexErr::InvalidRequest(message),
         ApiError::Transport(transport) => match transport {
@@ -101,6 +104,11 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                         url,
                         cf_ray: extract_header(headers.as_ref(), CF_RAY_HEADER),
                         request_id: extract_request_id(headers.as_ref()),
+                        identity_authorization_error: extract_header(
+                            headers.as_ref(),
+                            X_OPENAI_AUTHORIZATION_ERROR_HEADER,
+                        ),
+                        identity_error_code: extract_x_error_json_code(headers.as_ref()),
                     })
                 }
             }
@@ -159,6 +167,8 @@ const ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 const OAI_REQUEST_ID_HEADER: &str = "x-oai-request-id";
 const CF_RAY_HEADER: &str = "cf-ray";
+const X_OPENAI_AUTHORIZATION_ERROR_HEADER: &str = "x-openai-authorization-error";
+const X_ERROR_JSON_HEADER: &str = "x-error-json";
 
 #[cfg(test)]
 #[path = "api_bridge_tests.rs"]
@@ -179,6 +189,19 @@ fn extract_header(headers: Option<&HeaderMap>, name: &str) -> Option<String> {
             .and_then(|value| value.to_str().ok())
             .map(str::to_string)
     })
+}
+
+fn extract_x_error_json_code(headers: Option<&HeaderMap>) -> Option<String> {
+    let encoded = extract_header(headers, X_ERROR_JSON_HEADER)?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let parsed = serde_json::from_slice::<Value>(&decoded).ok()?;
+    parsed
+        .get("error")
+        .and_then(|error| error.get("code"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 pub(crate) fn auth_provider_from_auth(
@@ -237,6 +260,26 @@ struct UsageErrorBody {
 pub(crate) struct CoreAuthProvider {
     token: Option<String>,
     account_id: Option<String>,
+}
+
+impl CoreAuthProvider {
+    pub(crate) fn auth_header_attached(&self) -> bool {
+        self.token
+            .as_ref()
+            .is_some_and(|token| http::HeaderValue::from_str(&format!("Bearer {token}")).is_ok())
+    }
+
+    pub(crate) fn auth_header_name(&self) -> Option<&'static str> {
+        self.auth_header_attached().then_some("authorization")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(token: Option<&str>, account_id: Option<&str>) -> Self {
+        Self {
+            token: token.map(str::to_string),
+            account_id: account_id.map(str::to_string),
+        }
+    }
 }
 
 impl ApiAuthProvider for CoreAuthProvider {
