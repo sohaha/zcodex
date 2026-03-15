@@ -13,6 +13,7 @@ use assert_matches::assert_matches;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
@@ -197,6 +198,68 @@ async fn on_event_updates_status_from_error() {
     }));
 
     let expected = AgentStatus::Errored("boom".to_string());
+    assert_eq!(status, Some(expected));
+}
+
+#[tokio::test]
+async fn on_event_updates_status_from_usage_limit_error() {
+    let status = agent_status_from_event(&EventMsg::Error(ErrorEvent {
+        message: "You've hit your usage limit. Try again at 10:00 AM.".to_string(),
+        codex_error_info: None,
+    }));
+
+    let expected = AgentStatus::Errored(
+        "Rate limited (HTTP 429): You've hit your usage limit. Try again at 10:00 AM.".to_string(),
+    );
+    assert_eq!(status, Some(expected));
+}
+
+#[tokio::test]
+async fn on_event_updates_status_from_retry_limit_429_error() {
+    let status = agent_status_from_event(&EventMsg::Error(ErrorEvent {
+        message: "exceeded retry limit, last status: 429 Too Many Requests".to_string(),
+        codex_error_info: None,
+    }));
+
+    let expected = AgentStatus::Errored(
+        "Rate limited (HTTP 429): exceeded retry limit, last status: 429 Too Many Requests"
+            .to_string(),
+    );
+    assert_eq!(status, Some(expected));
+}
+
+#[tokio::test]
+async fn on_event_updates_status_from_structured_usage_limit_error() {
+    let status = agent_status_from_event(&EventMsg::Error(ErrorEvent {
+        message: "limit reached".to_string(),
+        codex_error_info: Some(CodexErrorInfo::UsageLimitExceeded),
+    }));
+
+    let expected = AgentStatus::Errored("Rate limited (HTTP 429): limit reached".to_string());
+    assert_eq!(status, Some(expected));
+}
+
+#[tokio::test]
+async fn on_event_updates_status_from_structured_retry_limit_429_error() {
+    let status = agent_status_from_event(&EventMsg::Error(ErrorEvent {
+        message: "retry limit reached".to_string(),
+        codex_error_info: Some(CodexErrorInfo::ResponseTooManyFailedAttempts {
+            http_status_code: Some(429),
+        }),
+    }));
+
+    let expected = AgentStatus::Errored("Rate limited (HTTP 429): retry limit reached".to_string());
+    assert_eq!(status, Some(expected));
+}
+
+#[tokio::test]
+async fn on_event_does_not_mislabel_non_429_structured_errors_as_rate_limits() {
+    let status = agent_status_from_event(&EventMsg::Error(ErrorEvent {
+        message: "429 Too Many Requests".to_string(),
+        codex_error_info: Some(CodexErrorInfo::ServerOverloaded),
+    }));
+
+    let expected = AgentStatus::Errored("429 Too Many Requests".to_string());
     assert_eq!(status, Some(expected));
 }
 

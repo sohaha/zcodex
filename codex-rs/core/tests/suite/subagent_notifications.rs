@@ -322,6 +322,123 @@ async fn subagent_notification_is_included_without_wait() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn subagent_notification_surfaces_rate_limit_errors() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let spawn_args = serde_json::to_string(&json!({
+        "message": CHILD_PROMPT,
+    }))?;
+
+    let _turn1 = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
+        sse(vec![
+            ev_response_created("resp-turn1-rate-limit-1"),
+            ev_function_call(SPAWN_CALL_ID, "spawn_agent", &spawn_args),
+            ev_completed("resp-turn1-rate-limit-1"),
+        ]),
+    )
+    .await;
+
+    let child_rate_limited = mount_response_once_match(
+        &server,
+        |req: &wiremock::Request| {
+            body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
+        },
+        ResponseTemplate::new(429).set_body_json(json!({
+            "error": {
+                "type": "usage_limit_reached",
+                "message": "limit reached",
+                "resets_at": 1704067242,
+                "plan_type": "pro"
+            }
+        })),
+    )
+    .await;
+
+    let _turn1_followup = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
+        sse(vec![
+            ev_response_created("resp-turn1-rate-limit-2"),
+            ev_assistant_message("msg-turn1-rate-limit-2", "parent done"),
+            ev_completed("resp-turn1-rate-limit-2"),
+        ]),
+    )
+    .await;
+
+    let test = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("test config should allow feature update");
+            config.model = Some(INHERITED_MODEL.to_string());
+            config.model_reasoning_effort = Some(INHERITED_REASONING_EFFORT);
+        })
+        .build(&server)
+        .await?;
+
+    test.submit_turn(TURN_1_PROMPT).await?;
+    let _ = wait_for_requests(&child_rate_limited).await?;
+
+    let rollout_path = test
+        .codex
+        .rollout_path()
+        .ok_or_else(|| anyhow::anyhow!("expected parent rollout path"))?;
+    let deadline = Instant::now() + Duration::from_secs(6);
+    loop {
+        let has_notification = tokio::fs::read_to_string(&rollout_path)
+            .await
+            .is_ok_and(|rollout| rollout.contains("Rate limited (HTTP 429)"));
+        if has_notification {
+            break;
+        }
+        if Instant::now() >= deadline {
+            anyhow::bail!(
+                "timed out waiting for parent rollout to include 429 subagent notification"
+            );
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    let turn2 = mount_sse_once_match(
+        &server,
+        |req: &wiremock::Request| body_contains(req, TURN_2_NO_WAIT_PROMPT),
+        sse(vec![
+            ev_response_created("resp-turn2-rate-limit-1"),
+            ev_assistant_message("msg-turn2-rate-limit-1", "no wait path"),
+            ev_completed("resp-turn2-rate-limit-1"),
+        ]),
+    )
+    .await;
+    test.submit_turn(TURN_2_NO_WAIT_PROMPT).await?;
+
+    let turn2_requests = wait_for_requests(&turn2).await?;
+    assert!(turn2_requests.iter().any(|req| {
+        req.message_input_texts("user").iter().any(|text| {
+            text.contains("<subagent_notification>")
+                && text.contains("Rate limited (HTTP 429)")
+                && text.contains("usage limit")
+        })
+    }));
+
+    let child_request_count = server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|request| {
+            body_contains(request, CHILD_PROMPT) && !body_contains(request, SPAWN_CALL_ID)
+        })
+        .count();
+    assert_eq!(child_request_count, 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawned_child_receives_forked_parent_context() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
