@@ -6601,34 +6601,62 @@ async fn maybe_retry_subagent_with_parent_model(
         return None;
     };
 
-    let (parent_model, parent_reasoning_effort) = if let Some(parent_model) = parent_model.as_ref()
-    {
-        let parent_reasoning_effort = sess
-            .services
-            .agent_control
-            .get_thread_config_snapshot(*parent_thread_id)
-            .await
-            .map(|snapshot| snapshot.reasoning_effort)
-            .unwrap_or(turn_context.reasoning_effort);
-        (parent_model.clone(), parent_reasoning_effort)
+    let parent_snapshot = sess
+        .services
+        .agent_control
+        .get_thread_config_snapshot(*parent_thread_id)
+        .await;
+    let fallback_turn_context = if let Some(parent_model) = parent_model.as_ref() {
+        if let Some(parent_snapshot) = parent_snapshot
+            .as_ref()
+            .filter(|snapshot| snapshot.model == *parent_model)
+        {
+            turn_context
+                .with_model_and_reasoning_effort(
+                    parent_model.clone(),
+                    parent_snapshot.reasoning_effort,
+                    &sess.services.models_manager,
+                )
+                .await
+        } else {
+            turn_context
+                .with_model(parent_model.clone(), &sess.services.models_manager)
+                .await
+        }
     } else {
-        let parent_snapshot = sess
-            .services
-            .agent_control
-            .get_thread_config_snapshot(*parent_thread_id)
-            .await?;
-        (parent_snapshot.model, parent_snapshot.reasoning_effort)
+        let parent_snapshot = parent_snapshot?;
+        turn_context
+            .with_model_and_reasoning_effort(
+                parent_snapshot.model,
+                parent_snapshot.reasoning_effort,
+                &sess.services.models_manager,
+            )
+            .await
     };
-    if parent_model == turn_context.model_info.slug {
+    if fallback_turn_context.model_info.slug == turn_context.model_info.slug {
         return None;
     }
 
-    warn!(
-        child_model = %turn_context.model_info.slug,
-        parent_model = %parent_model,
-        error = %err,
-        "subagent request failed with configured model; retrying once with parent model"
-    );
+    let parent_model = fallback_turn_context.model_info.slug.clone();
+    let parent_reasoning_effort = fallback_turn_context.reasoning_effort;
+    let fallback_turn_context = Arc::new(fallback_turn_context);
+
+    if let Some(parent_reasoning_effort) = parent_reasoning_effort {
+        warn!(
+            child_model = %turn_context.model_info.slug,
+            parent_model = %parent_model,
+            parent_reasoning_effort = %parent_reasoning_effort,
+            error = %err,
+            "subagent request failed with configured model; retrying once with parent model"
+        );
+    } else {
+        warn!(
+            child_model = %turn_context.model_info.slug,
+            parent_model = %parent_model,
+            error = %err,
+            "subagent request failed with configured model; retrying once with parent model"
+        );
+    };
     sess.send_event(
         turn_context,
         EventMsg::Warning(WarningEvent {
@@ -6640,15 +6668,7 @@ async fn maybe_retry_subagent_with_parent_model(
     )
     .await;
 
-    Some(Arc::new(
-        turn_context
-            .with_model_and_reasoning_effort(
-                parent_model,
-                parent_reasoning_effort,
-                &sess.services.models_manager,
-            )
-            .await,
-    ))
+    Some(fallback_turn_context)
 }
 
 pub(crate) async fn built_tools(

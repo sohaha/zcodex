@@ -9240,6 +9240,13 @@
                   "format": "int32",
                   "type": "integer"
                 },
+                "parent_model": {
+                  "default": null,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "parent_thread_id": {
                   "$ref": "#/definitions/ThreadId"
                 }

@@ -30,6 +30,7 @@ use codex_protocol::request_permissions::RequestPermissionProfile;
 use http::StatusCode;
 use tracing::Span;
 
+use crate::ThreadManager;
 use crate::protocol::CompactedItem;
 use crate::protocol::CreditsSnapshot;
 use crate::protocol::InitialHistory;
@@ -69,6 +70,8 @@ use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::RealtimeAudioFrame;
 use codex_protocol::protocol::Submission;
@@ -1835,6 +1838,111 @@ async fn turn_context_with_model_and_reasoning_effort_preserves_requested_effort
     assert_eq!(
         updated.config.model_reasoning_effort,
         Some(ReasoningEffortConfig::High)
+    );
+}
+
+#[tokio::test]
+async fn maybe_retry_subagent_with_saved_parent_model_recomputes_reasoning_without_parent_snapshot()
+{
+    let (mut session, mut turn_context) = make_session_and_context().await;
+    let mut config = (*turn_context.config).clone();
+    let mut overlay_model = turn_context.model_info.clone();
+    overlay_model.slug = "gpt-overlay-low-only".to_string();
+    overlay_model.display_name = "GPT Overlay Low Only".to_string();
+    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
+    overlay_model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Low,
+        description: "Quick scan".to_string(),
+    }];
+    config.model_catalog = None;
+    config.model_catalog_merge = Some(ModelsResponse {
+        models: vec![overlay_model.clone()],
+    });
+    let manager = ThreadManager::new(
+        &config,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+    );
+    session.services.agent_control = manager.agent_control();
+    session.services.models_manager = manager.get_models_manager();
+    turn_context.provider = config.model_provider.clone();
+    turn_context.config = Arc::new(config);
+    turn_context.reasoning_effort = Some(ReasoningEffortConfig::High);
+    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: ThreadId::new(),
+        depth: 1,
+        parent_model: Some(overlay_model.slug.clone()),
+        agent_nickname: None,
+        agent_role: None,
+    });
+
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let err = CodexErr::InvalidRequest("Model `gpt-5.1` is not available.".to_string());
+    let retried = maybe_retry_subagent_with_parent_model(&session, &turn_context, &err)
+        .await
+        .expect("saved parent model should allow a retry");
+
+    assert_eq!(retried.model_info.slug, overlay_model.slug);
+    assert_eq!(retried.reasoning_effort, Some(ReasoningEffortConfig::Low));
+    assert_eq!(
+        retried.config.model_reasoning_effort,
+        Some(ReasoningEffortConfig::Low)
+    );
+}
+
+#[tokio::test]
+async fn maybe_retry_subagent_with_saved_parent_model_ignores_mismatched_parent_snapshot() {
+    let (mut session, mut turn_context) = make_session_and_context().await;
+    let mut config = (*turn_context.config).clone();
+    let mut overlay_model = turn_context.model_info.clone();
+    overlay_model.slug = "gpt-overlay-low-only".to_string();
+    overlay_model.display_name = "GPT Overlay Low Only".to_string();
+    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
+    overlay_model.supported_reasoning_levels = vec![ReasoningEffortPreset {
+        effort: ReasoningEffort::Low,
+        description: "Quick scan".to_string(),
+    }];
+    config.model_catalog = None;
+    config.model_catalog_merge = Some(ModelsResponse {
+        models: vec![overlay_model.clone()],
+    });
+    let manager = ThreadManager::new(
+        &config,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+    );
+    let parent_thread = manager
+        .start_thread(config.clone())
+        .await
+        .expect("parent thread should spawn");
+    session.services.agent_control = manager.agent_control();
+    session.services.models_manager = manager.get_models_manager();
+    turn_context.provider = config.model_provider.clone();
+    turn_context.config = Arc::new(config);
+    turn_context.reasoning_effort = Some(ReasoningEffortConfig::High);
+    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: parent_thread.thread_id,
+        depth: 1,
+        parent_model: Some(overlay_model.slug.clone()),
+        agent_nickname: None,
+        agent_role: None,
+    });
+
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let err = CodexErr::InvalidRequest("Model `gpt-5.1` is not available.".to_string());
+    let retried = maybe_retry_subagent_with_parent_model(&session, &turn_context, &err)
+        .await
+        .expect("saved parent model should allow a retry");
+
+    assert_eq!(retried.model_info.slug, overlay_model.slug);
+    assert_eq!(retried.reasoning_effort, Some(ReasoningEffortConfig::Low));
+    assert_eq!(
+        retried.config.model_reasoning_effort,
+        Some(ReasoningEffortConfig::Low)
     );
 }
 
