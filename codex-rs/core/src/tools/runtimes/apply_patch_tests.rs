@@ -1,7 +1,15 @@
 use super::*;
+use crate::sandboxing::SandboxManager;
+use crate::sandboxing::SandboxTransformRequest;
+use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::GranularApprovalConfig;
+use codex_protocol::protocol::SandboxPolicy;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
+use std::path::Path;
+use std::path::PathBuf;
 
 #[test]
 fn wants_no_sandbox_approval_granular_respects_sandbox_flag() {
@@ -66,5 +74,58 @@ fn guardian_review_request_includes_patch_context() {
             change_count: 1usize,
             patch: expected_patch,
         }
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn build_command_spec_keeps_linux_sandbox_separator_before_apply_patch_flag() {
+    let path = std::env::temp_dir().join("apply-patch-separator-test.txt");
+    let action = ApplyPatchAction::new_add_for_test(&path, "hello".to_string());
+    let request = ApplyPatchRequest {
+        action,
+        file_paths: vec![],
+        changes: HashMap::new(),
+        exec_approval_requirement: ExecApprovalRequirement::Skip {
+            bypass_sandbox: false,
+            proposed_execpolicy_amendment: None,
+        },
+        sandbox_permissions: SandboxPermissions::UseDefault,
+        additional_permissions: None,
+        permissions_preapproved: true,
+        timeout_ms: None,
+        codex_exe: Some(PathBuf::from("/tmp/codex")),
+    };
+
+    let spec = ApplyPatchRuntime::build_command_spec(&request, Path::new("/tmp"))
+        .expect("build command spec");
+    let manager = SandboxManager::new();
+    let sandbox_policy = SandboxPolicy::new_read_only_policy();
+    let codex_linux_sandbox_exe = PathBuf::from("/tmp/codex-linux-sandbox");
+    let exec_request = manager
+        .transform(SandboxTransformRequest {
+            spec,
+            policy: &sandbox_policy,
+            file_system_policy: &FileSystemSandboxPolicy::from(&sandbox_policy),
+            network_policy: NetworkSandboxPolicy::Restricted,
+            sandbox: crate::exec::SandboxType::LinuxSeccomp,
+            enforce_managed_network: false,
+            network: None,
+            sandbox_policy_cwd: Path::new("/tmp"),
+            codex_linux_sandbox_exe: Some(&codex_linux_sandbox_exe),
+            use_legacy_landlock: false,
+            windows_sandbox_level: WindowsSandboxLevel::Disabled,
+            windows_sandbox_private_desktop: false,
+        })
+        .expect("transform");
+
+    let separator = exec_request
+        .command
+        .iter()
+        .position(|arg| arg == "--")
+        .expect("linux sandbox separator");
+    assert_eq!(
+        exec_request.command[separator + 2],
+        "--codex-run-as-apply-patch".to_string()
     );
 }

@@ -1,5 +1,9 @@
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
 
 use crate::apply_patch;
 use crate::apply_patch::InternalApplyPatchInvocation;
@@ -26,7 +30,9 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
 use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
+use crate::tools::sandboxing::ExecApprovalRequirement;
 use crate::tools::sandboxing::ToolCtx;
+use crate::tools::sandboxing::ToolError;
 use crate::tools::spec::ApplyPatchToolArgs;
 use crate::tools::spec::JsonSchema;
 use async_trait::async_trait;
@@ -34,9 +40,8 @@ use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use std::collections::BTreeSet;
-use std::sync::Arc;
 
 pub struct ApplyPatchHandler;
 
@@ -182,6 +187,8 @@ impl ToolHandler for ApplyPatchHandler {
                         Ok(FunctionToolOutput::from_text(content, Some(true)))
                     }
                     InternalApplyPatchInvocation::DelegateToExec(apply) => {
+                        let run_in_process =
+                            should_run_apply_patch_in_process(turn.as_ref(), &apply);
                         let changes = convert_apply_patch_to_protocol(&apply.action);
                         let emitter =
                             ToolEmitter::apply_patch(changes.clone(), apply.auto_approved);
@@ -216,16 +223,22 @@ impl ToolHandler for ApplyPatchHandler {
                             call_id: call_id.clone(),
                             tool_name: tool_name.to_string(),
                         };
-                        let out = orchestrator
-                            .run(
-                                &mut runtime,
-                                &req,
-                                &tool_ctx,
-                                turn.as_ref(),
-                                turn.approval_policy.value(),
-                            )
-                            .await
-                            .map(|result| result.output);
+                        let out = if run_in_process {
+                            run_apply_patch_in_process(&req.action)
+                                .await
+                                .map_err(ToolError::Rejected)
+                        } else {
+                            orchestrator
+                                .run(
+                                    &mut runtime,
+                                    &req,
+                                    &tool_ctx,
+                                    turn.as_ref(),
+                                    turn.approval_policy.value(),
+                                )
+                                .await
+                                .map(|result| result.output)
+                        };
                         let event_ctx = ToolEventCtx::new(
                             session.as_ref(),
                             turn.as_ref(),
@@ -288,6 +301,7 @@ pub(crate) async fn intercept_apply_patch(
                     Ok(Some(FunctionToolOutput::from_text(content, Some(true))))
                 }
                 InternalApplyPatchInvocation::DelegateToExec(apply) => {
+                    let run_in_process = should_run_apply_patch_in_process(turn.as_ref(), &apply);
                     let changes = convert_apply_patch_to_protocol(&apply.action);
                     let emitter = ToolEmitter::apply_patch(changes.clone(), apply.auto_approved);
                     let event_ctx = ToolEventCtx::new(
@@ -320,16 +334,22 @@ pub(crate) async fn intercept_apply_patch(
                         call_id: call_id.to_string(),
                         tool_name: tool_name.to_string(),
                     };
-                    let out = orchestrator
-                        .run(
-                            &mut runtime,
-                            &req,
-                            &tool_ctx,
-                            turn.as_ref(),
-                            turn.approval_policy.value(),
-                        )
-                        .await
-                        .map(|result| result.output);
+                    let out = if run_in_process {
+                        run_apply_patch_in_process(&req.action)
+                            .await
+                            .map_err(ToolError::Rejected)
+                    } else {
+                        orchestrator
+                            .run(
+                                &mut runtime,
+                                &req,
+                                &tool_ctx,
+                                turn.as_ref(),
+                                turn.approval_policy.value(),
+                            )
+                            .await
+                            .map(|result| result.output)
+                    };
                     let event_ctx = ToolEventCtx::new(
                         session.as_ref(),
                         turn.as_ref(),
@@ -365,6 +385,164 @@ pub(crate) fn create_apply_patch_freeform_tool() -> ToolSpec {
             syntax: "lark".to_string(),
             definition: APPLY_PATCH_LARK_GRAMMAR.to_string(),
         },
+    })
+}
+
+fn should_run_apply_patch_in_process(
+    turn: &TurnContext,
+    apply: &crate::apply_patch::ApplyPatchExec,
+) -> bool {
+    matches!(turn.sandbox_policy.get(), SandboxPolicy::DangerFullAccess)
+        && matches!(
+            apply.exec_approval_requirement,
+            ExecApprovalRequirement::Skip { .. }
+        )
+}
+
+async fn run_apply_patch_in_process(
+    action: &ApplyPatchAction,
+) -> Result<crate::exec::ExecToolCallOutput, String> {
+    let start = Instant::now();
+    let (patch, path_rewrites) = absolutize_apply_patch(action);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = match codex_apply_patch::apply_patch(&patch, &mut stdout, &mut stderr) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    };
+    let stdout = rewrite_apply_patch_output(
+        String::from_utf8_lossy(&stdout).into_owned(),
+        &path_rewrites,
+    );
+    let stderr = rewrite_apply_patch_output(
+        String::from_utf8_lossy(&stderr).into_owned(),
+        &path_rewrites,
+    );
+    let aggregated = if stderr.is_empty() {
+        stdout.clone()
+    } else if stdout.is_empty() {
+        stderr.clone()
+    } else {
+        format!("{stdout}{stderr}")
+    };
+
+    Ok(crate::exec::ExecToolCallOutput {
+        exit_code,
+        stdout: crate::exec::StreamOutput::new(stdout),
+        stderr: crate::exec::StreamOutput::new(stderr),
+        aggregated_output: crate::exec::StreamOutput::new(aggregated),
+        duration: start.elapsed(),
+        timed_out: false,
+    })
+}
+
+fn absolutize_apply_patch(action: &ApplyPatchAction) -> (String, Vec<(String, String)>) {
+    let mut rewritten_lines = Vec::new();
+    let mut path_rewrites = Vec::new();
+
+    for line in action.patch.lines() {
+        if let Some(path) = line.strip_prefix("*** Add File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Add File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Delete File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Delete File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Update File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Update File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Move to: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Move to: {}", absolute.display()));
+        } else {
+            rewritten_lines.push(line.to_string());
+        }
+    }
+
+    path_rewrites.sort_by(|left, right| right.0.len().cmp(&left.0.len()));
+    path_rewrites.dedup();
+
+    let mut rewritten = rewritten_lines.join("\n");
+    if action.patch.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    (rewritten, path_rewrites)
+}
+
+fn absolutize_patch_path(path: &str, cwd: &Path) -> PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+fn rewrite_apply_patch_output(output: String, path_rewrites: &[(String, String)]) -> String {
+    let mut rewritten = output
+        .lines()
+        .map(|line| rewrite_apply_patch_output_line(line, path_rewrites))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if output.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    rewritten
+}
+
+fn rewrite_apply_patch_output_line(line: &str, path_rewrites: &[(String, String)]) -> String {
+    [
+        "A ",
+        "M ",
+        "D ",
+        "Failed to create parent directories for ",
+        "Failed to write file ",
+        "Failed to delete file ",
+        "Failed to remove original ",
+        "Failed to read file to update ",
+        "Failed to find expected lines in ",
+    ]
+    .into_iter()
+    .find_map(|prefix| rewrite_line_path_after_prefix(line, prefix, path_rewrites))
+    .or_else(|| rewrite_context_lookup_line(line, path_rewrites))
+    .unwrap_or_else(|| line.to_string())
+}
+
+fn rewrite_line_path_after_prefix(
+    line: &str,
+    prefix: &str,
+    path_rewrites: &[(String, String)],
+) -> Option<String> {
+    let remainder = line.strip_prefix(prefix)?;
+    let (rewritten, suffix) = rewrite_path_with_optional_suffix(remainder, path_rewrites)?;
+    Some(format!("{prefix}{rewritten}{suffix}"))
+}
+
+fn rewrite_context_lookup_line(line: &str, path_rewrites: &[(String, String)]) -> Option<String> {
+    let (prefix, path) = line.rsplit_once(" in ")?;
+    if !prefix.starts_with("Failed to find context '") {
+        return None;
+    }
+    let rewritten = rewrite_exact_path(path, path_rewrites)?;
+    Some(format!("{prefix} in {rewritten}"))
+}
+
+fn rewrite_exact_path<'a>(path: &'a str, path_rewrites: &'a [(String, String)]) -> Option<&'a str> {
+    path_rewrites
+        .iter()
+        .find_map(|(absolute, original)| (path == absolute).then_some(original.as_str()))
+}
+
+fn rewrite_path_with_optional_suffix<'a>(
+    path: &'a str,
+    path_rewrites: &'a [(String, String)],
+) -> Option<(&'a str, &'a str)> {
+    path_rewrites.iter().find_map(|(absolute, original)| {
+        let suffix = path.strip_prefix(absolute)?;
+        (suffix.is_empty() || suffix.starts_with(':')).then_some((original.as_str(), suffix))
     })
 }
 
