@@ -133,6 +133,7 @@ mod tests {
         let spawn = CoreSessionSource::SubAgent(CoreSubAgentSource::ThreadSpawn {
             parent_thread_id,
             depth: 1,
+            parent_model: None,
             agent_nickname: None,
             agent_role: None,
         });
