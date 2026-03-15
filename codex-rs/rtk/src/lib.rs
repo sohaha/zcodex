@@ -22,7 +22,7 @@ mod ls;
 mod mypy_cmd;
 mod next_cmd;
 mod npm_cmd;
-mod parser;
+pub mod parser;
 mod pip_cmd;
 mod playwright_cmd;
 mod pnpm_cmd;

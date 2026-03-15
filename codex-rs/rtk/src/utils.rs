@@ -96,6 +96,7 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
 /// assert_eq!(format_tokens(59_234), "59.2K");
 /// assert_eq!(format_tokens(694), "694");
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_tokens(n: usize) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -122,6 +123,7 @@ pub fn format_tokens(n: usize) -> String {
 /// assert_eq!(format_usd(0.123), "$0.12");
 /// assert_eq!(format_usd(0.0096), "$0.0096");
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_usd(amount: f64) -> String {
     if !amount.is_finite() {
         return "$0.00".to_string();
@@ -148,6 +150,7 @@ pub fn format_usd(amount: f64) -> String {
 /// assert_eq!(format_cpt(0.0000038), "$3.80/MTok");
 /// assert_eq!(format_cpt(0.00000386), "$3.86/MTok");
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_cpt(cpt: f64) -> String {
     if !cpt.is_finite() || cpt <= 0.0 {
         return "$0.00/MTok".to_string();
