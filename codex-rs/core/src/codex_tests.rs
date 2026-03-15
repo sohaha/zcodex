@@ -1946,6 +1946,69 @@ async fn maybe_retry_subagent_with_saved_parent_model_ignores_mismatched_parent_
     );
 }
 
+#[tokio::test]
+async fn maybe_retry_subagent_with_saved_parent_model_uses_matching_parent_snapshot_reasoning() {
+    let (mut session, mut turn_context) = make_session_and_context().await;
+    let mut config = (*turn_context.config).clone();
+    let mut overlay_model = turn_context.model_info.clone();
+    overlay_model.slug = "gpt-overlay-low-high".to_string();
+    overlay_model.display_name = "GPT Overlay Low High".to_string();
+    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
+    overlay_model.supported_reasoning_levels = vec![
+        ReasoningEffortPreset {
+            effort: ReasoningEffort::Low,
+            description: "Quick scan".to_string(),
+        },
+        ReasoningEffortPreset {
+            effort: ReasoningEffort::High,
+            description: "Deep dive".to_string(),
+        },
+    ];
+    config.model_catalog = None;
+    config.model_catalog_merge = Some(ModelsResponse {
+        models: vec![overlay_model.clone()],
+    });
+    let manager = ThreadManager::new(
+        &config,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+    );
+    let mut parent_config = config.clone();
+    parent_config.model = Some(overlay_model.slug.clone());
+    parent_config.model_reasoning_effort = Some(ReasoningEffortConfig::High);
+    let parent_thread = manager
+        .start_thread(parent_config)
+        .await
+        .expect("parent thread should spawn");
+    session.services.agent_control = manager.agent_control();
+    session.services.models_manager = manager.get_models_manager();
+    turn_context.provider = config.model_provider.clone();
+    turn_context.config = Arc::new(config);
+    turn_context.reasoning_effort = Some(ReasoningEffortConfig::Low);
+    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: parent_thread.thread_id,
+        depth: 1,
+        parent_model: Some(overlay_model.slug.clone()),
+        agent_nickname: None,
+        agent_role: None,
+    });
+
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let err = CodexErr::InvalidRequest("Model `gpt-5.1` is not available.".to_string());
+    let retried = maybe_retry_subagent_with_parent_model(&session, &turn_context, &err)
+        .await
+        .expect("matching parent snapshot should preserve its reasoning effort");
+
+    assert_eq!(retried.model_info.slug, overlay_model.slug);
+    assert_eq!(retried.reasoning_effort, Some(ReasoningEffortConfig::High));
+    assert_eq!(
+        retried.config.model_reasoning_effort,
+        Some(ReasoningEffortConfig::High)
+    );
+}
+
 #[test]
 fn should_retry_subagent_with_parent_model_on_model_access_denied_403() {
     let err = CodexErr::UnexpectedStatus(UnexpectedResponseError {
