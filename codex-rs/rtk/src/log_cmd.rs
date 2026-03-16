@@ -1,11 +1,23 @@
 use crate::tracking;
 use anyhow::Result;
+use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::io::BufRead;
 use std::io::{self};
 use std::path::Path;
+
+lazy_static! {
+    static ref TIMESTAMP_RE: Regex =
+        Regex::new(r"^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*\s*").unwrap();
+    static ref UUID_RE: Regex =
+        Regex::new(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+            .unwrap();
+    static ref HEX_RE: Regex = Regex::new(r"0x[0-9a-fA-F]+").unwrap();
+    static ref NUM_RE: Regex = Regex::new(r"\b\d{4,}\b").unwrap();
+    static ref PATH_RE: Regex = Regex::new(r"/[\w./\-]+").unwrap();
+}
 
 /// Filter and deduplicate log output
 pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
@@ -17,7 +29,7 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
 
     let content = fs::read_to_string(file)?;
     let result = analyze_logs(&content);
-    println!("{result}");
+    println!("{}", result);
     timer.track(
         &format!("cat {}", file.display()),
         "rtk log",
@@ -39,7 +51,7 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
     }
 
     let result = analyze_logs(&content);
-    println!("{result}");
+    println!("{}", result);
 
     timer.track("log (stdin)", "rtk log (stdin)", &content, &result);
 
@@ -59,22 +71,14 @@ fn analyze_logs(content: &str) -> String {
     let mut unique_errors: Vec<String> = Vec::new();
     let mut unique_warnings: Vec<String> = Vec::new();
 
-    // Patterns to normalize log messages
-    let timestamp_re =
-        Regex::new(r"^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*\s*").unwrap();
-    let uuid_re =
-        Regex::new(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-            .unwrap();
-    let hex_re = Regex::new(r"0x[0-9a-fA-F]+").unwrap();
-    let num_re = Regex::new(r"\b\d{4,}\b").unwrap();
-    let path_re = Regex::new(r"/[\w./\-]+").unwrap();
+    // Use module-level lazy_static regexes for normalization
 
     for line in content.lines() {
         let line_lower = line.to_lowercase();
 
         // Normalize for deduplication
         let normalized =
-            normalize_log_line(line, &timestamp_re, &uuid_re, &hex_re, &num_re, &path_re);
+            normalize_log_line(line, &TIMESTAMP_RE, &UUID_RE, &HEX_RE, &NUM_RE, &PATH_RE);
 
         // Categorize
         if line_lower.contains("error")
@@ -102,7 +106,7 @@ fn analyze_logs(content: &str) -> String {
     let total_warnings: usize = warn_counts.values().sum();
     let total_info: usize = info_counts.values().sum();
 
-    result.push("📊 Log Summary".to_string());
+    result.push(format!("📊 Log Summary"));
     result.push(format!(
         "   ❌ {} errors ({} unique)",
         total_errors,
@@ -113,7 +117,7 @@ fn analyze_logs(content: &str) -> String {
         total_warnings,
         warn_counts.len()
     ));
-    result.push(format!("   ℹ️  {total_info} info messages"));
+    result.push(format!("   ℹ️  {} info messages", total_info));
     result.push(String::new());
 
     // Errors with counts
@@ -129,23 +133,23 @@ fn analyze_logs(content: &str) -> String {
             let original = unique_errors
                 .iter()
                 .find(|e| {
-                    &normalize_log_line(e, &timestamp_re, &uuid_re, &hex_re, &num_re, &path_re)
+                    &normalize_log_line(e, &TIMESTAMP_RE, &UUID_RE, &HEX_RE, &NUM_RE, &PATH_RE)
                         == *normalized
                 })
-                .map(std::string::String::as_str)
+                .map(|s| s.as_str())
                 .unwrap_or(normalized);
 
             let truncated = if original.len() > 100 {
                 let t: String = original.chars().take(97).collect();
-                format!("{t}...")
+                format!("{}...", t)
             } else {
                 original.to_string()
             };
 
             if **count > 1 {
-                result.push(format!("   [×{count}] {truncated}"));
+                result.push(format!("   [×{}] {}", count, truncated));
             } else {
-                result.push(format!("   {truncated}"));
+                result.push(format!("   {}", truncated));
             }
         }
 
@@ -169,23 +173,23 @@ fn analyze_logs(content: &str) -> String {
             let original = unique_warnings
                 .iter()
                 .find(|w| {
-                    &normalize_log_line(w, &timestamp_re, &uuid_re, &hex_re, &num_re, &path_re)
+                    &normalize_log_line(w, &TIMESTAMP_RE, &UUID_RE, &HEX_RE, &NUM_RE, &PATH_RE)
                         == *normalized
                 })
-                .map(std::string::String::as_str)
+                .map(|s| s.as_str())
                 .unwrap_or(normalized);
 
             let truncated = if original.len() > 100 {
                 let t: String = original.chars().take(97).collect();
-                format!("{t}...")
+                format!("{}...", t)
             } else {
                 original.to_string()
             };
 
             if **count > 1 {
-                result.push(format!("   [×{count}] {truncated}"));
+                result.push(format!("   [×{}] {}", count, truncated));
             } else {
-                result.push(format!("   {truncated}"));
+                result.push(format!("   {}", truncated));
             }
         }
 

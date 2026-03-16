@@ -1,13 +1,13 @@
 use crate::json_cmd;
 use crate::tracking;
+use crate::utils::resolved_command;
 use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
-use std::process::Command;
 
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
-    let mut cmd = Command::new("curl");
+    let mut cmd = resolved_command("curl");
     cmd.arg("-s"); // Silent mode (no progress bar)
 
     for arg in args {
@@ -28,7 +28,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         } else {
             stderr.trim().to_string()
         };
-        eprintln!("FAILED: curl {msg}");
+        eprintln!("FAILED: curl {}", msg);
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
@@ -36,7 +36,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     // Auto-detect JSON and pipe through filter
     let filtered = filter_curl_output(&stdout);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         &format!("curl {}", args.join(" ")),
@@ -54,11 +54,12 @@ fn filter_curl_output(output: &str) -> String {
     // Try JSON detection: starts with { or [
     if (trimmed.starts_with('{') || trimmed.starts_with('['))
         && (trimmed.ends_with('}') || trimmed.ends_with(']'))
-        && let Ok(schema) = json_cmd::filter_json_string(trimmed, 5)
     {
-        // Only use schema if it's actually shorter than the original (#297)
-        if schema.len() <= trimmed.len() {
-            return schema;
+        if let Ok(schema) = json_cmd::filter_json_string(trimmed, 5) {
+            // Only use schema if it's actually shorter than the original (#297)
+            if schema.len() <= trimmed.len() {
+                return schema;
+            }
         }
     }
 
@@ -124,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_filter_curl_long_output() {
-        let lines: Vec<String> = (0..50).map(|i| format!("Line {i}")).collect();
+        let lines: Vec<String> = (0..50).map(|i| format!("Line {}", i)).collect();
         let output = lines.join("\n");
         let result = filter_curl_output(&output);
         assert!(result.contains("Line 0"));

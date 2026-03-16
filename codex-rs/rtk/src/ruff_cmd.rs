@@ -1,17 +1,30 @@
 use crate::tracking;
+use crate::utils::resolved_command;
 use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::process::Command;
 
 #[derive(Debug, Deserialize)]
-struct RuffFix {}
+struct RuffLocation {
+    row: usize,
+    column: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuffFix {
+    #[allow(dead_code)]
+    applicability: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct RuffDiagnostic {
     code: String,
+    message: String,
+    location: RuffLocation,
+    #[allow(dead_code)]
+    end_location: Option<RuffLocation>,
     filename: String,
     fix: Option<RuffFix>,
 }
@@ -26,7 +39,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let is_format = args.iter().any(|a| a == "format");
 
-    let mut cmd = Command::new("ruff");
+    let mut cmd = resolved_command("ruff");
 
     if is_check {
         // Force JSON output for check command
@@ -71,7 +84,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     let filtered = if is_check && !stdout.trim().is_empty() {
         filter_ruff_check_json(&stdout)
@@ -82,7 +95,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         raw.trim().to_string()
     };
 
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         &format!("ruff {}", args.join(" ")),
@@ -145,11 +158,12 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "Ruff: {total_issues} issues in {total_files} files"
+        "Ruff: {} issues in {} files",
+        total_issues, total_files
     ));
 
     if fixable_count > 0 {
-        result.push_str(&format!(" ({fixable_count} fixable)"));
+        result.push_str(&format!(" ({} fixable)", fixable_count));
     }
     result.push('\n');
     result.push_str("═══════════════════════════════════════\n");
@@ -161,7 +175,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     if !rule_counts.is_empty() {
         result.push_str("Top rules:\n");
         for (rule, count) in rule_counts.iter().take(10) {
-            result.push_str(&format!("  {rule} ({count}x)\n"));
+            result.push_str(&format!("  {} ({}x)\n", rule, count));
         }
         result.push('\n');
     }
@@ -170,7 +184,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     result.push_str("Top files:\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
-        result.push_str(&format!("  {short_path} ({count} issues)\n"));
+        result.push_str(&format!("  {} ({} issues)\n", short_path, count));
 
         // Show top 3 rules in this file
         let mut file_rules: HashMap<String, usize> = HashMap::new();
@@ -182,7 +196,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
         file_rule_counts.sort_by(|a, b| b.1.cmp(a.1));
 
         for (rule, count) in file_rule_counts.iter().take(3) {
-            result.push_str(&format!("    {rule} ({count})\n"));
+            result.push_str(&format!("    {} ({})\n", rule, count));
         }
     }
 
@@ -192,7 +206,8 @@ pub fn filter_ruff_check_json(output: &str) -> String {
 
     if fixable_count > 0 {
         result.push_str(&format!(
-            "\n💡 Run `ruff check --fix` to auto-fix {fixable_count} issues\n"
+            "\n💡 Run `ruff check --fix` to auto-fix {} issues\n",
+            fixable_count
         ));
     }
 
@@ -224,15 +239,14 @@ pub fn filter_ruff_format(output: &str) -> String {
             for part in parts {
                 let part_lower = part.to_lowercase();
                 if part_lower.contains("left unchanged") {
-                    let words: Vec<&str> = part.split_whitespace().collect();
+                    let words: Vec<&str> = part.trim().split_whitespace().collect();
                     // Look for number before "file" or "files"
                     for (i, word) in words.iter().enumerate() {
-                        if (word == &"file" || word == &"files")
-                            && i > 0
-                            && let Ok(count) = words[i - 1].parse::<usize>()
-                        {
-                            files_checked = count;
-                            break;
+                        if (word == &"file" || word == &"files") && i > 0 {
+                            if let Ok(count) = words[i - 1].parse::<usize>() {
+                                files_checked = count;
+                                break;
+                            }
                         }
                     }
                     break;
@@ -273,7 +287,7 @@ pub fn filter_ruff_format(output: &str) -> String {
             }
 
             if files_checked > 0 {
-                result.push_str(&format!("\n✓ {files_checked} files already formatted\n"));
+                result.push_str(&format!("\n✓ {} files already formatted\n", files_checked));
             }
 
             result.push_str("\n💡 Run `ruff format` to format these files\n");

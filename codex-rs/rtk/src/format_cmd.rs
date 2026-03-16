@@ -2,10 +2,10 @@ use crate::prettier_cmd;
 use crate::ruff_cmd;
 use crate::tracking;
 use crate::utils::package_manager_exec;
+use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
 use std::path::Path;
-use std::process::Command;
 
 /// Detect formatter from project files or explicit argument
 fn detect_formatter(args: &[String]) -> String {
@@ -66,16 +66,16 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     };
 
     if verbose > 0 {
-        eprintln!("Detected formatter: {formatter}");
+        eprintln!("Detected formatter: {}", formatter);
         eprintln!("Arguments: {}", args[start_idx..].join(" "));
     }
 
     // Build command based on formatter
     let mut cmd = match formatter.as_str() {
         "prettier" => package_manager_exec("prettier"),
-        "black" | "ruff" => Command::new(formatter.as_str()),
+        "black" | "ruff" => resolved_command(formatter.as_str()),
         "biome" => package_manager_exec("biome"),
-        _ => Command::new(formatter.as_str()),
+        _ => resolved_command(formatter.as_str()),
     };
 
     // Add formatter-specific flags
@@ -112,12 +112,13 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context(format!(
-        "Failed to run {formatter}. Is it installed? Try: pip install {formatter} (or npm/pnpm for JS formatters)"
+        "Failed to run {}. Is it installed? Try: pip install {} (or npm/pnpm for JS formatters)",
+        formatter, formatter
     ))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     // Dispatch to appropriate filter based on formatter
     let filtered = match formatter.as_str() {
@@ -127,7 +128,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         _ => raw.trim().to_string(),
     };
 
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         &format!("{} {}", formatter, user_args.join(" ")),
@@ -169,17 +170,16 @@ fn filter_black_output(output: &str) -> String {
             // Split by comma to handle both parts
             for part in trimmed.split(',') {
                 let part_lower = part.to_lowercase();
-                let words: Vec<&str> = part.split_whitespace().collect();
+                let words: Vec<&str> = part.trim().split_whitespace().collect();
 
                 if part_lower.contains("would be reformatted") {
                     // Parse "X file(s) would be reformatted"
                     for (i, word) in words.iter().enumerate() {
-                        if (word == &"file" || word == &"files")
-                            && i > 0
-                            && let Ok(count) = words[i - 1].parse::<usize>()
-                        {
-                            files_would_reformat = count;
-                            break;
+                        if (word == &"file" || word == &"files") && i > 0 {
+                            if let Ok(count) = words[i - 1].parse::<usize>() {
+                                files_would_reformat = count;
+                                break;
+                            }
                         }
                     }
                 }
@@ -187,12 +187,11 @@ fn filter_black_output(output: &str) -> String {
                 if part_lower.contains("would be left unchanged") {
                     // Parse "X file(s) would be left unchanged"
                     for (i, word) in words.iter().enumerate() {
-                        if (word == &"file" || word == &"files")
-                            && i > 0
-                            && let Ok(count) = words[i - 1].parse::<usize>()
-                        {
-                            files_unchanged = count;
-                            break;
+                        if (word == &"file" || word == &"files") && i > 0 {
+                            if let Ok(count) = words[i - 1].parse::<usize>() {
+                                files_unchanged = count;
+                                break;
+                            }
                         }
                     }
                 }
@@ -203,12 +202,11 @@ fn filter_black_output(output: &str) -> String {
         if lower.contains("left unchanged") && !lower.contains("would be") {
             let words: Vec<&str> = trimmed.split_whitespace().collect();
             for (i, word) in words.iter().enumerate() {
-                if (word == &"file" || word == &"files")
-                    && i > 0
-                    && let Ok(count) = words[i - 1].parse::<usize>()
-                {
-                    files_unchanged = count;
-                    break;
+                if (word == &"file" || word == &"files") && i > 0 {
+                    if let Ok(count) = words[i - 1].parse::<usize>() {
+                        files_unchanged = count;
+                        break;
+                    }
                 }
             }
         }
@@ -232,7 +230,7 @@ fn filter_black_output(output: &str) -> String {
         // All files formatted correctly
         result.push_str("✓ Format (black): All files formatted");
         if files_unchanged > 0 {
-            result.push_str(&format!(" ({files_unchanged} files checked)"));
+            result.push_str(&format!(" ({} files checked)", files_unchanged));
         }
     } else if needs_formatting {
         // Files need formatting
@@ -242,7 +240,10 @@ fn filter_black_output(output: &str) -> String {
             files_would_reformat
         };
 
-        result.push_str(&format!("Format (black): {count} files need formatting\n"));
+        result.push_str(&format!(
+            "Format (black): {} files need formatting\n",
+            count
+        ));
         result.push_str("═══════════════════════════════════════\n");
 
         if !files_to_format.is_empty() {
@@ -259,7 +260,10 @@ fn filter_black_output(output: &str) -> String {
         }
 
         if files_unchanged > 0 {
-            result.push_str(&format!("\n✓ {files_unchanged} files already formatted\n"));
+            result.push_str(&format!(
+                "\n✓ {} files already formatted\n",
+                files_unchanged
+            ));
         }
 
         result.push_str("\n💡 Run `black .` to format these files\n");

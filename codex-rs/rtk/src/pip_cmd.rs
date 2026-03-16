@@ -1,8 +1,9 @@
 use crate::tracking;
+use crate::utils::resolved_command;
+use crate::utils::tool_exists;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
-use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 struct Package {
@@ -16,7 +17,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     // Auto-detect uv vs pip
-    let use_uv = which_command("uv").is_some();
+    let use_uv = tool_exists("uv");
     let base_cmd = if use_uv { "uv" } else { "pip" };
 
     if verbose > 0 && use_uv {
@@ -24,7 +25,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     // Detect subcommand
-    let subcommand = args.first().map(std::string::String::as_str).unwrap_or("");
+    let subcommand = args.first().map(|s| s.as_str()).unwrap_or("");
 
     let (cmd_str, filtered) = match subcommand {
         "list" => run_list(base_cmd, &args[1..], verbose)?,
@@ -35,7 +36,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
         _ => {
             anyhow::bail!(
-                "rtk pip: unsupported subcommand '{subcommand}'\nSupported: list, outdated, install, uninstall, show"
+                "rtk pip: unsupported subcommand '{}'\nSupported: list, outdated, install, uninstall, show",
+                subcommand
             );
         }
     };
@@ -51,7 +53,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 }
 
 fn run_list(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, String)> {
-    let mut cmd = Command::new(base_cmd);
+    let mut cmd = resolved_command(base_cmd);
 
     if base_cmd == "uv" {
         cmd.arg("pip");
@@ -64,19 +66,19 @@ fn run_list(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, Str
     }
 
     if verbose > 0 {
-        eprintln!("Running: {base_cmd} pip list --format=json");
+        eprintln!("Running: {} pip list --format=json", base_cmd);
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {base_cmd} pip list"))?;
+        .with_context(|| format!("Failed to run {} pip list", base_cmd))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     let filtered = filter_pip_list(&stdout);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
@@ -86,7 +88,7 @@ fn run_list(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, Str
 }
 
 fn run_outdated(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, String)> {
-    let mut cmd = Command::new(base_cmd);
+    let mut cmd = resolved_command(base_cmd);
 
     if base_cmd == "uv" {
         cmd.arg("pip");
@@ -99,19 +101,19 @@ fn run_outdated(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String,
     }
 
     if verbose > 0 {
-        eprintln!("Running: {base_cmd} pip list --outdated --format=json");
+        eprintln!("Running: {} pip list --outdated --format=json", base_cmd);
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {base_cmd} pip list --outdated"))?;
+        .with_context(|| format!("Failed to run {} pip list --outdated", base_cmd))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     let filtered = filter_pip_outdated(&stdout);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
@@ -121,7 +123,7 @@ fn run_outdated(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String,
 }
 
 fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, String)> {
-    let mut cmd = Command::new(base_cmd);
+    let mut cmd = resolved_command(base_cmd);
 
     if base_cmd == "uv" {
         cmd.arg("pip");
@@ -141,10 +143,10 @@ fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(Stri
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
-    print!("{stdout}");
-    eprint!("{stderr}");
+    print!("{}", stdout);
+    eprint!("{}", stderr);
 
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
@@ -153,24 +155,12 @@ fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(Stri
     Ok((raw.clone(), raw))
 }
 
-/// Check if a command exists in PATH
-fn which_command(cmd: &str) -> Option<String> {
-    Command::new("which")
-        .arg(cmd)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
 /// Filter pip list JSON output
 fn filter_pip_list(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip list (JSON parse failed: {e})");
+            return format!("pip list (JSON parse failed: {})", e);
         }
     };
 
@@ -215,7 +205,7 @@ fn filter_pip_outdated(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip outdated (JSON parse failed: {e})");
+            return format!("pip outdated (JSON parse failed: {})", e);
         }
     };
 
@@ -228,7 +218,11 @@ fn filter_pip_outdated(output: &str) -> String {
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, pkg) in packages.iter().take(20).enumerate() {
-        let latest = pkg.latest_version.as_deref().unwrap_or("unknown");
+        let latest = pkg
+            .latest_version
+            .as_ref()
+            .map(|v| v.as_str())
+            .unwrap_or("unknown");
         result.push_str(&format!(
             "{}. {} ({} → {})\n",
             i + 1,

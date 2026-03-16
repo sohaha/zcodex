@@ -1,7 +1,7 @@
 use crate::tracking;
+use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
-use std::process::Command;
 
 /// Noise directories commonly excluded from LLM context
 const NOISE_DIRS: &[&str] = &[
@@ -42,17 +42,17 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let flags: Vec<&str> = args
         .iter()
         .filter(|a| a.starts_with('-'))
-        .map(std::string::String::as_str)
+        .map(|s| s.as_str())
         .collect();
     let paths: Vec<&str> = args
         .iter()
         .filter(|a| !a.starts_with('-'))
-        .map(std::string::String::as_str)
+        .map(|s| s.as_str())
         .collect();
 
     // Build ls -la + any extra flags the user passed (e.g. -R)
     // Strip -l, -a, -h (we handle all of these ourselves)
-    let mut cmd = Command::new("ls");
+    let mut cmd = resolved_command("ls");
     cmd.arg("-la");
     for flag in &flags {
         if flag.starts_with("--") {
@@ -67,7 +67,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
                 .filter(|c| *c != 'l' && *c != 'a' && *c != 'h')
                 .collect();
             if !extra.is_empty() {
-                cmd.arg(format!("-{extra}"));
+                cmd.arg(format!("-{}", extra));
             }
         }
     }
@@ -85,7 +85,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprint!("{stderr}");
+        eprint!("{}", stderr);
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
@@ -110,9 +110,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     } else {
         paths.join(" ")
     };
-    print!("{filtered}");
+    print!("{}", filtered);
     timer.track(
-        &format!("ls -la {target_display}"),
+        &format!("ls -la {}", target_display),
         "rtk ls",
         &raw,
         &filtered,
@@ -128,7 +128,7 @@ fn human_size(bytes: u64) -> String {
     } else if bytes >= 1024 {
         format!("{:.1}K", bytes as f64 / 1024.0)
     } else {
-        format!("{bytes}B")
+        format!("{}B", bytes)
     }
 }
 
@@ -211,7 +211,7 @@ fn compact_ls(raw: &str, show_all: bool) -> String {
         let ext_parts: Vec<String> = ext_counts
             .iter()
             .take(5)
-            .map(|(ext, count)| format!("{count} {ext}"))
+            .map(|(ext, count)| format!("{} {}", count, ext))
             .collect();
         summary.push_str(" (");
         summary.push_str(&ext_parts.join(", "));

@@ -1,10 +1,10 @@
 use crate::tracking;
+use crate::utils::resolved_command;
 use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::process::Command;
 use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ where
 {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("cargo");
+    let mut cmd = resolved_command("cargo");
     cmd.arg(subcommand);
 
     let restored_args = restore_double_dash(args);
@@ -83,10 +83,10 @@ where
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run cargo {subcommand}"))?;
+        .with_context(|| format!("Failed to run cargo {}", subcommand))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     let exit_code = output
         .status
@@ -94,10 +94,11 @@ where
         .unwrap_or(if output.status.success() { 0 } else { 1 });
     let filtered = filter_fn(&raw);
 
-    if let Some(hint) = crate::tee::tee_and_hint(&raw, &format!("cargo_{subcommand}"), exit_code) {
-        println!("{filtered}\n{hint}");
+    if let Some(hint) = crate::tee::tee_and_hint(&raw, &format!("cargo_{}", subcommand), exit_code)
+    {
+        println!("{}\n{}", filtered, hint);
     } else {
-        println!("{filtered}");
+        println!("{}", filtered);
     }
 
     timer.track(
@@ -145,7 +146,7 @@ fn format_crate_info(name: &str, version: &str, fallback: &str) -> String {
     } else if version.is_empty() {
         name.to_string()
     } else {
-        format!("{name} {version}")
+        format!("{} {}", name, version)
     }
 }
 
@@ -260,14 +261,14 @@ fn filter_cargo_install(output: &str) -> String {
     // Already installed / up to date
     if already_installed {
         let info = ignored_line.split('`').nth(1).unwrap_or(&ignored_line);
-        return format!("✓ cargo install: {info} already installed");
+        return format!("✓ cargo install: {} already installed", info);
     }
 
     // Errors
     if error_count > 0 {
         let crate_info = format_crate_info(&installed_crate, &installed_version, "");
         let deps_info = if compiled > 0 {
-            format!(", {compiled} deps compiled")
+            format!(", {} deps compiled", compiled)
         } else {
             String::new()
         };
@@ -309,10 +310,13 @@ fn filter_cargo_install(output: &str) -> String {
     // Success
     let crate_info = format_crate_info(&installed_crate, &installed_version, "package");
 
-    let mut result = format!("✓ cargo install ({crate_info}, {compiled} deps compiled)");
+    let mut result = format!(
+        "✓ cargo install ({}, {} deps compiled)",
+        crate_info, compiled
+    );
 
     for line in &replaced_lines {
-        result.push_str(&format!("\n  {line}"));
+        result.push_str(&format!("\n  {}", line));
     }
 
     result
@@ -383,10 +387,10 @@ fn filter_cargo_nextest(output: &str) -> String {
 
         // Parse binary count from Starting line
         if trimmed.starts_with("Starting") {
-            if let Some(caps) = starting_re.captures(trimmed)
-                && let Some(m) = caps.get(1)
-            {
-                binaries = m.as_str().parse().unwrap_or(0);
+            if let Some(caps) = starting_re.captures(trimmed) {
+                if let Some(m) = caps.get(1) {
+                    binaries = m.as_str().parse().unwrap_or(0);
+                }
             }
             continue;
         }
@@ -479,7 +483,7 @@ fn filter_cargo_nextest(output: &str) -> String {
         let binary_text = if binaries == 1 {
             "1 binary".to_string()
         } else if binaries > 1 {
-            format!("{binaries} binaries")
+            format!("{} binaries", binaries)
         } else {
             String::new()
         };
@@ -488,12 +492,12 @@ fn filter_cargo_nextest(output: &str) -> String {
             // All pass - compact single line
             let mut parts = vec![format!("{} passed", passed)];
             if skipped > 0 {
-                parts.push(format!("{skipped} skipped"));
+                parts.push(format!("{} skipped", skipped));
             }
             let meta = if binary_text.is_empty() {
-                format!("{duration}s")
+                format!("{}s", duration)
             } else {
-                format!("{binary_text}, {duration}s")
+                format!("{}, {}s", binary_text, duration)
             };
             return format!("✓ cargo nextest: {} ({})", parts.join(", "), meta);
         }
@@ -512,15 +516,15 @@ fn filter_cargo_nextest(output: &str) -> String {
 
         let mut summary_parts = vec![format!("{} passed", passed)];
         if failed > 0 {
-            summary_parts.push(format!("{failed} failed"));
+            summary_parts.push(format!("{} failed", failed));
         }
         if skipped > 0 {
-            summary_parts.push(format!("{skipped} skipped"));
+            summary_parts.push(format!("{} skipped", skipped));
         }
         let meta = if binary_text.is_empty() {
-            format!("{duration}s")
+            format!("{}s", duration)
         } else {
-            format!("{binary_text}, {duration}s")
+            format!("{}, {}s", binary_text, duration)
         };
         result.push_str(&format!(
             "cargo nextest: {} ({})",
@@ -618,12 +622,13 @@ fn filter_cargo_build(output: &str) -> String {
     }
 
     if error_count == 0 && warnings == 0 {
-        return format!("✓ cargo build ({compiled} crates compiled)");
+        return format!("✓ cargo build ({} crates compiled)", compiled);
     }
 
     let mut result = String::new();
     result.push_str(&format!(
-        "cargo build: {error_count} errors, {warnings} warnings ({compiled} crates)\n"
+        "cargo build: {} errors, {} warnings ({} crates)\n",
+        error_count, warnings, compiled
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -735,7 +740,7 @@ impl AggregatedTestResult {
                 counts, suite_text, self.duration_secs
             )
         } else {
-            format!("✓ cargo test: {counts} ({suite_text})")
+            format!("✓ cargo test: {} ({})", counts, suite_text)
         }
     }
 }
@@ -813,16 +818,17 @@ fn filter_cargo_test(output: &str) -> String {
         }
 
         // If all lines parsed successfully and we have at least one suite, return compact format
-        if all_parsed
-            && let Some(agg) = aggregated
-            && agg.suites > 0
-        {
-            return agg.format_compact();
+        if all_parsed {
+            if let Some(agg) = aggregated {
+                if agg.suites > 0 {
+                    return agg.format_compact();
+                }
+            }
         }
 
         // Fallback: use original behavior if regex failed
         for line in &summary_lines {
-            result.push_str(&format!("✓ {line}\n"));
+            result.push_str(&format!("✓ {}\n", line));
         }
         return result.trim().to_string();
     }
@@ -840,7 +846,7 @@ fn filter_cargo_test(output: &str) -> String {
     }
 
     for line in &summary_lines {
-        result.push_str(&format!("{line}\n"));
+        result.push_str(&format!("{}\n", line));
     }
 
     if result.trim().is_empty() {
@@ -850,7 +856,7 @@ fn filter_cargo_test(output: &str) -> String {
             .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with("Compiling"))
             .collect();
         for line in meaningful.iter().rev().take(5).rev() {
-            result.push_str(&format!("{line}\n"));
+            result.push_str(&format!("{}\n", line));
         }
     }
 
@@ -927,7 +933,8 @@ fn filter_cargo_clippy(output: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&format!(
-        "cargo clippy: {error_count} errors, {warning_count} warnings\n"
+        "cargo clippy: {} errors, {} warnings\n",
+        error_count, warning_count
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -938,7 +945,7 @@ fn filter_cargo_clippy(output: &str) -> String {
     for (rule, locations) in rule_counts.iter().take(15) {
         result.push_str(&format!("  {} ({}x)\n", rule, locations.len()));
         for loc in locations.iter().take(3) {
-            result.push_str(&format!("    {loc}\n"));
+            result.push_str(&format!("    {}\n", loc));
         }
         if locations.len() > 3 {
             result.push_str(&format!("    ... +{} more\n", locations.len() - 3));
@@ -957,17 +964,17 @@ pub fn run_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("cargo passthrough: {args:?}");
+        eprintln!("cargo passthrough: {:?}", args);
     }
-    let status = Command::new("cargo")
+    let status = resolved_command("cargo")
         .args(args)
         .status()
         .context("Failed to run cargo")?;
 
     let args_str = tracking::args_display(args);
     timer.track_passthrough(
-        &format!("cargo {args_str}"),
-        &format!("rtk cargo {args_str} (passthrough)"),
+        &format!("cargo {}", args_str),
+        &format!("rtk cargo {} (passthrough)", args_str),
     );
 
     if !status.success() {
@@ -1094,7 +1101,8 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test: 15 passed (1 suite, 0.01s)"),
-            "Expected compact format, got: {result}"
+            "Expected compact format, got: {}",
+            result
         );
         assert!(!result.contains("Compiling"));
         assert!(!result.contains("test utils"));
@@ -1150,7 +1158,8 @@ test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test: 137 passed (4 suites, 1.45s)"),
-            "Expected aggregated format, got: {result}"
+            "Expected aggregated format, got: {}",
+            result
         );
         assert!(!result.contains("running"));
     }
@@ -1181,13 +1190,13 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 "#;
         let result = filter_cargo_test(output);
         // Should NOT aggregate when there are failures
-        assert!(result.contains("FAILURES"), "got: {result}");
-        assert!(result.contains("test_bad"), "got: {result}");
-        assert!(result.contains("test result:"), "got: {result}");
+        assert!(result.contains("FAILURES"), "got: {}", result);
+        assert!(result.contains("test_bad"), "got: {}", result);
+        assert!(result.contains("test result:"), "got: {}", result);
         // Should show individual summaries
-        assert!(result.contains("20 passed"), "got: {result}");
-        assert!(result.contains("14 passed"), "got: {result}");
-        assert!(result.contains("10 passed"), "got: {result}");
+        assert!(result.contains("20 passed"), "got: {}", result);
+        assert!(result.contains("14 passed"), "got: {}", result);
+        assert!(result.contains("10 passed"), "got: {}", result);
     }
 
     #[test]
@@ -1213,7 +1222,8 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test: 0 passed (3 suites, 0.00s)"),
-            "Expected compact format for zero tests, got: {result}"
+            "Expected compact format for zero tests, got: {}",
+            result
         );
     }
 
@@ -1232,7 +1242,8 @@ test result: ok. 18 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test: 63 passed, 5 ignored, 2 filtered out (2 suites, 0.70s)"),
-            "Expected compact format with ignored and filtered, got: {result}"
+            "Expected compact format with ignored and filtered, got: {}",
+            result
         );
     }
 
@@ -1246,7 +1257,8 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test: 15 passed (1 suite, 0.01s)"),
-            "Expected singular 'suite', got: {result}"
+            "Expected singular 'suite', got: {}",
+            result
         );
     }
 
@@ -1261,7 +1273,8 @@ test result: MALFORMED LINE WITHOUT PROPER FORMAT
         // Should fallback to original behavior (show line with checkmark)
         assert!(
             result.contains("✓ test result: MALFORMED"),
-            "Expected fallback format, got: {result}"
+            "Expected fallback format, got: {}",
+            result
         );
     }
 
@@ -1314,12 +1327,12 @@ warning: `rtk` (bin) generated 2 warnings
    Replaced package `rtk v0.9.4` with `rtk v0.11.0` (/Users/user/.cargo/bin/rtk)
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("rtk v0.11.0"), "got: {result}");
-        assert!(result.contains("5 deps compiled"), "got: {result}");
-        assert!(result.contains("Replaced"), "got: {result}");
-        assert!(!result.contains("Compiling"), "got: {result}");
-        assert!(!result.contains("Downloading"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "got: {}", result);
+        assert!(result.contains("rtk v0.11.0"), "got: {}", result);
+        assert!(result.contains("5 deps compiled"), "got: {}", result);
+        assert!(result.contains("Replaced"), "got: {}", result);
+        assert!(!result.contains("Compiling"), "got: {}", result);
+        assert!(!result.contains("Downloading"), "got: {}", result);
     }
 
     #[test]
@@ -1331,9 +1344,9 @@ warning: `rtk` (bin) generated 2 warnings
    Replaced package `rtk v0.9.4` with `rtk v0.11.0` (/Users/user/.cargo/bin/rtk)
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("Replacing"), "got: {result}");
-        assert!(result.contains("Replaced"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "got: {}", result);
+        assert!(result.contains("Replacing"), "got: {}", result);
+        assert!(result.contains("Replaced"), "got: {}", result);
     }
 
     #[test]
@@ -1349,10 +1362,10 @@ error[E0308]: mismatched types
 error: aborting due to 1 previous error
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("cargo install: 1 error"), "got: {result}");
-        assert!(result.contains("E0308"), "got: {result}");
-        assert!(result.contains("mismatched types"), "got: {result}");
-        assert!(!result.contains("aborting"), "got: {result}");
+        assert!(result.contains("cargo install: 1 error"), "got: {}", result);
+        assert!(result.contains("E0308"), "got: {}", result);
+        assert!(result.contains("mismatched types"), "got: {}", result);
+        assert!(!result.contains("aborting"), "got: {}", result);
     }
 
     #[test]
@@ -1360,8 +1373,8 @@ error: aborting due to 1 previous error
         let output = r#"  Ignored package `rtk v0.11.0`, is already installed
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("already installed"), "got: {result}");
-        assert!(result.contains("rtk v0.11.0"), "got: {result}");
+        assert!(result.contains("already installed"), "got: {}", result);
+        assert!(result.contains("rtk v0.11.0"), "got: {}", result);
     }
 
     #[test]
@@ -1369,15 +1382,15 @@ error: aborting due to 1 previous error
         let output = r#"  Ignored package `cargo-deb v2.1.0 (/Users/user/cargo-deb)`, is already installed
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("already installed"), "got: {result}");
-        assert!(result.contains("cargo-deb v2.1.0"), "got: {result}");
+        assert!(result.contains("already installed"), "got: {}", result);
+        assert!(result.contains("cargo-deb v2.1.0"), "got: {}", result);
     }
 
     #[test]
     fn test_filter_cargo_install_empty_output() {
         let result = filter_cargo_install("");
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("0 deps compiled"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "got: {}", result);
+        assert!(result.contains("0 deps compiled"), "got: {}", result);
     }
 
     #[test]
@@ -1390,12 +1403,13 @@ error: aborting due to 1 previous error
 warning: be sure to add `/Users/user/.cargo/bin` to your PATH
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "got: {}", result);
         assert!(
             result.contains("be sure to add"),
-            "PATH warning should be kept: {result}"
+            "PATH warning should be kept: {}",
+            result
         );
-        assert!(result.contains("Replaced"), "got: {result}");
+        assert!(result.contains("Replaced"), "got: {}", result);
     }
 
     #[test]
@@ -1419,11 +1433,12 @@ error: aborting due to 2 previous errors
         let result = filter_cargo_install(output);
         assert!(
             result.contains("2 errors"),
-            "should show 2 errors: {result}"
+            "should show 2 errors: {}",
+            result
         );
-        assert!(result.contains("E0308"), "got: {result}");
-        assert!(result.contains("E0425"), "got: {result}");
-        assert!(!result.contains("aborting"), "got: {result}");
+        assert!(result.contains("E0308"), "got: {}", result);
+        assert!(result.contains("E0425"), "got: {}", result);
+        assert!(!result.contains("aborting"), "got: {}", result);
     }
 
     #[test]
@@ -1438,10 +1453,10 @@ error: aborting due to 2 previous errors
   Installing rtk v0.11.0
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(!result.contains("Locking"), "got: {result}");
-        assert!(!result.contains("Blocking"), "got: {result}");
-        assert!(!result.contains("Downloading"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "got: {}", result);
+        assert!(!result.contains("Locking"), "got: {}", result);
+        assert!(!result.contains("Blocking"), "got: {}", result);
+        assert!(!result.contains("Downloading"), "got: {}", result);
     }
 
     #[test]
@@ -1452,8 +1467,8 @@ error: aborting due to 2 previous errors
 "#;
         let result = filter_cargo_install(output);
         // Path-based install: crate info not extracted from path
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("1 deps compiled"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "got: {}", result);
+        assert!(result.contains("1 deps compiled"), "got: {}", result);
     }
 
     #[test]
@@ -1479,7 +1494,8 @@ error: aborting due to 2 previous errors
         let result = filter_cargo_nextest(output);
         assert_eq!(
             result, "✓ cargo nextest: 301 passed (1 binary, 0.192s)",
-            "got: {result}"
+            "got: {}",
+            result
         );
     }
 
@@ -1514,34 +1530,41 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("tests::failing_test"),
-            "should contain first failure: {result}"
+            "should contain first failure: {}",
+            result
         );
         assert!(
             result.contains("tests::another_failing"),
-            "should contain second failure: {result}"
+            "should contain second failure: {}",
+            result
         );
         assert!(
             result.contains("panicked"),
-            "should contain stderr detail: {result}"
+            "should contain stderr detail: {}",
+            result
         );
         assert!(
             result.contains("2 passed, 2 failed, 1 skipped"),
-            "should contain summary: {result}"
+            "should contain summary: {}",
+            result
         );
         assert!(
             !result.contains("PASS"),
-            "should not contain PASS lines: {result}"
+            "should not contain PASS lines: {}",
+            result
         );
         // Post-summary FAIL recaps must not create duplicate FAIL header entries
         // (test names may appear in both header and stderr body naturally)
         assert_eq!(
             result.matches("FAIL [").count(),
             2,
-            "should have exactly 2 FAIL headers (no post-summary duplicates): {result}"
+            "should have exactly 2 FAIL headers (no post-summary duplicates): {}",
+            result
         );
         assert!(
             !result.contains("error: test run failed"),
-            "should not contain post-summary error line: {result}"
+            "should not contain post-summary error line: {}",
+            result
         );
     }
 
@@ -1556,7 +1579,8 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert_eq!(
             result, "✓ cargo nextest: 50 passed, 3 skipped (2 binaries, 0.500s)",
-            "got: {result}"
+            "got: {}",
+            result
         );
     }
 
@@ -1579,17 +1603,20 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("assertion failed: false"),
-            "should show panic message: {result}"
+            "should show panic message: {}",
+            result
         );
         assert!(
             result.contains("1 passed, 1 failed"),
-            "should show summary: {result}"
+            "should show summary: {}",
+            result
         );
         // Post-summary recap must not duplicate FAIL headers
         assert_eq!(
             result.matches("FAIL [").count(),
             1,
-            "should have exactly 1 FAIL header (no post-summary duplicate): {result}"
+            "should have exactly 1 FAIL header (no post-summary duplicate): {}",
+            result
         );
     }
 
@@ -1603,7 +1630,8 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert_eq!(
             result, "✓ cargo nextest: 100 passed (5 binaries, 1.234s)",
-            "got: {result}"
+            "got: {}",
+            result
         );
     }
 
@@ -1622,26 +1650,30 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             !result.contains("Compiling"),
-            "should strip Compiling: {result}"
+            "should strip Compiling: {}",
+            result
         );
         assert!(
             !result.contains("Downloading"),
-            "should strip Downloading: {result}"
+            "should strip Downloading: {}",
+            result
         );
         assert!(
             !result.contains("Finished"),
-            "should strip Finished: {result}"
+            "should strip Finished: {}",
+            result
         );
         assert!(
             result.contains("✓ cargo nextest: 10 passed"),
-            "got: {result}"
+            "got: {}",
+            result
         );
     }
 
     #[test]
     fn test_filter_cargo_nextest_empty() {
         let result = filter_cargo_nextest("");
-        assert!(result.is_empty(), "got: {result}");
+        assert!(result.is_empty(), "got: {}", result);
     }
 
     #[test]
@@ -1662,17 +1694,20 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("Cancelling due to test failure"),
-            "should include cancel notice: {result}"
+            "should include cancel notice: {}",
+            result
         );
         assert!(
             result.contains("1 failed"),
-            "should show failure count: {result}"
+            "should show failure count: {}",
+            result
         );
         // Post-summary recap must not duplicate FAIL headers
         assert_eq!(
             result.matches("FAIL [").count(),
             1,
-            "should have exactly 1 FAIL header (no post-summary duplicate): {result}"
+            "should have exactly 1 FAIL header (no post-summary duplicate): {}",
+            result
         );
     }
 
@@ -1686,7 +1721,8 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("Summary MALFORMED"),
-            "should fall back to raw summary: {result}"
+            "should fall back to raw summary: {}",
+            result
         );
     }
 }
