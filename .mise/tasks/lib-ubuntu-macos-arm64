@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="${REPO_ROOT_OVERRIDE:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-zig_version="${ZIG_VERSION:-0.14.0}"
+zig_version="${ZIG_VERSION:-0.15.2}"
 zig_install_root="${ZIG_INSTALL_ROOT:-$repo_root/.cache/zig}"
 zig_download_root="${ZIG_DOWNLOAD_ROOT:-$zig_install_root/downloads}"
 download_connect_timeout="${DOWNLOAD_CONNECT_TIMEOUT:-30}"
@@ -21,6 +21,7 @@ curl_download() {
   local output="$2"
   local label="$3"
   local -a args
+  local -a resume_args
 
   mkdir -p "$(dirname "$output")"
   args=(
@@ -35,11 +36,20 @@ curl_download() {
     args+=(--max-time "$download_max_time")
   fi
 
-  if [ -f "$output" ]; then
-    args+=(-C -)
+  echo "[mise] 下载 $label: $url" >&2
+
+  if [ ! -f "$output" ]; then
+    curl "${args[@]}" -o "$output" "$url"
+    return
   fi
 
-  echo "[mise] 下载 $label: $url" >&2
+  resume_args=("${args[@]}" -C -)
+  if curl "${resume_args[@]}" -o "$output" "$url"; then
+    return
+  fi
+
+  echo "[mise] 断点续传失败，重试完整下载: $label" >&2
+  rm -f "$output"
   curl "${args[@]}" -o "$output" "$url"
 }
 
@@ -75,8 +85,22 @@ resolve_zig_host_arch() {
 
 resolve_zig_archive_name() {
   local zig_host_arch
+  local semver
+  local major
+  local minor
+  local patch
 
   zig_host_arch="$(resolve_zig_host_arch)"
+  semver="${zig_version%%-*}"
+  IFS='.' read -r major minor patch <<EOF
+$semver
+EOF
+
+  if [ "${major:-0}" -eq 0 ] && [ "${minor:-0}" -ge 15 ]; then
+    printf 'zig-%s-linux-%s.tar.xz\n' "$zig_host_arch" "$zig_version"
+    return
+  fi
+
   printf 'zig-linux-%s-%s.tar.xz\n' "$zig_host_arch" "$zig_version"
 }
 

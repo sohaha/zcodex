@@ -72,6 +72,8 @@ MSG
   fi
 
   zig_bin="$(ensure_zig_binary)"
+  export CARGO_ZIGBUILD_ZIG_PATH
+  CARGO_ZIGBUILD_ZIG_PATH="$zig_bin"
   export PATH
   PATH="$(dirname "$zig_bin"):$PATH"
   echo "[build-ubuntu-macos-arm64] 使用 Zig: $zig_bin" >&2
@@ -90,6 +92,9 @@ fi
 export SDKROOT="$sdk_path"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+# On Linux host, libz-sys may pick host pkg-config paths like x86_64-linux-gnu.
+# Force vendored/probed build path for Apple target to avoid invalid linker search dirs.
+export ZLIB_NO_PKG_CONFIG="${ZLIB_NO_PKG_CONFIG:-1}"
 
 profile_dir="$(resolve_build_profile_dir "$@")"
 output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
