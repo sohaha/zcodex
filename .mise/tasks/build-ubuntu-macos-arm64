@@ -9,8 +9,21 @@ target="aarch64-apple-darwin"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 sdk_path="${SDKROOT:-${MACOS_SDK_PATH:-$repo_root/.cache/macos-sdk/MacOSX.sdk}}"
 
+ensure_default_release_args() {
+  for arg in "$@"; do
+    case "$arg" in
+      --release|--profile|--profile=*)
+        printf '%s\0' "$@"
+        return
+        ;;
+    esac
+  done
+
+  printf '%s\0' "$@" --release
+}
+
 resolve_build_profile_dir() {
-  local profile="debug"
+  local profile="release"
   local previous_was_profile=0
 
   for arg in "$@"; do
@@ -407,8 +420,9 @@ export ZIG_BIN="$CARGO_ZIGBUILD_ZIG_PATH"
 prepare_cross_wrappers
 
 profile_dir="$(resolve_build_profile_dir "$@")"
+mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
 output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
 
-"$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
+"$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
 
 echo "[build-ubuntu-macos-arm64] 构建完成: $output_bin" >&2
