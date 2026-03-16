@@ -13,11 +13,12 @@ name = "codex_tui"
 path = "src/lib.rs"
 
 [features]
-default = ["voice-input"]
+default = ["clipboard", "voice-input"]
 # Enable vt100-based tests (emulator) when running with `--features vt100-tests`.
 vt100-tests = []
 # Gate verbose debug logging inside the TUI implementation.
 debug-logs = []
+clipboard = ["dep:arboard"]
 voice-input = ["dep:cpal", "dep:hound"]
 
 [lints]
@@ -127,7 +128,7 @@ winsplit = "0.1"
 # Clipboard support via `arboard` is not available on Android/Termux.
 # Only include it for non-Android targets so the crate builds on Android.
 [target.'cfg(not(target_os = "android"))'.dependencies]
-arboard = { workspace = true }
+arboard = { workspace = true, optional = true }
 
 
 [dev-dependencies]

@@ -95,6 +95,12 @@ export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 # On Linux host, libz-sys may pick host pkg-config paths like x86_64-linux-gnu.
 # Force vendored/probed build path for Apple target to avoid invalid linker search dirs.
 export ZLIB_NO_PKG_CONFIG="${ZLIB_NO_PKG_CONFIG:-1}"
+sdk_cflags="-isysroot $sdk_path -iframework $sdk_path/System/Library/Frameworks -isystem $sdk_path/usr/include"
+export CFLAGS_aarch64_apple_darwin="${CFLAGS_aarch64_apple_darwin:-$sdk_cflags}"
+export CXXFLAGS_aarch64_apple_darwin="${CXXFLAGS_aarch64_apple_darwin:-$sdk_cflags}"
+export CPPFLAGS_aarch64_apple_darwin="${CPPFLAGS_aarch64_apple_darwin:-$sdk_cflags}"
+export BINDGEN_EXTRA_CLANG_ARGS="${BINDGEN_EXTRA_CLANG_ARGS:-$sdk_cflags}"
+export COREAUDIO_SDK_PATH="${COREAUDIO_SDK_PATH:-$sdk_path}"
 
 profile_dir="$(resolve_build_profile_dir "$@")"
 output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"

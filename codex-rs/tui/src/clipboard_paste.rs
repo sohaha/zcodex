@@ -47,7 +47,7 @@ pub struct PastedImageInfo {
 }
 
 /// Capture image from system clipboard, encode to PNG, and return bytes + info.
-#[cfg(not(target_os = "android"))]
+#[cfg(all(not(target_os = "android"), feature = "clipboard"))]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     let _span = tracing::debug_span!("paste_image_as_png").entered();
     tracing::debug!("attempting clipboard image read");
@@ -109,6 +109,13 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 }
 
 /// Android/Termux does not support arboard; return a clear error.
+#[cfg(all(not(target_os = "android"), not(feature = "clipboard")))]
+pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
+    Err(PasteImageError::ClipboardUnavailable(
+        "clipboard image paste is unavailable in this build".into(),
+    ))
+}
+
 #[cfg(target_os = "android")]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
@@ -117,7 +124,7 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 }
 
 /// Convenience: write to a temp file and return its path + info.
-#[cfg(not(target_os = "android"))]
+#[cfg(all(not(target_os = "android"), feature = "clipboard"))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     // First attempt: read image from system clipboard via arboard (native paths or image data).
     match paste_image_as_png() {
@@ -226,6 +233,13 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(all(not(target_os = "android"), not(feature = "clipboard")))]
+pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
+    Err(PasteImageError::ClipboardUnavailable(
+        "clipboard image paste is unavailable in this build".into(),
+    ))
 }
 
 #[cfg(target_os = "android")]

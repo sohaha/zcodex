@@ -52,7 +52,7 @@ use crate::clipboard_paste::is_probably_wsl;
 ///
 /// Returns a descriptive error string when the selected clipboard mechanism is
 /// unavailable or the fallback path also fails.
-#[cfg(not(target_os = "android"))]
+#[cfg(all(not(target_os = "android"), feature = "clipboard"))]
 pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
     if std::env::var_os("SSH_CONNECTION").is_some() || std::env::var_os("SSH_TTY").is_some() {
         return copy_via_osc52(text);
@@ -190,6 +190,11 @@ fn osc52_sequence(text: &str, tmux: bool) -> String {
 ///
 /// The TUI's clipboard implementation depends on host integrations that are not
 /// available in the supported Android/Termux environment.
+#[cfg(all(not(target_os = "android"), not(feature = "clipboard")))]
+pub fn copy_text_to_clipboard(_text: &str) -> Result<(), String> {
+    Err("clipboard text copy is unavailable in this build".into())
+}
+
 #[cfg(target_os = "android")]
 pub fn copy_text_to_clipboard(_text: &str) -> Result<(), String> {
     Err("clipboard text copy is unsupported on Android".into())
