@@ -273,7 +273,7 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
         .open(&lock_path)?;
     lock_file.try_lock()?;
 
-    for filename in &[
+    for &filename in &[
         APPLY_PATCH_ARG0,
         MISSPELLED_APPLY_PATCH_ARG0,
         RTK_ARG0,
