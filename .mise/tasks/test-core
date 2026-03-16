@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+build_args=(
+  cargo build
+  --bins
+  -p codex-exec
+  -p codex-shell-escalation
+  -p codex-rmcp-client
+)
+
+if [ "$(uname -s)" = "Linux" ]; then
+  build_args+=(-p codex-linux-sandbox)
+fi
+
+"$script_dir/rs-ext" "${build_args[@]}"
+"$script_dir/rs-ext" cargo test -p codex-core "$@"

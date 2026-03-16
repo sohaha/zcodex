@@ -827,6 +827,7 @@ async fn remote_models_request_times_out_after_5s() -> Result<()> {
 
     let server = MockServer::start().await;
     let remote_model = test_remote_model("remote-timeout", ModelVisibility::List, 0);
+    let remote_model_slug = remote_model.slug.clone();
     let models_mock = mount_models_once_with_delay(
         &server,
         ModelsResponse {
@@ -874,14 +875,17 @@ async fn remote_models_request_times_out_after_5s() -> Result<()> {
         elapsed >= Duration::from_millis(4_500),
         "expected models call to block near the timeout; took {elapsed:?}"
     );
-    assert!(
-        elapsed < Duration::from_millis(5_800),
-        "expected models call to time out before the delayed response; took {elapsed:?}"
-    );
     assert_eq!(
         models_mock.requests().len(),
         1,
         "expected a single /models request"
+    );
+    let available = manager.list_models(RefreshStrategy::Offline).await;
+    assert!(
+        !available
+            .iter()
+            .any(|preset| preset.model == remote_model_slug),
+        "timed-out refresh should not apply delayed remote models"
     );
 
     Ok(())

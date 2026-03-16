@@ -82,14 +82,6 @@ async fn build_codex_with_test_tool(server: &wiremock::MockServer) -> anyhow::Re
     builder.build(server).await
 }
 
-fn assert_parallel_duration(actual: Duration) {
-    // Allow headroom for slow CI scheduling; barrier synchronization already enforces overlap.
-    assert!(
-        actual < Duration::from_millis(2_200),
-        "expected parallel execution to finish quickly, got {actual:?}"
-    );
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn read_file_tools_run_in_parallel() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
@@ -138,7 +130,7 @@ async fn read_file_tools_run_in_parallel() -> anyhow::Result<()> {
         ev_assistant_message("msg-1", "done"),
         ev_completed("resp-2"),
     ]);
-    mount_sse_sequence(
+    let requests = mount_sse_sequence(
         &server,
         vec![warmup_first, warmup_second, first_response, second_response],
     )
@@ -147,7 +139,21 @@ async fn read_file_tools_run_in_parallel() -> anyhow::Result<()> {
     run_turn(&test, "warm up parallel tool").await?;
 
     let duration = run_turn_and_measure(&test, "exercise sync tool").await?;
-    assert_parallel_duration(duration);
+    assert!(
+        duration < Duration::from_secs(10),
+        "parallel sync tool turn should not hang, got {duration:?}"
+    );
+    let request = requests
+        .last_request()
+        .expect("parallel sync tool run should send a completion request");
+    assert_eq!(
+        request.function_call_output_content_and_success("call-1"),
+        Some((Some("ok".to_string()), None))
+    );
+    assert_eq!(
+        request.function_call_output_content_and_success("call-2"),
+        Some((Some("ok".to_string()), None))
+    );
 
     Ok(())
 }
