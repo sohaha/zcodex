@@ -2,59 +2,12 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$script_dir/lib-ubuntu-macos-arm64"
 target="x86_64-pc-windows-gnu"
+target_label="Windows amd64"
+build_task_name="build-ubuntu-win-amd64"
+deps_task_name="deps-ubuntu-win-amd64"
+cross_build_description="Linux -> Windows amd64"
+bootstrap_guard_var="CODEX_UBUNTU_WIN_AMD64_DEPS_BOOTSTRAPPED"
+source "$script_dir/lib-ubuntu-win"
 
-ensure_host_tools() {
-  local -a missing_tools=()
-  local -a sudo_cmd=()
-
-  for tool in curl sha256sum xz; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-      missing_tools+=("$tool")
-    fi
-  done
-
-  if [ "${#missing_tools[@]}" -eq 0 ]; then
-    return
-  fi
-
-  if ! command -v apt-get >/dev/null 2>&1; then
-    die "[mise] 缺少基础工具: ${missing_tools[*]}；请先安装后重试"
-  fi
-
-  if [ "${EUID}" -ne 0 ]; then
-    sudo_cmd=(sudo)
-  fi
-
-  "${sudo_cmd[@]}" apt-get update
-  "${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl coreutils xz-utils
-}
-
-if [ "$(uname -s)" != "Linux" ]; then
-  die "[mise] deps-ubuntu-win-amd64 目前只支持在 Linux 主机上运行"
-fi
-
-if ! command -v cargo >/dev/null 2>&1; then
-  die "[mise] 未找到 cargo，请先安装 Rust 工具链"
-fi
-
-if ! command -v rustup >/dev/null 2>&1; then
-  die "[mise] 未找到 rustup，请先安装 Rust 工具链"
-fi
-
-ensure_host_tools
-
-zig_bin="$(ensure_zig_binary)"
-echo "[mise] Zig 已就绪: $zig_bin" >&2
-
-if ! cargo zigbuild --help >/dev/null 2>&1; then
-  cargo install --locked cargo-zigbuild
-fi
-
-if ! rustup target list --installed | grep -Fxq "$target"; then
-  rustup target add "$target"
-fi
-
-echo "[mise] Windows Rust target 已就绪: $target" >&2
-echo "[mise] 现在可以运行: mise run build-ubuntu-win-amd64 --release" >&2
+install_cross_deps

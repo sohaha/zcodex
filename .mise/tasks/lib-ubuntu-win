@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${script_dir:?}"
+: "${target:?}"
+: "${build_task_name:?}"
+: "${deps_task_name:?}"
+: "${target_label:?}"
+: "${cross_build_description:?}"
+: "${bootstrap_guard_var:?}"
+
+source "$script_dir/lib-ubuntu-macos-arm64"
+
+ensure_host_tools() {
+  local -a missing_tools=()
+  local -a sudo_cmd=()
+
+  for tool in curl sha256sum xz; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+      missing_tools+=("$tool")
+    fi
+  done
+
+  if [ "${#missing_tools[@]}" -eq 0 ]; then
+    return
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    die "[mise] 缺少基础工具: ${missing_tools[*]}；请先安装后重试"
+  fi
+
+  if [ "${EUID}" -ne 0 ]; then
+    sudo_cmd=(sudo)
+  fi
+
+  "${sudo_cmd[@]}" apt-get update
+  "${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl coreutils xz-utils
+}
+
+ensure_default_release_args() {
+  for arg in "$@"; do
+    case "$arg" in
+      --release|--profile|--profile=*)
+        printf '%s\0' "$@"
+        return
+        ;;
+    esac
+  done
+
+  printf '%s\0' "$@" --release
+}
+
+resolve_build_profile_dir() {
+  local profile="release"
+  local previous_was_profile=0
+
+  for arg in "$@"; do
+    if [ "$previous_was_profile" -eq 1 ]; then
+      profile="$arg"
+      break
+    fi
+
+    case "$arg" in
+      --release)
+        profile="release"
+        ;;
+      --profile)
+        previous_was_profile=1
+        ;;
+      --profile=*)
+        profile="${arg#--profile=}"
+        break
+        ;;
+    esac
+  done
+
+  if [ "$profile" = "dev" ]; then
+    profile="debug"
+  fi
+
+  printf '%s\n' "$profile"
+}
+
+has_rust_target() {
+  rustup target list --installed | grep -Fxq "$target"
+}
+
+has_cargo_zigbuild() {
+  cargo zigbuild --help >/dev/null 2>&1
+}
+
+has_usable_zig() {
+  local zig_on_path
+  local zig_install_dir
+
+  if [ -n "${ZIG_PATH:-}" ] && [ -x "${ZIG_PATH}" ]; then
+    return 0
+  fi
+
+  if [ -n "${ZIG_TARBALL:-}" ] && [ -f "${ZIG_TARBALL}" ]; then
+    return 0
+  fi
+
+  zig_on_path="$(command -v zig 2>/dev/null || true)"
+  if [ -n "$zig_on_path" ] && [ "$(zig version 2>/dev/null || true)" = "$zig_version" ]; then
+    return 0
+  fi
+
+  zig_install_dir="${ZIG_INSTALL_ROOT:-$repo_root/.cache/zig}/$zig_version"
+  [ -x "$zig_install_dir/zig" ]
+}
+
+bootstrap_cross_deps() {
+  local should_bootstrap=0
+
+  if ! has_cargo_zigbuild || ! has_rust_target; then
+    should_bootstrap=1
+  fi
+
+  if ! has_usable_zig && { ! command -v curl >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1; }; then
+    should_bootstrap=1
+  fi
+
+  if [ "$should_bootstrap" -eq 0 ] || [ "${!bootstrap_guard_var:-0}" = "1" ]; then
+    return
+  fi
+
+  echo "[$build_task_name] 检测到交叉编译依赖缺失，先同步运行 $deps_task_name..." >&2
+  env "$bootstrap_guard_var=1" "$script_dir/$deps_task_name"
+}
+
+ensure_cross_deps() {
+  local zig_bin
+
+  if [ "$(uname -s)" != "Linux" ]; then
+    echo "[$build_task_name] 该 task 仅用于 $cross_build_description 交叉编译" >&2
+    exit 1
+  fi
+
+  if ! command -v cargo >/dev/null 2>&1 || ! command -v rustup >/dev/null 2>&1; then
+    echo "[$build_task_name] 缺少 Rust 工具链，请先安装 cargo/rustup" >&2
+    exit 1
+  fi
+
+  bootstrap_cross_deps
+
+  if ! has_cargo_zigbuild; then
+    echo "[$build_task_name] 缺少 cargo-zigbuild，请先运行 `mise run $deps_task_name`" >&2
+    exit 1
+  fi
+
+  if ! has_rust_target; then
+    echo "[$build_task_name] 缺少 Rust target $target，请先运行 `mise run $deps_task_name`" >&2
+    exit 1
+  fi
+
+  zig_bin="$(ensure_zig_binary)"
+  export CARGO_ZIGBUILD_ZIG_PATH="$zig_bin"
+  export PATH="$(dirname "$zig_bin"):$PATH"
+  echo "[$build_task_name] 使用 Zig: $zig_bin" >&2
+}
+
+install_cross_deps() {
+  local zig_bin
+
+  if [ "$(uname -s)" != "Linux" ]; then
+    die "[mise] $deps_task_name 目前只支持在 Linux 主机上运行"
+  fi
+
+  if ! command -v cargo >/dev/null 2>&1; then
+    die "[mise] 未找到 cargo，请先安装 Rust 工具链"
+  fi
+
+  if ! command -v rustup >/dev/null 2>&1; then
+    die "[mise] 未找到 rustup，请先安装 Rust 工具链"
+  fi
+
+  ensure_host_tools
+
+  zig_bin="$(ensure_zig_binary)"
+  echo "[mise] Zig 已就绪: $zig_bin" >&2
+
+  if ! has_cargo_zigbuild; then
+    cargo install --locked cargo-zigbuild
+  fi
+
+  if ! has_rust_target; then
+    rustup target add "$target"
+  fi
+
+  echo "[mise] ${target_label} Rust target 已就绪: $target" >&2
+  echo "[mise] 现在可以运行: mise run $build_task_name --release" >&2
+}

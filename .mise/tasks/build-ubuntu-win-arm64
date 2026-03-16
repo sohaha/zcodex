@@ -4,132 +4,14 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
-source "$script_dir/lib-ubuntu-macos-arm64"
 target="aarch64-pc-windows-gnullvm"
+target_label="Windows arm64"
+build_task_name="build-ubuntu-win-arm64"
+deps_task_name="deps-ubuntu-win-arm64"
+cross_build_description="Linux -> Windows arm64"
+bootstrap_guard_var="CODEX_UBUNTU_WIN_ARM64_DEPS_BOOTSTRAPPED"
+source "$script_dir/lib-ubuntu-win"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
-
-ensure_default_release_args() {
-  for arg in "$@"; do
-    case "$arg" in
-      --release|--profile|--profile=*)
-        printf '%s\0' "$@"
-        return
-        ;;
-    esac
-  done
-
-  printf '%s\0' "$@" --release
-}
-
-resolve_build_profile_dir() {
-  local profile="release"
-  local previous_was_profile=0
-
-  for arg in "$@"; do
-    if [ "$previous_was_profile" -eq 1 ]; then
-      profile="$arg"
-      break
-    fi
-
-    case "$arg" in
-      --release)
-        profile="release"
-        ;;
-      --profile)
-        previous_was_profile=1
-        ;;
-      --profile=*)
-        profile="${arg#--profile=}"
-        break
-        ;;
-    esac
-  done
-
-  if [ "$profile" = "dev" ]; then
-    profile="debug"
-  fi
-
-  printf '%s\n' "$profile"
-}
-
-has_rust_target() {
-  rustup target list --installed | grep -Fxq "$target"
-}
-
-has_cargo_zigbuild() {
-  cargo zigbuild --help >/dev/null 2>&1
-}
-
-has_usable_zig() {
-  local zig_on_path
-  local zig_install_dir
-
-  if [ -n "${ZIG_PATH:-}" ] && [ -x "${ZIG_PATH}" ]; then
-    return 0
-  fi
-
-  if [ -n "${ZIG_TARBALL:-}" ] && [ -f "${ZIG_TARBALL}" ]; then
-    return 0
-  fi
-
-  zig_on_path="$(command -v zig 2>/dev/null || true)"
-  if [ -n "$zig_on_path" ] && [ "$(zig version 2>/dev/null || true)" = "$zig_version" ]; then
-    return 0
-  fi
-
-  zig_install_dir="${ZIG_INSTALL_ROOT:-$repo_root/.cache/zig}/$zig_version"
-  [ -x "$zig_install_dir/zig" ]
-}
-
-bootstrap_cross_deps() {
-  local should_bootstrap=0
-
-  if ! has_cargo_zigbuild || ! has_rust_target; then
-    should_bootstrap=1
-  fi
-
-  if ! has_usable_zig && { ! command -v curl >/dev/null 2>&1 || ! command -v xz >/dev/null 2>&1 || ! command -v sha256sum >/dev/null 2>&1; }; then
-    should_bootstrap=1
-  fi
-
-  if [ "$should_bootstrap" -eq 0 ] || [ "${CODEX_UBUNTU_WIN_ARM64_DEPS_BOOTSTRAPPED:-0}" = "1" ]; then
-    return
-  fi
-
-  echo "[build-ubuntu-win-arm64] 检测到交叉编译依赖缺失，先同步运行 deps-ubuntu-win-arm64..." >&2
-  CODEX_UBUNTU_WIN_ARM64_DEPS_BOOTSTRAPPED=1 "$script_dir/deps-ubuntu-win-arm64"
-}
-
-ensure_cross_deps() {
-  local zig_bin
-
-  if [ "$(uname -s)" != "Linux" ]; then
-    echo "[build-ubuntu-win-arm64] 该 task 仅用于 Linux -> Windows arm64 交叉编译" >&2
-    exit 1
-  fi
-
-  if ! command -v cargo >/dev/null 2>&1 || ! command -v rustup >/dev/null 2>&1; then
-    echo "[build-ubuntu-win-arm64] 缺少 Rust 工具链，请先安装 cargo/rustup" >&2
-    exit 1
-  fi
-
-  bootstrap_cross_deps
-
-  if ! has_cargo_zigbuild; then
-    echo "[build-ubuntu-win-arm64] 缺少 cargo-zigbuild，请先运行 `mise run deps-ubuntu-win-arm64`" >&2
-    exit 1
-  fi
-
-  if ! has_rust_target; then
-    echo "[build-ubuntu-win-arm64] 缺少 Rust target $target，请先运行 `mise run deps-ubuntu-win-arm64`" >&2
-    exit 1
-  fi
-
-  zig_bin="$(ensure_zig_binary)"
-  export CARGO_ZIGBUILD_ZIG_PATH="$zig_bin"
-  export PATH="$(dirname "$zig_bin"):$PATH"
-  echo "[build-ubuntu-win-arm64] 使用 Zig: $zig_bin" >&2
-}
 
 ensure_cross_deps
 mapfile -d '' -t build_args < <(ensure_default_release_args "$@")

@@ -92,10 +92,13 @@ Ubuntu for Windows:
 
 ```bash
 # Install Zig/cargo-zigbuild and the Rust Windows targets.
+# amd64 -> x86_64-pc-windows-gnu
+# arm64 -> aarch64-pc-windows-gnullvm
 mise run deps-ubuntu-win-amd64
 mise run deps-ubuntu-win-arm64
 
 # Optional Zig overrides for mirrors, local archives, or preinstalled binaries:
+# apply to either deps task:
 ZIG_BASE_URL=https://mirror.example.com/zig mise run deps-ubuntu-win-amd64
 ZIG_URL=https://mirror.example.com/zig/0.14.0/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-win-amd64
 ZIG_TARBALL=/path/to/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-win-amd64

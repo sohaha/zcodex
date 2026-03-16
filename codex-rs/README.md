@@ -16,7 +16,7 @@ You can also install via Homebrew (`brew install --cask codex`) or download a pl
 ## Documentation quickstart
 
 - First run with Codex? Start with [`docs/getting-started.md`](../docs/getting-started.md) (links to the walkthrough for prompts, keyboard shortcuts, and session management).
-- Want deeper control? See [`docs/config.md`](../docs/config.md) and [`docs/install.md`](../docs/install.md).
+- Want deeper control? See [`docs/config.md`](../docs/config.md) and [`docs/install.md`](../docs/install.md), including Ubuntu cross-build tasks for macOS arm64 and Windows amd64/arm64.
 
 ## What's new in the Rust CLI
 
