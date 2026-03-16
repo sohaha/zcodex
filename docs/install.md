@@ -85,14 +85,15 @@ If you need to tune download behavior further, the tasks also honor
 `DOWNLOAD_CONNECT_TIMEOUT`, `DOWNLOAD_RETRY_COUNT`, `DOWNLOAD_RETRY_DELAY`,
 `DOWNLOAD_MAX_TIME`, and `DOWNLOAD_METADATA_MAX_TIME`.
 
-### Ubuntu cross-build to Windows amd64
+### Ubuntu cross-build to Windows
 
 If you use `mise`, the repository also provides tasks for building the CLI from
-Ubuntu for Windows amd64 (`x86_64-pc-windows-gnu`):
+Ubuntu for Windows:
 
 ```bash
-# Install Zig/cargo-zigbuild and the Rust Windows target.
+# Install Zig/cargo-zigbuild and the Rust Windows targets.
 mise run deps-ubuntu-win-amd64
+mise run deps-ubuntu-win-arm64
 
 # Optional Zig overrides for mirrors, local archives, or preinstalled binaries:
 ZIG_BASE_URL=https://mirror.example.com/zig mise run deps-ubuntu-win-amd64
@@ -100,9 +101,13 @@ ZIG_URL=https://mirror.example.com/zig/0.14.0/zig-linux-x86_64-0.14.0.tar.xz mis
 ZIG_TARBALL=/path/to/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-win-amd64
 ZIG_PATH=/path/to/zig mise run deps-ubuntu-win-amd64
 
-# Build codex.exe for Windows amd64 from Ubuntu.
+# Build codex.exe for Windows amd64 or arm64 from Ubuntu.
 mise run build-ubuntu-win-amd64 --release
+mise run build-ubuntu-win-arm64 --release
 ```
+
+The arm64 task uses Rust target `aarch64-pc-windows-gnullvm`, because the
+current Linux Rust toolchain does not expose `aarch64-pc-windows-gnu`.
 
 ## Tracing / verbose logging
 
