@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@1.92
-      - name: Validate tag matches Cargo.toml version
+      - name: Validate release tag
         shell: bash
         run: |
           set -euo pipefail
@@ -33,16 +33,19 @@ jobs:
           [[ "${GITHUB_REF_NAME}" =~ ^rust-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
             || { echo "❌  Tag '${GITHUB_REF_NAME}' doesn't match expected format"; exit 1; }
 
-          # 2. Extract versions
+          # 2. Extract release version from the tag.
           tag_ver="${GITHUB_REF_NAME#rust-v}"
-          cargo_ver="$(grep -m1 '^version' codex-rs/Cargo.toml \
-                        | sed -E 's/version *= *"([^"]+)".*/\1/')"
+          workspace_ver="$(grep -m1 '^version' codex-rs/Cargo.toml \
+                            | sed -E 's/version *= *"([^"]+)".*/\1/')"
 
-          # 3. Compare
-          [[ "${tag_ver}" == "${cargo_ver}" ]] \
-            || { echo "❌  Tag ${tag_ver} ≠ Cargo.toml ${cargo_ver}"; exit 1; }
+          # Rust workspace crates intentionally inherit a placeholder version
+          # from the workspace manifest. The actual release version is defined
+          # by the git tag, so we only guard that the placeholder stays in
+          # place unless the release process is updated.
+          [[ "${workspace_ver}" == "0.0.0" ]] \
+            || { echo "❌  Expected workspace placeholder version 0.0.0, found ${workspace_ver}"; exit 1; }
 
-          echo "✅  Tag and Cargo.toml agree (${tag_ver})"
+          echo "✅  Release tag is valid (${tag_ver}); Cargo workspace placeholder is ${workspace_ver}"
           echo "::endgroup::"
 
   build:
