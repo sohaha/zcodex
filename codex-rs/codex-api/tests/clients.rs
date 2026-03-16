@@ -124,6 +124,7 @@ fn provider(name: &str) -> Provider {
     Provider {
         name: name.to_string(),
         base_url: "https://example.com/v1".to_string(),
+        wire_api: codex_api::provider::WireApi::Responses,
         query_params: None,
         headers: HeaderMap::new(),
         retry: codex_api::provider::RetryConfig {
@@ -134,6 +135,13 @@ fn provider(name: &str) -> Provider {
             retry_transport: true,
         },
         stream_idle_timeout: Duration::from_millis(10),
+    }
+}
+
+fn anthropic_provider() -> Provider {
+    Provider {
+        wire_api: codex_api::provider::WireApi::Anthropic,
+        ..provider("anthropic")
     }
 }
 
@@ -356,6 +364,76 @@ async fn azure_default_store_attaches_ids_and_headers() -> Result<()> {
         .and_then(|item| item.get("id"))
         .and_then(|id| id.as_str());
     assert_eq!(input_id, Some("msg_1"));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn anthropic_stream_request_preserves_session_headers() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let client = ResponsesClient::new(transport, anthropic_provider(), NoAuth);
+
+    let request = ResponsesApiRequest {
+        model: "claude-test".into(),
+        instructions: "Say hi".into(),
+        input: vec![ResponseItem::Message {
+            id: Some("msg_1".into()),
+            role: "user".into(),
+            content: vec![ContentItem::InputText { text: "hi".into() }],
+            end_turn: None,
+            phase: None,
+        }],
+        tools: Vec::new(),
+        tool_choice: "auto".into(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+    };
+
+    let _stream = client
+        .stream_request(
+            request,
+            ResponsesOptions {
+                conversation_id: Some("sess_123".into()),
+                session_source: Some(SessionSource::SubAgent(SubAgentSource::Review)),
+                extra_headers: HeaderMap::new(),
+                compression: Compression::None,
+                turn_state: None,
+            },
+        )
+        .await?;
+
+    let requests = state.take_stream_requests();
+    assert_eq!(requests.len(), 1);
+    let req = &requests[0];
+
+    assert_path_ends_with(&requests, "/messages");
+    assert_eq!(
+        req.headers.get("session_id").and_then(|v| v.to_str().ok()),
+        Some("sess_123")
+    );
+    assert_eq!(
+        req.headers
+            .get("x-openai-subagent")
+            .and_then(|v| v.to_str().ok()),
+        Some("review")
+    );
+    assert_eq!(
+        req.headers
+            .get("x-client-request-id")
+            .and_then(|v| v.to_str().ok()),
+        Some("sess_123")
+    );
+    assert!(
+        req.headers.get("x-codex-subagent").is_none(),
+        "anthropic requests should use the same subagent header name as responses"
+    );
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use base64::Engine;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_api::AuthProvider as ApiAuthProvider;
@@ -7,6 +8,7 @@ use codex_api::rate_limits::parse_promo_message;
 use codex_api::rate_limits::parse_rate_limit_for_limit;
 use http::HeaderMap;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::auth::CodexAuth;
 use crate::error::CodexErr;
@@ -30,6 +32,8 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
             url: None,
             cf_ray: None,
             request_id: None,
+            identity_authorization_error: None,
+            identity_error_code: None,
         }),
         ApiError::InvalidRequest { message } => CodexErr::InvalidRequest(message),
         ApiError::Transport(transport) => match transport {
@@ -59,6 +63,8 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                         .contains("The image data you provided does not represent a valid image")
                     {
                         CodexErr::InvalidImageRequest()
+                    } else if is_context_window_bad_request(&body_text) {
+                        CodexErr::ContextWindowExceeded
                     } else {
                         CodexErr::InvalidRequest(body_text)
                     }
@@ -98,6 +104,11 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                         url,
                         cf_ray: extract_header(headers.as_ref(), CF_RAY_HEADER),
                         request_id: extract_request_id(headers.as_ref()),
+                        identity_authorization_error: extract_header(
+                            headers.as_ref(),
+                            X_OPENAI_AUTHORIZATION_ERROR_HEADER,
+                        ),
+                        identity_error_code: extract_x_error_json_code(headers.as_ref()),
                     })
                 }
             }
@@ -114,110 +125,54 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
     }
 }
 
+fn is_context_window_bad_request(body_text: &str) -> bool {
+    if let Ok(value) = serde_json::from_str::<Value>(body_text) {
+        if value
+            .get("error")
+            .and_then(|error| error.get("code"))
+            .and_then(Value::as_str)
+            == Some("context_length_exceeded")
+        {
+            return true;
+        }
+
+        if let Some(message) = value
+            .get("error")
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+        {
+            return is_structured_context_window_message(message);
+        }
+    }
+
+    is_plaintext_context_window_message(body_text)
+}
+
+fn is_structured_context_window_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("context window")
+        || normalized.contains("context length")
+        || normalized.contains("exceed context limit")
+        || ((normalized.contains("prompt is too long") || normalized.contains("input is too long"))
+            && normalized.contains("token")
+            && (normalized.contains("max") || normalized.contains("context")))
+}
+
+fn is_plaintext_context_window_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("context window") || normalized.contains("context length")
+}
+
 const ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 const OAI_REQUEST_ID_HEADER: &str = "x-oai-request-id";
 const CF_RAY_HEADER: &str = "cf-ray";
+const X_OPENAI_AUTHORIZATION_ERROR_HEADER: &str = "x-openai-authorization-error";
+const X_ERROR_JSON_HEADER: &str = "x-error-json";
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn map_api_error_maps_server_overloaded() {
-        let err = map_api_error(ApiError::ServerOverloaded);
-        assert!(matches!(err, CodexErr::ServerOverloaded));
-    }
-
-    #[test]
-    fn map_api_error_maps_server_overloaded_from_503_body() {
-        let body = serde_json::json!({
-            "error": {
-                "code": "server_is_overloaded"
-            }
-        })
-        .to_string();
-        let err = map_api_error(ApiError::Transport(TransportError::Http {
-            status: http::StatusCode::SERVICE_UNAVAILABLE,
-            url: Some("http://example.com/v1/responses".to_string()),
-            headers: None,
-            body: Some(body),
-        }));
-
-        assert!(matches!(err, CodexErr::ServerOverloaded));
-    }
-
-    #[test]
-    fn map_api_error_maps_usage_limit_limit_name_header() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            ACTIVE_LIMIT_HEADER,
-            http::HeaderValue::from_static("codex_other"),
-        );
-        headers.insert(
-            "x-codex-other-limit-name",
-            http::HeaderValue::from_static("codex_other"),
-        );
-        let body = serde_json::json!({
-            "error": {
-                "type": "usage_limit_reached",
-                "plan_type": "pro",
-            }
-        })
-        .to_string();
-        let err = map_api_error(ApiError::Transport(TransportError::Http {
-            status: http::StatusCode::TOO_MANY_REQUESTS,
-            url: Some("http://example.com/v1/responses".to_string()),
-            headers: Some(headers),
-            body: Some(body),
-        }));
-
-        let CodexErr::UsageLimitReached(usage_limit) = err else {
-            panic!("expected CodexErr::UsageLimitReached, got {err:?}");
-        };
-        assert_eq!(
-            usage_limit
-                .rate_limits
-                .as_ref()
-                .and_then(|snapshot| snapshot.limit_name.as_deref()),
-            Some("codex_other")
-        );
-    }
-
-    #[test]
-    fn map_api_error_does_not_fallback_limit_name_to_limit_id() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            ACTIVE_LIMIT_HEADER,
-            http::HeaderValue::from_static("codex_other"),
-        );
-        let body = serde_json::json!({
-            "error": {
-                "type": "usage_limit_reached",
-                "plan_type": "pro",
-            }
-        })
-        .to_string();
-        let err = map_api_error(ApiError::Transport(TransportError::Http {
-            status: http::StatusCode::TOO_MANY_REQUESTS,
-            url: Some("http://example.com/v1/responses".to_string()),
-            headers: Some(headers),
-            body: Some(body),
-        }));
-
-        let CodexErr::UsageLimitReached(usage_limit) = err else {
-            panic!("expected CodexErr::UsageLimitReached, got {err:?}");
-        };
-        assert_eq!(
-            usage_limit
-                .rate_limits
-                .as_ref()
-                .and_then(|snapshot| snapshot.limit_name.as_deref()),
-            None
-        );
-    }
-}
+#[path = "api_bridge_tests.rs"]
+mod tests;
 
 fn extract_request_tracking_id(headers: Option<&HeaderMap>) -> Option<String> {
     extract_request_id(headers).or_else(|| extract_header(headers, CF_RAY_HEADER))
@@ -236,10 +191,30 @@ fn extract_header(headers: Option<&HeaderMap>, name: &str) -> Option<String> {
     })
 }
 
+fn extract_x_error_json_code(headers: Option<&HeaderMap>) -> Option<String> {
+    let encoded = extract_header(headers, X_ERROR_JSON_HEADER)?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .ok()?;
+    let parsed = serde_json::from_slice::<Value>(&decoded).ok()?;
+    parsed
+        .get("error")
+        .and_then(|error| error.get("code"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 pub(crate) fn auth_provider_from_auth(
     auth: Option<CodexAuth>,
     provider: &ModelProviderInfo,
 ) -> crate::error::Result<CoreAuthProvider> {
+    if provider.wire_api == crate::model_provider_info::WireApi::Anthropic {
+        return Ok(CoreAuthProvider {
+            token: None,
+            account_id: None,
+        });
+    }
+
     if let Some(api_key) = provider.api_key()? {
         return Ok(CoreAuthProvider {
             token: Some(api_key),
@@ -285,6 +260,26 @@ struct UsageErrorBody {
 pub(crate) struct CoreAuthProvider {
     token: Option<String>,
     account_id: Option<String>,
+}
+
+impl CoreAuthProvider {
+    pub(crate) fn auth_header_attached(&self) -> bool {
+        self.token
+            .as_ref()
+            .is_some_and(|token| http::HeaderValue::from_str(&format!("Bearer {token}")).is_ok())
+    }
+
+    pub(crate) fn auth_header_name(&self) -> Option<&'static str> {
+        self.auth_header_attached().then_some("authorization")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(token: Option<&str>, account_id: Option<&str>) -> Self {
+        Self {
+            token: token.map(str::to_string),
+            account_id: account_id.map(str::to_string),
+        }
+    }
 }
 
 impl ApiAuthProvider for CoreAuthProvider {

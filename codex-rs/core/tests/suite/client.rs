@@ -70,6 +70,7 @@ use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::ResponseTemplate;
 use wiremock::matchers::body_string_contains;
+use wiremock::matchers::header;
 use wiremock::matchers::header_regex;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
@@ -515,6 +516,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::ResponseItem(ResponseItem::FunctionCall {
                 id: None,
                 name: "view_image".to_string(),
+                namespace: None,
                 arguments: "{\"path\":\"/tmp/example.webp\"}".to_string(),
                 call_id: function_call_id.to_string(),
             }),
@@ -714,7 +716,7 @@ async fn chatgpt_auth_sends_correct_request() {
     )
     .await;
 
-    let mut model_provider = built_in_model_providers()["openai"].clone();
+    let mut model_provider = built_in_model_providers(/* openai_base_url */ None)["openai"].clone();
     model_provider.base_url = Some(format!("{}/api/codex", server.uri()));
     let mut builder = test_codex()
         .with_auth(create_dummy_codex_auth())
@@ -790,7 +792,7 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
 
     let model_provider = ModelProviderInfo {
         base_url: Some(format!("{}/v1", server.uri())),
-        ..built_in_model_providers()["openai"].clone()
+        ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
     };
 
     // Init session
@@ -815,10 +817,9 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
             Err(e) => panic!("Failed to load CodexAuth: {e}"),
         };
     let thread_manager = ThreadManager::new(
-        codex_home.path().to_path_buf(),
+        &config,
         auth_manager,
         SessionSource::Exec,
-        config.model_catalog.clone(),
         CollaborationModesConfig {
             default_mode_request_user_input: config
                 .features
@@ -922,7 +923,7 @@ async fn includes_user_instructions_message_in_request() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn includes_apps_guidance_as_developer_message_when_enabled() {
+async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth() {
     skip_if_no_network!();
     let server = MockServer::start().await;
     let apps_server = AppsTestServer::mount(&server)
@@ -937,15 +938,11 @@ async fn includes_apps_guidance_as_developer_message_when_enabled() {
     .await;
 
     let mut builder = test_codex()
-        .with_auth(CodexAuth::from_api_key("Test API Key"))
+        .with_auth(create_dummy_codex_auth())
         .with_config(move |config| {
             config
                 .features
                 .enable(Feature::Apps)
-                .expect("test config should allow feature update");
-            config
-                .features
-                .disable(Feature::AppsMcpGateway)
                 .expect("test config should allow feature update");
             config.chatgpt_base_url = apps_base_url;
         });
@@ -971,7 +968,8 @@ async fn includes_apps_guidance_as_developer_message_when_enabled() {
     let request = resp_mock.single_request();
     let request_body = request.body_json();
     let input = request_body["input"].as_array().expect("input array");
-    let apps_snippet = "Apps are mentioned in the prompt in the format";
+    let apps_snippet =
+        "Apps (Connectors) can be explicitly triggered in user messages in the format";
 
     let has_developer_apps_guidance = input.iter().any(|item| {
         item.get("role").and_then(|value| value.as_str()) == Some("developer")
@@ -1013,7 +1011,74 @@ async fn includes_apps_guidance_as_developer_message_when_enabled() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn skills_append_to_instructions() {
+async fn omits_apps_guidance_for_api_key_auth_even_when_feature_enabled() {
+    skip_if_no_network!();
+    let server = MockServer::start().await;
+    let apps_server = AppsTestServer::mount(&server)
+        .await
+        .expect("mount apps MCP mock");
+    let apps_base_url = apps_server.chatgpt_base_url.clone();
+
+    let resp_mock = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
+    )
+    .await;
+
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::from_api_key("Test API Key"))
+        .with_config(move |config| {
+            config
+                .features
+                .enable(Feature::Apps)
+                .expect("test config should allow feature update");
+            config.chatgpt_base_url = apps_base_url;
+        });
+    let codex = builder
+        .build(&server)
+        .await
+        .expect("create new conversation")
+        .codex;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "hello".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await
+        .unwrap();
+
+    wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let request = resp_mock.single_request();
+    let request_body = request.body_json();
+    let input = request_body["input"].as_array().expect("input array");
+    let apps_snippet =
+        "Apps (Connectors) can be explicitly triggered in user messages in the format";
+
+    let has_apps_guidance = input.iter().any(|item| {
+        item.get("content")
+            .and_then(|value| value.as_array())
+            .is_some_and(|content| {
+                content.iter().any(|entry| {
+                    entry
+                        .get("text")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|text| text.contains(apps_snippet))
+                })
+            })
+    });
+    assert!(
+        !has_apps_guidance,
+        "did not expect apps guidance for API key auth, got {input:#?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn skills_append_to_developer_message() {
     skip_if_no_network!();
     let server = MockServer::start().await;
 
@@ -1059,27 +1124,21 @@ async fn skills_append_to_instructions() {
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request = resp_mock.single_request();
-    let request_body = request.body_json();
-
-    assert_message_role(&request_body["input"][0], "developer");
-
-    assert_message_role(&request_body["input"][1], "user");
-    let instructions_text = request_body["input"][1]["content"][0]["text"]
-        .as_str()
-        .expect("instructions text");
+    let developer_messages = request.message_input_texts("developer");
+    let developer_text = developer_messages.join("\n\n");
     assert!(
-        instructions_text.contains("## Skills"),
-        "expected skills section present"
+        developer_text.contains("## Skills"),
+        "expected skills section present: {developer_messages:?}"
     );
     assert!(
-        instructions_text.contains("demo: build charts"),
-        "expected skill summary"
+        developer_text.contains("demo: build charts"),
+        "expected skill summary: {developer_messages:?}"
     );
     let expected_path = normalize_path(skill_dir.join("SKILL.md")).unwrap();
     let expected_path_str = expected_path.to_string_lossy().replace('\\', "/");
     assert!(
-        instructions_text.contains(&expected_path_str),
-        "expected path {expected_path_str} in instructions"
+        developer_text.contains(&expected_path_str),
+        "expected path {expected_path_str} in developer message: {developer_messages:?}"
     );
     let _codex_home_guard = codex_home;
 }
@@ -1684,6 +1743,15 @@ async fn includes_developer_instructions_message_in_request() {
         "expected developer instructions in a developer message, got {:?}",
         request_body["input"]
     );
+    assert!(
+        developer_messages.iter().any(|item| {
+            message_input_texts(item)
+                .iter()
+                .any(|text| text.contains("Prefer `codex rtk` for noisy shell output."))
+        }),
+        "expected RTK guidance in a developer message, got {:?}",
+        request_body["input"]
+    );
 
     assert_message_role(&request_body["input"][1], "user");
     let user_context_texts = message_input_texts(&request_body["input"][1]);
@@ -1809,6 +1877,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     prompt.input.push(ResponseItem::FunctionCall {
         id: Some("function-id".into()),
         name: "do_thing".into(),
+        namespace: None,
         arguments: "{}".into(),
         call_id: "function-call-id".into(),
     });
@@ -1906,7 +1975,7 @@ async fn token_count_includes_rate_limits_snapshot() {
         .mount(&server)
         .await;
 
-    let mut provider = built_in_model_providers()["openai"].clone();
+    let mut provider = built_in_model_providers(/* openai_base_url */ None)["openai"].clone();
     provider.base_url = Some(format!("{}/v1", server.uri()));
 
     let mut builder = test_codex()
@@ -2283,7 +2352,11 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_overrides_assign_properties_used_for_responses_url() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let existing_env_var_with_random_value = "PATH";
+    let expected_authorization = format!(
+        "Bearer {}",
+        std::env::var(existing_env_var_with_random_value).expect("PATH should be set in tests")
+    );
 
     // Mock server
     let server = MockServer::start().await;
@@ -2301,14 +2374,7 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         .and(path("/openai/responses"))
         .and(query_param("api-version", "2025-04-01-preview"))
         .and(header_regex("Custom-Header", "Value"))
-        .and(header_regex(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var(existing_env_var_with_random_value).unwrap()
-            )
-            .as_str(),
-        ))
+        .and(header("Authorization", expected_authorization.as_str()))
         .respond_with(first)
         .expect(1)
         .mount(&server)
@@ -2367,7 +2433,11 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn env_var_overrides_loaded_auth() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = if cfg!(windows) { "USERNAME" } else { "USER" };
+    let existing_env_var_with_random_value = "PATH";
+    let expected_authorization = format!(
+        "Bearer {}",
+        std::env::var(existing_env_var_with_random_value).expect("PATH should be set in tests")
+    );
 
     // Mock server
     let server = MockServer::start().await;
@@ -2385,14 +2455,7 @@ async fn env_var_overrides_loaded_auth() {
         .and(path("/openai/responses"))
         .and(query_param("api-version", "2025-04-01-preview"))
         .and(header_regex("Custom-Header", "Value"))
-        .and(header_regex(
-            "Authorization",
-            format!(
-                "Bearer {}",
-                std::env::var(existing_env_var_with_random_value).unwrap()
-            )
-            .as_str(),
-        ))
+        .and(header("Authorization", expected_authorization.as_str()))
         .respond_with(first)
         .expect(1)
         .mount(&server)

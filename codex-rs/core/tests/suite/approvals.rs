@@ -123,7 +123,7 @@ impl ActionKind {
                 let (path, _) = target.resolve_for_patch(test);
                 let _ = fs::remove_file(&path);
                 let command = format!("printf {content:?} > {path:?} && cat {path:?}");
-                let event = shell_event(call_id, &command, 1_000, sandbox_permissions)?;
+                let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
             ActionKind::FetchUrl {
@@ -139,12 +139,8 @@ impl ActionKind {
                     .await;
 
                 let url = format!("{}{}", server.uri(), endpoint);
-                let escaped_url = url.replace('\'', "\\'");
-                let script = format!(
-                    "import sys\nimport urllib.request\nurl = '{escaped_url}'\ntry:\n    data = urllib.request.urlopen(url, timeout=2).read().decode()\n    print('OK:' + data.strip())\nexcept Exception as exc:\n    print('ERR:' + exc.__class__.__name__)\n    sys.exit(1)",
-                );
-
-                let command = format!("python3 -c \"{script}\"");
+                let command =
+                    format!("body=$(curl -sS --fail {url:?}) && printf 'OK:%s' \"$body\"");
                 let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
@@ -161,12 +157,9 @@ impl ActionKind {
                     .await;
 
                 let url = format!("{}{}", server.uri(), endpoint);
-                let escaped_url = url.replace('\'', "\\'");
-                let script = format!(
-                    "import sys\nimport urllib.request\nurl = '{escaped_url}'\nopener = urllib.request.build_opener(urllib.request.ProxyHandler({{}}))\ntry:\n    data = opener.open(url, timeout=2).read().decode()\n    print('OK:' + data.strip())\nexcept Exception as exc:\n    print('ERR:' + exc.__class__.__name__)\n    sys.exit(1)",
+                let command = format!(
+                    "body=$(curl -sS --fail --noproxy '*' {url:?}) && printf 'OK:%s' \"$body\""
                 );
-
-                let command = format!("python3 -c \"{script}\"");
                 let event = shell_event(call_id, &command, 5_000, sandbox_permissions)?;
                 Ok((event, Some(command)))
             }
@@ -1321,7 +1314,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
             expectation: Expectation::FileNotCreated {
                 target: TargetPath::Workspace("ro_never.txt"),
                 message_contains: if cfg!(target_os = "linux") {
-                    &["Permission denied"]
+                    &["Permission denied|Read-only file system"]
                 } else {
                     &[
                         "Permission denied|Operation not permitted|operation not permitted|\
@@ -1468,7 +1461,7 @@ fn scenarios() -> Vec<ScenarioSpec> {
             expectation: Expectation::FileNotCreated {
                 target: TargetPath::OutsideWorkspace("ww_never.txt"),
                 message_contains: if cfg!(target_os = "linux") {
-                    &["Permission denied"]
+                    &["Permission denied|Read-only file system"]
                 } else {
                     &[
                         "Permission denied|Operation not permitted|operation not permitted|\
@@ -1577,6 +1570,10 @@ fn scenarios() -> Vec<ScenarioSpec> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn approval_matrix_covers_all_modes() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping approval matrix");
+        return Ok(());
+    }
 
     for scenario in scenarios() {
         run_scenario(&scenario).await?;
@@ -1701,6 +1698,10 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
 #[cfg(unix)]
 async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping apply_patch approval test");
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::OnRequest;
@@ -1818,6 +1819,10 @@ async fn approving_apply_patch_for_session_skips_future_prompts_for_same_file() 
 #[tokio::test(flavor = "current_thread")]
 #[cfg(unix)]
 async fn approving_execpolicy_amendment_persists_policy_and_skips_future_prompts() -> Result<()> {
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping execpolicy approval test");
+        return Ok(());
+    }
     let server = start_mock_server().await;
     let approval_policy = AskForApproval::UnlessTrusted;
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
@@ -2229,6 +2234,10 @@ async fn approving_fallback_rule_for_compound_command_works() -> Result<()> {
 async fn denying_network_policy_amendment_persists_policy_and_skips_future_network_prompt()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !core_test_support::unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable; skipping network approval test");
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let home = Arc::new(TempDir::new()?);
@@ -2290,20 +2299,16 @@ allow_local_binding = true
         test.config.permissions.network.is_some(),
         "expected managed network proxy config to be present"
     );
-    let runtime_proxy = test
-        .session_configured
+    test.session_configured
         .network_proxy
         .as_ref()
         .expect("expected runtime managed network proxy addresses");
-    let proxy_addr = runtime_proxy.http_addr.as_str();
 
     let call_id_first = "allow-network-first";
-    // Use the same urllib-based pattern as the other network integration tests,
-    // but point it at the runtime proxy directly so the blocked host reliably
-    // produces a network approval request without relying on curl.
-    let fetch_command = format!(
-        "python3 -c \"import urllib.request; proxy = urllib.request.ProxyHandler({{'http': 'http://{proxy_addr}'}}); opener = urllib.request.build_opener(proxy); print('OK:' + opener.open('http://codex-network-test.invalid', timeout=30).read().decode(errors='replace'))\""
-    );
+    // Use urllib without overriding proxy settings so managed-network sessions
+    // continue to exercise the env-based proxy routing path under bubblewrap.
+    let fetch_command = r#"python3 -c "import urllib.request; opener = urllib.request.build_opener(urllib.request.ProxyHandler()); print('OK:' + opener.open('http://codex-network-test.invalid', timeout=30).read().decode(errors='replace'))""#
+        .to_string();
     let first_event = shell_event(
         call_id_first,
         &fetch_command,

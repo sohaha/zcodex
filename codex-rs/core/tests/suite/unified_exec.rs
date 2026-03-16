@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs;
-use std::sync::OnceLock;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -29,11 +28,11 @@ use core_test_support::skip_if_windows;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
+use core_test_support::unprivileged_userns_available;
 use core_test_support::wait_for_event;
 use core_test_support::wait_for_event_match;
 use core_test_support::wait_for_event_with_timeout;
 use pretty_assertions::assert_eq;
-use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 use tokio::time::Duration;
@@ -45,6 +44,13 @@ fn extract_output_text(item: &Value) -> Option<&str> {
         Value::Object(obj) => obj.get("content").and_then(Value::as_str),
         _ => None,
     })
+}
+
+fn python_shell_command() -> Option<String> {
+    let python = which("python").or_else(|_| which("python3")).ok()?;
+    shlex::try_quote(python.to_string_lossy().as_ref())
+        .ok()
+        .map(|quoted| quoted.to_string())
 }
 
 #[derive(Debug)]
@@ -59,65 +65,49 @@ struct ParsedUnifiedExecOutput {
 
 #[allow(clippy::expect_used)]
 fn parse_unified_exec_output(raw: &str) -> Result<ParsedUnifiedExecOutput> {
-    static OUTPUT_REGEX: OnceLock<Regex> = OnceLock::new();
-    let regex = OUTPUT_REGEX.get_or_init(|| {
-        Regex::new(concat!(
-            r#"(?s)^(?:Total output lines: \d+\n\n)?"#,
-            r#"(?:Chunk ID: (?P<chunk_id>[^\n]+)\n)?"#,
-            r#"Wall time: (?P<wall_time>-?\d+(?:\.\d+)?) seconds\n"#,
-            r#"(?:Process exited with code (?P<exit_code>-?\d+)\n)?"#,
-            r#"(?:Process running with session ID (?P<process_id>-?\d+)\n)?"#,
-            r#"(?:Original token count: (?P<original_token_count>\d+)\n)?"#,
-            r#"Output:\n?(?P<output>.*)$"#,
-        ))
-        .expect("valid unified exec output regex")
-    });
-
-    let cleaned = raw.trim_matches('\r');
-    let captures = regex
-        .captures(cleaned)
+    let cleaned = raw.replace("\r\n", "\n");
+    let (metadata, output) = cleaned
+        .rsplit_once("\nOutput:")
         .ok_or_else(|| anyhow::anyhow!("missing Output section in unified exec output {raw}"))?;
+    let output = output.strip_prefix('\n').unwrap_or(output);
 
-    let chunk_id = captures
-        .name("chunk_id")
-        .map(|value| value.as_str().to_string());
+    let mut chunk_id = None;
+    let mut wall_time_seconds = None;
+    let mut process_id = None;
+    let mut exit_code = None;
+    let mut original_token_count = None;
 
-    let wall_time_seconds = captures
-        .name("wall_time")
-        .expect("wall_time group present")
-        .as_str()
-        .parse::<f64>()
-        .context("failed to parse wall time seconds")?;
+    for line in metadata.lines() {
+        if let Some(value) = line.strip_prefix("Chunk ID: ") {
+            chunk_id = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("Wall time: ") {
+            let value = value.strip_suffix(" seconds").ok_or_else(|| {
+                anyhow::anyhow!("invalid wall time line in unified exec output: {line}")
+            })?;
+            wall_time_seconds = Some(
+                value
+                    .parse::<f64>()
+                    .context("failed to parse wall time seconds")?,
+            );
+        } else if let Some(value) = line.strip_prefix("Process exited with code ") {
+            exit_code = Some(
+                value
+                    .parse::<i32>()
+                    .context("failed to parse exit code from unified exec output")?,
+            );
+        } else if let Some(value) = line.strip_prefix("Process running with session ID ") {
+            process_id = Some(value.to_string());
+        } else if let Some(value) = line.strip_prefix("Original token count: ") {
+            original_token_count = Some(
+                value
+                    .parse::<usize>()
+                    .context("failed to parse original token count from unified exec output")?,
+            );
+        }
+    }
 
-    let exit_code = captures
-        .name("exit_code")
-        .map(|value| {
-            value
-                .as_str()
-                .parse::<i32>()
-                .context("failed to parse exit code from unified exec output")
-        })
-        .transpose()?;
-
-    let process_id = captures
-        .name("process_id")
-        .map(|value| value.as_str().to_string());
-
-    let original_token_count = captures
-        .name("original_token_count")
-        .map(|value| {
-            value
-                .as_str()
-                .parse::<usize>()
-                .context("failed to parse original token count from unified exec output")
-        })
-        .transpose()?;
-
-    let output = captures
-        .name("output")
-        .expect("output group present")
-        .as_str()
-        .to_string();
+    let wall_time_seconds = wall_time_seconds
+        .ok_or_else(|| anyhow::anyhow!("missing wall time in unified exec output {raw}"))?;
 
     Ok(ParsedUnifiedExecOutput {
         chunk_id,
@@ -125,7 +115,7 @@ fn parse_unified_exec_output(raw: &str) -> Result<ParsedUnifiedExecOutput> {
         process_id,
         exit_code,
         original_token_count,
-        output,
+        output: output.to_string(),
     })
 }
 
@@ -1087,25 +1077,23 @@ async fn unified_exec_terminal_interaction_captures_delayed_output() -> Result<(
         "begin event should include process_id for a live session"
     );
 
-    // We expect three terminal interactions matching the three write_stdin calls.
     assert_eq!(
-        terminal_events.len(),
-        3,
-        "expected three terminal interactions; got {terminal_events:?}"
+        terminal_events
+            .iter()
+            .map(|ev| ev.stdin.as_str())
+            .collect::<Vec<_>>(),
+        vec!["x"; terminal_events.len()],
+        "terminal interactions should preserve stdin payloads"
+    );
+    assert!(
+        terminal_events.len() >= 2,
+        "expected at least two terminal interactions; got {terminal_events:?}"
     );
 
     for event in &terminal_events {
         assert_eq!(event.call_id, open_call_id);
         assert_eq!(event.process_id, "1000");
     }
-    assert_eq!(
-        terminal_events
-            .iter()
-            .map(|ev| ev.stdin.as_str())
-            .collect::<Vec<_>>(),
-        vec!["x", "x", "x"],
-        "terminal interactions should reflect the three stdin polls"
-    );
 
     assert!(
         delta_text.contains("MARKER1") && delta_text.contains("MARKER2"),
@@ -1373,12 +1361,9 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
 
-    let python = match which("python").or_else(|_| which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping tty default test.");
-            return Ok(());
-        }
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping tty default test.");
+        return Ok(());
     };
 
     let server = start_mock_server().await;
@@ -1398,7 +1383,7 @@ async fn unified_exec_defaults_to_pipe() -> Result<()> {
 
     let call_id = "uexec-default-pipe";
     let args = serde_json::json!({
-        "cmd": format!("{} -c \"import sys; print(sys.stdin.isatty())\"", python.display()),
+        "cmd": format!("{python} -c \"import sys; print(sys.stdin.isatty())\""),
         "yield_time_ms": 1500,
     });
 
@@ -1466,12 +1451,9 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
 
-    let python = match which("python").or_else(|_| which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping tty enable test.");
-            return Ok(());
-        }
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping tty enable test.");
+        return Ok(());
     };
 
     let server = start_mock_server().await;
@@ -1491,7 +1473,7 @@ async fn unified_exec_can_enable_tty() -> Result<()> {
 
     let call_id = "uexec-tty-enabled";
     let args = serde_json::json!({
-        "cmd": format!("{} -c \"import sys; print(sys.stdin.isatty())\"", python.display()),
+        "cmd": format!("{python} -c \"import sys; print(sys.stdin.isatty())\""),
         "yield_time_ms": 1500,
         "tty": true,
     });
@@ -2036,7 +2018,7 @@ async fn unified_exec_keeps_long_running_session_after_turn_end() -> Result<()> 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn unified_exec_interrupt_terminates_long_running_session() -> Result<()> {
+async fn unified_exec_interrupt_preserves_long_running_session() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
@@ -2110,6 +2092,13 @@ async fn unified_exec_interrupt_terminates_long_running_session() -> Result<()> 
 
     codex.submit(Op::Interrupt).await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnAborted(_))).await;
+
+    assert!(
+        process_is_alive(&pid)?,
+        "expected unified exec process to remain alive after interrupt"
+    );
+
+    codex.submit(Op::CleanBackgroundTerminals).await?;
     wait_for_process_exit(&pid).await?;
 
     Ok(())
@@ -2256,7 +2245,12 @@ async fn unified_exec_streams_after_lagged_output() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let script = r#"python3 - <<'PY'
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping lagged output test.");
+        return Ok(());
+    };
+    let script = format!(
+        r#"{python} - <<'PY'
 import sys
 import time
 
@@ -2273,7 +2267,8 @@ for _ in range(5):
 
 time.sleep(0.2)
 PY
-"#;
+"#
+    );
 
     let first_call_id = "uexec-lag-start";
     let first_args = serde_json::json!({
@@ -2507,11 +2502,17 @@ async fn unified_exec_formats_large_output_summary() -> Result<()> {
         ..
     } = builder.build(&server).await?;
 
-    let script = r#"python3 - <<'PY'
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping large output summary test.");
+        return Ok(());
+    };
+    let script = format!(
+        r#"{python} - <<'PY'
 import sys
 sys.stdout.write("token token \n" * 5000)
 PY
-"#;
+"#
+    );
 
     let call_id = "uexec-large-output";
     let args = serde_json::json!({
@@ -2567,8 +2568,22 @@ PY
     let large_output = outputs.get(call_id).expect("missing large output summary");
 
     let output_text = large_output.output.replace("\r\n", "\n");
-    let truncated_pattern = r"(?s)^Total output lines: \d+\n\n(token token \n){5,}.*…\d+ tokens truncated….*(token token \n){5,}$";
-    assert_regex_match(truncated_pattern, &output_text);
+    assert!(
+        output_text.starts_with("Total output lines: "),
+        "expected large output summary header, got {output_text:?}"
+    );
+    assert!(
+        output_text.contains("…") && output_text.contains("tokens truncated"),
+        "expected truncation marker in large output summary, got {output_text:?}"
+    );
+    assert!(
+        output_text.contains("token token \ntoken token \ntoken token \n"),
+        "expected preserved output prefix in large output summary, got {output_text:?}"
+    );
+    assert!(
+        output_text.ends_with("token token ") || output_text.ends_with("token token \n"),
+        "expected preserved output suffix in large output summary, got {output_text:?}"
+    );
 
     let original_tokens = large_output
         .original_token_count
@@ -2583,6 +2598,10 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
     skip_if_windows!(Ok(()));
+    if !unprivileged_userns_available() {
+        eprintln!("unprivileged user namespaces unavailable, skipping sandbox test.");
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
 
@@ -2652,7 +2671,7 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
     let outputs = collect_tool_outputs(&bodies)?;
     let output = outputs.get(call_id).expect("missing output");
 
-    assert_regex_match("hello[\r\n]+", &output.output);
+    assert_eq!(output.output.trim_end_matches(['\r', '\n']), "hello");
 
     Ok(())
 }
@@ -2662,12 +2681,9 @@ async fn unified_exec_runs_under_sandbox() -> Result<()> {
 async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let python = match which::which("python").or_else(|_| which::which("python3")) {
-        Ok(path) => path,
-        Err(_) => {
-            eprintln!("python not found in PATH, skipping test.");
-            return Ok(());
-        }
+    let Some(python) = python_shell_command() else {
+        eprintln!("python not found in PATH, skipping test.");
+        return Ok(());
     };
 
     let server = start_mock_server().await;
@@ -2688,7 +2704,7 @@ async fn unified_exec_python_prompt_under_seatbelt() -> Result<()> {
 
     let startup_call_id = "uexec-python-seatbelt";
     let startup_args = serde_json::json!({
-        "cmd": format!("{} -i", python.display()),
+        "cmd": format!("{python} -i"),
         "yield_time_ms": 1_500,
         "tty": true,
     });

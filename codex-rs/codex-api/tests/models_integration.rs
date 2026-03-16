@@ -33,6 +33,7 @@ fn provider(base_url: &str) -> Provider {
     Provider {
         name: "test".to_string(),
         base_url: base_url.to_string(),
+        wire_api: codex_api::provider::WireApi::Responses,
         query_params: None,
         headers: HeaderMap::new(),
         retry: RetryConfig {
@@ -95,6 +96,7 @@ async fn models_client_hits_models_endpoint() {
             input_modalities: default_input_modalities(),
             prefer_websockets: false,
             used_fallback_model_metadata: false,
+            supports_search_tool: false,
         }],
     };
 

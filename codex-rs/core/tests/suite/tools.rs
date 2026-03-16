@@ -27,6 +27,21 @@ use regex_lite::Regex;
 use serde_json::Value;
 use serde_json::json;
 
+fn sandbox_exec_supported(test_name: &str) -> bool {
+    if core_test_support::unprivileged_userns_available() {
+        return true;
+    }
+    eprintln!("unprivileged user namespaces unavailable, skipping {test_name}");
+    false
+}
+
+fn python_executable() -> Option<String> {
+    which::which("python")
+        .or_else(|_| which::which("python3"))
+        .ok()
+        .map(|path| path.to_string_lossy().to_string())
+}
+
 fn tool_names(body: &Value) -> Vec<String> {
     body.get("tools")
         .and_then(Value::as_array)
@@ -191,6 +206,9 @@ async fn shell_escalated_permissions_rejected_then_ok() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sandbox_denied_shell_returns_original_output() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    if !sandbox_exec_supported("sandbox_denied_shell_returns_original_output") {
+        return Ok(());
+    }
 
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.1-codex");
@@ -418,6 +436,10 @@ async fn shell_timeout_includes_timeout_prefix_and_metadata() -> Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_timeout_handles_background_grandchild_stdout() -> Result<()> {
     skip_if_no_network!(Ok(()));
+    let Some(python) = python_executable() else {
+        eprintln!("python not found in PATH, skipping shell timeout grandchild test.");
+        return Ok(());
+    };
 
     let server = start_mock_server().await;
     let mut builder = test_codex().with_model("gpt-5.1").with_config(|config| {
@@ -446,7 +468,7 @@ time.sleep(60)
     fs::write(&script_path, script)?;
 
     let args = json!({
-        "command": ["python3", script_path.to_string_lossy()],
+        "command": [python, script_path.to_string_lossy()],
         "timeout_ms": 200,
     });
 

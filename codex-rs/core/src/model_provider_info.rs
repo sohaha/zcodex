@@ -9,6 +9,7 @@ use crate::auth::AuthMode;
 use crate::error::EnvVarError;
 use codex_api::Provider as ApiProvider;
 use codex_api::provider::RetryConfig as ApiRetryConfig;
+use codex_api::provider::WireApi as ApiWireApi;
 use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;
@@ -16,6 +17,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::Duration;
 
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS: u64 = 300_000;
@@ -27,6 +29,10 @@ const MAX_STREAM_MAX_RETRIES: u64 = 100;
 const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
+const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
+const ANTHROPIC_API_VERSION: &str = "2023-06-01";
+pub const OPENAI_PROVIDER_ID: &str = "openai";
+pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
 const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub(crate) const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
@@ -38,6 +44,18 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// The Anthropic Messages API exposed at `/v1/messages`.
+    Anthropic,
+}
+
+impl fmt::Display for WireApi {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value = match self {
+            Self::Responses => "responses",
+            Self::Anthropic => "anthropic",
+        };
+        f.write_str(value)
+    }
 }
 
 impl<'de> Deserialize<'de> for WireApi {
@@ -48,8 +66,12 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
+            "anthropic" => Ok(Self::Anthropic),
             "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["responses", "anthropic"],
+            )),
         }
     }
 }
@@ -145,17 +167,50 @@ impl ModelProviderInfo {
         &self,
         auth_mode: Option<AuthMode>,
     ) -> crate::error::Result<ApiProvider> {
-        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-            "https://chatgpt.com/backend-api/codex"
-        } else {
-            "https://api.openai.com/v1"
+        let default_base_url = match self.wire_api {
+            WireApi::Responses if matches!(auth_mode, Some(AuthMode::Chatgpt)) => {
+                "https://chatgpt.com/backend-api/codex"
+            }
+            WireApi::Responses => "https://api.openai.com/v1",
+            WireApi::Anthropic => "https://api.anthropic.com/v1",
         };
         let base_url = self
             .base_url
             .clone()
             .unwrap_or_else(|| default_base_url.to_string());
 
-        let headers = self.build_header_map()?;
+        let mut headers = self.build_header_map()?;
+        if self.wire_api == WireApi::Anthropic {
+            headers.insert(
+                HeaderName::from_static("anthropic-version"),
+                HeaderValue::from_static(ANTHROPIC_API_VERSION),
+            );
+
+            match self.api_key() {
+                Ok(Some(api_key)) => {
+                    if let Ok(value) = HeaderValue::try_from(api_key) {
+                        headers.insert(HeaderName::from_static("x-api-key"), value);
+                    }
+                }
+                Ok(None) => {
+                    if let Some(token) = &self.experimental_bearer_token
+                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
+                    {
+                        headers.insert(http::header::AUTHORIZATION, value);
+                    }
+                }
+                Err(crate::error::CodexErr::EnvVar(_))
+                    if self.experimental_bearer_token.is_some() =>
+                {
+                    if let Some(token) = &self.experimental_bearer_token
+                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
+                    {
+                        headers.insert(http::header::AUTHORIZATION, value);
+                    }
+                }
+                Err(err) => return Err(err),
+            }
+        }
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
             base_delay: Duration::from_millis(200),
@@ -167,6 +222,10 @@ impl ModelProviderInfo {
         Ok(ApiProvider {
             name: self.name.clone(),
             base_url,
+            wire_api: match self.wire_api {
+                WireApi::Responses => ApiWireApi::Responses,
+                WireApi::Anthropic => ApiWireApi::Anthropic,
+            },
             query_params: self.query_params.clone(),
             headers,
             retry,
@@ -215,17 +274,11 @@ impl ModelProviderInfo {
             .map(Duration::from_millis)
             .unwrap_or(Duration::from_millis(DEFAULT_STREAM_IDLE_TIMEOUT_MS))
     }
-    pub fn create_openai_provider() -> ModelProviderInfo {
+
+    pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
-            // Allow users to override the default OpenAI endpoint by
-            // exporting `OPENAI_BASE_URL`. This is useful when pointing
-            // Codex at a proxy, mock server, or Azure-style deployment
-            // without requiring a full TOML override for the built-in
-            // OpenAI provider.
-            base_url: std::env::var("OPENAI_BASE_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
+            base_url,
             env_key: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
@@ -256,6 +309,27 @@ impl ModelProviderInfo {
         }
     }
 
+    pub fn create_anthropic_provider() -> ModelProviderInfo {
+        ModelProviderInfo {
+            name: ANTHROPIC_PROVIDER_NAME.into(),
+            base_url: std::env::var("ANTHROPIC_BASE_URL")
+                .ok()
+                .filter(|v| !v.trim().is_empty()),
+            env_key: Some("ANTHROPIC_API_KEY".into()),
+            env_key_instructions: None,
+            experimental_bearer_token: None,
+            wire_api: WireApi::Anthropic,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        }
+    }
+
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
     }
@@ -268,15 +342,20 @@ pub const LMSTUDIO_OSS_PROVIDER_ID: &str = "lmstudio";
 pub const OLLAMA_OSS_PROVIDER_ID: &str = "ollama";
 
 /// Built-in default provider list.
-pub fn built_in_model_providers() -> HashMap<String, ModelProviderInfo> {
+pub fn built_in_model_providers(
+    openai_base_url: Option<String>,
+) -> HashMap<String, ModelProviderInfo> {
     use ModelProviderInfo as P;
+    let openai_provider = P::create_openai_provider(openai_base_url);
 
     // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI and
-    // open source ("oss") providers by default. Users are encouraged to add to
-    // `model_providers` in config.toml to add their own providers.
+    // providers are bundled with Codex CLI, so we only include the OpenAI,
+    // Anthropic, and open source ("oss") providers by default. Users are
+    // encouraged to add to `model_providers` in config.toml to add their own
+    // providers.
     [
-        ("openai", P::create_openai_provider()),
+        (OPENAI_PROVIDER_ID, openai_provider),
+        (ANTHROPIC_PROVIDER_ID, P::create_anthropic_provider()),
         (
             OLLAMA_OSS_PROVIDER_ID,
             create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
@@ -330,112 +409,5 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_deserialize_ollama_model_provider_toml() {
-        let azure_provider_toml = r#"
-name = "Ollama"
-base_url = "http://localhost:11434/v1"
-        "#;
-        let expected_provider = ModelProviderInfo {
-            name: "Ollama".into(),
-            base_url: Some("http://localhost:11434/v1".into()),
-            env_key: None,
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            wire_api: WireApi::Responses,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-        };
-
-        let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
-        assert_eq!(expected_provider, provider);
-    }
-
-    #[test]
-    fn test_deserialize_azure_model_provider_toml() {
-        let azure_provider_toml = r#"
-name = "Azure"
-base_url = "https://xxxxx.openai.azure.com/openai"
-env_key = "AZURE_OPENAI_API_KEY"
-query_params = { api-version = "2025-04-01-preview" }
-        "#;
-        let expected_provider = ModelProviderInfo {
-            name: "Azure".into(),
-            base_url: Some("https://xxxxx.openai.azure.com/openai".into()),
-            env_key: Some("AZURE_OPENAI_API_KEY".into()),
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            wire_api: WireApi::Responses,
-            query_params: Some(maplit::hashmap! {
-                "api-version".to_string() => "2025-04-01-preview".to_string(),
-            }),
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-        };
-
-        let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
-        assert_eq!(expected_provider, provider);
-    }
-
-    #[test]
-    fn test_deserialize_example_model_provider_toml() {
-        let azure_provider_toml = r#"
-name = "Example"
-base_url = "https://example.com"
-env_key = "API_KEY"
-http_headers = { "X-Example-Header" = "example-value" }
-env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
-        "#;
-        let expected_provider = ModelProviderInfo {
-            name: "Example".into(),
-            base_url: Some("https://example.com".into()),
-            env_key: Some("API_KEY".into()),
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            wire_api: WireApi::Responses,
-            query_params: None,
-            http_headers: Some(maplit::hashmap! {
-                "X-Example-Header".to_string() => "example-value".to_string(),
-            }),
-            env_http_headers: Some(maplit::hashmap! {
-                "X-Example-Env-Header".to_string() => "EXAMPLE_ENV_VAR".to_string(),
-            }),
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-        };
-
-        let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
-        assert_eq!(expected_provider, provider);
-    }
-
-    #[test]
-    fn test_deserialize_chat_wire_api_shows_helpful_error() {
-        let provider_toml = r#"
-name = "OpenAI using Chat Completions"
-base_url = "https://api.openai.com/v1"
-env_key = "OPENAI_API_KEY"
-wire_api = "chat"
-        "#;
-
-        let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
-        assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
-    }
-}
+#[path = "model_provider_info_tests.rs"]
+mod tests;

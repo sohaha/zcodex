@@ -4,6 +4,7 @@ members = [
     "ansi-escape",
     "async-utils",
     "app-server",
+    "app-server-client",
     "app-server-protocol",
     "app-server-test-client",
     "debug-client",
@@ -15,6 +16,7 @@ members = [
     "cloud-tasks",
     "cloud-tasks-client",
     "cli",
+    "connectors",
     "config",
     "shell-command",
     "shell-escalation",
@@ -37,6 +39,7 @@ members = [
     "protocol",
     "rmcp-client",
     "responses-api-proxy",
+    "rtk",
     "stdio-to-uds",
     "otel",
     "tui",
@@ -86,6 +89,7 @@ codex-api = { path = "codex-api" }
 codex-artifacts = { path = "artifacts" }
 codex-package-manager = { path = "package-manager" }
 codex-app-server = { path = "app-server" }
+codex-app-server-client = { path = "app-server-client" }
 codex-app-server-protocol = { path = "app-server-protocol" }
 codex-app-server-test-client = { path = "app-server-test-client" }
 codex-apply-patch = { path = "apply-patch" }
@@ -96,6 +100,7 @@ codex-chatgpt = { path = "chatgpt" }
 codex-cli = { path = "cli" }
 codex-client = { path = "codex-client" }
 codex-cloud-requirements = { path = "cloud-requirements" }
+codex-connectors = { path = "connectors" }
 codex-config = { path = "config" }
 codex-core = { path = "core" }
 codex-exec = { path = "exec" }
@@ -117,6 +122,7 @@ codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-rmcp-client = { path = "rmcp-client" }
+codex-rtk = { path = "rtk" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
@@ -167,6 +173,7 @@ chardetng = "0.1.17"
 chrono = "0.4.43"
 clap = "4"
 clap_complete = "4"
+colored = "2"
 color-eyre = "0.6.3"
 crossbeam-channel = "0.5.15"
 crossterm = "0.28.1"
@@ -231,11 +238,14 @@ regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = "0.12"
 rmcp = { version = "0.15.0", default-features = false }
+rusqlite = "0.32"
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
     "std",
 ] }
+rustls-native-certs = "0.8.3"
+rustls-pki-types = "1.14.0"
 schemars = "0.8.22"
 seccompiler = "0.5.0"
 semver = "1.0"
@@ -298,6 +308,7 @@ unicode-segmentation = "1.12.0"
 unicode-width = "0.2"
 url = "2"
 urlencoding = "2.1"
+ureq = "2"
 uuid = "1"
 vt100 = "0.16.2"
 walkdir = "2.5.0"

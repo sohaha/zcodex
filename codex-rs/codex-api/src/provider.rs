@@ -8,6 +8,13 @@ use std::collections::HashMap;
 use std::time::Duration;
 use url::Url;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum WireApi {
+    #[default]
+    Responses,
+    Anthropic,
+}
+
 /// High-level retry configuration for a provider.
 ///
 /// This is converted into a `RetryPolicy` used by `codex-client` to drive
@@ -43,6 +50,7 @@ impl RetryConfig {
 pub struct Provider {
     pub name: String,
     pub base_url: String,
+    pub wire_api: WireApi,
     pub query_params: Option<HashMap<String, String>>,
     pub headers: HeaderMap,
     pub retry: RetryConfig,

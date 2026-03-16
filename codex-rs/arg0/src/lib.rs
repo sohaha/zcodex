@@ -12,6 +12,7 @@ use tempfile::TempDir;
 const LINUX_SANDBOX_ARG0: &str = "codex-linux-sandbox";
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
+const RTK_ARG0: &str = "rtk";
 #[cfg(unix)]
 const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
 const LOCK_FILENAME: &str = ".lock";
@@ -275,6 +276,7 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
     for filename in &[
         APPLY_PATCH_ARG0,
         MISSPELLED_APPLY_PATCH_ARG0,
+        RTK_ARG0,
         #[cfg(target_os = "linux")]
         LINUX_SANDBOX_ARG0,
         #[cfg(unix)]
@@ -291,15 +293,30 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
         #[cfg(windows)]
         {
             let batch_script = path.join(format!("{filename}.bat"));
-            std::fs::write(
-                &batch_script,
-                format!(
-                    r#"@echo off
+            let contents =
+                if filename == APPLY_PATCH_ARG0 || filename == MISSPELLED_APPLY_PATCH_ARG0 {
+                    format!(
+                        r#"@echo off
 "{}" {CODEX_CORE_APPLY_PATCH_ARG1} %*
 "#,
-                    exe.display()
-                ),
-            )?;
+                        exe.display()
+                    )
+                } else if filename == RTK_ARG0 {
+                    format!(
+                        r#"@echo off
+"{}" rtk %*
+"#,
+                        exe.display()
+                    )
+                } else {
+                    format!(
+                        r#"@echo off
+"{}" %*
+"#,
+                        exe.display()
+                    )
+                };
+            std::fs::write(&batch_script, contents)?;
         }
     }
 

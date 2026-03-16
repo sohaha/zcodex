@@ -1,0 +1,225 @@
+use super::*;
+use pretty_assertions::assert_eq;
+
+#[test]
+fn test_deserialize_ollama_model_provider_toml() {
+    let azure_provider_toml = r#"
+name = "Ollama"
+base_url = "http://localhost:11434/v1"
+        "#;
+    let expected_provider = ModelProviderInfo {
+        name: "Ollama".into(),
+        base_url: Some("http://localhost:11434/v1".into()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
+    assert_eq!(expected_provider, provider);
+}
+
+#[test]
+fn test_deserialize_azure_model_provider_toml() {
+    let azure_provider_toml = r#"
+name = "Azure"
+base_url = "https://xxxxx.openai.azure.com/openai"
+env_key = "AZURE_OPENAI_API_KEY"
+query_params = { api-version = "2025-04-01-preview" }
+        "#;
+    let expected_provider = ModelProviderInfo {
+        name: "Azure".into(),
+        base_url: Some("https://xxxxx.openai.azure.com/openai".into()),
+        env_key: Some("AZURE_OPENAI_API_KEY".into()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Responses,
+        query_params: Some(maplit::hashmap! {
+            "api-version".to_string() => "2025-04-01-preview".to_string(),
+        }),
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
+    assert_eq!(expected_provider, provider);
+}
+
+#[test]
+fn test_deserialize_example_model_provider_toml() {
+    let azure_provider_toml = r#"
+name = "Example"
+base_url = "https://example.com"
+env_key = "API_KEY"
+http_headers = { "X-Example-Header" = "example-value" }
+env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
+        "#;
+    let expected_provider = ModelProviderInfo {
+        name: "Example".into(),
+        base_url: Some("https://example.com".into()),
+        env_key: Some("API_KEY".into()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: Some(maplit::hashmap! {
+            "X-Example-Header".to_string() => "example-value".to_string(),
+        }),
+        env_http_headers: Some(maplit::hashmap! {
+            "X-Example-Env-Header".to_string() => "EXAMPLE_ENV_VAR".to_string(),
+        }),
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let provider: ModelProviderInfo = toml::from_str(azure_provider_toml).unwrap();
+    assert_eq!(expected_provider, provider);
+}
+
+#[test]
+fn test_deserialize_chat_wire_api_shows_helpful_error() {
+    let provider_toml = r#"
+name = "OpenAI using Chat Completions"
+base_url = "https://api.openai.com/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "chat"
+        "#;
+
+    let err = toml::from_str::<ModelProviderInfo>(provider_toml).unwrap_err();
+    assert!(err.to_string().contains(CHAT_WIRE_API_REMOVED_ERROR));
+}
+
+#[test]
+fn anthropic_provider_defaults_to_official_base_url() {
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+    assert_eq!(api_provider.base_url, "https://api.anthropic.com/v1");
+}
+
+#[test]
+fn anthropic_provider_honors_configured_base_url() {
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: Some("https://proxy.example/v1".into()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+    assert_eq!(api_provider.base_url, "https://proxy.example/v1");
+}
+
+#[test]
+fn anthropic_provider_uses_x_api_key_without_authorization_header() {
+    const API_KEY_ENV: &str = "CODEX_TEST_ANTHROPIC_API_KEY";
+    const SUBPROCESS_ENV: &str = "CODEX_TEST_ANTHROPIC_PROVIDER_SUBPROCESS";
+
+    if std::env::var_os(SUBPROCESS_ENV).is_none() {
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("test binary path should resolve"),
+        )
+        .arg("--exact")
+        .arg("model_provider_info::tests::anthropic_provider_uses_x_api_key_without_authorization_header")
+        .env(SUBPROCESS_ENV, "1")
+        .env(API_KEY_ENV, "test-anthropic-api-key")
+        .output()
+        .expect("subprocess should run");
+
+        assert!(
+            output.status.success(),
+            "subprocess failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: None,
+        env_key: Some(API_KEY_ENV.to_string()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+
+    assert_eq!(
+        api_provider
+            .headers
+            .get("anthropic-version")
+            .and_then(|value| value.to_str().ok()),
+        Some("2023-06-01")
+    );
+    assert_eq!(
+        api_provider
+            .headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok()),
+        Some("test-anthropic-api-key")
+    );
+    assert!(
+        api_provider
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .is_none(),
+        "anthropic env_key auth should use x-api-key only"
+    );
+}

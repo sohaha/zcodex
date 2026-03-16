@@ -4,6 +4,8 @@ use codex_core::test_support::all_model_presets;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ConfigShellToolType;
 use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ModelInstructionsVariables;
+use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::TruncationPolicyConfig;
@@ -11,8 +13,25 @@ use codex_protocol::openai_models::default_input_modalities;
 use serde_json::json;
 use std::path::Path;
 
+const DEFAULT_PERSONALITY_HEADER: &str = "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.";
+const LOCAL_FRIENDLY_TEMPLATE: &str =
+    "You optimize for team morale and being a supportive teammate as much as code quality.";
+const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
+const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
+
 /// Convert a ModelPreset to ModelInfo for cache storage.
 fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
+    let base_instructions = codex_core::models_manager::model_info::BASE_INSTRUCTIONS.to_string();
+    let model_messages = preset.supports_personality.then(|| ModelMessages {
+        instructions_template: Some(format!(
+            "{DEFAULT_PERSONALITY_HEADER}\n\n{PERSONALITY_PLACEHOLDER}\n\n{base_instructions}"
+        )),
+        instructions_variables: Some(ModelInstructionsVariables {
+            personality_default: Some(String::new()),
+            personality_friendly: Some(LOCAL_FRIENDLY_TEMPLATE.to_string()),
+            personality_pragmatic: Some(LOCAL_PRAGMATIC_TEMPLATE.to_string()),
+        }),
+    });
     ModelInfo {
         slug: preset.id.clone(),
         display_name: preset.display_name.clone(),
@@ -28,8 +47,8 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         supported_in_api: preset.supported_in_api,
         priority,
         upgrade: preset.upgrade.as_ref().map(|u| u.into()),
-        base_instructions: "base instructions".to_string(),
-        model_messages: None,
+        base_instructions,
+        model_messages,
         supports_reasoning_summaries: false,
         default_reasoning_summary: ReasoningSummary::Auto,
         support_verbosity: false,
@@ -47,6 +66,7 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         input_modalities: default_input_modalities(),
         prefer_websockets: false,
         used_fallback_model_metadata: false,
+        supports_search_tool: false,
     }
 }
 

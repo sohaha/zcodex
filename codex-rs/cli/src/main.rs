@@ -22,6 +22,8 @@ use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
+use codex_rtk::alias_name as rtk_alias_name;
+use codex_rtk::is_alias_invocation as is_rtk_alias_invocation;
 use codex_state::StateRuntime;
 use codex_state::state_db_path;
 use codex_tui::AppExitInfo;
@@ -99,6 +101,9 @@ enum Subcommand {
     /// Manage external MCP servers for Codex.
     Mcp(McpCli),
 
+    /// Run token-optimized command wrappers.
+    Rtk(RtkArgs),
+
     /// Start Codex as an MCP server (stdio).
     McpServer,
 
@@ -153,6 +158,13 @@ struct CompletionCommand {
     /// Shell to generate completions for
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
+}
+
+#[derive(Debug, Args)]
+#[command(disable_help_flag = true, disable_version_flag = true)]
+struct RtkArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<std::ffi::OsString>,
 }
 
 #[derive(Debug, Parser)]
@@ -239,7 +251,7 @@ enum SandboxCommand {
     #[clap(visible_alias = "seatbelt")]
     Macos(SeatbeltCommand),
 
-    /// Run a command under Landlock+seccomp (Linux only).
+    /// Run a command under the Linux sandbox (bubblewrap by default).
     #[clap(visible_alias = "landlock")]
     Linux(LandlockCommand),
 
@@ -563,7 +575,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         feature_toggles,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = parse_multitool_cli_from_env();
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
@@ -601,6 +613,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             // Propagate any root-level config overrides (e.g. `-c key=value`).
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
+        }
+        Some(Subcommand::Rtk(rtk_cli)) => {
+            codex_rtk::run_from_os_args(rtk_cli.args)?;
         }
         Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
             None => {
@@ -836,6 +851,23 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn parse_multitool_cli_from_env() -> MultitoolCli {
+    let raw_args = std::env::args_os().collect::<Vec<_>>();
+    if raw_args.is_empty() {
+        return MultitoolCli::parse();
+    }
+
+    if is_rtk_alias_invocation(&raw_args[0]) {
+        let mut injected_args = Vec::with_capacity(raw_args.len() + 1);
+        injected_args.push(raw_args[0].clone());
+        injected_args.push(rtk_alias_name().into());
+        injected_args.extend(raw_args.into_iter().skip(1));
+        MultitoolCli::parse_from(injected_args)
+    } else {
+        MultitoolCli::parse_from(raw_args)
+    }
+}
+
 async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
     FeatureToggles::validate_feature(feature)?;
     let codex_home = find_codex_home()?;
@@ -976,7 +1008,12 @@ async fn run_interactive_tui(
         }
     }
 
-    codex_tui::run_main(interactive, arg0_paths).await
+    codex_tui::run_main(
+        interactive,
+        arg0_paths,
+        codex_core::config_loader::LoaderOverrides::default(),
+    )
+    .await
 }
 
 fn confirm(prompt: &str) -> std::io::Result<bool> {
@@ -1513,6 +1550,19 @@ mod tests {
                 "features.web_search_request=true".to_string(),
                 "features.unified_exec=false".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn feature_toggles_accept_legacy_linux_sandbox_flag() {
+        let toggles = FeatureToggles {
+            enable: vec!["use_linux_sandbox_bwrap".to_string()],
+            disable: Vec::new(),
+        };
+        let overrides = toggles.to_overrides().expect("valid features");
+        assert_eq!(
+            overrides,
+            vec!["features.use_linux_sandbox_bwrap=true".to_string(),]
         );
     }
 

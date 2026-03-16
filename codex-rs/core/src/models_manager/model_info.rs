@@ -4,6 +4,8 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelInstructionsVariables;
 use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelVisibility;
+use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::openai_models::TruncationMode;
 use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::WebSearchToolType;
@@ -20,6 +22,11 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
     "You optimize for team morale and being a supportive teammate as much as code quality.";
 const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
+const ANTHROPIC_REASONING_LEVELS: [ReasoningEffort; 3] = [
+    ReasoningEffort::Low,
+    ReasoningEffort::Medium,
+    ReasoningEffort::High,
+];
 
 pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> ModelInfo {
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
@@ -90,6 +97,76 @@ pub(crate) fn model_info_from_slug(slug: &str) -> ModelInfo {
         input_modalities: default_input_modalities(),
         prefer_websockets: false,
         used_fallback_model_metadata: true, // this is the fallback model metadata
+        supports_search_tool: false,
+    }
+}
+
+pub(crate) fn anthropic_model_catalog() -> Vec<ModelInfo> {
+    vec![
+        anthropic_model(
+            "claude-sonnet-4-20250514",
+            "Claude Sonnet 4",
+            0,
+            Some(ReasoningEffort::Medium),
+        ),
+        anthropic_model(
+            "claude-opus-4-1-20250805",
+            "Claude Opus 4.1",
+            1,
+            Some(ReasoningEffort::High),
+        ),
+        anthropic_model("claude-3-5-haiku-20241022", "Claude Haiku 3.5", 2, None),
+    ]
+}
+
+fn anthropic_model(
+    slug: &str,
+    display_name: &str,
+    priority: i32,
+    default_reasoning_level: Option<ReasoningEffort>,
+) -> ModelInfo {
+    let supports_reasoning_summaries = default_reasoning_level.is_some();
+    ModelInfo {
+        slug: slug.to_string(),
+        display_name: display_name.to_string(),
+        description: None,
+        default_reasoning_level,
+        supported_reasoning_levels: if supports_reasoning_summaries {
+            ANTHROPIC_REASONING_LEVELS
+                .into_iter()
+                .map(|effort| ReasoningEffortPreset {
+                    effort,
+                    description: effort.to_string(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+        shell_type: ConfigShellToolType::ShellCommand,
+        visibility: ModelVisibility::List,
+        supported_in_api: true,
+        priority,
+        availability_nux: None,
+        upgrade: None,
+        base_instructions: BASE_INSTRUCTIONS.to_string(),
+        model_messages: None,
+        supports_reasoning_summaries,
+        default_reasoning_summary: ReasoningSummary::Auto,
+        support_verbosity: false,
+        default_verbosity: None,
+        apply_patch_tool_type: None,
+        web_search_tool_type: WebSearchToolType::Text,
+        truncation_policy: TruncationPolicyConfig::bytes(10_000),
+        supports_parallel_tool_calls: true,
+        supports_image_detail_original: false,
+        context_window: Some(200_000),
+        auto_compact_token_limit: None,
+        effective_context_window_percent: 95,
+        experimental_supported_tools: Vec::new(),
+        input_modalities: default_input_modalities(),
+        prefer_websockets: false,
+        supports_search_tool: false,
+        used_fallback_model_metadata: false,
     }
 }
 
@@ -110,44 +187,5 @@ fn local_personality_messages_for_slug(slug: &str) -> Option<ModelMessages> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::test_config;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn reasoning_summaries_override_true_enables_support() {
-        let model = model_info_from_slug("unknown-model");
-        let mut config = test_config();
-        config.model_supports_reasoning_summaries = Some(true);
-
-        let updated = with_config_overrides(model.clone(), &config);
-        let mut expected = model;
-        expected.supports_reasoning_summaries = true;
-
-        assert_eq!(updated, expected);
-    }
-
-    #[test]
-    fn reasoning_summaries_override_false_does_not_disable_support() {
-        let mut model = model_info_from_slug("unknown-model");
-        model.supports_reasoning_summaries = true;
-        let mut config = test_config();
-        config.model_supports_reasoning_summaries = Some(false);
-
-        let updated = with_config_overrides(model.clone(), &config);
-
-        assert_eq!(updated, model);
-    }
-
-    #[test]
-    fn reasoning_summaries_override_false_is_noop_when_model_is_false() {
-        let model = model_info_from_slug("unknown-model");
-        let mut config = test_config();
-        config.model_supports_reasoning_summaries = Some(false);
-
-        let updated = with_config_overrides(model.clone(), &config);
-
-        assert_eq!(updated, model);
-    }
-}
+#[path = "model_info_tests.rs"]
+mod tests;

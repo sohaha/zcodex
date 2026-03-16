@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$#" -eq 0 ]; then
+  set -- cargo build
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+codex_rs_dir="$repo_root/codex-rs"
+external_volume="${EXTERNAL_VOLUME:-/Volumes/V2}"
+external_tmp_root="${EXTERNAL_TMP_ROOT:-$external_volume/tmp}"
+external_target_dir="${EXTERNAL_TARGET_DIR:-$external_tmp_root/zcodex-cargo-target}"
+
+if [ -d "$external_volume" ] && [ -w "$external_volume" ]; then
+  mkdir -p "$external_tmp_root" "$external_target_dir"
+  if [ -w "$external_tmp_root" ] && [ -w "$external_target_dir" ]; then
+    export TMPDIR="$external_tmp_root"
+    export CARGO_TARGET_DIR="$external_target_dir"
+    echo "[mise] using external build root: $external_tmp_root" >&2
+  else
+    echo "[mise] external build root is not writable: $external_tmp_root" >&2
+  fi
+else
+  echo "[mise] external build root unavailable: $external_volume" >&2
+fi
+
+cd "$codex_rs_dir"
+exec "$@"

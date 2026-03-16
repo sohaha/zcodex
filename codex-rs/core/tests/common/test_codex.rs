@@ -179,21 +179,21 @@ impl TestCodexBuilder {
         resume_from: Option<PathBuf>,
     ) -> anyhow::Result<TestCodex> {
         let auth = self.auth.clone();
-        let thread_manager = if let Some(model_catalog) = config.model_catalog.clone() {
-            ThreadManager::new(
-                config.codex_home.clone(),
-                codex_core::test_support::auth_manager_from_auth(auth.clone()),
-                SessionSource::Exec,
-                Some(model_catalog),
-                CollaborationModesConfig::default(),
-            )
-        } else {
-            codex_core::test_support::thread_manager_with_models_provider_and_home(
-                auth.clone(),
-                config.model_provider.clone(),
-                config.codex_home.clone(),
-            )
-        };
+        let thread_manager =
+            if config.model_catalog.is_some() || config.model_catalog_merge.is_some() {
+                ThreadManager::new(
+                    &config,
+                    codex_core::test_support::auth_manager_from_auth(auth.clone()),
+                    SessionSource::Exec,
+                    CollaborationModesConfig::default(),
+                )
+            } else {
+                codex_core::test_support::thread_manager_with_models_provider_and_home(
+                    auth.clone(),
+                    config.model_provider.clone(),
+                    config.codex_home.clone(),
+                )
+            };
         let thread_manager = Arc::new(thread_manager);
 
         let new_conversation = match resume_from {
@@ -203,6 +203,7 @@ impl TestCodexBuilder {
                     config.clone(),
                     path,
                     auth_manager,
+                    None,
                 ))
                 .await?
             }
@@ -226,7 +227,7 @@ impl TestCodexBuilder {
     ) -> anyhow::Result<(Config, Arc<TempDir>)> {
         let model_provider = ModelProviderInfo {
             base_url: Some(base_url),
-            ..built_in_model_providers()["openai"].clone()
+            ..built_in_model_providers(/* openai_base_url */ None)["openai"].clone()
         };
         let cwd = Arc::new(TempDir::new()?);
         let mut config = load_default_config_for_test(home).await;
@@ -235,13 +236,13 @@ impl TestCodexBuilder {
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }
-        if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex") {
+        if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex-linux-sandbox") {
             config.codex_linux_sandbox_exe = Some(path);
         } else if let Ok(exe) = std::env::current_exe()
             && let Some(path) = exe
                 .parent()
                 .and_then(|parent| parent.parent())
-                .map(|parent| parent.join("codex"))
+                .map(|parent| parent.join("codex-linux-sandbox"))
             && path.is_file()
         {
             config.codex_linux_sandbox_exe = Some(path);
@@ -265,9 +266,7 @@ impl TestCodexBuilder {
 }
 
 fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
-    if config.model.as_deref() != Some(TEST_MODEL_WITH_EXPERIMENTAL_TOOLS)
-        || config.model_catalog.is_some()
-    {
+    if config.model.as_deref() != Some(TEST_MODEL_WITH_EXPERIMENTAL_TOOLS) {
         return Ok(());
     }
 
@@ -296,7 +295,23 @@ fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {
         "grep_files".to_string(),
         "list_dir".to_string(),
     ];
-    config.model_catalog = Some(ModelsResponse {
+    if let Some(catalog) = config.model_catalog_merge.as_mut() {
+        catalog
+            .models
+            .retain(|candidate| candidate.slug != model.slug);
+        catalog.models.push(model);
+        return Ok(());
+    }
+
+    if let Some(catalog) = config.model_catalog.as_mut() {
+        catalog
+            .models
+            .retain(|candidate| candidate.slug != model.slug);
+        catalog.models.push(model);
+        return Ok(());
+    }
+
+    config.model_catalog_merge = Some(ModelsResponse {
         models: vec![model],
     });
     Ok(())
@@ -560,6 +575,7 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use tempfile::TempDir;
 
     #[test]
     fn custom_tool_call_output_text_returns_output_text() {
@@ -585,5 +601,28 @@ mod tests {
         })];
 
         let _ = custom_tool_call_output_text(&bodies, "call-2");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn prepare_config_keeps_linux_sandbox_binary() {
+        let home = TempDir::new().expect("tempdir");
+        let mut builder = test_codex();
+
+        let (config, _) = builder
+            .prepare_config("http://example.invalid/v1".to_string(), &home)
+            .await
+            .expect("prepare config");
+
+        let sandbox = config
+            .codex_linux_sandbox_exe
+            .expect("linux sandbox binary should be configured");
+        assert_eq!(
+            sandbox
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("sandbox file name"),
+            "codex-linux-sandbox"
+        );
     }
 }

@@ -43,10 +43,10 @@ fn build_permissions_update_item(
     Some(DeveloperInstructions::from_policy(
         next.sandbox_policy.get(),
         next.approval_policy.value(),
-        next.features.enabled(Feature::GuardianApproval),
         exec_policy,
         &next.cwd,
-        next.features.enabled(Feature::RequestPermissions),
+        next.features.enabled(Feature::ExecPermissionApprovals),
+        next.features.enabled(Feature::RequestPermissionsTool),
     ))
 }
 
@@ -76,7 +76,17 @@ pub(crate) fn build_realtime_update_item(
         next.realtime_active,
     ) {
         (Some(true), false) => Some(DeveloperInstructions::realtime_end_message("inactive")),
-        (Some(false), true) | (None, true) => Some(DeveloperInstructions::realtime_start_message()),
+        (Some(false), true) | (None, true) => Some(
+            if let Some(instructions) = next
+                .config
+                .experimental_realtime_start_instructions
+                .as_deref()
+            {
+                DeveloperInstructions::realtime_start_message_with_instructions(instructions)
+            } else {
+                DeveloperInstructions::realtime_start_message()
+            },
+        ),
         (Some(true), true) | (Some(false), false) => None,
         (None, false) => previous_turn_settings
             .and_then(|settings| settings.realtime_active)
@@ -184,6 +194,8 @@ pub(crate) fn build_settings_update_items(
 ) -> Vec<ResponseItem> {
     let contextual_user_message = build_environment_update_item(previous, next, shell);
     let developer_update_sections = [
+        // Only emit turn-local diffs here. Stable prefix guidance such as RTK lives in
+        // `build_initial_context()` so ordinary turns preserve provider-side prefix caching.
         // Keep model-switch instructions first so model-specific guidance is read before
         // any other context diffs on this turn.
         build_model_instructions_update_item(previous_turn_settings, next),

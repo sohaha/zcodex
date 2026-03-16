@@ -1,6 +1,9 @@
-use codex_protocol::models::FunctionCallOutputBody;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
 
 use crate::apply_patch;
 use crate::apply_patch::InternalApplyPatchInvocation;
@@ -12,26 +15,33 @@ use crate::client_common::tools::ToolSpec;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
+use crate::sandboxing::effective_file_system_sandbox_policy;
+use crate::sandboxing::merge_permission_profiles;
+use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
+use crate::tools::handlers::apply_granted_turn_permissions;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::orchestrator::ToolOrchestrator;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::runtimes::apply_patch::ApplyPatchRequest;
 use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
+use crate::tools::sandboxing::ExecApprovalRequirement;
 use crate::tools::sandboxing::ToolCtx;
+use crate::tools::sandboxing::ToolError;
 use crate::tools::spec::ApplyPatchToolArgs;
 use crate::tools::spec::JsonSchema;
 use async_trait::async_trait;
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
+use codex_protocol::models::FileSystemPermissions;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use std::sync::Arc;
 
 pub struct ApplyPatchHandler;
 
@@ -61,8 +71,67 @@ fn to_abs_path(cwd: &Path, path: &Path) -> Option<AbsolutePathBuf> {
     AbsolutePathBuf::resolve_path_against_base(path, cwd).ok()
 }
 
+fn write_permissions_for_paths(file_paths: &[AbsolutePathBuf]) -> Option<PermissionProfile> {
+    let write_paths = file_paths
+        .iter()
+        .map(|path| {
+            path.parent()
+                .unwrap_or_else(|| path.clone())
+                .into_path_buf()
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(AbsolutePathBuf::from_absolute_path)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+
+    let permissions = (!write_paths.is_empty()).then_some(PermissionProfile {
+        file_system: Some(FileSystemPermissions {
+            read: Some(vec![]),
+            write: Some(write_paths),
+        }),
+        ..Default::default()
+    })?;
+
+    crate::sandboxing::normalize_additional_permissions(permissions).ok()
+}
+
+async fn effective_patch_permissions(
+    session: &Session,
+    turn: &TurnContext,
+    action: &ApplyPatchAction,
+) -> (
+    Vec<AbsolutePathBuf>,
+    crate::tools::handlers::EffectiveAdditionalPermissions,
+    codex_protocol::permissions::FileSystemSandboxPolicy,
+) {
+    let file_paths = file_paths_for_action(action);
+    let granted_permissions = merge_permission_profiles(
+        session.granted_session_permissions().await.as_ref(),
+        session.granted_turn_permissions().await.as_ref(),
+    );
+    let effective_additional_permissions = apply_granted_turn_permissions(
+        session,
+        crate::sandboxing::SandboxPermissions::UseDefault,
+        write_permissions_for_paths(&file_paths),
+    )
+    .await;
+    let file_system_sandbox_policy = effective_file_system_sandbox_policy(
+        &turn.file_system_sandbox_policy,
+        granted_permissions.as_ref(),
+    );
+
+    (
+        file_paths,
+        effective_additional_permissions,
+        file_system_sandbox_policy,
+    )
+}
+
 #[async_trait]
 impl ToolHandler for ApplyPatchHandler {
+    type Output = FunctionToolOutput;
+
     fn kind(&self) -> ToolKind {
         ToolKind::Function
     }
@@ -78,7 +147,7 @@ impl ToolHandler for ApplyPatchHandler {
         true
     }
 
-    async fn handle(&self, invocation: ToolInvocation) -> Result<ToolOutput, FunctionCallError> {
+    async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation {
             session,
             turn,
@@ -108,17 +177,19 @@ impl ToolHandler for ApplyPatchHandler {
         let command = vec!["apply_patch".to_string(), patch_input.clone()];
         match codex_apply_patch::maybe_parse_apply_patch_verified(&command, &cwd) {
             codex_apply_patch::MaybeApplyPatchVerified::Body(changes) => {
-                match apply_patch::apply_patch(turn.as_ref(), changes).await {
+                let (file_paths, effective_additional_permissions, file_system_sandbox_policy) =
+                    effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
+                match apply_patch::apply_patch(turn.as_ref(), &file_system_sandbox_policy, changes)
+                    .await
+                {
                     InternalApplyPatchInvocation::Output(item) => {
                         let content = item?;
-                        Ok(ToolOutput::Function {
-                            body: FunctionCallOutputBody::Text(content),
-                            success: Some(true),
-                        })
+                        Ok(FunctionToolOutput::from_text(content, Some(true)))
                     }
                     InternalApplyPatchInvocation::DelegateToExec(apply) => {
+                        let run_in_process =
+                            should_run_apply_patch_in_process(turn.as_ref(), &apply);
                         let changes = convert_apply_patch_to_protocol(&apply.action);
-                        let file_paths = file_paths_for_action(&apply.action);
                         let emitter =
                             ToolEmitter::apply_patch(changes.clone(), apply.auto_approved);
                         let event_ctx = ToolEventCtx::new(
@@ -134,6 +205,12 @@ impl ToolHandler for ApplyPatchHandler {
                             file_paths,
                             changes,
                             exec_approval_requirement: apply.exec_approval_requirement,
+                            sandbox_permissions: effective_additional_permissions
+                                .sandbox_permissions,
+                            additional_permissions: effective_additional_permissions
+                                .additional_permissions,
+                            permissions_preapproved: effective_additional_permissions
+                                .permissions_preapproved,
                             timeout_ms: None,
                             codex_exe: turn.codex_linux_sandbox_exe.clone(),
                         };
@@ -146,16 +223,22 @@ impl ToolHandler for ApplyPatchHandler {
                             call_id: call_id.clone(),
                             tool_name: tool_name.to_string(),
                         };
-                        let out = orchestrator
-                            .run(
-                                &mut runtime,
-                                &req,
-                                &tool_ctx,
-                                turn.as_ref(),
-                                turn.approval_policy.value(),
-                            )
-                            .await
-                            .map(|result| result.output);
+                        let out = if run_in_process {
+                            run_apply_patch_in_process(&req.action)
+                                .await
+                                .map_err(ToolError::Rejected)
+                        } else {
+                            orchestrator
+                                .run(
+                                    &mut runtime,
+                                    &req,
+                                    &tool_ctx,
+                                    turn.as_ref(),
+                                    turn.approval_policy.value(),
+                                )
+                                .await
+                                .map(|result| result.output)
+                        };
                         let event_ctx = ToolEventCtx::new(
                             session.as_ref(),
                             turn.as_ref(),
@@ -163,10 +246,7 @@ impl ToolHandler for ApplyPatchHandler {
                             Some(&tracker),
                         );
                         let content = emitter.finish(event_ctx, out).await?;
-                        Ok(ToolOutput::Function {
-                            body: FunctionCallOutputBody::Text(content),
-                            success: Some(true),
-                        })
+                        Ok(FunctionToolOutput::from_text(content, Some(true)))
                     }
                 }
             }
@@ -200,7 +280,7 @@ pub(crate) async fn intercept_apply_patch(
     tracker: Option<&SharedTurnDiffTracker>,
     call_id: &str,
     tool_name: &str,
-) -> Result<Option<ToolOutput>, FunctionCallError> {
+) -> Result<Option<FunctionToolOutput>, FunctionCallError> {
     match codex_apply_patch::maybe_parse_apply_patch_verified(command, cwd) {
         codex_apply_patch::MaybeApplyPatchVerified::Body(changes) => {
             session
@@ -211,17 +291,18 @@ pub(crate) async fn intercept_apply_patch(
                     turn.as_ref(),
                 )
                 .await;
-            match apply_patch::apply_patch(turn.as_ref(), changes).await {
+            let (approval_keys, effective_additional_permissions, file_system_sandbox_policy) =
+                effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
+            match apply_patch::apply_patch(turn.as_ref(), &file_system_sandbox_policy, changes)
+                .await
+            {
                 InternalApplyPatchInvocation::Output(item) => {
                     let content = item?;
-                    Ok(Some(ToolOutput::Function {
-                        body: FunctionCallOutputBody::Text(content),
-                        success: Some(true),
-                    }))
+                    Ok(Some(FunctionToolOutput::from_text(content, Some(true))))
                 }
                 InternalApplyPatchInvocation::DelegateToExec(apply) => {
+                    let run_in_process = should_run_apply_patch_in_process(turn.as_ref(), &apply);
                     let changes = convert_apply_patch_to_protocol(&apply.action);
-                    let approval_keys = file_paths_for_action(&apply.action);
                     let emitter = ToolEmitter::apply_patch(changes.clone(), apply.auto_approved);
                     let event_ctx = ToolEventCtx::new(
                         session.as_ref(),
@@ -236,6 +317,11 @@ pub(crate) async fn intercept_apply_patch(
                         file_paths: approval_keys,
                         changes,
                         exec_approval_requirement: apply.exec_approval_requirement,
+                        sandbox_permissions: effective_additional_permissions.sandbox_permissions,
+                        additional_permissions: effective_additional_permissions
+                            .additional_permissions,
+                        permissions_preapproved: effective_additional_permissions
+                            .permissions_preapproved,
                         timeout_ms,
                         codex_exe: turn.codex_linux_sandbox_exe.clone(),
                     };
@@ -248,16 +334,22 @@ pub(crate) async fn intercept_apply_patch(
                         call_id: call_id.to_string(),
                         tool_name: tool_name.to_string(),
                     };
-                    let out = orchestrator
-                        .run(
-                            &mut runtime,
-                            &req,
-                            &tool_ctx,
-                            turn.as_ref(),
-                            turn.approval_policy.value(),
-                        )
-                        .await
-                        .map(|result| result.output);
+                    let out = if run_in_process {
+                        run_apply_patch_in_process(&req.action)
+                            .await
+                            .map_err(ToolError::Rejected)
+                    } else {
+                        orchestrator
+                            .run(
+                                &mut runtime,
+                                &req,
+                                &tool_ctx,
+                                turn.as_ref(),
+                                turn.approval_policy.value(),
+                            )
+                            .await
+                            .map(|result| result.output)
+                    };
                     let event_ctx = ToolEventCtx::new(
                         session.as_ref(),
                         turn.as_ref(),
@@ -265,10 +357,7 @@ pub(crate) async fn intercept_apply_patch(
                         tracker.as_ref().copied(),
                     );
                     let content = emitter.finish(event_ctx, out).await?;
-                    Ok(Some(ToolOutput::Function {
-                        body: FunctionCallOutputBody::Text(content),
-                        success: Some(true),
-                    }))
+                    Ok(Some(FunctionToolOutput::from_text(content, Some(true))))
                 }
             }
         }
@@ -296,6 +385,164 @@ pub(crate) fn create_apply_patch_freeform_tool() -> ToolSpec {
             syntax: "lark".to_string(),
             definition: APPLY_PATCH_LARK_GRAMMAR.to_string(),
         },
+    })
+}
+
+fn should_run_apply_patch_in_process(
+    turn: &TurnContext,
+    apply: &crate::apply_patch::ApplyPatchExec,
+) -> bool {
+    matches!(turn.sandbox_policy.get(), SandboxPolicy::DangerFullAccess)
+        && matches!(
+            apply.exec_approval_requirement,
+            ExecApprovalRequirement::Skip { .. }
+        )
+}
+
+async fn run_apply_patch_in_process(
+    action: &ApplyPatchAction,
+) -> Result<crate::exec::ExecToolCallOutput, String> {
+    let start = Instant::now();
+    let (patch, path_rewrites) = absolutize_apply_patch(action);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = match codex_apply_patch::apply_patch(&patch, &mut stdout, &mut stderr) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    };
+    let stdout = rewrite_apply_patch_output(
+        String::from_utf8_lossy(&stdout).into_owned(),
+        &path_rewrites,
+    );
+    let stderr = rewrite_apply_patch_output(
+        String::from_utf8_lossy(&stderr).into_owned(),
+        &path_rewrites,
+    );
+    let aggregated = if stderr.is_empty() {
+        stdout.clone()
+    } else if stdout.is_empty() {
+        stderr.clone()
+    } else {
+        format!("{stdout}{stderr}")
+    };
+
+    Ok(crate::exec::ExecToolCallOutput {
+        exit_code,
+        stdout: crate::exec::StreamOutput::new(stdout),
+        stderr: crate::exec::StreamOutput::new(stderr),
+        aggregated_output: crate::exec::StreamOutput::new(aggregated),
+        duration: start.elapsed(),
+        timed_out: false,
+    })
+}
+
+fn absolutize_apply_patch(action: &ApplyPatchAction) -> (String, Vec<(String, String)>) {
+    let mut rewritten_lines = Vec::new();
+    let mut path_rewrites = Vec::new();
+
+    for line in action.patch.lines() {
+        if let Some(path) = line.strip_prefix("*** Add File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Add File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Delete File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Delete File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Update File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Update File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Move to: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Move to: {}", absolute.display()));
+        } else {
+            rewritten_lines.push(line.to_string());
+        }
+    }
+
+    path_rewrites.sort_by(|left, right| right.0.len().cmp(&left.0.len()));
+    path_rewrites.dedup();
+
+    let mut rewritten = rewritten_lines.join("\n");
+    if action.patch.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    (rewritten, path_rewrites)
+}
+
+fn absolutize_patch_path(path: &str, cwd: &Path) -> PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+fn rewrite_apply_patch_output(output: String, path_rewrites: &[(String, String)]) -> String {
+    let mut rewritten = output
+        .lines()
+        .map(|line| rewrite_apply_patch_output_line(line, path_rewrites))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if output.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    rewritten
+}
+
+fn rewrite_apply_patch_output_line(line: &str, path_rewrites: &[(String, String)]) -> String {
+    [
+        "A ",
+        "M ",
+        "D ",
+        "Failed to create parent directories for ",
+        "Failed to write file ",
+        "Failed to delete file ",
+        "Failed to remove original ",
+        "Failed to read file to update ",
+        "Failed to find expected lines in ",
+    ]
+    .into_iter()
+    .find_map(|prefix| rewrite_line_path_after_prefix(line, prefix, path_rewrites))
+    .or_else(|| rewrite_context_lookup_line(line, path_rewrites))
+    .unwrap_or_else(|| line.to_string())
+}
+
+fn rewrite_line_path_after_prefix(
+    line: &str,
+    prefix: &str,
+    path_rewrites: &[(String, String)],
+) -> Option<String> {
+    let remainder = line.strip_prefix(prefix)?;
+    let (rewritten, suffix) = rewrite_path_with_optional_suffix(remainder, path_rewrites)?;
+    Some(format!("{prefix}{rewritten}{suffix}"))
+}
+
+fn rewrite_context_lookup_line(line: &str, path_rewrites: &[(String, String)]) -> Option<String> {
+    let (prefix, path) = line.rsplit_once(" in ")?;
+    if !prefix.starts_with("Failed to find context '") {
+        return None;
+    }
+    let rewritten = rewrite_exact_path(path, path_rewrites)?;
+    Some(format!("{prefix} in {rewritten}"))
+}
+
+fn rewrite_exact_path<'a>(path: &'a str, path_rewrites: &'a [(String, String)]) -> Option<&'a str> {
+    path_rewrites
+        .iter()
+        .find_map(|(absolute, original)| (path == absolute).then_some(original.as_str()))
+}
+
+fn rewrite_path_with_optional_suffix<'a>(
+    path: &'a str,
+    path_rewrites: &'a [(String, String)],
+) -> Option<(&'a str, &'a str)> {
+    path_rewrites.iter().find_map(|(absolute, original)| {
+        let suffix = path.strip_prefix(absolute)?;
+        (suffix.is_empty() || suffix.starts_with(':')).then_some((original.as_str(), suffix))
     })
 }
 
@@ -379,44 +626,18 @@ It is important to remember:
 - You must prefix new lines with `+` even when creating a new file
 - File references can only be relative, NEVER ABSOLUTE.
 "#
-            .to_string(),
+        .to_string(),
         strict: false,
+        defer_loading: None,
         parameters: JsonSchema::Object {
             properties,
             required: Some(vec!["input".to_string()]),
             additional_properties: Some(false.into()),
         },
+        output_schema: None,
     })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use codex_apply_patch::MaybeApplyPatchVerified;
-    use pretty_assertions::assert_eq;
-    use tempfile::TempDir;
-
-    #[test]
-    fn approval_keys_include_move_destination() {
-        let tmp = TempDir::new().expect("tmp");
-        let cwd = tmp.path();
-        std::fs::create_dir_all(cwd.join("old")).expect("create old dir");
-        std::fs::create_dir_all(cwd.join("renamed/dir")).expect("create dest dir");
-        std::fs::write(cwd.join("old/name.txt"), "old content\n").expect("write old file");
-        let patch = r#"*** Begin Patch
-*** Update File: old/name.txt
-*** Move to: renamed/dir/name.txt
-@@
--old content
-+new content
-*** End Patch"#;
-        let argv = vec!["apply_patch".to_string(), patch.to_string()];
-        let action = match codex_apply_patch::maybe_parse_apply_patch_verified(&argv, cwd) {
-            MaybeApplyPatchVerified::Body(action) => action,
-            other => panic!("expected patch body, got: {other:?}"),
-        };
-
-        let keys = file_paths_for_action(&action);
-        assert_eq!(keys.len(), 2);
-    }
-}
+#[path = "apply_patch_tests.rs"]
+mod tests;

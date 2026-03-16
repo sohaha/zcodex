@@ -12,15 +12,23 @@
 //! 4. Approve only low- and medium-risk actions (`risk_score < 80`).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use codex_protocol::approvals::NetworkApprovalProtocol;
+use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::GuardianAssessmentEvent;
+use codex_protocol::protocol::GuardianAssessmentStatus;
+use codex_protocol::protocol::GuardianRiskLevel;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
@@ -66,17 +74,28 @@ const GUARDIAN_RECENT_ENTRY_LIMIT: usize = 40;
 const GUARDIAN_TRUNCATION_TAG: &str = "guardian_truncated";
 
 pub(crate) const GUARDIAN_REJECTION_MESSAGE: &str = concat!(
-    "Guardian rejected this action due to unacceptable risk. ",
+    "This action was rejected due to unacceptable risk. ",
     "The agent must not attempt to achieve the same outcome via workaround, ",
     "indirect execution, or policy circumvention. ",
-    "Proceed only with a materially safer alternative, or stop and request user input.",
+    "Proceed only with a materially safer alternative, ",
+    "or if the user explicitly approves the action after being informed of the risk. ",
+    "Otherwise, stop and request user input.",
 );
 
+fn guardian_risk_level_str(level: GuardianRiskLevel) -> &'static str {
+    match level {
+        GuardianRiskLevel::Low => "low",
+        GuardianRiskLevel::Medium => "medium",
+        GuardianRiskLevel::High => "high",
+    }
+}
+
 /// Whether this turn should route `on-request` approval prompts through the
-/// guardian reviewer instead of surfacing them to the user.
+/// guardian reviewer instead of surfacing them to the user. ARC may still
+/// block actions earlier in the flow.
 pub(crate) fn routes_approval_to_guardian(turn: &TurnContext) -> bool {
     turn.approval_policy.value() == AskForApproval::OnRequest
-        && turn.features.enabled(Feature::GuardianApproval)
+        && turn.config.approvals_reviewer == ApprovalsReviewer::GuardianSubagent
 }
 
 pub(crate) fn is_guardian_subagent_source(
@@ -87,21 +106,6 @@ pub(crate) fn is_guardian_subagent_source(
         codex_protocol::protocol::SessionSource::SubAgent(SubAgentSource::Other(name))
             if name == GUARDIAN_SUBAGENT_NAME
     )
-}
-
-/// Canonical description of the action the guardian is being asked to review.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct GuardianReviewRequest {
-    pub(crate) action: Value,
-}
-
-/// Coarse risk label paired with the numeric `risk_score`.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub(crate) enum GuardianRiskLevel {
-    Low,
-    Medium,
-    High,
 }
 
 /// Evidence item returned by the guardian subagent.
@@ -118,6 +122,73 @@ pub(crate) struct GuardianAssessment {
     risk_score: u8,
     rationale: String,
     evidence: Vec<GuardianEvidence>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum GuardianApprovalRequest {
+    Shell {
+        id: String,
+        command: Vec<String>,
+        cwd: PathBuf,
+        sandbox_permissions: crate::sandboxing::SandboxPermissions,
+        additional_permissions: Option<PermissionProfile>,
+        justification: Option<String>,
+    },
+    ExecCommand {
+        id: String,
+        command: Vec<String>,
+        cwd: PathBuf,
+        sandbox_permissions: crate::sandboxing::SandboxPermissions,
+        additional_permissions: Option<PermissionProfile>,
+        justification: Option<String>,
+        tty: bool,
+    },
+    #[cfg(unix)]
+    Execve {
+        id: String,
+        tool_name: String,
+        program: String,
+        argv: Vec<String>,
+        cwd: PathBuf,
+        additional_permissions: Option<PermissionProfile>,
+    },
+    ApplyPatch {
+        id: String,
+        cwd: PathBuf,
+        files: Vec<AbsolutePathBuf>,
+        change_count: usize,
+        patch: String,
+    },
+    NetworkAccess {
+        id: String,
+        turn_id: String,
+        target: String,
+        host: String,
+        protocol: NetworkApprovalProtocol,
+        port: u16,
+    },
+    McpToolCall {
+        id: String,
+        server: String,
+        tool_name: String,
+        arguments: Option<Value>,
+        connector_id: Option<String>,
+        connector_name: Option<String>,
+        connector_description: Option<String>,
+        tool_title: Option<String>,
+        tool_description: Option<String>,
+        annotations: Option<GuardianMcpAnnotations>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct GuardianMcpAnnotations {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) destructive_hint: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) open_world_hint: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) read_only_hint: Option<bool>,
 }
 
 /// Transcript entry retained for guardian review after filtering.
@@ -164,51 +235,97 @@ impl GuardianTranscriptEntryKind {
 async fn run_guardian_review(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
-    request: GuardianReviewRequest,
+    request: GuardianApprovalRequest,
     retry_reason: Option<String>,
+    external_cancel: Option<CancellationToken>,
 ) -> ReviewDecision {
+    let assessment_id = guardian_request_id(&request).to_string();
+    let assessment_turn_id = guardian_request_turn_id(&request, &turn.sub_id).to_string();
+    let action_summary = guardian_assessment_action_value(&request);
     session
-        .notify_background_event(
+        .send_event(
             turn.as_ref(),
-            "Guardian assessing approval request...".to_string(),
+            EventMsg::GuardianAssessment(GuardianAssessmentEvent {
+                id: assessment_id.clone(),
+                turn_id: assessment_turn_id.clone(),
+                status: GuardianAssessmentStatus::InProgress,
+                risk_score: None,
+                risk_level: None,
+                rationale: None,
+                action: Some(action_summary.clone()),
+            }),
         )
         .await;
 
+    let terminal_action = action_summary.clone();
     let prompt_items = build_guardian_prompt_items(session.as_ref(), retry_reason, request).await;
     let schema = guardian_output_schema();
     let cancel_token = CancellationToken::new();
-    let review = tokio::select! {
+    enum GuardianReviewOutcome {
+        Completed(anyhow::Result<GuardianAssessment>),
+        TimedOut,
+        Aborted,
+    }
+    let outcome = tokio::select! {
         review = run_guardian_subagent(
             session.clone(),
             turn.clone(),
             prompt_items,
             schema,
             cancel_token.clone(),
-        ) => Some(review),
+        ) => GuardianReviewOutcome::Completed(review),
         _ = tokio::time::sleep(GUARDIAN_REVIEW_TIMEOUT) => {
             // Cancel the delegate token before failing closed so the one-shot
             // subagent tears down its background streams instead of lingering
             // after the caller has already timed out.
             cancel_token.cancel();
-            None
-        }
+            GuardianReviewOutcome::TimedOut
+        },
+        _ = async {
+            if let Some(external_cancel) = external_cancel.as_ref() {
+                external_cancel.cancelled().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => {
+            cancel_token.cancel();
+            GuardianReviewOutcome::Aborted
+        },
     };
 
-    let assessment = match review {
-        Some(Ok(assessment)) => assessment,
-        Some(Err(err)) => GuardianAssessment {
+    let assessment = match outcome {
+        GuardianReviewOutcome::Completed(Ok(assessment)) => assessment,
+        GuardianReviewOutcome::Completed(Err(err)) => GuardianAssessment {
             risk_level: GuardianRiskLevel::High,
             risk_score: 100,
-            rationale: format!("Guardian review failed: {err}"),
+            rationale: format!("Automatic approval review failed: {err}"),
             evidence: vec![],
         },
-        None => GuardianAssessment {
+        GuardianReviewOutcome::TimedOut => GuardianAssessment {
             risk_level: GuardianRiskLevel::High,
             risk_score: 100,
-            rationale: "Guardian review timed out while evaluating the requested approval."
-                .to_string(),
+            rationale:
+                "Automatic approval review timed out while evaluating the requested approval."
+                    .to_string(),
             evidence: vec![],
         },
+        GuardianReviewOutcome::Aborted => {
+            session
+                .send_event(
+                    turn.as_ref(),
+                    EventMsg::GuardianAssessment(GuardianAssessmentEvent {
+                        id: assessment_id,
+                        turn_id: assessment_turn_id,
+                        status: GuardianAssessmentStatus::Aborted,
+                        risk_score: None,
+                        risk_level: None,
+                        rationale: None,
+                        action: Some(action_summary),
+                    }),
+                )
+                .await;
+            return ReviewDecision::Abort;
+        }
     };
 
     let approved = assessment.risk_score < GUARDIAN_APPROVAL_RISK_THRESHOLD;
@@ -216,15 +333,33 @@ async fn run_guardian_review(
     // Emit a concise warning so the parent turn has an auditable summary of the
     // guardian decision without needing the full subagent transcript.
     let warning = format!(
-        "Guardian {verdict} approval request ({}/100, {}): {}",
-        assessment.risk_score,
-        assessment.risk_level.as_str(),
+        "Automatic approval review {verdict} (risk: {}): {}",
+        guardian_risk_level_str(assessment.risk_level),
         assessment.rationale
     );
     session
         .send_event(
             turn.as_ref(),
             EventMsg::Warning(WarningEvent { message: warning }),
+        )
+        .await;
+    let status = if approved {
+        GuardianAssessmentStatus::Approved
+    } else {
+        GuardianAssessmentStatus::Denied
+    };
+    session
+        .send_event(
+            turn.as_ref(),
+            EventMsg::GuardianAssessment(GuardianAssessmentEvent {
+                id: assessment_id,
+                turn_id: assessment_turn_id,
+                status,
+                risk_score: Some(assessment.risk_score),
+                risk_level: Some(assessment.risk_level),
+                rationale: Some(assessment.rationale.clone()),
+                action: Some(terminal_action),
+            }),
         )
         .await;
 
@@ -239,10 +374,34 @@ async fn run_guardian_review(
 pub(crate) async fn review_approval_request(
     session: &Arc<Session>,
     turn: &Arc<TurnContext>,
-    request: GuardianReviewRequest,
+    request: GuardianApprovalRequest,
     retry_reason: Option<String>,
 ) -> ReviewDecision {
-    run_guardian_review(Arc::clone(session), Arc::clone(turn), request, retry_reason).await
+    run_guardian_review(
+        Arc::clone(session),
+        Arc::clone(turn),
+        request,
+        retry_reason,
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn review_approval_request_with_cancel(
+    session: &Arc<Session>,
+    turn: &Arc<TurnContext>,
+    request: GuardianApprovalRequest,
+    retry_reason: Option<String>,
+    cancel_token: CancellationToken,
+) -> ReviewDecision {
+    run_guardian_review(
+        Arc::clone(session),
+        Arc::clone(turn),
+        request,
+        retry_reason,
+        Some(cancel_token),
+    )
+    .await
 }
 
 /// Builds the guardian user content items from:
@@ -256,11 +415,11 @@ pub(crate) async fn review_approval_request(
 async fn build_guardian_prompt_items(
     session: &Session,
     retry_reason: Option<String>,
-    request: GuardianReviewRequest,
+    request: GuardianApprovalRequest,
 ) -> Vec<UserInput> {
     let history = session.clone_history().await;
     let transcript_entries = collect_guardian_transcript_entries(history.raw_items());
-    let planned_action_json = format_guardian_action_pretty(&request.action);
+    let planned_action_json = format_guardian_action_pretty(&request);
 
     let (transcript_entries, omission_note) =
         render_guardian_transcript_entries(transcript_entries.as_slice());
@@ -400,6 +559,13 @@ fn render_guardian_transcript_entries(
 fn collect_guardian_transcript_entries(items: &[ResponseItem]) -> Vec<GuardianTranscriptEntry> {
     let mut entries = Vec::new();
     let mut tool_names_by_call_id = HashMap::new();
+    let non_empty_entry = |kind, text: String| {
+        (!text.trim().is_empty()).then_some(GuardianTranscriptEntry { kind, text })
+    };
+    let content_entry =
+        |kind, content| content_items_to_text(content).and_then(|text| non_empty_entry(kind, text));
+    let serialized_entry =
+        |kind, serialized: Option<String>| serialized.and_then(|text| non_empty_entry(kind, text));
 
     for item in items {
         let entry = match item {
@@ -407,25 +573,16 @@ fn collect_guardian_transcript_entries(items: &[ResponseItem]) -> Vec<GuardianTr
                 if is_contextual_user_message_content(content) {
                     None
                 } else {
-                    content_items_to_text(content).map(|text| GuardianTranscriptEntry {
-                        kind: GuardianTranscriptEntryKind::User,
-                        text,
-                    })
+                    content_entry(GuardianTranscriptEntryKind::User, content)
                 }
             }
             ResponseItem::Message { role, content, .. } if role == "assistant" => {
-                content_items_to_text(content).map(|text| GuardianTranscriptEntry {
-                    kind: GuardianTranscriptEntryKind::Assistant,
-                    text,
-                })
+                content_entry(GuardianTranscriptEntryKind::Assistant, content)
             }
-            ResponseItem::LocalShellCall { action, .. } => serde_json::to_string(action)
-                .ok()
-                .filter(|text| !text.trim().is_empty())
-                .map(|text| GuardianTranscriptEntry {
-                    kind: GuardianTranscriptEntryKind::Tool("tool shell call".to_string()),
-                    text,
-                }),
+            ResponseItem::LocalShellCall { action, .. } => serialized_entry(
+                GuardianTranscriptEntryKind::Tool("tool shell call".to_string()),
+                serde_json::to_string(action).ok(),
+            ),
             ResponseItem::FunctionCall {
                 call_id,
                 name,
@@ -450,28 +607,26 @@ fn collect_guardian_transcript_entries(items: &[ResponseItem]) -> Vec<GuardianTr
                     text: input.clone(),
                 })
             }
-            ResponseItem::WebSearchCall { action, .. } => action
-                .as_ref()
-                .and_then(|action| serde_json::to_string(action).ok())
-                .filter(|text| !text.trim().is_empty())
-                .map(|text| GuardianTranscriptEntry {
-                    kind: GuardianTranscriptEntryKind::Tool("tool web_search call".to_string()),
-                    text,
-                }),
+            ResponseItem::WebSearchCall { action, .. } => action.as_ref().and_then(|action| {
+                serialized_entry(
+                    GuardianTranscriptEntryKind::Tool("tool web_search call".to_string()),
+                    serde_json::to_string(action).ok(),
+                )
+            }),
             ResponseItem::FunctionCallOutput { call_id, output }
-            | ResponseItem::CustomToolCallOutput { call_id, output } => output
-                .body
-                .to_text()
-                .filter(|text| !text.trim().is_empty())
-                .map(|text| GuardianTranscriptEntry {
-                    kind: GuardianTranscriptEntryKind::Tool(
-                        tool_names_by_call_id.get(call_id).map_or_else(
-                            || "tool result".to_string(),
-                            |name| format!("tool {name} result"),
+            | ResponseItem::CustomToolCallOutput { call_id, output } => {
+                output.body.to_text().and_then(|text| {
+                    non_empty_entry(
+                        GuardianTranscriptEntryKind::Tool(
+                            tool_names_by_call_id.get(call_id).map_or_else(
+                                || "tool result".to_string(),
+                                |name| format!("tool {name} result"),
+                            ),
                         ),
-                    ),
-                    text,
-                }),
+                        text,
+                    )
+                })
+            }
             _ => None,
         };
 
@@ -506,6 +661,13 @@ async fn run_guardian_subagent(
         .models_manager
         .list_models(crate::models_manager::manager::RefreshStrategy::Offline)
         .await;
+    let preferred_reasoning_effort = |supports_low: bool, fallback| {
+        if supports_low {
+            Some(codex_protocol::openai_models::ReasoningEffort::Low)
+        } else {
+            fallback
+        }
+    };
     // Prefer `GUARDIAN_PREFERRED_MODEL` when the active provider exposes it,
     // but fall back to the parent turn's active model so guardian does not
     // become a blanket deny on providers or test environments that do not
@@ -514,28 +676,23 @@ async fn run_guardian_subagent(
         .iter()
         .find(|preset| preset.model == GUARDIAN_PREFERRED_MODEL);
     let (guardian_model, guardian_reasoning_effort) = if let Some(preset) = preferred_model {
-        let reasoning_effort = if preset
-            .supported_reasoning_efforts
-            .iter()
-            .any(|effort| effort.effort == codex_protocol::openai_models::ReasoningEffort::Low)
-        {
-            Some(codex_protocol::openai_models::ReasoningEffort::Low)
-        } else {
-            Some(preset.default_reasoning_effort)
-        };
+        let reasoning_effort = preferred_reasoning_effort(
+            preset
+                .supported_reasoning_efforts
+                .iter()
+                .any(|effort| effort.effort == codex_protocol::openai_models::ReasoningEffort::Low),
+            Some(preset.default_reasoning_effort),
+        );
         (GUARDIAN_PREFERRED_MODEL.to_string(), reasoning_effort)
     } else {
-        let reasoning_effort = if turn
-            .model_info
-            .supported_reasoning_levels
-            .iter()
-            .any(|preset| preset.effort == codex_protocol::openai_models::ReasoningEffort::Low)
-        {
-            Some(codex_protocol::openai_models::ReasoningEffort::Low)
-        } else {
+        let reasoning_effort = preferred_reasoning_effort(
+            turn.model_info
+                .supported_reasoning_levels
+                .iter()
+                .any(|preset| preset.effort == codex_protocol::openai_models::ReasoningEffort::Low),
             turn.reasoning_effort
-                .or(turn.model_info.default_reasoning_level)
-        };
+                .or(turn.model_info.default_reasoning_level),
+        );
         (turn.model_info.slug.clone(), reasoning_effort)
     };
     let guardian_config = build_guardian_subagent_config(
@@ -632,6 +789,7 @@ fn build_guardian_subagent_config(
         )?);
     }
     for feature in [
+        Feature::SpawnCsv,
         Feature::Collab,
         Feature::WebSearchRequest,
         Feature::WebSearchCached,
@@ -664,19 +822,261 @@ fn truncate_guardian_action_value(value: Value) -> Value {
                 .map(truncate_guardian_action_value)
                 .collect::<Vec<_>>(),
         ),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, truncate_guardian_action_value(value)))
-                .collect(),
-        ),
+        Value::Object(values) => {
+            let mut entries = values.into_iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, truncate_guardian_action_value(value)))
+                    .collect(),
+            )
+        }
         other => other,
     }
 }
 
-fn format_guardian_action_pretty(action: &Value) -> String {
-    serde_json::to_string_pretty(&truncate_guardian_action_value(action.clone()))
-        .unwrap_or_else(|_| "null".to_string())
+pub(crate) fn guardian_approval_request_to_json(action: &GuardianApprovalRequest) -> Value {
+    match action {
+        GuardianApprovalRequest::Shell {
+            id: _,
+            command,
+            cwd,
+            sandbox_permissions,
+            additional_permissions,
+            justification,
+        } => {
+            let mut action = serde_json::json!({
+                "tool": "shell",
+                "command": command,
+                "cwd": cwd,
+                "sandbox_permissions": sandbox_permissions,
+                "additional_permissions": additional_permissions,
+                "justification": justification,
+            });
+            if let Some(action) = action.as_object_mut() {
+                if additional_permissions.is_none() {
+                    action.remove("additional_permissions");
+                }
+                if justification.is_none() {
+                    action.remove("justification");
+                }
+            }
+            action
+        }
+        GuardianApprovalRequest::ExecCommand {
+            id: _,
+            command,
+            cwd,
+            sandbox_permissions,
+            additional_permissions,
+            justification,
+            tty,
+        } => {
+            let mut action = serde_json::json!({
+                "tool": "exec_command",
+                "command": command,
+                "cwd": cwd,
+                "sandbox_permissions": sandbox_permissions,
+                "additional_permissions": additional_permissions,
+                "justification": justification,
+                "tty": tty,
+            });
+            if let Some(action) = action.as_object_mut() {
+                if additional_permissions.is_none() {
+                    action.remove("additional_permissions");
+                }
+                if justification.is_none() {
+                    action.remove("justification");
+                }
+            }
+            action
+        }
+        #[cfg(unix)]
+        GuardianApprovalRequest::Execve {
+            id: _,
+            tool_name,
+            program,
+            argv,
+            cwd,
+            additional_permissions,
+        } => {
+            let mut action = serde_json::json!({
+                "tool": tool_name,
+                "program": program,
+                "argv": argv,
+                "cwd": cwd,
+                "additional_permissions": additional_permissions,
+            });
+            if let Some(action) = action.as_object_mut()
+                && additional_permissions.is_none()
+            {
+                action.remove("additional_permissions");
+            }
+            action
+        }
+        GuardianApprovalRequest::ApplyPatch {
+            id: _,
+            cwd,
+            files,
+            change_count,
+            patch,
+        } => serde_json::json!({
+            "tool": "apply_patch",
+            "cwd": cwd,
+            "files": files,
+            "change_count": change_count,
+            "patch": patch,
+        }),
+        GuardianApprovalRequest::NetworkAccess {
+            id: _,
+            turn_id: _,
+            target,
+            host,
+            protocol,
+            port,
+        } => serde_json::json!({
+            "tool": "network_access",
+            "target": target,
+            "host": host,
+            "protocol": protocol,
+            "port": port,
+        }),
+        GuardianApprovalRequest::McpToolCall {
+            id: _,
+            server,
+            tool_name,
+            arguments,
+            connector_id,
+            connector_name,
+            connector_description,
+            tool_title,
+            tool_description,
+            annotations,
+        } => {
+            let mut action = serde_json::json!({
+                "tool": "mcp_tool_call",
+                "server": server,
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "connector_id": connector_id,
+                "connector_name": connector_name,
+                "connector_description": connector_description,
+                "tool_title": tool_title,
+                "tool_description": tool_description,
+                "annotations": annotations,
+            });
+            if let Some(action) = action.as_object_mut() {
+                for key in [
+                    ("arguments", arguments.is_none()),
+                    ("connector_id", connector_id.is_none()),
+                    ("connector_name", connector_name.is_none()),
+                    ("connector_description", connector_description.is_none()),
+                    ("tool_title", tool_title.is_none()),
+                    ("tool_description", tool_description.is_none()),
+                    ("annotations", annotations.is_none()),
+                ] {
+                    if key.1 {
+                        action.remove(key.0);
+                    }
+                }
+            }
+            action
+        }
+    }
+}
+
+fn guardian_assessment_action_value(action: &GuardianApprovalRequest) -> Value {
+    match action {
+        GuardianApprovalRequest::Shell { command, cwd, .. } => serde_json::json!({
+            "tool": "shell",
+            "command": codex_shell_command::parse_command::shlex_join(command),
+            "cwd": cwd,
+        }),
+        GuardianApprovalRequest::ExecCommand { command, cwd, .. } => serde_json::json!({
+            "tool": "exec_command",
+            "command": codex_shell_command::parse_command::shlex_join(command),
+            "cwd": cwd,
+        }),
+        #[cfg(unix)]
+        GuardianApprovalRequest::Execve {
+            tool_name,
+            program,
+            argv,
+            cwd,
+            ..
+        } => serde_json::json!({
+            "tool": tool_name,
+            "program": program,
+            "argv": argv,
+            "cwd": cwd,
+        }),
+        GuardianApprovalRequest::ApplyPatch {
+            cwd,
+            files,
+            change_count,
+            ..
+        } => serde_json::json!({
+            "tool": "apply_patch",
+            "cwd": cwd,
+            "files": files,
+            "change_count": change_count,
+        }),
+        GuardianApprovalRequest::NetworkAccess {
+            id: _,
+            turn_id: _,
+            target,
+            host,
+            protocol,
+            port,
+        } => serde_json::json!({
+            "tool": "network_access",
+            "target": target,
+            "host": host,
+            "protocol": protocol,
+            "port": port,
+        }),
+        GuardianApprovalRequest::McpToolCall {
+            server, tool_name, ..
+        } => serde_json::json!({
+            "tool": "mcp_tool_call",
+            "server": server,
+            "tool_name": tool_name,
+        }),
+    }
+}
+
+fn guardian_request_id(request: &GuardianApprovalRequest) -> &str {
+    match request {
+        GuardianApprovalRequest::Shell { id, .. }
+        | GuardianApprovalRequest::ExecCommand { id, .. }
+        | GuardianApprovalRequest::ApplyPatch { id, .. }
+        | GuardianApprovalRequest::NetworkAccess { id, .. }
+        | GuardianApprovalRequest::McpToolCall { id, .. } => id,
+        #[cfg(unix)]
+        GuardianApprovalRequest::Execve { id, .. } => id,
+    }
+}
+
+fn guardian_request_turn_id<'a>(
+    request: &'a GuardianApprovalRequest,
+    default_turn_id: &'a str,
+) -> &'a str {
+    match request {
+        GuardianApprovalRequest::NetworkAccess { turn_id, .. } => turn_id,
+        GuardianApprovalRequest::Shell { .. }
+        | GuardianApprovalRequest::ExecCommand { .. }
+        | GuardianApprovalRequest::ApplyPatch { .. }
+        | GuardianApprovalRequest::McpToolCall { .. } => default_turn_id,
+        #[cfg(unix)]
+        GuardianApprovalRequest::Execve { .. } => default_turn_id,
+    }
+}
+
+fn format_guardian_action_pretty(action: &GuardianApprovalRequest) -> String {
+    let mut value = guardian_approval_request_to_json(action);
+    value = truncate_guardian_action_value(value);
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".to_string())
 }
 
 fn guardian_truncate_text(content: &str, token_cap: usize) -> String {
@@ -821,16 +1221,6 @@ fn guardian_output_contract_prompt() -> &'static str {
 fn guardian_policy_prompt() -> String {
     let prompt = include_str!("guardian_prompt.md").trim_end();
     format!("{prompt}\n\n{}\n", guardian_output_contract_prompt())
-}
-
-impl GuardianRiskLevel {
-    fn as_str(self) -> &'static str {
-        match self {
-            GuardianRiskLevel::Low => "low",
-            GuardianRiskLevel::Medium => "medium",
-            GuardianRiskLevel::High => "high",
-        }
-    }
 }
 
 #[cfg(test)]
