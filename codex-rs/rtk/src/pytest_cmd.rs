@@ -1,8 +1,9 @@
 use crate::tracking;
+use crate::utils::resolved_command;
+use crate::utils::tool_exists;
 use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
-use std::process::Command;
 
 #[derive(Debug, PartialEq)]
 enum ParseState {
@@ -16,11 +17,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     // Try to detect pytest command (could be "pytest", "python -m pytest", etc.)
-    let mut cmd = if which_command("pytest").is_some() {
-        Command::new("pytest")
+    let mut cmd = if tool_exists("pytest") {
+        resolved_command("pytest")
     } else {
         // Fallback to python -m pytest
-        let mut c = Command::new("python");
+        let mut c = resolved_command("python");
         c.arg("-m").arg("pytest");
         c
     };
@@ -50,7 +51,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     let filtered = filter_pytest_output(&stdout);
 
@@ -59,9 +60,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .code()
         .unwrap_or(if output.status.success() { 0 } else { 1 });
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "pytest", exit_code) {
-        println!("{filtered}\n{hint}");
+        println!("{}\n{}", filtered, hint);
     } else {
-        println!("{filtered}");
+        println!("{}", filtered);
     }
 
     // Include stderr if present (import errors, etc.)
@@ -82,18 +83,6 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Check if a command exists in PATH
-fn which_command(cmd: &str) -> Option<String> {
-    Command::new("which")
-        .arg(cmd)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
 }
 
 /// Parse pytest output using state machine
@@ -181,7 +170,7 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     let (passed, failed, skipped) = parse_summary_line(summary);
 
     if failed == 0 && passed > 0 {
-        return format!("✓ Pytest: {passed} passed");
+        return format!("✓ Pytest: {} passed", passed);
     }
 
     if passed == 0 && failed == 0 {
@@ -189,9 +178,9 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Pytest: {passed} passed, {failed} failed"));
+    result.push_str(&format!("Pytest: {} passed, {} failed", passed, failed));
     if skipped > 0 {
-        result.push_str(&format!(", {skipped} skipped"));
+        result.push_str(&format!(", {} skipped", skipped));
     }
     result.push('\n');
     result.push_str("═══════════════════════════════════════\n");
@@ -275,10 +264,10 @@ fn parse_summary_line(summary: &str) -> (usize, usize, usize) {
                     if let Ok(n) = words[i - 1].parse::<usize>() {
                         failed = n;
                     }
-                } else if word.contains("skipped")
-                    && let Ok(n) = words[i - 1].parse::<usize>()
-                {
-                    skipped = n;
+                } else if word.contains("skipped") {
+                    if let Ok(n) = words[i - 1].parse::<usize>() {
+                        skipped = n;
+                    }
                 }
             }
         }

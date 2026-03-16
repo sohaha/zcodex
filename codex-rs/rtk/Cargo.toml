@@ -24,3 +24,4 @@ serde_json = { workspace = true, features = ["preserve_order"] }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 walkdir = { workspace = true }
+which = { workspace = true }

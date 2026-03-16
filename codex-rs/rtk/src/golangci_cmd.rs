@@ -1,21 +1,27 @@
 use crate::tracking;
+use crate::utils::resolved_command;
 use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 struct Position {
     #[serde(rename = "Filename")]
     filename: String,
+    #[serde(rename = "Line")]
+    line: usize,
+    #[serde(rename = "Column")]
+    column: usize,
 }
 
 #[derive(Debug, Deserialize)]
 struct Issue {
     #[serde(rename = "FromLinter")]
     from_linter: String,
+    #[serde(rename = "Text")]
+    text: String,
     #[serde(rename = "Pos")]
     pos: Position,
 }
@@ -29,7 +35,7 @@ struct GolangciOutput {
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("golangci-lint");
+    let mut cmd = resolved_command("golangci-lint");
 
     // Force JSON output
     let has_format = args
@@ -56,11 +62,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     let filtered = filter_golangci_json(&stdout);
 
-    println!("{filtered}");
+    println!("{}", filtered);
 
     // Include stderr if present (config errors, etc.)
     if !stderr.trim().is_empty() && verbose > 0 {
@@ -74,9 +80,21 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // golangci-lint returns exit code 1 when issues found (expected behavior)
-    // Don't exit with error code in that case
-    Ok(())
+    // golangci-lint: exit 0 = clean, exit 1 = lint issues, exit 2+ = config/build error
+    // None = killed by signal (OOM, SIGKILL) — always fatal
+    match output.status.code() {
+        Some(0) | Some(1) => Ok(()),
+        Some(code) => {
+            if !stderr.trim().is_empty() {
+                eprintln!("{}", stderr.trim());
+            }
+            std::process::exit(code);
+        }
+        None => {
+            eprintln!("golangci-lint: killed by signal");
+            std::process::exit(130);
+        }
+    }
 }
 
 /// Filter golangci-lint JSON output - group by linter and file
@@ -126,7 +144,8 @@ fn filter_golangci_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "golangci-lint: {total_issues} issues in {total_files} files\n"
+        "golangci-lint: {} issues in {} files\n",
+        total_issues, total_files
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -137,7 +156,7 @@ fn filter_golangci_json(output: &str) -> String {
     if !linter_counts.is_empty() {
         result.push_str("Top linters:\n");
         for (linter, count) in linter_counts.iter().take(10) {
-            result.push_str(&format!("  {linter} ({count}x)\n"));
+            result.push_str(&format!("  {} ({}x)\n", linter, count));
         }
         result.push('\n');
     }
@@ -146,7 +165,7 @@ fn filter_golangci_json(output: &str) -> String {
     result.push_str("Top files:\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
-        result.push_str(&format!("  {short_path} ({count} issues)\n"));
+        result.push_str(&format!("  {} ({} issues)\n", short_path, count));
 
         // Show top 3 linters in this file
         let mut file_linters: HashMap<String, usize> = HashMap::new();
@@ -158,7 +177,7 @@ fn filter_golangci_json(output: &str) -> String {
         file_linter_counts.sort_by(|a, b| b.1.cmp(a.1));
 
         for (linter, count) in file_linter_counts.iter().take(3) {
-            result.push_str(&format!("    {linter} ({count})\n"));
+            result.push_str(&format!("    {} ({})\n", linter, count));
         }
     }
 

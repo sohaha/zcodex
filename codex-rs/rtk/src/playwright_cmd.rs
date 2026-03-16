@@ -1,5 +1,6 @@
 use crate::tracking;
 use crate::utils::detect_package_manager;
+use crate::utils::resolved_command;
 use crate::utils::strip_ansi;
 use anyhow::Context;
 use anyhow::Result;
@@ -253,17 +254,17 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let pm = detect_package_manager();
     let mut cmd = match pm {
         "pnpm" => {
-            let mut c = std::process::Command::new("pnpm");
+            let mut c = resolved_command("pnpm");
             c.arg("exec").arg("--").arg("playwright");
             c
         }
         "yarn" => {
-            let mut c = std::process::Command::new("yarn");
+            let mut c = resolved_command("yarn");
             c.arg("exec").arg("--").arg("playwright");
             c
         }
         _ => {
-            let mut c = std::process::Command::new("npx");
+            let mut c = resolved_command("npx");
             c.arg("--no-install").arg("--").arg("playwright");
             c
         }
@@ -296,7 +297,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
 
     // Parse output using PlaywrightParser
     let parse_result = PlaywrightParser::parse(&stdout);
@@ -321,7 +322,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
     };
 
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         &format!("playwright {}", args.join(" ")),

@@ -806,7 +806,7 @@ fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
     let raw_command = rendered_args.join(" ");
     let timer = tracking::TimedExecution::start();
 
-    let status = std::process::Command::new(&args[0])
+    let status = utils::resolved_command(&rendered_args[0])
         .args(&args[1..])
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
@@ -1387,7 +1387,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                             _ => {
                                 // Passthrough other prisma subcommands
                                 let timer = tracking::TimedExecution::start();
-                                let mut cmd = std::process::Command::new("npx");
+                                let mut cmd = utils::resolved_command("npx");
                                 for arg in &args {
                                     cmd.arg(arg);
                                 }
@@ -1404,7 +1404,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         }
                     } else {
                         let timer = tracking::TimedExecution::start();
-                        let status = std::process::Command::new("npx")
+                        let status = utils::resolved_command("npx")
                             .arg("prisma")
                             .status()
                             .context("Failed to run npx prisma")?;

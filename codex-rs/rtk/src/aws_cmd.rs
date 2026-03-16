@@ -6,11 +6,11 @@
 use crate::json_cmd;
 use crate::tracking;
 use crate::utils::join_with_overflow;
+use crate::utils::resolved_command;
 use crate::utils::truncate_iso_date;
 use anyhow::Context;
 use anyhow::Result;
 use serde_json::Value;
-use std::process::Command;
 
 const MAX_ITEMS: usize = 20;
 const JSON_COMPRESS_DEPTH: usize = 4;
@@ -56,7 +56,7 @@ pub fn run(subcommand: &str, args: &[String], verbose: u8) -> Result<()> {
 /// Mutating/transfer operations (s3 cp, s3 sync, s3 mb, etc.) emit plain text progress
 /// and do not accept --output json, so we must not inject it for them.
 fn is_structured_operation(args: &[String]) -> bool {
-    let op = args.first().map(std::string::String::as_str).unwrap_or("");
+    let op = args.first().map(|s| s.as_str()).unwrap_or("");
     op.starts_with("describe-") || op.starts_with("list-") || op.starts_with("get-")
 }
 
@@ -64,7 +64,7 @@ fn is_structured_operation(args: &[String]) -> bool {
 fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("aws");
+    let mut cmd = resolved_command("aws");
     cmd.arg(subcommand);
 
     let mut has_output_flag = false;
@@ -83,7 +83,7 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
     }
 
     if verbose > 0 {
-        eprintln!("Running: aws {full_sub}");
+        eprintln!("Running: aws {}", full_sub);
     }
 
     let output = cmd.output().context("Failed to run aws CLI")?;
@@ -92,8 +92,8 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
 
     if !output.status.success() {
         timer.track(
-            &format!("aws {full_sub}"),
-            &format!("rtk aws {full_sub}"),
+            &format!("aws {}", full_sub),
+            &format!("rtk aws {}", full_sub),
             &stderr,
             &stderr,
         );
@@ -103,19 +103,19 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
 
     let filtered = match json_cmd::filter_json_string(&raw, JSON_COMPRESS_DEPTH) {
         Ok(schema) => {
-            println!("{schema}");
+            println!("{}", schema);
             schema
         }
         Err(_) => {
             // Fallback: print raw (maybe not JSON)
-            print!("{raw}");
+            print!("{}", raw);
             raw.clone()
         }
     };
 
     timer.track(
-        &format!("aws {full_sub}"),
-        &format!("rtk aws {full_sub}"),
+        &format!("aws {}", full_sub),
+        &format!("rtk aws {}", full_sub),
         &raw,
         &filtered,
     );
@@ -128,7 +128,7 @@ fn run_aws_json(
     extra_args: &[String],
     verbose: u8,
 ) -> Result<(String, String, std::process::ExitStatus)> {
-    let mut cmd = Command::new("aws");
+    let mut cmd = resolved_command("aws");
     for arg in sub_args {
         cmd.arg(arg);
     }
@@ -150,10 +150,12 @@ fn run_aws_json(
 
     let cmd_desc = format!("aws {}", sub_args.join(" "));
     if verbose > 0 {
-        eprintln!("Running: {cmd_desc}");
+        eprintln!("Running: {}", cmd_desc);
     }
 
-    let output = cmd.output().context(format!("Failed to run {cmd_desc}"))?;
+    let output = cmd
+        .output()
+        .context(format!("Failed to run {}", cmd_desc))?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
@@ -182,7 +184,7 @@ fn run_sts_identity(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws sts get-caller-identity",
@@ -197,7 +199,7 @@ fn run_s3_ls(extra_args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     // s3 ls doesn't support --output json, run as-is and filter text
-    let mut cmd = Command::new("aws");
+    let mut cmd = resolved_command("aws");
     cmd.args(["s3", "ls"]);
     for arg in extra_args {
         cmd.arg(arg);
@@ -218,7 +220,7 @@ fn run_s3_ls(extra_args: &[String], verbose: u8) -> Result<()> {
     }
 
     let filtered = filter_s3_ls(&raw);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track("aws s3 ls", "rtk aws s3 ls", &raw, &filtered);
     Ok(())
@@ -242,7 +244,7 @@ fn run_ec2_describe(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws ec2 describe-instances",
@@ -271,7 +273,7 @@ fn run_ecs_list_services(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws ecs list-services",
@@ -300,7 +302,7 @@ fn run_ecs_describe_services(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws ecs describe-services",
@@ -330,7 +332,7 @@ fn run_rds_describe(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws rds describe-db-instances",
@@ -360,7 +362,7 @@ fn run_cfn_list_stacks(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws cloudformation list-stacks",
@@ -390,7 +392,7 @@ fn run_cfn_describe_stacks(extra_args: &[String], verbose: u8) -> Result<()> {
         Some(f) => f,
         None => raw.clone(),
     };
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track(
         "aws cloudformation describe-stacks",
@@ -407,7 +409,7 @@ fn filter_sts_identity(json_str: &str) -> Option<String> {
     let v: Value = serde_json::from_str(json_str).ok()?;
     let account = v["Account"].as_str().unwrap_or("?");
     let arn = v["Arn"].as_str().unwrap_or("?");
-    Some(format!("AWS: {account} {arn}"))
+    Some(format!("AWS: {} {}", account, arn))
 }
 
 fn filter_s3_ls(output: &str) -> String {
@@ -448,16 +450,16 @@ fn filter_ec2_instances(json_str: &str) -> Option<String> {
                     .and_then(|t| t["Value"].as_str())
                     .unwrap_or("-");
 
-                instances.push(format!("{id} {state} {itype} {ip} ({name})"));
+                instances.push(format!("{} {} {} {} ({})", id, state, itype, ip, name));
             }
         }
     }
 
     let total = instances.len();
-    let mut result = format!("EC2: {total} instances\n");
+    let mut result = format!("EC2: {} instances\n", total);
 
     for inst in instances.iter().take(MAX_ITEMS) {
-        result.push_str(&format!("  {inst}\n"));
+        result.push_str(&format!("  {}\n", inst));
     }
 
     if total > MAX_ITEMS {
@@ -497,7 +499,10 @@ fn filter_ecs_describe_services(json_str: &str) -> Option<String> {
         let running = svc["runningCount"].as_i64().unwrap_or(0);
         let desired = svc["desiredCount"].as_i64().unwrap_or(0);
         let launch = svc["launchType"].as_str().unwrap_or("?");
-        result.push(format!("{name} {status} {running}/{desired} ({launch})"));
+        result.push(format!(
+            "{} {} {}/{} ({})",
+            name, status, running, desired, launch
+        ));
     }
 
     Some(join_with_overflow(&result, total, MAX_ITEMS, "services"))
@@ -516,7 +521,10 @@ fn filter_rds_instances(json_str: &str) -> Option<String> {
         let version = db["EngineVersion"].as_str().unwrap_or("?");
         let class = db["DBInstanceClass"].as_str().unwrap_or("?");
         let status = db["DBInstanceStatus"].as_str().unwrap_or("?");
-        result.push(format!("{name} {engine} {version} {class} {status}"));
+        result.push(format!(
+            "{} {} {} {} {}",
+            name, engine, version, class, status
+        ));
     }
 
     Some(join_with_overflow(&result, total, MAX_ITEMS, "instances"))
@@ -563,7 +571,7 @@ fn filter_cfn_describe_stacks(json_str: &str) -> Option<String> {
             for out in outputs {
                 let key = out["OutputKey"].as_str().unwrap_or("?");
                 let val = out["OutputValue"].as_str().unwrap_or("?");
-                result.push(format!("  {key}={val}"));
+                result.push(format!("  {}={}", key, val));
             }
         }
     }
@@ -637,7 +645,7 @@ mod tests {
     fn test_filter_s3_ls_overflow() {
         let mut lines = Vec::new();
         for i in 1..=50 {
-            lines.push(format!("2024-01-01 bucket{i}"));
+            lines.push(format!("2024-01-01 bucket{}", i));
         }
         let input = lines.join("\n");
         let result = filter_s3_ls(&input);
@@ -835,7 +843,8 @@ mod tests {
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "EC2 filter: expected >=60% savings, got {savings:.1}%"
+            "EC2 filter: expected >=60% savings, got {:.1}%",
+            savings
         );
     }
 
@@ -852,7 +861,8 @@ mod tests {
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "STS identity filter: expected >=60% savings, got {savings:.1}%"
+            "STS identity filter: expected >=60% savings, got {:.1}%",
+            savings
         );
     }
 
@@ -861,7 +871,8 @@ mod tests {
         let mut dbs = Vec::new();
         for i in 1..=25 {
             dbs.push(format!(
-                r#"{{"DBInstanceIdentifier": "db-{i}", "Engine": "postgres", "EngineVersion": "15.4", "DBInstanceClass": "db.t3.micro", "DBInstanceStatus": "available"}}"#
+                r#"{{"DBInstanceIdentifier": "db-{}", "Engine": "postgres", "EngineVersion": "15.4", "DBInstanceClass": "db.t3.micro", "DBInstanceStatus": "available"}}"#,
+                i
             ));
         }
         let json = format!(r#"{{"DBInstances": [{}]}}"#, dbs.join(","));

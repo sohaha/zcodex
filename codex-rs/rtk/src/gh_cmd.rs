@@ -6,13 +6,13 @@
 use crate::git;
 use crate::tracking;
 use crate::utils::ok_confirmation;
+use crate::utils::resolved_command;
 use crate::utils::truncate;
 use anyhow::Context;
 use anyhow::Result;
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde_json::Value;
-use std::process::Command;
 
 lazy_static! {
     static ref HTML_COMMENT_RE: Regex = Regex::new(r"(?s)<!--.*?-->").unwrap();
@@ -196,8 +196,8 @@ fn run_pr(args: &[String], verbose: u8, ultra_compact: bool) -> Result<()> {
         "create" => pr_create(&args[1..], verbose),
         "merge" => pr_merge(&args[1..], verbose),
         "diff" => pr_diff(&args[1..], verbose),
-        "comment" => pr_action("commented", args, verbose),
-        "edit" => pr_action("edited", args, verbose),
+        "comment" => pr_action("commented", &args, verbose),
+        "edit" => pr_action("edited", &args, verbose),
         _ => run_passthrough("gh", "pr", args),
     }
 }
@@ -205,7 +205,7 @@ fn run_pr(args: &[String], verbose: u8, ultra_compact: bool) -> Result<()> {
 fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args([
         "pr",
         "list",
@@ -272,13 +272,13 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
                 author
             );
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
 
         if prs.len() > 20 {
             let more_line = format!("  ... {} more (use gh pr list for all)\n", prs.len() - 20);
             filtered.push_str(&more_line);
-            print!("{more_line}");
+            print!("{}", more_line);
         }
     }
 
@@ -306,7 +306,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         return run_passthrough_with_extra("gh", &["pr", "view", &pr_number], &extra_args);
     }
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args([
         "pr",
         "view",
@@ -324,8 +324,8 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         timer.track(
-            &format!("gh pr view {pr_number}"),
-            &format!("rtk gh pr view {pr_number}"),
+            &format!("gh pr view {}", pr_number),
+            &format!("rtk gh pr view {}", pr_number),
             &stderr,
             &stderr,
         );
@@ -362,22 +362,22 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         }
     };
 
-    let line = format!("{state_icon} PR #{number}: {title}\n");
+    let line = format!("{} PR #{}: {}\n", state_icon, number, title);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  {author}\n");
+    let line = format!("  {}\n", author);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     let mergeable_str = match mergeable {
         "MERGEABLE" => "✓",
         "CONFLICTING" => "✗",
         _ => "?",
     };
-    let line = format!("  {state} | {mergeable_str}\n");
+    let line = format!("  {} | {}\n", state, mergeable_str);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     // Show reviews summary
     if let Some(reviews) = json["reviews"]["nodes"].as_array() {
@@ -391,9 +391,12 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
             .count();
 
         if approved > 0 || changes > 0 {
-            let line = format!("  Reviews: {approved} approved, {changes} changes requested\n");
+            let line = format!(
+                "  Reviews: {} approved, {} changes requested\n",
+                approved, changes
+            );
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
     }
 
@@ -417,49 +420,49 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
         if ultra_compact {
             if failed > 0 {
-                let line = format!("  ✗{passed}/{total}  {failed} fail\n");
+                let line = format!("  ✗{}/{}  {} fail\n", passed, total, failed);
                 filtered.push_str(&line);
-                print!("{line}");
+                print!("{}", line);
             } else {
-                let line = format!("  ✓{passed}/{total}\n");
+                let line = format!("  ✓{}/{}\n", passed, total);
                 filtered.push_str(&line);
-                print!("{line}");
+                print!("{}", line);
             }
         } else {
-            let line = format!("  Checks: {passed}/{total} passed\n");
+            let line = format!("  Checks: {}/{} passed\n", passed, total);
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
             if failed > 0 {
-                let line = format!("  ⚠️  {failed} checks failed\n");
+                let line = format!("  ⚠️  {} checks failed\n", failed);
                 filtered.push_str(&line);
-                print!("{line}");
+                print!("{}", line);
             }
         }
     }
 
-    let line = format!("  {url}\n");
+    let line = format!("  {}\n", url);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     // Show filtered body
-    if let Some(body) = json["body"].as_str()
-        && !body.is_empty()
-    {
-        let body_filtered = filter_markdown_body(body);
-        if !body_filtered.is_empty() {
-            filtered.push('\n');
-            println!();
-            for line in body_filtered.lines() {
-                let formatted = format!("  {line}\n");
-                filtered.push_str(&formatted);
-                print!("{formatted}");
+    if let Some(body) = json["body"].as_str() {
+        if !body.is_empty() {
+            let body_filtered = filter_markdown_body(body);
+            if !body_filtered.is_empty() {
+                filtered.push('\n');
+                println!();
+                for line in body_filtered.lines() {
+                    let formatted = format!("  {}\n", line);
+                    filtered.push_str(&formatted);
+                    print!("{}", formatted);
+                }
             }
         }
     }
 
     timer.track(
-        &format!("gh pr view {pr_number}"),
-        &format!("rtk gh pr view {pr_number}"),
+        &format!("gh pr view {}", pr_number),
+        &format!("rtk gh pr view {}", pr_number),
         &raw,
         &filtered,
     );
@@ -474,7 +477,7 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
         None => return Err(anyhow::anyhow!("PR number required")),
     };
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args(["pr", "checks", &pr_number]);
     for arg in &extra_args {
         cmd.arg(arg);
@@ -486,8 +489,8 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         timer.track(
-            &format!("gh pr checks {pr_number}"),
-            &format!("rtk gh pr checks {pr_number}"),
+            &format!("gh pr checks {}", pr_number),
+            &format!("rtk gh pr checks {}", pr_number),
             &stderr,
             &stderr,
         );
@@ -518,36 +521,36 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 
     let line = "🔍 CI Checks Summary:\n";
     filtered.push_str(line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  ✅ Passed: {passed}\n");
+    let line = format!("  ✅ Passed: {}\n", passed);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  ❌ Failed: {failed}\n");
+    let line = format!("  ❌ Failed: {}\n", failed);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     if pending > 0 {
-        let line = format!("  ⏳ Pending: {pending}\n");
+        let line = format!("  ⏳ Pending: {}\n", pending);
         filtered.push_str(&line);
-        print!("{line}");
+        print!("{}", line);
     }
 
     if !failed_checks.is_empty() {
         let line = "\n  Failed checks:\n";
         filtered.push_str(line);
-        print!("{line}");
+        print!("{}", line);
         for check in failed_checks {
-            let line = format!("    {check}\n");
+            let line = format!("    {}\n", check);
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
     }
 
     timer.track(
-        &format!("gh pr checks {pr_number}"),
-        &format!("rtk gh pr checks {pr_number}"),
+        &format!("gh pr checks {}", pr_number),
+        &format!("rtk gh pr checks {}", pr_number),
         &raw,
         &filtered,
     );
@@ -557,7 +560,7 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args([
         "pr",
         "status",
@@ -583,14 +586,14 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     if let Some(created_by) = json["createdBy"].as_array() {
         let line = format!("📝 Your PRs ({}):\n", created_by.len());
         filtered.push_str(&line);
-        print!("{line}");
+        print!("{}", line);
         for pr in created_by.iter().take(5) {
             let number = pr["number"].as_i64().unwrap_or(0);
             let title = pr["title"].as_str().unwrap_or("???");
             let reviews = pr["reviewDecision"].as_str().unwrap_or("PENDING");
             let line = format!("  #{} {} [{}]\n", number, truncate(title, 50), reviews);
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
     }
 
@@ -613,7 +616,7 @@ fn run_issue(args: &[String], verbose: u8, ultra_compact: bool) -> Result<()> {
 fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args(["issue", "list", "--json", "number,title,state,author"]);
 
     for arg in args {
@@ -655,13 +658,13 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
             };
             let line = format!("  {} #{} {}\n", icon, number, truncate(title, 60));
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
 
         if issues.len() > 20 {
             let line = format!("  ... {} more\n", issues.len() - 20);
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
     }
 
@@ -677,7 +680,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
         None => return Err(anyhow::anyhow!("Issue number required")),
     };
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args([
         "issue",
         "view",
@@ -695,8 +698,8 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         timer.track(
-            &format!("gh issue view {issue_number}"),
-            &format!("rtk gh issue view {issue_number}"),
+            &format!("gh issue view {}", issue_number),
+            &format!("rtk gh issue view {}", issue_number),
             &stderr,
             &stderr,
         );
@@ -717,41 +720,41 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("{icon} Issue #{number}: {title}\n");
+    let line = format!("{} Issue #{}: {}\n", icon, number, title);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  Author: @{author}\n");
+    let line = format!("  Author: @{}\n", author);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  Status: {state}\n");
+    let line = format!("  Status: {}\n", state);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  URL: {url}\n");
+    let line = format!("  URL: {}\n", url);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    if let Some(body) = json["body"].as_str()
-        && !body.is_empty()
-    {
-        let body_filtered = filter_markdown_body(body);
-        if !body_filtered.is_empty() {
-            let line = "\n  Description:\n";
-            filtered.push_str(line);
-            print!("{line}");
-            for line in body_filtered.lines() {
-                let formatted = format!("    {line}\n");
-                filtered.push_str(&formatted);
-                print!("{formatted}");
+    if let Some(body) = json["body"].as_str() {
+        if !body.is_empty() {
+            let body_filtered = filter_markdown_body(body);
+            if !body_filtered.is_empty() {
+                let line = "\n  Description:\n";
+                filtered.push_str(line);
+                print!("{}", line);
+                for line in body_filtered.lines() {
+                    let formatted = format!("    {}\n", line);
+                    filtered.push_str(&formatted);
+                    print!("{}", formatted);
+                }
             }
         }
     }
 
     timer.track(
-        &format!("gh issue view {issue_number}"),
-        &format!("rtk gh issue view {issue_number}"),
+        &format!("gh issue view {}", issue_number),
+        &format!("rtk gh issue view {}", issue_number),
         &raw,
         &filtered,
     );
@@ -773,7 +776,7 @@ fn run_workflow(args: &[String], verbose: u8, ultra_compact: bool) -> Result<()>
 fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args([
         "run",
         "list",
@@ -845,7 +848,7 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
             let line = format!("  {} {} [{}]\n", icon, truncate(name, 50), id);
             filtered.push_str(&line);
-            print!("{line}");
+            print!("{}", line);
         }
     }
 
@@ -875,7 +878,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
 
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args(["run", "view", &run_id]);
     for arg in &extra_args {
         cmd.arg(arg);
@@ -887,8 +890,8 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         timer.track(
-            &format!("gh run view {run_id}"),
-            &format!("rtk gh run view {run_id}"),
+            &format!("gh run view {}", run_id),
+            &format!("rtk gh run view {}", run_id),
             &stderr,
             &stderr,
         );
@@ -902,9 +905,9 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("🏃 Workflow Run #{run_id}\n");
+    let line = format!("🏃 Workflow Run #{}\n", run_id);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     for line in stdout.lines() {
         if line.contains("JOBS") {
@@ -919,18 +922,18 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
             if line.contains('✗') || line.contains("fail") {
                 let formatted = format!("  ❌ {}\n", line.trim());
                 filtered.push_str(&formatted);
-                print!("{formatted}");
+                print!("{}", formatted);
             }
         } else if line.contains("Status:") || line.contains("Conclusion:") {
             let formatted = format!("  {}\n", line.trim());
             filtered.push_str(&formatted);
-            print!("{formatted}");
+            print!("{}", formatted);
         }
     }
 
     timer.track(
-        &format!("gh run view {run_id}"),
-        &format!("rtk gh run view {run_id}"),
+        &format!("gh run view {}", run_id),
+        &format!("rtk gh run view {}", run_id),
         &raw,
         &filtered,
     );
@@ -951,7 +954,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
 
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.arg("repo").arg("view");
 
     for arg in rest_args {
@@ -992,27 +995,27 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("📦 {owner}/{name}\n");
+    let line = format!("📦 {}/{}\n", owner, name);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  {visibility}\n");
+    let line = format!("  {}\n", visibility);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     if !description.is_empty() {
         let line = format!("  {}\n", truncate(description, 80));
         filtered.push_str(&line);
-        print!("{line}");
+        print!("{}", line);
     }
 
-    let line = format!("  ⭐ {stars} stars | 🔱 {forks} forks\n");
+    let line = format!("  ⭐ {} stars | 🔱 {} forks\n", stars, forks);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
-    let line = format!("  {url}\n");
+    let line = format!("  {}\n", url);
     filtered.push_str(&line);
-    print!("{line}");
+    print!("{}", line);
 
     timer.track("gh repo view", "rtk gh repo view", &raw, &filtered);
     Ok(())
@@ -1021,7 +1024,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
 fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args(["pr", "create"]);
     for arg in args {
         cmd.arg(arg);
@@ -1044,13 +1047,13 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
     let pr_num = url.rsplit('/').next().unwrap_or("");
 
     let detail = if !pr_num.is_empty() && pr_num.chars().all(|c| c.is_ascii_digit()) {
-        format!("#{pr_num} {url}")
+        format!("#{} {}", pr_num, url)
     } else {
         url.to_string()
     };
 
     let filtered = ok_confirmation("created", &detail);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     timer.track("gh pr create", "rtk gh pr create", &stdout, &filtered);
     Ok(())
@@ -1059,7 +1062,7 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
 fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args(["pr", "merge"]);
     for arg in args {
         cmd.arg(arg);
@@ -1079,23 +1082,23 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
     let pr_num = args
         .iter()
         .find(|a| !a.starts_with('-'))
-        .map(std::string::String::as_str)
+        .map(|s| s.as_str())
         .unwrap_or("");
 
     let detail = if !pr_num.is_empty() {
-        format!("#{pr_num}")
+        format!("#{}", pr_num)
     } else {
         String::new()
     };
 
     let filtered = ok_confirmation("merged", &detail);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     // Use stdout or detail as raw input (gh pr merge doesn't output much)
     let raw = if !stdout.trim().is_empty() {
         stdout
     } else {
-        detail
+        detail.clone()
     };
 
     timer.track("gh pr merge", "rtk gh pr merge", &raw, &filtered);
@@ -1117,7 +1120,7 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
 
     let timer = tracking::TimedExecution::start();
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.args(["pr", "diff"]);
     for arg in gh_args.iter() {
         cmd.arg(arg);
@@ -1135,11 +1138,11 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
 
     let filtered = if raw.trim().is_empty() {
         let msg = "No diff\n";
-        print!("{msg}");
+        print!("{}", msg);
         msg.to_string()
     } else {
         let compacted = git::compact_diff(&raw, 500);
-        println!("{compacted}");
+        println!("{}", compacted);
         compacted
     };
 
@@ -1152,7 +1155,7 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
     let subcmd = &args[0];
 
-    let mut cmd = Command::new("gh");
+    let mut cmd = resolved_command("gh");
     cmd.arg("pr");
     for arg in args {
         cmd.arg(arg);
@@ -1160,14 +1163,14 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
 
     let output = cmd
         .output()
-        .context(format!("Failed to run gh pr {subcmd}"))?;
+        .context(format!("Failed to run gh pr {}", subcmd))?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         timer.track(
-            &format!("gh pr {subcmd}"),
-            &format!("rtk gh pr {subcmd}"),
+            &format!("gh pr {}", subcmd),
+            &format!("rtk gh pr {}", subcmd),
             &stderr,
             &stderr,
         );
@@ -1179,22 +1182,22 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
     let pr_num = args[1..]
         .iter()
         .find(|a| !a.starts_with('-'))
-        .map(|s| format!("#{s}"))
+        .map(|s| format!("#{}", s))
         .unwrap_or_default();
 
     let filtered = ok_confirmation(action, &pr_num);
-    println!("{filtered}");
+    println!("{}", filtered);
 
     // Use stdout or pr_num as raw input
     let raw = if !stdout.trim().is_empty() {
         stdout
     } else {
-        pr_num
+        pr_num.clone()
     };
 
     timer.track(
-        &format!("gh pr {subcmd}"),
-        &format!("rtk gh pr {subcmd}"),
+        &format!("gh pr {}", subcmd),
+        &format!("rtk gh pr {}", subcmd),
         &raw,
         &filtered,
     );
@@ -1212,7 +1215,7 @@ fn run_api(args: &[String], _verbose: u8) -> Result<()> {
 fn run_passthrough_with_extra(cmd: &str, base_args: &[&str], extra_args: &[String]) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut command = Command::new(cmd);
+    let mut command = resolved_command(cmd);
     for arg in base_args {
         command.arg(arg);
     }
@@ -1229,14 +1232,9 @@ fn run_passthrough_with_extra(cmd: &str, base_args: &[&str], extra_args: &[Strin
         "{} {} {}",
         cmd,
         base_args.join(" "),
-        tracking::args_display(
-            &extra_args
-                .iter()
-                .map(std::convert::Into::into)
-                .collect::<Vec<_>>()
-        )
+        tracking::args_display(&extra_args.iter().map(|s| s.into()).collect::<Vec<_>>())
     );
-    timer.track_passthrough(&full_cmd, &format!("rtk {full_cmd} (passthrough)"));
+    timer.track_passthrough(&full_cmd, &format!("rtk {} (passthrough)", full_cmd));
 
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));
@@ -1248,7 +1246,7 @@ fn run_passthrough_with_extra(cmd: &str, base_args: &[&str], extra_args: &[Strin
 fn run_passthrough(cmd: &str, subcommand: &str, args: &[String]) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    let mut command = Command::new(cmd);
+    let mut command = resolved_command(cmd);
     command.arg(subcommand);
     for arg in args {
         command.arg(arg);
@@ -1256,17 +1254,12 @@ fn run_passthrough(cmd: &str, subcommand: &str, args: &[String]) -> Result<()> {
 
     let status = command
         .status()
-        .context(format!("Failed to run {cmd} {subcommand}"))?;
+        .context(format!("Failed to run {} {}", cmd, subcommand))?;
 
-    let args_str = tracking::args_display(
-        &args
-            .iter()
-            .map(std::convert::Into::into)
-            .collect::<Vec<_>>(),
-    );
+    let args_str = tracking::args_display(&args.iter().map(|s| s.into()).collect::<Vec<_>>());
     timer.track_passthrough(
-        &format!("{cmd} {subcommand} {args_str}"),
-        &format!("rtk {cmd} {subcommand} {args_str} (passthrough)"),
+        &format!("{} {} {}", cmd, subcommand, args_str),
+        &format!("rtk {} {} {} (passthrough)", cmd, subcommand, args_str),
     );
 
     if !status.success() {
@@ -1426,6 +1419,47 @@ mod tests {
     #[test]
     fn test_run_view_no_passthrough_other_flags() {
         assert!(!should_passthrough_run_view(&["--web".into()]));
+    }
+
+    #[test]
+    fn test_extract_identifier_with_job_flag_after() {
+        // gh run view 12345 --job 67890
+        let args: Vec<String> = vec!["12345".into(), "--job".into(), "67890".into()];
+        let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
+        assert_eq!(id, "12345");
+        assert_eq!(extra, vec!["--job", "67890"]);
+    }
+
+    #[test]
+    fn test_extract_identifier_with_job_flag_before() {
+        // gh run view --job 67890 12345
+        let args: Vec<String> = vec!["--job".into(), "67890".into(), "12345".into()];
+        let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
+        assert_eq!(id, "12345");
+        assert_eq!(extra, vec!["--job", "67890"]);
+    }
+
+    #[test]
+    fn test_extract_identifier_with_job_and_log_failed() {
+        // gh run view --log-failed --job 67890 12345
+        let args: Vec<String> = vec![
+            "--log-failed".into(),
+            "--job".into(),
+            "67890".into(),
+            "12345".into(),
+        ];
+        let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
+        assert_eq!(id, "12345");
+        assert_eq!(extra, vec!["--log-failed", "--job", "67890"]);
+    }
+
+    #[test]
+    fn test_extract_identifier_with_attempt_flag() {
+        // gh run view 12345 --attempt 3
+        let args: Vec<String> = vec!["12345".into(), "--attempt".into(), "3".into()];
+        let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
+        assert_eq!(id, "12345");
+        assert_eq!(extra, vec!["--attempt", "3"]);
     }
 
     // --- should_passthrough_pr_view tests ---
@@ -1596,7 +1630,10 @@ ___
 
         assert!(
             savings >= 30.0,
-            "Expected ≥30% savings, got {savings:.1}% (input: {input_tokens} tokens, output: {output_tokens} tokens)"
+            "Expected ≥30% savings, got {:.1}% (input: {} tokens, output: {} tokens)",
+            savings,
+            input_tokens,
+            output_tokens
         );
 
         // Verify meaningful content preserved

@@ -7,9 +7,10 @@
 //! unless -a flag is present (respecting user intent).
 
 use crate::tracking;
+use crate::utils::resolved_command;
+use crate::utils::tool_exists;
 use anyhow::Context;
 use anyhow::Result;
-use std::process::Command;
 
 /// Noise directories commonly excluded from LLM context
 const NOISE_DIRS: &[&str] = &[
@@ -45,8 +46,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     // Check if tree is installed
-    let tree_check = Command::new("which").arg("tree").output();
-    if tree_check.is_err() || !tree_check.unwrap().status.success() {
+    if !tool_exists("tree") {
         anyhow::bail!(
             "tree command not found. Install it first:\n\
              - macOS: brew install tree\n\
@@ -56,7 +56,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         );
     }
 
-    let mut cmd = Command::new("tree");
+    let mut cmd = resolved_command("tree");
 
     // Determine if user wants all files or default behavior
     let show_all = args.iter().any(|a| a == "-a" || a == "--all");
@@ -77,7 +77,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        eprint!("{stderr}");
+        eprint!("{}", stderr);
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
@@ -97,7 +97,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         );
     }
 
-    print!("{filtered}");
+    print!("{}", filtered);
     timer.track("tree", "rtk tree", &raw, &filtered);
 
     Ok(())
@@ -127,7 +127,7 @@ fn filter_tree_output(raw: &str) -> String {
     }
 
     // Remove trailing empty lines
-    while filtered_lines.last().is_some_and(|l| l.trim().is_empty()) {
+    while filtered_lines.last().map_or(false, |l| l.trim().is_empty()) {
         filtered_lines.pop();
     }
 
@@ -186,7 +186,8 @@ mod tests {
             let output = filter_tree_output(input);
             assert!(
                 !output.contains(summary_fragment),
-                "Should remove summary '{summary_fragment}' from output"
+                "Should remove summary '{}' from output",
+                summary_fragment
             );
             assert!(
                 output.contains("file.txt"),

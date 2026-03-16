@@ -203,6 +203,101 @@ fn rtk_git_status_defaults_to_short_output() -> Result<()> {
 }
 
 #[test]
+fn rtk_git_log_preserves_first_commit_body_line() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let repo = codex_home.path().join("repo");
+    std::fs::create_dir(&repo)?;
+
+    run_command(Command::new("git").arg("init").arg(&repo))?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "config",
+        "user.name",
+        "RTK Test",
+    ]))?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "config",
+        "user.email",
+        "rtk@example.com",
+    ]))?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "config",
+        "commit.gpgsign",
+        "false",
+    ]))?;
+    std::fs::write(repo.join("note.txt"), "body\n")?;
+    run_command(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["add", "note.txt"]),
+    )?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "commit",
+        "-m",
+        "feat: preserve body",
+        "-m",
+        "BREAKING CHANGE: body line stays visible",
+    ]))?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&repo)
+        .args(["rtk", "git", "log", "-1"])
+        .assert()
+        .success()
+        .stdout(
+            contains("feat: preserve body")
+                .and(contains("BREAKING CHANGE: body line stays visible")),
+        );
+
+    Ok(())
+}
+
+#[test]
+fn rtk_git_log_respects_user_oneline_format() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let repo = codex_home.path().join("repo");
+    std::fs::create_dir(&repo)?;
+
+    run_command(Command::new("git").arg("init").arg(&repo))?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "config",
+        "user.name",
+        "RTK Test",
+    ]))?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "config",
+        "user.email",
+        "rtk@example.com",
+    ]))?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "config",
+        "commit.gpgsign",
+        "false",
+    ]))?;
+    std::fs::write(repo.join("note.txt"), "oneline\n")?;
+    run_command(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["add", "note.txt"]),
+    )?;
+    run_command(Command::new("git").arg("-C").arg(&repo).args([
+        "commit",
+        "-m",
+        "fix: oneline output",
+    ]))?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&repo)
+        .args(["rtk", "git", "log", "--oneline", "-1"])
+        .assert()
+        .success()
+        .stdout(contains("fix: oneline output").and(contains("---END---").not()));
+
+    Ok(())
+}
+
+#[test]
 fn rtk_grep_adds_filename_and_line_number() -> Result<()> {
     let codex_home = TempDir::new()?;
     let workspace = codex_home.path().join("search");

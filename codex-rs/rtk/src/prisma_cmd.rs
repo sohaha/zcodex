@@ -1,4 +1,6 @@
 use crate::tracking;
+use crate::utils::resolved_command;
+use crate::utils::tool_exists;
 use anyhow::Context;
 use anyhow::Result;
 use std::process::Command;
@@ -27,16 +29,10 @@ pub fn run(cmd: PrismaCommand, args: &[String], verbose: u8) -> Result<()> {
 
 /// Create a Command that will run prisma (tries global first, then npx)
 fn create_prisma_command() -> Command {
-    let prisma_exists = Command::new("which")
-        .arg("prisma")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    if prisma_exists {
-        Command::new("prisma")
+    if tool_exists("prisma") {
+        resolved_command("prisma")
     } else {
-        let mut c = Command::new("npx");
+        let mut c = resolved_command("npx");
         c.arg("prisma");
         c
     }
@@ -60,18 +56,24 @@ fn run_generate(args: &[String], verbose: u8) -> Result<()> {
         .output()
         .context("Failed to run prisma generate (try: npm install -g prisma)")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("prisma generate failed: {stderr}");
-    }
-
+    let exit_code = output.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
+
+    if !output.status.success() {
+        if !stdout.trim().is_empty() {
+            eprint!("{}", stdout);
+        }
+        if !stderr.trim().is_empty() {
+            eprint!("{}", stderr);
+        }
+        timer.track("prisma generate", "rtk prisma generate", &raw, &raw);
+        std::process::exit(exit_code);
+    }
+
     let filtered = filter_prisma_generate(&raw);
-
-    println!("{filtered}");
-
+    println!("{}", filtered);
     timer.track("prisma generate", "rtk prisma generate", &raw, &filtered);
 
     Ok(())
@@ -106,19 +108,26 @@ fn run_migrate(subcommand: MigrateSubcommand, args: &[String], verbose: u8) -> R
     }
 
     if verbose > 0 {
-        eprintln!("Running: {cmd_name}");
+        eprintln!("Running: {}", cmd_name);
     }
 
     let output = cmd.output().context("Failed to run prisma migrate")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("prisma migrate failed: {stderr}");
-    }
-
+    let exit_code = output.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
+
+    if !output.status.success() {
+        if !stdout.trim().is_empty() {
+            eprint!("{}", stdout);
+        }
+        if !stderr.trim().is_empty() {
+            eprint!("{}", stderr);
+        }
+        timer.track(cmd_name, &format!("rtk {}", cmd_name), &raw, &raw);
+        std::process::exit(exit_code);
+    }
 
     let filtered = match subcommand {
         MigrateSubcommand::Dev { .. } => filter_migrate_dev(&raw),
@@ -126,9 +135,8 @@ fn run_migrate(subcommand: MigrateSubcommand, args: &[String], verbose: u8) -> R
         MigrateSubcommand::Deploy => filter_migrate_deploy(&raw),
     };
 
-    println!("{filtered}");
-
-    timer.track(cmd_name, &format!("rtk {cmd_name}"), &raw, &filtered);
+    println!("{}", filtered);
+    timer.track(cmd_name, &format!("rtk {}", cmd_name), &raw, &filtered);
 
     Ok(())
 }
@@ -149,18 +157,24 @@ fn run_db_push(args: &[String], verbose: u8) -> Result<()> {
 
     let output = cmd.output().context("Failed to run prisma db push")?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("prisma db push failed: {stderr}");
-    }
-
+    let exit_code = output.status.code().unwrap_or(1);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{stdout}\n{stderr}");
+    let raw = format!("{}\n{}", stdout, stderr);
+
+    if !output.status.success() {
+        if !stdout.trim().is_empty() {
+            eprint!("{}", stdout);
+        }
+        if !stderr.trim().is_empty() {
+            eprint!("{}", stderr);
+        }
+        timer.track("prisma db push", "rtk prisma db push", &raw, &raw);
+        std::process::exit(exit_code);
+    }
+
     let filtered = filter_db_push(&raw);
-
-    println!("{filtered}");
-
+    println!("{}", filtered);
     timer.track("prisma db push", "rtk prisma db push", &raw, &filtered);
 
     Ok(())
@@ -186,21 +200,20 @@ fn filter_prisma_generate(output: &str) -> String {
         }
 
         // Extract counts
-        if line.contains("model")
-            && line.contains("generated")
-            && let Some(num) = extract_number(line)
-        {
-            models = num;
+        if line.contains("model") && line.contains("generated") {
+            if let Some(num) = extract_number(line) {
+                models = num;
+            }
         }
-        if line.contains("enum")
-            && let Some(num) = extract_number(line)
-        {
-            enums = num;
+        if line.contains("enum") {
+            if let Some(num) = extract_number(line) {
+                enums = num;
+            }
         }
-        if line.contains("type")
-            && let Some(num) = extract_number(line)
-        {
-            types = num;
+        if line.contains("type") {
+            if let Some(num) = extract_number(line) {
+                types = num;
+            }
         }
 
         // Extract output path
@@ -214,7 +227,8 @@ fn filter_prisma_generate(output: &str) -> String {
 
     if models > 0 || enums > 0 || types > 0 {
         result.push_str(&format!(
-            "  • {models} models, {enums} enums, {types} types\n"
+            "  • {} models, {} enums, {} types\n",
+            models, enums, types
         ));
     }
 
@@ -236,14 +250,13 @@ fn filter_migrate_dev(output: &str) -> String {
 
     for line in output.lines() {
         // Extract migration name
-        if line.contains("migration")
-            && line.contains("_")
-            && let Some(pos) = line.find("202")
-        {
-            let end = line[pos..]
-                .find(|c: char| c.is_whitespace())
-                .unwrap_or(line.len() - pos);
-            migration_name = line[pos..pos + end].to_string();
+        if line.contains("migration") && line.contains("_") {
+            if let Some(pos) = line.find("202") {
+                let end = line[pos..]
+                    .find(|c: char| c.is_whitespace())
+                    .unwrap_or(line.len() - pos);
+                migration_name = line[pos..pos + end].to_string();
+            }
         }
 
         // Count changes
@@ -253,15 +266,15 @@ fn filter_migrate_dev(output: &str) -> String {
         if line.contains("ALTER TABLE") {
             tables_modified += 1;
         }
-        if (line.contains("FOREIGN KEY") || line.contains("REFERENCES"))
-            && let Some(table) = extract_table_name(line)
-        {
-            relations.push(table);
+        if line.contains("FOREIGN KEY") || line.contains("REFERENCES") {
+            if let Some(table) = extract_table_name(line) {
+                relations.push(table);
+            }
         }
-        if (line.contains("CREATE INDEX") || line.contains("CREATE UNIQUE INDEX"))
-            && let Some(idx) = extract_index_name(line)
-        {
-            indexes.push(idx);
+        if line.contains("CREATE INDEX") || line.contains("CREATE UNIQUE INDEX") {
+            if let Some(idx) = extract_index_name(line) {
+                indexes.push(idx);
+            }
         }
 
         if line.contains("applied") || line.contains("✓") {
@@ -272,16 +285,16 @@ fn filter_migrate_dev(output: &str) -> String {
     let mut result = String::new();
 
     if !migration_name.is_empty() {
-        result.push_str(&format!("🗃️  Migration: {migration_name}\n"));
+        result.push_str(&format!("🗃️  Migration: {}\n", migration_name));
         result.push_str("═══════════════════════════════════════\n");
     }
 
     result.push_str("Changes:\n");
     if tables_added > 0 {
-        result.push_str(&format!("  + {tables_added} table(s)\n"));
+        result.push_str(&format!("  + {} table(s)\n", tables_added));
     }
     if tables_modified > 0 {
-        result.push_str(&format!("  ~ {tables_modified} table(s) modified\n"));
+        result.push_str(&format!("  ~ {} table(s) modified\n", tables_modified));
     }
     if !relations.is_empty() {
         result.push_str(&format!("  + {} relation(s)\n", relations.len()));
@@ -307,12 +320,11 @@ fn filter_migrate_status(output: &str) -> String {
     for line in output.lines() {
         if line.contains("applied") {
             applied_count += 1;
-            if latest_migration.is_empty()
-                && line.contains("202")
-                && let Some(pos) = line.find("202")
-            {
-                let end = line[pos..].find(|c: char| c.is_whitespace()).unwrap_or(20);
-                latest_migration = line[pos..pos + end].to_string();
+            if latest_migration.is_empty() && line.contains("202") {
+                if let Some(pos) = line.find("202") {
+                    let end = line[pos..].find(|c: char| c.is_whitespace()).unwrap_or(20);
+                    latest_migration = line[pos..pos + end].to_string();
+                }
             }
         }
         if line.contains("pending") || line.contains("unapplied") {
@@ -322,11 +334,12 @@ fn filter_migrate_status(output: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&format!(
-        "Migrations: {applied_count} applied, {pending_count} pending\n"
+        "Migrations: {} applied, {} pending\n",
+        applied_count, pending_count
     ));
 
     if !latest_migration.is_empty() {
-        result.push_str(&format!("Latest: {latest_migration}\n"));
+        result.push_str(&format!("Latest: {}\n", latest_migration));
     }
 
     result.trim().to_string()
@@ -349,11 +362,11 @@ fn filter_migrate_deploy(output: &str) -> String {
     let mut result = String::new();
 
     if errors.is_empty() {
-        result.push_str(&format!("✓ {deployed} migration(s) deployed\n"));
+        result.push_str(&format!("✓ {} migration(s) deployed\n", deployed));
     } else {
         result.push_str("❌ Deployment failed:\n");
         for err in errors.iter().take(5) {
-            result.push_str(&format!("  {err}\n"));
+            result.push_str(&format!("  {}\n", err));
         }
     }
 
@@ -383,7 +396,8 @@ fn filter_db_push(output: &str) -> String {
 
     if tables_added > 0 || columns_modified > 0 || dropped > 0 {
         result.push_str(&format!(
-            "  + {tables_added} tables, ~ {columns_modified} columns, - {dropped} dropped\n"
+            "  + {} tables, ~ {} columns, - {} dropped\n",
+            tables_added, columns_modified, dropped
         ));
     }
 
