@@ -143,6 +143,7 @@ ensure_zig_binary() {
   local zig_bin_path="${ZIG_PATH:-}"
   local zig_archive="${ZIG_TARBALL:-}"
   local zig_archive_name
+  local zig_on_path
   local zig_install_dir
   local zig_url
   local zig_sha256="${ZIG_SHA256:-}"
@@ -150,6 +151,12 @@ ensure_zig_binary() {
   if [ -n "$zig_bin_path" ]; then
     [ -x "$zig_bin_path" ] || die "[mise] ZIG_PATH 不存在或不可执行: $zig_bin_path"
     printf '%s\n' "$zig_bin_path"
+    return
+  fi
+
+  zig_on_path="$(command -v zig 2>/dev/null || true)"
+  if [ -n "$zig_on_path" ] && [ "$(zig version 2>/dev/null || true)" = "$zig_version" ]; then
+    printf '%s\n' "$zig_on_path"
     return
   fi
 

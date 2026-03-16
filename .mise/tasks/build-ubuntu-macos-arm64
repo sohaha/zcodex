@@ -40,6 +40,32 @@ resolve_build_profile_dir() {
   printf '%s\n' "$profile"
 }
 
+has_clang() {
+  command -v clang >/dev/null 2>&1
+}
+
+has_rust_target() {
+  rustup target list --installed | grep -Fxq "$target"
+}
+
+bootstrap_cross_deps() {
+  local should_bootstrap=0
+
+  if [ "$sdk_path" = "$repo_root/.cache/macos-sdk/MacOSX.sdk" ] && [ ! -d "$sdk_path" ]; then
+    should_bootstrap=1
+  fi
+  if ! has_clang || ! has_rust_target; then
+    should_bootstrap=1
+  fi
+
+  if [ "$should_bootstrap" -eq 0 ] || [ "${CODEX_UBUNTU_MACOS_ARM64_DEPS_BOOTSTRAPPED:-0}" = "1" ]; then
+    return
+  fi
+
+  echo "[build-ubuntu-macos-arm64] 检测到交叉编译依赖缺失，先同步运行 deps-ubuntu-macos-arm64..." >&2
+  CODEX_UBUNTU_MACOS_ARM64_DEPS_BOOTSTRAPPED=1 "$script_dir/deps-ubuntu-macos-arm64"
+}
+
 ensure_cross_deps() {
   local zig_bin
 
@@ -47,6 +73,8 @@ ensure_cross_deps() {
     echo "[build-ubuntu-macos-arm64] 该 task 仅用于 Linux -> macOS arm64 交叉编译" >&2
     exit 1
   fi
+
+  bootstrap_cross_deps
 
   if [ ! -d "$sdk_path" ]; then
     cat >&2 <<MSG
@@ -61,12 +89,12 @@ MSG
     exit 1
   fi
 
-  if ! command -v clang >/dev/null 2>&1; then
+  if ! has_clang; then
     echo "[build-ubuntu-macos-arm64] 缺少 clang，请先运行 `mise run deps-ubuntu-macos-arm64`" >&2
     exit 1
   fi
 
-  if ! rustup target list --installed | grep -Fxq "$target"; then
+  if ! has_rust_target; then
     echo "[build-ubuntu-macos-arm64] 缺少 Rust target $target，请先运行 `mise run deps-ubuntu-macos-arm64`" >&2
     exit 1
   fi
