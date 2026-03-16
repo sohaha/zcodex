@@ -21,24 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS
-          - os: macos-15-xlarge
-            target: aarch64-apple-darwin
-          - os: macos-15-xlarge
-            target: x86_64-apple-darwin
-
-          # Linux
+          # Linux (keep a single GitHub-hosted runner for forks/community CI)
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-          - os: ubuntu-24.04
-            target: x86_64-unknown-linux-musl
-          # 2026-02-27 Bazel tests have been flaky on arm in CI.
-          # Disable until we can investigate and stabilize them.
-          # - os: ubuntu-24.04-arm
-          #   target: aarch64-unknown-linux-musl
-          # - os: ubuntu-24.04-arm
-          #   target: aarch64-unknown-linux-gnu
-
           # TODO: Enable Windows once we fix the toolchain issues there.
           #- os: windows-latest
           #  target: x86_64-pc-windows-gnullvm
@@ -110,6 +95,17 @@ jobs:
           # Use a very short path to reduce argv/path length issues.
           "BAZEL_STARTUP_ARGS=--output_user_root=C:\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Enable unprivileged user namespaces (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # Required for bubblewrap to work on Linux CI runners.
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          # Ubuntu 24.04+ can additionally gate unprivileged user namespaces
+          # behind AppArmor.
+          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: bazel test //...
         env:
           BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
@@ -158,11 +154,19 @@ jobs:
             test
             //...
             --test_verbose_timeout_warnings
-            --build_metadata=REPO_URL=https://github.com/openai/codex.git
+            --build_metadata=REPO_URL=https://github.com/${{ github.repository }}.git
             --build_metadata=COMMIT_SHA=$(git rev-parse HEAD)
             --build_metadata=ROLE=CI
             --build_metadata=VISIBILITY=PUBLIC
           )
+
+          codex_cli_version="$(grep -m1 '^version' codex-rs/Cargo.toml \
+            | sed -E 's/version *= *"([^"]+)".*/\1/')"
+          if [[ -z "${codex_cli_version}" ]]; then
+            echo "Failed to parse codex-rs/Cargo.toml version" >&2
+            exit 1
+          fi
+          bazel_args+=("--action_env=CODEX_CLI_VERSION=${codex_cli_version}")
 
           if [[ "${RUNNER_OS:-}" != "Windows" ]]; then
             # Bazel test sandboxes on macOS may resolve an older Homebrew `node`
