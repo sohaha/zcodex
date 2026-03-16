@@ -61,7 +61,7 @@ if [ "$(uname -s)" != "Linux" ]; then
 fi
 
 if ! command -v apt-get >/dev/null 2>&1; then
-  die "[mise] 仅支持 apt-get 环境，请手动安装 curl、xz-utils、pkg-config、Rust 和 cargo-zigbuild"
+  die "[mise] 仅支持 apt-get 环境，请手动安装 curl、xz-utils、pkg-config、clang、lld、Rust 和 cargo-zigbuild"
 fi
 
 sudo_cmd=()
@@ -70,7 +70,7 @@ if [ "${EUID}" -ne 0 ]; then
 fi
 
 "${sudo_cmd[@]}" apt-get update
-"${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl pkg-config xz-utils clang libclang-dev
+"${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl pkg-config xz-utils clang libclang-dev lld
 
 if ! command -v cargo >/dev/null 2>&1; then
   die "[mise] 未找到 cargo，请先安装 Rust 工具链"

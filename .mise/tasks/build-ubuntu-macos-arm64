@@ -61,8 +61,8 @@ MSG
     exit 1
   fi
 
-  if ! cargo zigbuild --help >/dev/null 2>&1; then
-    echo "[build-ubuntu-macos-arm64] 缺少 cargo-zigbuild，请先运行 `mise run deps-ubuntu-macos-arm64`" >&2
+  if ! command -v clang >/dev/null 2>&1; then
+    echo "[build-ubuntu-macos-arm64] 缺少 clang，请先运行 `mise run deps-ubuntu-macos-arm64`" >&2
     exit 1
   fi
 
@@ -77,6 +77,279 @@ MSG
   export PATH
   PATH="$(dirname "$zig_bin"):$PATH"
   echo "[build-ubuntu-macos-arm64] 使用 Zig: $zig_bin" >&2
+}
+
+find_latest_runtime_archive() {
+  local search_root="$1"
+  local archive_name="$2"
+  local marker="${3:-}"
+
+  if [ ! -d "$search_root" ]; then
+    return
+  fi
+
+  if [ -n "$marker" ] && [ -e "$marker" ]; then
+    find "$search_root" -type f -name "$archive_name" -newer "$marker" -printf '%T@ %p\n' 2>/dev/null \
+      | sort -nr \
+      | head -n 1 \
+      | cut -d' ' -f2-
+    return
+  fi
+
+  find "$search_root" -type f -name "$archive_name" -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr \
+    | head -n 1 \
+    | cut -d' ' -f2-
+}
+
+prepare_cross_wrappers() {
+  local zig_cache_root wrapper_dir zig_cc_wrapper zig_cxx_wrapper zig_ar_wrapper zig_ranlib_wrapper
+  local clang_link_wrapper runtime_marker runtime_dir runtime_source runtime_bin
+  local latest_ubsan latest_compiler_rt
+
+  zig_cache_root="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/zig}"
+  wrapper_dir="$repo_root/.cache/ubuntu-macos-arm64-toolchain"
+  zig_cc_wrapper="$wrapper_dir/zig-cc"
+  zig_cxx_wrapper="$wrapper_dir/zig-cxx"
+  zig_ar_wrapper="$wrapper_dir/zig-ar"
+  zig_ranlib_wrapper="$wrapper_dir/zig-ranlib"
+  clang_link_wrapper="$wrapper_dir/clang-link"
+  mkdir -p "$wrapper_dir"
+
+  cat > "$zig_cc_wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+zig_bin="${ZIG_BIN:?}"
+sdk_path="${SDKROOT:?}"
+out=(
+  cc
+  -isysroot "$sdk_path"
+  -iframework "$sdk_path/System/Library/Frameworks"
+  -isystem "$sdk_path/usr/include"
+  -F"$sdk_path/System/Library/Frameworks"
+  -L"$sdk_path/usr/lib"
+)
+needs_default_target=1
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -Wp,-U*|-Wp,-D*)
+      out+=( "${1#-Wp,}" )
+      shift
+      ;;
+    --target=arm64-apple-macosx|--target=arm64-apple-darwin|--target=aarch64-apple-darwin)
+      out+=( -target aarch64-macos-none )
+      needs_default_target=0
+      shift
+      ;;
+    --target)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "missing value for --target" >&2
+        exit 1
+      fi
+      case "$1" in
+        arm64-apple-macosx|arm64-apple-darwin|aarch64-apple-darwin)
+          out+=( -target aarch64-macos-none )
+          ;;
+        *)
+          out+=( --target="$1" )
+          ;;
+      esac
+      needs_default_target=0
+      shift
+      ;;
+    -target)
+      out+=( "$1" )
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "missing value for -target" >&2
+        exit 1
+      fi
+      out+=( "$1" )
+      needs_default_target=0
+      shift
+      ;;
+    *)
+      out+=( "$1" )
+      shift
+      ;;
+  esac
+done
+
+if [ "$needs_default_target" -eq 1 ]; then
+  out+=( -target aarch64-macos-none )
+fi
+
+exec "$zig_bin" "${out[@]}"
+EOF
+
+  cat > "$zig_cxx_wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+zig_bin="${ZIG_BIN:?}"
+sdk_path="${SDKROOT:?}"
+out=(
+  c++
+  -isysroot "$sdk_path"
+  -iframework "$sdk_path/System/Library/Frameworks"
+  -isystem "$sdk_path/usr/include"
+  -F"$sdk_path/System/Library/Frameworks"
+  -L"$sdk_path/usr/lib"
+)
+needs_default_target=1
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -Wp,-U*|-Wp,-D*)
+      out+=( "${1#-Wp,}" )
+      shift
+      ;;
+    --target=arm64-apple-macosx|--target=arm64-apple-darwin|--target=aarch64-apple-darwin)
+      out+=( -target aarch64-macos-none )
+      needs_default_target=0
+      shift
+      ;;
+    --target)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "missing value for --target" >&2
+        exit 1
+      fi
+      case "$1" in
+        arm64-apple-macosx|arm64-apple-darwin|aarch64-apple-darwin)
+          out+=( -target aarch64-macos-none )
+          ;;
+        *)
+          out+=( --target="$1" )
+          ;;
+      esac
+      needs_default_target=0
+      shift
+      ;;
+    -target)
+      out+=( "$1" )
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "missing value for -target" >&2
+        exit 1
+      fi
+      out+=( "$1" )
+      needs_default_target=0
+      shift
+      ;;
+    *)
+      out+=( "$1" )
+      shift
+      ;;
+  esac
+done
+
+if [ "$needs_default_target" -eq 1 ]; then
+  out+=( -target aarch64-macos-none )
+fi
+
+exec "$zig_bin" "${out[@]}"
+EOF
+
+  cat > "$zig_ar_wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exec "${ZIG_BIN:?}" ar "$@"
+EOF
+
+  cat > "$zig_ranlib_wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+exec "${ZIG_BIN:?}" ranlib "$@"
+EOF
+
+  chmod +x \
+    "$zig_cc_wrapper" \
+    "$zig_cxx_wrapper" \
+    "$zig_ar_wrapper" \
+    "$zig_ranlib_wrapper"
+
+  runtime_marker="$(mktemp)"
+  runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/macos-runtime.XXXXXX")"
+  runtime_source="$runtime_dir/runtime.c"
+  runtime_bin="$runtime_dir/runtime"
+  printf 'int main(void) { return 0; }\n' > "$runtime_source"
+  "$zig_cc_wrapper" "$runtime_source" -o "$runtime_bin" >/dev/null 2>&1
+  "$zig_cc_wrapper" -fsanitize=undefined "$runtime_source" -o "$runtime_bin" >/dev/null 2>&1
+  latest_ubsan="$(find_latest_runtime_archive "$zig_cache_root/o" 'libubsan_rt.a' "$runtime_marker")"
+  latest_compiler_rt="$(find_latest_runtime_archive "$zig_cache_root/o" 'libcompiler_rt.a' "$runtime_marker")"
+  rm -f "$runtime_marker"
+  rm -rf "$runtime_dir"
+
+  if [ -z "$latest_ubsan" ]; then
+    latest_ubsan="$(find_latest_runtime_archive "$zig_cache_root/o" 'libubsan_rt.a')"
+  fi
+  if [ -z "$latest_compiler_rt" ]; then
+    latest_compiler_rt="$(find_latest_runtime_archive "$zig_cache_root/o" 'libcompiler_rt.a')"
+  fi
+
+  if [ -z "$latest_ubsan" ] || [ -z "$latest_compiler_rt" ]; then
+    echo "[build-ubuntu-macos-arm64] 无法定位 Zig runtime archive，请清理 $zig_cache_root 后重试" >&2
+    exit 1
+  fi
+
+  cat > "$clang_link_wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+sdk_path="${SDKROOT:?}"
+ubsan_rt="${CODEX_MACOS_UBSAN_RT:?}"
+compiler_rt="${CODEX_MACOS_COMPILER_RT:?}"
+out=(
+  clang
+  -fuse-ld=lld
+  -isysroot "$sdk_path"
+  -iframework "$sdk_path/System/Library/Frameworks"
+  -F"$sdk_path/System/Library/Frameworks"
+  -L"$sdk_path/usr/lib"
+)
+needs_default_target=1
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --target=*|-target)
+      out+=( "$1" )
+      shift
+      if [ "${out[-1]}" = "-target" ] && [ "$#" -gt 0 ]; then
+        out+=( "$1" )
+        shift
+      fi
+      needs_default_target=0
+      ;;
+    *)
+      out+=( "$1" )
+      shift
+      ;;
+  esac
+done
+
+if [ "$needs_default_target" -eq 1 ]; then
+  out+=( --target=arm64-apple-darwin )
+fi
+
+out+=( "$ubsan_rt" "$compiler_rt" )
+exec "${out[@]}"
+EOF
+
+  chmod +x \
+    "$clang_link_wrapper"
+
+  export CODEX_MACOS_UBSAN_RT="$latest_ubsan"
+  export CODEX_MACOS_COMPILER_RT="$latest_compiler_rt"
+  export CC_aarch64_apple_darwin="$zig_cc_wrapper"
+  export CXX_aarch64_apple_darwin="$zig_cxx_wrapper"
+  export AR_aarch64_apple_darwin="$zig_ar_wrapper"
+  export RANLIB_aarch64_apple_darwin="$zig_ranlib_wrapper"
+  export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$clang_link_wrapper"
+  export CARGO_TARGET_AARCH64_APPLE_DARWIN_AR="$zig_ar_wrapper"
 }
 
 ensure_cross_deps "$@"
@@ -101,10 +374,13 @@ export CXXFLAGS_aarch64_apple_darwin="${CXXFLAGS_aarch64_apple_darwin:-$sdk_cfla
 export CPPFLAGS_aarch64_apple_darwin="${CPPFLAGS_aarch64_apple_darwin:-$sdk_cflags}"
 export BINDGEN_EXTRA_CLANG_ARGS="${BINDGEN_EXTRA_CLANG_ARGS:-$sdk_cflags}"
 export COREAUDIO_SDK_PATH="${COREAUDIO_SDK_PATH:-$sdk_path}"
+export ZIG_BIN="$CARGO_ZIGBUILD_ZIG_PATH"
+
+prepare_cross_wrappers
 
 profile_dir="$(resolve_build_profile_dir "$@")"
 output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
 
-"$script_dir/rs-ext" cargo zigbuild -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
+"$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
 
 echo "[build-ubuntu-macos-arm64] 构建完成: $output_bin" >&2
