@@ -82,4 +82,13 @@ Prefer `codex rtk` for noisy shell output. When Codex embeds a dedicated wrapper
 - `codex rtk diff <file1> [file2]` for condensed diffs
 - `codex rtk summary <cmd>` for heuristic summaries
 
+## `mise run` Guidance
+
+- If `mise run <task>` ultimately maps to a supported RTK command, prefer the direct command.
+  - e.g. use `codex rtk cargo test` instead of `codex rtk test mise run test` when the underlying command is known.
+- If you need to preserve the `mise` task wrapper, use the generic wrappers:
+  - `codex rtk test mise run <task>` for test tasks
+  - `codex rtk err mise run <task>` for errors/warnings only
+  - `codex rtk summary mise run <task>` for multi-step task summaries
+
 Do not reference upstream RTK bootstrap, analytics, or hook-management commands such as `codex rtk init`, `codex rtk gain`, `codex rtk discover`, `codex rtk learn`, `codex rtk rewrite`, `codex rtk hook-audit`, or `codex rtk verify`; Codex does not embed them.
