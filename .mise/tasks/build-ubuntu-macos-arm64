@@ -120,29 +120,6 @@ MSG
   echo "[build-ubuntu-macos-arm64] 使用 Zig: $zig_bin" >&2
 }
 
-find_latest_runtime_archive() {
-  local search_root="$1"
-  local archive_name="$2"
-  local marker="${3:-}"
-
-  if [ ! -d "$search_root" ]; then
-    return
-  fi
-
-  if [ -n "$marker" ] && [ -e "$marker" ]; then
-    find "$search_root" -type f -name "$archive_name" -newer "$marker" -printf '%T@ %p\n' 2>/dev/null \
-      | sort -nr \
-      | head -n 1 \
-      | cut -d' ' -f2-
-    return
-  fi
-
-  find "$search_root" -type f -name "$archive_name" -printf '%T@ %p\n' 2>/dev/null \
-    | sort -nr \
-    | head -n 1 \
-    | cut -d' ' -f2-
-}
-
 prepare_cross_wrappers() {
   local zig_cache_root wrapper_dir zig_cc_wrapper zig_cxx_wrapper zig_ar_wrapper zig_ranlib_wrapper
   local clang_link_wrapper runtime_marker runtime_dir runtime_source runtime_bin
@@ -320,16 +297,36 @@ EOF
   printf 'int main(void) { return 0; }\n' > "$runtime_source"
   "$zig_cc_wrapper" "$runtime_source" -o "$runtime_bin" >/dev/null 2>&1
   "$zig_cc_wrapper" -fsanitize=undefined "$runtime_source" -o "$runtime_bin" >/dev/null 2>&1
-  latest_ubsan="$(find_latest_runtime_archive "$zig_cache_root/o" 'libubsan_rt.a' "$runtime_marker")"
-  latest_compiler_rt="$(find_latest_runtime_archive "$zig_cache_root/o" 'libcompiler_rt.a' "$runtime_marker")"
+  latest_ubsan="$(
+    find "$zig_cache_root/o" -type f -name 'libubsan_rt.a' -newer "$runtime_marker" -printf '%T@ %p\n' 2>/dev/null \
+      | sort -nr \
+      | head -n 1 \
+      | cut -d' ' -f2-
+  )"
+  latest_compiler_rt="$(
+    find "$zig_cache_root/o" -type f -name 'libcompiler_rt.a' -newer "$runtime_marker" -printf '%T@ %p\n' 2>/dev/null \
+      | sort -nr \
+      | head -n 1 \
+      | cut -d' ' -f2-
+  )"
   rm -f "$runtime_marker"
   rm -rf "$runtime_dir"
 
   if [ -z "$latest_ubsan" ]; then
-    latest_ubsan="$(find_latest_runtime_archive "$zig_cache_root/o" 'libubsan_rt.a')"
+    latest_ubsan="$(
+      find "$zig_cache_root/o" -type f -name 'libubsan_rt.a' -printf '%T@ %p\n' 2>/dev/null \
+        | sort -nr \
+        | head -n 1 \
+        | cut -d' ' -f2-
+    )"
   fi
   if [ -z "$latest_compiler_rt" ]; then
-    latest_compiler_rt="$(find_latest_runtime_archive "$zig_cache_root/o" 'libcompiler_rt.a')"
+    latest_compiler_rt="$(
+      find "$zig_cache_root/o" -type f -name 'libcompiler_rt.a' -printf '%T@ %p\n' 2>/dev/null \
+        | sort -nr \
+        | head -n 1 \
+        | cut -d' ' -f2-
+    )"
   fi
 
   if [ -z "$latest_ubsan" ] || [ -z "$latest_compiler_rt" ]; then
@@ -342,8 +339,6 @@ EOF
 set -euo pipefail
 
 sdk_path="${SDKROOT:?}"
-ubsan_rt="${CODEX_MACOS_UBSAN_RT:?}"
-compiler_rt="${CODEX_MACOS_COMPILER_RT:?}"
 out=(
   clang
   -fuse-ld=lld
@@ -352,6 +347,8 @@ out=(
   -F"$sdk_path/System/Library/Frameworks"
   -L"$sdk_path/usr/lib"
 )
+ubsan_rt="${CODEX_MACOS_UBSAN_RT:?}"
+compiler_rt="${CODEX_MACOS_COMPILER_RT:?}"
 needs_default_target=1
 
 while [ "$#" -gt 0 ]; do
@@ -393,6 +390,55 @@ EOF
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_AR="$zig_ar_wrapper"
 }
 
+ensure_data_const_read_only_flag() {
+  local binary="$1"
+
+  perl - "$binary" <<'EOF'
+use strict;
+use warnings;
+use Fcntl qw(SEEK_SET);
+
+my $path = shift @ARGV;
+open my $fh, '+<:raw', $path or die "open $path: $!";
+read($fh, my $header, 32) == 32 or die "read mach header: $!";
+
+my ($magic, undef, undef, undef, $ncmds, undef, undef, undef) = unpack('V8', $header);
+die "unsupported Mach-O header in $path\n" if $magic != 0xfeedfacf;
+
+my $offset = 32;
+my $patched = 0;
+
+for (1 .. $ncmds) {
+  seek($fh, $offset, SEEK_SET) or die "seek load command: $!";
+  read($fh, my $load_cmd, 8) == 8 or die "read load command: $!";
+  my ($cmd, $cmdsize) = unpack('V2', $load_cmd);
+
+  if ($cmd == 0x19) {
+    seek($fh, $offset + 8, SEEK_SET) or die "seek segment name: $!";
+    read($fh, my $segname, 16) == 16 or die "read segment name: $!";
+    $segname =~ s/\0.*//s;
+
+    if ($segname eq '__DATA_CONST') {
+      seek($fh, $offset + 68, SEEK_SET) or die "seek segment flags: $!";
+      read($fh, my $raw_flags, 4) == 4 or die "read segment flags: $!";
+      my $flags = unpack('V', $raw_flags);
+      my $new_flags = $flags | 0x10;
+      if ($new_flags != $flags) {
+        seek($fh, $offset + 68, SEEK_SET) or die "rewrite segment flags: $!";
+        print {$fh} pack('V', $new_flags) or die "write segment flags: $!";
+      }
+      $patched = 1;
+      last;
+    }
+  }
+
+  $offset += $cmdsize;
+}
+
+die "missing __DATA_CONST segment in $path\n" if !$patched;
+EOF
+}
+
 ensure_cross_deps "$@"
 
 if [ -z "${LIBCLANG_PATH:-}" ] && command -v ldconfig >/dev/null 2>&1; then
@@ -424,5 +470,6 @@ mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
 output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
 
 "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
+ensure_data_const_read_only_flag "$output_bin"
 
 echo "[build-ubuntu-macos-arm64] 构建完成: $output_bin" >&2
