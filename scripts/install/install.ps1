@@ -41,6 +41,10 @@ function Get-ReleaseUrl {
         [string]$ResolvedVersion
     )
 
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_BASE_URL)) {
+        return "$($env:CODEX_BASE_URL.TrimEnd('/'))/$AssetName"
+    }
+
     return "https://github.com/openai/codex/releases/download/rust-v$ResolvedVersion/$AssetName"
 }
 

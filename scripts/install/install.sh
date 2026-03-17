@@ -4,6 +4,7 @@ set -eu
 
 VERSION="${1:-latest}"
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
+BASE_URL="${CODEX_BASE_URL:-}"
 path_action="already"
 path_profile=""
 
@@ -100,6 +101,11 @@ add_to_path() {
 release_url_for_asset() {
   asset="$1"
   resolved_version="$2"
+
+  if [ -n "$BASE_URL" ]; then
+    printf '%s/%s\n' "${BASE_URL%/}" "$asset"
+    return
+  fi
 
   printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
 }
