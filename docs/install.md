@@ -144,6 +144,8 @@ mise run build ubuntu-win-amd64 --release
 mise run build ubuntu-win-arm64 --release
 
 # Optionally package the local cross-built binaries into zip archives.
+mise run package ubuntu-win
+# Or call the script directly if you want to choose a custom output dir.
 ./scripts/package_windows_cross_builds.sh
 ```
 

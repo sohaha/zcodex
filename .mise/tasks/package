@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run package ubuntu-win [output_dir]
+EOF
+  exit 0
+fi
+
+case "${1:-}" in
+  ubuntu-win)
+    shift
+    exec "$script_dir/package-ubuntu-win" "$@"
+    ;;
+esac
+
+if [ "$#" -gt 0 ]; then
+  echo "[mise] 未知 package 目标: $1" >&2
+fi
+echo "[mise] 可用目标: ubuntu-win" >&2
+exit 1
