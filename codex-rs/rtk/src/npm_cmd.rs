@@ -79,7 +79,7 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
 
     // Determine if this is "npm run <script>" or another npm subcommand (install, list, etc.)
     // Only inject "run" when args look like a script name, not a known npm subcommand.
-    let first_arg = args.first().map(|s| s.as_str());
+    let first_arg = args.first().map(std::string::String::as_str);
     let is_run_explicit = first_arg == Some("run");
     let is_npm_subcommand = first_arg
         .map(|a| NPM_SUBCOMMANDS.contains(&a) || a.starts_with('-'))
@@ -113,10 +113,10 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
     let output = cmd.output().context("Failed to run npm")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_npm_output(&raw);
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track(
         &format!("npm {}", args.join(" ")),
@@ -206,8 +206,7 @@ npm notice
         for subcmd in NPM_SUBCOMMANDS {
             assert!(
                 !needs_run_injection(&[subcmd]),
-                "'npm {}' should NOT inject 'run'",
-                subcmd
+                "'npm {subcmd}' should NOT inject 'run'"
             );
         }
 
@@ -215,8 +214,7 @@ npm notice
         for script in &["build", "dev", "lint", "typecheck", "deploy"] {
             assert!(
                 needs_run_injection(&[script]),
-                "'npm {}' SHOULD inject 'run'",
-                script
+                "'npm {script}' SHOULD inject 'run'"
             );
         }
 

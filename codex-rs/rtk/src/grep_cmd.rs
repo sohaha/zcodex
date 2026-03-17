@@ -5,20 +5,30 @@ use anyhow::Result;
 use regex::Regex;
 use std::collections::HashMap;
 
-pub fn run(
-    pattern: &str,
-    path: &str,
-    max_line_len: usize,
-    max_results: usize,
-    context_only: bool,
-    file_type: Option<&str>,
-    extra_args: &[String],
-    verbose: u8,
-) -> Result<()> {
+pub struct GrepOptions<'a> {
+    pub pattern: &'a str,
+    pub path: &'a str,
+    pub max_line_len: usize,
+    pub max_results: usize,
+    pub context_only: bool,
+    pub file_type: Option<&'a str>,
+    pub extra_args: &'a [String],
+}
+
+pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
+    let GrepOptions {
+        pattern,
+        path,
+        max_line_len,
+        max_results,
+        context_only,
+        file_type,
+        extra_args,
+    } = options;
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("grep: '{}' in {}", pattern, path);
+        eprintln!("grep: '{pattern}' in {path}");
     }
 
     // Fix: convert BRE alternation \| → | for rg (which uses PCRE-style regex)
@@ -61,10 +71,10 @@ pub fn run(
                 eprintln!("{}", stderr.trim());
             }
         }
-        let msg = format!("🔍 0 for '{}'", pattern);
-        println!("{}", msg);
+        let msg = format!("🔍 0 for '{pattern}'");
+        println!("{msg}");
         timer.track(
-            &format!("grep -rn '{}' {}", pattern, path),
+            &format!("grep -rn '{pattern}' {path}"),
             "rtk grep",
             &raw_output,
             &msg,
@@ -112,7 +122,7 @@ pub fn run(
         rtk_output.push_str(&format!("📄 {} ({}):\n", file_display, matches.len()));
 
         for (line_num, content) in matches.iter().take(10) {
-            rtk_output.push_str(&format!("  {:>4}: {}\n", line_num, content));
+            rtk_output.push_str(&format!("  {line_num:>4}: {content}\n"));
             shown += 1;
             if shown >= max_results {
                 break;
@@ -129,9 +139,9 @@ pub fn run(
         rtk_output.push_str(&format!("... +{}\n", total - shown));
     }
 
-    print!("{}", rtk_output);
+    print!("{rtk_output}");
     timer.track(
-        &format!("grep -rn '{}' {}", pattern, path),
+        &format!("grep -rn '{pattern}' {path}"),
         "rtk grep",
         &raw_output,
         &rtk_output,
@@ -147,14 +157,13 @@ pub fn run(
 fn clean_line(line: &str, max_len: usize, context_only: bool, pattern: &str) -> String {
     let trimmed = line.trim();
 
-    if context_only {
-        if let Ok(re) = Regex::new(&format!("(?i).{{0,20}}{}.*", regex::escape(pattern))) {
-            if let Some(m) = re.find(trimmed) {
-                let matched = m.as_str();
-                if matched.len() <= max_len {
-                    return matched.to_string();
-                }
-            }
+    if context_only
+        && let Ok(re) = Regex::new(&format!("(?i).{{0,20}}{}.*", regex::escape(pattern)))
+        && let Some(m) = re.find(trimmed)
+    {
+        let matched = m.as_str();
+        if matched.len() <= max_len {
+            return matched.to_string();
         }
     }
 
@@ -179,15 +188,15 @@ fn clean_line(line: &str, max_len: usize, context_only: bool, pattern: &str) -> 
 
             let slice: String = chars[start..end].iter().collect();
             if start > 0 && end < char_len {
-                format!("...{}...", slice)
+                format!("...{slice}...")
             } else if start > 0 {
-                format!("...{}", slice)
+                format!("...{slice}")
             } else {
-                format!("{}...", slice)
+                format!("{slice}...")
             }
         } else {
             let t: String = trimmed.chars().take(max_len - 3).collect();
-            format!("{}...", t)
+            format!("{t}...")
         }
     }
 }

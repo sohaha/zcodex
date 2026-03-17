@@ -40,7 +40,7 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
 }
 
 fn summarize_output(output: &str, command: &str, success: bool) -> String {
-    let lines: Vec<&str> = output.lines().collect();
+    let line_count = output.lines().count();
     let mut result = Vec::new();
 
     // Status
@@ -50,7 +50,7 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
         status_icon,
         truncate(command, 60)
     ));
-    result.push(format!("   {} lines of output", lines.len()));
+    result.push(format!("   {line_count} lines of output"));
     result.push(String::new());
 
     // Detect type of output and summarize accordingly
@@ -96,12 +96,14 @@ fn detect_output_type(output: &str, command: &str) -> OutputType {
         OutputType::LogOutput
     } else if output.trim_start().starts_with('{') || output.trim_start().starts_with('[') {
         OutputType::JsonOutput
-    } else if output.lines().all(|l| {
-        l.len() < 200
-            && !l
-                .contains('\t')
-                .then_some(true)
-                .unwrap_or(l.split_whitespace().count() < 10)
+    } else if output.lines().all(|line| {
+        let short_enough = line.len() < 200;
+        let compact_columns = if line.contains('\t') {
+            false
+        } else {
+            line.split_whitespace().count() < 10
+        };
+        short_enough && compact_columns
     }) {
         OutputType::ListOutput
     } else {

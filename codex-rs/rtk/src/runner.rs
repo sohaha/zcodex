@@ -103,24 +103,24 @@ fn filter_errors(output: &str) -> String {
     lazy_static::lazy_static! {
         static ref ERROR_PATTERNS: Vec<Regex> = vec![
             // Generic errors
-            Regex::new(r"(?i)^.*error[\s:\[].*$").unwrap(),
-            Regex::new(r"(?i)^.*\berr\b.*$").unwrap(),
-            Regex::new(r"(?i)^.*warning[\s:\[].*$").unwrap(),
-            Regex::new(r"(?i)^.*\bwarn\b.*$").unwrap(),
-            Regex::new(r"(?i)^.*failed.*$").unwrap(),
-            Regex::new(r"(?i)^.*failure.*$").unwrap(),
-            Regex::new(r"(?i)^.*exception.*$").unwrap(),
-            Regex::new(r"(?i)^.*panic.*$").unwrap(),
+            crate::utils::compile_regex(r"(?i)^.*error[\s:\[].*$"),
+            crate::utils::compile_regex(r"(?i)^.*\berr\b.*$"),
+            crate::utils::compile_regex(r"(?i)^.*warning[\s:\[].*$"),
+            crate::utils::compile_regex(r"(?i)^.*\bwarn\b.*$"),
+            crate::utils::compile_regex(r"(?i)^.*failed.*$"),
+            crate::utils::compile_regex(r"(?i)^.*failure.*$"),
+            crate::utils::compile_regex(r"(?i)^.*exception.*$"),
+            crate::utils::compile_regex(r"(?i)^.*panic.*$"),
             // Rust specific
-            Regex::new(r"^error\[E\d+\]:.*$").unwrap(),
-            Regex::new(r"^\s*--> .*:\d+:\d+$").unwrap(),
+            crate::utils::compile_regex(r"^error\[E\d+\]:.*$"),
+            crate::utils::compile_regex(r"^\s*--> .*:\d+:\d+$"),
             // Python
-            Regex::new(r"^Traceback.*$").unwrap(),
-            Regex::new(r#"^\s*File ".*", line \d+.*$"#).unwrap(),
+            crate::utils::compile_regex(r"^Traceback.*$"),
+            crate::utils::compile_regex(r#"^\s*File ".*", line \d+.*$"#),
             // JavaScript/TypeScript
-            Regex::new(r"^\s*at .*:\d+:\d+.*$").unwrap(),
+            crate::utils::compile_regex(r"^\s*at .*:\d+:\d+.*$"),
             // Go
-            Regex::new(r"^.*\.go:\d+:.*$").unwrap(),
+            crate::utils::compile_regex(r"^.*\.go:\d+:.*$"),
         ];
     }
 
@@ -142,7 +142,8 @@ fn filter_errors(output: &str) -> String {
     lines
         .iter()
         .zip(include)
-        .filter_map(|(line, keep)| keep.then(|| (*line).to_string()))
+        .filter(|&(_line, keep)| keep)
+        .map(|(line, _keep)| (*line).to_string())
         .collect::<Vec<_>>()
         .join("\n")
 }

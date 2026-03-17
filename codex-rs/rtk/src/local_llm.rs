@@ -1,6 +1,5 @@
 use anyhow::Context;
 use anyhow::Result;
-use regex::Regex;
 use std::fs;
 use std::path::Path;
 
@@ -21,7 +20,7 @@ pub fn run(file: &Path, _model: &str, _force_download: bool, verbose: u8) -> Res
         .map(Language::from_extension)
         .unwrap_or(Language::Unknown);
 
-    let summary = analyze_code(&content, &lang);
+    let summary = analyze_code(&content, lang);
 
     println!("{}", summary.line1);
     println!("{}", summary.line2);
@@ -35,9 +34,8 @@ struct CodeSummary {
     line2: String,
 }
 
-fn analyze_code(content: &str, lang: &Language) -> CodeSummary {
-    let lines: Vec<&str> = content.lines().collect();
-    let total_lines = lines.len();
+fn analyze_code(content: &str, lang: Language) -> CodeSummary {
+    let total_lines = content.lines().count();
 
     // Extract components
     let imports = extract_imports(content, lang);
@@ -119,7 +117,7 @@ fn analyze_code(content: &str, lang: &Language) -> CodeSummary {
     CodeSummary { line1, line2 }
 }
 
-fn lang_display_name(lang: &Language) -> &'static str {
+fn lang_display_name(lang: Language) -> &'static str {
     match lang {
         Language::Rust => "Rust",
         Language::Python => "Python",
@@ -136,7 +134,7 @@ fn lang_display_name(lang: &Language) -> &'static str {
     }
 }
 
-fn extract_imports(content: &str, lang: &Language) -> Vec<String> {
+fn extract_imports(content: &str, lang: Language) -> Vec<String> {
     let pattern = match lang {
         Language::Rust => r"^use\s+([a-zA-Z_][a-zA-Z0-9_]*(?:::[a-zA-Z_][a-zA-Z0-9_]*)?)",
         Language::Python => r"^(?:from\s+(\S+)|import\s+(\S+))",
@@ -147,7 +145,7 @@ fn extract_imports(content: &str, lang: &Language) -> Vec<String> {
         _ => return Vec::new(),
     };
 
-    let re = Regex::new(pattern).unwrap();
+    let re = crate::utils::compile_regex(pattern);
     let mut imports = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -167,7 +165,7 @@ fn extract_imports(content: &str, lang: &Language) -> Vec<String> {
     imports.into_iter().take(5).collect()
 }
 
-fn is_std_import(name: &str, lang: &Language) -> bool {
+fn is_std_import(name: &str, lang: Language) -> bool {
     match lang {
         Language::Rust => matches!(name, "std" | "core" | "alloc"),
         Language::Python => matches!(name, "os" | "sys" | "re" | "json" | "typing"),
@@ -175,7 +173,7 @@ fn is_std_import(name: &str, lang: &Language) -> bool {
     }
 }
 
-fn extract_functions(content: &str, lang: &Language) -> Vec<String> {
+fn extract_functions(content: &str, lang: Language) -> Vec<String> {
     let pattern = match lang {
         Language::Rust => r"(?:pub\s+)?(?:async\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)",
         Language::Python => r"def\s+([a-zA-Z_][a-zA-Z0-9_]*)",
@@ -186,7 +184,7 @@ fn extract_functions(content: &str, lang: &Language) -> Vec<String> {
         _ => return Vec::new(),
     };
 
-    let re = Regex::new(pattern).unwrap();
+    let re = crate::utils::compile_regex(pattern);
     let mut functions = Vec::new();
 
     for line in content.lines() {
@@ -205,7 +203,7 @@ fn extract_functions(content: &str, lang: &Language) -> Vec<String> {
     functions.into_iter().take(10).collect()
 }
 
-fn extract_structs(content: &str, lang: &Language) -> Vec<String> {
+fn extract_structs(content: &str, lang: Language) -> Vec<String> {
     let pattern = match lang {
         Language::Rust => r"(?:pub\s+)?(?:struct|enum)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
         Language::Python => r"class\s+([a-zA-Z_][a-zA-Z0-9_]*)",
@@ -215,28 +213,28 @@ fn extract_structs(content: &str, lang: &Language) -> Vec<String> {
         _ => return Vec::new(),
     };
 
-    let re = Regex::new(pattern).unwrap();
+    let re = crate::utils::compile_regex(pattern);
     re.captures_iter(content)
         .filter_map(|caps| caps.get(1).map(|m| m.as_str().to_string()))
         .take(10)
         .collect()
 }
 
-fn extract_traits(content: &str, lang: &Language) -> Vec<String> {
+fn extract_traits(content: &str, lang: Language) -> Vec<String> {
     let pattern = match lang {
         Language::Rust => r"(?:pub\s+)?trait\s+([a-zA-Z_][a-zA-Z0-9_]*)",
         Language::TypeScript => r"interface\s+([a-zA-Z_][a-zA-Z0-9_]*)",
         _ => return Vec::new(),
     };
 
-    let re = Regex::new(pattern).unwrap();
+    let re = crate::utils::compile_regex(pattern);
     re.captures_iter(content)
         .filter_map(|caps| caps.get(1).map(|m| m.as_str().to_string()))
         .take(5)
         .collect()
 }
 
-fn detect_patterns(content: &str, lang: &Language) -> Vec<String> {
+fn detect_patterns(content: &str, lang: Language) -> Vec<String> {
     let mut patterns = Vec::new();
 
     // Common patterns
@@ -304,7 +302,7 @@ pub fn load_config() -> Result<Config> {
 
 fn helper() {}
 "#;
-        let summary = analyze_code(code, &Language::Rust);
+        let summary = analyze_code(code, Language::Rust);
         assert!(summary.line1.contains("Rust"));
         assert!(summary.line1.contains("fn"));
     }
@@ -322,7 +320,7 @@ class Config:
 def load_config():
     return Config("test")
 "#;
-        let summary = analyze_code(code, &Language::Python);
+        let summary = analyze_code(code, Language::Python);
         assert!(summary.line1.contains("Python"));
     }
 
@@ -332,7 +330,7 @@ def load_config():
 name = "demo"
 enabled = true
 "#;
-        let summary = analyze_code(content, &Language::Data);
+        let summary = analyze_code(content, Language::Data);
         assert_eq!(
             summary,
             CodeSummary {

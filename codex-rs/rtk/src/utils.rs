@@ -11,6 +11,13 @@ use regex::Regex;
 use std::path::PathBuf;
 use std::process::Command;
 
+pub(crate) fn compile_regex(pattern: &str) -> Regex {
+    match Regex::new(pattern) {
+        Ok(regex) => regex,
+        Err(err) => panic!("invalid regex pattern {pattern:?}: {err}"),
+    }
+}
+
 /// Truncates a string to `max_len` characters, appending `...` if needed.
 ///
 /// # Arguments
@@ -48,7 +55,7 @@ pub fn truncate(s: &str, max_len: usize) -> String {
 /// ```
 pub fn strip_ansi(text: &str) -> String {
     lazy_static::lazy_static! {
-        static ref ANSI_RE: Regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+        static ref ANSI_RE: Regex = compile_regex(r"\x1b\[[0-9;]*[a-zA-Z]");
     }
     ANSI_RE.replace_all(text, "").to_string()
 }
@@ -73,7 +80,7 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
     let output = resolved_command(cmd)
         .args(args)
         .output()
-        .context(format!("Failed to execute {}", cmd))?;
+        .context(format!("Failed to execute {cmd}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -97,13 +104,14 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
 /// assert_eq!(format_tokens(59_234), "59.2K");
 /// assert_eq!(format_tokens(694), "694");
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_tokens(n: usize) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
     } else if n >= 1_000 {
         format!("{:.1}K", n as f64 / 1_000.0)
     } else {
-        format!("{}", n)
+        format!("{n}")
     }
 }
 
@@ -123,14 +131,15 @@ pub fn format_tokens(n: usize) -> String {
 /// assert_eq!(format_usd(0.123), "$0.12");
 /// assert_eq!(format_usd(0.0096), "$0.0096");
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_usd(amount: f64) -> String {
     if !amount.is_finite() {
         return "$0.00".to_string();
     }
     if amount >= 0.01 {
-        format!("${:.2}", amount)
+        format!("${amount:.2}")
     } else {
-        format!("${:.4}", amount)
+        format!("${amount:.4}")
     }
 }
 
@@ -149,12 +158,13 @@ pub fn format_usd(amount: f64) -> String {
 /// assert_eq!(format_cpt(0.0000038), "$3.80/MTok");
 /// assert_eq!(format_cpt(0.00000386), "$3.86/MTok");
 /// ```
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn format_cpt(cpt: f64) -> String {
     if !cpt.is_finite() || cpt <= 0.0 {
         return "$0.00/MTok".to_string();
     }
     let cpt_per_million = cpt * 1_000_000.0;
-    format!("${:.2}/MTok", cpt_per_million)
+    format!("${cpt_per_million:.2}/MTok")
 }
 
 /// Join items into a newline-separated string, appending an overflow hint when total > max.
@@ -198,9 +208,9 @@ pub fn truncate_iso_date(date: &str) -> &str {
 /// ```
 pub fn ok_confirmation(action: &str, detail: &str) -> String {
     if detail.is_empty() {
-        format!("ok {}", action)
+        format!("ok {action}")
     } else {
-        format!("ok {} {}", action, detail)
+        format!("ok {action} {detail}")
     }
 }
 
@@ -265,7 +275,7 @@ pub fn package_manager_exec(tool: &str) -> Command {
 /// # Returns
 /// Full path to the resolved binary, or error if not found.
 pub fn resolve_binary(name: &str) -> Result<PathBuf> {
-    which::which(name).context(format!("Binary '{}' not found on PATH", name))
+    which::which(name).context(format!("Binary '{name}' not found on PATH"))
 }
 
 /// Create a `Command` with PATHEXT-aware binary resolution.
@@ -297,8 +307,7 @@ pub fn resolved_command(name: &str) -> Command {
             {
                 #[cfg(debug_assertions)]
                 eprintln!(
-                    "rtk: Failed to resolve '{}' via PATH, falling back to direct exec: {}",
-                    name, e
+                    "rtk: Failed to resolve '{name}' via PATH, falling back to direct exec: {e}"
                 );
             }
             Command::new(name)
@@ -502,8 +511,7 @@ mod tests {
         let path = resolve_binary("cargo").expect("cargo should be resolvable");
         assert!(
             path.is_absolute(),
-            "resolve_binary should return absolute path, got: {:?}",
-            path
+            "resolve_binary should return absolute path, got: {path:?}"
         );
     }
 
@@ -526,8 +534,7 @@ mod tests {
         // On Windows this could be "cargo.exe", on Unix just "cargo"
         assert!(
             filename.starts_with("cargo"),
-            "resolved path filename should start with 'cargo', got: {}",
-            filename
+            "resolved path filename should start with 'cargo', got: {filename}"
         );
     }
 

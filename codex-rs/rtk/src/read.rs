@@ -38,7 +38,7 @@ pub fn run(
 
     // Apply filter
     let filter = filter::get_filter(level);
-    let mut filtered = filter.filter(&content, &lang);
+    let mut filtered = filter.filter(&content, lang);
 
     if verbose > 0 {
         let original_lines = content.lines().count();
@@ -51,7 +51,7 @@ pub fn run(
         eprintln!("Lines: {original_lines} -> {filtered_lines} ({reduction:.1}% reduction)");
     }
 
-    filtered = apply_line_window(&filtered, max_lines, tail_lines, &lang);
+    filtered = apply_line_window(&filtered, max_lines, tail_lines, lang);
 
     let rtk_output = if line_numbers {
         format_with_line_numbers(&filtered)
@@ -100,7 +100,7 @@ pub fn run_stdin(
 
     // Apply filter
     let filter = filter::get_filter(level);
-    let mut filtered = filter.filter(&content, &lang);
+    let mut filtered = filter.filter(&content, lang);
 
     if verbose > 0 {
         let original_lines = content.lines().count();
@@ -113,7 +113,7 @@ pub fn run_stdin(
         eprintln!("Lines: {original_lines} -> {filtered_lines} ({reduction:.1}% reduction)");
     }
 
-    filtered = apply_line_window(&filtered, max_lines, tail_lines, &lang);
+    filtered = apply_line_window(&filtered, max_lines, tail_lines, lang);
 
     let rtk_output = if line_numbers {
         format_with_line_numbers(&filtered)
@@ -140,7 +140,7 @@ fn apply_line_window(
     content: &str,
     max_lines: Option<usize>,
     tail_lines: Option<usize>,
-    lang: &Language,
+    lang: Language,
 ) -> String {
     if let Some(tail) = tail_lines {
         if tail == 0 {
@@ -194,21 +194,21 @@ fn main() {{
     #[test]
     fn test_apply_line_window_tail_lines() {
         let input = "a\nb\nc\nd\n";
-        let output = apply_line_window(input, None, Some(2), &Language::Unknown);
+        let output = apply_line_window(input, None, Some(2), Language::Unknown);
         assert_eq!(output, "c\nd\n");
     }
 
     #[test]
     fn test_apply_line_window_tail_lines_no_trailing_newline() {
         let input = "a\nb\nc\nd";
-        let output = apply_line_window(input, None, Some(2), &Language::Unknown);
+        let output = apply_line_window(input, None, Some(2), Language::Unknown);
         assert_eq!(output, "c\nd");
     }
 
     #[test]
     fn test_apply_line_window_max_lines_still_works() {
         let input = "a\nb\nc\nd\n";
-        let output = apply_line_window(input, Some(2), None, &Language::Unknown);
+        let output = apply_line_window(input, Some(2), None, Language::Unknown);
         assert!(output.starts_with("a\n"));
         assert!(output.contains("more lines"));
     }

@@ -33,7 +33,7 @@ impl std::fmt::Display for FilterLevel {
 }
 
 pub trait FilterStrategy {
-    fn filter(&self, content: &str, lang: &Language) -> String;
+    fn filter(&self, content: &str, lang: Language) -> String;
     #[allow(dead_code)]
     fn name(&self) -> &'static str;
 }
@@ -74,7 +74,7 @@ impl Language {
         }
     }
 
-    pub fn comment_patterns(&self) -> CommentPatterns {
+    pub fn comment_patterns(self) -> CommentPatterns {
         match self {
             Language::Rust => CommentPatterns {
                 line: Some("//"),
@@ -146,7 +146,7 @@ pub struct CommentPatterns {
 pub struct NoFilter;
 
 impl FilterStrategy for NoFilter {
-    fn filter(&self, content: &str, _lang: &Language) -> String {
+    fn filter(&self, content: &str, _lang: Language) -> String {
         content.to_string()
     }
 
@@ -158,12 +158,12 @@ impl FilterStrategy for NoFilter {
 pub struct MinimalFilter;
 
 lazy_static! {
-    static ref MULTIPLE_BLANK_LINES: Regex = Regex::new(r"\n{3,}").unwrap();
-    static ref TRAILING_WHITESPACE: Regex = Regex::new(r"[ \t]+$").unwrap();
+    static ref MULTIPLE_BLANK_LINES: Regex = crate::utils::compile_regex(r"\n{3,}");
+    static ref TRAILING_WHITESPACE: Regex = crate::utils::compile_regex(r"[ \t]+$");
 }
 
 impl FilterStrategy for MinimalFilter {
-    fn filter(&self, content: &str, lang: &Language) -> String {
+    fn filter(&self, content: &str, lang: Language) -> String {
         let patterns = lang.comment_patterns();
         let mut result = String::with_capacity(content.len());
         let mut in_block_comment = false;
@@ -189,7 +189,7 @@ impl FilterStrategy for MinimalFilter {
             }
 
             // Handle Python docstrings (keep them in minimal mode)
-            if *lang == Language::Python && trimmed.starts_with("\"\"\"") {
+            if lang == Language::Python && trimmed.starts_with("\"\"\"") {
                 in_docstring = !in_docstring;
                 result.push_str(line);
                 result.push('\n');
@@ -203,17 +203,17 @@ impl FilterStrategy for MinimalFilter {
             }
 
             // Skip single-line comments (but keep doc comments)
-            if let Some(line_comment) = patterns.line {
-                if trimmed.starts_with(line_comment) {
-                    // Keep doc comments
-                    if let Some(doc) = patterns.doc_line {
-                        if trimmed.starts_with(doc) {
-                            result.push_str(line);
-                            result.push('\n');
-                        }
-                    }
-                    continue;
+            if let Some(line_comment) = patterns.line
+                && trimmed.starts_with(line_comment)
+            {
+                // Keep doc comments
+                if let Some(doc) = patterns.doc_line
+                    && trimmed.starts_with(doc)
+                {
+                    result.push_str(line);
+                    result.push('\n');
                 }
+                continue;
             }
 
             // Skip empty lines at this point, we'll normalize later
@@ -240,15 +240,14 @@ pub struct AggressiveFilter;
 
 lazy_static! {
     static ref IMPORT_PATTERN: Regex =
-        Regex::new(r"^(use |import |from |require\(|#include)").unwrap();
-    static ref FUNC_SIGNATURE: Regex = Regex::new(
+        crate::utils::compile_regex(r"^(use |import |from |require\(|#include)");
+    static ref FUNC_SIGNATURE: Regex = crate::utils::compile_regex(
         r"^(pub\s+)?(async\s+)?(fn|def|function|func|class|struct|enum|trait|interface|type)\s+\w+"
-    )
-    .unwrap();
+    );
 }
 
 impl FilterStrategy for AggressiveFilter {
-    fn filter(&self, content: &str, lang: &Language) -> String {
+    fn filter(&self, content: &str, lang: Language) -> String {
         let minimal = MinimalFilter.filter(content, lang);
         let mut result = String::with_capacity(minimal.len() / 2);
         let mut brace_depth = 0;
@@ -325,7 +324,7 @@ pub fn get_filter(level: FilterLevel) -> Box<dyn FilterStrategy> {
     }
 }
 
-pub fn smart_truncate(content: &str, max_lines: usize, _lang: &Language) -> String {
+pub fn smart_truncate(content: &str, max_lines: usize, _lang: Language) -> String {
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() <= max_lines {
         return content.to_string();
@@ -443,7 +442,7 @@ mod tests {
   }
 }"#;
         let filter = MinimalFilter;
-        let result = filter.filter(json, &Language::Data);
+        let result = filter.filter(json, Language::Data);
         assert!(
             result.contains("scripts"),
             "scripts section must be preserved"
@@ -467,7 +466,7 @@ fn main() {
 }
 "#;
         let filter = MinimalFilter;
-        let result = filter.filter(code, &Language::Rust);
+        let result = filter.filter(code, Language::Rust);
         assert!(!result.contains("// This is a comment"));
         assert!(result.contains("fn main()"));
     }

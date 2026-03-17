@@ -25,7 +25,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     // Detect subcommand
-    let subcommand = args.first().map(|s| s.as_str()).unwrap_or("");
+    let subcommand = args.first().map(std::string::String::as_str).unwrap_or("");
 
     let (cmd_str, filtered) = match subcommand {
         "list" => run_list(base_cmd, &args[1..], verbose)?,
@@ -36,8 +36,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
         _ => {
             anyhow::bail!(
-                "rtk pip: unsupported subcommand '{}'\nSupported: list, outdated, install, uninstall, show",
-                subcommand
+                "rtk pip: unsupported subcommand '{subcommand}'\nSupported: list, outdated, install, uninstall, show"
             );
         }
     };
@@ -66,19 +65,19 @@ fn run_list(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, Str
     }
 
     if verbose > 0 {
-        eprintln!("Running: {} pip list --format=json", base_cmd);
+        eprintln!("Running: {base_cmd} pip list --format=json");
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {} pip list", base_cmd))?;
+        .with_context(|| format!("Failed to run {base_cmd} pip list"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_pip_list(&stdout);
-    println!("{}", filtered);
+    println!("{filtered}");
 
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
@@ -101,19 +100,19 @@ fn run_outdated(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String,
     }
 
     if verbose > 0 {
-        eprintln!("Running: {} pip list --outdated --format=json", base_cmd);
+        eprintln!("Running: {base_cmd} pip list --outdated --format=json");
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {} pip list --outdated", base_cmd))?;
+        .with_context(|| format!("Failed to run {base_cmd} pip list --outdated"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_pip_outdated(&stdout);
-    println!("{}", filtered);
+    println!("{filtered}");
 
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
@@ -143,10 +142,10 @@ fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(Stri
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
-    print!("{}", stdout);
-    eprint!("{}", stderr);
+    print!("{stdout}");
+    eprint!("{stderr}");
 
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
@@ -160,7 +159,7 @@ fn filter_pip_list(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip list (JSON parse failed: {})", e);
+            return format!("pip list (JSON parse failed: {e})");
         }
     };
 
@@ -185,7 +184,9 @@ fn filter_pip_list(output: &str) -> String {
     letters.sort();
 
     for letter in letters {
-        let pkgs = by_letter.get(letter).unwrap();
+        let Some(pkgs) = by_letter.get(letter) else {
+            continue;
+        };
         result.push_str(&format!("\n[{}]\n", letter.to_uppercase()));
 
         for pkg in pkgs.iter().take(10) {
@@ -205,7 +206,7 @@ fn filter_pip_outdated(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip outdated (JSON parse failed: {})", e);
+            return format!("pip outdated (JSON parse failed: {e})");
         }
     };
 
@@ -218,11 +219,7 @@ fn filter_pip_outdated(output: &str) -> String {
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, pkg) in packages.iter().take(20).enumerate() {
-        let latest = pkg
-            .latest_version
-            .as_ref()
-            .map(|v| v.as_str())
-            .unwrap_or("unknown");
+        let latest = pkg.latest_version.as_deref().unwrap_or("unknown");
         result.push_str(&format!(
             "{}. {} ({} → {})\n",
             i + 1,

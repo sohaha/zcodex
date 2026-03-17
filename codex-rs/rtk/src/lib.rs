@@ -1,3 +1,5 @@
+#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
+
 mod aws_cmd;
 mod cargo_cmd;
 mod container;
@@ -1229,13 +1231,15 @@ fn run_cli(cli: Cli) -> Result<()> {
             extra_args,
         } => {
             grep_cmd::run(
-                &pattern,
-                &path,
-                max_len,
-                max,
-                context_only,
-                file_type.as_deref(),
-                &extra_args,
+                grep_cmd::GrepOptions {
+                    pattern: &pattern,
+                    path: &path,
+                    max_line_len: max_len,
+                    max_results: max,
+                    context_only,
+                    file_type: file_type.as_deref(),
+                    extra_args: &extra_args,
+                },
                 cli.verbose,
             )?;
         }

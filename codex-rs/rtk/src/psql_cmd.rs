@@ -14,10 +14,10 @@ const MAX_TABLE_ROWS: usize = 30;
 const MAX_EXPANDED_RECORDS: usize = 20;
 
 lazy_static! {
-    static ref EXPANDED_RECORD: Regex = Regex::new(r"-\[ RECORD \d+ \]-").unwrap();
-    static ref SEPARATOR: Regex = Regex::new(r"^[-+]+$").unwrap();
-    static ref ROW_COUNT: Regex = Regex::new(r"^\(\d+ rows?\)$").unwrap();
-    static ref RECORD_HEADER: Regex = Regex::new(r"^-\[ RECORD (\d+) \]-").unwrap();
+    static ref EXPANDED_RECORD: Regex = crate::utils::compile_regex(r"-\[ RECORD \d+ \]-");
+    static ref SEPARATOR: Regex = crate::utils::compile_regex(r"^[-+]+$");
+    static ref ROW_COUNT: Regex = crate::utils::compile_regex(r"^\(\d+ rows?\)$");
+    static ref RECORD_HEADER: Regex = crate::utils::compile_regex(r"^-\[ RECORD (\d+) \]-");
 }
 
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
@@ -41,7 +41,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let exit_code = output.status.code().unwrap_or(1);
 
     if !stderr.is_empty() {
-        eprint!("{}", stderr);
+        eprint!("{stderr}");
     }
 
     if exit_code != 0 {
@@ -51,9 +51,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let filtered = filter_psql_output(&stdout);
 
     if let Some(hint) = crate::tee::tee_and_hint(&stdout, "psql", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track(
@@ -129,7 +129,7 @@ fn filter_table(output: &str) -> String {
             }
 
             if data_rows <= MAX_TABLE_ROWS || total_rows == 1 {
-                let cols: Vec<&str> = trimmed.split('|').map(|c| c.trim()).collect();
+                let cols: Vec<&str> = trimmed.split('|').map(str::trim).collect();
                 result.push(cols.join("\t"));
             }
         } else {
@@ -176,7 +176,7 @@ fn filter_expanded(output: &str) -> String {
             if parts.len() == 2 {
                 let key = parts[0].trim();
                 let val = parts[1].trim();
-                current_pairs.push(format!("{}={}", key, val));
+                current_pairs.push(format!("{key}={val}"));
             }
         } else if trimmed.is_empty() {
             continue;
@@ -187,10 +187,10 @@ fn filter_expanded(output: &str) -> String {
     }
 
     // Flush last record
-    if let Some(rec) = current_record.take() {
-        if record_count <= MAX_EXPANDED_RECORDS {
-            result.push(format!("{} {}", rec, current_pairs.join(" ")));
-        }
+    if let Some(rec) = current_record.take()
+        && record_count <= MAX_EXPANDED_RECORDS
+    {
+        result.push(format!("{} {}", rec, current_pairs.join(" ")));
     }
 
     if record_count > MAX_EXPANDED_RECORDS {
@@ -266,7 +266,7 @@ mod tests {
     fn test_filter_table_overflow() {
         let mut lines = vec![" id | val".to_string(), "----+-----".to_string()];
         for i in 1..=40 {
-            lines.push(format!("  {} | row{}", i, i));
+            lines.push(format!("  {i} | row{i}"));
         }
         lines.push("(40 rows)".to_string());
         let input = lines.join("\n");
@@ -274,8 +274,7 @@ mod tests {
         let result = filter_table(&input);
         assert!(result.contains("... +10 more rows"));
         // Header + 30 data rows + overflow line
-        let result_lines: Vec<&str> = result.lines().collect();
-        assert_eq!(result_lines.len(), 32); // 1 header + 30 data + 1 overflow
+        assert_eq!(result.lines().count(), 32); // 1 header + 30 data + 1 overflow
     }
 
     #[test]
@@ -303,9 +302,9 @@ name | bob
     fn test_filter_expanded_overflow() {
         let mut lines = Vec::new();
         for i in 1..=25 {
-            lines.push(format!("-[ RECORD {} ]----", i));
-            lines.push(format!("id   | {}", i));
-            lines.push(format!("name | user{}", i));
+            lines.push(format!("-[ RECORD {i} ]----"));
+            lines.push(format!("id   | {i}"));
+            lines.push(format!("name | user{i}"));
         }
         let input = lines.join("\n");
 
@@ -363,8 +362,7 @@ name | bob
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 40.0,
-            "Table filter: expected >=40% savings, got {:.1}%",
-            savings
+            "Table filter: expected >=40% savings, got {savings:.1}%"
         );
     }
 
@@ -377,8 +375,7 @@ name | bob
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "Expanded filter: expected >=60% savings, got {:.1}%",
-            savings
+            "Expanded filter: expected >=60% savings, got {savings:.1}%"
         );
     }
 }

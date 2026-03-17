@@ -35,15 +35,15 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .context("Failed to run tsc (try: npm install -g typescript)")?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_tsc_output(&raw);
 
     let exit_code = output.status.code().unwrap_or(1);
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "tsc", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track(
@@ -61,9 +61,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 fn filter_tsc_output(output: &str) -> String {
     lazy_static::lazy_static! {
         // Pattern: src/file.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
-        static ref TSC_ERROR: Regex = Regex::new(
+        static ref TSC_ERROR: Regex = crate::utils::compile_regex(
             r"^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.+)$"
-        ).unwrap();
+        );
     }
 
     struct TsError {
@@ -145,7 +145,7 @@ fn filter_tsc_output(output: &str) -> String {
         let codes_str: Vec<String> = code_counts
             .iter()
             .take(5)
-            .map(|(code, count)| format!("{} ({}x)", code, count))
+            .map(|(code, count)| format!("{code} ({count}x)"))
             .collect();
         result.push_str(&format!("Top codes: {}\n\n", codes_str.join(", ")));
     }
@@ -233,17 +233,15 @@ src/app.tsx(20,5): error TS2345: Argument of type 'number' is not assignable to 
         let mut output = String::new();
         for i in 1..=15 {
             output.push_str(&format!(
-                "src/file{}.ts({},1): error TS2322: Error in file {}.\n",
-                i, i, i
+                "src/file{i}.ts({i},1): error TS2322: Error in file {i}.\n"
             ));
         }
         let result = filter_tsc_output(&output);
         assert!(result.contains("15 errors in 15 files"));
         for i in 1..=15 {
             assert!(
-                result.contains(&format!("file{}.ts", i)),
-                "file{}.ts missing from output",
-                i
+                result.contains(&format!("file{i}.ts")),
+                "file{i}.ts missing from output"
             );
         }
     }

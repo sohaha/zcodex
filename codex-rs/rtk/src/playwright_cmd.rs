@@ -169,12 +169,12 @@ fn collect_test_results(
 /// Tier 2: Extract test statistics using regex (degraded mode)
 fn extract_playwright_regex(output: &str) -> Option<TestResult> {
     lazy_static::lazy_static! {
-        static ref SUMMARY_RE: Regex = Regex::new(
+        static ref SUMMARY_RE: Regex = crate::utils::compile_regex(
             r"(\d+)\s+(passed|failed|flaky|skipped)"
-        ).unwrap();
-        static ref DURATION_RE: Regex = Regex::new(
+        );
+        static ref DURATION_RE: Regex = crate::utils::compile_regex(
             r"\((\d+(?:\.\d+)?)(ms|s|m)\)"
-        ).unwrap();
+        );
     }
 
     let clean_output = strip_ansi(output);
@@ -225,9 +225,9 @@ fn extract_playwright_regex(output: &str) -> Option<TestResult> {
 /// Extract failures using regex
 fn extract_failures_regex(output: &str) -> Vec<TestFailure> {
     lazy_static::lazy_static! {
-        static ref TEST_PATTERN: Regex = Regex::new(
+        static ref TEST_PATTERN: Regex = crate::utils::compile_regex(
             r"[×✗]\s+.*?›\s+([^›]+\.spec\.[tj]sx?)"
-        ).unwrap();
+        );
     }
 
     let mut failures = Vec::new();
@@ -297,7 +297,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     // Parse output using PlaywrightParser
     let parse_result = PlaywrightParser::parse(&stdout);
@@ -322,7 +322,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
     };
 
-    println!("{}", filtered);
+    println!("{filtered}");
 
     timer.track(
         &format!("playwright {}", args.join(" ")),

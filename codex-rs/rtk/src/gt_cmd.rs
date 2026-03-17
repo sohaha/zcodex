@@ -11,14 +11,13 @@ use std::ffi::OsString;
 
 lazy_static! {
     static ref EMAIL_RE: Regex =
-        Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b").unwrap();
-    static ref BRANCH_NAME_RE: Regex = Regex::new(
+        crate::utils::compile_regex(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b");
+    static ref BRANCH_NAME_RE: Regex = crate::utils::compile_regex(
         r#"(?:Created|Pushed|pushed|Deleted|deleted)\s+branch\s+[`"']?([a-zA-Z0-9/_.\-+@]+)"#
-    )
-    .unwrap();
-    static ref PR_LINE_RE: Regex =
-        Regex::new(r"(Created|Updated)\s+pull\s+request\s+#(\d+)\s+for\s+([^\s:]+)(?::\s*(\S+))?")
-            .unwrap();
+    );
+    static ref PR_LINE_RE: Regex = crate::utils::compile_regex(
+        r"(Created|Updated)\s+pull\s+request\s+#(\d+)\s+for\s+([^\s:]+)(?::\s*(\S+))?"
+    );
 }
 
 fn run_gt_filtered(
@@ -43,30 +42,27 @@ fn run_gt_filtered(
         eprintln!("Running: gt {} {}", subcmd_str, args.join(" "));
     }
 
-    let cmd_output = cmd.output().with_context(|| {
-        format!(
-            "Failed to run gt {}. Is gt (Graphite) installed?",
-            subcmd_str
-        )
-    })?;
+    let cmd_output = cmd
+        .output()
+        .with_context(|| format!("Failed to run gt {subcmd_str}. Is gt (Graphite) installed?"))?;
 
     let stdout = String::from_utf8_lossy(&cmd_output.stdout);
     let stderr = String::from_utf8_lossy(&cmd_output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = cmd_output.status.code().unwrap_or(1);
 
     let clean = strip_ansi(stdout.trim());
     let output = if verbose > 0 {
-        clean.clone()
+        clean
     } else {
         filter_fn(&clean)
     };
 
     if let Some(hint) = crate::tee::tee_and_hint(&raw, tee_label, exit_code) {
-        println!("{}\n{}", output, hint);
+        println!("{output}\n{hint}");
     } else {
-        println!("{}", output);
+        println!("{output}");
     }
 
     if !stderr.trim().is_empty() {
@@ -74,11 +70,11 @@ fn run_gt_filtered(
     }
 
     let label = if args.is_empty() {
-        format!("gt {}", subcmd_str)
+        format!("gt {subcmd_str}")
     } else {
         format!("gt {} {}", subcmd_str, args.join(" "))
     };
-    let rtk_label = format!("rtk {}", label);
+    let rtk_label = format!("rtk {label}");
     timer.track(&label, &rtk_label, &raw, &output);
 
     if !cmd_output.status.success() {
@@ -93,7 +89,7 @@ fn filter_identity(input: &str) -> String {
 }
 
 pub fn run_log(args: &[String], verbose: u8) -> Result<()> {
-    match args.first().map(|s| s.as_str()) {
+    match args.first().map(std::string::String::as_str) {
         Some("short") => run_gt_filtered(
             &["log", "short"],
             &args[1..],
@@ -186,7 +182,7 @@ fn passthrough_gt(subcommand: &str, args: &[String], verbose: u8) -> Result<()> 
 
     let status = cmd
         .status()
-        .with_context(|| format!("Failed to run gt {}", subcommand))?;
+        .with_context(|| format!("Failed to run gt {subcommand}"))?;
 
     let args_str = if args.is_empty() {
         subcommand.to_string()
@@ -194,8 +190,8 @@ fn passthrough_gt(subcommand: &str, args: &[String], verbose: u8) -> Result<()> 
         format!("{} {}", subcommand, args.join(" "))
     };
     timer.track_passthrough(
-        &format!("gt {}", args_str),
-        &format!("rtk gt {} (passthrough)", args_str),
+        &format!("gt {args_str}"),
+        &format!("rtk gt {args_str} (passthrough)"),
     );
 
     if !status.success() {
@@ -229,7 +225,7 @@ fn filter_gt_log_entries(input: &str) -> String {
         if entry_count >= MAX_LOG_ENTRIES {
             let remaining = lines[i + 1..].iter().filter(|l| is_graph_node(l)).count();
             if remaining > 0 {
-                result.push(format!("... +{} more entries", remaining));
+                result.push(format!("... +{remaining} more entries"));
             }
             break;
         }
@@ -268,7 +264,7 @@ fn filter_gt_submit(input: &str) -> String {
                     url.as_str()
                 ));
             } else {
-                prs.push(format!("{} PR #{} {}", action, num, branch));
+                prs.push(format!("{action} PR #{num} {branch}"));
             }
         }
     }
@@ -278,7 +274,7 @@ fn filter_gt_submit(input: &str) -> String {
     if !pushed.is_empty() {
         let branch_names: Vec<&str> = pushed
             .iter()
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
             .filter(|s| !s.is_empty())
             .collect();
         if !branch_names.is_empty() {
@@ -330,12 +326,12 @@ fn filter_gt_sync(input: &str) -> String {
     let mut parts = Vec::new();
 
     if synced > 0 {
-        parts.push(format!("{} synced", synced));
+        parts.push(format!("{synced} synced"));
     }
 
     if deleted > 0 {
         if deleted_names.is_empty() {
-            parts.push(format!("{} deleted", deleted));
+            parts.push(format!("{deleted} deleted"));
         } else {
             parts.push(format!(
                 "{} deleted ({})",
@@ -367,7 +363,7 @@ fn filter_gt_restack(input: &str) -> String {
     }
 
     if restacked > 0 {
-        ok_confirmation("restacked", &format!("{} branches", restacked))
+        ok_confirmation("restacked", &format!("{restacked} branches"))
     } else {
         ok_confirmation("restacked", "")
     }
@@ -505,8 +501,7 @@ Restacked branch fix/parsing on feat/add-db
         let mut input = String::new();
         for i in 0..20 {
             input.push_str(&format!(
-                "◉  hash{:02} branch-{} 1d ago dev@example.com\n│  commit message {}\n│\n",
-                i, i, i
+                "◉  hash{i:02} branch-{i} 1d ago dev@example.com\n│  commit message {i}\n│\n"
             ));
         }
         input.push_str("~\n");
@@ -544,10 +539,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt log filter: expected >=60% savings, got {:.1}% ({} -> {} tokens)",
-            savings,
-            input_tokens,
-            output_tokens
+            "gt log filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
         );
     }
 
@@ -629,10 +621,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt submit filter: expected >=60% savings, got {:.1}% ({} -> {} tokens)",
-            savings,
-            input_tokens,
-            output_tokens
+            "gt submit filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
         );
     }
 
@@ -757,10 +746,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt sync filter: expected >=60% savings, got {:.1}% ({} -> {} tokens)",
-            savings,
-            input_tokens,
-            output_tokens
+            "gt sync filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
         );
     }
 
@@ -780,10 +766,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt create filter: expected >=60% savings, got {:.1}% ({} -> {} tokens)",
-            savings,
-            input_tokens,
-            output_tokens
+            "gt create filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
         );
     }
 
@@ -806,8 +789,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt restack filter: expected >=60% savings, got {:.1}%",
-            savings
+            "gt restack filter: expected >=60% savings, got {savings:.1}%"
         );
     }
 }

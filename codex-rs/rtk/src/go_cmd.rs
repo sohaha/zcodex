@@ -63,7 +63,7 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = output
         .status
@@ -72,9 +72,9 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
     let filtered = filter_go_test_json(&stdout);
 
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "go_test", exit_code) {
-        println!("{}\n{}", filtered, hint);
+        println!("{filtered}\n{hint}");
     } else {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     // Include stderr if present (build errors, etc.)
@@ -117,7 +117,7 @@ pub fn run_build(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = output
         .status
@@ -127,12 +127,12 @@ pub fn run_build(args: &[String], verbose: u8) -> Result<()> {
 
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "go_build", exit_code) {
         if !filtered.is_empty() {
-            println!("{}\n{}", filtered, hint);
+            println!("{filtered}\n{hint}");
         } else {
-            println!("{}", hint);
+            println!("{hint}");
         }
     } else if !filtered.is_empty() {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track(
@@ -170,7 +170,7 @@ pub fn run_vet(args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = output
         .status
@@ -180,12 +180,12 @@ pub fn run_vet(args: &[String], verbose: u8) -> Result<()> {
 
     if let Some(hint) = crate::tee::tee_and_hint(&raw, "go_vet", exit_code) {
         if !filtered.is_empty() {
-            println!("{}\n{}", filtered, hint);
+            println!("{filtered}\n{hint}");
         } else {
-            println!("{}", hint);
+            println!("{hint}");
         }
     } else if !filtered.is_empty() {
-        println!("{}", filtered);
+        println!("{filtered}");
     }
 
     timer.track(
@@ -219,23 +219,23 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: go {} ...", subcommand);
+        eprintln!("Running: go {subcommand} ...");
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run go {}", subcommand))?;
+        .with_context(|| format!("Failed to run go {subcommand}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let raw = format!("{}\n{}", stdout, stderr);
+    let raw = format!("{stdout}\n{stderr}");
 
-    print!("{}", stdout);
-    eprint!("{}", stderr);
+    print!("{stdout}");
+    eprint!("{stderr}");
 
     timer.track(
-        &format!("go {}", subcommand),
-        &format!("rtk go {}", subcommand),
+        &format!("go {subcommand}"),
+        &format!("rtk go {subcommand}"),
         &raw,
         &raw, // No filtering for unsupported commands
     );
@@ -309,10 +309,10 @@ fn filter_go_test_json(output: &str) -> String {
                     // Package-level build failure
                     pkg_result.build_failed = true;
                     // Collect build errors from the import path
-                    if let Some(import_path) = &event.failed_build {
-                        if let Some(errors) = build_output.remove(import_path) {
-                            pkg_result.build_errors = errors;
-                        }
+                    if let Some(import_path) = &event.failed_build
+                        && let Some(errors) = build_output.remove(import_path)
+                    {
+                        pkg_result.build_errors = errors;
                     }
                 }
             }
@@ -349,10 +349,7 @@ fn filter_go_test_json(output: &str) -> String {
     }
 
     if !has_failures {
-        return format!(
-            "✓ Go test: {} passed in {} packages",
-            total_pass, total_packages
-        );
+        return format!("✓ Go test: {total_pass} passed in {total_packages} packages");
     }
 
     let mut result = String::new();
@@ -362,9 +359,9 @@ fn filter_go_test_json(output: &str) -> String {
         total_fail + total_build_fail
     ));
     if total_skip > 0 {
-        result.push_str(&format!(", {} skipped", total_skip));
+        result.push_str(&format!(", {total_skip} skipped"));
     }
-    result.push_str(&format!(" in {} packages\n", total_packages));
+    result.push_str(&format!(" in {total_packages} packages\n"));
     result.push_str("═══════════════════════════════════════\n");
 
     // Show build failures first
@@ -401,7 +398,7 @@ fn filter_go_test_json(output: &str) -> String {
         ));
 
         for (test, outputs) in &pkg_result.failed_tests {
-            result.push_str(&format!("  ❌ {}\n", test));
+            result.push_str(&format!("  ❌ {test}\n"));
 
             // Show failure output (limit to key lines)
             let relevant_lines: Vec<&String> = outputs

@@ -1,6 +1,5 @@
 use crate::tracking;
 use anyhow::Result;
-use regex::Regex;
 use std::fs;
 use std::path::Path;
 
@@ -73,9 +72,10 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
 
 fn summarize_cargo_str(path: &Path) -> Result<String> {
     let content = fs::read_to_string(path)?;
-    let dep_re =
-        Regex::new(r#"^([a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]+)"|.*version\s*=\s*"([^"]+)")"#).unwrap();
-    let section_re = Regex::new(r"^\[([^\]]+)\]").unwrap();
+    let dep_re = crate::utils::compile_regex(
+        r#"^([a-zA-Z0-9_-]+)\s*=\s*(?:"([^"]+)"|.*version\s*=\s*"([^"]+)")"#,
+    );
+    let section_re = crate::utils::compile_regex(r"^\[([^\]]+)\]");
     let mut current_section = String::new();
     let mut deps = Vec::new();
     let mut dev_deps = Vec::new();
@@ -162,7 +162,7 @@ fn summarize_package_json_str(path: &Path) -> Result<String> {
 
 fn summarize_requirements_str(path: &Path) -> Result<String> {
     let content = fs::read_to_string(path)?;
-    let dep_re = Regex::new(r"^([a-zA-Z0-9_-]+)([=<>!~]+.*)?$").unwrap();
+    let dep_re = crate::utils::compile_regex(r"^([a-zA-Z0-9_-]+)([=<>!~]+.*)?$");
     let mut deps = Vec::new();
     let mut out = String::new();
 

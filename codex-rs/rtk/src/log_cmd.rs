@@ -10,13 +10,13 @@ use std::path::Path;
 
 lazy_static! {
     static ref TIMESTAMP_RE: Regex =
-        Regex::new(r"^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*\s*").unwrap();
-    static ref UUID_RE: Regex =
-        Regex::new(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-            .unwrap();
-    static ref HEX_RE: Regex = Regex::new(r"0x[0-9a-fA-F]+").unwrap();
-    static ref NUM_RE: Regex = Regex::new(r"\b\d{4,}\b").unwrap();
-    static ref PATH_RE: Regex = Regex::new(r"/[\w./\-]+").unwrap();
+        crate::utils::compile_regex(r"^\d{4}[-/]\d{2}[-/]\d{2}[T ]\d{2}:\d{2}:\d{2}[.,]?\d*\s*");
+    static ref UUID_RE: Regex = crate::utils::compile_regex(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    );
+    static ref HEX_RE: Regex = crate::utils::compile_regex(r"0x[0-9a-fA-F]+");
+    static ref NUM_RE: Regex = crate::utils::compile_regex(r"\b\d{4,}\b");
+    static ref PATH_RE: Regex = crate::utils::compile_regex(r"/[\w./\-]+");
 }
 
 /// Filter and deduplicate log output
@@ -29,7 +29,7 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
 
     let content = fs::read_to_string(file)?;
     let result = analyze_logs(&content);
-    println!("{}", result);
+    println!("{result}");
     timer.track(
         &format!("cat {}", file.display()),
         "rtk log",
@@ -51,7 +51,7 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
     }
 
     let result = analyze_logs(&content);
-    println!("{}", result);
+    println!("{result}");
 
     timer.track("log (stdin)", "rtk log (stdin)", &content, &result);
 
@@ -106,7 +106,7 @@ fn analyze_logs(content: &str) -> String {
     let total_warnings: usize = warn_counts.values().sum();
     let total_info: usize = info_counts.values().sum();
 
-    result.push(format!("📊 Log Summary"));
+    result.push("📊 Log Summary".to_string());
     result.push(format!(
         "   ❌ {} errors ({} unique)",
         total_errors,
@@ -117,7 +117,7 @@ fn analyze_logs(content: &str) -> String {
         total_warnings,
         warn_counts.len()
     ));
-    result.push(format!("   ℹ️  {} info messages", total_info));
+    result.push(format!("   ℹ️  {total_info} info messages"));
     result.push(String::new());
 
     // Errors with counts
@@ -136,20 +136,20 @@ fn analyze_logs(content: &str) -> String {
                     &normalize_log_line(e, &TIMESTAMP_RE, &UUID_RE, &HEX_RE, &NUM_RE, &PATH_RE)
                         == *normalized
                 })
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .unwrap_or(normalized);
 
             let truncated = if original.len() > 100 {
                 let t: String = original.chars().take(97).collect();
-                format!("{}...", t)
+                format!("{t}...")
             } else {
                 original.to_string()
             };
 
             if **count > 1 {
-                result.push(format!("   [×{}] {}", count, truncated));
+                result.push(format!("   [×{count}] {truncated}"));
             } else {
-                result.push(format!("   {}", truncated));
+                result.push(format!("   {truncated}"));
             }
         }
 
@@ -176,20 +176,20 @@ fn analyze_logs(content: &str) -> String {
                     &normalize_log_line(w, &TIMESTAMP_RE, &UUID_RE, &HEX_RE, &NUM_RE, &PATH_RE)
                         == *normalized
                 })
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .unwrap_or(normalized);
 
             let truncated = if original.len() > 100 {
                 let t: String = original.chars().take(97).collect();
-                format!("{}...", t)
+                format!("{t}...")
             } else {
                 original.to_string()
             };
 
             if **count > 1 {
-                result.push(format!("   [×{}] {}", count, truncated));
+                result.push(format!("   [×{count}] {truncated}"));
             } else {
-                result.push(format!("   {}", truncated));
+                result.push(format!("   {truncated}"));
             }
         }
 
