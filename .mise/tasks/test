@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "$#" -eq 0 ]; then
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run test core [cargo test args...]
+  mise run test cli [cargo test args...]
+  mise run test tui [cargo test args...]
+  mise run test app-server-protocol [cargo test args...]
+  mise run test -p <cargo-package> [cargo test args...]
+EOF
+  exit 1
+fi
+
+case "${1:-}" in
+  core|codex-core)
+    shift
+    set -- -p codex-core "$@"
+    ;;
+  cli|codex-cli)
+    shift
+    set -- -p codex-cli "$@"
+    ;;
+  tui|codex-tui)
+    shift
+    set -- -p codex-tui "$@"
+    ;;
+  app-server-protocol|codex-app-server-protocol)
+    shift
+    set -- -p codex-app-server-protocol "$@"
+    ;;
+esac
+
+needs_workspace_bins=0
+previous_was_package=0
+
+for arg in "$@"; do
+  if [ "$previous_was_package" -eq 1 ]; then
+    case "$arg" in
+      codex-core|codex-cli|codex-tui)
+        needs_workspace_bins=1
+        ;;
+    esac
+    previous_was_package=0
+    continue
+  fi
+
+  case "$arg" in
+    -p|--package)
+      previous_was_package=1
+      ;;
+    -p=codex-core|-p=codex-cli|-p=codex-tui|--package=codex-core|--package=codex-cli|--package=codex-tui)
+      needs_workspace_bins=1
+      ;;
+  esac
+done
+
+if [ "$needs_workspace_bins" -eq 1 ]; then
+  build_args=(
+    cargo build
+    --bins
+    -p codex-exec
+    -p codex-shell-escalation
+    -p codex-rmcp-client
+  )
+
+  if [ "$(uname -s)" = "Linux" ]; then
+    build_args+=(-p codex-linux-sandbox)
+  fi
+
+  "$script_dir/rs-ext" "${build_args[@]}"
+fi
+
+"$script_dir/rs-ext" cargo test "$@"
