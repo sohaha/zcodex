@@ -5,6 +5,8 @@ repo="sohaha/zcodex"
 per_page=100
 confirm_delete=0
 field_separator=$'\037'
+api_base="https://api.github.com"
+token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 usage() {
   cat >&2 <<'EOF'
@@ -15,6 +17,7 @@ usage() {
 说明:
   默认执行 dry-run，只列出将删除的 completed workflow runs。
   传入 --yes 后，才会真正删除 sohaha/zcodex 的 GitHub Actions 记录。
+  需要环境变量 GITHUB_TOKEN 或 GH_TOKEN。
 EOF
 }
 
@@ -46,24 +49,48 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-require_command gh
+require_command curl
+require_command jq
 
-if ! gh auth status >/dev/null 2>&1; then
-  die "未检测到 gh 登录态，请先执行 gh auth login"
+if [ -z "$token" ]; then
+  die "缺少 GitHub token，请设置 GITHUB_TOKEN 或 GH_TOKEN"
 fi
 
 runs_file="$(mktemp)"
+response_file="$(mktemp)"
+error_file="$(mktemp)"
 
 cleanup() {
-  rm -f "$runs_file"
+  rm -f "$runs_file" "$response_file" "$error_file"
 }
 
 trap cleanup EXIT
 
-if ! gh api \
-  --paginate \
-  -H "Accept: application/vnd.github+json" \
-  --jq '
+page=1
+while true; do
+  status_code="$(
+    curl -sS \
+      -o "$response_file" \
+      -w "%{http_code}" \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer $token" \
+      "$api_base/repos/$repo/actions/runs?status=completed&per_page=$per_page&page=$page"
+  )"
+
+  if [ "$status_code" != "200" ]; then
+    api_message="$(jq -r '.message // empty' "$response_file" 2>/dev/null || true)"
+    if [ -n "$api_message" ]; then
+      die "获取 workflow runs 失败: HTTP $status_code - $api_message"
+    fi
+    die "获取 workflow runs 失败: HTTP $status_code"
+  fi
+
+  current_count="$(jq '.workflow_runs | length' "$response_file")"
+  if [ "$current_count" = "0" ]; then
+    break
+  fi
+
+  jq -r '
     .workflow_runs[]
     | [
         (.id | tostring),
@@ -73,10 +100,13 @@ if ! gh api \
         ((.created_at // "") | gsub("\u001f"; " "))
       ]
     | join("\u001f")
-  ' \
-  "/repos/$repo/actions/runs?status=completed&per_page=$per_page" >"$runs_file"; then
-  die "获取 workflow runs 失败"
-fi
+  ' "$response_file" >>"$runs_file"
+
+  if [ "$current_count" -lt "$per_page" ]; then
+    break
+  fi
+  page=$((page + 1))
+done
 
 run_count="$(wc -l <"$runs_file" | tr -d '[:space:]')"
 
@@ -90,10 +120,22 @@ echo "[mise] repo=$repo completed_runs=$run_count"
 while IFS="$field_separator" read -r run_id title status conclusion created_at; do
   if [ "$confirm_delete" -eq 1 ]; then
     echo "[delete] run_id=$run_id title=$title status=$status conclusion=$conclusion created_at=$created_at"
-    gh api \
-      --method DELETE \
-      -H "Accept: application/vnd.github+json" \
-      "/repos/$repo/actions/runs/$run_id" >/dev/null
+    status_code="$(
+      curl -sS \
+        -o "$error_file" \
+        -w "%{http_code}" \
+        -X DELETE \
+        -H "Accept: application/vnd.github+json" \
+        -H "Authorization: Bearer $token" \
+        "$api_base/repos/$repo/actions/runs/$run_id"
+    )"
+    if [ "$status_code" != "204" ]; then
+      api_message="$(jq -r '.message // empty' "$error_file" 2>/dev/null || true)"
+      if [ -n "$api_message" ]; then
+        die "删除 run_id=$run_id 失败: HTTP $status_code - $api_message"
+      fi
+      die "删除 run_id=$run_id 失败: HTTP $status_code"
+    fi
   else
     echo "[dry-run] run_id=$run_id title=$title status=$status conclusion=$conclusion created_at=$created_at"
   fi
