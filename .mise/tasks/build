@@ -7,6 +7,31 @@ codex_rs_dir="$repo_root/codex-rs"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 
+if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run build [cargo build args...]
+  mise run build cli [cargo build args...]
+  mise run build codex [cargo build args...]
+  mise run build ubuntu-linux-amd64 [args...]
+  mise run build ubuntu-macos-arm64 [args...]
+  mise run build ubuntu-win-amd64 [args...]
+  mise run build ubuntu-win-arm64 [args...]
+EOF
+  exit 0
+fi
+
+case "${1:-}" in
+  cli|codex|codex-cli)
+    shift
+    ;;
+  ubuntu-linux-amd64|ubuntu-macos-arm64|ubuntu-win-amd64|ubuntu-win-arm64)
+    target_task="$1"
+    shift
+    exec "$script_dir/build-$target_task" "$@"
+    ;;
+esac
+
 target_requires_linux_build_deps() {
   local target="${CARGO_BUILD_TARGET:-}"
   local previous_was_target=0

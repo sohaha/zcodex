@@ -1,6 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run deps
+  mise run deps host
+  mise run deps ubuntu-macos-arm64
+  mise run deps ubuntu-win-amd64
+  mise run deps ubuntu-win-arm64
+EOF
+  exit 0
+fi
+
+case "${1:-}" in
+  ""|host)
+    [ "$#" -gt 0 ] && shift
+    ;;
+  ubuntu-macos-arm64|ubuntu-win-amd64|ubuntu-win-arm64)
+    target_task="$1"
+    shift
+    exec "$script_dir/deps-$target_task" "$@"
+    ;;
+esac
+
+if [ "$#" -gt 0 ]; then
+  echo "[mise] 未知 deps 目标: $1" >&2
+  echo "[mise] 可用目标: host, ubuntu-macos-arm64, ubuntu-win-amd64, ubuntu-win-arm64" >&2
+  exit 1
+fi
+
 os_name="$(uname -s)"
 
 if [ "$os_name" = "Darwin" ]; then
