@@ -326,6 +326,9 @@ node ./dist/cli.js
 pnpm link
 ```
 
+For native Rust builds and Ubuntu cross-build tasks for macOS arm64 or Windows
+amd64/arm64, see [`docs/install.md`](../docs/install.md).
+
 </details>
 
 ---
