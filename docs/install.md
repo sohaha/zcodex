@@ -120,6 +120,145 @@ If you need to tune download behavior further, the tasks also honor
 `DOWNLOAD_CONNECT_TIMEOUT`, `DOWNLOAD_RETRY_COUNT`, `DOWNLOAD_RETRY_DELAY`,
 `DOWNLOAD_MAX_TIME`, and `DOWNLOAD_METADATA_MAX_TIME`.
 
+The Ubuntu cross-build task produces a release binary, but it does **not**
+perform Apple code signing or notarization. If you copy that binary to a Mac
+and run it directly, macOS may block or kill it until you sign it locally or
+ship it through the release workflow.
+
+### macOS code signing and notarization
+
+For distributable macOS artifacts, you need both:
+
+1. A `Developer ID Application` certificate exported as `.p12`
+2. An App Store Connect API key for `notarytool` (`.p8`, Key ID, Issuer ID)
+
+The repository now includes two helper scripts:
+
+```bash
+# Upload the 5 GitHub Actions secrets expected by the release workflow.
+./scripts/setup_macos_signing_secrets.sh --help
+
+# Sign + notarize local binaries, .app bundles, .dmg, or .pkg on macOS.
+./scripts/macos_sign_and_notarize_local.sh --help
+```
+
+#### Generate the signing certificate (`.p12`)
+
+On a Mac:
+
+1. Open `Keychain Access`
+2. Choose `Keychain Access > Certificate Assistant > Request a Certificate from a Certificate Authority`
+3. Save the CSR to disk
+4. In Apple Developer, go to `Certificates, Identifiers & Profiles > Certificates > +`
+5. Create a `Developer ID Application` certificate using that CSR
+6. Download the generated `.cer` and import it into Keychain Access
+7. In `My Certificates`, confirm the certificate has its private key attached
+8. Export it as `.p12` and choose an export password
+
+If the imported certificate does not show a private key, you created the CSR on
+another machine or in another keychain and cannot export a usable `.p12` from
+this Mac.
+
+Helpful Apple docs:
+
+- https://developer.apple.com/help/account/certificates/create-a-certificate-signing-request
+- https://developer.apple.com/help/account/certificates/create-developer-id-certificates
+- https://support.apple.com/guide/keychain-access/import-and-export-keychain-items-kyca35961/mac
+
+#### Generate the notarization API key (`.p8`)
+
+In App Store Connect:
+
+1. Open `Users and Access > Integrations > Team Keys`
+2. Enable API access if your organization has not done so already
+3. Generate a new API key
+4. Download the `.p8` file exactly once
+5. Record the `Key ID` and `Issuer ID`
+
+Apple doc:
+
+- https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api
+
+#### Configure GitHub Actions secrets
+
+The release workflow expects these repository secrets:
+
+- `APPLE_CERTIFICATE_P12`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_NOTARIZATION_KEY_P8`
+- `APPLE_NOTARIZATION_KEY_ID`
+- `APPLE_NOTARIZATION_ISSUER_ID`
+
+Use the helper script to upload them from local files:
+
+```bash
+gh auth login
+
+APPLE_CERTIFICATE_PASSWORD='your-p12-password' \
+./scripts/setup_macos_signing_secrets.sh \
+  --p12 /absolute/path/DeveloperIDApplication.p12 \
+  --p8 /absolute/path/AuthKey_ABC123XYZ.p8 \
+  --key-id ABC123XYZ \
+  --issuer-id 00000000-0000-0000-0000-000000000000 \
+  --repo owner/repo
+```
+
+Use `--dry-run` first if you want input validation without uploading anything.
+
+#### Sign and notarize locally on macOS
+
+First, list the signing identities available in your keychain:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+Then sign and notarize a standalone binary:
+
+```bash
+./scripts/macos_sign_and_notarize_local.sh \
+  --identity "Developer ID Application: Example, Inc. (TEAMID)" \
+  --binary ./codex \
+  --p8 ~/keys/AuthKey_ABC123XYZ.p8 \
+  --key-id ABC123XYZ \
+  --issuer-id 00000000-0000-0000-0000-000000000000
+```
+
+Or sign and notarize an app bundle plus dmg:
+
+```bash
+./scripts/macos_sign_and_notarize_local.sh \
+  --identity "Developer ID Application: Example, Inc. (TEAMID)" \
+  --app ./Codex.app \
+  --dmg ./Codex.dmg \
+  --p8 ~/keys/AuthKey_ABC123XYZ.p8 \
+  --key-id ABC123XYZ \
+  --issuer-id 00000000-0000-0000-0000-000000000000
+```
+
+The helper script:
+
+- signs every target with `codesign --timestamp`
+- adds `--options runtime` where appropriate
+- submits binaries through `xcrun notarytool submit --wait`
+- staples `.app`, `.dmg`, and `.pkg` targets after notarization
+
+For standalone Mach-O binaries, notarization is submitted with a temporary zip.
+Those binaries are verified locally after signing, but they do not support the
+same stapling flow as `.app` or `.dmg`.
+
+Apple notarization docs:
+
+- https://developer.apple.com/documentation/security/customizing-the-notarization-workflow
+
+If you only need a local test binary on your own Mac, an ad-hoc signature is
+often enough:
+
+```bash
+codesign --force --sign - ./codex
+./codex --help
+```
+
 ### Ubuntu cross-build to Windows
 
 If you use `mise`, the repository also provides tasks for building the CLI from
