@@ -49,6 +49,41 @@ just test
 cargo test --all-features
 ```
 
+### Common `mise` tasks
+
+If you use `mise`, the repository also provides a few shortcut tasks around the
+Rust workspace:
+
+```bash
+# Show task help
+mise run build help
+mise run deps help
+
+# Install host build dependencies
+mise run deps
+# equivalent explicit form:
+mise run deps host
+
+# Build the local Codex CLI
+mise run build
+# equivalent aliases:
+mise run build cli
+mise run build codex
+
+# Run crate tests through the shared wrapper
+mise run test core
+mise run test tui
+mise run test app-server-protocol
+
+# You can still pass through cargo test selectors/filters:
+mise run test core remote_models_request_times_out_after_5s
+mise run test codex-core read_file_tools_run_in_parallel
+```
+
+For `codex-core`, `codex-cli`, and `codex-tui`, the shared `mise run test`
+wrapper automatically prebuilds the workspace binaries that those tests expect
+to find locally on Linux.
+
 ### Ubuntu cross-build to macOS arm64
 
 If you use `mise`, the repository also provides dedicated tasks for building the
@@ -58,21 +93,21 @@ CLI from Ubuntu for Apple Silicon (`aarch64-apple-darwin`):
 # Install Zig/cargo-zigbuild/Rust target and automatically fetch a default
 # public macOS SDK into `.cache/macos-sdk`. The task now downloads/extracts
 # Zig directly so it is not limited by mise's default HTTP timeout.
-mise run deps-ubuntu-macos-arm64
+mise run deps ubuntu-macos-arm64
 
 # Optional overrides if you want to pin a specific SDK source:
-MACOS_SDK_URL=https://.../MacOSX.sdk.tar.xz mise run deps-ubuntu-macos-arm64
-MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run deps-ubuntu-macos-arm64
-MACOS_SDK_TARBALL=/path/to/MacOSX.sdk.tar.xz mise run deps-ubuntu-macos-arm64
+MACOS_SDK_URL=https://.../MacOSX.sdk.tar.xz mise run deps ubuntu-macos-arm64
+MACOS_SDK_PATH=/path/to/MacOSX.sdk mise run deps ubuntu-macos-arm64
+MACOS_SDK_TARBALL=/path/to/MacOSX.sdk.tar.xz mise run deps ubuntu-macos-arm64
 
 # Optional Zig overrides for mirrors, local archives, or preinstalled binaries:
-ZIG_BASE_URL=https://mirror.example.com/zig mise run deps-ubuntu-macos-arm64
-ZIG_URL=https://mirror.example.com/zig/0.14.0/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-macos-arm64
-ZIG_TARBALL=/path/to/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-macos-arm64
-ZIG_PATH=/path/to/zig mise run deps-ubuntu-macos-arm64
+ZIG_BASE_URL=https://mirror.example.com/zig mise run deps ubuntu-macos-arm64
+ZIG_URL=https://mirror.example.com/zig/0.14.0/zig-linux-x86_64-0.14.0.tar.xz mise run deps ubuntu-macos-arm64
+ZIG_TARBALL=/path/to/zig-linux-x86_64-0.14.0.tar.xz mise run deps ubuntu-macos-arm64
+ZIG_PATH=/path/to/zig mise run deps ubuntu-macos-arm64
 
 # Build codex for macOS arm64 from Ubuntu.
-mise run build-ubuntu-macos-arm64 --release
+mise run build ubuntu-macos-arm64 --release
 ```
 
 By default, the dependency task downloads a public prepackaged macOS SDK. If
@@ -94,19 +129,19 @@ Ubuntu for Windows:
 # Install Zig/cargo-zigbuild and the Rust Windows targets.
 # amd64 -> x86_64-pc-windows-gnu
 # arm64 -> aarch64-pc-windows-gnullvm
-mise run deps-ubuntu-win-amd64
-mise run deps-ubuntu-win-arm64
+mise run deps ubuntu-win-amd64
+mise run deps ubuntu-win-arm64
 
 # Optional Zig overrides for mirrors, local archives, or preinstalled binaries:
 # apply to either deps task:
-ZIG_BASE_URL=https://mirror.example.com/zig mise run deps-ubuntu-win-amd64
-ZIG_URL=https://mirror.example.com/zig/0.14.0/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-win-amd64
-ZIG_TARBALL=/path/to/zig-linux-x86_64-0.14.0.tar.xz mise run deps-ubuntu-win-amd64
-ZIG_PATH=/path/to/zig mise run deps-ubuntu-win-amd64
+ZIG_BASE_URL=https://mirror.example.com/zig mise run deps ubuntu-win-amd64
+ZIG_URL=https://mirror.example.com/zig/0.14.0/zig-linux-x86_64-0.14.0.tar.xz mise run deps ubuntu-win-amd64
+ZIG_TARBALL=/path/to/zig-linux-x86_64-0.14.0.tar.xz mise run deps ubuntu-win-amd64
+ZIG_PATH=/path/to/zig mise run deps ubuntu-win-amd64
 
 # Build codex.exe for Windows amd64 or arm64 from Ubuntu.
-mise run build-ubuntu-win-amd64 --release
-mise run build-ubuntu-win-arm64 --release
+mise run build ubuntu-win-amd64 --release
+mise run build ubuntu-win-arm64 --release
 ```
 
 The arm64 task uses Rust target `aarch64-pc-windows-gnullvm`, because the
