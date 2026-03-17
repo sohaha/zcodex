@@ -247,9 +247,21 @@ security find-identity -v -p codesigning
   --issuer-id 00000000-0000-0000-0000-000000000000
 ```
 
+如果要处理 `.pkg`，需要额外提供 Installer 证书身份：
+
+```bash
+./scripts/macos_sign_and_notarize_local.sh \
+  --identity "Developer ID Application: Example, Inc. (TEAMID)" \
+  --installer-identity "Developer ID Installer: Example, Inc. (TEAMID)" \
+  --pkg ./Codex.pkg \
+  --p8 ~/keys/AuthKey_ABC123XYZ.p8 \
+  --key-id ABC123XYZ \
+  --issuer-id 00000000-0000-0000-0000-000000000000
+```
+
 这个脚本会：
 
-- 对每个目标执行 `codesign --timestamp`
+- 对 `.pkg` 执行 `productsign --timestamp`，对其他目标执行 `codesign --timestamp`
 - 在适用的目标上附加 `--options runtime`
 - 用 `xcrun notarytool submit --wait` 提交公证
 - 在公证通过后对 `.app`、`.dmg`、`.pkg` 执行 `staple`

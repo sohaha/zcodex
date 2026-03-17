@@ -13,6 +13,8 @@ Usage:
 
 Options:
   --identity NAME      codesign identity name or SHA-1 hash from keychain
+  --installer-identity NAME
+                       Required when signing .pkg; use a Developer ID Installer identity
   --binary PATH        Sign a standalone Mach-O binary; repeatable
   --app PATH           Sign and notarize a .app bundle; repeatable
   --dmg PATH           Sign and notarize a .dmg; repeatable
@@ -38,6 +40,14 @@ Examples:
     --identity ABCDEF0123456789ABCDEF0123456789ABCDEF01 \
     --app ./MyApp.app \
     --dmg ./MyApp.dmg \
+    --p8 ~/keys/AuthKey_ABC123XYZ.p8 \
+    --key-id ABC123XYZ \
+    --issuer-id 00000000-0000-0000-0000-000000000000
+
+  scripts/macos_sign_and_notarize_local.sh \
+    --identity "Developer ID Application: Example, Inc. (TEAMID)" \
+    --installer-identity "Developer ID Installer: Example, Inc. (TEAMID)" \
+    --pkg ./MyApp.pkg \
     --p8 ~/keys/AuthKey_ABC123XYZ.p8 \
     --key-id ABC123XYZ \
     --issuer-id 00000000-0000-0000-0000-000000000000
@@ -80,10 +90,25 @@ validate_id_like() {
   [[ "$value" =~ $pattern ]] || die "$label format looks wrong: $value"
 }
 
-codesign_target() {
+sign_target() {
   local kind="$1"
   local path="$2"
   local -a args
+  local signed_pkg=""
+
+  if [ "$kind" = "pkg" ]; then
+    if [ "$dry_run" -eq 1 ]; then
+      printf 'dry-run:'
+      printf ' %q' productsign --sign "$installer_identity" --timestamp "$path" "${path}.signed"
+      printf '\n'
+      return
+    fi
+
+    signed_pkg="$(mktemp "${TMPDIR:-/tmp}/signed-installer.XXXXXX.pkg")"
+    productsign --sign "$installer_identity" --timestamp "$path" "$signed_pkg"
+    mv "$signed_pkg" "$path"
+    return
+  fi
 
   args=(
     codesign
@@ -105,7 +130,14 @@ codesign_target() {
 }
 
 verify_signature() {
-  local path="$1"
+  local kind="$1"
+  local path="$2"
+
+  if [ "$kind" = "pkg" ]; then
+    run pkgutil --check-signature "$path"
+    run spctl -a -vv -t install "$path"
+    return
+  fi
 
   run codesign --verify --verbose=4 "$path"
   run spctl -a -vv "$path"
@@ -200,6 +232,7 @@ staple_target() {
 
 main() {
   identity=""
+  installer_identity=""
   entitlements=""
   p8_path=""
   key_id=""
@@ -216,6 +249,11 @@ main() {
         shift
         [ "$#" -gt 0 ] || die "missing value for --identity"
         identity="$1"
+        ;;
+      --installer-identity)
+        shift
+        [ "$#" -gt 0 ] || die "missing value for --installer-identity"
+        installer_identity="$1"
         ;;
       --binary)
         shift
@@ -293,6 +331,21 @@ main() {
   require_cmd jq
   require_cmd security
 
+  local has_pkg_target=0
+  local kind
+  for kind in "${targets_kind[@]}"; do
+    if [ "$kind" = "pkg" ]; then
+      has_pkg_target=1
+      break
+    fi
+  done
+
+  if [ "$has_pkg_target" -eq 1 ]; then
+    [ -n "$installer_identity" ] || die "--installer-identity is required when signing .pkg targets"
+    require_cmd productsign
+    require_cmd pkgutil
+  fi
+
   if [ "$notarize" -eq 1 ]; then
     [ -f "$p8_path" ] || die "--p8 file not found: $p8_path"
     [ -n "$key_id" ] || die "--key-id is required unless --no-notarize is used"
@@ -310,8 +363,8 @@ main() {
   local i
   for i in "${!targets_path[@]}"; do
     echo "signing ${targets_kind[$i]}: ${targets_path[$i]}" >&2
-    codesign_target "${targets_kind[$i]}" "${targets_path[$i]}"
-    verify_signature "${targets_path[$i]}"
+    sign_target "${targets_kind[$i]}" "${targets_path[$i]}"
+    verify_signature "${targets_kind[$i]}" "${targets_path[$i]}"
   done
 
   if [ "$notarize" -eq 0 ]; then
