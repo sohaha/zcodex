@@ -25,6 +25,8 @@ use crate::render::line_utils::line_to_static;
 use crate::render::line_utils::prefix_lines;
 use crate::render::line_utils::push_owned_lines;
 use crate::render::renderable::Renderable;
+use crate::repo_urls::LATEST_RELEASE_NOTES_URL;
+use crate::repo_urls::REPOSITORY_URL;
 use crate::style::proposed_plan_style;
 use crate::style::user_message_style;
 use crate::text_formatting::format_and_truncate_tool_result;
@@ -513,7 +515,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         } else {
             line![
                 "See ",
-                "https://github.com/openai/codex".cyan().underlined(),
+                REPOSITORY_URL.cyan().underlined(),
                 " for installation options."
             ]
         };
@@ -528,9 +530,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
             update_instruction,
             "",
             "See full release notes:",
-            "https://github.com/openai/codex/releases/latest"
-                .cyan()
-                .underlined(),
+            LATEST_RELEASE_NOTES_URL.cyan().underlined(),
         ];
 
         let inner_width = content
@@ -2594,6 +2594,16 @@ mod tests {
 
     fn render_transcript(cell: &dyn HistoryCell) -> Vec<String> {
         render_lines(&cell.transcript_lines(u16::MAX))
+    }
+
+    #[test]
+    fn update_available_history_cell_uses_fork_release_links() {
+        let cell = UpdateAvailableHistoryCell::new("9.9.9".to_string(), None);
+        let rendered = render_lines(&cell.display_lines(120)).join("\n");
+
+        assert!(rendered.contains("https://github.com/sohaha/zcodex"));
+        assert!(rendered.contains("https://github.com/sohaha/zcodex/releases/latest"));
+        assert!(!rendered.contains("https://github.com/openai/codex"));
     }
 
     fn image_block(data: &str) -> serde_json::Value {

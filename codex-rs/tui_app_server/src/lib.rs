@@ -113,6 +113,7 @@ mod oss_selection;
 mod pager_overlay;
 pub mod public_widgets;
 mod render;
+mod repo_urls;
 mod resume_picker;
 mod selection_list;
 mod session_log;

@@ -1,5 +1,6 @@
 #![cfg(not(debug_assertions))]
 
+use crate::repo_urls::LATEST_RELEASE_API_URL;
 use crate::update_action;
 use crate::update_action::UpdateAction;
 use chrono::DateTime;
@@ -57,7 +58,6 @@ struct VersionInfo {
 const VERSION_FILENAME: &str = "version.json";
 // We use the latest version from the cask if installation is via homebrew - homebrew does not immediately pick up the latest release and can lag behind.
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
-const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
 
 #[derive(Deserialize, Debug, Clone)]
 struct ReleaseInfo {
@@ -94,7 +94,7 @@ async fn check_for_update(version_file: &Path) -> anyhow::Result<()> {
             let ReleaseInfo {
                 tag_name: latest_tag_name,
             } = create_client()
-                .get(LATEST_RELEASE_URL)
+                .get(LATEST_RELEASE_API_URL)
                 .send()
                 .await?
                 .error_for_status()?
