@@ -120,68 +120,69 @@ If you need to tune download behavior further, the tasks also honor
 `DOWNLOAD_CONNECT_TIMEOUT`, `DOWNLOAD_RETRY_COUNT`, `DOWNLOAD_RETRY_DELAY`,
 `DOWNLOAD_MAX_TIME`, and `DOWNLOAD_METADATA_MAX_TIME`.
 
-The Ubuntu cross-build task produces a release binary, but it does **not**
-perform Apple code signing or notarization. If you copy that binary to a Mac
-and run it directly, macOS may block or kill it until you sign it locally or
-ship it through the release workflow.
+Ubuntu 交叉编译任务产出的是 `release` 二进制，但它**不会**执行 Apple
+签名或公证。如果你把这个二进制直接拷到 Mac 上运行，macOS 可能会拦截或
+直接杀掉进程，直到你在本地重新签名，或者走正式发布流程。
 
-### macOS code signing and notarization
+### macOS 签名与公证
 
-For distributable macOS artifacts, you need both:
+如果你要分发 macOS 产物，至少需要准备两样东西：
 
-1. A `Developer ID Application` certificate exported as `.p12`
-2. An App Store Connect API key for `notarytool` (`.p8`, Key ID, Issuer ID)
+1. 导出成 `.p12` 的 `Developer ID Application` 证书
+2. 给 `notarytool` 使用的 App Store Connect API Key
+   也就是 `.p8`、`Key ID`、`Issuer ID`
 
-The repository now includes two helper scripts:
+仓库里现在提供了两个辅助脚本：
 
 ```bash
-# Upload the 5 GitHub Actions secrets expected by the release workflow.
+# 把发布 workflow 需要的 5 个 GitHub Actions secrets 上传到仓库
 ./scripts/setup_macos_signing_secrets.sh --help
 
-# Sign + notarize local binaries, .app bundles, .dmg, or .pkg on macOS.
+# 在 macOS 本地对二进制、.app、.dmg、.pkg 做签名和公证
 ./scripts/macos_sign_and_notarize_local.sh --help
 ```
 
-#### Generate the signing certificate (`.p12`)
+#### 生成签名证书（`.p12`）
 
-On a Mac:
+在一台 Mac 上操作：
 
-1. Open `Keychain Access`
-2. Choose `Keychain Access > Certificate Assistant > Request a Certificate from a Certificate Authority`
-3. Save the CSR to disk
-4. In Apple Developer, go to `Certificates, Identifiers & Profiles > Certificates > +`
-5. Create a `Developer ID Application` certificate using that CSR
-6. Download the generated `.cer` and import it into Keychain Access
-7. In `My Certificates`, confirm the certificate has its private key attached
-8. Export it as `.p12` and choose an export password
+1. 打开 `Keychain Access`
+2. 进入 `Keychain Access > Certificate Assistant > Request a Certificate from a Certificate Authority`
+3. 把 CSR 保存到本地
+4. 打开 Apple Developer 的 `Certificates, Identifiers & Profiles > Certificates > +`
+5. 使用刚才的 CSR 创建 `Developer ID Application` 证书
+6. 下载生成的 `.cer`，并导入到 `Keychain Access`
+7. 在 `My Certificates` 中确认该证书下面带有私钥
+8. 导出为 `.p12`，并设置导出密码
 
-If the imported certificate does not show a private key, you created the CSR on
-another machine or in another keychain and cannot export a usable `.p12` from
-this Mac.
+如果导入后的证书下面看不到私钥，说明 CSR 不是在当前这台 Mac 或当前
+keychain 中生成的，这种情况下无法从这台机器导出可用的 `.p12`。
 
-Helpful Apple docs:
+Apple 参考文档：
 
 - https://developer.apple.com/help/account/certificates/create-a-certificate-signing-request
 - https://developer.apple.com/help/account/certificates/create-developer-id-certificates
 - https://support.apple.com/guide/keychain-access/import-and-export-keychain-items-kyca35961/mac
 
-#### Generate the notarization API key (`.p8`)
+#### 生成公证用 API Key（`.p8`）
 
-In App Store Connect:
+在 App Store Connect 中操作：
 
-1. Open `Users and Access > Integrations > Team Keys`
-2. Enable API access if your organization has not done so already
-3. Generate a new API key
-4. Download the `.p8` file exactly once
-5. Record the `Key ID` and `Issuer ID`
+1. 打开 `Users and Access > Integrations > Team Keys`
+2. 如果组织还没启用 API 访问，先开通
+3. 新建一个 API Key
+4. 下载 `.p8` 文件
+5. 记下 `Key ID` 和 `Issuer ID`
 
-Apple doc:
+注意：`.p8` 只能下载一次，丢失后需要重新生成。
+
+Apple 参考文档：
 
 - https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api
 
-#### Configure GitHub Actions secrets
+#### 配置 GitHub Actions secrets
 
-The release workflow expects these repository secrets:
+当前发布 workflow 需要以下仓库 secrets：
 
 - `APPLE_CERTIFICATE_P12`
 - `APPLE_CERTIFICATE_PASSWORD`
@@ -189,31 +190,31 @@ The release workflow expects these repository secrets:
 - `APPLE_NOTARIZATION_KEY_ID`
 - `APPLE_NOTARIZATION_ISSUER_ID`
 
-Use the helper script to upload them from local files:
+可以直接用辅助脚本从本地文件上传：
 
 ```bash
 gh auth login
 
-APPLE_CERTIFICATE_PASSWORD='your-p12-password' \
+APPLE_CERTIFICATE_PASSWORD='你的 p12 密码' \
 ./scripts/setup_macos_signing_secrets.sh \
-  --p12 /absolute/path/DeveloperIDApplication.p12 \
-  --p8 /absolute/path/AuthKey_ABC123XYZ.p8 \
+  --p12 /绝对路径/DeveloperIDApplication.p12 \
+  --p8 /绝对路径/AuthKey_ABC123XYZ.p8 \
   --key-id ABC123XYZ \
   --issuer-id 00000000-0000-0000-0000-000000000000 \
   --repo owner/repo
 ```
 
-Use `--dry-run` first if you want input validation without uploading anything.
+如果你想先校验参数而不真正上传，可以先加 `--dry-run`。
 
-#### Sign and notarize locally on macOS
+#### 在 macOS 本地签名和公证
 
-First, list the signing identities available in your keychain:
+先查看当前 keychain 里可用的签名身份：
 
 ```bash
 security find-identity -v -p codesigning
 ```
 
-Then sign and notarize a standalone binary:
+然后对单个二进制做签名和公证：
 
 ```bash
 ./scripts/macos_sign_and_notarize_local.sh \
@@ -224,7 +225,7 @@ Then sign and notarize a standalone binary:
   --issuer-id 00000000-0000-0000-0000-000000000000
 ```
 
-Or sign and notarize an app bundle plus dmg:
+或者对 `.app` 和 `.dmg` 一起处理：
 
 ```bash
 ./scripts/macos_sign_and_notarize_local.sh \
@@ -236,23 +237,21 @@ Or sign and notarize an app bundle plus dmg:
   --issuer-id 00000000-0000-0000-0000-000000000000
 ```
 
-The helper script:
+这个脚本会：
 
-- signs every target with `codesign --timestamp`
-- adds `--options runtime` where appropriate
-- submits binaries through `xcrun notarytool submit --wait`
-- staples `.app`, `.dmg`, and `.pkg` targets after notarization
+- 对每个目标执行 `codesign --timestamp`
+- 在适用的目标上附加 `--options runtime`
+- 用 `xcrun notarytool submit --wait` 提交公证
+- 在公证通过后对 `.app`、`.dmg`、`.pkg` 执行 `staple`
 
-For standalone Mach-O binaries, notarization is submitted with a temporary zip.
-Those binaries are verified locally after signing, but they do not support the
-same stapling flow as `.app` or `.dmg`.
+对于单独的 Mach-O 二进制，脚本会先临时打成 zip 再提交公证。签名后会做本地
+校验，但它不像 `.app` 或 `.dmg` 那样走同一套 `staple` 流程。
 
-Apple notarization docs:
+Apple 公证参考文档：
 
 - https://developer.apple.com/documentation/security/customizing-the-notarization-workflow
 
-If you only need a local test binary on your own Mac, an ad-hoc signature is
-often enough:
+如果你只是想在自己的 Mac 上本地测试，一个 ad-hoc 签名通常就够了：
 
 ```bash
 codesign --force --sign - ./codex
