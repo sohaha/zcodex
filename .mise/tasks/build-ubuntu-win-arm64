@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
+source "$script_dir/lib-artifact-size"
 target="aarch64-pc-windows-gnullvm"
 target_label="Windows arm64"
 build_task_name="build-ubuntu-win-arm64"
@@ -20,4 +21,4 @@ output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex
 
 "$script_dir/rs-ext" cargo zigbuild -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
 
-echo "[build-ubuntu-win-arm64] 构建完成: $output_bin" >&2
+print_artifact_size "build-ubuntu-win-arm64" "$output_bin"

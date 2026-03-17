@@ -4,6 +4,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
+source "$script_dir/lib-artifact-size"
 source "$script_dir/lib-ubuntu-macos-arm64"
 target="aarch64-apple-darwin"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
@@ -472,4 +473,4 @@ output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex
 "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
 ensure_data_const_read_only_flag "$output_bin"
 
-echo "[build-ubuntu-macos-arm64] 构建完成: $output_bin" >&2
+print_artifact_size "build-ubuntu-macos-arm64" "$output_bin"

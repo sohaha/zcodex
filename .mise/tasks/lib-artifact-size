@@ -1,0 +1,34 @@
+artifact_size_bytes() {
+  local path="$1"
+
+  if [ ! -f "$path" ]; then
+    echo "[build] 缺少构建产物: $path" >&2
+    return 1
+  fi
+
+  wc -c < "$path" | tr -d '[:space:]'
+}
+
+format_artifact_size() {
+  local bytes="$1"
+
+  if command -v numfmt >/dev/null 2>&1; then
+    numfmt --to=iec-i --suffix=B "$bytes"
+    return
+  fi
+
+  printf '%s bytes\n' "$bytes"
+}
+
+print_artifact_size() {
+  local task_name="$1"
+  local path="$2"
+  local bytes
+  local size
+
+  bytes="$(artifact_size_bytes "$path")" || return 1
+  size="$(format_artifact_size "$bytes")"
+
+  echo "[$task_name] 构建完成: $path" >&2
+  echo "[$task_name] 文件大小: $size ($bytes bytes)" >&2
+}

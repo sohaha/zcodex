@@ -6,6 +6,7 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+source "$script_dir/lib-artifact-size"
 
 if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   cat >&2 <<'EOF'
@@ -246,3 +247,4 @@ fi
 
 codex_bin="$(resolve_codex_bin "$@")"
 run_build "$codex_bin" "$@"
+print_artifact_size "build" "$codex_bin"
