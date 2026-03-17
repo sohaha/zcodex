@@ -836,10 +836,10 @@ jobs:
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
 
-      - name: Stage hodexctl scripts
-        run: |
-          cp scripts/hodexctl/hodexctl.sh dist/hodexctl.sh
-          cp scripts/hodexctl/hodexctl.ps1 dist/hodexctl.ps1
+      # - name: Stage hodexctl scripts
+      #   run: |
+      #     cp scripts/hodexctl/hodexctl.sh dist/hodexctl.sh
+      #     cp scripts/hodexctl/hodexctl.ps1 dist/hodexctl.ps1
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
