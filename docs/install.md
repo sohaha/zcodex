@@ -78,7 +78,15 @@ mise run test app-server-protocol
 # You can still pass through cargo test selectors/filters:
 mise run test core remote_models_request_times_out_after_5s
 mise run test codex-core read_file_tools_run_in_parallel
+
+# Preview (dry-run) and clear completed GitHub Actions runs for sohaha/zcodex.
+# Requires a token with Actions write permission.
+GITHUB_TOKEN=<token> mise run clear-actions
+GITHUB_TOKEN=<token> mise run clear-actions -- --yes
 ```
+
+`clear-actions` defaults to dry-run. Use `-- --yes` to pass the confirmation
+flag through `mise run` and execute deletion.
 
 For `codex-core`, `codex-cli`, and `codex-tui`, the shared `mise run test`
 wrapper automatically prebuilds the workspace binaries that those tests expect
