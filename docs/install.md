@@ -142,6 +142,9 @@ ZIG_PATH=/path/to/zig mise run deps ubuntu-win-amd64
 # Build codex.exe for Windows amd64 or arm64 from Ubuntu.
 mise run build ubuntu-win-amd64 --release
 mise run build ubuntu-win-arm64 --release
+
+# Optionally package the local cross-built binaries into zip archives.
+./scripts/package_windows_cross_builds.sh
 ```
 
 The arm64 task uses Rust target `aarch64-pc-windows-gnullvm`, because the
