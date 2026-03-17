@@ -108,13 +108,15 @@ pub(crate) async fn handle_mcp_tool_call(
             &call_id,
             invocation,
             "MCP tool call blocked by app configuration".to_string(),
-            false,
+            /*already_started*/ false,
         )
         .await;
         let status = if result.is_ok() { "ok" } else { "error" };
-        turn_context
-            .session_telemetry
-            .counter("codex.mcp.call", 1, &[("status", status)]);
+        turn_context.session_telemetry.counter(
+            "codex.mcp.call",
+            /*inc*/ 1,
+            &[("status", status)],
+        );
         return CallToolResult::from_result(result);
     }
     let request_meta = build_mcp_tool_call_request_meta(&server, metadata.as_ref());
@@ -190,7 +192,7 @@ pub(crate) async fn handle_mcp_tool_call(
                     &call_id,
                     invocation,
                     message,
-                    true,
+                    /*already_started*/ true,
                 )
                 .await
             }
@@ -202,7 +204,7 @@ pub(crate) async fn handle_mcp_tool_call(
                     &call_id,
                     invocation,
                     message,
-                    true,
+                    /*already_started*/ true,
                 )
                 .await
             }
@@ -213,16 +215,18 @@ pub(crate) async fn handle_mcp_tool_call(
                     &call_id,
                     invocation,
                     message,
-                    true,
+                    /*already_started*/ true,
                 )
                 .await
             }
         };
 
         let status = if result.is_ok() { "ok" } else { "error" };
-        turn_context
-            .session_telemetry
-            .counter("codex.mcp.call", 1, &[("status", status)]);
+        turn_context.session_telemetry.counter(
+            "codex.mcp.call",
+            /*inc*/ 1,
+            &[("status", status)],
+        );
 
         return CallToolResult::from_result(result);
     }
@@ -263,7 +267,7 @@ pub(crate) async fn handle_mcp_tool_call(
     let status = if result.is_ok() { "ok" } else { "error" };
     turn_context
         .session_telemetry
-        .counter("codex.mcp.call", 1, &[("status", status)]);
+        .counter("codex.mcp.call", /*inc*/ 1, &[("status", status)]);
 
     CallToolResult::from_result(result)
 }
@@ -646,7 +650,13 @@ fn prepare_arc_request_action(
     metadata: Option<&McpToolApprovalMetadata>,
 ) -> serde_json::Value {
     let request = build_guardian_mcp_tool_review_request("arc-monitor", invocation, metadata);
-    guardian_approval_request_to_json(&request)
+    match guardian_approval_request_to_json(&request) {
+        Ok(action) => action,
+        Err(error) => {
+            error!(error = %error, "failed to serialize guardian MCP approval request for ARC");
+            serde_json::Value::Null
+        }
+    }
 }
 
 fn session_mcp_tool_approval_key(
@@ -1033,6 +1043,7 @@ fn build_mcp_tool_approval_display_params(
             |(name, value)| crate::mcp_tool_approval_templates::RenderedMcpToolApprovalParam {
                 name: name.clone(),
                 value: value.clone(),
+                display_name: name.clone(),
             },
         )
         .collect::<Vec<_>>();

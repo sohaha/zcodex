@@ -103,7 +103,7 @@ impl ToolHandler for Handler {
             return Err(err);
         }
         turn.session_telemetry
-            .counter("codex.multi_agent.resume", 1, &[]);
+            .counter("codex.multi_agent.resume", /*inc*/ 1, &[]);
 
         Ok(ResumeAgentResult { status })
     }
@@ -154,7 +154,7 @@ async fn try_resume_closed_agent(
                 session.conversation_id,
                 child_depth,
                 Some(&turn.model_info.slug),
-                None,
+                /*agent_role*/ None,
             ),
         )
         .await
