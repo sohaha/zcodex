@@ -6,6 +6,9 @@ on:
       release-lto:
         required: true
         type: string
+      release-tag:
+        required: true
+        type: string
     secrets:
       AZURE_TRUSTED_SIGNING_CLIENT_ID:
         required: false
@@ -68,6 +71,36 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Sync Cargo workspace version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELEASE_TAG="${{ inputs.release-tag }}"
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          release_tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(r"(?:rust-)?v(.+)", release_tag)
+          if match is None:
+              raise SystemExit(f"unsupported release tag: {release_tag}")
+
+          version = match.group(1)
+          cargo_toml = pathlib.Path("Cargo.toml")
+          content = cargo_toml.read_text(encoding="utf-8")
+          updated, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("failed to update workspace version in Cargo.toml")
+
+          cargo_toml.write_text(updated, encoding="utf-8")
+          print(f"Set Cargo workspace version to {version}")
+          PY
       - name: Print runner specs (Windows)
         shell: powershell
         run: |
@@ -148,6 +181,36 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Sync Cargo workspace version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELEASE_TAG="${{ inputs.release-tag }}"
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          release_tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(r"(?:rust-)?v(.+)", release_tag)
+          if match is None:
+              raise SystemExit(f"unsupported release tag: {release_tag}")
+
+          version = match.group(1)
+          cargo_toml = pathlib.Path("Cargo.toml")
+          content = cargo_toml.read_text(encoding="utf-8")
+          updated, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("failed to update workspace version in Cargo.toml")
+
+          cargo_toml.write_text(updated, encoding="utf-8")
+          print(f"Set Cargo workspace version to {version}")
+          PY
 
       - name: Download prebuilt Windows primary binaries
         uses: actions/download-artifact@v8

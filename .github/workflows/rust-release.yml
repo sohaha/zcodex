@@ -25,31 +25,18 @@ jobs:
     if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@1.92
-      - name: Validate tag matches Cargo.toml version
+      - name: Validate release tag format
         shell: bash
         run: |
           set -euo pipefail
           echo "::group::Tag validation"
-          exit 0
-          # 1. Must be a tag and match the regex
           [[ "${GITHUB_REF_TYPE}" == "tag" ]] \
             || { echo "❌  Not a tag push"; exit 1; }
           [[ "${GITHUB_REF_NAME}" =~ ^(rust-)?v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
             || { echo "❌  Tag '${GITHUB_REF_NAME}' doesn't match expected format (vX.Y.Z or rust-vX.Y.Z)"; exit 1; }
-
-          # 2. Extract versions
           tag_ver="${GITHUB_REF_NAME#rust-v}"
           tag_ver="${tag_ver#v}"
-          cargo_ver="$(grep -m1 '^version' codex-rs/Cargo.toml \
-                        | sed -E 's/version *= *"([^"]+)".*/\1/')"
-
-          # 3. Compare
-          [[ "${tag_ver}" == "${cargo_ver}" ]] \
-            || { echo "❌  Tag ${tag_ver} ≠ Cargo.toml ${cargo_ver}"; exit 1; }
-
-          echo "✅  Tag and Cargo.toml agree (${tag_ver})"
+          echo "✅  Release tag accepted (${tag_ver})"
           echo "::endgroup::"
 
   build:
@@ -88,6 +75,36 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+      - name: Sync Cargo workspace version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELEASE_TAG="${GITHUB_REF_NAME}"
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          release_tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(r"(?:rust-)?v(.+)", release_tag)
+          if match is None:
+              raise SystemExit(f"unsupported release tag: {release_tag}")
+
+          version = match.group(1)
+          cargo_toml = pathlib.Path("Cargo.toml")
+          content = cargo_toml.read_text(encoding="utf-8")
+          updated, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("failed to update workspace version in Cargo.toml")
+
+          cargo_toml.write_text(updated, encoding="utf-8")
+          print(f"Set Cargo workspace version to {version}")
+          PY
       - name: Print runner specs (Linux)
         if: ${{ runner.os == 'Linux' }}
         shell: bash
@@ -419,10 +436,42 @@ jobs:
           - runner: macos-latest
             target: x86_64-apple-darwin
           - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
 
     steps:
       - uses: actions/checkout@v6
+      - name: Sync Cargo workspace version from tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          export RELEASE_TAG="${GITHUB_REF_NAME}"
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+
+          release_tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(r"(?:rust-)?v(.+)", release_tag)
+          if match is None:
+              raise SystemExit(f"unsupported release tag: {release_tag}")
+
+          version = match.group(1)
+          cargo_toml = pathlib.Path("Cargo.toml")
+          content = cargo_toml.read_text(encoding="utf-8")
+          updated, count = re.subn(
+              r'(?m)^version = "[^"]+"$',
+              f'version = "{version}"',
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("failed to update workspace version in Cargo.toml")
+
+          cargo_toml.write_text(updated, encoding="utf-8")
+          print(f"Set Cargo workspace version to {version}")
+          PY
 
       - name: Setup Node.js for Web UI
         uses: actions/setup-node@v4
@@ -662,6 +711,7 @@ jobs:
     uses: ./.github/workflows/rust-release-windows.yml
     with:
       release-lto: ${{ contains(github.ref_name, '-alpha') && 'thin' || 'fat' }}
+      release-tag: ${{ github.ref_name }}
     secrets: inherit
 
   shell-tool-mcp:
@@ -782,7 +832,7 @@ jobs:
           VERSION: ${{ steps.release_name.outputs.name }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REPOSITORY}" != "openai/codex" ]]; then
+          if [[ "${GITHUB_REPOSITORY}" != "openai/codex" && "${GITHUB_REPOSITORY}" != "sohaha/zcodex" ]]; then
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
             echo "npm_tag=" >> "$GITHUB_OUTPUT"
             exit 0
@@ -802,35 +852,41 @@ jobs:
           fi
 
       - name: Setup pnpm
-        if: ${{ github.repository == 'openai/codex' }}
+        if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
         uses: pnpm/action-setup@v4
         with:
           run_install: false
 
       - name: Setup Node.js for npm packaging
-        if: ${{ github.repository == 'openai/codex' }}
+        if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
         uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - name: Install dependencies
-        if: ${{ github.repository == 'openai/codex' }}
+        if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
         run: pnpm install --frozen-lockfile
 
       # stage_npm_packages.py requires DotSlash when staging releases.
       - uses: facebook/install-dotslash@v2
-        if: ${{ github.repository == 'openai/codex' }}
+        if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
       - name: Stage npm packages
-        if: ${{ github.repository == 'openai/codex' }}
+        if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ steps.release_name.outputs.name }}
         run: |
-          ./scripts/stage_npm_packages.py \
-            --release-version "$RELEASE_VERSION" \
-            --package codex \
-            --package codex-responses-api-proxy \
-            --package codex-sdk
+          if [[ "${GITHUB_REPOSITORY}" == "sohaha/zcodex" ]]; then
+            ./scripts/stage_npm_packages.py \
+              --release-version "$RELEASE_VERSION" \
+              --package codex
+          else
+            ./scripts/stage_npm_packages.py \
+              --release-version "$RELEASE_VERSION" \
+              --package codex \
+              --package codex-responses-api-proxy \
+              --package codex-sdk
+          fi
 
       - name: Stage installer scripts
         run: |
@@ -879,7 +935,7 @@ jobs:
   # npm docs: https://docs.npmjs.com/trusted-publishers
   publish-npm:
     # Publish to npm for stable releases and alpha pre-releases with numeric suffixes.
-    if: ${{ github.repository == 'openai/codex' && needs.release.outputs.should_publish_npm == 'true' }}
+    if: ${{ (github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex') && needs.release.outputs.should_publish_npm == 'true' }}
     name: publish-npm
     needs: release
     runs-on: ubuntu-latest
@@ -893,7 +949,7 @@ jobs:
         with:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
-          scope: "@openai"
+          scope: ${{ github.repository == 'sohaha/zcodex' && '@sohaha' || '@openai' }}
 
       # Trusted publishing requires npm CLI version 11.5.1 or later.
       - name: Update npm
@@ -909,14 +965,23 @@ jobs:
           version="$RELEASE_VERSION"
           tag="$RELEASE_TAG"
           mkdir -p dist/npm
-          patterns=(
-            "codex-npm-${version}.tgz"
-            "codex-npm-linux-*-${version}.tgz"
-            "codex-npm-darwin-*-${version}.tgz"
-            "codex-npm-win32-*-${version}.tgz"
-            "codex-responses-api-proxy-npm-${version}.tgz"
-            "codex-sdk-npm-${version}.tgz"
-          )
+          if [[ "${GITHUB_REPOSITORY}" == "sohaha/zcodex" ]]; then
+            patterns=(
+              "codex-npm-${version}.tgz"
+              "codex-npm-linux-*-${version}.tgz"
+              "codex-npm-darwin-*-${version}.tgz"
+              "codex-npm-win32-*-${version}.tgz"
+            )
+          else
+            patterns=(
+              "codex-npm-${version}.tgz"
+              "codex-npm-linux-*-${version}.tgz"
+              "codex-npm-darwin-*-${version}.tgz"
+              "codex-npm-win32-*-${version}.tgz"
+              "codex-responses-api-proxy-npm-${version}.tgz"
+              "codex-sdk-npm-${version}.tgz"
+            )
+          fi
           for pattern in "${patterns[@]}"; do
             gh release download "$tag" \
               --repo "${GITHUB_REPOSITORY}" \
@@ -961,6 +1026,11 @@ jobs:
                 exit 1
                 ;;
             esac
+
+            if [[ "${GITHUB_REPOSITORY}" == "sohaha/zcodex" && "${filename}" != codex-npm* ]]; then
+              echo "Skipping non-zcodex npm package for fork repository: ${filename}"
+              continue
+            fi
 
             publish_cmd=(npm publish "${GITHUB_WORKSPACE}/${tarball}")
             if [[ -n "${tag}" ]]; then
