@@ -64,7 +64,7 @@ fn default_release_locator_uses_openai_codex_github_releases() {
 
     assert_eq!(
         url.as_str(),
-        "https://github.com/openai/codex/releases/download/artifact-runtime-v0.1.0/artifact-runtime-v0.1.0-manifest.json"
+        "https://github.com/sohaha/zcodex/releases/download/artifact-runtime-v0.1.0/artifact-runtime-v0.1.0-manifest.json"
     );
 }
 
