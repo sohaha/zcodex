@@ -6,7 +6,7 @@ on:
       release-lto:
         required: true
         type: string
-      release-tag:
+      release-version:
         required: true
         type: string
     secrets:
@@ -75,18 +75,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export RELEASE_TAG="${{ inputs.release-tag }}"
+          export RELEASE_VERSION="${{ inputs.release-version }}"
           python3 - <<'PY'
           import os
           import pathlib
           import re
 
-          release_tag = os.environ["RELEASE_TAG"]
-          match = re.fullmatch(r"(?:rust-)?v(.+)", release_tag)
-          if match is None:
-              raise SystemExit(f"unsupported release tag: {release_tag}")
-
-          version = match.group(1)
+          version = os.environ["RELEASE_VERSION"]
+          if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-(?:alpha|beta)(?:\.[0-9]+)?)?", version) is None:
+              raise SystemExit(f"unsupported release version: {version}")
           cargo_toml = pathlib.Path("Cargo.toml")
           content = cargo_toml.read_text(encoding="utf-8")
           updated, count = re.subn(
@@ -185,18 +182,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export RELEASE_TAG="${{ inputs.release-tag }}"
+          export RELEASE_VERSION="${{ inputs.release-version }}"
           python3 - <<'PY'
           import os
           import pathlib
           import re
 
-          release_tag = os.environ["RELEASE_TAG"]
-          match = re.fullmatch(r"(?:rust-)?v(.+)", release_tag)
-          if match is None:
-              raise SystemExit(f"unsupported release tag: {release_tag}")
-
-          version = match.group(1)
+          version = os.environ["RELEASE_VERSION"]
+          if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-(?:alpha|beta)(?:\.[0-9]+)?)?", version) is None:
+              raise SystemExit(f"unsupported release version: {version}")
           cargo_toml = pathlib.Path("Cargo.toml")
           content = cargo_toml.read_text(encoding="utf-8")
           updated, count = re.subn(
