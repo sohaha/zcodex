@@ -682,6 +682,12 @@ cd "$RELEASE_DIR"
 npm publish
 ```
 
+For GitHub Actions based releases, use `.github/workflows/rust-release.yml`:
+
+- Tag-driven release: push `v1.2.3` or `rust-v1.2.3`; CI derives the Rust and npm package version from the tag automatically.
+- Manual release: run `workflow_dispatch` and provide `release-version`; `release-tag` is optional and defaults to `rust-v<release-version>`.
+- Safety check: when `release-tag` is provided manually, CI verifies that the version embedded in the tag exactly matches `release-version` and fails fast otherwise.
+
 ### Alternative build options
 
 #### Nix flake development

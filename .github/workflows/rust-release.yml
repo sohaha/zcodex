@@ -65,6 +65,11 @@ jobs:
           [[ "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
             || { echo "❌  Version '${release_version}' doesn't match expected format"; exit 1; }
 
+          tag_version="${release_tag#rust-v}"
+          tag_version="${tag_version#v}"
+          [[ "${tag_version}" == "${release_version}" ]] \
+            || { echo "❌  release-tag '${release_tag}' does not match release-version '${release_version}'"; exit 1; }
+
           release_lto="fat"
           if [[ "${release_version}" == *-alpha* ]]; then
             release_lto="thin"
