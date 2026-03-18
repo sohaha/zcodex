@@ -1,7 +1,9 @@
 ---
-source: tui/src/update_prompt.rs
+source: tui_app_server/src/update_prompt.rs
+assertion_line: 266
 expression: terminal.backend()
 ---
+
   ✨ Update available! 0.0.1 -> 9.9.9
 
   Release notes: https://github.com/sohaha/zcodex/releases/latest

@@ -20,6 +20,7 @@ from urllib.request import urlopen
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CODEX_CLI_ROOT = SCRIPT_DIR.parent
+DEFAULT_WORKFLOW_REPO = "openai/codex"
 DEFAULT_WORKFLOW_URL = "https://github.com/openai/codex/actions/runs/17952349351"  # rust-v0.40.0
 VENDOR_DIR_NAME = "vendor"
 RG_MANIFEST = CODEX_CLI_ROOT / "bin" / "rg"
@@ -169,13 +170,13 @@ def main() -> int:
     if not workflow_url:
         workflow_url = DEFAULT_WORKFLOW_URL
 
-    workflow_id = workflow_url.rstrip("/").split("/")[-1]
-    print(f"Downloading native artifacts from workflow {workflow_id}...")
+    workflow_repo, workflow_id = resolve_workflow_run(workflow_url)
+    print(f"Downloading native artifacts from workflow {workflow_repo}#{workflow_id}...")
 
-    with _gha_group(f"Download native artifacts from workflow {workflow_id}"):
+    with _gha_group(f"Download native artifacts from workflow {workflow_repo}#{workflow_id}"):
         with tempfile.TemporaryDirectory(prefix="codex-native-artifacts-") as artifacts_dir_str:
             artifacts_dir = Path(artifacts_dir_str)
-            _download_artifacts(workflow_id, artifacts_dir)
+            _download_artifacts(workflow_repo, workflow_id, artifacts_dir)
             install_binary_components(
                 artifacts_dir,
                 vendor_dir,
@@ -259,7 +260,24 @@ def fetch_rg(
     return [results[target] for target in targets]
 
 
-def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
+def resolve_workflow_run(workflow_url: str) -> tuple[str, str]:
+    parsed = urlparse(workflow_url)
+    if parsed.scheme and parsed.netloc:
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 4 and parts[2] == "actions" and parts[3] == "runs":
+            workflow_id = parts[4] if len(parts) >= 5 else ""
+            if workflow_id:
+                return f"{parts[0]}/{parts[1]}", workflow_id
+        raise ValueError(f"Unsupported GitHub Actions workflow URL: {workflow_url}")
+
+    workflow_id = workflow_url.strip().rstrip("/")
+    if workflow_id.isdigit():
+        return DEFAULT_WORKFLOW_REPO, workflow_id
+
+    raise ValueError(f"Unsupported workflow reference: {workflow_url}")
+
+
+def _download_artifacts(repo: str, workflow_id: str, dest_dir: Path) -> None:
     cmd = [
         "gh",
         "run",
@@ -267,7 +285,7 @@ def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
         "--dir",
         str(dest_dir),
         "--repo",
-        "openai/codex",
+        repo,
         workflow_id,
     ]
     subprocess.check_call(cmd)
