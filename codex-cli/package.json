@@ -1,6 +1,6 @@
 {
   "name": "@sohaha/zcodex",
-  "version": "0.0.0-dev",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "bin": {
     "codex": "bin/codex.js"
