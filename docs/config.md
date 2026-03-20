@@ -102,7 +102,13 @@ fallback_providers = [
 When both styles are present, Codex treats them as part of the same ordered
 fallback list for the current request only.
 
-For a Chinese-commented example config, see `docs/fallback-providers.zh-example.md`.
+For Chinese-commented example configs, including:
+
+- `OpenRouter + relay`
+- `relay + relay backup`
+- `Azure OpenAI + OpenRouter`
+
+see `docs/fallback-providers.zh-example.md`.
 
 ## Custom model catalogs
 

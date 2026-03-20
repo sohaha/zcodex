@@ -1,12 +1,27 @@
 # 回退渠道配置示例（中文注释）
 
-下面这份示例适合：
+本文提供 3 套可直接改造的模板：
+
+- 模板 A：`OpenRouter + 国内中转`
+- 模板 B：`纯国内中转双备线`
+- 模板 C：`Azure OpenAI + OpenRouter`
+
+把其中一套按需改成你自己的域名、部署名、模型名和环境变量后，再放进 `~/.codex/config.toml`。
+
+## 通用说明
+
+- 回退只作用于“当前请求”，下一次新请求仍优先从主渠道开始。
+- `request_max_retries = 0` / `stream_max_retries = 0` 更适合“尽快切线路”的场景。
+- 如果备用渠道不支持主模型，请在 `fallback_providers` 里单独指定它自己的模型。
+- 多级回退使用 `fallback_providers`；如果你只需要一级回退，也可以继续使用 `fallback_provider` + `fallback_model`。
+
+## 模板 A：OpenRouter + 国内中转
+
+适合：
 
 - 主渠道走国内中转
 - 第一备用走 OpenRouter
 - 第二备用走另一条国内中转备线
-
-把它按需改成你自己的域名、模型名和环境变量后，再放进 `~/.codex/config.toml`。
 
 ```toml
 # 默认主模型
@@ -19,23 +34,12 @@ model_provider = "cn-relay"
 # 主渠道：国内中转（OpenAI 兼容）
 # -----------------------------
 [model_providers.cn-relay]
-# 渠道显示名称
 name = "国内中转主线"
-
-# 你的中转地址，通常是 OpenAI 兼容接口
 base_url = "https://your-relay.example.com/v1"
-
-# 从环境变量读取主线 key
 env_key = "CN_RELAY_API_KEY"
-
-# OpenAI 兼容接口一般用 responses
 wire_api = "responses"
-
-# 当前渠道失败后尽快切下一个，不在本渠道内部继续重试
 request_max_retries = 0
 stream_max_retries = 0
-
-# 建议先关闭 websocket，减少多渠道切换时的链路复杂度
 supports_websockets = false
 
 # -----------------------------
@@ -62,13 +66,6 @@ request_max_retries = 0
 stream_max_retries = 0
 supports_websockets = false
 
-# -----------------------------
-# 回退链
-# 按顺序尝试：
-# 1. 主渠道 cn-relay
-# 2. openrouter
-# 3. cn-relay-backup
-# -----------------------------
 fallback_providers = [
   # 主渠道失败后，先切 OpenRouter
   { provider = "openrouter", model = "openai/gpt-4.1" },
@@ -78,15 +75,7 @@ fallback_providers = [
 ]
 ```
 
-如果你只需要单级回退，也可以继续使用旧配置：
-
-```toml
-model_provider = "cn-relay"
-fallback_provider = "openrouter"
-fallback_model = "openai/gpt-4.1"
-```
-
-建议同时准备好这些环境变量：
+建议准备的环境变量：
 
 ```bash
 export CN_RELAY_API_KEY="你的主中转 Key"
@@ -94,8 +83,142 @@ export OPENROUTER_API_KEY="你的 OpenRouter Key"
 export CN_RELAY_BACKUP_API_KEY="你的备线中转 Key"
 ```
 
-说明：
+## 模板 B：纯国内中转双备线
 
-- 回退只作用于“当前请求”，下一次新请求仍优先从主渠道开始。
-- `request_max_retries = 0` / `stream_max_retries = 0` 更适合“尽快切线路”的场景。
-- 如果备用渠道不支持主模型，请在 `fallback_providers` 里单独指定它自己的模型。
+适合：
+
+- 不想走 OpenRouter
+- 只想在多条国内中转线路之间切换
+
+```toml
+# 默认主模型
+model = "gpt-4.1"
+
+# 主渠道：国内中转主线
+model_provider = "relay-a"
+
+# -----------------------------
+# 主渠道：中转 A
+# -----------------------------
+[model_providers.relay-a]
+name = "中转 A"
+base_url = "https://relay-a.example.com/v1"
+env_key = "RELAY_A_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+# -----------------------------
+# 备用渠道 1：中转 B
+# -----------------------------
+[model_providers.relay-b]
+name = "中转 B"
+base_url = "https://relay-b.example.com/v1"
+env_key = "RELAY_B_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+# -----------------------------
+# 备用渠道 2：中转 C
+# -----------------------------
+[model_providers.relay-c]
+name = "中转 C"
+base_url = "https://relay-c.example.com/v1"
+env_key = "RELAY_C_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+fallback_providers = [
+  # A 失败后切 B
+  { provider = "relay-b", model = "gpt-4.1" },
+
+  # B 再失败后切 C
+  { provider = "relay-c", model = "gpt-4.1" },
+]
+```
+
+建议准备的环境变量：
+
+```bash
+export RELAY_A_API_KEY="中转 A Key"
+export RELAY_B_API_KEY="中转 B Key"
+export RELAY_C_API_KEY="中转 C Key"
+```
+
+## 模板 C：Azure OpenAI + OpenRouter
+
+适合：
+
+- 主渠道走 Azure OpenAI
+- 失败后回退到 OpenRouter
+
+```toml
+# 主模型按你的 Azure 部署对应能力来选
+model = "gpt-4.1"
+
+# 主渠道：Azure OpenAI
+model_provider = "azure-openai"
+
+# -----------------------------
+# 主渠道：Azure OpenAI
+# 说明：
+# 1. 这里走的是 OpenAI 兼容 responses 接口
+# 2. base_url 需要替换成你的 Azure OpenAI endpoint
+# 3. query_params 里通常要带 api-version
+# 4. 如果你的网关要求 api-key 请求头，可以用 http_headers / env_http_headers
+# -----------------------------
+[model_providers.azure-openai]
+name = "Azure OpenAI"
+base_url = "https://your-resource.openai.azure.com/openai"
+env_key = "AZURE_OPENAI_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+[model_providers.azure-openai.query_params]
+api-version = "2025-01-01-preview"
+
+# 如果你的 Azure 接入层需要额外 header，可以改成下面这种：
+# [model_providers.azure-openai.env_http_headers]
+# "api-key" = "AZURE_OPENAI_API_KEY"
+
+# -----------------------------
+# 备用渠道：OpenRouter
+# -----------------------------
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+fallback_providers = [
+  # Azure 主线路失败后切 OpenRouter
+  { provider = "openrouter", model = "openai/gpt-4.1" },
+]
+```
+
+建议准备的环境变量：
+
+```bash
+export AZURE_OPENAI_API_KEY="你的 Azure OpenAI Key"
+export OPENROUTER_API_KEY="你的 OpenRouter Key"
+```
+
+## 单级回退的旧写法
+
+如果你只需要一级回退，也可以继续使用：
+
+```toml
+model_provider = "cn-relay"
+fallback_provider = "openrouter"
+fallback_model = "openai/gpt-4.1"
+```
