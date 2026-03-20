@@ -56,14 +56,15 @@ fallback_providers = [
 ]
 ```
 
-Example with a primary provider plus two fallbacks:
+Example with a relay primary provider plus OpenRouter and a backup relay:
 
 ```toml
 model = "gpt-5.1"
 model_provider = "cn-relay"
 
 [model_providers.cn-relay]
-name = "Primary relay"
+# Primary relay (OpenAI-compatible)
+name = "CN relay"
 base_url = "https://relay.example.com/v1"
 env_key = "CN_RELAY_API_KEY"
 wire_api = "responses"
@@ -81,7 +82,7 @@ stream_max_retries = 0
 supports_websockets = false
 
 [model_providers.cn-relay-backup]
-name = "Backup relay"
+name = "CN relay backup"
 base_url = "https://backup-relay.example.com/v1"
 env_key = "CN_RELAY_BACKUP_API_KEY"
 wire_api = "responses"
@@ -90,7 +91,9 @@ stream_max_retries = 0
 supports_websockets = false
 
 fallback_providers = [
+  # Try OpenRouter first when the primary relay fails.
   { provider = "openrouter", model = "openai/gpt-4.1" },
+  # Then fall back to a secondary relay.
   { provider = "cn-relay-backup", model = "gpt-4.1" },
 ]
 ```
@@ -98,6 +101,8 @@ fallback_providers = [
 `fallback_provider` + `fallback_model` remain supported for a single fallback.
 When both styles are present, Codex treats them as part of the same ordered
 fallback list for the current request only.
+
+For a Chinese-commented example config, see `docs/fallback-providers.zh-example.md`.
 
 ## Custom model catalogs
 
