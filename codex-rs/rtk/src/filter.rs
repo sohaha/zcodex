@@ -50,6 +50,7 @@ pub enum Language {
     Java,
     Ruby,
     Shell,
+    /// Data formats should not have comment-like syntax stripped.
     Data,
     Unknown,
 }
@@ -67,9 +68,10 @@ impl Language {
             "java" => Language::Java,
             "rb" => Language::Ruby,
             "sh" | "bash" | "zsh" => Language::Shell,
-            "json" | "jsonc" | "json5" | "yaml" | "yml" | "toml" | "xml" | "html" | "htm"
-            | "css" | "scss" | "svg" | "md" | "markdown" | "txt" | "csv" | "tsv" | "env"
-            | "ini" | "cfg" | "conf" | "lock" => Language::Data,
+            "json" | "jsonc" | "json5" | "yaml" | "yml" | "toml" | "xml" | "csv" | "tsv"
+            | "graphql" | "gql" | "sql" | "md" | "markdown" | "txt" | "env" | "lock" => {
+                Language::Data
+            }
             _ => Language::Unknown,
         }
     }
@@ -248,6 +250,10 @@ lazy_static! {
 
 impl FilterStrategy for AggressiveFilter {
     fn filter(&self, content: &str, lang: Language) -> String {
+        if lang == Language::Data {
+            return MinimalFilter.filter(content, lang);
+        }
+
         let minimal = MinimalFilter.filter(content, lang);
         let mut result = String::with_capacity(minimal.len() / 2);
         let mut brace_depth = 0;
@@ -424,8 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn test_data_files_no_comment_stripping() {
-        // Regression test for #464: package.json with `/*` in strings
+    fn test_json_no_comment_stripping() {
         let json = r#"{
   "workspaces": {
     "packages": [
@@ -444,16 +449,39 @@ mod tests {
         let filter = MinimalFilter;
         let result = filter.filter(json, Language::Data);
         assert!(
+            result.contains("packages/*"),
+            "packages/* should not be treated as a block comment"
+        );
+        assert!(
             result.contains("scripts"),
             "scripts section must be preserved"
         );
         assert!(
-            result.contains("packages/*"),
-            "glob pattern must be preserved"
+            result.contains("lint-staged"),
+            "lint-staged section must be preserved"
         );
         assert!(
             result.contains("**/package.json"),
-            "glob pattern must be preserved"
+            "**/package.json should not be stripped"
+        );
+    }
+
+    #[test]
+    fn test_json_aggressive_filter_preserves_structure() {
+        let json = r#"{
+  "name": "my-app",
+  "dependencies": {
+    "react": "^18.0.0"
+  },
+  "scripts": {
+    "dev": "next dev /* not a comment */"
+  }
+}"#;
+        let filter = AggressiveFilter;
+        let result = filter.filter(json, Language::Data);
+        assert!(
+            result.contains("/* not a comment */"),
+            "aggressive filtering must not strip JSON string contents"
         );
     }
 

@@ -19,6 +19,27 @@ fn run_command(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
+fn init_git_repo(repo: &Path) -> Result<()> {
+    run_command(Command::new("git").arg("init").arg(repo))?;
+    run_command(
+        Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["config", "user.name", "RTK Test"]),
+    )?;
+    run_command(Command::new("git").arg("-C").arg(repo).args([
+        "config",
+        "user.email",
+        "rtk@example.com",
+    ]))?;
+    run_command(Command::new("git").arg("-C").arg(repo).args([
+        "config",
+        "commit.gpgsign",
+        "false",
+    ]))?;
+    Ok(())
+}
+
 fn command_exists(program: &str) -> bool {
     Command::new(program)
         .arg("--version")
@@ -187,9 +208,7 @@ fn rtk_git_status_defaults_to_short_output() -> Result<()> {
     let codex_home = TempDir::new()?;
     let repo = codex_home.path().join("repo");
     std::fs::create_dir(&repo)?;
-    let mut init = Command::new("git");
-    init.arg("init").arg(&repo);
-    run_command(&mut init)?;
+    init_git_repo(&repo)?;
     std::fs::write(repo.join("new.txt"), "hello\n")?;
 
     let mut cmd = codex_command(codex_home.path())?;
@@ -197,7 +216,70 @@ fn rtk_git_status_defaults_to_short_output() -> Result<()> {
         .args(["rtk", "git", "status"])
         .assert()
         .success()
-        .stdout(contains("Untracked: 1 files").and(contains("new.txt")));
+        .stdout(contains("? Untracked: 1 files").and(contains("new.txt")));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_git_status_with_flags_keeps_git_exit_code() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let workspace = codex_home.path().join("workspace");
+    std::fs::create_dir(&workspace)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&workspace)
+        .args(["rtk", "git", "status", "--short"])
+        .assert()
+        .code(128)
+        .stderr(contains("not a git repository"));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_git_status_reports_clean_tree() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let repo = codex_home.path().join("repo");
+    std::fs::create_dir(&repo)?;
+    init_git_repo(&repo)?;
+    std::fs::write(repo.join("tracked.txt"), "hello\n")?;
+    run_command(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["add", "tracked.txt"]),
+    )?;
+    run_command(
+        Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["commit", "-m", "chore: init"]),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&repo)
+        .args(["rtk", "git", "status"])
+        .assert()
+        .success()
+        .stdout(contains("* ").and(contains("clean — nothing to commit")));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_git_branch_show_current_passthroughs_stdout() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let repo = codex_home.path().join("repo");
+    std::fs::create_dir(&repo)?;
+    init_git_repo(&repo)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&repo)
+        .args(["rtk", "git", "branch", "--show-current"])
+        .assert()
+        .success()
+        .stdout(contains("main").or(contains("master")));
 
     Ok(())
 }
@@ -208,22 +290,7 @@ fn rtk_git_log_preserves_first_commit_body_line() -> Result<()> {
     let repo = codex_home.path().join("repo");
     std::fs::create_dir(&repo)?;
 
-    run_command(Command::new("git").arg("init").arg(&repo))?;
-    run_command(Command::new("git").arg("-C").arg(&repo).args([
-        "config",
-        "user.name",
-        "RTK Test",
-    ]))?;
-    run_command(Command::new("git").arg("-C").arg(&repo).args([
-        "config",
-        "user.email",
-        "rtk@example.com",
-    ]))?;
-    run_command(Command::new("git").arg("-C").arg(&repo).args([
-        "config",
-        "commit.gpgsign",
-        "false",
-    ]))?;
+    init_git_repo(&repo)?;
     std::fs::write(repo.join("note.txt"), "body\n")?;
     run_command(
         Command::new("git")
@@ -258,22 +325,7 @@ fn rtk_git_log_respects_user_oneline_format() -> Result<()> {
     let repo = codex_home.path().join("repo");
     std::fs::create_dir(&repo)?;
 
-    run_command(Command::new("git").arg("init").arg(&repo))?;
-    run_command(Command::new("git").arg("-C").arg(&repo).args([
-        "config",
-        "user.name",
-        "RTK Test",
-    ]))?;
-    run_command(Command::new("git").arg("-C").arg(&repo).args([
-        "config",
-        "user.email",
-        "rtk@example.com",
-    ]))?;
-    run_command(Command::new("git").arg("-C").arg(&repo).args([
-        "config",
-        "commit.gpgsign",
-        "false",
-    ]))?;
+    init_git_repo(&repo)?;
     std::fs::write(repo.join("note.txt"), "oneline\n")?;
     run_command(
         Command::new("git")
