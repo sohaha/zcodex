@@ -207,7 +207,7 @@ jobs:
 
       - if: ${{ matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-unknown-linux-musl'}}
         name: Install Zig
-        uses: mlugg/setup-zig@v2
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
         with:
           version: 0.14.0
 
@@ -765,6 +765,13 @@ jobs:
       publish: true
     secrets: inherit
 
+  argument-comment-lint-release-assets:
+    name: argument-comment-lint release assets
+    needs: tag-check
+    uses: ./.github/workflows/rust-release-argument-comment-lint.yml
+    with:
+      publish: true
+
   release:
     if: ${{ always() && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.build-stellar.result == 'success' || needs.build-stellar.result == 'skipped') && (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped') && (needs.shell-tool-mcp.result == 'success' || needs.shell-tool-mcp.result == 'skipped') && (needs.build.result == 'success' || needs.build-stellar.result == 'success') }}
     needs:
@@ -773,6 +780,7 @@ jobs:
       - build-stellar
       - build-windows
       - shell-tool-mcp
+      - argument-comment-lint-release-assets
     name: release
     runs-on: ubuntu-latest
     permissions:
@@ -949,6 +957,13 @@ jobs:
         with:
           tag: ${{ needs.tag-check.outputs.release_tag }}
           config: .github/dotslash-config.json
+
+      - uses: facebook/dotslash-publish-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag: ${{ github.ref_name }}
+          config: .github/dotslash-argument-comment-lint-config.json
 
       - name: Trigger developers.openai.com deploy
         # Only trigger the deploy if the release is not a pre-release.

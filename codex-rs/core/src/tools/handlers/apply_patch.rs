@@ -17,6 +17,7 @@ use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
 use crate::sandboxing::effective_file_system_sandbox_policy;
 use crate::sandboxing::merge_permission_profiles;
+use crate::tools::context::ApplyPatchToolOutput;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolInvocation;
@@ -130,7 +131,7 @@ async fn effective_patch_permissions(
 
 #[async_trait]
 impl ToolHandler for ApplyPatchHandler {
-    type Output = FunctionToolOutput;
+    type Output = ApplyPatchToolOutput;
 
     fn kind(&self) -> ToolKind {
         ToolKind::Function
@@ -184,7 +185,7 @@ impl ToolHandler for ApplyPatchHandler {
                 {
                     InternalApplyPatchInvocation::Output(item) => {
                         let content = item?;
-                        Ok(FunctionToolOutput::from_text(content, Some(true)))
+                        Ok(ApplyPatchToolOutput::from_text(content))
                     }
                     InternalApplyPatchInvocation::DelegateToExec(apply) => {
                         let run_in_process =
@@ -246,7 +247,7 @@ impl ToolHandler for ApplyPatchHandler {
                             Some(&tracker),
                         );
                         let content = emitter.finish(event_ctx, out).await?;
-                        Ok(FunctionToolOutput::from_text(content, Some(true)))
+                        Ok(ApplyPatchToolOutput::from_text(content))
                     }
                 }
             }

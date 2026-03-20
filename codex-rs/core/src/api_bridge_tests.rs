@@ -154,6 +154,7 @@ fn anthropic_auth_provider_does_not_duplicate_api_key_as_bearer() {
         request_max_retries: None,
         stream_max_retries: None,
         stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
         requires_openai_auth: false,
         supports_websockets: false,
     };

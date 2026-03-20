@@ -33,7 +33,6 @@ fn test_model_client_with_wire_api(
         None,
         false,
         false,
-        false,
         None,
     )
 }
