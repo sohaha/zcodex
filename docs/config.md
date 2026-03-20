@@ -39,6 +39,12 @@ unless you override the provider config. The built-in `anthropic` provider
 defaults to `https://api.anthropic.com/v1`, and you can override that with
 `ANTHROPIC_BASE_URL` or a custom `model_providers.<id>.base_url` entry.
 
+To retry a failed primary request against another provider, set
+`fallback_provider` to a provider ID from `model_providers` (or a built-in
+provider) and optionally set `fallback_model` to the model slug that fallback
+request should use. Codex retries the fallback only for the current request;
+new requests still start with the primary `model_provider`.
+
 ## Custom model catalogs
 
 Codex supports two startup-only config keys for overriding available models:

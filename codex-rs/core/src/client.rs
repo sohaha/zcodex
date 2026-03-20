@@ -678,6 +678,10 @@ impl Drop for ModelClientSession {
 }
 
 impl ModelClientSession {
+    pub(crate) fn responses_websocket_enabled(&self) -> bool {
+        self.client.responses_websocket_enabled()
+    }
+
     fn reset_websocket_session(&mut self) {
         self.websocket_session.connection = None;
         self.websocket_session.last_request = None;

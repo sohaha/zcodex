@@ -1948,6 +1948,14 @@
     "experimental_use_unified_exec_tool": {
       "type": "boolean"
     },
+    "fallback_model": {
+      "description": "Optional model slug to use with the fallback provider.",
+      "type": "string"
+    },
+    "fallback_provider": {
+      "description": "Optional provider to use when the primary provider request fails.",
+      "type": "string"
+    },
     "features": {
       "additionalProperties": false,
       "default": null,

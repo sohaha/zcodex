@@ -1795,6 +1795,58 @@ fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
 }
 
 #[test]
+fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let cfg = ConfigToml {
+        fallback_provider: Some("fallback".to_string()),
+        fallback_model: Some("fallback-model".to_string()),
+        model_providers: HashMap::from([(
+            "fallback".to_string(),
+            ModelProviderInfo {
+                name: "Fallback Provider".to_string(),
+                base_url: Some("https://fallback.example/v1".to_string()),
+                env_key: Some("FALLBACK_API_KEY".to_string()),
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                wire_api: crate::WireApi::Responses,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: Some(0),
+                stream_max_retries: Some(0),
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.fallback_provider_id.as_deref(), Some("fallback"));
+    assert_eq!(
+        config
+            .fallback_provider
+            .as_ref()
+            .map(|provider| provider.name.as_str()),
+        Some("Fallback Provider")
+    );
+    assert_eq!(config.fallback_model.as_deref(), Some("fallback-model"));
+
+    Ok(())
+}
+
+#[test]
 fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
@@ -4475,6 +4527,9 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             service_tier: None,
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
+            fallback_provider_id: None,
+            fallback_provider: None,
+            fallback_model: None,
             permissions: Permissions {
                 approval_policy: Constrained::allow_any(AskForApproval::Never),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4619,6 +4674,9 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4761,6 +4819,9 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4889,6 +4950,9 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),

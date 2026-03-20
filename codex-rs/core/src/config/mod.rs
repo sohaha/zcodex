@@ -259,6 +259,16 @@ pub struct Config {
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
 
+    /// Optional fallback provider identifier used when the primary provider
+    /// request fails for the current request.
+    pub fallback_provider_id: Option<String>,
+
+    /// Optional fallback provider definition resolved from `fallback_provider_id`.
+    pub fallback_provider: Option<ModelProviderInfo>,
+
+    /// Optional model slug to use with the fallback provider.
+    pub fallback_model: Option<String>,
+
     /// Optionally specify the personality of the model
     pub personality: Option<Personality>,
 
@@ -1226,6 +1236,12 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
+
+    /// Optional provider to use when the primary provider request fails.
+    pub fallback_provider: Option<String>,
+
+    /// Optional model slug to use with the fallback provider.
+    pub fallback_model: Option<String>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -2443,6 +2459,19 @@ impl Config {
                 std::io::Error::new(std::io::ErrorKind::NotFound, message)
             })?
             .clone();
+        let fallback_provider_id = cfg.fallback_provider.clone();
+        let fallback_provider = fallback_provider_id
+            .as_ref()
+            .map(|provider_id| {
+                model_providers.get(provider_id).ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("Fallback model provider `{provider_id}` not found"),
+                    )
+                })
+            })
+            .transpose()?
+            .cloned();
 
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
@@ -2711,6 +2740,9 @@ impl Config {
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_provider_id,
             model_provider,
+            fallback_provider_id,
+            fallback_provider,
+            fallback_model: cfg.fallback_model,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {
