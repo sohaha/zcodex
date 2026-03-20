@@ -45,6 +45,17 @@ provider) and optionally set `fallback_model` to the model slug that fallback
 request should use. Codex retries the fallback only for the current request;
 new requests still start with the primary `model_provider`.
 
+For multi-step fallback, use `fallback_providers` in priority order:
+
+```toml
+model_provider = "openai"
+
+fallback_providers = [
+  { provider = "anthropic", model = "claude-sonnet-4-5" },
+  { provider = "openrouter", model = "openai/gpt-4.1" },
+]
+```
+
 ## Custom model catalogs
 
 Codex supports two startup-only config keys for overriding available models:

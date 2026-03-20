@@ -614,6 +614,23 @@
       },
       "type": "object"
     },
+    "FallbackProviderToml": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "description": "Optional model slug to use with this fallback provider.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Provider to use from the model_providers map.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
     "FeedbackConfigToml": {
       "additionalProperties": false,
       "properties": {
@@ -1955,6 +1972,14 @@
     "fallback_provider": {
       "description": "Optional provider to use when the primary provider request fails.",
       "type": "string"
+    },
+    "fallback_providers": {
+      "default": [],
+      "description": "Ordered list of fallback providers to try for the current request.",
+      "items": {
+        "$ref": "#/definitions/FallbackProviderToml"
+      },
+      "type": "array"
     },
     "features": {
       "additionalProperties": false,

@@ -269,6 +269,9 @@ pub struct Config {
     /// Optional model slug to use with the fallback provider.
     pub fallback_model: Option<String>,
 
+    /// Ordered list of fallback providers to try for the current request.
+    pub fallback_providers: Vec<FallbackProviderConfig>,
+
     /// Optionally specify the personality of the model
     pub personality: Option<Personality>,
 
@@ -1225,6 +1228,23 @@ pub fn set_default_oss_provider(codex_home: &Path, provider: &str) -> std::io::R
         .map_err(|err| std::io::Error::other(format!("failed to persist config.toml: {err}")))
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FallbackProviderToml {
+    /// Provider to use from the model_providers map.
+    pub provider: String,
+
+    /// Optional model slug to use with this fallback provider.
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FallbackProviderConfig {
+    pub provider_id: String,
+    pub provider: ModelProviderInfo,
+    pub model: Option<String>,
+}
+
 /// Base config deserialized from ~/.codex/config.toml.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
@@ -1242,6 +1262,10 @@ pub struct ConfigToml {
 
     /// Optional model slug to use with the fallback provider.
     pub fallback_model: Option<String>,
+
+    /// Ordered list of fallback providers to try for the current request.
+    #[serde(default)]
+    pub fallback_providers: Vec<FallbackProviderToml>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -2472,6 +2496,47 @@ impl Config {
             })
             .transpose()?
             .cloned();
+        let mut fallback_providers = cfg
+            .fallback_providers
+            .into_iter()
+            .map(|fallback| {
+                let provider_id = fallback.provider;
+                let provider = model_providers
+                    .get(&provider_id)
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("Fallback model provider `{provider_id}` not found"),
+                        )
+                    })?
+                    .clone();
+                Ok(FallbackProviderConfig {
+                    provider_id,
+                    provider,
+                    model: fallback.model,
+                })
+            })
+            .collect::<std::io::Result<Vec<_>>>()?;
+        if let Some(provider_id) = fallback_provider_id.as_ref()
+            && !fallback_providers
+                .iter()
+                .any(|fallback| &fallback.provider_id == provider_id)
+        {
+            let Some(provider) = fallback_provider.clone() else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Fallback model provider `{provider_id}` not found"),
+                ));
+            };
+            fallback_providers.insert(
+                0,
+                FallbackProviderConfig {
+                    provider_id: provider_id.clone(),
+                    provider,
+                    model: cfg.fallback_model.clone(),
+                },
+            );
+        }
 
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
@@ -2743,6 +2808,7 @@ impl Config {
             fallback_provider_id,
             fallback_provider,
             fallback_model: cfg.fallback_model,
+            fallback_providers,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {

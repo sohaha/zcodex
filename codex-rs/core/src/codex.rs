@@ -24,6 +24,7 @@ use crate::compact::InitialContextInjection;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
+use crate::config::FallbackProviderConfig;
 use crate::config::ManagedFeatures;
 use crate::connectors;
 use crate::exec_policy::ExecPolicyManager;
@@ -6454,7 +6455,7 @@ async fn run_sampling_request(
         .await;
     let mut retries = 0;
     let mut sampling_turn_context = Arc::clone(&turn_context);
-    let mut attempted_provider_fallback = false;
+    let mut next_fallback_index = 0usize;
     let mut fallback_client_session: Option<ModelClientSession> = None;
     loop {
         let request_result = if let Some(fallback_client_session) = fallback_client_session.as_mut()
@@ -6504,12 +6505,11 @@ async fn run_sampling_request(
             Err(err) => err,
         };
 
-        if !attempted_provider_fallback
-            && should_retry_with_fallback_provider(&err)
-            && let Some(fallback_turn_context) =
-                maybe_retry_with_fallback_provider(&sess, &sampling_turn_context).await
+        if should_retry_with_fallback_provider(&err)
+            && let Some((fallback_turn_context, used_fallback_index)) =
+                next_fallback_turn_context(&sess, &sampling_turn_context, next_fallback_index).await
         {
-            attempted_provider_fallback = true;
+            next_fallback_index = used_fallback_index + 1;
             let fallback_provider = fallback_turn_context.provider.name.clone();
             let fallback_model = fallback_turn_context.model_info.slug.clone();
             fallback_client_session =
@@ -6520,7 +6520,7 @@ async fn run_sampling_request(
                 &sampling_turn_context,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "Primary provider request failed; retrying with fallback provider `{fallback_provider}` and model `{fallback_model}`. {err:#}"
+                        "Provider request failed; retrying with fallback provider `{fallback_provider}` and model `{fallback_model}`. {err:#}"
                     ),
                 }),
             )
@@ -6621,32 +6621,52 @@ fn build_model_client_for_turn(sess: &Session, turn_context: &TurnContext) -> Mo
     )
 }
 
-async fn maybe_retry_with_fallback_provider(
+async fn next_fallback_turn_context(
     sess: &Session,
     turn_context: &Arc<TurnContext>,
-) -> Option<Arc<TurnContext>> {
-    let fallback_provider_id = turn_context.config.fallback_provider_id.clone()?;
-    let fallback_provider = turn_context.config.fallback_provider.clone()?;
-    let fallback_model = turn_context
-        .config
-        .fallback_model
-        .clone()
-        .unwrap_or_else(|| turn_context.model_info.slug.clone());
-    if fallback_provider_id == turn_context.config.model_provider_id
-        && fallback_model == turn_context.model_info.slug
-    {
-        return None;
+    start_index: usize,
+) -> Option<(Arc<TurnContext>, usize)> {
+    let fallback_candidates = if turn_context.config.fallback_providers.is_empty() {
+        turn_context
+            .config
+            .fallback_provider_id
+            .as_ref()
+            .zip(turn_context.config.fallback_provider.as_ref())
+            .map(|(provider_id, provider)| {
+                vec![FallbackProviderConfig {
+                    provider_id: provider_id.clone(),
+                    provider: provider.clone(),
+                    model: turn_context.config.fallback_model.clone(),
+                }]
+            })
+            .unwrap_or_default()
+    } else {
+        turn_context.config.fallback_providers.clone()
+    };
+
+    for (index, fallback) in fallback_candidates.iter().enumerate().skip(start_index) {
+        let fallback_model = fallback
+            .model
+            .clone()
+            .unwrap_or_else(|| turn_context.model_info.slug.clone());
+        if fallback.provider_id == turn_context.config.model_provider_id
+            && fallback_model == turn_context.model_info.slug
+        {
+            continue;
+        }
+
+        let fallback_turn_context = turn_context
+            .with_model_provider(
+                fallback_model,
+                fallback.provider_id.clone(),
+                fallback.provider.clone(),
+                &sess.services.models_manager,
+            )
+            .await;
+        return Some((Arc::new(fallback_turn_context), index));
     }
 
-    let fallback_turn_context = turn_context
-        .with_model_provider(
-            fallback_model,
-            fallback_provider_id,
-            fallback_provider,
-            &sess.services.models_manager,
-        )
-        .await;
-    Some(Arc::new(fallback_turn_context))
+    None
 }
 
 fn should_retry_with_fallback_provider(err: &CodexErr) -> bool {

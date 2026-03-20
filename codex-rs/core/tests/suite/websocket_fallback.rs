@@ -304,3 +304,109 @@ async fn request_fallback_switches_to_configured_provider_and_model() -> Result<
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let primary_server = responses::start_mock_server().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("primary failed"))
+        .mount(&primary_server)
+        .await;
+
+    let fallback_a_server = responses::start_mock_server().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(ResponseTemplate::new(502).set_body_string("fallback a failed"))
+        .mount(&fallback_a_server)
+        .await;
+
+    let fallback_b_server = responses::start_mock_server().await;
+    let fallback_b_mock = mount_sse_once(
+        &fallback_b_server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_config({
+        let fallback_a_base_url = format!("{}/v1", fallback_a_server.uri());
+        let fallback_b_base_url = format!("{}/v1", fallback_b_server.uri());
+        move |config| {
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+            config.model_provider.supports_websockets = false;
+            config.fallback_providers = vec![
+                codex_core::config::FallbackProviderConfig {
+                    provider_id: "fallback-a".to_string(),
+                    provider: codex_core::ModelProviderInfo {
+                        name: "fallback-a".to_string(),
+                        base_url: Some(fallback_a_base_url),
+                        env_key: Some("OPENAI_API_KEY".to_string()),
+                        env_key_instructions: None,
+                        experimental_bearer_token: None,
+                        wire_api: codex_core::WireApi::Responses,
+                        query_params: None,
+                        http_headers: None,
+                        env_http_headers: None,
+                        request_max_retries: Some(0),
+                        stream_max_retries: Some(0),
+                        stream_idle_timeout_ms: None,
+                        websocket_connect_timeout_ms: None,
+                        requires_openai_auth: false,
+                        supports_websockets: false,
+                    },
+                    model: Some("fallback-model-a".to_string()),
+                },
+                codex_core::config::FallbackProviderConfig {
+                    provider_id: "fallback-b".to_string(),
+                    provider: codex_core::ModelProviderInfo {
+                        name: "fallback-b".to_string(),
+                        base_url: Some(fallback_b_base_url),
+                        env_key: Some("OPENAI_API_KEY".to_string()),
+                        env_key_instructions: None,
+                        experimental_bearer_token: None,
+                        wire_api: codex_core::WireApi::Responses,
+                        query_params: None,
+                        http_headers: None,
+                        env_http_headers: None,
+                        request_max_retries: Some(0),
+                        stream_max_retries: Some(0),
+                        stream_idle_timeout_ms: None,
+                        websocket_connect_timeout_ms: None,
+                        requires_openai_auth: false,
+                        supports_websockets: false,
+                    },
+                    model: Some("fallback-model-b".to_string()),
+                },
+            ];
+        }
+    });
+    let test = builder.build(&primary_server).await?;
+
+    test.submit_turn("hello").await?;
+
+    let primary_http_attempts = primary_server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|req| req.method == Method::POST && req.url.path().ends_with("/responses"))
+        .count();
+    let fallback_a_http_attempts = fallback_a_server
+        .received_requests()
+        .await
+        .unwrap_or_default()
+        .iter()
+        .filter(|req| req.method == Method::POST && req.url.path().ends_with("/responses"))
+        .count();
+    assert_eq!(primary_http_attempts, 1);
+    assert_eq!(fallback_a_http_attempts, 1);
+
+    let fallback_b_request = fallback_b_mock.single_request();
+    let fallback_b_body: Value = fallback_b_request.body_json();
+    assert_eq!(fallback_b_body["model"].as_str(), Some("fallback-model-b"));
+
+    Ok(())
+}

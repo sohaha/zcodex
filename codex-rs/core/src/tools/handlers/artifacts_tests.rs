@@ -33,7 +33,7 @@ fn default_runtime_manager_uses_openai_codex_release_base() {
 
     assert_eq!(
         manager.config().release().base_url().as_str(),
-        "https://github.com/openai/codex/releases/download/"
+        "https://github.com/sohaha/zcodex/releases/download/"
     );
     assert_eq!(
         manager.config().release().runtime_version(),

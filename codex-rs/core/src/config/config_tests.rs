@@ -1842,6 +1842,96 @@ fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
         Some("Fallback Provider")
     );
     assert_eq!(config.fallback_model.as_deref(), Some("fallback-model"));
+    assert_eq!(config.fallback_providers.len(), 1);
+    assert_eq!(config.fallback_providers[0].provider_id, "fallback");
+    assert_eq!(
+        config.fallback_providers[0].model.as_deref(),
+        Some("fallback-model")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn resolves_fallback_provider_chain() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let cfg = ConfigToml {
+        fallback_providers: vec![
+            FallbackProviderToml {
+                provider: "fallback-a".to_string(),
+                model: Some("model-a".to_string()),
+            },
+            FallbackProviderToml {
+                provider: "fallback-b".to_string(),
+                model: Some("model-b".to_string()),
+            },
+        ],
+        model_providers: HashMap::from([
+            (
+                "fallback-a".to_string(),
+                ModelProviderInfo {
+                    name: "Fallback A".to_string(),
+                    base_url: Some("https://fallback-a.example/v1".to_string()),
+                    env_key: Some("FALLBACK_A_API_KEY".to_string()),
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    wire_api: crate::WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: Some(0),
+                    stream_max_retries: Some(0),
+                    stream_idle_timeout_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                },
+            ),
+            (
+                "fallback-b".to_string(),
+                ModelProviderInfo {
+                    name: "Fallback B".to_string(),
+                    base_url: Some("https://fallback-b.example/v1".to_string()),
+                    env_key: Some("FALLBACK_B_API_KEY".to_string()),
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    wire_api: crate::WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: Some(0),
+                    stream_max_retries: Some(0),
+                    stream_idle_timeout_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                },
+            ),
+        ]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.fallback_providers.len(), 2);
+    assert_eq!(config.fallback_providers[0].provider_id, "fallback-a");
+    assert_eq!(
+        config.fallback_providers[0].model.as_deref(),
+        Some("model-a")
+    );
+    assert_eq!(config.fallback_providers[1].provider_id, "fallback-b");
+    assert_eq!(
+        config.fallback_providers[1].model.as_deref(),
+        Some("model-b")
+    );
 
     Ok(())
 }
@@ -4530,6 +4620,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             fallback_provider_id: None,
             fallback_provider: None,
             fallback_model: None,
+            fallback_providers: Vec::new(),
             permissions: Permissions {
                 approval_policy: Constrained::allow_any(AskForApproval::Never),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4677,6 +4768,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         fallback_provider_id: None,
         fallback_provider: None,
         fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4822,6 +4914,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         fallback_provider_id: None,
         fallback_provider: None,
         fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4953,6 +5046,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         fallback_provider_id: None,
         fallback_provider: None,
         fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
