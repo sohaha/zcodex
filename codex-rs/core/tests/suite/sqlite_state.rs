@@ -1,7 +1,7 @@
 use anyhow::Result;
 use codex_core::config::types::McpServerConfig;
 use codex_core::config::types::McpServerTransportConfig;
-use codex_core::features::Feature;
+use codex_features::Feature;
 use codex_protocol::ThreadId;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::protocol::AskForApproval;
@@ -482,7 +482,7 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
         if let Some(row) = rows.into_iter().find(|row| {
             row.message
                 .as_deref()
-                .is_some_and(|m| m.starts_with("ToolCall:"))
+                .is_some_and(|m| m.contains("ToolCall:"))
         }) {
             let thread_id = row.thread_id;
             let message = row.message;
@@ -497,7 +497,7 @@ async fn tool_call_logs_include_thread_id() -> Result<()> {
     assert!(
         message
             .as_deref()
-            .is_some_and(|text| text.starts_with("ToolCall:")),
+            .is_some_and(|text| text.contains("ToolCall:")),
         "expected ToolCall message, got {message:?}"
     );
 

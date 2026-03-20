@@ -1,5 +1,5 @@
 use crate::repo_urls::ANNOUNCEMENT_TIP_URL;
-use codex_core::features::FEATURES;
+use codex_features::FEATURES;
 use codex_protocol::account::PlanType;
 use lazy_static::lazy_static;
 use rand::Rng;

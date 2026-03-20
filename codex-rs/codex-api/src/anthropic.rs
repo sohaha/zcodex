@@ -112,13 +112,13 @@ pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stre
                 local_shell_input(action),
             )),
             ResponseItem::FunctionCallOutput { call_id, output }
-            | ResponseItem::CustomToolCallOutput { call_id, output } => {
-                messages.push(tool_result_message(
-                    call_id.clone(),
-                    tool_result_text(output),
-                    output.success == Some(false),
-                ))
-            }
+            | ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => messages.push(tool_result_message(
+                call_id.clone(),
+                tool_result_text(output),
+                output.success == Some(false),
+            )),
             ResponseItem::ToolSearchOutput {
                 call_id,
                 status,

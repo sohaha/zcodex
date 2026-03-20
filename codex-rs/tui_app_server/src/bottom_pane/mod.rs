@@ -27,9 +27,9 @@ use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;
 use bottom_pane_view::BottomPaneView;
-use codex_core::features::Features;
 use codex_core::plugins::PluginCapabilitySummary;
 use codex_core::skills::model::SkillMetadata;
+use codex_features::Features;
 use codex_file_search::FileMatch;
 use codex_protocol::request_user_input::RequestUserInputEvent;
 use codex_protocol::user_input::TextElement;
@@ -958,7 +958,9 @@ impl BottomPane {
             request
         };
 
-        if let Some(tool_suggestion) = request.tool_suggestion() {
+        if let Some(tool_suggestion) = request.tool_suggestion()
+            && let Some(install_url) = tool_suggestion.install_url.clone()
+        {
             let suggestion_type = match tool_suggestion.suggest_type {
                 mcp_server_elicitation::ToolSuggestionType::Install => {
                     AppLinkSuggestionType::Install
@@ -982,7 +984,7 @@ impl BottomPane {
                             "Enable this app to use it for the current request.".to_string()
                         }
                     },
-                    url: tool_suggestion.install_url.clone(),
+                    url: install_url,
                     is_installed,
                     is_enabled: false,
                     suggest_reason: Some(tool_suggestion.suggest_reason.clone()),

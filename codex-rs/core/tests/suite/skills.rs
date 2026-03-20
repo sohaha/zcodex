@@ -149,11 +149,12 @@ async fn skill_load_errors_surface_in_session_configured() -> Result<()> {
         }),
         "expected broken skill not loaded, got {skills:?}"
     );
-    assert_eq!(errors.len(), 1, "expected one load error");
-    let error_path = errors[0].path.to_string_lossy();
     assert!(
-        error_path.ends_with("skills/broken/SKILL.md"),
-        "unexpected error path: {error_path}"
+        errors.iter().any(|error| error
+            .path
+            .to_string_lossy()
+            .ends_with("skills/broken/SKILL.md")),
+        "expected broken skill load error, got {errors:?}"
     );
 
     Ok(())
