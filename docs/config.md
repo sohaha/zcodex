@@ -56,6 +56,49 @@ fallback_providers = [
 ]
 ```
 
+Example with a primary provider plus two fallbacks:
+
+```toml
+model = "gpt-5.1"
+model_provider = "cn-relay"
+
+[model_providers.cn-relay]
+name = "Primary relay"
+base_url = "https://relay.example.com/v1"
+env_key = "CN_RELAY_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+[model_providers.openrouter]
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+env_key = "OPENROUTER_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+[model_providers.cn-relay-backup]
+name = "Backup relay"
+base_url = "https://backup-relay.example.com/v1"
+env_key = "CN_RELAY_BACKUP_API_KEY"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+supports_websockets = false
+
+fallback_providers = [
+  { provider = "openrouter", model = "openai/gpt-4.1" },
+  { provider = "cn-relay-backup", model = "gpt-4.1" },
+]
+```
+
+`fallback_provider` + `fallback_model` remain supported for a single fallback.
+When both styles are present, Codex treats them as part of the same ordered
+fallback list for the current request only.
+
 ## Custom model catalogs
 
 Codex supports two startup-only config keys for overriding available models:
