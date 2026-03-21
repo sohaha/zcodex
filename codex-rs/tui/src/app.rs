@@ -1546,11 +1546,11 @@ impl App {
     fn thread_label(&self, thread_id: ThreadId) -> String {
         let is_primary = self.primary_thread_id == Some(thread_id);
         let fallback_label = if is_primary {
-            "Main [default]".to_string()
+            "主线程 [default]".to_string()
         } else {
             let thread_id = thread_id.to_string();
             let short_id: String = thread_id.chars().take(8).collect();
-            format!("Agent ({short_id})")
+            format!("智能体 ({short_id})")
         };
         if let Some(entry) = self.agent_navigation.get(&thread_id) {
             let label = format_agent_picker_item_name(
@@ -1558,7 +1558,7 @@ impl App {
                 entry.agent_role.as_deref(),
                 is_primary,
             );
-            if label == "Agent" {
+            if label == "智能体" {
                 let thread_id = thread_id.to_string();
                 let short_id: String = thread_id.chars().take(8).collect();
                 format!("{label} ({short_id})")
@@ -1853,7 +1853,7 @@ impl App {
 
         if self.agent_navigation.is_empty() {
             self.chat_widget
-                .add_info_message("No agents available yet.".to_string(), /*hint*/ None);
+                .add_info_message("暂无可用智能体。".to_string(), /*hint*/ None);
             return;
         }
 
@@ -1891,7 +1891,7 @@ impl App {
             .collect();
 
         self.chat_widget.show_selection_view(SelectionViewParams {
-            title: Some("Subagents".to_string()),
+            title: Some("子智能体".to_string()),
             subtitle: Some(AgentNavigationState::picker_subtitle()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -1937,9 +1937,8 @@ impl App {
                     self.mark_agent_picker_thread_closed(thread_id);
                     None
                 } else {
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to attach to agent thread {thread_id}: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("无法连接到智能体线程 {thread_id}: {err}"));
                     return Ok(());
                 }
             }
@@ -1951,7 +1950,7 @@ impl App {
         self.active_thread_id = None;
         let Some((receiver, snapshot)) = self.activate_thread_for_replay(thread_id).await else {
             self.chat_widget
-                .add_error_message(format!("Agent thread {thread_id} is already active."));
+                .add_error_message(format!("智能体线程 {thread_id} 已处于活动状态。"));
             if let Some(previous_thread_id) = previous_thread_id {
                 self.activate_thread_channel(previous_thread_id).await;
             }
@@ -1973,9 +1972,10 @@ impl App {
         self.reset_for_thread_switch(tui)?;
         self.replay_thread_snapshot(snapshot, !is_replay_only);
         if is_replay_only {
+            let hint = None;
             self.chat_widget.add_info_message(
-                format!("Agent thread {thread_id} is closed. Replaying saved transcript."),
-                /*hint*/ None,
+                format!("智能体线程 {thread_id} 已关闭，正在回放已保存的对话记录。"),
+                hint,
             );
         }
         self.drain_active_thread_events(tui).await?;
@@ -4094,16 +4094,15 @@ impl App {
             self.mark_agent_picker_thread_closed(closed_thread_id);
             self.select_agent_thread(tui, primary_thread_id).await?;
             if self.active_thread_id == Some(primary_thread_id) {
+                let hint = None;
                 self.chat_widget.add_info_message(
-                    format!(
-                        "Agent thread {closed_thread_id} closed. Switched back to main thread."
-                    ),
-                    /*hint*/ None,
+                    format!("智能体线程 {closed_thread_id} 已关闭，已切回主线程。"),
+                    hint,
                 );
             } else {
                 self.clear_active_thread().await;
                 self.chat_widget.add_error_message(format!(
-                    "Agent thread {closed_thread_id} closed. Failed to switch back to main thread {primary_thread_id}.",
+                    "智能体线程 {closed_thread_id} 已关闭，切回主线程 {primary_thread_id} 失败。",
                 ));
             }
             return Ok(());
