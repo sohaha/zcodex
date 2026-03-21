@@ -31,8 +31,8 @@ impl ChatWidget {
     pub(crate) fn open_skills_menu(&mut self) {
         let items = vec![
             SelectionItem {
-                name: "List skills".to_string(),
-                description: Some("Tip: press $ to open this list directly.".to_string()),
+                name: "查看 Skills".to_string(),
+                description: Some("提示：按 $ 可直接打开列表。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenSkillsList);
                 })],
@@ -40,8 +40,8 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Enable/Disable Skills".to_string(),
-                description: Some("Enable or disable skills.".to_string()),
+                name: "启用/禁用 Skills".to_string(),
+                description: Some("启用或禁用 Skills。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenManageSkillsPopup);
                 })],
@@ -52,7 +52,7 @@ impl ChatWidget {
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some("Skills".to_string()),
-            subtitle: Some("Choose an action".to_string()),
+            subtitle: Some("选择操作".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -61,7 +61,7 @@ impl ChatWidget {
 
     pub(crate) fn open_manage_skills_popup(&mut self) {
         if self.skills_all.is_empty() {
-            self.add_info_message("No skills available.".to_string(), /*hint*/ None);
+            self.add_info_message("暂无 Skills 可用。".to_string(), /*hint*/ None);
             return;
         }
 
@@ -131,9 +131,10 @@ impl ChatWidget {
         if enabled_count == 0 && disabled_count == 0 {
             return;
         }
+        let hint = None;
         self.add_info_message(
-            format!("{enabled_count} skills enabled, {disabled_count} skills disabled"),
-            /*hint*/ None,
+            format!("已启用 {enabled_count} 个 Skills，已禁用 {disabled_count} 个 Skills"),
+            hint,
         );
     }
 
