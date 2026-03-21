@@ -23,10 +23,10 @@ impl PromptArgsError {
     fn describe(&self, command: &str) -> String {
         match self {
             PromptArgsError::MissingAssignment { token } => format!(
-                "Could not parse {command}: expected key=value but found '{token}'. Wrap values in double quotes if they contain spaces."
+                "无法解析 {command}：应为 key=value，但收到 '{token}'。如果值包含空格，请用双引号包裹。"
             ),
             PromptArgsError::MissingKey { token } => {
-                format!("Could not parse {command}: expected a name before '=' in '{token}'.")
+                format!("无法解析 {command}：在 '{token}' 中，'=' 前缺少参数名。")
             }
         }
     }
@@ -51,7 +51,7 @@ impl PromptExpansionError {
             PromptExpansionError::MissingArgs { command, missing } => {
                 let list = missing.join(", ");
                 format!(
-                    "Missing required args for {command}: {list}. Provide as key=value (quote values with spaces)."
+                    "{command} 缺少必填参数：{list}。请使用 key=value 形式传入（值含空格请加引号）。"
                 )
             }
         }
@@ -145,7 +145,7 @@ fn shift_text_element_left(elem: &TextElement, offset: usize) -> Option<TextElem
 ///
 /// The input is split using shlex rules, so quoted values are supported
 /// (for example `USER="Alice Smith"`). The function returns a map of parsed
-/// arguments, or an error if a token is missing `=` or if the key is empty.
+/// arguments, 或按 an error if a token is missing `=` 或按 if the key is empty.
 pub fn parse_prompt_inputs(
     rest: &str,
     text_elements: &[TextElement],
@@ -185,7 +185,7 @@ pub fn parse_prompt_inputs(
 
 /// Expands a message of the form `/prompts:name [value] [value] …` using a matching saved prompt.
 ///
-/// If the text does not start with `/prompts:`, or if no prompt named `name` exists,
+/// If the text does not start with `/prompts:`, 或按 if no prompt named `name` exists,
 /// the function returns `Ok(None)`. On success it returns
 /// `Ok(Some(expanded))`; otherwise it returns a descriptive error.
 pub fn expand_custom_prompt(
@@ -252,7 +252,7 @@ pub fn expand_custom_prompt(
     )))
 }
 
-/// Detect whether `content` contains numeric placeholders ($1..$9) or `$ARGUMENTS`.
+/// Detect whether `content` contains numeric placeholders ($1..$9) 或按 `$ARGUMENTS`.
 pub fn prompt_has_numeric_placeholders(content: &str) -> bool {
     if content.contains("$ARGUMENTS") {
         return true;
@@ -272,7 +272,7 @@ pub fn prompt_has_numeric_placeholders(content: &str) -> bool {
 }
 
 /// Extract positional arguments from a composer first line like "/name a b" for a given prompt name.
-/// Returns empty when the command name does not match or when there are no args.
+/// Returns empty when the command name does not match 或按 when there are no args.
 pub fn extract_positional_args_for_prompt_line(
     line: &str,
     prompt_name: &str,
@@ -466,7 +466,7 @@ fn apply_replacements_to_token(token: String, replacements: &[ElementReplacement
     }
 }
 
-/// Find the earliest sentinel occurrence at or after `cursor`.
+/// Find the earliest sentinel occurrence at 或按 after `cursor`.
 fn next_replacement<'a>(
     token: &str,
     cursor: usize,
@@ -622,7 +622,7 @@ mod tests {
         let err = expand_custom_prompt("/prompts:my-prompt USER=Alice stray", &[], &prompts)
             .unwrap_err()
             .user_message();
-        assert!(err.contains("expected key=value"));
+        assert!(err.contains("应为 key=value"));
     }
 
     #[test]
@@ -637,7 +637,7 @@ mod tests {
         let err = expand_custom_prompt("/prompts:my-prompt USER=Alice", &[], &prompts)
             .unwrap_err()
             .user_message();
-        assert!(err.to_lowercase().contains("missing required args"));
+        assert!(err.contains("缺少必填参数"));
         assert!(err.contains("BRANCH"));
     }
 

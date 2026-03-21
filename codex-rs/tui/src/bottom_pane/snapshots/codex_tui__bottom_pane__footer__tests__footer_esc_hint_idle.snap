@@ -2,4 +2,4 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  esc esc to edit previous message                                              "
+"  esc esc 编辑上一条消息                                                        " Hidden by multi-width symbols: [(11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " ")]
