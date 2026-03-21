@@ -6471,6 +6471,7 @@ async fn run_sampling_request(
     let mut sampling_turn_context = Arc::clone(&turn_context);
     let mut next_fallback_index = 0usize;
     let mut fallback_client_session: Option<ModelClientSession> = None;
+    let primary_requested_model = sampling_turn_context.model_info.slug.clone();
     loop {
         let request_result = if let Some(fallback_client_session) = fallback_client_session.as_mut()
         {
@@ -6520,8 +6521,13 @@ async fn run_sampling_request(
         };
 
         if should_retry_with_fallback_provider(&err)
-            && let Some((fallback_turn_context, used_fallback_index)) =
-                next_fallback_turn_context(&sess, &sampling_turn_context, next_fallback_index).await
+            && let Some((fallback_turn_context, used_fallback_index)) = next_fallback_turn_context(
+                &sess,
+                &sampling_turn_context,
+                &primary_requested_model,
+                next_fallback_index,
+            )
+            .await
         {
             next_fallback_index = used_fallback_index + 1;
             let fallback_provider = fallback_turn_context.provider.name.clone();
@@ -6638,6 +6644,7 @@ fn build_model_client_for_turn(sess: &Session, turn_context: &TurnContext) -> Mo
 async fn next_fallback_turn_context(
     sess: &Session,
     turn_context: &Arc<TurnContext>,
+    primary_requested_model: &str,
     start_index: usize,
 ) -> Option<(Arc<TurnContext>, usize)> {
     let fallback_candidates = if turn_context.config.fallback_providers.is_empty() {
@@ -6662,7 +6669,7 @@ async fn next_fallback_turn_context(
         let fallback_model = fallback
             .model
             .clone()
-            .unwrap_or_else(|| turn_context.model_info.slug.clone());
+            .unwrap_or_else(|| primary_requested_model.to_string());
         if fallback.provider_id == turn_context.config.model_provider_id
             && fallback_model == turn_context.model_info.slug
         {

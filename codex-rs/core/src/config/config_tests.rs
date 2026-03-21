@@ -1937,6 +1937,62 @@ fn resolves_fallback_provider_chain() -> std::io::Result<()> {
 }
 
 #[test]
+fn preserves_legacy_fallback_when_same_provider_has_different_models() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let provider = ModelProviderInfo {
+        name: "Shared Fallback".to_string(),
+        base_url: Some("https://fallback.example/v1".to_string()),
+        env_key: Some("FALLBACK_API_KEY".to_string()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(0),
+        stream_max_retries: Some(0),
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+    let cfg = ConfigToml {
+        fallback_provider: Some("fallback".to_string()),
+        fallback_model: Some("legacy-model".to_string()),
+        fallback_providers: vec![FallbackProviderToml {
+            provider: "fallback".to_string(),
+            model: Some("chain-model".to_string()),
+        }],
+        model_providers: HashMap::from([("fallback".to_string(), provider)]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.fallback_providers.len(), 2);
+    assert_eq!(config.fallback_providers[0].provider_id, "fallback");
+    assert_eq!(
+        config.fallback_providers[0].model.as_deref(),
+        Some("legacy-model")
+    );
+    assert_eq!(config.fallback_providers[1].provider_id, "fallback");
+    assert_eq!(
+        config.fallback_providers[1].model.as_deref(),
+        Some("chain-model")
+    );
+
+    Ok(())
+}
+
+#[test]
 fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {

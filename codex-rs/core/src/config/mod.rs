@@ -2592,9 +2592,9 @@ impl Config {
             })
             .collect::<std::io::Result<Vec<_>>>()?;
         if let Some(provider_id) = fallback_provider_id.as_ref()
-            && !fallback_providers
-                .iter()
-                .any(|fallback| &fallback.provider_id == provider_id)
+            && !fallback_providers.iter().any(|fallback| {
+                &fallback.provider_id == provider_id && fallback.model == cfg.fallback_model
+            })
         {
             let Some(provider) = fallback_provider.clone() else {
                 return Err(std::io::Error::new(

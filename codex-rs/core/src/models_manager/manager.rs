@@ -403,10 +403,22 @@ impl ModelsManager {
 
         if self.provider.wire_api == WireApi::Anthropic {
             return match refresh_strategy {
-                RefreshStrategy::Offline => Ok(()),
-                RefreshStrategy::OnlineIfUncached | RefreshStrategy::Online => {
+                RefreshStrategy::Offline => {
+                    self.try_load_cache(/*allow_legacy_without_provider_cache_key*/ false)
+                        .await;
+                    Ok(())
+                }
+                RefreshStrategy::OnlineIfUncached => {
+                    if self
+                        .try_load_cache(/*allow_legacy_without_provider_cache_key*/ false)
+                        .await
+                    {
+                        info!("models cache: using cached anthropic models for OnlineIfUncached");
+                        return Ok(());
+                    }
                     self.fetch_and_update_models().await
                 }
+                RefreshStrategy::Online => self.fetch_and_update_models().await,
             };
         }
 
@@ -415,7 +427,8 @@ impl ModelsManager {
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
             ) {
-                self.try_load_cache().await;
+                self.try_load_cache(/*allow_legacy_without_provider_cache_key*/ true)
+                    .await;
             }
             return Ok(());
         }
@@ -423,12 +436,16 @@ impl ModelsManager {
         match refresh_strategy {
             RefreshStrategy::Offline => {
                 // Only try to load from cache, never fetch
-                self.try_load_cache().await;
+                self.try_load_cache(/*allow_legacy_without_provider_cache_key*/ true)
+                    .await;
                 Ok(())
             }
             RefreshStrategy::OnlineIfUncached => {
                 // Try cache first, fall back to online if unavailable
-                if self.try_load_cache().await {
+                if self
+                    .try_load_cache(/*allow_legacy_without_provider_cache_key*/ true)
+                    .await
+                {
                     info!("models cache: using cached models for OnlineIfUncached");
                     return Ok(());
                 }
@@ -475,7 +492,7 @@ impl ModelsManager {
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
         self.cache_manager
-            .persist_cache(&models, etag, client_version)
+            .persist_cache(&models, etag, client_version, self.provider_cache_key())
             .await;
         Ok(())
     }
@@ -537,12 +554,21 @@ impl ModelsManager {
     }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
-    async fn try_load_cache(&self) -> bool {
+    async fn try_load_cache(&self, allow_legacy_without_provider_cache_key: bool) -> bool {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::models_manager::client_version_to_whole();
+        let provider_cache_key = self.provider_cache_key();
         info!(client_version, "models cache: evaluating cache eligibility");
-        let cache = match self.cache_manager.load_fresh(&client_version).await {
+        let cache = match self
+            .cache_manager
+            .load_fresh(
+                &client_version,
+                &provider_cache_key,
+                allow_legacy_without_provider_cache_key,
+            )
+            .await
+        {
             Some(cache) => cache,
             None => {
                 info!("models cache: no usable cache entry");
@@ -558,6 +584,14 @@ impl ModelsManager {
             "models cache: cache entry applied"
         );
         true
+    }
+
+    fn provider_cache_key(&self) -> String {
+        format!(
+            "{}:{}",
+            self.provider.wire_api,
+            self.provider.base_url.as_deref().unwrap_or_default()
+        )
     }
 
     /// Build picker-ready presets from the active catalog snapshot.

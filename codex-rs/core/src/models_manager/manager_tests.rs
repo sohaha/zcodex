@@ -793,6 +793,7 @@ async fn anthropic_provider_ignores_shared_models_cache() {
             &[remote_model("gpt-cached", "Cached GPT", 0)],
             None,
             crate::models_manager::client_version_to_whole(),
+            "responses:https://api.openai.com/v1".to_string(),
         )
         .await;
 
@@ -818,6 +819,48 @@ async fn anthropic_provider_ignores_shared_models_cache() {
         models_mock.requests().len(),
         1,
         "anthropic refresh should fetch /models instead of reusing shared cache"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_provider_uses_matching_cache_for_online_if_uncached() {
+    let server = MockServer::start().await;
+    let cached_model = remote_model("claude-cached", "Claude Cached", 0);
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+    manager
+        .cache_manager
+        .persist_cache(
+            std::slice::from_ref(&cached_model),
+            None,
+            crate::models_manager::client_version_to_whole(),
+            format!("anthropic:{}/v1", server.uri()),
+        )
+        .await;
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("anthropic cache load should succeed");
+
+    let remote_models = manager.get_remote_models().await;
+    assert!(
+        remote_models
+            .iter()
+            .any(|candidate| candidate.slug == cached_model.slug),
+        "anthropic provider should accept matching provider cache"
+    );
+    let requests = server.received_requests().await.unwrap_or_default();
+    assert!(
+        requests.is_empty(),
+        "matching anthropic cache should avoid a network fetch"
     );
 }
 
