@@ -1,6 +1,6 @@
 .tag-release-codex: &tag-release-codex
   docker:
-    image: ubuntu:24.04
+    image: docker.cnb.cool/zls-tools/vm/rust:latest
     volumes:
       - /root/.cargo/registry:copy-on-write
       - /root/.cargo/git:copy-on-write
@@ -13,73 +13,6 @@
   env:
     GITHUB_REPOSITORY: sohaha/zcodex
   stages:
-    - name: prepare release toolchain
-      script: |
-        set -eu
-        (set -o pipefail) 2>/dev/null && set -o pipefail
-        export DEBIAN_FRONTEND=noninteractive
-        export TZ=Etc/UTC
-        apt-get update
-        apt-get install -y --no-install-recommends --no-upgrade \
-          build-essential \
-          ca-certificates \
-          clang \
-          curl \
-          git \
-          jq \
-          libcap-dev \
-          libclang-dev \
-          libssl-dev \
-          lld \
-          pkg-config \
-          python3 \
-          xz-utils
-
-        if ! command -v gh >/dev/null 2>&1; then
-          apt-get install -y --no-install-recommends gh || true
-        fi
-
-        if ! command -v gh >/dev/null 2>&1; then
-          arch="$(dpkg --print-architecture)"
-          case "$arch" in
-            amd64)
-              gh_arch="amd64"
-              ;;
-            arm64)
-              gh_arch="arm64"
-              ;;
-            *)
-              echo "unsupported gh architecture: $arch" >&2
-              exit 1
-              ;;
-          esac
-          gh_version="2.76.2"
-          gh_archive="gh_${gh_version}_linux_${gh_arch}.tar.gz"
-          gh_url="https://github.com/cli/cli/releases/download/v${gh_version}/${gh_archive}"
-          tmp_dir="$(mktemp -d)"
-          trap 'rm -rf "$tmp_dir"' EXIT
-          curl -fsSL "$gh_url" -o "$tmp_dir/$gh_archive"
-          tar -xzf "$tmp_dir/$gh_archive" -C "$tmp_dir"
-          install "$tmp_dir/gh_${gh_version}_linux_${gh_arch}/bin/gh" /usr/local/bin/gh
-        fi
-
-        if ! command -v rustup >/dev/null 2>&1; then
-          curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal
-        fi
-
-        export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
-        rustup toolchain install stable --profile minimal --no-self-update
-        rustup default stable
-
-        if ! command -v mise >/dev/null 2>&1; then
-          curl -fsSL https://mise.run | sh
-        fi
-
-        export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
-        rustup --version
-        cargo --version
-        mise --version
-        gh --version
     - name: build linux amd64
       timeout: 2h
       script: |
