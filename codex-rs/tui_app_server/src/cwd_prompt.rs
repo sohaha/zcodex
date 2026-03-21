@@ -30,17 +30,10 @@ pub(crate) enum CwdPromptAction {
 }
 
 impl CwdPromptAction {
-    fn verb(self) -> &'static str {
+    fn action_label(self) -> &'static str {
         match self {
-            CwdPromptAction::Resume => "resume",
-            CwdPromptAction::Fork => "fork",
-        }
-    }
-
-    fn past_participle(self) -> &'static str {
-        match self {
-            CwdPromptAction::Resume => "resumed",
-            CwdPromptAction::Fork => "forked",
+            CwdPromptAction::Resume => "继续",
+            CwdPromptAction::Fork => "分叉",
         }
     }
 }
@@ -195,49 +188,46 @@ impl WidgetRef for &CwdPromptScreen {
         Clear.render(area, buf);
         let mut column = ColumnRenderable::new();
 
-        let action_verb = self.action.verb();
-        let action_past = self.action.past_participle();
+        let action_label = self.action.action_label();
         let current_cwd = self.current_cwd.as_str();
         let session_cwd = self.session_cwd.as_str();
 
         column.push("");
         column.push(Line::from(vec![
-            "Choose working directory to ".into(),
-            action_verb.bold(),
-            " this session".into(),
+            "请选择用于".into(),
+            action_label.bold(),
+            "该会话的工作目录".into(),
         ]));
         column.push("");
         column.push(
-            Line::from(format!(
-                "Session = latest cwd recorded in the {action_past} session"
-            ))
-            .dim()
-            .inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            Line::from("会话目录 = 上次会话记录的最新 cwd")
+                .dim()
+                .inset(Insets::tlbr(
+                    /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
+                )),
         );
         column.push(
-            Line::from("Current = your current working directory".dim()).inset(Insets::tlbr(
+            Line::from("当前目录 = 你现在所在的工作目录".dim()).inset(Insets::tlbr(
                 /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
             )),
         );
         column.push("");
         column.push(selection_option_row(
             /*index*/ 0,
-            format!("Use session directory ({session_cwd})"),
+            format!("使用会话目录（{session_cwd}）"),
             self.highlighted == CwdSelection::Session,
         ));
         column.push(selection_option_row(
             /*index*/ 1,
-            format!("Use current directory ({current_cwd})"),
+            format!("使用当前目录（{current_cwd}）"),
             self.highlighted == CwdSelection::Current,
         ));
         column.push("");
         column.push(
             Line::from(vec![
-                "Press ".dim(),
+                "按 ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
-                " to continue".dim(),
+                " 继续".dim(),
             ])
             .inset(Insets::tlbr(
                 /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,

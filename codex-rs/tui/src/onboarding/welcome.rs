@@ -85,9 +85,9 @@ impl WidgetRef for &WelcomeWidget {
         }
         lines.push(Line::from(vec![
             "  ".into(),
-            "Welcome to ".into(),
+            "欢迎使用 ".into(),
             "Codex".bold(),
-            ", OpenAI's command-line coding agent".into(),
+            "，OpenAI 的命令行编程助手".into(),
         ]));
 
         Paragraph::new(lines)
@@ -122,7 +122,7 @@ mod tests {
             for x in 0..buf.area.width {
                 row.push_str(buf[(x, y)].symbol());
             }
-            row.contains(needle)
+            row.replace(' ', "").contains(needle)
         })
     }
 
@@ -134,7 +134,7 @@ mod tests {
         let frame_lines = widget.animation.current_frame().lines().count() as u16;
         (&widget).render(area, &mut buf);
 
-        let welcome_row = row_containing(&buf, "Welcome");
+        let welcome_row = row_containing(&buf, "欢迎使用");
         assert_eq!(welcome_row, Some(frame_lines + 1));
     }
 
@@ -145,7 +145,7 @@ mod tests {
         let mut buf = Buffer::empty(area);
         (&widget).render(area, &mut buf);
 
-        let welcome_row = row_containing(&buf, "Welcome");
+        let welcome_row = row_containing(&buf, "欢迎使用");
         assert_eq!(welcome_row, Some(0));
     }
 
