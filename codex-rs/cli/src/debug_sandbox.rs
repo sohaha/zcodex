@@ -59,7 +59,7 @@ pub async fn run_command_under_seatbelt(
     _command: SeatbeltCommand,
     _codex_linux_sandbox_exe: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    anyhow::bail!("Seatbelt sandbox is only available on macOS");
+    anyhow::bail!("Seatbelt 沙箱仅在 macOS 上可用");
 }
 
 pub async fn run_command_under_landlock(
@@ -191,11 +191,11 @@ async fn run_command_under_sandbox(
             let capture = match res {
                 Ok(Ok(v)) => v,
                 Ok(Err(err)) => {
-                    eprintln!("windows sandbox failed: {err}");
+                    eprintln!("Windows 沙箱执行失败：{err}");
                     std::process::exit(1);
                 }
                 Err(join_err) => {
-                    eprintln!("windows sandbox join error: {join_err}");
+                    eprintln!("Windows 沙箱 join 错误：{join_err}");
                     std::process::exit(1);
                 }
             };
@@ -213,7 +213,7 @@ async fn run_command_under_sandbox(
         }
         #[cfg(not(target_os = "windows"))]
         {
-            anyhow::bail!("Windows sandbox is only available on Windows");
+            anyhow::bail!("Windows 沙箱仅在 Windows 上可用");
         }
     }
 
@@ -235,7 +235,7 @@ async fn run_command_under_sandbox(
                 NetworkProxyAuditMetadata::default(),
             )
             .await
-            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?,
+            .map_err(|err| anyhow::anyhow!("启动托管网络代理失败：{err}"))?,
         ),
         None => None,
     };
@@ -319,9 +319,9 @@ async fn run_command_under_sandbox(
     #[cfg(target_os = "macos")]
     if let Some(denial_logger) = denial_logger {
         let denials = denial_logger.finish().await;
-        eprintln!("\n=== Sandbox denials ===");
+        eprintln!("\n=== 沙箱拒绝记录 ===");
         if denials.is_empty() {
-            eprintln!("None found.");
+            eprintln!("未发现记录。");
         } else {
             for seatbelt::SandboxDenial { name, capability } in denials {
                 eprintln!("({name}) {capability}");
@@ -404,7 +404,7 @@ async fn load_debug_sandbox_config_with_codex_home(
     if config_uses_permission_profiles(&config) {
         if full_auto {
             anyhow::bail!(
-                "`codex sandbox --full-auto` is only supported for legacy `sandbox_mode` configs; choose a writable `[permissions]` profile instead"
+                "`codex sandbox --full-auto` 仅支持旧版 `sandbox_mode` 配置；请改用可写的 `[permissions]` profile"
             );
         }
         return Ok(config);
