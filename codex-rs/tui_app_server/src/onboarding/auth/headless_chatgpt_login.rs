@@ -304,7 +304,7 @@ async fn fallback_to_browser_login(
                 &request_frame,
                 &error,
                 &cancel,
-                format!("Unexpected account/login/start response: {other:?}"),
+                format!("account/login/start 返回了意外响应：{other:?}"),
             );
         }
         Err(err) => {
@@ -382,7 +382,7 @@ fn apply_chatgpt_auth_tokens_login_response_for_active_attempt(
                 request_frame,
                 error,
                 cancel,
-                format!("Unexpected account/login/start response: {other:?}"),
+                format!("account/login/start 返回了意外响应：{other:?}"),
             );
         }
         Err(err) => {

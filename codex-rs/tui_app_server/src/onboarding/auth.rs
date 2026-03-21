@@ -389,7 +389,7 @@ impl AuthModeWidget {
 
         if !self.is_api_login_allowed() {
             lines.push(
-                "  API key login is disabled by this workspace. 使用 ChatGPT 登录 to continue."
+                "  当前 workspace 禁用了 API key 登录。请使用 ChatGPT 登录后继续。"
                     .dim()
                     .into(),
             );
@@ -465,7 +465,7 @@ impl AuthModeWidget {
             "  请决定要授予 Codex 多大的自动执行权限".into(),
             Line::from(vec![
                 "  更多说明请查看 ".into(),
-                "\u{1b}]8;;https://developers.openai.com/codex/security\u{7}Codex docs\u{1b}]8;;\u{7}".underlined(),
+                "\u{1b}]8;;https://developers.openai.com/codex/security\u{7}Codex 文档\u{1b}]8;;\u{7}".underlined(),
             ])
             .dim(),
             "".into(),
@@ -475,7 +475,7 @@ impl AuthModeWidget {
             "  由你的 ChatGPT 账号提供支持".into(),
             Line::from(vec![
                 "  使用你当前方案的速率限制和 ".into(),
-                "\u{1b}]8;;https://chatgpt.com/#settings\u{7}training data preferences\u{1b}]8;;\u{7}".underlined(),
+                "\u{1b}]8;;https://chatgpt.com/#settings\u{7}训练数据偏好设置\u{1b}]8;;\u{7}".underlined(),
             ])
             .dim(),
             "".into(),
@@ -497,7 +497,7 @@ impl AuthModeWidget {
 
     fn render_api_key_configured(&self, area: Rect, buf: &mut Buffer) {
         let lines = vec![
-            "✓ API key configured".fg(Color::Green).into(),
+            "✓ API key 已配置".fg(Color::Green).into(),
             "".into(),
             "  Codex 将使用你的 API key 进行按量计费。".into(),
         ];
@@ -701,9 +701,8 @@ impl AuthModeWidget {
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyConfigured;
                 }
                 Ok(other) => {
-                    *error.write().unwrap() = Some(format!(
-                        "Unexpected account/login/start response: {other:?}"
-                    ));
+                    *error.write().unwrap() =
+                        Some(format!("account/login/start 返回了意外响应：{other:?}"));
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyEntry(ApiKeyInputState {
                         value: api_key,
                         prepopulated_from_env: false,
@@ -767,9 +766,8 @@ impl AuthModeWidget {
                 }
                 Ok(other) => {
                     *sign_in_state.write().unwrap() = SignInState::PickMode;
-                    *error.write().unwrap() = Some(format!(
-                        "Unexpected account/login/start response: {other:?}"
-                    ));
+                    *error.write().unwrap() =
+                        Some(format!("account/login/start 返回了意外响应：{other:?}"));
                 }
                 Err(err) => {
                     *sign_in_state.write().unwrap() = SignInState::PickMode;
