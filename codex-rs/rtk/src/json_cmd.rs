@@ -83,7 +83,7 @@ pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
 /// Useful for piping JSON from other commands (e.g., `gh api`, `curl`).
 pub fn filter_json_string(json_str: &str, max_depth: usize) -> Result<String> {
     let value: Value = serde_json::from_str(json_str).context("Failed to parse JSON")?;
-    Ok(extract_schema(&value, 0, max_depth))
+    Ok(extract_schema(&value, /*depth*/ 0, max_depth))
 }
 
 fn extract_schema(value: &Value, depth: usize, max_depth: usize) -> String {

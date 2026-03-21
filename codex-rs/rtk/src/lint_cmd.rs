@@ -239,7 +239,7 @@ fn filter_eslint_json(output: &str) -> String {
             return format!(
                 "ESLint output (JSON parse failed: {})\n{}",
                 e,
-                truncate(output, 500)
+                truncate(output, /*max_len*/ 500)
             );
         }
     };
@@ -330,7 +330,7 @@ fn filter_pylint_json(output: &str) -> String {
             return format!(
                 "Pylint output (JSON parse failed: {})\n{}",
                 e,
-                truncate(output, 500)
+                truncate(output, /*max_len*/ 500)
             );
         }
     };
@@ -462,7 +462,7 @@ fn filter_generic_lint(output: &str) -> String {
     result.push_str("═══════════════════════════════════════\n");
 
     for issue in issues.iter().take(20) {
-        result.push_str(&format!("{}\n", truncate(issue, 100)));
+        result.push_str(&format!("{}\n", truncate(issue, /*max_len*/ 100)));
     }
 
     if issues.len() > 20 {

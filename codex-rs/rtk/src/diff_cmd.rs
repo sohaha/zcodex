@@ -41,13 +41,17 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
 
     for change in diff.changes.iter().take(50) {
         match change {
-            DiffChange::Added(ln, c) => rtk.push_str(&format!("+{:4} {}\n", ln, truncate(c, 80))),
-            DiffChange::Removed(ln, c) => rtk.push_str(&format!("-{:4} {}\n", ln, truncate(c, 80))),
+            DiffChange::Added(ln, c) => {
+                rtk.push_str(&format!("+{:4} {}\n", ln, truncate(c, /*max_len*/ 80)))
+            }
+            DiffChange::Removed(ln, c) => {
+                rtk.push_str(&format!("-{:4} {}\n", ln, truncate(c, /*max_len*/ 80)))
+            }
             DiffChange::Modified(ln, old, new) => rtk.push_str(&format!(
                 "~{:4} {} → {}\n",
                 ln,
-                truncate(old, 70),
-                truncate(new, 70)
+                truncate(old, /*max_len*/ 70),
+                truncate(new, /*max_len*/ 70)
             )),
         }
     }
@@ -188,12 +192,12 @@ fn condense_unified_diff(diff: &str) -> String {
         } else if line.starts_with('+') && !line.starts_with("+++") {
             added += 1;
             if changes.len() < 15 {
-                changes.push(truncate(line, 70));
+                changes.push(truncate(line, /*max_len*/ 70));
             }
         } else if line.starts_with('-') && !line.starts_with("---") {
             removed += 1;
             if changes.len() < 15 {
-                changes.push(truncate(line, 70));
+                changes.push(truncate(line, /*max_len*/ 70));
             }
         }
     }

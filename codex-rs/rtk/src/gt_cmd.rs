@@ -142,13 +142,55 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
     // gt passes unknown subcommands to git, so "gt status" = "git status".
     // Route known git commands to RTK's git filters for token savings.
     match subcommand.as_ref() {
-        "status" => crate::git::run(crate::git::GitCommand::Status, &rest, None, verbose, &[]),
-        "diff" => crate::git::run(crate::git::GitCommand::Diff, &rest, None, verbose, &[]),
-        "show" => crate::git::run(crate::git::GitCommand::Show, &rest, None, verbose, &[]),
-        "add" => crate::git::run(crate::git::GitCommand::Add, &rest, None, verbose, &[]),
-        "push" => crate::git::run(crate::git::GitCommand::Push, &rest, None, verbose, &[]),
-        "pull" => crate::git::run(crate::git::GitCommand::Pull, &rest, None, verbose, &[]),
-        "fetch" => crate::git::run(crate::git::GitCommand::Fetch, &rest, None, verbose, &[]),
+        "status" => crate::git::run(
+            crate::git::GitCommand::Status,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
+        "diff" => crate::git::run(
+            crate::git::GitCommand::Diff,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
+        "show" => crate::git::run(
+            crate::git::GitCommand::Show,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
+        "add" => crate::git::run(
+            crate::git::GitCommand::Add,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
+        "push" => crate::git::run(
+            crate::git::GitCommand::Push,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
+        "pull" => crate::git::run(
+            crate::git::GitCommand::Pull,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
+        "fetch" => crate::git::run(
+            crate::git::GitCommand::Fetch,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
         "stash" => {
             let stash_sub = rest.first().cloned();
             let stash_args = rest.get(1..).unwrap_or(&[]);
@@ -157,12 +199,18 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
                     subcommand: stash_sub,
                 },
                 stash_args,
-                None,
+                /*max_lines*/ None,
                 verbose,
                 &[],
             )
         }
-        "worktree" => crate::git::run(crate::git::GitCommand::Worktree, &rest, None, verbose, &[]),
+        "worktree" => crate::git::run(
+            crate::git::GitCommand::Worktree,
+            &rest,
+            /*max_lines*/ None,
+            verbose,
+            &[],
+        ),
         _ => passthrough_gt(&subcommand, &rest, verbose),
     }
 }
@@ -219,7 +267,7 @@ fn filter_gt_log_entries(input: &str) -> String {
         }
 
         let replaced = EMAIL_RE.replace_all(line, "");
-        let processed = truncate(replaced.trim_end(), 120);
+        let processed = truncate(replaced.trim_end(), /*max_len*/ 120);
         result.push(processed);
 
         if entry_count >= MAX_LOG_ENTRIES {
@@ -287,7 +335,7 @@ fn filter_gt_submit(input: &str) -> String {
     summary.extend(prs);
 
     if summary.is_empty() {
-        return truncate(trimmed, 200);
+        return truncate(trimmed, /*max_len*/ 200);
     }
 
     summary.join("\n")

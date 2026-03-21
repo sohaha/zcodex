@@ -163,10 +163,10 @@ fn filter_tsc_output(output: &str) -> String {
                 "  L{}: {} {}\n",
                 err.line,
                 err.code,
-                truncate(&err.message, 120)
+                truncate(&err.message, /*max_len*/ 120)
             ));
             for ctx in &err.context_lines {
-                result.push_str(&format!("    {}\n", truncate(ctx, 120)));
+                result.push_str(&format!("    {}\n", truncate(ctx, /*max_len*/ 120)));
             }
         }
         result.push('\n');

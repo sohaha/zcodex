@@ -62,7 +62,13 @@ impl OutputParser for PnpmListParser {
                 let mut total_count = 0;
 
                 for (name, pkg) in &json.packages {
-                    collect_dependencies(name, pkg, false, &mut dependencies, &mut total_count);
+                    collect_dependencies(
+                        name,
+                        pkg,
+                        /*is_dev*/ false,
+                        &mut dependencies,
+                        &mut total_count,
+                    );
                 }
 
                 let result = DependencyState {
@@ -81,7 +87,7 @@ impl OutputParser for PnpmListParser {
                     }
                     None => {
                         // Tier 3: Passthrough
-                        ParseResult::Passthrough(truncate_output(input, 500))
+                        ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
             }
@@ -113,7 +119,7 @@ fn collect_dependencies(
     }
 
     for (dep_name, dep_pkg) in &pkg.dev_dependencies {
-        collect_dependencies(dep_name, dep_pkg, true, deps, count);
+        collect_dependencies(dep_name, dep_pkg, /*is_dev*/ true, deps, count);
     }
 }
 
@@ -208,7 +214,7 @@ impl OutputParser for PnpmOutdatedParser {
                     }
                     None => {
                         // Tier 3: Passthrough
-                        ParseResult::Passthrough(truncate_output(input, 500))
+                        ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
             }

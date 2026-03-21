@@ -210,7 +210,7 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
                     result.push_str(&format!("{}. ❌ {}\n", i + 1, test_name));
                 }
                 if parts.len() > 1 {
-                    result.push_str(&format!("     {}\n", truncate(parts[1], 100)));
+                    result.push_str(&format!("     {}\n", truncate(parts[1], /*max_len*/ 100)));
                 }
                 continue;
             }
@@ -227,7 +227,7 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
                 || line.contains(".py:");
 
             if is_relevant && relevant_lines < 3 {
-                result.push_str(&format!("     {}\n", truncate(line, 100)));
+                result.push_str(&format!("     {}\n", truncate(line, /*max_len*/ 100)));
                 relevant_lines += 1;
             }
         }

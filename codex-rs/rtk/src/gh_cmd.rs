@@ -269,7 +269,7 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
                 "  {} #{} {} ({})\n",
                 state_icon,
                 number,
-                truncate(title, 60),
+                truncate(title, /*max_len*/ 60),
                 author
             );
             filtered.push_str(&line);
@@ -589,7 +589,12 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
             let number = pr["number"].as_i64().unwrap_or(0);
             let title = pr["title"].as_str().unwrap_or("???");
             let reviews = pr["reviewDecision"].as_str().unwrap_or("PENDING");
-            let line = format!("  #{} {} [{}]\n", number, truncate(title, 50), reviews);
+            let line = format!(
+                "  #{} {} [{}]\n",
+                number,
+                truncate(title, /*max_len*/ 50),
+                reviews
+            );
             filtered.push_str(&line);
             print!("{line}");
         }
@@ -654,7 +659,12 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
             } else {
                 if state == "OPEN" { "🟢" } else { "🔴" }
             };
-            let line = format!("  {} #{} {}\n", icon, number, truncate(title, 60));
+            let line = format!(
+                "  {} #{} {}\n",
+                icon,
+                number,
+                truncate(title, /*max_len*/ 60)
+            );
             filtered.push_str(&line);
             print!("{line}");
         }
@@ -844,7 +854,7 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
                 }
             };
 
-            let line = format!("  {} {} [{}]\n", icon, truncate(name, 50), id);
+            let line = format!("  {} {} [{}]\n", icon, truncate(name, /*max_len*/ 50), id);
             filtered.push_str(&line);
             print!("{line}");
         }
@@ -1002,7 +1012,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
     print!("{line}");
 
     if !description.is_empty() {
-        let line = format!("  {}\n", truncate(description, 80));
+        let line = format!("  {}\n", truncate(description, /*max_len*/ 80));
         filtered.push_str(&line);
         print!("{line}");
     }
@@ -1139,7 +1149,7 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
         print!("{msg}");
         msg.to_string()
     } else {
-        let compacted = git::compact_diff(&raw, 500);
+        let compacted = git::compact_diff(&raw, /*max_lines*/ 500);
         println!("{compacted}");
         compacted
     };

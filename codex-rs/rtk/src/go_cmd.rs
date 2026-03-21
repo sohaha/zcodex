@@ -379,7 +379,7 @@ fn filter_go_test_json(output: &str) -> String {
             let trimmed = line.trim();
             // Skip the "# package" header line
             if !trimmed.starts_with('#') && !trimmed.is_empty() {
-                result.push_str(&format!("  {}\n", truncate(trimmed, 120)));
+                result.push_str(&format!("  {}\n", truncate(trimmed, /*max_len*/ 120)));
             }
         }
     }
@@ -418,7 +418,7 @@ fn filter_go_test_json(output: &str) -> String {
                 .collect();
 
             for line in relevant_lines {
-                result.push_str(&format!("     {}\n", truncate(line, 100)));
+                result.push_str(&format!("     {}\n", truncate(line, /*max_len*/ 100)));
             }
         }
     }
@@ -459,7 +459,11 @@ fn filter_go_build(output: &str) -> String {
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, error) in errors.iter().take(20).enumerate() {
-        result.push_str(&format!("{}. {}\n", i + 1, truncate(error, 120)));
+        result.push_str(&format!(
+            "{}. {}\n",
+            i + 1,
+            truncate(error, /*max_len*/ 120)
+        ));
     }
 
     if errors.len() > 20 {
@@ -491,7 +495,11 @@ fn filter_go_vet(output: &str) -> String {
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, issue) in issues.iter().take(20).enumerate() {
-        result.push_str(&format!("{}. {}\n", i + 1, truncate(issue, 120)));
+        result.push_str(&format!(
+            "{}. {}\n",
+            i + 1,
+            truncate(issue, /*max_len*/ 120)
+        ));
     }
 
     if issues.len() > 20 {

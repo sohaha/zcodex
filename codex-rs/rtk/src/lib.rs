@@ -970,19 +970,25 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Diff,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
                 }
                 GitCommands::Log { args } => {
-                    git::run(git::GitCommand::Log, &args, None, cli.verbose, &global_args)?;
+                    git::run(
+                        git::GitCommand::Log,
+                        &args,
+                        /*max_lines*/ None,
+                        cli.verbose,
+                        &global_args,
+                    )?;
                 }
                 GitCommands::Status { args } => {
                     git::run(
                         git::GitCommand::Status,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -991,19 +997,25 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Show,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
                 }
                 GitCommands::Add { args } => {
-                    git::run(git::GitCommand::Add, &args, None, cli.verbose, &global_args)?;
+                    git::run(
+                        git::GitCommand::Add,
+                        &args,
+                        /*max_lines*/ None,
+                        cli.verbose,
+                        &global_args,
+                    )?;
                 }
                 GitCommands::Commit { args } => {
                     git::run(
                         git::GitCommand::Commit,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -1012,7 +1024,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Push,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -1021,7 +1033,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Pull,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -1030,7 +1042,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Branch,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -1039,7 +1051,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Fetch,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -1048,7 +1060,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Stash { subcommand },
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;
@@ -1057,7 +1069,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                     git::run(
                         git::GitCommand::Worktree,
                         &args,
-                        None,
+                        /*max_lines*/ None,
                         cli.verbose,
                         &global_args,
                     )?;

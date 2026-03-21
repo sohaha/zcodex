@@ -111,7 +111,7 @@ fn filter_golangci_json(output: &str) -> String {
             return format!(
                 "golangci-lint (JSON parse failed: {})\n{}",
                 e,
-                truncate(output, 500)
+                truncate(output, /*max_len*/ 500)
             );
         }
     };

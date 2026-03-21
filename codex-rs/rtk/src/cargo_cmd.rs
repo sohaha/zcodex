@@ -830,7 +830,11 @@ fn filter_cargo_test(output: &str) -> String {
         result.push_str(&format!("FAILURES ({}):\n", failures.len()));
         result.push_str("═══════════════════════════════════════\n");
         for (i, failure) in failures.iter().enumerate().take(10) {
-            result.push_str(&format!("{}. {}\n", i + 1, truncate(failure, 200)));
+            result.push_str(&format!(
+                "{}. {}\n",
+                i + 1,
+                truncate(failure, /*max_len*/ 200)
+            ));
         }
         if failures.len() > 10 {
             result.push_str(&format!("\n... +{} more failures\n", failures.len() - 10));

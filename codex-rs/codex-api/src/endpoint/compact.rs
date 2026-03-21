@@ -89,9 +89,12 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
             include: Vec::new(),
             service_tier: None,
             prompt_cache_key: None,
-            text: create_text_param_for_request(None, &Some(compaction_output_schema())),
+            text: create_text_param_for_request(
+                /*verbosity*/ None,
+                &Some(compaction_output_schema()),
+            ),
         };
-        let body = anthropic::build_request_body_with_stream(&request, false);
+        let body = anthropic::build_request_body_with_stream(&request, /*stream*/ false);
         let resp = self
             .session
             .execute_with(Method::POST, "messages", extra_headers, Some(body), |req| {

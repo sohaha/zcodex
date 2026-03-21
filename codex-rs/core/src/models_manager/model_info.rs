@@ -105,16 +105,21 @@ pub(crate) fn anthropic_model_catalog() -> Vec<ModelInfo> {
         anthropic_model(
             "claude-sonnet-4-20250514",
             "Claude Sonnet 4",
-            0,
+            /*priority*/ 0,
             Some(ReasoningEffort::Medium),
         ),
         anthropic_model(
             "claude-opus-4-1-20250805",
             "Claude Opus 4.1",
-            1,
+            /*priority*/ 1,
             Some(ReasoningEffort::High),
         ),
-        anthropic_model("claude-3-5-haiku-20241022", "Claude Haiku 3.5", 2, None),
+        anthropic_model(
+            "claude-3-5-haiku-20241022",
+            "Claude Haiku 3.5",
+            /*priority*/ 2,
+            /*default_reasoning_level*/ None,
+        ),
     ]
 }
 
@@ -155,7 +160,7 @@ fn anthropic_model(
         default_verbosity: None,
         apply_patch_tool_type: None,
         web_search_tool_type: WebSearchToolType::Text,
-        truncation_policy: TruncationPolicyConfig::bytes(10_000),
+        truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_parallel_tool_calls: true,
         supports_image_detail_original: false,
         context_window: Some(200_000),

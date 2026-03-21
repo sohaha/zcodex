@@ -90,7 +90,7 @@ pub trait OutputParser: Sized {
         let result = Self::parse(input);
         if result.tier() > max_tier {
             // Force degradation to passthrough if exceeds max tier
-            return ParseResult::Passthrough(truncate_output(input, 500));
+            return ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500));
         }
         result
     }

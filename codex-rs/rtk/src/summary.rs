@@ -48,7 +48,7 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     result.push(format!(
         "{} Command: {}",
         status_icon,
-        truncate(command, 60)
+        truncate(command, /*max_len*/ 60)
     ));
     result.push(format!("   {line_count} lines of output"));
     result.push(String::new());
@@ -156,7 +156,7 @@ fn summarize_tests(output: &str, result: &mut Vec<String>) {
         result.push(String::new());
         result.push("   Failures:".to_string());
         for f in failures.iter().take(5) {
-            result.push(format!("   • {}", truncate(f, 70)));
+            result.push(format!("   • {}", truncate(f, /*max_len*/ 70)));
         }
     }
 }
@@ -202,7 +202,7 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
         result.push(String::new());
         result.push("   Errors:".to_string());
         for e in &error_msgs {
-            result.push(format!("   • {}", truncate(e, 70)));
+            result.push(format!("   • {}", truncate(e, /*max_len*/ 70)));
         }
     }
 }
@@ -235,7 +235,7 @@ fn summarize_list(output: &str, result: &mut Vec<String>) {
     result.push(format!("📋 List ({} items):", lines.len()));
 
     for line in lines.iter().take(10) {
-        result.push(format!("   • {}", truncate(line, 70)));
+        result.push(format!("   • {}", truncate(line, /*max_len*/ 70)));
     }
     if lines.len() > 10 {
         result.push(format!("   ... +{} more", lines.len() - 10));
@@ -261,7 +261,10 @@ fn summarize_json(output: &str, result: &mut Vec<String>) {
                 }
             }
             _ => {
-                result.push(format!("   {}", truncate(&value.to_string(), 100)));
+                result.push(format!(
+                    "   {}",
+                    truncate(&value.to_string(), /*max_len*/ 100)
+                ));
             }
         }
     } else {
@@ -277,7 +280,7 @@ fn summarize_generic(output: &str, result: &mut Vec<String>) {
     // First few lines
     for line in lines.iter().take(5) {
         if !line.trim().is_empty() {
-            result.push(format!("   {}", truncate(line, 75)));
+            result.push(format!("   {}", truncate(line, /*max_len*/ 75)));
         }
     }
 
@@ -286,7 +289,7 @@ fn summarize_generic(output: &str, result: &mut Vec<String>) {
         // Last few lines
         for line in lines.iter().skip(lines.len() - 3) {
             if !line.trim().is_empty() {
-                result.push(format!("   {}", truncate(line, 75)));
+                result.push(format!("   {}", truncate(line, /*max_len*/ 75)));
             }
         }
     }

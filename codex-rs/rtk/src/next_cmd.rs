@@ -159,7 +159,7 @@ fn filter_next_build(output: &str) -> String {
 
             result.push_str(&format!(
                 "  {:<30} {:>6.0} kB{}\n",
-                truncate(route, 30),
+                truncate(route, /*max_len*/ 30),
                 size,
                 warning_marker
             ));

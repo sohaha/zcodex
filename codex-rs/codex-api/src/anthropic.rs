@@ -38,7 +38,7 @@ const ANTHROPIC_OUTPUT_SCHEMA_INSTRUCTIONS: &str =
 const TOOL_INPUT_FIELD: &str = "input";
 
 pub(crate) fn build_request_body(request: &ResponsesApiRequest) -> Value {
-    build_request_body_with_stream(request, true)
+    build_request_body_with_stream(request, /*stream*/ true)
 }
 
 pub(crate) fn build_request_body_with_stream(request: &ResponsesApiRequest, stream: bool) -> Value {

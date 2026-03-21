@@ -1060,10 +1060,11 @@ impl TurnContext {
         config.model_reasoning_effort = reasoning_effort;
         updated.config = Arc::new(config);
         updated.reasoning_effort = reasoning_effort;
-        updated.collaboration_mode =
-            updated
-                .collaboration_mode
-                .with_updates(None, Some(reasoning_effort), None);
+        updated.collaboration_mode = updated.collaboration_mode.with_updates(
+            /*model*/ None,
+            Some(reasoning_effort),
+            /*developer_instructions*/ None,
+        );
         updated
     }
 
@@ -2256,7 +2257,7 @@ impl Session {
                     .apply_rollout_reconstruction(
                         &turn_context,
                         &rollout_items,
-                        /* clear_missing_rtk_baseline */ false,
+                        /*clear_missing_rtk_baseline*/ false,
                     )
                     .await;
 
@@ -2297,7 +2298,7 @@ impl Session {
                 self.apply_rollout_reconstruction(
                     &turn_context,
                     &rollout_items,
-                    /* clear_missing_rtk_baseline */ false,
+                    /*clear_missing_rtk_baseline*/ false,
                 )
                 .await;
 
@@ -5186,7 +5187,7 @@ mod handlers {
         sess.apply_rollout_reconstruction(
             turn_context.as_ref(),
             replay_items.as_slice(),
-            /* clear_missing_rtk_baseline */ true,
+            /*clear_missing_rtk_baseline*/ true,
         )
         .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;
