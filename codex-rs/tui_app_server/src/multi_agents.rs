@@ -73,7 +73,7 @@ pub(crate) fn format_agent_picker_item_name(
     is_primary: bool,
 ) -> String {
     if is_primary {
-        return "Main [default]".to_string();
+        return "主线程 [默认]".to_string();
     }
 
     let agent_nickname = agent_nickname
@@ -84,7 +84,7 @@ pub(crate) fn format_agent_picker_item_name(
         (Some(agent_nickname), Some(agent_role)) => format!("{agent_nickname} [{agent_role}]"),
         (Some(agent_nickname), None) => agent_nickname.to_string(),
         (None, Some(agent_role)) => format!("[{agent_role}]"),
-        (None, None) => "Agent".to_string(),
+        (None, None) => "智能体".to_string(),
     }
 }
 
@@ -188,7 +188,7 @@ pub(crate) fn spawn_end(
 
     let title = match new_thread_id {
         Some(thread_id) => title_with_agent(
-            "Spawned",
+            "已创建",
             AgentLabel {
                 thread_id: Some(thread_id),
                 nickname: new_agent_nickname.as_deref(),
@@ -196,7 +196,7 @@ pub(crate) fn spawn_end(
             },
             spawn_request,
         ),
-        None => title_text("Agent spawn failed"),
+        None => title_text("创建智能体失败"),
     };
 
     let mut details = Vec::new();
@@ -218,7 +218,7 @@ pub(crate) fn interaction_end(ev: CollabAgentInteractionEndEvent) -> PlainHistor
     } = ev;
 
     let title = title_with_agent(
-        "Sent input to",
+        "已发送输入至",
         AgentLabel {
             thread_id: Some(receiver_thread_id),
             nickname: receiver_agent_nickname.as_deref(),
@@ -245,12 +245,12 @@ pub(crate) fn waiting_begin(ev: CollabWaitingBeginEvent) -> PlainHistoryCell {
 
     let title = match receiver_agents.as_slice() {
         [receiver] => title_with_agent(
-            "Waiting for",
+            "等待",
             agent_label_from_ref(receiver),
             /*spawn_request*/ None,
         ),
-        [] => title_text("Waiting for agents"),
-        _ => title_text(format!("Waiting for {} agents", receiver_agents.len())),
+        [] => title_text("等待智能体"),
+        _ => title_text(format!("等待 {} 个智能体", receiver_agents.len())),
     };
 
     let details = if receiver_agents.len() > 1 {
@@ -273,7 +273,7 @@ pub(crate) fn waiting_end(ev: CollabWaitingEndEvent) -> PlainHistoryCell {
         statuses,
     } = ev;
     let details = wait_complete_lines(&statuses, &agent_statuses);
-    collab_event(title_text("Finished waiting"), details)
+    collab_event(title_text("等待结束"), details)
 }
 
 pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
@@ -288,7 +288,7 @@ pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
 
     collab_event(
         title_with_agent(
-            "Closed",
+            "已关闭",
             AgentLabel {
                 thread_id: Some(receiver_thread_id),
                 nickname: receiver_agent_nickname.as_deref(),
@@ -311,7 +311,7 @@ pub(crate) fn resume_begin(ev: CollabResumeBeginEvent) -> PlainHistoryCell {
 
     collab_event(
         title_with_agent(
-            "Resuming",
+            "正在恢复",
             AgentLabel {
                 thread_id: Some(receiver_thread_id),
                 nickname: receiver_agent_nickname.as_deref(),
@@ -335,7 +335,7 @@ pub(crate) fn resume_end(ev: CollabResumeEndEvent) -> PlainHistoryCell {
 
     collab_event(
         title_with_agent(
-            "Resumed",
+            "已恢复",
             AgentLabel {
                 thread_id: Some(receiver_thread_id),
                 nickname: receiver_agent_nickname.as_deref(),
@@ -402,7 +402,7 @@ fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
     } else if let Some(thread_id) = agent.thread_id {
         spans.push(Span::from(thread_id.to_string()).cyan());
     } else {
-        spans.push(Span::from("agent").cyan());
+        spans.push(Span::from("智能体").cyan());
     }
 
     if let Some(role) = role {
@@ -480,7 +480,7 @@ fn wait_complete_lines(
     agent_statuses: &[CollabAgentStatusEntry],
 ) -> Vec<Line<'static>> {
     if statuses.is_empty() && agent_statuses.is_empty() {
-        return vec![Line::from(Span::from("No agents completed yet"))];
+        return vec![Line::from(Span::from("暂无已完成的智能体"))];
     }
 
     let entries = if agent_statuses.is_empty() {
@@ -543,13 +543,13 @@ fn status_summary_line(status: &AgentStatus) -> Line<'static> {
 
 fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
     match status {
-        AgentStatus::PendingInit => vec![Span::from("Pending init").cyan()],
-        AgentStatus::Running => vec![Span::from("Running").cyan().bold()],
+        AgentStatus::PendingInit => vec![Span::from("初始化中").cyan()],
+        AgentStatus::Running => vec![Span::from("运行中").cyan().bold()],
         // Allow `.yellow()`
         #[allow(clippy::disallowed_methods)]
-        AgentStatus::Interrupted => vec![Span::from("Interrupted").yellow()],
+        AgentStatus::Interrupted => vec![Span::from("已中断").yellow()],
         AgentStatus::Completed(message) => {
-            let mut spans = vec![Span::from("Completed").green()];
+            let mut spans = vec![Span::from("已完成").green()];
             if let Some(message) = message.as_ref() {
                 let message_preview = truncate_text(
                     &message.split_whitespace().collect::<Vec<_>>().join(" "),
@@ -563,7 +563,7 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
             spans
         }
         AgentStatus::Errored(error) => {
-            let mut spans = vec![Span::from("Error").red()];
+            let mut spans = vec![Span::from("错误").red()];
             let error_preview = truncate_text(
                 &error.split_whitespace().collect::<Vec<_>>().join(" "),
                 COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES,
@@ -574,8 +574,8 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
             }
             spans
         }
-        AgentStatus::Shutdown => vec![Span::from("Shutdown")],
-        AgentStatus::NotFound => vec![Span::from("Not found").red()],
+        AgentStatus::Shutdown => vec![Span::from("已关闭")],
+        AgentStatus::NotFound => vec![Span::from("未找到").red()],
     }
 }
 

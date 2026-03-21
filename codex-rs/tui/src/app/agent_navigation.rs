@@ -221,7 +221,7 @@ impl AgentNavigationState {
         let previous: Span<'static> = previous_agent_shortcut().into();
         let next: Span<'static> = next_agent_shortcut().into();
         format!(
-            "Select an agent to watch. {} previous, {} next.",
+            "选择要查看的智能体。{} 上一个，{} 下一个。",
             previous.content, next.content
         )
     }
@@ -325,7 +325,7 @@ mod tests {
         );
         assert_eq!(
             state.active_agent_label(Some(main_thread_id), Some(main_thread_id)),
-            Some("Main [default]".to_string())
+            Some("主线程 [默认]".to_string())
         );
     }
 }

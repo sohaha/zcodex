@@ -178,18 +178,18 @@ use tracing::debug;
 use tracing::warn;
 use unicode_segmentation::UnicodeSegmentation;
 
-const DEFAULT_MODEL_DISPLAY_NAME: &str = "loading";
-const PLAN_IMPLEMENTATION_TITLE: &str = "Implement this plan?";
-const PLAN_IMPLEMENTATION_YES: &str = "Yes, implement this plan";
-const PLAN_IMPLEMENTATION_NO: &str = "No, stay in Plan mode";
-const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "Implement the plan.";
-const MULTI_AGENT_ENABLE_TITLE: &str = "Enable subagents?";
-const MULTI_AGENT_ENABLE_YES: &str = "Yes, enable";
-const MULTI_AGENT_ENABLE_NO: &str = "Not now";
-const MULTI_AGENT_ENABLE_NOTICE: &str = "Subagents will be enabled in the next session.";
-const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
-const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
-const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
+const DEFAULT_MODEL_DISPLAY_NAME: &str = "加载中";
+const PLAN_IMPLEMENTATION_TITLE: &str = "要执行这个计划吗？";
+const PLAN_IMPLEMENTATION_YES: &str = "是，执行这个计划";
+const PLAN_IMPLEMENTATION_NO: &str = "否，继续停留在 Plan mode";
+const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "请执行该计划。";
+const MULTI_AGENT_ENABLE_TITLE: &str = "要启用子智能体吗？";
+const MULTI_AGENT_ENABLE_YES: &str = "是，启用";
+const MULTI_AGENT_ENABLE_NO: &str = "暂不启用";
+const MULTI_AGENT_ENABLE_NOTICE: &str = "子智能体将在下一个会话中启用。";
+const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "应用推理设置变更";
+const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "仅应用到 Plan mode 覆盖设置";
+const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "应用到全局默认值和 Plan mode 覆盖设置";
 const CONNECTORS_SELECTION_VIEW_ID: &str = "connectors-selection";
 
 /// Choose the keybinding used to edit the most-recently queued message.
@@ -7342,14 +7342,14 @@ impl ChatWidget {
 
         let items = vec![
             SelectionItem {
-                name: "Yes, continue anyway".to_string(),
+                name: "是，仍然继续".to_string(),
                 description: Some("Apply full access for this session".to_string()),
                 actions: accept_actions,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
-                name: "Yes, and don't ask again".to_string(),
+                name: "是，并且不再提示".to_string(),
                 description: Some("Enable full access and remember this choice".to_string()),
                 actions: accept_and_remember_actions,
                 dismiss_on_select: true,
@@ -7357,7 +7357,7 @@ impl ChatWidget {
             },
             SelectionItem {
                 name: "Cancel".to_string(),
-                description: Some("Go back without enabling full access".to_string()),
+                description: Some("返回，不启用 full access".to_string()),
                 actions: deny_actions,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -7503,7 +7503,10 @@ impl ChatWidget {
             let mut header = ColumnRenderable::new();
             header.push(*Box::new(
                 Paragraph::new(vec![
-                    line!["Agent mode on Windows uses an experimental sandbox to limit network and filesystem access.".bold()],
+                    line![
+                        "Windows 上的 Agent mode 使用实验性 sandbox 来限制网络和文件系统访问。"
+                            .bold()
+                    ],
                     line!["Learn more: https://developers.openai.com/codex/windows"],
                 ])
                 .wrap(Wrap { trim: false }),
@@ -7512,7 +7515,7 @@ impl ChatWidget {
             let preset_clone = preset;
             let items = vec![
                 SelectionItem {
-                    name: "Enable experimental sandbox".to_string(),
+                    name: "启用实验性 sandbox".to_string(),
                     description: None,
                     actions: vec![Box::new(move |tx| {
                         tx.send(AppEvent::EnableWindowsSandboxForAgentMode {
@@ -7524,7 +7527,7 @@ impl ChatWidget {
                     ..Default::default()
                 },
                 SelectionItem {
-                    name: "Go back".to_string(),
+                    name: "返回".to_string(),
                     description: None,
                     actions: vec![Box::new(|tx| {
                         tx.send(AppEvent::OpenApprovalsPopup);
@@ -7553,7 +7556,7 @@ impl ChatWidget {
         let mut header = ColumnRenderable::new();
         header.push(*Box::new(
             Paragraph::new(vec![
-                line!["Set up the Codex agent sandbox to protect your files and control network access. Learn more <https://developers.openai.com/codex/windows>"],
+                line!["设置 Codex agent sandbox 以保护你的文件并控制网络访问。了解更多 <https://developers.openai.com/codex/windows>"],
             ])
             .wrap(Wrap { trim: false }),
         ));
@@ -7564,7 +7567,7 @@ impl ChatWidget {
         let quit_otel = self.session_telemetry.clone();
         let items = vec![
             SelectionItem {
-                name: "Set up default sandbox (requires Administrator permissions)".to_string(),
+                name: "设置默认 sandbox（需要管理员权限）".to_string(),
                 description: None,
                 actions: vec![Box::new(move |tx| {
                     accept_otel.counter(
@@ -7580,7 +7583,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Use non-admin sandbox (higher risk if prompt injected)".to_string(),
+                name: "使用非管理员 sandbox（若 prompt 注入风险更高）".to_string(),
                 description: None,
                 actions: vec![Box::new(move |tx| {
                     legacy_otel.counter(
@@ -7596,7 +7599,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Quit".to_string(),
+                name: "退出".to_string(),
                 description: None,
                 actions: vec![Box::new(move |tx| {
                     quit_otel.counter(
@@ -7628,12 +7631,10 @@ impl ChatWidget {
         use ratatui_macros::line;
 
         let mut lines = Vec::new();
-        lines.push(line![
-            "Couldn't set up your sandbox with Administrator permissions".bold()
-        ]);
+        lines.push(line!["无法使用管理员权限完成 sandbox 设置".bold()]);
         lines.push(line![""]);
         lines.push(line![
-            "You can still use Codex in a non-admin sandbox. It carries greater risk if prompt injected."
+            "你仍可在非管理员 sandbox 中使用 Codex，但在 prompt 注入场景下风险更高。"
         ]);
         lines.push(line![
             "Learn more <https://developers.openai.com/codex/windows>"
@@ -7647,7 +7648,7 @@ impl ChatWidget {
         let quit_otel = self.session_telemetry.clone();
         let items = vec![
             SelectionItem {
-                name: "Try setting up admin sandbox again".to_string(),
+                name: "重试设置管理员 sandbox".to_string(),
                 description: None,
                 actions: vec![Box::new({
                     let otel = self.session_telemetry.clone();
@@ -7667,7 +7668,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Use Codex with non-admin sandbox".to_string(),
+                name: "在非管理员 sandbox 下使用 Codex".to_string(),
                 description: None,
                 actions: vec![Box::new({
                     let otel = self.session_telemetry.clone();
@@ -7687,7 +7688,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Quit".to_string(),
+                name: "退出".to_string(),
                 description: None,
                 actions: vec![Box::new(move |tx| {
                     quit_otel.counter(
@@ -7735,14 +7736,14 @@ impl ChatWidget {
         // accidentally queue messages that will run under an unexpected mode.
         self.bottom_pane.set_composer_input_enabled(
             /*enabled*/ false,
-            Some("Input disabled until setup completes.".to_string()),
+            Some("设置完成前输入已禁用。".to_string()),
         );
         self.bottom_pane.ensure_status_indicator();
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ false);
         self.set_status(
-            "Setting up sandbox...".to_string(),
-            Some("Hang tight, this may take a few minutes".to_string()),
+            "正在设置 sandbox...".to_string(),
+            Some("请稍候，这可能需要几分钟".to_string()),
             StatusDetailsCapitalization::CapitalizeFirst,
             STATUS_DETAILS_DEFAULT_MAX_LINES,
         );
@@ -9287,7 +9288,7 @@ impl Notification {
         match self {
             Notification::AgentTurnComplete { response } => {
                 Notification::agent_turn_preview(response)
-                    .unwrap_or_else(|| "Agent turn complete".to_string())
+                    .unwrap_or_else(|| "智能体回合完成".to_string())
             }
             Notification::ExecApprovalRequested { command } => {
                 format!(

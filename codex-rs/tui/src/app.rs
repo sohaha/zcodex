@@ -1114,7 +1114,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "Cannot disable Guardian Approvals in this profile because `approvals_reviewer` is configured outside the active profile.".to_string(),
+                        "当前 profile 无法关闭 Guardian Approvals，因为 `approvals_reviewer` 配置在 active profile 之外。".to_string(),
                     );
                 continue;
             }
@@ -1125,9 +1125,8 @@ impl App {
                     feature = feature_key,
                     "failed to update constrained feature flags"
                 );
-                self.chat_widget.add_error_message(format!(
-                    "Failed to update experimental feature `{feature_key}`: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("更新实验特性 `{feature_key}` 失败：{err}"));
                 continue;
             }
             let effective_enabled = feature_config.features.enabled(feature);
@@ -1209,7 +1208,7 @@ impl App {
         if let Err(err) = builder.apply().await {
             tracing::error!(error = %err, "failed to persist feature flags");
             self.chat_widget
-                .add_error_message(format!("Failed to update experimental features: {err}"));
+                .add_error_message(format!("更新实验特性失败：{err}"));
             return;
         }
 
@@ -1235,7 +1234,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("Failed to enable Guardian Approvals: {err}"));
+                .add_error_message(format!("启用 Guardian Approvals 失败：{err}"));
         }
 
         if approval_policy_override.is_some()
@@ -1544,7 +1543,7 @@ impl App {
     fn thread_label(&self, thread_id: ThreadId) -> String {
         let is_primary = self.primary_thread_id == Some(thread_id);
         let fallback_label = if is_primary {
-            "主线程 [default]".to_string()
+            "主线程 [默认]".to_string()
         } else {
             let thread_id = thread_id.to_string();
             let short_id: String = thread_id.chars().take(8).collect();
@@ -1673,15 +1672,14 @@ impl App {
                 Ok(thread) => match thread.submit(op).await {
                     Ok(_) => true,
                     Err(err) => {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to submit op to thread {thread_id}: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("向线程 {thread_id} 提交操作失败：{err}"));
                         false
                     }
                 },
                 Err(err) => {
                     self.chat_widget.add_error_message(format!(
-                        "Failed to find thread {thread_id} for approval response: {err}"
+                        "未找到线程 {thread_id}（用于审批响应）：{err}"
                     ));
                     false
                 }
@@ -2686,9 +2684,8 @@ impl App {
                         {
                             Ok(cfg) => cfg,
                             Err(err) => {
-                                self.chat_widget.add_error_message(format!(
-                                    "Failed to rebuild configuration for resume: {err}"
-                                ));
+                                self.chat_widget
+                                    .add_error_message(format!("恢复会话时重建配置失败：{err}"));
                                 return Ok(AppRunControl::Continue);
                             }
                         };
@@ -2811,16 +2808,12 @@ impl App {
                             }
                         }
                     } else {
-                        self.chat_widget.add_error_message(
-                            "A thread must contain at least one turn before it can be forked."
-                                .to_string(),
-                        );
+                        self.chat_widget
+                            .add_error_message("线程至少包含一轮对话后才能派生。".to_string());
                     }
                 } else {
-                    self.chat_widget.add_error_message(
-                        "A thread must contain at least one turn before it can be forked."
-                            .to_string(),
-                    );
+                    self.chat_widget
+                        .add_error_message("线程至少包含一轮对话后才能派生。".to_string());
                 }
 
                 tui.frame_requester().schedule_frame();
@@ -3233,7 +3226,7 @@ impl App {
             AppEvent::WindowsSandboxGrantReadRootCompleted { path, error } => match error {
                 Some(err) => {
                     self.chat_widget
-                        .add_to_history(history_cell::new_error_event(format!("Error: {err}")));
+                        .add_to_history(history_cell::new_error_event(format!("错误：{err}")));
                 }
                 None => {
                     let hint = None;
@@ -3491,7 +3484,7 @@ impl App {
                         if self.chat_widget.realtime_conversation_is_live() {
                             self.chat_widget.open_realtime_audio_restart_prompt(kind);
                         } else {
-                            let selection = name.unwrap_or_else(|| "System default".to_string());
+                            let selection = name.unwrap_or_else(|| "系统默认".to_string());
                             self.chat_widget.add_info_message(
                                 format!("Realtime {} 已设置为 {selection}", kind.noun()),
                                 /*hint*/ None,
@@ -5767,7 +5760,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Subagents will be enabled in the next session."));
+        assert!(rendered.contains("子智能体将在下一个会话中启用。"));
         Ok(())
     }
 
