@@ -729,8 +729,8 @@ pub struct Tui {
     pub animations: bool,
 
     /// Show startup tooltips in the TUI welcome screen.
-    /// Defaults to `true`.
-    #[serde(default = "default_true")]
+    /// Defaults to `false`.
+    #[serde(default)]
     pub show_tooltips: bool,
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
