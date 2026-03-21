@@ -511,12 +511,12 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         use ratatui_macros::line;
         use ratatui_macros::text;
         let update_instruction = if let Some(update_action) = self.update_action {
-            line!["Run ", update_action.command_str().cyan(), " to update."]
+            line!["运行 ", update_action.command_str().cyan(), " 进行更新。"]
         } else {
             line![
-                "See ",
+                "请查看 ",
                 REPOSITORY_URL.cyan().underlined(),
-                " for installation options."
+                " 获取安装方式。"
             ]
         };
 
@@ -1145,34 +1145,32 @@ pub(crate) fn new_session_info(
     if is_first_event {
         // Help lines below the header (new copy and list)
         let help_lines: Vec<Line<'static>> = vec![
-            "  To get started, describe a task or try one of these commands:"
-                .dim()
-                .into(),
+            "  快速开始：描述一个任务，或试试以下命令：".dim().into(),
             Line::from(""),
             Line::from(vec![
                 "  ".into(),
                 "/init".into(),
-                " - create an AGENTS.md file with instructions for Codex".dim(),
+                " - 创建包含 Codex 指令的 AGENTS.md 文件".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/status".into(),
-                " - show current session configuration".dim(),
+                " - 显示当前会话配置".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/permissions".into(),
-                " - choose what Codex is allowed to do".dim(),
+                " - 配置 Codex 可执行的操作".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/model".into(),
-                " - choose what model and reasoning effort to use".dim(),
+                " - 选择模型和推理强度".dim(),
             ]),
             Line::from(vec![
                 "  ".into(),
                 "/review".into(),
-                " - review any changes and find issues".dim(),
+                " - 审查改动并找出问题".dim(),
             ]),
         ];
 
@@ -1192,9 +1190,9 @@ pub(crate) fn new_session_info(
         }
         if requested_model != model {
             let lines = vec![
-                "model changed:".magenta().bold().into(),
-                format!("requested: {requested_model}").into(),
-                format!("used: {model}").into(),
+                "模型已切换：".magenta().bold().into(),
+                format!("请求：{requested_model}").into(),
+                format!("实际使用：{model}").into(),
             ];
             parts.push(Box::new(PlainHistoryCell { lines }));
         }
@@ -2808,7 +2806,7 @@ mod tests {
 
         let rendered = render_transcript(&cell).join("\n");
         assert!(!rendered.contains("Model just became available"));
-        assert!(rendered.contains("To get started"));
+        assert!(rendered.contains("快速开始"));
     }
 
     #[tokio::test]
