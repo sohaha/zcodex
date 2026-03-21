@@ -28,3 +28,4 @@ which = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 chardetng = { workspace = true }
+encoding_rs = { workspace = true }

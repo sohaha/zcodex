@@ -109,10 +109,13 @@ pub fn decode_output(bytes: &[u8]) -> Cow<'_, str> {
             return decoded;
         }
 
-        return encoding.decode(bytes).0;
+        encoding.decode(bytes).0
     }
 
-    String::from_utf8_lossy(bytes)
+    #[cfg(not(target_os = "windows"))]
+    {
+        String::from_utf8_lossy(bytes)
+    }
 }
 
 /// Formats a token count with K/M suffixes for readability.
