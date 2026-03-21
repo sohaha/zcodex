@@ -10,6 +10,7 @@ use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::auth::AuthMode;
 use crate::auth::CodexAuth;
 use crate::error::CodexErr;
 use crate::error::RetryLimitReachedError;
@@ -212,6 +213,7 @@ pub(crate) fn auth_provider_from_auth(
         return Ok(CoreAuthProvider {
             token: None,
             account_id: None,
+            auth_mode: None,
         });
     }
 
@@ -219,6 +221,7 @@ pub(crate) fn auth_provider_from_auth(
         return Ok(CoreAuthProvider {
             token: Some(api_key),
             account_id: None,
+            auth_mode: Some(AuthMode::ApiKey),
         });
     }
 
@@ -226,19 +229,23 @@ pub(crate) fn auth_provider_from_auth(
         return Ok(CoreAuthProvider {
             token: Some(token.to_string()),
             account_id: None,
+            auth_mode: Some(AuthMode::ApiKey),
         });
     }
 
     if let Some(auth) = auth {
+        let auth_mode = auth.auth_mode();
         let token = auth.get_token()?;
         Ok(CoreAuthProvider {
             token: Some(token),
             account_id: auth.get_account_id(),
+            auth_mode: Some(auth_mode),
         })
     } else {
         Ok(CoreAuthProvider {
             token: None,
             account_id: None,
+            auth_mode: None,
         })
     }
 }
@@ -260,9 +267,18 @@ struct UsageErrorBody {
 pub(crate) struct CoreAuthProvider {
     token: Option<String>,
     account_id: Option<String>,
+    auth_mode: Option<AuthMode>,
 }
 
 impl CoreAuthProvider {
+    pub(crate) fn auth_mode(&self) -> Option<AuthMode> {
+        self.auth_mode
+    }
+
+    pub(crate) fn is_chatgpt_auth(&self) -> bool {
+        matches!(self.auth_mode, Some(AuthMode::Chatgpt))
+    }
+
     pub(crate) fn auth_header_attached(&self) -> bool {
         self.token
             .as_ref()
@@ -278,6 +294,7 @@ impl CoreAuthProvider {
         Self {
             token: token.map(str::to_string),
             account_id: account_id.map(str::to_string),
+            auth_mode: token.map(|_| AuthMode::ApiKey),
         }
     }
 }

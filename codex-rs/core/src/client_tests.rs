@@ -2,6 +2,7 @@ use super::AuthRequestTelemetryContext;
 use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
+use crate::auth::CodexAuth;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelInfo;
@@ -32,6 +33,22 @@ fn test_model_client_with_wire_api(
         session_source,
         None,
         false,
+        false,
+        None,
+    )
+}
+
+fn test_model_client_with_provider_and_auth(
+    provider: crate::model_provider_info::ModelProviderInfo,
+    auth: CodexAuth,
+) -> ModelClient {
+    ModelClient::new(
+        Some(crate::test_support::auth_manager_from_auth(auth)),
+        ThreadId::new(),
+        provider,
+        SessionSource::Cli,
+        None,
+        true,
         false,
         None,
     )
@@ -155,4 +172,34 @@ fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
     assert!(auth_context.retry_after_unauthorized);
     assert_eq!(auth_context.recovery_mode, Some("managed"));
     assert_eq!(auth_context.recovery_phase, Some("refresh_token"));
+}
+
+#[tokio::test]
+async fn provider_auth_disables_unauthorized_recovery_and_request_compression() {
+    let mut provider = crate::model_provider_info::create_oss_provider_with_base_url(
+        "https://example.com/v1",
+        crate::model_provider_info::WireApi::Responses,
+    );
+    provider.experimental_bearer_token = Some("provider-token".to_string());
+    let client = test_model_client_with_provider_and_auth(
+        provider,
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+    );
+
+    let client_setup = client
+        .current_client_setup()
+        .await
+        .expect("client setup should resolve");
+
+    assert_eq!(
+        client_setup.api_auth.auth_mode(),
+        Some(crate::auth::AuthMode::ApiKey)
+    );
+    assert!(client.unauthorized_recovery().is_none());
+    assert_eq!(
+        client
+            .new_session()
+            .responses_request_compression(&client_setup.api_auth),
+        codex_api::requests::responses::Compression::None
+    );
 }

@@ -125,6 +125,56 @@ api_key = "test-token"
 }
 
 #[test]
+fn provider_supplied_auth_detects_configured_authorization_headers() {
+    let provider = ModelProviderInfo {
+        name: "Example".into(),
+        base_url: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: Some(maplit::hashmap! {
+            "authorization".to_string() => "Bearer token".to_string(),
+        }),
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    assert!(provider.uses_provider_supplied_auth());
+}
+
+#[test]
+fn provider_supplied_auth_ignores_unrelated_headers() {
+    let provider = ModelProviderInfo {
+        name: "Example".into(),
+        base_url: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: Some(maplit::hashmap! {
+            "X-Test".to_string() => "value".to_string(),
+        }),
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    assert!(!provider.uses_provider_supplied_auth());
+}
+
+#[test]
 fn test_deserialize_chat_wire_api_shows_helpful_error() {
     let provider_toml = r#"
 name = "OpenAI using Chat Completions"

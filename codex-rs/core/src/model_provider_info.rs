@@ -148,6 +148,13 @@ impl ModelProviderInfo {
             .filter(|token| !token.trim().is_empty())
     }
 
+    pub(crate) fn uses_provider_supplied_auth(&self) -> bool {
+        self.env_key.is_some()
+            || self.configured_bearer_token().is_some()
+            || has_authorization_header(self.http_headers.as_ref())
+            || has_authorization_header(self.env_http_headers.as_ref())
+    }
+
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
         let capacity = self.http_headers.as_ref().map_or(0, HashMap::len)
             + self.env_http_headers.as_ref().map_or(0, HashMap::len);
@@ -361,6 +368,14 @@ impl ModelProviderInfo {
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
     }
+}
+
+fn has_authorization_header<T>(headers: Option<&HashMap<String, T>>) -> bool {
+    headers.is_some_and(|headers| {
+        headers
+            .keys()
+            .any(|name| name.eq_ignore_ascii_case(http::header::AUTHORIZATION.as_str()))
+    })
 }
 
 pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;

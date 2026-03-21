@@ -151,7 +151,6 @@ struct ModelClientState {
 /// Keeping this as a single bundle ensures prewarm and normal request paths
 /// share the same auth/provider setup flow.
 struct CurrentClientSetup {
-    auth: Option<CodexAuth>,
     api_provider: codex_api::Provider,
     api_auth: CoreAuthProvider,
 }
@@ -357,7 +356,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.api_auth.auth_mode(),
                 &client_setup.api_auth,
                 PendingUnauthorizedRetry::default(),
             ),
@@ -431,7 +430,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.api_auth.auth_mode(),
                 &client_setup.api_auth,
                 PendingUnauthorizedRetry::default(),
             ),
@@ -532,19 +531,29 @@ impl ModelClient {
     /// lockstep when auth/provider resolution changes.
     async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
         let auth = match self.state.auth_manager.as_ref() {
-            Some(manager) => manager.auth().await,
-            None => None,
+            Some(manager) if !self.state.provider.uses_provider_supplied_auth() => {
+                manager.auth().await
+            }
+            Some(_) | None => None,
         };
         let api_provider = self
             .state
             .provider
             .to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &self.state.provider)?;
+        let api_auth = auth_provider_from_auth(auth, &self.state.provider)?;
         Ok(CurrentClientSetup {
-            auth,
             api_provider,
             api_auth,
         })
+    }
+
+    fn unauthorized_recovery(&self) -> Option<UnauthorizedRecovery> {
+        let auth_manager = self.state.auth_manager.as_ref()?;
+        if self.state.provider.uses_provider_supplied_auth() {
+            return None;
+        }
+        matches!(auth_manager.auth_mode(), Some(AuthMode::Chatgpt))
+            .then(|| auth_manager.unauthorized_recovery())
     }
 
     /// Opens a websocket connection using the same header and telemetry wiring as normal turns.
@@ -881,7 +890,7 @@ impl ModelClientSession {
             ))
         })?;
         let auth_context = AuthRequestTelemetryContext::new(
-            client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+            client_setup.api_auth.auth_mode(),
             &client_setup.api_auth,
             PendingUnauthorizedRetry::default(),
         );
@@ -977,9 +986,9 @@ impl ModelClientSession {
             ))
     }
 
-    fn responses_request_compression(&self, auth: Option<&crate::auth::CodexAuth>) -> Compression {
+    fn responses_request_compression(&self, api_auth: &CoreAuthProvider) -> Compression {
         if self.client.state.enable_request_compression
-            && auth.is_some_and(CodexAuth::is_chatgpt_auth)
+            && api_auth.is_chatgpt_auth()
             && self.client.state.provider.is_openai()
         {
             Compression::Zstd
@@ -1027,16 +1036,13 @@ impl ModelClientSession {
             return Ok(stream);
         }
 
-        let auth_manager = self.client.state.auth_manager.clone();
-        let mut auth_recovery = auth_manager
-            .as_ref()
-            .map(super::auth::AuthManager::unauthorized_recovery);
+        let mut auth_recovery = self.client.unauthorized_recovery();
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let transport = ReqwestTransport::new(build_reqwest_client());
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.api_auth.auth_mode(),
                 &client_setup.api_auth,
                 pending_retry,
             );
@@ -1046,7 +1052,7 @@ impl ModelClientSession {
                 RequestRouteTelemetry::for_endpoint(RESPONSES_ENDPOINT),
                 self.client.state.auth_env_telemetry.clone(),
             );
-            let compression = self.responses_request_compression(client_setup.auth.as_ref());
+            let compression = self.responses_request_compression(&client_setup.api_auth);
             let options = self.build_responses_options(turn_metadata_header, compression);
 
             let request = self.build_responses_request(
@@ -1115,20 +1121,16 @@ impl ModelClientSession {
         warmup: bool,
         request_trace: Option<W3cTraceContext>,
     ) -> Result<WebsocketStreamOutcome> {
-        let auth_manager = self.client.state.auth_manager.clone();
-
-        let mut auth_recovery = auth_manager
-            .as_ref()
-            .map(super::auth::AuthManager::unauthorized_recovery);
+        let mut auth_recovery = self.client.unauthorized_recovery();
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
+                client_setup.api_auth.auth_mode(),
                 &client_setup.api_auth,
                 pending_retry,
             );
-            let compression = self.responses_request_compression(client_setup.auth.as_ref());
+            let compression = self.responses_request_compression(&client_setup.api_auth);
 
             let options = self.build_responses_options(turn_metadata_header, compression);
             let request = self.build_responses_request(
