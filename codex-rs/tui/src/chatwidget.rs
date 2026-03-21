@@ -323,8 +323,8 @@ use codex_utils_approval_presets::ApprovalPreset;
 use codex_utils_approval_presets::builtin_approval_presets;
 use strum::IntoEnumIterator;
 
-const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
-const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
+const USER_SHELL_COMMAND_HELP_TITLE: &str = "在命令前加 ! 即可在本地执行";
+const USER_SHELL_COMMAND_HELP_HINT: &str = "示例：!ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const FAST_STATUS_MODEL: &str = "gpt-5.4";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
@@ -564,14 +564,14 @@ struct StatusIndicatorState {
 impl StatusIndicatorState {
     fn working() -> Self {
         Self {
-            header: String::from("Working"),
+            header: String::from("处理中"),
             details: None,
             details_max_lines: STATUS_DETAILS_DEFAULT_MAX_LINES,
         }
     }
 
     fn is_guardian_review(&self) -> bool {
-        self.header == "Reviewing approval request" || self.header.starts_with("Reviewing ")
+        self.header == "正在审核审批请求" || self.header.starts_with("正在审核 ")
     }
 }
 
@@ -630,9 +630,9 @@ impl PendingGuardianReviewStatus {
         };
         let details = details?;
         let header = if self.entries.len() == 1 {
-            String::from("Reviewing approval request")
+            String::from("正在审核审批请求")
         } else {
-            format!("Reviewing {} approval requests", self.entries.len())
+            format!("正在审核 {} 个审批请求", self.entries.len())
         };
         let details_max_lines = if self.entries.len() == 1 { 1 } else { 4 };
         Some(StatusIndicatorState {
@@ -1143,7 +1143,7 @@ impl ChatWidget {
             self.set_status_header(header);
         } else if self.bottom_pane.is_task_running() {
             self.terminal_title_status_kind = TerminalTitleStatusKind::Working;
-            self.set_status_header(String::from("Working"));
+            self.set_status_header(String::from("处理中"));
         }
     }
 
@@ -1742,7 +1742,7 @@ impl ChatWidget {
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ true);
         self.terminal_title_status_kind = TerminalTitleStatusKind::Working;
-        self.set_status_header(String::from("Working"));
+        self.set_status_header(String::from("处理中"));
         self.full_reasoning_buffer.clear();
         self.reasoning_buffer.clear();
         self.request_redraw();
@@ -2534,12 +2534,12 @@ impl ChatWidget {
                     status.details_max_lines,
                 );
             } else if self.current_status.is_guardian_review() {
-                self.set_status_header(String::from("Working"));
+                self.set_status_header(String::from("处理中"));
             }
         } else if self.pending_guardian_review_status.is_empty()
             && self.current_status.is_guardian_review()
         {
-            self.set_status_header(String::from("Working"));
+            self.set_status_header(String::from("处理中"));
         }
 
         if ev.status == GuardianAssessmentStatus::Approved {
@@ -4282,7 +4282,7 @@ impl ChatWidget {
                         // Reset any reasoning header only when we are actually submitting a turn.
                         self.reasoning_buffer.clear();
                         self.full_reasoning_buffer.clear();
-                        self.set_status_header(String::from("Working"));
+                        self.set_status_header(String::from("处理中"));
                         self.submit_user_message(user_message);
                     } else {
                         self.queue_user_message(user_message);
@@ -4820,7 +4820,7 @@ impl ChatWidget {
                 if self.is_session_configured() {
                     self.reasoning_buffer.clear();
                     self.full_reasoning_buffer.clear();
-                    self.set_status_header(String::from("Working"));
+                    self.set_status_header(String::from("处理中"));
                     self.submit_user_message(user_message);
                 } else {
                     self.queue_user_message(user_message);

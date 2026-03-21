@@ -9838,7 +9838,7 @@ async fn guardian_parallel_reviews_keep_remaining_review_visible_after_denial() 
         }),
     });
 
-    assert_eq!(chat.current_status.header, "Reviewing approval request");
+    assert_eq!(chat.current_status.header, "正在审核审批请求");
     assert_eq!(
         chat.current_status.details,
         Some("rm -rf '/tmp/guardian target 2'".to_string())
@@ -10205,14 +10205,14 @@ async fn apply_patch_untrusted_shows_approval_modal() -> anyhow::Result<()> {
         for x in 0..area.width {
             row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
         }
-        if row.contains("Would you like to make the following edits?") {
+        if row.replace(' ', "").contains("要应用以下修改吗？") {
             contains_title = true;
             break;
         }
     }
     assert!(
         contains_title,
-        "expected approval modal to be visible with title 'Would you like to make the following edits?'"
+        "expected approval modal to be visible with title '要应用以下修改吗？'"
     );
 
     Ok(())
@@ -10386,7 +10386,7 @@ async fn thread_snapshot_replayed_turn_started_marks_task_running() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "Working");
+    assert_eq!(status.header(), "处理中");
 }
 
 #[tokio::test]
@@ -10445,7 +10445,7 @@ async fn thread_snapshot_replayed_stream_recovery_restores_previous_status_heade
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "Working");
+    assert_eq!(status.header(), "处理中");
     assert_eq!(status.details(), None);
     assert!(chat.retry_status_header.is_none());
 }
@@ -10501,7 +10501,7 @@ async fn replayed_interrupted_reconnect_footer_row_snapshot() {
 
     let header = render_bottom_first_row(&chat, 80);
     assert!(
-        !header.contains("Reconnecting") && !header.contains("Working"),
+        !header.contains("Reconnecting") && !header.contains("处理中"),
         "expected replayed interrupted reconnect to avoid active status row, got {header:?}"
     );
     assert_snapshot!("replayed_interrupted_reconnect_footer_row", header);
@@ -11030,7 +11030,7 @@ async fn stream_recovery_restores_previous_status_header() {
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "Working");
+    assert_eq!(status.header(), "处理中");
     assert_eq!(status.details(), None);
     assert!(chat.retry_status_header.is_none());
 }

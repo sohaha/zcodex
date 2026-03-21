@@ -2,11 +2,11 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: rendered
 ---
-• Reviewing 2 approval requests (0s • esc to interrupt)
+• 正 在 审 核  2 个 审 批 请 求  (0s • esc to interrupt)
   └ • rm -rf '/tmp/guardian target 1'
     • rm -rf '/tmp/guardian target 2'
 
 
 › Ask Codex to do anything
 
-  ? for shortcuts                                    100% context left
+  ? 查 看 快 捷 键                                          剩 余 上 下 文  100%
