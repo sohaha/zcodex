@@ -142,6 +142,12 @@ pub struct ModelProviderInfo {
 }
 
 impl ModelProviderInfo {
+    pub(crate) fn configured_bearer_token(&self) -> Option<&str> {
+        self.experimental_bearer_token
+            .as_deref()
+            .filter(|token| !token.trim().is_empty())
+    }
+
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
         let capacity = self.http_headers.as_ref().map_or(0, HashMap::len)
             + self.env_http_headers.as_ref().map_or(0, HashMap::len);
@@ -193,6 +199,7 @@ impl ModelProviderInfo {
             );
 
             let has_authorization_header = headers.contains_key(http::header::AUTHORIZATION);
+            let configured_bearer_token = self.configured_bearer_token();
             match self.api_key() {
                 Ok(Some(api_key)) => {
                     if !has_authorization_header
@@ -206,17 +213,15 @@ impl ModelProviderInfo {
                 }
                 Ok(None) => {
                     if !has_authorization_header
-                        && let Some(token) = &self.experimental_bearer_token
+                        && let Some(token) = configured_bearer_token
                         && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
                     {
                         headers.insert(http::header::AUTHORIZATION, value);
                     }
                 }
-                Err(crate::error::CodexErr::EnvVar(_))
-                    if self.experimental_bearer_token.is_some() =>
-                {
+                Err(crate::error::CodexErr::EnvVar(_)) if configured_bearer_token.is_some() => {
                     if !has_authorization_header
-                        && let Some(token) = &self.experimental_bearer_token
+                        && let Some(token) = configured_bearer_token
                         && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
                     {
                         headers.insert(http::header::AUTHORIZATION, value);

@@ -222,9 +222,9 @@ pub(crate) fn auth_provider_from_auth(
         });
     }
 
-    if let Some(token) = provider.experimental_bearer_token.clone() {
+    if let Some(token) = provider.configured_bearer_token() {
         return Ok(CoreAuthProvider {
-            token: Some(token),
+            token: Some(token.to_string()),
             account_id: None,
         });
     }

@@ -45,19 +45,23 @@ base_url = "https://your-proxy.example.com/v1"
 ## 自定义可用模型列表
 
 如果你的 Anthropic 中转暴露了内置目录之外的模型，可以在
-`~/.codex/config.toml` 中追加模型目录：
+`~/.codex/config.toml` 中直接声明模型列表：
 
 ```toml
 model_provider = "anthropic"
-model_catalog_merge_json = "/path/to/anthropic-models.json"
+model_catalog = ["MiniMax-M2.5-higspeed"]
 ```
 
 说明：
 
+- `model_catalog = ["..."]` 会直接把数组里的字符串当作模型 slug 列表使用。
+- 对已知模型，Codex 会复用内置元数据；对未知模型，会生成一份最小可用元数据。
+- 如果你更希望从文件加载，也可以写成
+  `model_catalog = "/path/to/anthropic-models.json"`。
 - `model_catalog_merge_json` 会在当前 provider 的内置模型列表之上合并额外模型。
 - 如果同时设置 `model_catalog_json`，则先使用它作为基础列表，再叠加
   `model_catalog_merge_json`。
-- 如果未设置 `model_catalog_json`，Codex 会尝试从当前 Anthropic provider 的
+- 如果未设置 `model_catalog` 或 `model_catalog_json`，Codex 会尝试从当前 Anthropic provider 的
   `/models` 拉取远端模型目录；如果拉取失败，则回退到内置 Claude catalog。
 - 合并按模型 `slug` 匹配；相同 `slug` 时，以 merge 文件中的定义为准。
 - 对 Responses provider 来说，`model_catalog_merge_json` 不会关闭远端

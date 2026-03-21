@@ -48,6 +48,7 @@ use crate::model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
 use crate::model_provider_info::OLLAMA_OSS_PROVIDER_ID;
 use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::model_provider_info::built_in_model_providers;
+use crate::models_manager::model_info;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::project_doc::DEFAULT_PROJECT_DOC_FILENAME;
 use crate::project_doc::LOCAL_PROJECT_DOC_FILENAME;
@@ -79,6 +80,7 @@ use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::config_types::WebSearchToolConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::MacOsSeatbeltProfileExtensions;
+use codex_protocol::openai_models::ModelVisibility;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
@@ -943,6 +945,73 @@ fn load_catalog_json(path: &AbsolutePathBuf, field_name: &str) -> std::io::Resul
     Ok(catalog)
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema)]
+#[serde(untagged)]
+pub enum ModelCatalogToml {
+    JsonPath(AbsolutePathBuf),
+    Inline(Vec<String>),
+}
+
+fn bundled_models_for_provider(
+    provider: &ModelProviderInfo,
+) -> Vec<codex_protocol::openai_models::ModelInfo> {
+    match provider.wire_api {
+        crate::model_provider_info::WireApi::Responses => {
+            let file_contents = include_str!("../../models.json");
+            let response: ModelsResponse = serde_json::from_str(file_contents)
+                .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"));
+            response.models
+        }
+        crate::model_provider_info::WireApi::Anthropic => model_info::anthropic_model_catalog(),
+    }
+}
+
+fn load_inline_model_catalog(
+    slugs: Vec<String>,
+    provider: &ModelProviderInfo,
+) -> std::io::Result<ModelsResponse> {
+    if slugs.is_empty() {
+        return Err(std::io::Error::new(
+            ErrorKind::InvalidData,
+            "model_catalog array must contain at least one model",
+        ));
+    }
+
+    let bundled_models = bundled_models_for_provider(provider);
+    let models = slugs
+        .into_iter()
+        .enumerate()
+        .map(|(index, slug)| {
+            let mut model = bundled_models
+                .iter()
+                .find(|candidate| candidate.slug == slug)
+                .cloned()
+                .unwrap_or_else(|| model_info::model_info_from_slug(&slug));
+            model.priority = i32::try_from(index).unwrap_or(i32::MAX);
+            model.visibility = ModelVisibility::List;
+            model.supported_in_api = true;
+            model
+        })
+        .collect();
+    Ok(ModelsResponse { models })
+}
+
+fn load_model_catalog(
+    model_catalog: Option<ModelCatalogToml>,
+    model_catalog_json: Option<AbsolutePathBuf>,
+    provider: &ModelProviderInfo,
+) -> std::io::Result<Option<ModelsResponse>> {
+    match model_catalog {
+        Some(ModelCatalogToml::JsonPath(path)) => {
+            Ok(Some(load_catalog_json(&path, "model_catalog")?))
+        }
+        Some(ModelCatalogToml::Inline(slugs)) => {
+            Ok(Some(load_inline_model_catalog(slugs, provider)?))
+        }
+        None => load_model_catalog_json(model_catalog_json),
+    }
+}
+
 fn load_model_catalog_json(
     model_catalog_json: Option<AbsolutePathBuf>,
 ) -> std::io::Result<Option<ModelsResponse>> {
@@ -1442,8 +1511,13 @@ pub struct ConfigToml {
     /// Override to force-enable reasoning summaries for the configured model.
     pub model_supports_reasoning_summaries: Option<bool>,
 
-    /// Optional path to a JSON model catalog (applied on startup only).
+    /// Optional model catalog (applied on startup only).
+    /// String values are treated as absolute JSON file paths; arrays are treated
+    /// as inline model slug lists.
     /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
+    pub model_catalog: Option<ModelCatalogToml>,
+    /// Legacy alias for a JSON model catalog path (applied on startup only).
+    /// Prefer `model_catalog = "/abs/path/catalog.json"`.
     pub model_catalog_json: Option<AbsolutePathBuf>,
     /// Optional path to a JSON model catalog overlay (applied on startup only).
     /// Per-thread `config` overrides are accepted but do not reapply this (no-ops).
@@ -2704,11 +2778,16 @@ impl Config {
         let review_model = override_review_model.or(cfg.review_model);
 
         let check_for_update_on_startup = cfg.check_for_update_on_startup.unwrap_or(true);
-        let model_catalog = load_model_catalog_json(
+        let model_catalog = load_model_catalog(
+            config_profile
+                .model_catalog
+                .clone()
+                .or(cfg.model_catalog.clone()),
             config_profile
                 .model_catalog_json
                 .clone()
                 .or(cfg.model_catalog_json.clone()),
+            &model_provider,
         )?;
         let model_catalog_merge = load_model_catalog_merge_json(
             config_profile

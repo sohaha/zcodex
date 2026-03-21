@@ -164,6 +164,34 @@ fn anthropic_auth_provider_does_not_duplicate_api_key_as_bearer() {
 }
 
 #[test]
+fn responses_auth_provider_ignores_empty_configured_bearer_token() {
+    let provider = ModelProviderInfo {
+        name: "OpenAI compatible".to_string(),
+        base_url: Some("https://example.com/v1".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: Some("  ".to_string()),
+        wire_api: crate::model_provider_info::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let auth = auth_provider_from_auth(Some(CodexAuth::from_api_key("auth-json-key")), &provider)
+        .expect("responses auth should build");
+    assert_eq!(
+        codex_api::AuthProvider::bearer_token(&auth).as_deref(),
+        Some("auth-json-key")
+    );
+}
+
+#[test]
 fn map_api_error_extracts_identity_auth_details_from_headers() {
     let mut headers = HeaderMap::new();
     headers.insert(REQUEST_ID_HEADER, http::HeaderValue::from_static("req-401"));

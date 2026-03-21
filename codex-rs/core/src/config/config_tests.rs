@@ -4276,6 +4276,58 @@ fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io::Resul
 }
 
 #[test]
+fn model_catalog_loads_from_string_path() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let catalog_path = codex_home.path().join("catalog.json");
+    let mut catalog: ModelsResponse =
+        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
+    catalog.models = catalog.models.into_iter().take(1).collect();
+    std::fs::write(
+        &catalog_path,
+        serde_json::to_string(&catalog).expect("serialize catalog"),
+    )?;
+
+    let cfg = ConfigToml {
+        model_catalog: Some(ModelCatalogToml::JsonPath(
+            AbsolutePathBuf::from_absolute_path(catalog_path)?,
+        )),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.model_catalog, Some(catalog));
+    assert_eq!(config.model_catalog_merge, None);
+    Ok(())
+}
+
+#[test]
+fn model_catalog_deserializes_from_toml_string_or_array() {
+    let path_cfg: ConfigToml =
+        toml::from_str(r#"model_catalog = "/tmp/catalog.json""#).expect("string path should parse");
+    assert_eq!(
+        path_cfg.model_catalog,
+        Some(ModelCatalogToml::JsonPath(
+            AbsolutePathBuf::from_absolute_path(Path::new("/tmp/catalog.json"))
+                .expect("absolute path should be valid"),
+        ))
+    );
+
+    let inline_cfg: ConfigToml = toml::from_str(r#"model_catalog = ["MiniMax-M2.5-higspeed"]"#)
+        .expect("inline array should parse");
+    assert_eq!(
+        inline_cfg.model_catalog,
+        Some(ModelCatalogToml::Inline(vec![
+            "MiniMax-M2.5-higspeed".to_string()
+        ]))
+    );
+}
+
+#[test]
 fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let catalog_path = codex_home.path().join("catalog.json");
@@ -4330,6 +4382,40 @@ fn write_catalog(path: &std::path::Path, catalog: &ModelsResponse) -> std::io::R
 }
 
 #[test]
+fn model_catalog_loads_from_inline_slug_array() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg = ConfigToml {
+        model_provider: Some("anthropic".to_string()),
+        model_catalog: Some(ModelCatalogToml::Inline(vec![
+            "claude-sonnet-4-20250514".to_string(),
+            "MiniMax-M2.5-higspeed".to_string(),
+        ])),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    let catalog = config.model_catalog.expect("inline catalog should load");
+    assert_eq!(catalog.models.len(), 2);
+    assert_eq!(catalog.models[0].slug, "claude-sonnet-4-20250514");
+    assert_eq!(catalog.models[0].display_name, "Claude Sonnet 4");
+    assert_eq!(catalog.models[0].priority, 0);
+    assert_eq!(catalog.models[1].slug, "MiniMax-M2.5-higspeed");
+    assert_eq!(catalog.models[1].display_name, "MiniMax-M2.5-higspeed");
+    assert_eq!(catalog.models[1].priority, 1);
+    assert_eq!(
+        catalog.models[1].visibility,
+        codex_protocol::openai_models::ModelVisibility::List
+    );
+    assert!(catalog.models[1].used_fallback_model_metadata);
+    Ok(())
+}
+
+#[test]
 fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let catalog_path = codex_home.path().join("catalog.json");
@@ -4350,6 +4436,30 @@ fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     assert_eq!(err.kind(), ErrorKind::InvalidData);
     assert!(
         err.to_string().contains("must contain at least one model"),
+        "unexpected error: {err}"
+    );
+    Ok(())
+}
+
+#[test]
+fn model_catalog_rejects_empty_inline_array() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg = ConfigToml {
+        model_catalog: Some(ModelCatalogToml::Inline(Vec::new())),
+        ..Default::default()
+    };
+
+    let err = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )
+    .expect_err("empty inline catalog should fail config load");
+
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
+    assert!(
+        err.to_string()
+            .contains("model_catalog array must contain at least one model"),
         "unexpected error: {err}"
     );
     Ok(())

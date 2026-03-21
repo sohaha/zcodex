@@ -1,6 +1,10 @@
 use super::RealtimeHandoffState;
 use super::RealtimeSessionKind;
+use super::realtime_api_key;
 use super::realtime_text_from_handoff_request;
+use crate::CodexAuth;
+use crate::ModelProviderInfo;
+use crate::WireApi;
 use async_channel::bounded;
 use codex_protocol::protocol::RealtimeHandoffRequested;
 use codex_protocol::protocol::RealtimeTranscriptEntry;
@@ -52,6 +56,31 @@ fn ignores_empty_handoff_request_input_transcript() {
         active_transcript: vec![],
     };
     assert_eq!(realtime_text_from_handoff_request(&handoff), None);
+}
+
+#[test]
+fn realtime_api_key_ignores_empty_configured_bearer_token() {
+    let provider = ModelProviderInfo {
+        name: "OpenAI compatible".to_string(),
+        base_url: Some("https://example.com/v1".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: Some(String::new()),
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_key = realtime_api_key(Some(&CodexAuth::from_api_key("auth-json-key")), &provider)
+        .expect("realtime api key should fall back to auth");
+    assert_eq!(api_key, "auth-json-key");
 }
 
 #[tokio::test]

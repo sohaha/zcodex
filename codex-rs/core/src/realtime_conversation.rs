@@ -633,8 +633,8 @@ fn realtime_api_key(
         return Ok(api_key);
     }
 
-    if let Some(token) = provider.experimental_bearer_token.clone() {
-        return Ok(token);
+    if let Some(token) = provider.configured_bearer_token() {
+        return Ok(token.to_string());
     }
 
     if let Some(api_key) = auth.and_then(CodexAuth::api_key) {

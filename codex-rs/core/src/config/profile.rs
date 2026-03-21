@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::config::ModelCatalogToml;
 use crate::config::ToolsToml;
 use crate::config::types::ApprovalsReviewer;
 use crate::config::types::Personality;
@@ -33,7 +34,11 @@ pub struct ConfigProfile {
     pub plan_mode_reasoning_effort: Option<ReasoningEffort>,
     pub model_reasoning_summary: Option<ReasoningSummary>,
     pub model_verbosity: Option<Verbosity>,
-    /// Optional path to a JSON model catalog (applied on startup only).
+    /// Optional model catalog (applied on startup only).
+    /// String values are treated as absolute JSON file paths; arrays are treated
+    /// as inline model slug lists.
+    pub model_catalog: Option<ModelCatalogToml>,
+    /// Legacy alias for a JSON model catalog path (applied on startup only).
     pub model_catalog_json: Option<AbsolutePathBuf>,
     /// Optional path to a JSON model catalog overlay (applied on startup only).
     pub model_catalog_merge_json: Option<AbsolutePathBuf>,

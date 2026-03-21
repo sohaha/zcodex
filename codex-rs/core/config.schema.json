@@ -534,13 +534,21 @@
         "model": {
           "type": "string"
         },
+        "model_catalog": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ModelCatalogToml"
+            }
+          ],
+          "description": "Optional model catalog (applied on startup only). String values are treated as absolute JSON file paths; arrays are treated as inline model slug lists."
+        },
         "model_catalog_json": {
           "allOf": [
             {
               "$ref": "#/definitions/AbsolutePathBuf"
             }
           ],
-          "description": "Optional path to a JSON model catalog (applied on startup only)."
+          "description": "Legacy alias for a JSON model catalog path (applied on startup only)."
         },
         "model_catalog_merge_json": {
           "allOf": [
@@ -828,6 +836,19 @@
         "type": "integer"
       },
       "type": "object"
+    },
+    "ModelCatalogToml": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/AbsolutePathBuf"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ]
     },
     "ModelProviderInfo": {
       "additionalProperties": false,
@@ -2295,13 +2316,21 @@
       "format": "int64",
       "type": "integer"
     },
+    "model_catalog": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ModelCatalogToml"
+        }
+      ],
+      "description": "Optional model catalog (applied on startup only). String values are treated as absolute JSON file paths; arrays are treated as inline model slug lists. Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
+    },
     "model_catalog_json": {
       "allOf": [
         {
           "$ref": "#/definitions/AbsolutePathBuf"
         }
       ],
-      "description": "Optional path to a JSON model catalog (applied on startup only). Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
+      "description": "Legacy alias for a JSON model catalog path (applied on startup only). Prefer `model_catalog = \"/abs/path/catalog.json\"`."
     },
     "model_catalog_merge_json": {
       "allOf": [
