@@ -921,6 +921,7 @@ mod tests {
     fn run_git_in(repo_path: &Path, args: &[&str]) {
         let status = Command::new("git")
             .current_dir(repo_path)
+            .args(["-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false"])
             .args(args)
             .status()
             .expect("git command");
@@ -931,6 +932,7 @@ mod tests {
     fn run_git_stdout(repo_path: &Path, args: &[&str]) -> String {
         let output = Command::new("git")
             .current_dir(repo_path)
+            .args(["-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false"])
             .args(args)
             .output()
             .expect("git command");

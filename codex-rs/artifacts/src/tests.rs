@@ -338,7 +338,10 @@ async fn artifacts_client_execute_build_writes_wrapped_script_and_env() {
             .to_string(),
             cwd: temp.path().to_path_buf(),
             timeout: Some(Duration::from_secs(5)),
-            env: BTreeMap::new(),
+            env: BTreeMap::from([
+                ("NO_COLOR".to_string(), "1".to_string()),
+                ("FORCE_COLOR".to_string(), "0".to_string()),
+            ]),
         })
         .await
         .unwrap_or_else(|error| panic!("{error}"));

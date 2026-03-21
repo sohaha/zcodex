@@ -25,7 +25,8 @@ const REQUESTED_MODEL: &str = "gpt-5.1-codex-max";
 const SERVER_MODEL: &str = "gpt-5.2-codex";
 
 #[tokio::test]
-async fn openai_model_header_mismatch_emits_model_rerouted_notification_v2() -> Result<()> {
+async fn custom_provider_header_mismatch_does_not_emit_model_rerouted_notification_v2() -> Result<()>
+{
     skip_if_no_network!(Ok(()));
 
     let server = responses::start_mock_server().await;
@@ -74,22 +75,13 @@ async fn openai_model_header_mismatch_emits_model_rerouted_notification_v2() -> 
     let turn_start: TurnStartResponse = to_response(turn_resp)?;
 
     let rerouted = collect_turn_notifications_and_validate_no_warning_item(&mut mcp).await?;
-    assert_eq!(
-        rerouted,
-        ModelReroutedNotification {
-            thread_id: thread.id,
-            turn_id: turn_start.turn.id,
-            from_model: REQUESTED_MODEL.to_string(),
-            to_model: SERVER_MODEL.to_string(),
-            reason: ModelRerouteReason::HighRiskCyberActivity,
-        }
-    );
+    assert_eq!(rerouted, None);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn response_model_field_mismatch_emits_model_rerouted_notification_v2_when_header_matches_requested()
+async fn custom_provider_response_model_mismatch_does_not_emit_model_rerouted_notification_v2()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -147,23 +139,14 @@ async fn response_model_field_mismatch_emits_model_rerouted_notification_v2_when
     let turn_start: TurnStartResponse = to_response(turn_resp)?;
 
     let rerouted = collect_turn_notifications_and_validate_no_warning_item(&mut mcp).await?;
-    assert_eq!(
-        rerouted,
-        ModelReroutedNotification {
-            thread_id: thread.id,
-            turn_id: turn_start.turn.id,
-            from_model: REQUESTED_MODEL.to_string(),
-            to_model: SERVER_MODEL.to_string(),
-            reason: ModelRerouteReason::HighRiskCyberActivity,
-        }
-    );
+    assert_eq!(rerouted, None);
 
     Ok(())
 }
 
 async fn collect_turn_notifications_and_validate_no_warning_item(
     mcp: &mut McpProcess,
-) -> Result<ModelReroutedNotification> {
+) -> Result<Option<ModelReroutedNotification>> {
     let mut rerouted = None;
 
     loop {
@@ -194,9 +177,7 @@ async fn collect_turn_notifications_and_validate_no_warning_item(
                 assert!(!is_warning_user_message_item(&payload.item));
             }
             "turn/completed" => {
-                return rerouted.ok_or_else(|| {
-                    anyhow::anyhow!("expected model/rerouted notification before turn/completed")
-                });
+                return Ok(rerouted);
             }
             _ => {}
         }

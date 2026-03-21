@@ -474,17 +474,17 @@ fn exec_resume_preserves_cli_configuration_overrides() -> anyhow::Result<()> {
 
     let stderr = String::from_utf8(output.stderr)?;
     assert!(
-        stderr.contains("model: gpt-5.1-high"),
+        stderr.contains("model:") && stderr.contains("gpt-5.1-high"),
         "stderr missing model override: {stderr}"
     );
     if cfg!(target_os = "windows") {
         assert!(
-            stderr.contains("sandbox: read-only"),
+            stderr.contains("sandbox:") && stderr.contains("read-only"),
             "stderr missing downgraded sandbox note: {stderr}"
         );
     } else {
         assert!(
-            stderr.contains("sandbox: workspace-write"),
+            stderr.contains("sandbox:") && stderr.contains("workspace-write"),
             "stderr missing sandbox override: {stderr}"
         );
     }

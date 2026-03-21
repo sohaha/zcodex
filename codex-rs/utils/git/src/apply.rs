@@ -605,7 +605,11 @@ mod tests {
     }
 
     fn run(cwd: &Path, args: &[&str]) -> (i32, String, String) {
-        let out = std::process::Command::new(args[0])
+        let mut cmd = std::process::Command::new(args[0]);
+        if args[0] == "git" {
+            cmd.args(["-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false"]);
+        }
+        let out = cmd
             .args(&args[1..])
             .current_dir(cwd)
             .output()
@@ -622,6 +626,8 @@ mod tests {
         let root = dir.path();
         // git init and minimal identity
         let _ = run(root, &["git", "init"]);
+        let _ = run(root, &["git", "config", "commit.gpgSign", "false"]);
+        let _ = run(root, &["git", "config", "tag.gpgSign", "false"]);
         let _ = run(root, &["git", "config", "user.email", "codex@example.com"]);
         let _ = run(root, &["git", "config", "user.name", "Codex"]);
         dir
