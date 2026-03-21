@@ -20,8 +20,7 @@
         export DEBIAN_FRONTEND=noninteractive
         export TZ=Etc/UTC
         apt-get update
-        apt-get install -y --no-install-recommends tzdata
-        apt-get install -y --no-install-recommends \
+        apt-get install -y --no-install-recommends --no-upgrade \
           build-essential \
           ca-certificates \
           clang \
