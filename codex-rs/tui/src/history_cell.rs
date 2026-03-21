@@ -806,10 +806,10 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "approved".bold(),
-                    " codex to run ".into(),
+                    "已批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
-                    " this time".bold(),
+                    "（本次）".bold(),
                 ],
             )
         }
@@ -821,8 +821,8 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "approved".bold(),
-                    " codex to always run commands that start with ".into(),
+                    "已批准".bold(),
+                    " Codex 始终执行以下前缀命令：".into(),
                     snippet,
                 ],
             )
@@ -833,10 +833,10 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "approved".bold(),
-                    " codex to run ".into(),
+                    "已批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
-                    " every time this session".bold(),
+                    "（本会话内每次）".bold(),
                 ],
             )
         }
@@ -847,8 +847,8 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "persisted".bold(),
-                    " Codex network access to ".into(),
+                    "已保存".bold(),
+                    " Codex 网络访问规则：".into(),
                     Span::from(network_policy_amendment.host).dim(),
                 ],
             ),
@@ -856,10 +856,10 @@ pub fn new_approval_decision_cell(
                 "✗ ".red(),
                 vec![
                     actor.subject().into(),
-                    "denied".bold(),
-                    " codex network access to ".into(),
+                    "已拒绝".bold(),
+                    " Codex 网络访问：".into(),
                     Span::from(network_policy_amendment.host).dim(),
-                    " and saved that rule".into(),
+                    "，并已保存该规则".into(),
                 ],
             ),
         },
@@ -868,14 +868,14 @@ pub fn new_approval_decision_cell(
             let summary = match actor {
                 ApprovalDecisionActor::User => vec![
                     actor.subject().into(),
-                    "did not approve".bold(),
-                    " codex to run ".into(),
+                    "未批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
                 ],
                 ApprovalDecisionActor::Guardian => vec![
-                    "Request ".into(),
-                    "denied".bold(),
-                    " for codex to run ".into(),
+                    "请求".into(),
+                    "已拒绝".bold(),
+                    "：让 Codex 执行 ".into(),
                     snippet,
                 ],
             };
@@ -887,8 +887,8 @@ pub fn new_approval_decision_cell(
                 "✗ ".red(),
                 vec![
                     actor.subject().into(),
-                    "canceled".bold(),
-                    " the request to run ".into(),
+                    "已取消".bold(),
+                    "执行请求：".into(),
                     snippet,
                 ],
             )
@@ -911,8 +911,8 @@ pub enum ApprovalDecisionActor {
 impl ApprovalDecisionActor {
     fn subject(self) -> &'static str {
         match self {
-            Self::User => "You ",
-            Self::Guardian => "Auto-reviewer ",
+            Self::User => "你",
+            Self::Guardian => "自动审查器",
         }
     }
 }
@@ -921,18 +921,14 @@ pub fn new_guardian_denied_patch_request(
     files: Vec<String>,
     change_count: usize,
 ) -> Box<dyn HistoryCell> {
-    let mut summary = vec![
-        "Request ".into(),
-        "denied".bold(),
-        " for codex to apply ".into(),
-    ];
+    let mut summary = vec!["请求".into(), "已拒绝".bold(), "：让 Codex 应用 ".into()];
     if files.len() == 1 {
-        summary.push("a patch touching ".into());
+        summary.push("补丁，涉及文件：".into());
         summary.push(Span::from(files[0].clone()).dim());
     } else {
-        summary.push(format!("a patch touching {change_count} changes across ").into());
+        summary.push(format!("补丁，涉及 {change_count} 处改动，覆盖 ").into());
         summary.push(Span::from(files.len().to_string()).dim());
-        summary.push(" files".into());
+        summary.push(" 个文件".into());
     }
 
     Box::new(PrefixedWrappedHistoryCell::new(
@@ -944,9 +940,9 @@ pub fn new_guardian_denied_patch_request(
 
 pub fn new_guardian_denied_action_request(summary: String) -> Box<dyn HistoryCell> {
     let line = Line::from(vec![
-        "Request ".into(),
-        "denied".bold(),
-        " for ".into(),
+        "请求".into(),
+        "已拒绝".bold(),
+        "：".into(),
         Span::from(summary).dim(),
     ]);
     Box::new(PrefixedWrappedHistoryCell::new(line, "✗ ".red(), "  "))
@@ -954,9 +950,9 @@ pub fn new_guardian_denied_action_request(summary: String) -> Box<dyn HistoryCel
 
 pub fn new_guardian_approved_action_request(summary: String) -> Box<dyn HistoryCell> {
     let line = Line::from(vec![
-        "Request ".into(),
-        "approved".bold(),
-        " for ".into(),
+        "请求".into(),
+        "已批准".bold(),
+        "：".into(),
         Span::from(summary).dim(),
     ]);
     Box::new(PrefixedWrappedHistoryCell::new(line, "✔ ".green(), "  "))
@@ -987,7 +983,7 @@ struct CompletedMcpToolCallWithImageOutput {
 }
 impl HistoryCell for CompletedMcpToolCallWithImageOutput {
     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
-        vec!["tool result (image output)".into()]
+        vec!["工具结果（图片输出）".into()]
     }
 }
 
@@ -1784,7 +1780,7 @@ pub(crate) fn empty_mcp_output() -> PlainHistoryCell {
         "  • 未配置 MCP 服务。".italic().into(),
         Line::from(vec![
             "    请参考 ".into(),
-            "\u{1b}]8;;https://developers.openai.com/codex/mcp\u{7}MCP docs\u{1b}]8;;\u{7}"
+            "\u{1b}]8;;https://developers.openai.com/codex/mcp\u{7}MCP 文档\u{1b}]8;;\u{7}"
                 .underlined(),
             " 进行配置。".into(),
         ])
@@ -2996,22 +2992,22 @@ mod tests {
     #[test]
     fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
         let summary = Line::from(vec![
-            "You ".into(),
-            "approved".bold(),
-            " codex to run ".into(),
+            "你".into(),
+            "已批准".bold(),
+            " Codex 执行 ".into(),
             "echo something really long to ensure wrapping happens".dim(),
-            " this time".bold(),
+            "（本次）".bold(),
         ]);
         let cell = PrefixedWrappedHistoryCell::new(summary, "✔ ".green(), "  ");
         let rendered = render_lines(&cell.display_lines(24));
         assert_eq!(
             rendered,
             vec![
-                "✔ You approved codex to".to_string(),
-                "  run echo something".to_string(),
-                "  really long to ensure".to_string(),
-                "  wrapping happens this".to_string(),
-                "  time".to_string(),
+                "✔ 你已批准 Codex 执行".to_string(),
+                "  echo something really".to_string(),
+                "  long to ensure".to_string(),
+                "  wrapping happens（本".to_string(),
+                "  次）".to_string(),
             ]
         );
     }
@@ -3269,7 +3265,7 @@ mod tests {
             .expect("expected image cell");
 
         let rendered = render_lines(&extra_cell.display_lines(80));
-        assert_eq!(rendered, vec!["tool result (image output)"]);
+        assert_eq!(rendered, vec!["工具结果（图片输出）"]);
     }
 
     #[test]
@@ -3296,7 +3292,7 @@ mod tests {
             .expect("expected image cell");
 
         let rendered = render_lines(&extra_cell.display_lines(80));
-        assert_eq!(rendered, vec!["tool result (image output)"]);
+        assert_eq!(rendered, vec!["工具结果（图片输出）"]);
     }
 
     #[test]
@@ -3322,7 +3318,7 @@ mod tests {
             .expect("expected image cell");
 
         let rendered = render_lines(&extra_cell.display_lines(80));
-        assert_eq!(rendered, vec!["tool result (image output)"]);
+        assert_eq!(rendered, vec!["工具结果（图片输出）"]);
     }
 
     #[test]

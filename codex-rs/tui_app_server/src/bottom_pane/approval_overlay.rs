@@ -1484,10 +1484,10 @@ mod tests {
             })
             .collect();
         let expected = vec![
-            "✔ You approved codex to run".to_string(),
-            "  git add tui/src/render/".to_string(),
-            "  mod.rs tui/src/render/".to_string(),
-            "  renderable.rs this time".to_string(),
+            "✔ 你已批准 Codex 执行 git".to_string(),
+            "  add tui/src/render/mod.rs".to_string(),
+            "  tui/src/render/".to_string(),
+            "  renderable.rs（本次）".to_string(),
         ];
         assert_eq!(rendered, expected);
     }
