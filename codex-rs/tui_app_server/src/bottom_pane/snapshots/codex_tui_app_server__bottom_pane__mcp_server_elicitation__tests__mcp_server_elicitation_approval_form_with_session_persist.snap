@@ -3,12 +3,12 @@ source: tui_app_server/src/bottom_pane/mcp_server_elicitation.rs
 expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
 ---
                                                                                                                         
-  Field 1/1                                                                                                             
+  字 段  1/1                                                                                                              
   Allow this request?                                                                                                   
-  › 1. Allow                   Run the tool and continue.                                                               
-    2. Allow for this session  Run the tool and remember this choice for this session.                                  
-    3. Always allow            Run the tool and remember this choice for future tool calls.                             
-    4. Cancel                  Cancel this tool call                                                                    
+  › 1. 允 许           运 行 该 工 具 并 继 续 。                                                                                  
+    2. 本 次 会 话 允 许   运 行 该 工 具 ， 并 在 当 前 会 话 记 住 此 选 择 。                                                                
+    3. 始 终 允 许       运 行 该 工 具 ， 并 在 后 续 工 具 调 用 中 记 住 此 选 择 。                                                          
+    4. 取 消           取 消 这 次 工 具 调 用                                                                                    
                                                                                                                         
                                                                                                                         
                                                                                                                         
@@ -16,4 +16,4 @@ expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
                                                                                                                         
                                                                                                                         
                                                                                                                         
-  enter to submit | esc to cancel
+  Enter 提 交  | Esc 取 消
