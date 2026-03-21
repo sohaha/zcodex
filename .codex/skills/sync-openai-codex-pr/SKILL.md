@@ -112,6 +112,15 @@ just bazel-lock-check
   2) 占位符与结构是否保持不变（如 `{thread_id}`、`{agent_role}`、Markdown/ANSI/快捷键）。
   3) 术语是否全局一致（同一词在全仓保持同一译法）。
   4) 是否仅改文案，不改行为逻辑。
+- `双层自检（默认执行）`：
+  1) 固定关键词扫描（保底拦截历史高频漏网词）：
+     ```bash
+     rg -n "Main \\[default\\]|\\[default\\]|\\bAgent spawn failed\\b|\\bAgent interaction failed\\b|\\bAgent resume failed\\b|\\bAgent close failed\\b|\\bAgent turn complete\\b|\\bSpawned\\b|\\bWaiting for\\b|\\bFinished waiting\\b|\\bResuming\\b|\\bResumed\\b|\\bClosed\\b|\\bNo agents completed yet\\b|\\bPending init\\b|\\bRunning\\b|\\bInterrupted\\b|\\bCompleted\\b|\\bNot found\\b" codex-rs/tui/src codex-rs/tui_app_server/src
+     ```
+  2) 增量差异扫描（仅检查本次改动中新引入的英文用户文案，避免新词漏网）：
+     ```bash
+     git diff --unified=0 -- codex-rs/tui codex-rs/tui_app_server | rg -n "^\\+.*[A-Za-z]{4,}"
+     ```
 - `保留英文（不要硬翻）`：命令名/子命令、配置键、协议字段、crate 名、代码标识符、产品名。
 - `术语建议（默认）`：
   - `Agent` -> `智能体`
