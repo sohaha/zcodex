@@ -2,5 +2,5 @@
 source: tui/src/multi_agents.rs
 expression: cell_to_text(&cell)
 ---
-• 已恢复 Robie [explorer]
-  └ 已中断
+• Resumed Robie [explorer]
+  └ Interrupted

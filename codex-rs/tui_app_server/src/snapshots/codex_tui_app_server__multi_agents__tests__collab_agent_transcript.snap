@@ -2,16 +2,16 @@
 source: tui_app_server/src/multi_agents.rs
 expression: snapshot
 ---
-• 已创建 Robie [explorer] (gpt-5 high)
-  └ 计算 11!，仅返回整数结果。
+• Spawned Robie [explorer] (gpt-5 high)
+  └ Compute 11! and reply with just the integer result.
 
-• 已发送输入给 Robie [explorer]
-  └ 请继续，并只返回答案。
+• Sent input to Robie [explorer]
+  └ Please continue and return the answer only.
 
-• 正在等待 Robie [explorer]
+• Waiting for Robie [explorer]
 
-• 等待结束
-  └ Robie [explorer]: 已完成 - 39916800
-    Bob [worker]: 错误 - 工具超时
+• Finished waiting
+  └ Robie [explorer]: Completed - 39916800
+    Bob [worker]: Error - tool timeout
 
-• 已关闭 Robie [explorer]
+• Closed Robie [explorer]

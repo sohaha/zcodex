@@ -73,7 +73,7 @@ pub(crate) fn format_agent_picker_item_name(
     is_primary: bool,
 ) -> String {
     if is_primary {
-        return "主线程 [default]".to_string();
+        return "Main [default]".to_string();
     }
 
     let agent_nickname = agent_nickname
@@ -84,7 +84,7 @@ pub(crate) fn format_agent_picker_item_name(
         (Some(agent_nickname), Some(agent_role)) => format!("{agent_nickname} [{agent_role}]"),
         (Some(agent_nickname), None) => agent_nickname.to_string(),
         (None, Some(agent_role)) => format!("[{agent_role}]"),
-        (None, None) => "智能体".to_string(),
+        (None, None) => "Agent".to_string(),
     }
 }
 
@@ -188,7 +188,7 @@ pub(crate) fn spawn_end(
 
     let title = match new_thread_id {
         Some(thread_id) => title_with_agent(
-            "已创建",
+            "Spawned",
             AgentLabel {
                 thread_id: Some(thread_id),
                 nickname: new_agent_nickname.as_deref(),
@@ -196,7 +196,7 @@ pub(crate) fn spawn_end(
             },
             spawn_request,
         ),
-        None => title_text("创建智能体失败"),
+        None => title_text("Agent spawn failed"),
     };
 
     let mut details = Vec::new();
@@ -218,7 +218,7 @@ pub(crate) fn interaction_end(ev: CollabAgentInteractionEndEvent) -> PlainHistor
     } = ev;
 
     let title = title_with_agent(
-        "已发送输入给",
+        "Sent input to",
         AgentLabel {
             thread_id: Some(receiver_thread_id),
             nickname: receiver_agent_nickname.as_deref(),
@@ -245,12 +245,12 @@ pub(crate) fn waiting_begin(ev: CollabWaitingBeginEvent) -> PlainHistoryCell {
 
     let title = match receiver_agents.as_slice() {
         [receiver] => title_with_agent(
-            "正在等待",
+            "Waiting for",
             agent_label_from_ref(receiver),
             /*spawn_request*/ None,
         ),
-        [] => title_text("正在等待智能体"),
-        _ => title_text(format!("正在等待 {} 个智能体", receiver_agents.len())),
+        [] => title_text("Waiting for agents"),
+        _ => title_text(format!("Waiting for {} agents", receiver_agents.len())),
     };
 
     let details = if receiver_agents.len() > 1 {
@@ -273,7 +273,7 @@ pub(crate) fn waiting_end(ev: CollabWaitingEndEvent) -> PlainHistoryCell {
         statuses,
     } = ev;
     let details = wait_complete_lines(&statuses, &agent_statuses);
-    collab_event(title_text("等待结束"), details)
+    collab_event(title_text("Finished waiting"), details)
 }
 
 pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
@@ -288,7 +288,7 @@ pub(crate) fn close_end(ev: CollabCloseEndEvent) -> PlainHistoryCell {
 
     collab_event(
         title_with_agent(
-            "已关闭",
+            "Closed",
             AgentLabel {
                 thread_id: Some(receiver_thread_id),
                 nickname: receiver_agent_nickname.as_deref(),
@@ -311,7 +311,7 @@ pub(crate) fn resume_begin(ev: CollabResumeBeginEvent) -> PlainHistoryCell {
 
     collab_event(
         title_with_agent(
-            "正在恢复",
+            "Resuming",
             AgentLabel {
                 thread_id: Some(receiver_thread_id),
                 nickname: receiver_agent_nickname.as_deref(),
@@ -335,7 +335,7 @@ pub(crate) fn resume_end(ev: CollabResumeEndEvent) -> PlainHistoryCell {
 
     collab_event(
         title_with_agent(
-            "已恢复",
+            "Resumed",
             AgentLabel {
                 thread_id: Some(receiver_thread_id),
                 nickname: receiver_agent_nickname.as_deref(),
@@ -402,7 +402,7 @@ fn agent_label_spans(agent: AgentLabel<'_>) -> Vec<Span<'static>> {
     } else if let Some(thread_id) = agent.thread_id {
         spans.push(Span::from(thread_id.to_string()).cyan());
     } else {
-        spans.push(Span::from("智能体").cyan());
+        spans.push(Span::from("agent").cyan());
     }
 
     if let Some(role) = role {
@@ -480,7 +480,7 @@ fn wait_complete_lines(
     agent_statuses: &[CollabAgentStatusEntry],
 ) -> Vec<Line<'static>> {
     if statuses.is_empty() && agent_statuses.is_empty() {
-        return vec![Line::from(Span::from("暂无已完成的智能体"))];
+        return vec![Line::from(Span::from("No agents completed yet"))];
     }
 
     let entries = if agent_statuses.is_empty() {
@@ -545,11 +545,11 @@ fn status_summary_line(status: &AgentStatus) -> Line<'static> {
 #[allow(clippy::disallowed_methods)]
 fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
     match status {
-        AgentStatus::PendingInit => vec![Span::from("等待初始化").cyan()],
-        AgentStatus::Running => vec![Span::from("运行中").cyan().bold()],
-        AgentStatus::Interrupted => vec![Span::from("已中断").yellow()],
+        AgentStatus::PendingInit => vec![Span::from("Pending init").cyan()],
+        AgentStatus::Running => vec![Span::from("Running").cyan().bold()],
+        AgentStatus::Interrupted => vec![Span::from("Interrupted").yellow()],
         AgentStatus::Completed(message) => {
-            let mut spans = vec![Span::from("已完成").green()];
+            let mut spans = vec![Span::from("Completed").green()];
             if let Some(message) = message.as_ref() {
                 let message_preview = truncate_text(
                     &message.split_whitespace().collect::<Vec<_>>().join(" "),
@@ -563,7 +563,7 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
             spans
         }
         AgentStatus::Errored(error) => {
-            let mut spans = vec![Span::from("错误").red()];
+            let mut spans = vec![Span::from("Error").red()];
             let error_preview = truncate_text(
                 &error.split_whitespace().collect::<Vec<_>>().join(" "),
                 COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES,
@@ -574,8 +574,8 @@ fn status_summary_spans(status: &AgentStatus) -> Vec<Span<'static>> {
             }
             spans
         }
-        AgentStatus::Shutdown => vec![Span::from("已关闭")],
-        AgentStatus::NotFound => vec![Span::from("未找到").red()],
+        AgentStatus::Shutdown => vec![Span::from("Shutdown")],
+        AgentStatus::NotFound => vec![Span::from("Not found").red()],
     }
 }
 
@@ -608,7 +608,7 @@ mod tests {
                 new_thread_id: Some(robie_id),
                 new_agent_nickname: Some("Robie".to_string()),
                 new_agent_role: Some("explorer".to_string()),
-                prompt: "计算 11!，仅返回整数结果。".to_string(),
+                prompt: "Compute 11! and reply with just the integer result.".to_string(),
                 model: "gpt-5".to_string(),
                 reasoning_effort: ReasoningEffortConfig::High,
                 status: AgentStatus::PendingInit,
@@ -625,7 +625,7 @@ mod tests {
             receiver_thread_id: robie_id,
             receiver_agent_nickname: Some("Robie".to_string()),
             receiver_agent_role: Some("explorer".to_string()),
-            prompt: "请继续，并只返回答案。".to_string(),
+            prompt: "Please continue and return the answer only.".to_string(),
             status: AgentStatus::Running,
         });
 
@@ -645,7 +645,7 @@ mod tests {
             robie_id,
             AgentStatus::Completed(Some("39916800".to_string())),
         );
-        statuses.insert(bob_id, AgentStatus::Errored("工具超时".to_string()));
+        statuses.insert(bob_id, AgentStatus::Errored("tool timeout".to_string()));
         let finished = waiting_end(CollabWaitingEndEvent {
             sender_thread_id,
             call_id: "call-wait".to_string(),
@@ -660,7 +660,7 @@ mod tests {
                     thread_id: bob_id,
                     agent_nickname: Some("Bob".to_string()),
                     agent_role: Some("worker".to_string()),
-                    status: AgentStatus::Errored("工具超时".to_string()),
+                    status: AgentStatus::Errored("tool timeout".to_string()),
                 },
             ],
             statuses,
