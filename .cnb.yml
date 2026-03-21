@@ -18,7 +18,9 @@
         set -eu
         (set -o pipefail) 2>/dev/null && set -o pipefail
         export DEBIAN_FRONTEND=noninteractive
+        export TZ=Etc/UTC
         apt-get update
+        apt-get install -y --no-install-recommends tzdata
         apt-get install -y --no-install-recommends \
           build-essential \
           ca-certificates \
