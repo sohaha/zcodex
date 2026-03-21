@@ -134,7 +134,7 @@ use self::agent_navigation::AgentNavigationDirection;
 use self::agent_navigation::AgentNavigationState;
 use self::pending_interactive_replay::PendingInteractiveReplayState;
 
-const EXTERNAL_EDITOR_HINT: &str = "Save and close external editor to continue.";
+const EXTERNAL_EDITOR_HINT: &str = "保存并关闭外部编辑器后继续。";
 const THREAD_EVENT_CHANNEL_CAPACITY: usize = 32768;
 
 enum ThreadInteractiveRequest {
@@ -234,7 +234,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
     let error_count = errors.len();
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         crate::history_cell::new_warning_event(format!(
-            "Skipped loading {error_count} skill(s) due to invalid SKILL.md files."
+            "由于 SKILL.md 文件无效，已跳过加载 {error_count} 个 skill。"
         )),
     )));
 
@@ -374,7 +374,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
                 .disabled_reason
                 .as_ref()
                 .map(ToString::to_string)
-                .unwrap_or_else(|| "config.toml is disabled.".to_string()),
+                .unwrap_or_else(|| "config.toml 已被禁用。".to_string()),
         ));
     }
 
@@ -383,8 +383,8 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
     }
 
     let mut message = concat!(
-        "Project config.toml files are disabled in the following folders. ",
-        "Settings in those files are ignored, but skills and exec policies still load.\n",
+        "以下文件夹中的项目级 config.toml 已被禁用。",
+        "这些文件中的配置会被忽略，但 skills 和执行策略仍会加载。\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {
@@ -423,12 +423,12 @@ async fn emit_custom_prompt_deprecation_notice(app_event_tx: &AppEventSender, co
         "prompts"
     };
     let details = format!(
-        "Detected {prompt_count} custom {prompt_label} in `$CODEX_HOME/prompts`. Use the `$skill-creator` skill to convert each custom prompt into a skill."
+        "在 `$CODEX_HOME/prompts` 中检测到 {prompt_count} 个自定义 {prompt_label}。可使用 `$skill-creator` skill 将每个自定义 prompt 转换为 skill。"
     );
 
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         history_cell::new_deprecation_notice(
-            "Custom prompts are deprecated and will soon be removed.".to_string(),
+            "自定义 prompts 已弃用，并将很快移除。".to_string(),
             Some(details),
         ),
     )));
@@ -1291,22 +1291,20 @@ impl App {
         }
 
         if let Some(label) = permissions_history_label {
-            self.chat_widget.add_info_message(
-                format!("Permissions updated to {label}"),
-                /*hint*/ None,
-            );
+            self.chat_widget
+                .add_info_message(format!("权限已更新为 {label}"), /*hint*/ None);
         }
     }
 
     fn open_url_in_browser(&mut self, url: String) {
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
-                .add_error_message(format!("Failed to open browser for {url}: {err}"));
+                .add_error_message(format!("无法为 {url} 打开浏览器：{err}"));
             return;
         }
 
         self.chat_widget
-            .add_info_message(format!("Opened {url} in your browser."), /*hint*/ None);
+            .add_info_message(format!("已在浏览器中打开 {url}。"), /*hint*/ None);
     }
 
     fn fetch_plugins_list(&mut self, cwd: PathBuf) {
@@ -1329,7 +1327,7 @@ impl App {
                 cwd,
             )
             .await
-            .map_err(|err| format!("Failed to load plugins: {err}"));
+            .map_err(|err| format!("加载插件失败：{err}"));
             app_event_tx.send(AppEvent::PluginsLoaded {
                 cwd: cwd_for_event,
                 result,
@@ -1357,7 +1355,7 @@ impl App {
                 params,
             )
             .await
-            .map_err(|err| format!("Failed to load plugin details: {err}"));
+            .map_err(|err| format!("加载插件详情失败：{err}"));
             app_event_tx.send(AppEvent::PluginDetailLoaded {
                 cwd: cwd_for_event,
                 result,
@@ -5852,7 +5850,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Guardian Approvals"));
+        assert!(rendered.contains("权限已更新为 Guardian Approvals"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
@@ -5943,7 +5941,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限已更新为 Default"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -6225,7 +6223,7 @@ guardian_approval = true
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限已更新为 Default"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -6291,7 +6289,7 @@ guardian_approval = true
                 AppEvent::InsertHistoryCell(cell) => cell
                     .display_lines(120)
                     .iter()
-                    .any(|line| line.to_string().contains("Permissions updated to")),
+                    .any(|line| line.to_string().contains("权限已更新为")),
                 _ => false,
             }),
             "blocking disable with inherited guardian review should not emit a permissions history update: {app_events:?}"
