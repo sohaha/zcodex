@@ -2784,7 +2784,7 @@ impl App {
                 } else if let Some(summary) = summary {
                     let mut lines: Vec<Line<'static>> = vec![summary.usage_line.clone().into()];
                     if let Some(command) = summary.resume_command {
-                        let spans = vec!["To continue this session, run ".into(), command.cyan()];
+                        let spans = vec!["要继续此会话，请运行 ".into(), command.cyan()];
                         lines.push(spans.into());
                     }
                     self.chat_widget.add_plain_history_lines(lines);
@@ -3049,7 +3049,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("Failed to resume session from {target_label}")
+                        format!("从 {target_label} 恢复会话失败")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -3087,7 +3087,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("Failed to fork session from {target_label}")
+                        format!("从 {target_label} 派生会话失败")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -3473,7 +3473,7 @@ impl App {
                                                 vec![summary.usage_line.clone().into()];
                                             if let Some(command) = summary.resume_command {
                                                 let spans = vec![
-                                                    "To continue this session, run ".into(),
+                                                    "要继续此会话，请运行 ".into(),
                                                     command.cyan(),
                                                 ];
                                                 lines.push(spans.into());
@@ -3491,7 +3491,7 @@ impl App {
                             Err(err) => {
                                 let path_display = target_session.display_label();
                                 self.chat_widget.add_error_message(format!(
-                                    "Failed to resume session from {path_display}: {err}"
+                                    "从 {path_display} 恢复会话失败：{err}"
                                 ));
                             }
                         }
@@ -3533,7 +3533,7 @@ impl App {
                                             vec![summary.usage_line.clone().into()];
                                         if let Some(command) = summary.resume_command {
                                             let spans = vec![
-                                                "To continue this session, run ".into(),
+                                                "要继续此会话，请运行 ".into(),
                                                 command.cyan(),
                                             ];
                                             lines.push(spans.into());
@@ -3639,7 +3639,7 @@ impl App {
                 // Enter alternate screen using TUI helper and build pager lines
                 let _ = tui.enter_alt_screen();
                 let pager_lines: Vec<ratatui::text::Line<'static>> = if text.trim().is_empty() {
-                    vec!["No changes detected.".italic().into()]
+                    vec!["未检测到变更。".italic().into()]
                 } else {
                     text.lines().map(ansi_escape_line).collect()
                 };
@@ -3928,7 +3928,7 @@ impl App {
                 {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("Granting sandbox read access to {path} ..."),
+                            format!("正在授予 sandbox 对 {path} 的读取权限..."),
                             /*hint*/ None,
                         ));
 
@@ -3973,10 +3973,11 @@ impl App {
                         .add_to_history(history_cell::new_error_event(format!("Error: {err}")));
                 }
                 None => {
+                    let hint = None;
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("Sandbox read access granted for {}", path.display()),
-                            /*hint*/ None,
+                            format!("已为 {} 授予 sandbox 读取权限", path.display()),
+                            hint,
                         ));
                 }
             },
@@ -4069,10 +4070,10 @@ impl App {
                                     .send(AppEvent::UpdateSandboxPolicy(preset.sandbox.clone()));
                                 let _ = mode;
                                 self.chat_widget.add_plain_history_lines(vec![
-                                    Line::from(vec!["• ".dim(), "Sandbox ready".into()]),
+                                    Line::from(vec!["• ".dim(), "Sandbox 已就绪".into()]),
                                     Line::from(vec![
                                         "  ".into(),
-                                        "Codex can now safely edit files and execute commands in your computer"
+                                        "Codex 现可在你的电脑上安全地编辑文件并执行命令"
                                             .dark_gray(),
                                     ]),
                                 ]);
@@ -4107,7 +4108,7 @@ impl App {
                             .map(|selected_effort| selected_effort.to_string())
                             .unwrap_or_else(|| "default".to_string());
                         tracing::info!("Selected model: {model}, Selected effort: {effort_label}");
-                        let mut message = format!("Model changed to {model}");
+                        let mut message = format!("模型已切换为 {model}");
                         if let Some(label) = Self::reasoning_label_for(&model, effort) {
                             message.push(' ');
                             message.push_str(label);
@@ -4145,7 +4146,7 @@ impl App {
                 {
                     Ok(()) => {
                         let label = Self::personality_label(personality);
-                        let mut message = format!("Personality set to {label}");
+                        let mut message = format!("人格已设置为 {label}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
@@ -4181,7 +4182,7 @@ impl App {
                 {
                     Ok(()) => {
                         let status = if service_tier.is_some() { "on" } else { "off" };
-                        let mut message = format!("Fast mode set to {status}");
+                        let mut message = format!("Fast mode 已设置为 {status}");
                         if let Some(profile) = profile {
                             message.push_str(" for ");
                             message.push_str(profile);
@@ -4233,7 +4234,7 @@ impl App {
                         } else {
                             let selection = name.unwrap_or_else(|| "System default".to_string());
                             self.chat_widget.add_info_message(
-                                format!("Realtime {} set to {selection}", kind.noun()),
+                                format!("Realtime {} 已设置为 {selection}", kind.noun()),
                                 /*hint*/ None,
                             );
                         }
@@ -4258,7 +4259,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut config,
                     policy,
-                    "Failed to set approval policy",
+                    "设置审批策略失败",
                     "failed to set approval policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -4282,7 +4283,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut config,
                     policy,
-                    "Failed to set sandbox policy",
+                    "设置 sandbox 策略失败",
                     "failed to set sandbox policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -4291,7 +4292,7 @@ impl App {
                 if let Err(err) = self.chat_widget.set_sandbox_policy(policy_for_chat) {
                     tracing::warn!(%err, "failed to set sandbox policy on chat config");
                     self.chat_widget
-                        .add_error_message(format!("Failed to set sandbox policy: {err}"));
+                        .add_error_message(format!("设置 sandbox 策略失败：{err}"));
                     return Ok(AppRunControl::Continue);
                 }
                 self.runtime_sandbox_policy_override =
@@ -4619,16 +4620,13 @@ impl App {
                     let _ = tui.enter_alt_screen();
                     let mut lines = Vec::new();
                     if let Some(reason) = reason {
-                        lines.push(Line::from(vec!["Reason: ".into(), reason.italic()]));
+                        lines.push(Line::from(vec!["原因：".into(), reason.italic()]));
                         lines.push(Line::from(""));
                     }
                     if let Some(rule_line) =
                         crate::bottom_pane::format_requested_permissions_rule(&permissions)
                     {
-                        lines.push(Line::from(vec![
-                            "Permission rule: ".into(),
-                            rule_line.cyan(),
-                        ]));
+                        lines.push(Line::from(vec!["权限规则：".into(), rule_line.cyan()]));
                     }
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],
@@ -4642,7 +4640,7 @@ impl App {
                 } => {
                     let _ = tui.enter_alt_screen();
                     let paragraph = Paragraph::new(vec![
-                        Line::from(vec!["Server: ".into(), server_name.bold()]),
+                        Line::from(vec!["服务端：".into(), server_name.bold()]),
                         Line::from(""),
                         Line::from(message),
                     ])
@@ -4979,16 +4977,16 @@ impl App {
             Err(external_editor::EditorError::MissingEditor) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(
-                    "Cannot open external editor: set $VISUAL or $EDITOR before starting Codex."
-                        .to_string(),
-                ));
+                        "无法打开外部编辑器：请在启动 Codex 前设置 $VISUAL 或 $EDITOR。"
+                            .to_string(),
+                    ));
                 self.reset_external_editor_state(tui);
                 return;
             }
             Err(err) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(format!(
-                        "Failed to open editor: {err}",
+                        "打开编辑器失败：{err}",
                     )));
                 self.reset_external_editor_state(tui);
                 return;
@@ -5012,7 +5010,7 @@ impl App {
             Err(err) => {
                 self.chat_widget
                     .add_to_history(history_cell::new_error_event(format!(
-                        "Failed to open editor: {err}",
+                        "打开编辑器失败：{err}",
                     )));
             }
         }
