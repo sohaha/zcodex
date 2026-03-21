@@ -97,6 +97,34 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
 }
 
 #[test]
+fn test_deserialize_provider_api_key_alias() {
+    let provider_toml = r#"
+name = "Example"
+api_key = "test-token"
+        "#;
+    let expected_provider = ModelProviderInfo {
+        name: "Example".into(),
+        base_url: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: Some("test-token".into()),
+        wire_api: WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let provider: ModelProviderInfo = toml::from_str(provider_toml).unwrap();
+    assert_eq!(expected_provider, provider);
+}
+
+#[test]
 fn test_deserialize_chat_wire_api_shows_helpful_error() {
     let provider_toml = r#"
 name = "OpenAI using Chat Completions"
@@ -162,7 +190,7 @@ fn anthropic_provider_honors_configured_base_url() {
 }
 
 #[test]
-fn anthropic_provider_uses_x_api_key_without_authorization_header() {
+fn anthropic_provider_uses_api_key_for_authorization_and_x_api_key() {
     const API_KEY_ENV: &str = "CODEX_TEST_ANTHROPIC_API_KEY";
     const SUBPROCESS_ENV: &str = "CODEX_TEST_ANTHROPIC_PROVIDER_SUBPROCESS";
 
@@ -171,7 +199,7 @@ fn anthropic_provider_uses_x_api_key_without_authorization_header() {
             std::env::current_exe().expect("test binary path should resolve"),
         )
         .arg("--exact")
-        .arg("model_provider_info::tests::anthropic_provider_uses_x_api_key_without_authorization_header")
+        .arg("model_provider_info::tests::anthropic_provider_uses_api_key_for_authorization_and_x_api_key")
         .env(SUBPROCESS_ENV, "1")
         .env(API_KEY_ENV, "test-anthropic-api-key")
         .output()
@@ -221,12 +249,47 @@ fn anthropic_provider_uses_x_api_key_without_authorization_header() {
             .and_then(|value| value.to_str().ok()),
         Some("test-anthropic-api-key")
     );
-    assert!(
+    assert_eq!(
         api_provider
             .headers
             .get(http::header::AUTHORIZATION)
-            .is_none(),
-        "anthropic env_key auth should use x-api-key only"
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer test-anthropic-api-key")
+    );
+}
+
+#[test]
+fn anthropic_provider_preserves_explicit_authorization_header() {
+    let provider = ModelProviderInfo {
+        name: "Anthropic".into(),
+        base_url: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: Some("test-anthropic-api-key".into()),
+        wire_api: WireApi::Anthropic,
+        query_params: None,
+        http_headers: Some(maplit::hashmap! {
+            "Authorization".to_string() => "Bearer explicit-token".to_string(),
+        }),
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let api_provider = provider
+        .to_api_provider(None)
+        .expect("anthropic provider should build");
+
+    assert_eq!(
+        api_provider
+            .headers
+            .get(http::header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer explicit-token")
     );
 }
 

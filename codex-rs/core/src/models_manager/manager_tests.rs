@@ -728,10 +728,60 @@ async fn anthropic_provider_keeps_bundled_catalog() {
 }
 
 #[tokio::test]
-async fn anthropic_provider_ignores_shared_models_cache() {
+async fn anthropic_provider_fetches_remote_models_when_uncached() {
+    let server = MockServer::start().await;
+    let remote_only_model = remote_model("claude-proxy-custom", "Claude Proxy Custom", 0);
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![remote_only_model.clone()],
+        },
+    )
+    .await;
+
     let codex_home = tempdir().expect("temp dir");
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
+    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
+        .await
+        .expect("anthropic refresh should succeed");
+
+    let remote_models = manager.get_remote_models().await;
+    assert!(
+        remote_models
+            .iter()
+            .any(|candidate| candidate.slug == remote_only_model.slug),
+        "anthropic refresh should merge remote /models entries"
+    );
+    assert_eq!(
+        models_mock.requests().len(),
+        1,
+        "anthropic provider should fetch /models when no custom catalog is configured"
+    );
+}
+
+#[tokio::test]
+async fn anthropic_provider_ignores_shared_models_cache() {
+    let server = MockServer::start().await;
+    let remote_only_model = remote_model("claude-remote-only", "Claude Remote Only", 0);
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![remote_only_model.clone()],
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
     let manager = ModelsManager::with_provider_for_tests(
         codex_home.path().to_path_buf(),
         auth_manager,
@@ -755,16 +805,37 @@ async fn anthropic_provider_ignores_shared_models_cache() {
     assert!(
         remote_models
             .iter()
-            .all(|candidate| candidate.slug.starts_with("claude-")),
+            .any(|candidate| candidate.slug == remote_only_model.slug),
+        "anthropic provider should ignore cached OpenAI models and use fresh remote results"
+    );
+    assert!(
+        remote_models
+            .iter()
+            .all(|candidate| candidate.slug != "gpt-cached"),
         "anthropic provider should ignore cached OpenAI models"
+    );
+    assert_eq!(
+        models_mock.requests().len(),
+        1,
+        "anthropic refresh should fetch /models instead of reusing shared cache"
     );
 }
 
 #[tokio::test]
 async fn anthropic_provider_applies_overlay_catalog() {
+    let server = MockServer::start().await;
+    let remote_only_model = remote_model("claude-remote-base", "Claude Remote Base", 1);
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![remote_only_model],
+        },
+    )
+    .await;
+
     let codex_home = tempdir().expect("temp dir");
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
+    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
     let overlay_model = remote_model("claude-proxy-custom", "Claude Proxy Custom", 0);
     let manager = ModelsManager::new_with_provider(
         codex_home.path().to_path_buf(),
@@ -777,7 +848,7 @@ async fn anthropic_provider_applies_overlay_catalog() {
         provider,
     );
 
-    let available = manager.list_models(RefreshStrategy::Offline).await;
+    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
     let remote_models = manager.get_remote_models().await;
 
     assert!(
@@ -791,6 +862,11 @@ async fn anthropic_provider_applies_overlay_catalog() {
             .iter()
             .any(|candidate| candidate.slug == overlay_model.slug),
         "overlay model should be merged into the anthropic catalog"
+    );
+    assert_eq!(
+        models_mock.requests().len(),
+        1,
+        "anthropic overlay config should not disable /models refresh"
     );
 }
 

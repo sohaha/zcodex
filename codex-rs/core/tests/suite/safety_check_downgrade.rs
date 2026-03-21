@@ -1,4 +1,6 @@
 use anyhow::Result;
+use codex_core::ModelProviderInfo;
+use codex_core::WireApi;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
@@ -20,6 +22,8 @@ use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
+use tokio::time::Duration;
+use tokio::time::timeout;
 
 const SERVER_MODEL: &str = "gpt-5.2";
 const REQUESTED_MODEL: &str = "gpt-5.3-codex";
@@ -251,6 +255,84 @@ async fn openai_model_header_mismatch_only_emits_one_warning_per_turn() -> Resul
     }
 
     assert_eq!(warning_count, 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn custom_provider_model_mismatch_does_not_emit_openai_safety_warning() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response =
+        sse_response(sse_completed("resp-1")).insert_header("OpenAI-Model", SERVER_MODEL);
+    let _mock = mount_response_once(&server, response).await;
+
+    let base_url = format!("{}/v1", server.uri());
+    let mut builder = test_codex()
+        .with_model(REQUESTED_MODEL)
+        .with_config(move |config| {
+            config.model_provider_id = "relay".to_string();
+            config.model_provider = ModelProviderInfo {
+                name: "relay".into(),
+                base_url: Some(base_url.clone()),
+                env_key: None,
+                env_key_instructions: None,
+                experimental_bearer_token: Some("relay-token".into()),
+                wire_api: WireApi::Responses,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: Some(0),
+                stream_max_retries: Some(0),
+                stream_idle_timeout_ms: Some(5_000),
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            };
+        });
+    let test = builder.build(&server).await?;
+
+    test.codex
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "trigger custom provider model mismatch".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: test.cwd_path().to_path_buf(),
+            approval_policy: AskForApproval::Never,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            model: REQUESTED_MODEL.to_string(),
+            effort: test.config.model_reasoning_effort,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    loop {
+        let event = timeout(Duration::from_secs(10), test.codex.next_event())
+            .await
+            .expect("timeout waiting for event")
+            .expect("stream ended unexpectedly")
+            .msg;
+        match event {
+            EventMsg::ModelReroute(_) => {
+                panic!("custom provider mismatch should not emit OpenAI reroute warning");
+            }
+            EventMsg::Warning(warning)
+                if warning
+                    .message
+                    .contains("flagged for potentially high-risk cyber activity") =>
+            {
+                panic!("custom provider mismatch should not emit OpenAI cyber-safety warning");
+            }
+            EventMsg::TurnComplete(_) => break,
+            _ => {}
+        }
+    }
 
     Ok(())
 }

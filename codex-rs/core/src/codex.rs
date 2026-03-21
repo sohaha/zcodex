@@ -389,6 +389,8 @@ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
+const OPENAI_CYBER_SAFETY_REQUESTED_MODEL: &str = "gpt-5.3-codex";
+const OPENAI_CYBER_SAFETY_FALLBACK_MODEL: &str = "gpt-5.2";
 const DIRECT_APP_TOOL_EXPOSURE_THRESHOLD: usize = 100;
 
 impl Codex {
@@ -3456,6 +3458,17 @@ impl Session {
         let requested_model_normalized = requested_model.to_ascii_lowercase();
         if server_model_normalized == requested_model_normalized {
             info!("server reported model {server_model} (matches requested model)");
+            return false;
+        }
+
+        let is_openai_cyber_safety_downgrade = turn_context.provider.requires_openai_auth
+            && requested_model_normalized == OPENAI_CYBER_SAFETY_REQUESTED_MODEL
+            && server_model_normalized == OPENAI_CYBER_SAFETY_FALLBACK_MODEL;
+        if !is_openai_cyber_safety_downgrade {
+            info!(
+                "server reported model {server_model} while requested model was {requested_model}; skipping OpenAI cyber-safety warning for provider {}",
+                turn_context.provider.name
+            );
             return false;
         }
 

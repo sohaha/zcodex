@@ -24,6 +24,8 @@ wire_api = "anthropic"
 
 - `wire_api = "anthropic"` 会使用 `/v1/messages` 的 Claude 接口。
 - `model` 需填写 Claude 模型名，例如 `claude-3-5-haiku-20241022`、`claude-sonnet-4-20250514`。
+- 当 provider 配置了 `env_key` 时，Codex 会同时发送 `x-api-key` 与 `Authorization: Bearer ...`，
+  以兼容官方 Anthropic API 以及 Claude Code 风格的兼容网关。
 
 ## 自定义 API 地址
 
@@ -55,6 +57,8 @@ model_catalog_merge_json = "/path/to/anthropic-models.json"
 - `model_catalog_merge_json` 会在当前 provider 的内置模型列表之上合并额外模型。
 - 如果同时设置 `model_catalog_json`，则先使用它作为基础列表，再叠加
   `model_catalog_merge_json`。
+- 如果未设置 `model_catalog_json`，Codex 会尝试从当前 Anthropic provider 的
+  `/models` 拉取远端模型目录；如果拉取失败，则回退到内置 Claude catalog。
 - 合并按模型 `slug` 匹配；相同 `slug` 时，以 merge 文件中的定义为准。
 - 对 Responses provider 来说，`model_catalog_merge_json` 不会关闭远端
   `/models` 刷新；它只是在当前目录快照之上追加/覆盖条目。

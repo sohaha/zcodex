@@ -95,6 +95,7 @@ pub struct ModelProviderInfo {
     /// Value to use with `Authorization: Bearer <token>` header. Use of this
     /// config is discouraged in favor of `env_key` for security reasons, but
     /// this may be necessary when using this programmatically.
+    #[serde(alias = "api_key")]
     pub experimental_bearer_token: Option<String>,
 
     /// Which wire protocol this provider expects.
@@ -191,14 +192,21 @@ impl ModelProviderInfo {
                 HeaderValue::from_static(ANTHROPIC_API_VERSION),
             );
 
+            let has_authorization_header = headers.contains_key(http::header::AUTHORIZATION);
             match self.api_key() {
                 Ok(Some(api_key)) => {
+                    if !has_authorization_header
+                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {api_key}"))
+                    {
+                        headers.insert(http::header::AUTHORIZATION, value);
+                    }
                     if let Ok(value) = HeaderValue::try_from(api_key) {
                         headers.insert(HeaderName::from_static("x-api-key"), value);
                     }
                 }
                 Ok(None) => {
-                    if let Some(token) = &self.experimental_bearer_token
+                    if !has_authorization_header
+                        && let Some(token) = &self.experimental_bearer_token
                         && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
                     {
                         headers.insert(http::header::AUTHORIZATION, value);
@@ -207,7 +215,8 @@ impl ModelProviderInfo {
                 Err(crate::error::CodexErr::EnvVar(_))
                     if self.experimental_bearer_token.is_some() =>
                 {
-                    if let Some(token) = &self.experimental_bearer_token
+                    if !has_authorization_header
+                        && let Some(token) = &self.experimental_bearer_token
                         && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
                     {
                         headers.insert(http::header::AUTHORIZATION, value);

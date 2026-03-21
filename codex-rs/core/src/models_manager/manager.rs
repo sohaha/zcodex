@@ -402,7 +402,12 @@ impl ModelsManager {
         }
 
         if self.provider.wire_api == WireApi::Anthropic {
-            return Ok(());
+            return match refresh_strategy {
+                RefreshStrategy::Offline => Ok(()),
+                RefreshStrategy::OnlineIfUncached | RefreshStrategy::Online => {
+                    self.fetch_and_update_models().await
+                }
+            };
         }
 
         if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
