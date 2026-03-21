@@ -8,6 +8,7 @@
 use anyhow::Context;
 use anyhow::Result;
 use regex::Regex;
+use std::borrow::Cow;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -82,11 +83,31 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
         .output()
         .context(format!("Failed to execute {cmd}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = decode_output(&output.stdout).to_string();
+    let stderr = decode_output(&output.stderr).to_string();
     let exit_code = output.status.code().unwrap_or(-1);
 
     Ok((stdout, stderr, exit_code))
+}
+
+/// Decode process output bytes to text.
+///
+/// Prefers UTF-8. For non-UTF8 bytes, uses chardetng to guess a legacy
+/// encoding (e.g. GBK/Shift-JIS/Windows-1252) before falling back to lossy
+/// UTF-8 replacement.
+pub fn decode_output(bytes: &[u8]) -> Cow<'_, str> {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return Cow::Borrowed(text);
+    }
+
+    let mut detector = chardetng::EncodingDetector::new();
+    detector.feed(bytes, true);
+    let encoding = detector.guess(None, true);
+    if let Some(decoded) = encoding.decode_without_bom_handling_and_without_replacement(bytes) {
+        return decoded;
+    }
+
+    encoding.decode(bytes).0
 }
 
 /// Formats a token count with K/M suffixes for readability.
@@ -360,6 +381,20 @@ mod tests {
     fn test_strip_ansi_multiple() {
         let input = "\x1b[1m\x1b[32mSuccess\x1b[0m\x1b[0m";
         assert_eq!(strip_ansi(input), "Success");
+    }
+
+    #[test]
+    fn test_decode_output_prefers_utf8() {
+        let text = "中文 output";
+        let decoded = decode_output(text.as_bytes());
+        assert_eq!(decoded, text);
+    }
+
+    #[test]
+    fn test_decode_output_detects_gbk() {
+        let gbk_bytes = [0xD6, 0xD0, 0xCE, 0xC4]; // "中文" in GBK
+        let decoded = decode_output(&gbk_bytes);
+        assert_eq!(decoded, "中文");
     }
 
     #[test]
@@ -671,7 +706,7 @@ mod tests {
                 "Command with resolved path should execute .cmd wrapper on Windows"
             );
             let output = output.unwrap();
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stdout = crate::utils::decode_output(&output.stdout);
             assert!(
                 stdout.contains("fake-tool-output"),
                 "should get output from .cmd wrapper, got: {}",

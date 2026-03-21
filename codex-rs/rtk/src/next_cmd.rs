@@ -35,8 +35,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let output = cmd
         .output()
         .context("Failed to run next build (try: npm install -g next)")?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_next_build(&raw);

@@ -58,7 +58,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
         })
         .context("grep/rg failed")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let exit_code = output.status.code().unwrap_or(1);
 
     let raw_output = stdout.to_string();
@@ -66,7 +66,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     if stdout.trim().is_empty() {
         // Show stderr for errors (bad regex, missing file, etc.)
         if exit_code == 2 {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = crate::utils::decode_output(&output.stderr);
             if !stderr.trim().is_empty() {
                 eprintln!("{}", stderr.trim());
             }

@@ -241,8 +241,8 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run vitest")?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let combined = format!("{stdout}{stderr}");
 
     // Parse output using VitestParser

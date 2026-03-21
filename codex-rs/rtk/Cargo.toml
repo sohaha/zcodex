@@ -14,8 +14,10 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+chardetng = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 dirs = { workspace = true }
+encoding_rs = { workspace = true }
 ignore = { workspace = true }
 lazy_static = { workspace = true }
 regex = { workspace = true }

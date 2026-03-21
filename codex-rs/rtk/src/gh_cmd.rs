@@ -220,10 +220,10 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh pr list")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("gh pr list", "rtk gh pr list", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));
@@ -320,10 +320,10 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh pr view")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track(
             &format!("gh pr view {pr_number}"),
             &format!("rtk gh pr view {pr_number}"),
@@ -482,10 +482,10 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
     }
 
     let output = cmd.output().context("Failed to run gh pr checks")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track(
             &format!("gh pr checks {pr_number}"),
             &format!("rtk gh pr checks {pr_number}"),
@@ -496,7 +496,7 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
 
     // Parse and compress checks output
     let mut passed = 0;
@@ -567,10 +567,10 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     ]);
 
     let output = cmd.output().context("Failed to run gh pr status")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("gh pr status", "rtk gh pr status", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));
@@ -627,10 +627,10 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
     }
 
     let output = cmd.output().context("Failed to run gh issue list")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("gh issue list", "rtk gh issue list", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));
@@ -701,10 +701,10 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh issue view")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track(
             &format!("gh issue view {issue_number}"),
             &format!("rtk gh issue view {issue_number}"),
@@ -798,10 +798,10 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh run list")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("gh run list", "rtk gh run list", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));
@@ -893,10 +893,10 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh run view")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track(
             &format!("gh run view {run_id}"),
             &format!("rtk gh run view {run_id}"),
@@ -908,7 +908,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     // Parse output and show only failures
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let mut in_jobs = false;
 
     let mut filtered = String::new();
@@ -975,10 +975,10 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
     ]);
 
     let output = cmd.output().context("Failed to run gh repo view")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("gh repo view", "rtk gh repo view", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));
@@ -1039,8 +1039,8 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh pr create")?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = crate::utils::decode_output(&output.stdout).to_string();
+    let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
     if !output.status.success() {
         timer.track("gh pr create", "rtk gh pr create", &stderr, &stderr);
@@ -1077,8 +1077,8 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh pr merge")?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = crate::utils::decode_output(&output.stdout).to_string();
+    let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
     if !output.status.success() {
         timer.track("gh pr merge", "rtk gh pr merge", &stderr, &stderr);
@@ -1135,10 +1135,10 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run gh pr diff")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("gh pr diff", "rtk gh pr diff", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));
@@ -1172,10 +1172,10 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
     let output = cmd
         .output()
         .context(format!("Failed to run gh pr {subcmd}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stdout = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track(
             &format!("gh pr {subcmd}"),
             &format!("rtk gh pr {subcmd}"),

@@ -87,8 +87,8 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
     }
 
     let output = cmd.output().context("Failed to run aws CLI")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
+    let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
     if !output.status.success() {
         timer.track(
@@ -154,8 +154,8 @@ fn run_aws_json(
     }
 
     let output = cmd.output().context(format!("Failed to run {cmd_desc}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = crate::utils::decode_output(&output.stdout).to_string();
+    let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
     if !output.status.success() {
         eprintln!("{}", stderr.trim());
@@ -208,10 +208,10 @@ fn run_s3_ls(extra_args: &[String], verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run aws s3 ls")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stderr = crate::utils::decode_output(&output.stderr).to_string();
         timer.track("aws s3 ls", "rtk aws s3 ls", &stderr, &stderr);
         eprintln!("{}", stderr.trim());
         std::process::exit(output.status.code().unwrap_or(1));

@@ -84,8 +84,8 @@ where
     let output = cmd
         .output()
         .with_context(|| format!("Failed to run cargo {subcommand}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = output

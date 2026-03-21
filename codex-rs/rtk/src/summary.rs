@@ -29,8 +29,8 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     }
     .context("Failed to execute command")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let summary = summarize_output(&raw, command, output.status.success());

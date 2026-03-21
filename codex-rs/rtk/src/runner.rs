@@ -17,8 +17,8 @@ pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
 
     let output = execute_command(command).context("Failed to execute command")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
     let filtered = filter_errors(&raw);
     let mut rtk = String::new();
@@ -67,8 +67,8 @@ pub fn run_test(command: &[String], verbose: u8) -> Result<()> {
 
     let output = execute_command(command).context("Failed to execute test command")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = output

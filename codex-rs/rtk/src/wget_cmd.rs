@@ -25,8 +25,8 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
         .output()
         .context("Failed to run wget")?;
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
 
     let raw_output = format!("{stderr}\n{stdout}");
 
@@ -71,7 +71,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
         .context("Failed to run wget")?;
 
     if output.status.success() {
-        let content = String::from_utf8_lossy(&output.stdout);
+        let content = crate::utils::decode_output(&output.stdout);
         let lines: Vec<&str> = content.lines().collect();
         let total = lines.len();
         let raw_output = content.to_string();
@@ -103,7 +103,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
             &rtk_output,
         );
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         let error = parse_error(&stderr, "");
         let msg = format!("⬇️ {} FAILED: {}", compact_url(url), error);
         println!("{msg}");

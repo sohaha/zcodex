@@ -46,8 +46,8 @@ fn run_gt_filtered(
         .output()
         .with_context(|| format!("Failed to run gt {subcmd_str}. Is gt (Graphite) installed?"))?;
 
-    let stdout = String::from_utf8_lossy(&cmd_output.stdout);
-    let stderr = String::from_utf8_lossy(&cmd_output.stderr);
+    let stdout = crate::utils::decode_output(&cmd_output.stdout);
+    let stderr = crate::utils::decode_output(&cmd_output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let exit_code = cmd_output.status.code().unwrap_or(1);

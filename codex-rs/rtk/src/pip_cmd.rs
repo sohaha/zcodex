@@ -72,8 +72,8 @@ fn run_list(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, Str
         .output()
         .with_context(|| format!("Failed to run {base_cmd} pip list"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_pip_list(&stdout);
@@ -107,8 +107,8 @@ fn run_outdated(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String,
         .output()
         .with_context(|| format!("Failed to run {base_cmd} pip list --outdated"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let filtered = filter_pip_outdated(&stdout);
@@ -140,8 +140,8 @@ fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(Stri
         .output()
         .with_context(|| format!("Failed to run {} pip {}", base_cmd, args.join(" ")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     print!("{stdout}");

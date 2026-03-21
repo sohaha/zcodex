@@ -295,8 +295,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .output()
         .context("Failed to run playwright (try: npm install -g playwright)")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     // Parse output using PlaywrightParser

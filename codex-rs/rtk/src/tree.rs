@@ -76,12 +76,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let output = cmd.output().context("Failed to run tree")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprint!("{stderr}");
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
     let filtered = filter_tree_output(&raw);
 
     if verbose > 0 {

@@ -31,7 +31,7 @@ fn docker_ps(_verbose: u8) -> Result<()> {
     let raw = resolved_command("docker")
         .args(["ps"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .map(|o| crate::utils::decode_output(&o.stdout).to_string())
         .unwrap_or_default();
 
     let output = resolved_command("docker")
@@ -44,13 +44,13 @@ fn docker_ps(_verbose: u8) -> Result<()> {
         .context("Failed to run docker ps")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprint!("{stderr}");
         timer.track("docker ps", "rtk docker ps", &raw, &raw);
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let mut rtk = String::new();
 
     if stdout.trim().is_empty() {
@@ -97,7 +97,7 @@ fn docker_images(_verbose: u8) -> Result<()> {
     let raw = resolved_command("docker")
         .args(["images"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .map(|o| crate::utils::decode_output(&o.stdout).to_string())
         .unwrap_or_default();
 
     let output = resolved_command("docker")
@@ -106,13 +106,13 @@ fn docker_images(_verbose: u8) -> Result<()> {
         .context("Failed to run docker images")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprint!("{stderr}");
         timer.track("docker images", "rtk docker images", &raw, &raw);
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
     let mut rtk = String::new();
 
@@ -182,8 +182,8 @@ fn docker_logs(args: &[String], _verbose: u8) -> Result<()> {
         .output()
         .context("Failed to run docker logs")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let analyzed = crate::log_cmd::run_stdin_str(&raw);
@@ -208,7 +208,7 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run kubectl get pods")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
     let mut rtk = String::new();
 
     let json: serde_json::Value = match serde_json::from_str(&raw) {
@@ -306,7 +306,7 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run kubectl get services")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
     let mut rtk = String::new();
 
     let json: serde_json::Value = match serde_json::from_str(&raw) {
@@ -383,7 +383,7 @@ fn kubectl_logs(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let output = cmd.output().context("Failed to run kubectl logs")?;
-    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw = crate::utils::decode_output(&output.stdout).to_string();
     let analyzed = crate::log_cmd::run_stdin_str(&raw);
     let rtk = format!("☸️  Logs for {pod}:\n{analyzed}");
     println!("{rtk}");
@@ -565,11 +565,11 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
         .context("Failed to run docker compose ps")?;
 
     if !raw_output.status.success() {
-        let stderr = String::from_utf8_lossy(&raw_output.stderr);
+        let stderr = crate::utils::decode_output(&raw_output.stderr);
         eprintln!("{stderr}");
         std::process::exit(raw_output.status.code().unwrap_or(1));
     }
-    let raw = String::from_utf8_lossy(&raw_output.stdout).to_string();
+    let raw = crate::utils::decode_output(&raw_output.stdout).to_string();
 
     // Structured output for parsing (same pattern as docker_ps)
     let output = resolved_command("docker")
@@ -583,11 +583,11 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
         .context("Failed to run docker compose ps --format")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("{stderr}");
         std::process::exit(output.status.code().unwrap_or(1));
     }
-    let structured = String::from_utf8_lossy(&output.stdout).to_string();
+    let structured = crate::utils::decode_output(&output.stdout).to_string();
 
     if verbose > 0 {
         eprintln!("raw docker compose ps:\n{raw}");
@@ -612,13 +612,13 @@ pub fn run_compose_logs(service: Option<&str>, verbose: u8) -> Result<()> {
     let output = cmd.output().context("Failed to run docker compose logs")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("{stderr}");
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     if verbose > 0 {
@@ -650,13 +650,13 @@ pub fn run_compose_build(service: Option<&str>, verbose: u8) -> Result<()> {
     let output = cmd.output().context("Failed to run docker compose build")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("{stderr}");
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     if verbose > 0 {

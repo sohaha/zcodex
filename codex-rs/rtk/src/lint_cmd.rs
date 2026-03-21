@@ -173,7 +173,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     // Check if process was killed by signal (SIGABRT, SIGKILL, etc.)
     if !output.status.success() && output.status.code().is_none() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("⚠️  Linter process terminated abnormally (possibly out of memory)");
         if !stderr.is_empty() {
             eprintln!(
@@ -184,8 +184,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         return Ok(());
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     // Dispatch to appropriate filter based on linter

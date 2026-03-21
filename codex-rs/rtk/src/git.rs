@@ -83,12 +83,12 @@ fn run_diff(
         let output = cmd.output().context("Failed to run git diff")?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = crate::utils::decode_output(&output.stderr);
             eprintln!("{stderr}");
             std::process::exit(output.status.code().unwrap_or(1));
         }
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = crate::utils::decode_output(&output.stdout);
         println!("{}", stdout.trim());
 
         timer.track(
@@ -110,7 +110,7 @@ fn run_diff(
     }
 
     let output = cmd.output().context("Failed to run git diff")?;
-    let stat_stdout = String::from_utf8_lossy(&output.stdout);
+    let stat_stdout = crate::utils::decode_output(&output.stdout);
 
     if verbose > 0 {
         eprintln!("Git diff summary:");
@@ -127,7 +127,7 @@ fn run_diff(
     }
 
     let diff_output = diff_cmd.output().context("Failed to run git diff")?;
-    let diff_stdout = String::from_utf8_lossy(&diff_output.stdout);
+    let diff_stdout = crate::utils::decode_output(&diff_output.stdout);
 
     let mut final_output = stat_stdout.to_string();
     if !diff_stdout.is_empty() {
@@ -177,11 +177,11 @@ fn run_show(
         }
         let output = cmd.output().context("Failed to run git show")?;
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr = crate::utils::decode_output(&output.stderr);
             eprintln!("{stderr}");
             std::process::exit(output.status.code().unwrap_or(1));
         }
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = crate::utils::decode_output(&output.stdout);
         if wants_blob_show {
             print!("{stdout}");
         } else {
@@ -206,7 +206,7 @@ fn run_show(
     }
     let raw_output = raw_cmd
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .map(|o| crate::utils::decode_output(&o.stdout).to_string())
         .unwrap_or_default();
 
     // Step 1: one-line commit summary
@@ -217,11 +217,11 @@ fn run_show(
     }
     let summary_output = summary_cmd.output().context("Failed to run git show")?;
     if !summary_output.status.success() {
-        let stderr = String::from_utf8_lossy(&summary_output.stderr);
+        let stderr = crate::utils::decode_output(&summary_output.stderr);
         eprintln!("{stderr}");
         std::process::exit(summary_output.status.code().unwrap_or(1));
     }
-    let summary = String::from_utf8_lossy(&summary_output.stdout);
+    let summary = crate::utils::decode_output(&summary_output.stdout);
     println!("{}", summary.trim());
 
     // Step 2: --stat summary
@@ -231,7 +231,7 @@ fn run_show(
         stat_cmd.arg(arg);
     }
     let stat_output = stat_cmd.output().context("Failed to run git show --stat")?;
-    let stat_stdout = String::from_utf8_lossy(&stat_output.stdout);
+    let stat_stdout = crate::utils::decode_output(&stat_output.stdout);
     let stat_text = stat_stdout.trim();
     if !stat_text.is_empty() {
         println!("{stat_text}");
@@ -244,7 +244,7 @@ fn run_show(
         diff_cmd.arg(arg);
     }
     let diff_output = diff_cmd.output().context("Failed to run git show (diff)")?;
-    let diff_stdout = String::from_utf8_lossy(&diff_output.stdout);
+    let diff_stdout = crate::utils::decode_output(&diff_output.stdout);
     let diff_text = diff_stdout.trim();
 
     let mut final_output = summary.to_string();
@@ -406,13 +406,13 @@ fn run_log(
     let output = cmd.output().context("Failed to run git log")?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("{stderr}");
         // Propagate git's exit code
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
 
     if verbose > 0 {
         eprintln!("Git log output:");
@@ -686,8 +686,8 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             .output()
             .context("Failed to run git status")?;
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
 
         if !output.status.success() {
             if !stderr.trim().is_empty() {
@@ -726,7 +726,7 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     let raw_output = git_cmd(global_args)
         .args(["status"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .map(|o| crate::utils::decode_output(&o.stdout).to_string())
         .unwrap_or_default();
 
     let output = git_cmd(global_args)
@@ -734,8 +734,8 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         .output()
         .context("Failed to run git status")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
 
     if !stderr.is_empty() && stderr.contains("not a git repository") {
         let message = "Not a git repository".to_string();
@@ -777,8 +777,8 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
 
     let raw_output = format!(
         "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
+        crate::utils::decode_output(&output.stdout),
+        crate::utils::decode_output(&output.stderr)
     );
 
     if output.status.success() {
@@ -788,7 +788,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
             .output()
             .context("Failed to check staged files")?;
 
-        let stat = String::from_utf8_lossy(&status_output.stdout);
+        let stat = crate::utils::decode_output(&status_output.stdout);
         let compact = if stat.trim().is_empty() {
             "ok (nothing to add)".to_string()
         } else {
@@ -810,8 +810,8 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
             &compact,
         );
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
         eprintln!("FAILED: git add");
         if !stderr.trim().is_empty() {
             eprintln!("{stderr}");
@@ -848,8 +848,8 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         .output()
         .context("Failed to run git commit")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw_output = format!("{stdout}\n{stderr}");
 
     if output.status.success() {
@@ -911,8 +911,8 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
 
     let output = cmd.output().context("Failed to run git push")?;
 
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let raw = format!("{stdout}{stderr}");
 
     if output.status.success() {
@@ -973,8 +973,8 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
 
     let output = cmd.output().context("Failed to run git pull")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw_output = format!("{stdout}\n{stderr}");
 
     if output.status.success() {
@@ -1097,8 +1097,8 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             cmd.arg(arg);
         }
         let output = cmd.output().context("Failed to run git branch")?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
         let combined = format!("{stdout}{stderr}");
         let trimmed = stdout.trim();
 
@@ -1129,8 +1129,8 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             cmd.arg(arg);
         }
         let output = cmd.output().context("Failed to run git branch")?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
         let combined = format!("{stdout}{stderr}");
 
         let msg = if output.status.success() {
@@ -1173,11 +1173,11 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     }
 
     let output = cmd.output().context("Failed to run git branch")?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let raw = stdout.to_string();
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::utils::decode_output(&output.stderr);
         if !stderr.trim().is_empty() {
             eprint!("{stderr}");
         }
@@ -1271,8 +1271,8 @@ fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()>
     }
 
     let output = cmd.output().context("Failed to run git fetch")?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}{stderr}");
 
     if !output.status.success() {
@@ -1319,7 +1319,7 @@ fn run_stash(
                 .args(["stash", "list"])
                 .output()
                 .context("Failed to run git stash list")?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stdout = crate::utils::decode_output(&output.stdout);
             let raw = stdout.to_string();
 
             if stdout.trim().is_empty() {
@@ -1340,7 +1340,7 @@ fn run_stash(
                 cmd.arg(arg);
             }
             let output = cmd.output().context("Failed to run git stash show")?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stdout = crate::utils::decode_output(&output.stdout);
             let raw = stdout.to_string();
 
             let filtered = if stdout.trim().is_empty() {
@@ -1362,8 +1362,8 @@ fn run_stash(
                 cmd.arg(arg);
             }
             let output = cmd.output().context("Failed to run git stash")?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let stderr = crate::utils::decode_output(&output.stderr);
             let combined = format!("{stdout}{stderr}");
 
             let msg = if output.status.success() {
@@ -1396,8 +1396,8 @@ fn run_stash(
                 cmd.arg(arg);
             }
             let output = cmd.output().context("Failed to run git stash")?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let stderr = crate::utils::decode_output(&output.stderr);
             let combined = format!("{stdout}{stderr}");
 
             let msg = if output.status.success() {
@@ -1431,8 +1431,8 @@ fn run_stash(
                 cmd.arg(arg);
             }
             let output = cmd.output().context("Failed to run git stash")?;
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let stderr = crate::utils::decode_output(&output.stderr);
             let combined = format!("{stdout}{stderr}");
 
             let msg = if output.status.success() {
@@ -1504,8 +1504,8 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
             cmd.arg(arg);
         }
         let output = cmd.output().context("Failed to run git worktree")?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
         let combined = format!("{stdout}{stderr}");
 
         let msg = if output.status.success() {
@@ -1539,7 +1539,7 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
         .output()
         .context("Failed to run git worktree list")?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = crate::utils::decode_output(&output.stdout);
     let raw = stdout.to_string();
 
     let filtered = filter_worktree_list(&stdout);
@@ -2094,7 +2094,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
             .args(["branch", "--list", branch])
             .output()
             .expect("git branch --list should work");
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = crate::utils::decode_output(&output.stdout);
         assert!(
             stdout.contains(branch),
             "Branch '{branch}' was not created. run_branch silently swallowed the creation."
@@ -2114,7 +2114,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
             .args(["branch", "--list", branch])
             .output()
             .expect("git branch --list should work");
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = crate::utils::decode_output(&output.stdout);
         assert!(
             stdout.contains(branch),
             "Branch '{branch}' was not created from commit."
@@ -2215,8 +2215,8 @@ no changes added to commit (use "git add" and/or "git commit -a")
         );
 
         // Message should be on stderr, not stdout
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
         assert!(
             stderr.to_lowercase().contains("not a git repository"),
             "Expected 'not a git repository' on stderr, got stderr={stderr:?}, stdout={stdout:?}"
