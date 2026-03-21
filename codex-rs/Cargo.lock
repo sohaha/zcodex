@@ -2444,7 +2444,6 @@ dependencies = [
  "chardetng",
  "clap",
  "dirs",
- "encoding_rs",
  "ignore",
  "lazy_static",
  "regex",

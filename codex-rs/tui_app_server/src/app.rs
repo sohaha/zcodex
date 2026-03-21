@@ -1591,7 +1591,7 @@ impl App {
     fn thread_label(&self, thread_id: ThreadId) -> String {
         let is_primary = self.primary_thread_id == Some(thread_id);
         let fallback_label = if is_primary {
-            "Main [default]".to_string()
+            "主线程 [default]".to_string()
         } else {
             let thread_id = thread_id.to_string();
             let short_id: String = thread_id.chars().take(8).collect();

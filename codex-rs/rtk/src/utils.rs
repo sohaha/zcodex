@@ -100,14 +100,19 @@ pub fn decode_output(bytes: &[u8]) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
 
-    let mut detector = chardetng::EncodingDetector::new();
-    detector.feed(bytes, true);
-    let encoding = detector.guess(None, true);
-    if let Some(decoded) = encoding.decode_without_bom_handling_and_without_replacement(bytes) {
-        return decoded;
+    #[cfg(target_os = "windows")]
+    {
+        let mut detector = chardetng::EncodingDetector::new();
+        detector.feed(bytes, true);
+        let encoding = detector.guess(None, true);
+        if let Some(decoded) = encoding.decode_without_bom_handling_and_without_replacement(bytes) {
+            return decoded;
+        }
+
+        return encoding.decode(bytes).0;
     }
 
-    encoding.decode(bytes).0
+    String::from_utf8_lossy(bytes)
 }
 
 /// Formats a token count with K/M suffixes for readability.
@@ -390,11 +395,19 @@ mod tests {
         assert_eq!(decoded, text);
     }
 
+    #[cfg(target_os = "windows")]
     #[test]
     fn test_decode_output_detects_gbk() {
         let gbk_bytes = [0xD6, 0xD0, 0xCE, 0xC4]; // "中文" in GBK
         let decoded = decode_output(&gbk_bytes);
         assert_eq!(decoded, "中文");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn test_decode_output_non_utf8_falls_back_lossy() {
+        let decoded = decode_output(&[0xD6, 0xD0, 0xCE, 0xC4]);
+        assert!(decoded.contains('\u{fffd}'));
     }
 
     #[test]

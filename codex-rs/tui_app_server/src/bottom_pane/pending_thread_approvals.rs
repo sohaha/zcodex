@@ -129,7 +129,7 @@ mod tests {
     fn render_multiple_threads_snapshot() {
         let mut widget = PendingThreadApprovals::new();
         widget.set_threads(vec![
-            "Main [default]".to_string(),
+            "主线程 [default]".to_string(),
             "Robie [explorer]".to_string(),
             "Inspector".to_string(),
             "Extra agent".to_string(),

@@ -69,9 +69,9 @@ fn format_unified_exec_interaction(command: &[String], input: Option<&str>) -> S
     match input {
         Some(data) if !data.is_empty() => {
             let preview = summarize_interaction_input(data);
-            format!("Interacted with `{command_display}`, sent `{preview}`")
+            format!("与 `{command_display}` 交互，已发送 `{preview}`")
         }
-        _ => format!("Waited for `{command_display}`"),
+        _ => format!("等待 `{command_display}`"),
     }
 }
 
@@ -154,7 +154,7 @@ pub(crate) fn output_lines(
     };
     if show_ellipsis {
         let omitted = total - 2 * line_limit;
-        out.push(format!("… +{omitted} lines").into());
+        out.push(format!("… +{omitted} 行").into());
     }
 
     let tail_start = if show_ellipsis {
@@ -232,7 +232,7 @@ impl HistoryCell for ExecCell {
                 let duration = call
                     .duration
                     .map(format_duration)
-                    .unwrap_or_else(|| "unknown".to_string());
+                    .unwrap_or_else(|| "未知".to_string());
                 let mut result: Line = if output.exit_code == 0 {
                     Line::from("✓".green().bold())
                 } else {
@@ -260,9 +260,9 @@ impl ExecCell {
             },
             " ".into(),
             if self.is_active() {
-                "Exploring".bold()
+                "探索中".bold()
             } else {
-                "Explored".bold()
+                "已探索".bold()
             },
         ]));
 
@@ -304,7 +304,7 @@ impl ExecCell {
                     })
                     .unique();
                 vec![(
-                    "Read",
+                    "读取",
                     Itertools::intersperse(names.into_iter().map(Into::into), ", ".dim()).collect(),
                 )]
             } else {
@@ -312,10 +312,10 @@ impl ExecCell {
                 for parsed in &call.parsed {
                     match parsed {
                         ParsedCommand::Read { name, .. } => {
-                            lines.push(("Read", vec![name.clone().into()]));
+                            lines.push(("读取", vec![name.clone().into()]));
                         }
                         ParsedCommand::ListFiles { cmd, path } => {
-                            lines.push(("List", vec![path.clone().unwrap_or(cmd.clone()).into()]));
+                            lines.push(("列出", vec![path.clone().unwrap_or(cmd.clone()).into()]));
                         }
                         ParsedCommand::Search { cmd, query, path } => {
                             let spans = match (query, path) {
@@ -325,10 +325,10 @@ impl ExecCell {
                                 (Some(q), None) => vec![q.clone().into()],
                                 _ => vec![cmd.clone().into()],
                             };
-                            lines.push(("Search", spans));
+                            lines.push(("搜索", spans));
                         }
                         ParsedCommand::Unknown { cmd } => {
-                            lines.push(("Run", vec![cmd.clone().into()]));
+                            lines.push(("运行", vec![cmd.clone().into()]));
                         }
                     }
                 }
@@ -368,11 +368,11 @@ impl ExecCell {
         let title = if is_interaction {
             ""
         } else if self.is_active() {
-            "Running"
+            "运行中"
         } else if call.is_user_shell_command() {
-            "You ran"
+            "你运行了"
         } else {
-            "Ran"
+            "已运行"
         };
 
         let mut header_line = if is_interaction {
@@ -622,14 +622,14 @@ impl ExecCell {
     }
 
     fn ellipsis_line(omitted: usize) -> Line<'static> {
-        Line::from(vec![format!("… +{omitted} lines").dim()])
+        Line::from(vec![format!("… +{omitted} 行").dim()])
     }
 
     /// Builds an ellipsis line (`… +N lines`) with an optional leading
     /// prefix so the ellipsis aligns with the output gutter.
     fn ellipsis_line_with_prefix(omitted: usize, prefix: Option<&Line<'static>>) -> Line<'static> {
         let mut line = prefix.cloned().unwrap_or_default();
-        line.push_span(format!("… +{omitted} lines").dim());
+        line.push_span(format!("… +{omitted} 行").dim());
         line
     }
 }
@@ -792,7 +792,7 @@ mod tests {
         let lines = vec![
             Line::from("  └ short"),
             Line::from("    this-is-a-very-long-token-that-wraps-many-rows"),
-            Line::from("    … +4 lines"),
+            Line::from("    … +4 行"),
             Line::from("    tail"),
         ];
 
@@ -809,7 +809,7 @@ mod tests {
             .collect();
 
         assert!(
-            rendered.iter().any(|line| line.contains("… +6 lines")),
+            rendered.iter().any(|line| line.contains("… +6 行")),
             "expected omitted hint to count hidden lines (not wrapped rows), got: {rendered:?}"
         );
     }
