@@ -4,7 +4,7 @@ expression: rendered
 ---
 /ps
 
-Background terminals
+后台终端
 
   • echo hello [...]
     ↳ hello

@@ -2,6 +2,6 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: combined
 ---
-• Generated Image:
+• 生成图片：
   └ A tiny blue square
-  └ Saved to: file:///tmp/ig-1.png
+  └ 保存到：file:///tmp/ig-1.png

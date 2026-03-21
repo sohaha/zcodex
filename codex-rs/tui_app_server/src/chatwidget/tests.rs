@@ -9860,7 +9860,7 @@ async fn interrupt_preserves_unified_exec_processes() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        combined.contains("Background terminals"),
+        combined.contains("后台终端"),
         "expected /ps to remain available after interrupt; got {combined:?}"
     );
     assert!(
@@ -9897,7 +9897,7 @@ async fn review_ended_keeps_unified_exec_processes() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        combined.contains("Background terminals"),
+        combined.contains("后台终端"),
         "expected /ps to remain available after review-ended abort; got {combined:?}"
     );
     assert!(
@@ -9969,7 +9969,7 @@ async fn turn_complete_keeps_unified_exec_processes() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        combined.contains("Background terminals"),
+        combined.contains("后台终端"),
         "expected /ps to remain available after turn complete; got {combined:?}"
     );
     assert!(
@@ -10970,7 +10970,7 @@ async fn plan_update_renders_history_cell() {
     assert!(!cells.is_empty(), "expected plan update cell to be sent");
     let blob = lines_to_single_string(cells.last().unwrap());
     assert!(
-        blob.contains("Updated Plan"),
+        blob.contains("更新后的计划"),
         "missing plan header: {blob:?}"
     );
     assert!(blob.contains("Explore codebase"));

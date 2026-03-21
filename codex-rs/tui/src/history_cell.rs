@@ -523,13 +523,13 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         let content = text![
             line![
                 padded_emoji("✨").bold().cyan(),
-                "Update available!".bold().cyan(),
+                "发现新版本！".bold().cyan(),
                 " ",
                 format!("{CODEX_CLI_VERSION} -> {}", self.latest_version).bold(),
             ],
             update_instruction,
             "",
-            "See full release notes:",
+            "完整更新说明：",
             LATEST_RELEASE_NOTES_URL.cyan().underlined(),
         ];
 
@@ -598,9 +598,9 @@ impl HistoryCell for UnifiedExecInteractionCell {
         let waited_only = self.stdin.is_empty();
 
         let mut header_spans = if waited_only {
-            vec!["• Waited for background terminal".bold()]
+            vec!["• 等待后台终端".bold()]
         } else {
-            vec!["↳ ".dim(), "Interacted with background terminal".bold()]
+            vec!["↳ ".dim(), "与后台终端交互".bold()]
         };
         if let Some(command) = &self.command_display
             && !command.is_empty()
@@ -668,11 +668,11 @@ impl HistoryCell for UnifiedExecProcessesCell {
         let wrap_width = width as usize;
         let max_processes = 16usize;
         let mut out: Vec<Line<'static>> = Vec::new();
-        out.push(vec!["Background terminals".bold()].into());
+        out.push(vec!["后台终端".bold()].into());
         out.push("".into());
 
         if self.processes.is_empty() {
-            out.push("  • No background terminals running.".italic().into());
+            out.push("  • 当前没有运行中的后台终端。".italic().into());
             return out;
         }
 
@@ -1781,14 +1781,14 @@ pub(crate) fn empty_mcp_output() -> PlainHistoryCell {
     let lines: Vec<Line<'static>> = vec![
         "/mcp".magenta().into(),
         "".into(),
-        vec!["🔌  ".into(), "MCP Tools".bold()].into(),
+        vec!["🔌  ".into(), "MCP 工具".bold()].into(),
         "".into(),
-        "  • No MCP servers configured.".italic().into(),
+        "  • 未配置 MCP 服务。".italic().into(),
         Line::from(vec![
-            "    See the ".into(),
+            "    请参考 ".into(),
             "\u{1b}]8;;https://developers.openai.com/codex/mcp\u{7}MCP docs\u{1b}]8;;\u{7}"
                 .underlined(),
-            " to configure them.".into(),
+            " 进行配置。".into(),
         ])
         .style(Style::default().add_modifier(Modifier::DIM)),
     ];
@@ -1807,12 +1807,12 @@ pub(crate) fn new_mcp_tools_output(
     let mut lines: Vec<Line<'static>> = vec![
         "/mcp".magenta().into(),
         "".into(),
-        vec!["🔌  ".into(), "MCP Tools".bold()].into(),
+        vec!["🔌  ".into(), "MCP 工具".bold()].into(),
         "".into(),
     ];
 
     if tools.is_empty() {
-        lines.push("  • No MCP tools available.".italic().into());
+        lines.push("  • 暂无可用 MCP 工具。".italic().into());
         lines.push("".into());
     }
 
@@ -1840,14 +1840,14 @@ pub(crate) fn new_mcp_tools_output(
             header.push("(disabled)".red());
             lines.push(header.into());
             if let Some(reason) = cfg.disabled_reason.as_ref().map(ToString::to_string) {
-                lines.push(vec!["    • Reason: ".into(), reason.dim()].into());
+                lines.push(vec!["    • 原因：".into(), reason.dim()].into());
             }
             lines.push(Line::from(""));
             continue;
         }
         lines.push(header.into());
-        lines.push(vec!["    • Status: ".into(), "enabled".green()].into());
-        lines.push(vec!["    • Auth: ".into(), auth_status.to_string().into()].into());
+        lines.push(vec!["    • 状态：".into(), "已启用".green()].into());
+        lines.push(vec!["    • 认证：".into(), auth_status.to_string().into()].into());
 
         match &cfg.transport {
             McpServerTransportConfig::Stdio {
@@ -1863,15 +1863,17 @@ pub(crate) fn new_mcp_tools_output(
                     format!(" {}", args.join(" "))
                 };
                 let cmd_display = format!("{command}{args_suffix}");
-                lines.push(vec!["    • Command: ".into(), cmd_display.into()].into());
+                lines.push(vec!["    • 命令：".into(), cmd_display.into()].into());
 
                 if let Some(cwd) = cwd.as_ref() {
-                    lines.push(vec!["    • Cwd: ".into(), cwd.display().to_string().into()].into());
+                    lines.push(
+                        vec!["    • 工作目录：".into(), cwd.display().to_string().into()].into(),
+                    );
                 }
 
                 let env_display = format_env_display(env.as_ref(), env_vars);
                 if env_display != "-" {
-                    lines.push(vec!["    • Env: ".into(), env_display.into()].into());
+                    lines.push(vec!["    • 环境变量：".into(), env_display.into()].into());
                 }
             }
             McpServerTransportConfig::StreamableHttp {
@@ -1880,7 +1882,7 @@ pub(crate) fn new_mcp_tools_output(
                 env_http_headers,
                 ..
             } => {
-                lines.push(vec!["    • URL: ".into(), url.clone().into()].into());
+                lines.push(vec!["    • URL：".into(), url.clone().into()].into());
                 if let Some(headers) = http_headers.as_ref()
                     && !headers.is_empty()
                 {
@@ -1891,7 +1893,7 @@ pub(crate) fn new_mcp_tools_output(
                         .map(|(name, _)| format!("{name}=*****"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    lines.push(vec!["    • HTTP headers: ".into(), display.into()].into());
+                    lines.push(vec!["    • HTTP headers：".into(), display.into()].into());
                 }
                 if let Some(headers) = env_http_headers.as_ref()
                     && !headers.is_empty()
@@ -1903,23 +1905,23 @@ pub(crate) fn new_mcp_tools_output(
                         .map(|(name, var)| format!("{name}={var}"))
                         .collect::<Vec<_>>()
                         .join(", ");
-                    lines.push(vec!["    • Env HTTP headers: ".into(), display.into()].into());
+                    lines.push(vec!["    • Env HTTP headers：".into(), display.into()].into());
                 }
             }
         }
 
         if names.is_empty() {
-            lines.push("    • Tools: (none)".into());
+            lines.push("    • 工具：（无）".into());
         } else {
-            lines.push(vec!["    • Tools: ".into(), names.join(", ").into()].into());
+            lines.push(vec!["    • 工具：".into(), names.join(", ").into()].into());
         }
 
         let server_resources: Vec<Resource> =
             resources.get(server.as_str()).cloned().unwrap_or_default();
         if server_resources.is_empty() {
-            lines.push("    • Resources: (none)".into());
+            lines.push("    • 资源：（无）".into());
         } else {
-            let mut spans: Vec<Span<'static>> = vec!["    • Resources: ".into()];
+            let mut spans: Vec<Span<'static>> = vec!["    • 资源：".into()];
 
             for (idx, resource) in server_resources.iter().enumerate() {
                 if idx > 0 {
@@ -1940,9 +1942,9 @@ pub(crate) fn new_mcp_tools_output(
             .cloned()
             .unwrap_or_default();
         if server_templates.is_empty() {
-            lines.push("    • Resource templates: (none)".into());
+            lines.push("    • 资源模板：（无）".into());
         } else {
-            let mut spans: Vec<Span<'static>> = vec!["    • Resource templates: ".into()];
+            let mut spans: Vec<Span<'static>> = vec!["    • 资源模板：".into()];
 
             for (idx, template) in server_templates.iter().enumerate() {
                 if idx > 0 {
@@ -2004,10 +2006,10 @@ impl HistoryCell for RequestUserInputResultCell {
             .count();
         let unanswered = total.saturating_sub(answered);
 
-        let mut header = vec!["•".dim(), " ".into(), "Questions".bold()];
-        header.push(format!(" {answered}/{total} answered").dim());
+        let mut header = vec!["•".dim(), " ".into(), "问题".bold()];
+        header.push(format!(" {answered}/{total} 已回答").dim());
         if self.interrupted {
-            header.push(" (interrupted)".cyan());
+            header.push("（已中断）".cyan());
         }
 
         let mut lines: Vec<Line<'static>> = vec![header.into()];
@@ -2026,7 +2028,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 Style::default(),
             );
             if answer_missing && let Some(last) = question_lines.last_mut() {
-                last.spans.push(" (unanswered)".dim());
+                last.spans.push("（未回答）".dim());
             }
             lines.extend(question_lines);
 
@@ -2037,7 +2039,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 lines.extend(wrap_with_prefix(
                     "••••••",
                     width,
-                    "    answer: ".dim(),
+                    "    回答：".dim(),
                     "            ".dim(),
                     Style::default().fg(Color::Cyan),
                 ));
@@ -2050,7 +2052,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 lines.extend(wrap_with_prefix(
                     &option,
                     width,
-                    "    answer: ".dim(),
+                    "    回答：".dim(),
                     "            ".dim(),
                     Style::default().fg(Color::Cyan),
                 ));
@@ -2058,13 +2060,13 @@ impl HistoryCell for RequestUserInputResultCell {
             if let Some(note) = note {
                 let (label, continuation, style) = if question.options.is_some() {
                     (
-                        "    note: ".dim(),
+                        "    备注：".dim(),
                         "          ".dim(),
                         Style::default().fg(Color::Cyan),
                     )
                 } else {
                     (
-                        "    answer: ".dim(),
+                        "    回答：".dim(),
                         "            ".dim(),
                         Style::default().fg(Color::Cyan),
                     )
@@ -2163,7 +2165,7 @@ pub(crate) struct ProposedPlanStreamCell {
 impl HistoryCell for ProposedPlanCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(vec!["• ".dim(), "Proposed Plan".bold()].into());
+        lines.push(vec!["• ".dim(), "拟定计划".bold()].into());
         lines.push(Line::from(" "));
 
         let mut plan_lines: Vec<Line<'static>> = vec![Line::from(" ")];
@@ -2177,7 +2179,7 @@ impl HistoryCell for ProposedPlanCell {
             &mut body,
         );
         if body.is_empty() {
-            body.push(Line::from("(empty)".dim().italic()));
+            body.push(Line::from("（空）".dim().italic()));
         }
         plan_lines.extend(prefix_lines(body, "  ".into(), "  ".into()));
         plan_lines.push(Line::from(" "));
@@ -2232,7 +2234,7 @@ impl HistoryCell for PlanUpdateCell {
         };
 
         let mut lines: Vec<Line<'static>> = vec![];
-        lines.push(vec!["• ".dim(), "Updated Plan".bold()].into());
+        lines.push(vec!["• ".dim(), "更新后的计划".bold()].into());
 
         let mut indented_lines = vec![];
         let note = self
@@ -2245,7 +2247,7 @@ impl HistoryCell for PlanUpdateCell {
         };
 
         if self.plan.is_empty() {
-            indented_lines.push(Line::from("(no steps provided)".dim().italic()));
+            indented_lines.push(Line::from("（未提供步骤）".dim().italic()));
         } else {
             for PlanItemArg { step, status } in self.plan.iter() {
                 indented_lines.extend(render_step(status, step));
@@ -2274,7 +2276,7 @@ pub(crate) fn new_patch_apply_failure(stderr: String) -> PlainHistoryCell {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     // Failure title
-    lines.push(Line::from("✘ Failed to apply patch".magenta().bold()));
+    lines.push(Line::from("✘ 应用补丁失败".magenta().bold()));
 
     if !stderr.trim().is_empty() {
         let output = output_lines(
@@ -2300,7 +2302,7 @@ pub(crate) fn new_view_image_tool_call(path: PathBuf, cwd: &Path) -> PlainHistor
     let display_path = display_path_for(&path, cwd);
 
     let lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Viewed Image".bold()].into(),
+        vec!["• ".dim(), "查看图片".bold()].into(),
         vec!["  └ ".dim(), display_path.dim()].into(),
     ];
 
@@ -2315,11 +2317,11 @@ pub(crate) fn new_image_generation_call(
     let detail = revised_prompt.unwrap_or_else(|| call_id.clone());
 
     let mut lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Generated Image:".bold()].into(),
+        vec!["• ".dim(), "生成图片：".bold()].into(),
         vec!["  └ ".dim(), detail.dim()].into(),
     ];
     if let Some(saved_path) = saved_path {
-        lines.push(vec!["  └ ".dim(), "Saved to: ".dim(), saved_path.into()].into());
+        lines.push(vec!["  └ ".dim(), "保存到：".dim(), saved_path.into()].into());
     }
 
     PlainHistoryCell { lines }
@@ -2646,9 +2648,9 @@ mod tests {
         assert_eq!(
             render_lines(&cell.display_lines(80)),
             vec![
-                "• Generated Image:".to_string(),
+                "• 生成图片：".to_string(),
                 "  └ A tiny blue square".to_string(),
-                format!("  └ Saved to: {saved_path}"),
+                format!("  └ 保存到：{saved_path}"),
             ],
         );
     }
@@ -2681,11 +2683,7 @@ mod tests {
         let lines = render_transcript(&cell);
         assert_eq!(
             lines,
-            vec![
-                "↳ Interacted with background terminal · echo hello",
-                "  └ ls",
-                "    pwd",
-            ],
+            vec!["↳ 与后台终端交互 · echo hello", "  └ ls", "    pwd",],
         );
     }
 
@@ -2693,7 +2691,7 @@ mod tests {
     fn unified_exec_interaction_cell_renders_wait() {
         let cell = new_unified_exec_interaction(None, String::new());
         let lines = render_transcript(&cell);
-        assert_eq!(lines, vec!["• Waited for background terminal"]);
+        assert_eq!(lines, vec!["• 等待后台终端"]);
     }
 
     #[test]
@@ -3121,8 +3119,9 @@ mod tests {
                 }
             })
             .collect::<String>();
+        let compact = first_row.replace(' ', "");
         assert!(
-            first_row.contains("Interacted with"),
+            compact.contains("与后台终端交互"),
             "expected first rendered row to keep the header visible, got: {first_row:?}"
         );
     }
