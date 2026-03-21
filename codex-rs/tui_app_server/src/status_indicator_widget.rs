@@ -259,7 +259,7 @@ impl Renderable for StatusIndicatorWidget {
             spans.extend(vec![
                 format!("({pretty_elapsed} • ").dim(),
                 key_hint::plain(KeyCode::Esc).into(),
-                " to interrupt)".dim(),
+                " 可中断)".dim(),
             ]);
         } else {
             spans.push(format!("({pretty_elapsed})").dim());
