@@ -15,7 +15,8 @@
   stages:
     - name: prepare release toolchain
       script: |
-        set -euo pipefail
+        set -eu
+        (set -o pipefail) 2>/dev/null && set -o pipefail
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
         apt-get install -y --no-install-recommends \
@@ -81,31 +82,36 @@
     - name: build linux amd64
       timeout: 2h
       script: |
-        set -euo pipefail
+        set -eu
+        (set -o pipefail) 2>/dev/null && set -o pipefail
         export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
         mise run build ubuntu-linux-amd64
     - name: build macos arm64
       timeout: 2h
       script: |
-        set -euo pipefail
+        set -eu
+        (set -o pipefail) 2>/dev/null && set -o pipefail
         export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
         mise run build ubuntu-macos-arm64
     - name: build windows amd64
       timeout: 2h
       script: |
-        set -euo pipefail
+        set -eu
+        (set -o pipefail) 2>/dev/null && set -o pipefail
         export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
         mise run build ubuntu-win-amd64
     - name: build windows arm64
       timeout: 2h
       script: |
-        set -euo pipefail
+        set -eu
+        (set -o pipefail) 2>/dev/null && set -o pipefail
         export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
         mise run build ubuntu-win-arm64
     - name: upload github release assets
       timeout: 30m
       script: |
-        set -euo pipefail
+        set -eu
+        (set -o pipefail) 2>/dev/null && set -o pipefail
         export PATH="/root/.cargo/bin:/root/.local/bin:$PATH"
         bash ./scripts/cnb_upload_codex_release.sh
 
