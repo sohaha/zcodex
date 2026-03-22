@@ -360,24 +360,24 @@ fn gutter() -> Span<'static> {
 fn feedback_title_and_placeholder(category: FeedbackCategory) -> (String, String) {
     match category {
         FeedbackCategory::BadResult => (
-            "Tell us more (bad result)".to_string(),
-            "(optional) Write a short description to help us further".to_string(),
+            "补充说明（结果不佳）".to_string(),
+            "（可选）写几句补充说明，帮助我们进一步定位问题".to_string(),
         ),
         FeedbackCategory::GoodResult => (
-            "Tell us more (good result)".to_string(),
-            "(optional) Write a short description to help us further".to_string(),
+            "补充说明（结果很好）".to_string(),
+            "（可选）写几句补充说明，帮助我们进一步了解情况".to_string(),
         ),
         FeedbackCategory::Bug => (
-            "Tell us more (bug)".to_string(),
-            "(optional) Write a short description to help us further".to_string(),
+            "补充说明（Bug）".to_string(),
+            "（可选）写几句补充说明，帮助我们进一步定位问题".to_string(),
         ),
         FeedbackCategory::SafetyCheck => (
-            "Tell us more (safety check)".to_string(),
-            "(optional) Share what was refused and why it should have been allowed".to_string(),
+            "补充说明（安全检查）".to_string(),
+            "（可选）说明被拒绝的内容，以及为什么本应被允许".to_string(),
         ),
         FeedbackCategory::Other => (
-            "Tell us more (other)".to_string(),
-            "(optional) Write a short description to help us further".to_string(),
+            "补充说明（其他）".to_string(),
+            "（可选）写几句补充说明，帮助我们进一步了解情况".to_string(),
         ),
     }
 }
@@ -427,36 +427,36 @@ pub(crate) fn feedback_selection_params(
     app_event_tx: AppEventSender,
 ) -> super::SelectionViewParams {
     super::SelectionViewParams {
-        title: Some("How was this?".to_string()),
+        title: Some("这次体验如何？".to_string()),
         items: vec![
             make_feedback_item(
                 app_event_tx.clone(),
-                "bug",
-                "Crash, error message, hang, or broken UI/behavior.",
+                "Bug",
+                "崩溃、报错、卡住，或 UI/行为异常。",
                 FeedbackCategory::Bug,
             ),
             make_feedback_item(
                 app_event_tx.clone(),
-                "bad result",
-                "Output was off-target, incorrect, incomplete, or unhelpful.",
+                "结果不佳",
+                "输出跑题、不正确、不完整，或没有帮助。",
                 FeedbackCategory::BadResult,
             ),
             make_feedback_item(
                 app_event_tx.clone(),
-                "good result",
-                "Helpful, correct, high‑quality, or delightful result worth celebrating.",
+                "结果很好",
+                "结果有帮助、正确、高质量，或让人满意。",
                 FeedbackCategory::GoodResult,
             ),
             make_feedback_item(
                 app_event_tx.clone(),
-                "safety check",
-                "Benign usage blocked due to safety checks or refusals.",
+                "安全检查",
+                "正常使用因安全检查或拒绝而被拦截。",
                 FeedbackCategory::SafetyCheck,
             ),
             make_feedback_item(
                 app_event_tx,
-                "other",
-                "Slowness, feature suggestion, UX feedback, or anything else.",
+                "其他",
+                "速度慢、功能建议、体验反馈，或其他任何问题。",
                 FeedbackCategory::Other,
             ),
         ],
@@ -467,11 +467,11 @@ pub(crate) fn feedback_selection_params(
 /// Build the selection popup params shown when feedback is disabled.
 pub(crate) fn feedback_disabled_params() -> super::SelectionViewParams {
     super::SelectionViewParams {
-        title: Some("Sending feedback is disabled".to_string()),
-        subtitle: Some("This action is disabled by configuration.".to_string()),
+        title: Some("反馈功能已禁用".to_string()),
+        subtitle: Some("此操作已被配置禁用。".to_string()),
         footer_hint: Some(standard_popup_hint_line()),
         items: vec![super::SelectionItem {
-            name: "Close".to_string(),
+            name: "关闭".to_string(),
             dismiss_on_select: true,
             ..Default::default()
         }],

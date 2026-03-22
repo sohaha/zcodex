@@ -199,10 +199,8 @@ impl ChatWidget {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(header),
             items: vec![SelectionItem {
-                name: "Loading plugin details...".to_string(),
-                description: Some(
-                    "This updates when the plugin detail request finishes.".to_string(),
-                ),
+                name: "正在加载插件详情...".to_string(),
+                description: Some("插件详情请求完成后会更新此处。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             }],

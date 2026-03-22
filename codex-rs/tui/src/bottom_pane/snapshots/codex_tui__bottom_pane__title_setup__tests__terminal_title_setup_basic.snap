@@ -17,5 +17,5 @@ expression: "render_lines(&view, 84)"
   [ ] model          当 前 模 型 名 称                                                    
   [ ] task-progress  update_plan 最 新 任 务 进 度 （ 未 可 用 前 隐 藏 ）                        
                                                                                     
-  my-project ⠋ Working | Investigate flaky test                                     
+  my-project ⠋ 运 行 中  | 调 查 偶 发 失 败 的 测 试                                           
   使 用  ↑↓ 浏 览 ， ←→ 移 动 ， 空 格  选 择 ， 回 车  确 认 ， Esc 取 消 。
