@@ -1,8 +1,7 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 5889
 expression: combined
 ---
-• Generated Image:
+• 生成图片：
   └ A tiny blue square
-  └ Saved to: file:///tmp/ig-1.png
+  └ 保存到：file:///tmp/ig-1.png

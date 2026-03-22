@@ -3,11 +3,11 @@ source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                                                                                        "
-"› 让 Codex 处理任何事情                                                                                              "
+"› 让 Codex 处理任何事情                                                                                                 " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
 "                                                                                                                        "
-"  ? for shortcuts                                                                                    100% context left  "
+"  ? 查看快捷键                                                                                         剩余上下文 100%  " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (104, " "), (106, " "), (108, " "), (110, " "), (112, " ")]

@@ -2,4 +2,4 @@
 source: tui/src/chatwidget/tests.rs
 expression: info
 ---
-• Model interrupted to submit steer instructions.
+• 模型已中断，以便提交引导说明。

@@ -2,4 +2,4 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  ? for shortcuts                                                    123K used  "
+"  ? 查看快捷键                                                     已使用 123K  " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (68, " "), (70, " "), (72, " ")]

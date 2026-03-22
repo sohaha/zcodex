@@ -1,13 +1,12 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 9336
 expression: rendered
 ---
-• Reviewing 2 approval requests (0s • esc to interrupt)
+• 正 在 审 核  2 个 审 批 请 求  (0s • esc 可 中 断 )
   └ • rm -rf '/tmp/guardian target 1'
     • rm -rf '/tmp/guardian target 2'
 
 
-› 让 Codex 处理任何事情
+› 让  Codex 处 理 任 何 事 情
 
-  ? for shortcuts                                    100% context left
+  ? 查 看 快 捷 键                                          剩 余 上 下 文  100%
