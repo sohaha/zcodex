@@ -291,10 +291,10 @@ impl Renderable for ExperimentalFeaturesView {
 
 fn experimental_popup_hint_line() -> Line<'static> {
     Line::from(vec![
-        "Press ".into(),
+        "按 ".into(),
         key_hint::plain(KeyCode::Char(' ')).into(),
-        " to select or ".into(),
+        " 选择，或按 ".into(),
         key_hint::plain(KeyCode::Enter).into(),
-        " to save for next conversation".into(),
+        " 保存到下次对话".into(),
     ])
 }
