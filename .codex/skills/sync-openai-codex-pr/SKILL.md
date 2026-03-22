@@ -112,6 +112,12 @@ just bazel-lock-check
   2) 占位符与结构是否保持不变（如 `{thread_id}`、`{agent_role}`、Markdown/ANSI/快捷键）。
   3) 术语是否全局一致（同一词在全仓保持同一译法）。
   4) 是否仅改文案，不改行为逻辑。
+- `翻译策略（默认）`：
+  1) **先看平行实现**：若 `codex-rs/tui` 与 `codex-rs/tui_app_server` 存在平行实现，先对照已汉化的一侧，优先复用现有译法，避免同一功能两套文案风格不一致。
+  2) **自然中文优先**：优先表达自然、完整、符合中文习惯的句子，不做逐词硬译；必要时可重组语序，但不得改变信息结构。
+  3) **固定保留英文**：命令名/子命令、配置键、协议字段、crate 名、代码标识符、产品名、快捷键（如 `Enter`/`Esc`/`Ctrl+C`）默认保留英文。
+  4) **慎翻功能术语**：`Fast mode`、`Plan mode`、`Guardian Approvals`、`Windows sandbox` 这类仓内高频术语，优先遵循现有仓内叫法；若仓内未统一，先在本次改动范围内统一，不要一半中文一半英文。
+  5) **测试文案也要同步**：若源码文案变化会影响 snapshot、断言、帮助文本测试，必须同步更新测试期望，避免“代码已汉化、测试仍断言英文”。
 - `双层自检（默认执行）`：
   1) 固定关键词扫描（保底拦截历史高频漏网词）：
      ```bash
@@ -121,13 +127,28 @@ just bazel-lock-check
      ```bash
      git diff --unified=0 -- codex-rs/tui codex-rs/tui_app_server | rg -n "^\\+.*[A-Za-z]{4,}"
      ```
+- `工具回退（环境无 rg 时）`：
+  - 固定关键词扫描可回退为：
+    ```bash
+    git grep -nE "Main \\[default\\]|\\[default\\]|Agent spawn failed|Agent interaction failed|Agent resume failed|Agent close failed|Agent turn complete|Spawned|Waiting for|Finished waiting|Resuming|Resumed|Closed|No agents completed yet|Pending init|Running|Interrupted|Completed|Not found" -- codex-rs/tui/src codex-rs/tui_app_server/src
+    ```
+  - 增量英文扫描可回退为：
+    ```bash
+    git diff --unified=0 -- codex-rs/tui codex-rs/tui_app_server | grep -nE "^\\+.*[A-Za-z]{4,}"
+    ```
 - `保留英文（不要硬翻）`：命令名/子命令、配置键、协议字段、crate 名、代码标识符、产品名。
 - `术语建议（默认）`：
   - `Agent` -> `智能体`
   - `Spawned` -> `已创建`
   - `Agent spawn failed` -> `创建智能体失败`
   - `Main [default]` -> `主线程 [默认]`
-- 目标：自然中文，不做逐词直译；汉化后重新检查相关快照/测试，确保输出稳定。
+- `高频补充建议（默认）`：
+  - `Running` -> `运行中`
+  - `Interrupted` -> `已中断`
+  - `Completed` -> `已完成`
+  - `Closed` -> `已关闭`
+  - `Not found` -> `未找到`
+- 目标：自然中文，不做逐词直译；汉化后重新检查相关快照/测试，确保输出稳定；若发现批量替换误伤了代码标识符，必须先回滚误改，再继续处理文案。
 
 ### 8) 提交 + 推送
 

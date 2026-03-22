@@ -2,11 +2,11 @@
 source: tui/src/chatwidget/tests.rs
 expression: popup
 ---
-  Select Reasoning Level for gpt-5.1-codex-max
+  为 gpt-5.1-codex-max 选择推理级别
 
-  1. Low               Fast responses with lighter reasoning
-  2. Medium (default)  Balances speed and reasoning depth for everyday tasks
-› 3. High (current)    Greater reasoning depth for complex problems
-  4. Extra high        Extra high reasoning depth for complex problems
+  1. 低               更快响应，较轻推理
+  2. 中（默认）  平衡速度与推理深度，适合日常任务
+› 3. 高（当前）    更深的推理深度，适合复杂问题
+  4. Extra high        超高推理深度，适合复杂问题
 
-  Press enter to confirm or esc to go back
+  按 enter 确认，按 esc 返回

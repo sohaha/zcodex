@@ -9052,7 +9052,7 @@ async fn approvals_popup_navigation_skips_disabled() {
         .expect("render approvals popup after disabled selection");
     let screen = terminal.backend().vt100().screen().contents();
     assert!(
-        screen.contains("Update Model Permissions") || screen.contains("更新模型权限"),
+        screen.contains("更新模型权限"),
         "popup should remain open after selecting a disabled entry"
     );
     assert!(
@@ -10395,12 +10395,12 @@ async fn background_event_updates_status_header() {
     chat.handle_codex_event(Event {
         id: "bg-1".into(),
         msg: EventMsg::BackgroundEvent(BackgroundEventEvent {
-            message: "Waiting for `vim`".to_string(),
+            message: "等待 `vim`".to_string(),
         }),
     });
 
     assert!(chat.bottom_pane.status_indicator_visible());
-    assert_eq!(chat.current_status.header, "Waiting for `vim`");
+    assert_eq!(chat.current_status.header, "等待 `vim`");
     assert!(drain_insert_history(&mut rx).is_empty());
 }
 
