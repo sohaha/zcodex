@@ -2708,29 +2708,29 @@ mod tests {
                 vec![RequestUserInputQuestion {
                     id: "q1".to_string(),
                     header: "Next Step".to_string(),
-                    question: "What would you like to do next?".to_string(),
+                    question: "你接下来想做什么？".to_string(),
                     is_other: false,
                     is_secret: false,
                     options: Some(vec![
                         RequestUserInputQuestionOption {
-                            label: "Discuss a code change (Recommended)".to_string(),
-                            description: "Walk through a plan and edit code together.".to_string(),
+                            label: "讨论代码改动（推荐）".to_string(),
+                            description: "一起过一遍计划并协作修改代码。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Run tests".to_string(),
-                            description: "Pick a crate and run its tests.".to_string(),
+                            label: "运行测试".to_string(),
+                            description: "选择一个 crate 并运行其测试。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Review a diff".to_string(),
-                            description: "Summarize or review current changes.".to_string(),
+                            label: "审查差异".to_string(),
+                            description: "总结或审查当前改动。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Refactor".to_string(),
-                            description: "Tighten structure and remove dead code.".to_string(),
+                            label: "重构".to_string(),
+                            description: "收紧结构并移除死代码。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Ship it".to_string(),
-                            description: "Finalize and open a PR.".to_string(),
+                            label: "完成交付".to_string(),
+                            description: "完成收尾并创建 PR。".to_string(),
                         },
                     ]),
                 }],
@@ -2760,29 +2760,29 @@ mod tests {
                 vec![RequestUserInputQuestion {
                     id: "q1".to_string(),
                     header: "Next Step".to_string(),
-                    question: "What would you like to do next?".to_string(),
+                    question: "你接下来想做什么？".to_string(),
                     is_other: false,
                     is_secret: false,
                     options: Some(vec![
                         RequestUserInputQuestionOption {
-                            label: "Discuss a code change (Recommended)".to_string(),
-                            description: "Walk through a plan and edit code together.".to_string(),
+                            label: "讨论代码改动（推荐）".to_string(),
+                            description: "一起过一遍计划并协作修改代码。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Run tests".to_string(),
-                            description: "Pick a crate and run its tests.".to_string(),
+                            label: "运行测试".to_string(),
+                            description: "选择一个 crate 并运行其测试。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Review a diff".to_string(),
-                            description: "Summarize or review current changes.".to_string(),
+                            label: "审查差异".to_string(),
+                            description: "总结或审查当前改动。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Refactor".to_string(),
-                            description: "Tighten structure and remove dead code.".to_string(),
+                            label: "重构".to_string(),
+                            description: "收紧结构并移除死代码。".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "Ship it".to_string(),
-                            description: "Finalize and open a PR.".to_string(),
+                            label: "完成交付".to_string(),
+                            description: "完成收尾并创建 PR。".to_string(),
                         },
                     ]),
                 }],

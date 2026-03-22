@@ -17,4 +17,4 @@ expression: terminal.backend().vt100().screen().contents()
   2. Yes, and don't ask again for these files (a)
   3. No, and tell Codex what to do differently (esc)
 
-  Press enter to confirm or esc to cancel
+  按 Enter 确认，按 Esc 取消

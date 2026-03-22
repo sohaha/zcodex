@@ -6,7 +6,7 @@ expression: render_lines(&view)
   Select Approval Mode                          
   Switch between Codex approval presets         
                                                 
-› 1. Read Only (current)  Codex can read files  
-  2. Full Access          Codex can edit files  
+› 1. Read Only (current)  可 读 取 文 件             
+  2. 完 全 访 问              可 编 辑 文 件             
                                                 
   按  enter 确 认 ， 按  esc 返 回

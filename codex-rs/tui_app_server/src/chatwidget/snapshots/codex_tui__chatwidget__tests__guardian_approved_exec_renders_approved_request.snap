@@ -12,6 +12,6 @@ expression: term.backend().vt100().screen().contents()
   time
 
 
-› Ask Codex to do anything
+› 让 Codex 处理任何事情
 
   ? for shortcuts                                                                                    100% context left

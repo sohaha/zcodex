@@ -3,4 +3,4 @@ source: tui/src/chatwidget/tests.rs
 assertion_line: 7060
 expression: header
 ---
-› Ask Codex to do anything
+› 让 Codex 处理任何事情

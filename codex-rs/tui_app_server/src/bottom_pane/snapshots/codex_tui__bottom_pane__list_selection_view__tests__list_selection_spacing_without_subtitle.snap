@@ -5,7 +5,7 @@ expression: render_lines(&view)
                                                 
   Select Approval Mode                          
                                                 
-› 1. 只读（当前）  Codex can read files  
-  2. Full Access          Codex can edit files  
+› 1. 只读（当前）  可读取文件  
+  2. 完全访问          可编辑文件  
                                                 
   按 enter 确认，按 esc 返回

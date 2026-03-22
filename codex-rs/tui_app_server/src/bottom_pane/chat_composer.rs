@@ -4543,7 +4543,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -4602,7 +4602,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_footer_hint_override(Some(vec![("K".to_string(), "label".to_string())]));
@@ -4640,7 +4640,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_footer_hint_override(Some(vec![("K".to_string(), "label".to_string())]));
@@ -4689,7 +4689,7 @@ mod tests {
             true,
             sender,
             enhanced_keys_supported,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         setup(&mut composer);
@@ -4950,7 +4950,7 @@ mod tests {
             true,
             sender,
             true,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -4977,7 +4977,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5000,7 +5000,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5026,7 +5026,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5088,7 +5088,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5131,7 +5131,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let remote_image_url = "https://example.com/one.png".to_string();
@@ -5173,7 +5173,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5216,7 +5216,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5258,7 +5258,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5287,7 +5287,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_connectors_enabled(true);
@@ -5329,7 +5329,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_connectors_enabled(true);
@@ -5367,7 +5367,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_text_content("$".to_string(), Vec::new(), Vec::new());
@@ -5475,7 +5475,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_connectors_enabled(true);
@@ -5513,7 +5513,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5763,7 +5763,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5798,7 +5798,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5829,7 +5829,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5853,7 +5853,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5886,7 +5886,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5934,7 +5934,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -5971,7 +5971,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6025,7 +6025,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6054,7 +6054,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6089,7 +6089,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6122,7 +6122,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6151,7 +6151,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6180,7 +6180,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6214,7 +6214,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_steer_enabled(true);
@@ -6242,7 +6242,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_steer_enabled(true);
@@ -6284,7 +6284,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_steer_enabled(false);
@@ -6329,7 +6329,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6370,7 +6370,7 @@ mod tests {
                 true,
                 sender.clone(),
                 false,
-                "Ask Codex to do anything".to_string(),
+                "让 Codex 处理任何事情".to_string(),
                 false,
             );
 
@@ -6462,7 +6462,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6490,7 +6490,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         type_chars_humanlike(&mut composer, &['/', 'm', 'o']);
@@ -6521,7 +6521,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6546,7 +6546,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         type_chars_humanlike(&mut composer, &['/', 'r', 'e', 's']);
@@ -6602,7 +6602,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6645,7 +6645,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_steer_enabled(true);
@@ -6679,7 +6679,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.textarea.insert_str("restore me");
@@ -6717,7 +6717,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_task_running(true);
@@ -6761,7 +6761,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             true,
         );
         composer.set_text_content("x".to_string(), Vec::new(), Vec::new());
@@ -6790,7 +6790,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_voice_transcription_enabled(true);
@@ -6822,7 +6822,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_voice_transcription_enabled(true);
@@ -6856,7 +6856,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_voice_transcription_enabled(true);
@@ -6890,7 +6890,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6917,7 +6917,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -6987,7 +6987,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7008,7 +7008,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7046,7 +7046,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_collaboration_modes_enabled(true);
@@ -7068,7 +7068,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_collaboration_modes_enabled(true);
@@ -7089,7 +7089,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7121,7 +7121,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7149,7 +7149,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_task_running(false);
@@ -7178,7 +7178,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7219,7 +7219,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_collaboration_modes_enabled(true);
@@ -7257,7 +7257,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7315,7 +7315,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7394,7 +7394,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7468,7 +7468,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7507,7 +7507,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7547,7 +7547,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7595,7 +7595,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let path = PathBuf::from("/tmp/image1.png");
@@ -7633,7 +7633,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7666,7 +7666,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let remote_image_url = "https://example.com/remote.png".to_string();
@@ -7700,7 +7700,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let remote_image_urls = vec![
@@ -7732,7 +7732,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7775,7 +7775,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7797,7 +7797,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7840,7 +7840,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7883,7 +7883,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7926,7 +7926,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -7972,7 +7972,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let path = PathBuf::from("/tmp/image2.png");
@@ -8011,7 +8011,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let path = PathBuf::from("/tmp/image_dup.png");
@@ -8034,7 +8034,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         let path = PathBuf::from("/tmp/image3.png");
@@ -8074,7 +8074,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8100,7 +8100,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8160,7 +8160,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8223,7 +8223,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8261,7 +8261,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8283,7 +8283,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8322,7 +8322,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8357,7 +8357,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8396,7 +8396,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8451,7 +8451,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8507,7 +8507,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8555,7 +8555,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8619,7 +8619,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8677,7 +8677,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8713,7 +8713,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8745,7 +8745,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8795,7 +8795,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8830,7 +8830,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8885,7 +8885,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8923,7 +8923,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -8961,7 +8961,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9004,7 +9004,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9044,7 +9044,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9085,7 +9085,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_steer_enabled(true);
@@ -9168,7 +9168,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9204,7 +9204,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9240,7 +9240,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9278,7 +9278,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9321,7 +9321,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9350,7 +9350,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9397,7 +9397,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9436,7 +9436,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9461,7 +9461,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9491,7 +9491,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9534,7 +9534,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9568,7 +9568,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9593,7 +9593,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9621,7 +9621,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9646,7 +9646,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9674,7 +9674,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9695,7 +9695,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9717,7 +9717,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9754,7 +9754,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9774,7 +9774,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 
@@ -9813,7 +9813,7 @@ mod tests {
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
 

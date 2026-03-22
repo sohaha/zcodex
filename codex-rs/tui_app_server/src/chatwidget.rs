@@ -7690,8 +7690,7 @@ impl ChatWidget {
             });
         }
 
-        let header =
-            self.model_menu_header("选择模型", "Pick a quick auto mode or browse all models.");
+        let header = self.model_menu_header("选择模型", "选择快捷自动模式，或浏览全部模型。");
         self.bottom_pane.show_selection_view(SelectionViewParams {
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -7715,10 +7714,7 @@ impl ChatWidget {
 
     pub(crate) fn open_all_models_popup(&mut self, presets: Vec<ModelPreset>) {
         if presets.is_empty() {
-            self.add_info_message(
-                "No additional models are available right now.".to_string(),
-                /*hint*/ None,
-            );
+            self.add_info_message("当前暂无更多可用模型。".to_string(), /*hint*/ None);
             return;
         }
 
@@ -7748,10 +7744,10 @@ impl ChatWidget {
 
         let header = self.model_menu_header(
             "选择模型与推理强度",
-            "Access legacy models by running codex -m <model_name> or in your config.toml",
+            "可通过运行 codex -m <model_name> 或在 config.toml 中访问旧版模型",
         );
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            footer_hint: Some("Press enter to select reasoning effort, or esc to dismiss.".into()),
+            footer_hint: Some("按 enter 选择推理强度，或按 esc 关闭。".into()),
             items,
             header,
             ..Default::default()
@@ -8381,10 +8377,7 @@ impl ChatWidget {
             tx.send(AppEvent::UpdateSandboxPolicy(sandbox_clone));
             tx.send(AppEvent::UpdateApprovalsReviewer(approvals_reviewer));
             tx.send(AppEvent::InsertHistoryCell(Box::new(
-                history_cell::new_info_event(
-                    format!("Permissions updated to {label}"),
-                    /*hint*/ None,
-                ),
+                history_cell::new_info_event(format!("权限已更新为 {label}"), /*hint*/ None),
             )));
         })]
     }
@@ -8463,11 +8456,11 @@ impl ChatWidget {
         let approval = preset.approval;
         let sandbox = preset.sandbox;
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
-        let title_line = Line::from("Enable full access?").bold();
+        let title_line = Line::from("启用完全访问？").bold();
         let info_line = Line::from(vec![
-            "When Codex runs with full access, it can edit any file on your computer and run commands with network, without your approval. "
+            "启用完全访问后，Codex 可以编辑你电脑上的任意文件，并在无需你批准的情况下执行联网命令。"
                 .into(),
-            "Exercise caution when enabling full access. This significantly increases the risk of data loss, leaks, or unexpected behavior."
+            "启用完全访问时请务必谨慎。这会显著增加数据丢失、泄露或出现意外行为的风险。"
                 .fg(Color::Red),
         ]);
         header_children.push(Box::new(title_line));
@@ -8508,21 +8501,21 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: "是，仍然继续".to_string(),
-                description: Some("为当前会话启用 full access".to_string()),
+                description: Some("为当前会话启用完全访问".to_string()),
                 actions: accept_actions,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "是，并且不再提示".to_string(),
-                description: Some("启用 full access 并记住此选择".to_string()),
+                description: Some("启用完全访问并记住此选择".to_string()),
                 actions: accept_and_remember_actions,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
-                name: "Cancel".to_string(),
-                description: Some("返回，不启用 full access".to_string()),
+                name: "取消".to_string(),
+                description: Some("返回，不启用完全访问".to_string()),
                 actions: deny_actions,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -9601,7 +9594,7 @@ impl ChatWidget {
         match connectors_cache {
             ConnectorsCacheState::Ready(snapshot) => {
                 if snapshot.connectors.is_empty() {
-                    self.add_info_message("No apps available.".to_string(), /*hint*/ None);
+                    self.add_info_message("暂无可用应用。".to_string(), /*hint*/ None);
                 } else {
                     self.open_connectors_popup(&snapshot.connectors);
                 }
@@ -10226,7 +10219,7 @@ impl ChatWidget {
         });
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Select a review preset".into()),
+            title: Some("选择审查预设".into()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -10259,11 +10252,11 @@ impl ChatWidget {
         }
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Select a base branch".to_string()),
+            title: Some("选择基准分支".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             is_searchable: true,
-            search_placeholder: Some("Type to search branches".to_string()),
+            search_placeholder: Some("输入以搜索分支".to_string()),
             ..Default::default()
         });
     }
@@ -10295,11 +10288,11 @@ impl ChatWidget {
         }
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Select a commit to review".to_string()),
+            title: Some("选择要审查的提交".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             is_searchable: true,
-            search_placeholder: Some("Type to search commits".to_string()),
+            search_placeholder: Some("输入以搜索提交".to_string()),
             ..Default::default()
         });
     }
@@ -10683,11 +10676,11 @@ pub(crate) fn show_review_commit_picker_with_entries(
     }
 
     chat.bottom_pane.show_selection_view(SelectionViewParams {
-        title: Some("Select a commit to review".to_string()),
+        title: Some("选择要审查的提交".to_string()),
         footer_hint: Some(standard_popup_hint_line()),
         items,
         is_searchable: true,
-        search_placeholder: Some("Type to search commits".to_string()),
+        search_placeholder: Some("输入以搜索提交".to_string()),
         ..Default::default()
     });
 }

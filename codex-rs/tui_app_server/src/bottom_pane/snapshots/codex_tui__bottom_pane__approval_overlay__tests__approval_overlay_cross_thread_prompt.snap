@@ -11,4 +11,4 @@ expression: "render_overlay_lines(&view, 80)"
 › 1. Yes, proceed (y)
   2. No, and tell Codex what to do differently (esc)
 
-  Press enter to confirm or esc to cancel or o to open thread
+  按 Enter 确认，按 Esc 取消 or o to open thread
