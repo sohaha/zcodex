@@ -90,10 +90,10 @@ fn default_mode_instructions(collaboration_modes_config: CollaborationModesConfi
 fn format_mode_names(modes: &[ModeKind]) -> String {
     let mode_names: Vec<&str> = modes.iter().map(|mode| mode.display_name()).collect();
     match mode_names.as_slice() {
-        [] => "none".to_string(),
+        [] => "无".to_string(),
         [mode_name] => (*mode_name).to_string(),
-        [first, second] => format!("{first} and {second}"),
-        [..] => mode_names.join(", "),
+        [first, second] => format!("{first} 和 {second}"),
+        [..] => mode_names.join("、"),
     }
 }
 
@@ -105,18 +105,18 @@ fn request_user_input_availability_message(
     if mode.allows_request_user_input()
         || (default_mode_request_user_input && mode == ModeKind::Default)
     {
-        format!("The `request_user_input` tool is available in {mode_name} mode.")
+        format!("`request_user_input` 工具可在 {mode_name} 模式下使用。")
     } else {
         format!(
-            "The `request_user_input` tool is unavailable in {mode_name} mode. If you call it while in {mode_name} mode, it will return an error."
+            "`request_user_input` 工具在 {mode_name} 模式下不可用；如果你在 {mode_name} 模式下调用它，将会返回错误。"
         )
     }
 }
 
 fn asking_questions_guidance_message(default_mode_request_user_input: bool) -> String {
     if default_mode_request_user_input {
-        "In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, prefer using the `request_user_input` tool rather than writing a multiple choice question as a textual assistant message. Never write a multiple choice question as a textual assistant message.".to_string()
+        "在 Default 模式下，应优先基于合理假设直接执行用户请求，而不是停下来提问。只有在确实无法从本地上下文得出答案，且贸然假设风险较高时，才考虑提问；此时优先使用 `request_user_input` 工具，而不是以普通文本助手消息的形式写出多项选择题。不要以普通文本助手消息的形式写多项选择题。".to_string()
     } else {
-        "In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.".to_string()
+        "在 Default 模式下，应优先基于合理假设直接执行用户请求，而不是停下来提问。只有在确实无法从本地上下文得出答案，且贸然假设风险较高时，才用简洁的纯文本问题直接询问用户。不要以普通文本助手消息的形式写多项选择题。".to_string()
     }
 }

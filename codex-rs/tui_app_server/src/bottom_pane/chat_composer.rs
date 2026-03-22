@@ -241,7 +241,7 @@ const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;
 
 fn user_input_too_large_message(actual_chars: usize) -> String {
     format!(
-        "Message exceeds the maximum length of {MAX_USER_INPUT_TEXT_CHARS} characters ({actual_chars} provided)."
+        "消息超出最大长度限制：最多 {MAX_USER_INPUT_TEXT_CHARS} 个字符，当前为 {actual_chars} 个字符。"
     )
 }
 
@@ -1283,7 +1283,7 @@ impl ChatComposer {
     }
 
     fn next_large_paste_placeholder(&mut self, char_count: usize) -> String {
-        let base = format!("[Pasted Content {char_count} chars]");
+        let base = format!("[粘贴内容 {char_count} 字]");
         let next_suffix = self.large_paste_counters.entry(char_count).or_insert(0);
         *next_suffix += 1;
         if *next_suffix == 1 {
@@ -2623,10 +2623,7 @@ impl ChatComposer {
         if !self.is_task_running || cmd.available_during_task() {
             return false;
         }
-        let message = format!(
-            "'/{}' is disabled while a task is in progress.",
-            cmd.command()
-        );
+        let message = format!("任务进行中时无法使用 `/{}`。", cmd.command());
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
             history_cell::new_error_event(message),
         )));
@@ -3633,24 +3630,24 @@ impl ChatComposer {
                 if !plugin.mcp_server_names.is_empty() {
                     let mcp_server_count = plugin.mcp_server_names.len();
                     capability_labels.push(if mcp_server_count == 1 {
-                        "1 MCP server".to_string()
+                        "1 个 MCP 服务".to_string()
                     } else {
-                        format!("{mcp_server_count} MCP servers")
+                        format!("{mcp_server_count} 个 MCP 服务")
                     });
                 }
                 if !plugin.app_connector_ids.is_empty() {
                     let app_count = plugin.app_connector_ids.len();
                     capability_labels.push(if app_count == 1 {
-                        "1 app".to_string()
+                        "1 个应用".to_string()
                     } else {
-                        format!("{app_count} apps")
+                        format!("{app_count} 个应用")
                     });
                 }
                 let description = plugin.description.clone().or_else(|| {
                     Some(if capability_labels.is_empty() {
-                        "Plugin".to_string()
+                        "插件".to_string()
                     } else {
-                        format!("Plugin · {}", capability_labels.join(" · "))
+                        format!("插件 · {}", capability_labels.join(" · "))
                     })
                 });
                 let mut search_terms = vec![plugin_name.to_string(), plugin.config_name.clone()];
@@ -3666,7 +3663,7 @@ impl ChatComposer {
                     insert_text: format!("${plugin_name}"),
                     search_terms,
                     path: Some(format!("plugin://{}", plugin.config_name)),
-                    category_tag: Some("[Plugin]".to_string()),
+                    category_tag: Some("[插件]".to_string()),
                     sort_rank: 0,
                 });
             }
@@ -5042,7 +5039,7 @@ mod tests {
         let large = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 5);
         composer.handle_paste(large.clone());
         let char_count = large.chars().count();
-        let placeholder = format!("[Pasted Content {char_count} chars]");
+        let placeholder = format!("[粘贴内容 {char_count} 字]");
         assert_eq!(composer.textarea.text(), placeholder);
         assert_eq!(
             composer.pending_pastes,
@@ -5408,10 +5405,7 @@ mod tests {
             composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
                 config_name: "sample@test".to_string(),
                 display_name: "Sample Plugin".to_string(),
-                description: Some(
-                    "Plugin that includes the Figma MCP server and Skills for common workflows"
-                        .to_string(),
-                ),
+                description: Some("包含 Figma MCP 服务和常用工作流技能的插件".to_string()),
                 has_skills: true,
                 mcp_server_names: vec!["sample".to_string()],
                 app_connector_ids: vec![codex_core::plugins::AppConnectorId(
@@ -6196,7 +6190,7 @@ mod tests {
         let large = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 10);
         let needs_redraw = composer.handle_paste(large.clone());
         assert!(needs_redraw);
-        let placeholder = format!("[Pasted Content {} chars]", large.chars().count());
+        let placeholder = format!("[粘贴内容 {} 字]", large.chars().count());
         assert_eq!(composer.textarea.text(), placeholder);
         assert_eq!(composer.pending_pastes.len(), 1);
         assert_eq!(composer.pending_pastes[0].0, placeholder);
@@ -6749,7 +6743,7 @@ mod tests {
                     .map(|line| line.to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
-                assert!(message.contains("disabled while a task is in progress"));
+                assert!(message.contains("任务进行中时无法使用"));
                 found_error = true;
                 break;
             }
@@ -7271,7 +7265,7 @@ mod tests {
         );
 
         let large = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 5);
-        let placeholder = format!("[Pasted Content {} chars]", large.chars().count());
+        let placeholder = format!("[粘贴内容 {} 字]", large.chars().count());
 
         composer.handle_paste(large.clone());
         composer.insert_str(" @ma");
@@ -7345,7 +7339,7 @@ mod tests {
             .map(|(content, is_large)| {
                 composer.handle_paste(content.clone());
                 if *is_large {
-                    let placeholder = format!("[Pasted Content {} chars]", content.chars().count());
+                    let placeholder = format!("[粘贴内容 {} 字]", content.chars().count());
                     expected_text.push_str(&placeholder);
                     expected_pending_count += 1;
                 } else {
@@ -7360,19 +7354,16 @@ mod tests {
             states,
             vec![
                 (
-                    format!("[Pasted Content {} chars]", test_cases[0].0.chars().count()),
+                    format!("[粘贴内容 {} 字]", test_cases[0].0.chars().count()),
+                    1
+                ),
+                (
+                    format!("[粘贴内容 {} 字] and ", test_cases[0].0.chars().count()),
                     1
                 ),
                 (
                     format!(
-                        "[Pasted Content {} chars] and ",
-                        test_cases[0].0.chars().count()
-                    ),
-                    1
-                ),
-                (
-                    format!(
-                        "[Pasted Content {} chars] and [Pasted Content {} chars]",
+                        "[粘贴内容 {} 字] and [粘贴内容 {} 字]",
                         test_cases[0].0.chars().count(),
                         test_cases[2].0.chars().count()
                     ),
@@ -7421,7 +7412,7 @@ mod tests {
             .map(|(content, is_large)| {
                 composer.handle_paste(content.clone());
                 if *is_large {
-                    let placeholder = format!("[Pasted Content {} chars]", content.chars().count());
+                    let placeholder = format!("[粘贴内容 {} 字]", content.chars().count());
                     current_pos += placeholder.len();
                 } else {
                     current_pos += content.len();
@@ -7457,7 +7448,7 @@ mod tests {
         assert_eq!(
             deletion_states,
             vec![
-                (" and [Pasted Content 1006 chars]".to_string(), 1),
+                (" and [粘贴内容 1006 字]".to_string(), 1),
                 (" and ".to_string(), 0),
             ]
         );
@@ -7482,7 +7473,7 @@ mod tests {
         );
 
         let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
-        let placeholder_base = format!("[Pasted Content {} chars]", paste.chars().count());
+        let placeholder_base = format!("[粘贴内容 {} 字]", paste.chars().count());
         let placeholder_second = format!("{placeholder_base} #2");
 
         composer.handle_paste(paste.clone());
@@ -7521,7 +7512,7 @@ mod tests {
         );
 
         let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
-        let base = format!("[Pasted Content {} chars]", paste.chars().count());
+        let base = format!("[粘贴内容 {} 字]", paste.chars().count());
         let second = format!("{base} #2");
         let third = format!("{base} #3");
 
@@ -7567,7 +7558,7 @@ mod tests {
         ];
 
         let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
-        let placeholder = format!("[Pasted Content {} chars]", paste.chars().count());
+        let placeholder = format!("[粘贴内容 {} 字]", paste.chars().count());
 
         let states: Vec<_> = test_cases
             .into_iter()
@@ -8587,7 +8578,7 @@ mod tests {
         composer.handle_paste(large_content.clone());
 
         // Verify placeholder was created
-        let placeholder = format!("[Pasted Content {} chars]", large_content.chars().count());
+        let placeholder = format!("[粘贴内容 {} 字]", large_content.chars().count());
         assert_eq!(
             composer.textarea.text(),
             format!("/prompts:code-review {}", placeholder)
@@ -9427,7 +9418,7 @@ mod tests {
         let flushed = composer.handle_paste_burst_flush(flush_time);
         assert!(flushed, "expected flush after stopping fast input");
 
-        let expected_placeholder = format!("[Pasted Content {count} chars]");
+        let expected_placeholder = format!("[粘贴内容 {count} 字]");
         assert_eq!(composer.textarea.text(), expected_placeholder);
         assert_eq!(composer.pending_pastes.len(), 1);
         assert_eq!(composer.pending_pastes[0].0, expected_placeholder);
@@ -9634,7 +9625,7 @@ mod tests {
             false,
         );
 
-        let placeholder = "[Pasted Content 5 chars]".to_string();
+        let placeholder = "[粘贴内容 5 字]".to_string();
         composer.textarea.insert_element(&placeholder);
         composer
             .pending_pastes

@@ -112,14 +112,14 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 #[cfg(all(not(target_os = "android"), not(feature = "clipboard")))]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unavailable in this build".into(),
+        "当前构建不支持从剪贴板粘贴图片".into(),
     ))
 }
 
 #[cfg(target_os = "android")]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unsupported on Android".into(),
+        "Android 平台暂不支持从剪贴板粘贴图片".into(),
     ))
 }
 
@@ -238,7 +238,7 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
 #[cfg(all(not(target_os = "android"), not(feature = "clipboard")))]
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unavailable in this build".into(),
+        "当前构建不支持从剪贴板粘贴图片".into(),
     ))
 }
 
@@ -246,7 +246,7 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     // Keep error consistent with paste_image_as_png.
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unsupported on Android".into(),
+        "Android 平台暂不支持从剪贴板粘贴图片".into(),
     ))
 }
 

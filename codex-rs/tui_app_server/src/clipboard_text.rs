@@ -182,7 +182,7 @@ fn osc52_sequence(text: &str, tmux: bool) -> String {
 /// available in the supported Android/Termux environment.
 #[cfg(target_os = "android")]
 pub fn copy_text_to_clipboard(_text: &str) -> Result<(), String> {
-    Err("clipboard text copy is unsupported on Android".into())
+    Err("Android 平台暂不支持复制文本到剪贴板".into())
 }
 
 #[cfg(all(test, not(target_os = "android")))]

@@ -4411,10 +4411,7 @@ impl ChatWidget {
 
     fn dispatch_command(&mut self, cmd: SlashCommand) {
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
-            let message = format!(
-                "'/{}' is disabled while a task is in progress.",
-                cmd.command()
-            );
+            let message = format!("任务进行中时无法使用 `/{}`。", cmd.command());
             self.add_to_history(history_cell::new_error_event(message));
             self.bottom_pane.drain_pending_submission_state();
             self.request_redraw();
@@ -4751,10 +4748,7 @@ impl ChatWidget {
             return;
         }
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
-            let message = format!(
-                "'/{}' is disabled while a task is in progress.",
-                cmd.command()
-            );
+            let message = format!("任务进行中时无法使用 `/{}`。", cmd.command());
             self.add_to_history(history_cell::new_error_event(message));
             self.request_redraw();
             return;

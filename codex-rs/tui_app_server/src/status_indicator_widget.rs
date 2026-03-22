@@ -311,7 +311,10 @@ mod tests {
         assert_eq!(fmt_elapsed_compact(59 * 60 + 59), "59分 59秒");
         assert_eq!(fmt_elapsed_compact(3600), "1时 00分 00秒");
         assert_eq!(fmt_elapsed_compact(3600 + 60 + 1), "1时 01分 01秒");
-        assert_eq!(fmt_elapsed_compact(25 * 3600 + 2 * 60 + 3), "25时 02分 03秒");
+        assert_eq!(
+            fmt_elapsed_compact(25 * 3600 + 2 * 60 + 3),
+            "25时 02分 03秒"
+        );
     }
 
     #[test]

@@ -6157,7 +6157,7 @@ async fn slash_clear_is_disabled_while_task_running() {
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(80));
             assert!(
-                rendered.contains("'/clear' is disabled while a task is in progress."),
+                rendered.contains("任务进行中时无法使用 `/clear`。"),
                 "expected /clear task-running error, got {rendered:?}"
             );
         }

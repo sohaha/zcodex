@@ -3101,8 +3101,7 @@ mod tests {
     #[test]
     fn error_event_oversized_input_snapshot() {
         let cell = new_error_event(
-            "Message exceeds the maximum length of 1048576 characters (1048577 provided)."
-                .to_string(),
+            "消息超出最大长度限制：最多 1048576 个字符，当前为 1048577 个字符。".to_string(),
         );
         let rendered = render_lines(&cell.display_lines(120)).join("\n");
         insta::assert_snapshot!(rendered);
