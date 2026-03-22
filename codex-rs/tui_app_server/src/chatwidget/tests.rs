@@ -614,7 +614,7 @@ async fn forked_thread_history_line_includes_name_and_id_snapshot() {
     let combined = lines_to_single_string(&history_cell.display_lines(80));
 
     assert!(
-        combined.contains("Thread forked from"),
+        combined.contains("线程分叉自"),
         "expected forked thread message in history"
     );
     assert_snapshot!("forked_thread_history_line", combined);
@@ -2223,18 +2223,10 @@ async fn rate_limit_warnings_emit_thresholds() {
     assert_eq!(
         warnings,
         vec![
-            String::from(
-                "Heads up, you have less than 25% of your 5h limit left. Run /status for a breakdown."
-            ),
-            String::from(
-                "Heads up, you have less than 25% of your weekly limit left. Run /status for a breakdown.",
-            ),
-            String::from(
-                "Heads up, you have less than 5% of your 5h limit left. Run /status for a breakdown."
-            ),
-            String::from(
-                "Heads up, you have less than 5% of your weekly limit left. Run /status for a breakdown.",
-            ),
+            String::from("注意：你的 5h 限额剩余已不足 25%。可运行 /status 查看详情。"),
+            String::from("注意：你的 每周 限额剩余已不足 25%。可运行 /status 查看详情。"),
+            String::from("注意：你的 5h 限额剩余已不足 5%。可运行 /status 查看详情。"),
+            String::from("注意：你的 每周 限额剩余已不足 5%。可运行 /status 查看详情。"),
         ],
         "expected one warning per limit for the highest crossed threshold"
     );
@@ -2249,7 +2241,7 @@ async fn test_rate_limit_warnings_monthly() {
     assert_eq!(
         warnings,
         vec![String::from(
-            "Heads up, you have less than 25% of your monthly limit left. Run /status for a breakdown.",
+            "注意：你的 每月 限额剩余已不足 25%。可运行 /status 查看详情。",
         ),],
         "expected one warning per limit for the highest crossed threshold"
     );
@@ -7258,7 +7250,7 @@ async fn interrupted_turn_pending_steers_message_snapshot() {
     let info = cells
         .iter()
         .map(|cell| lines_to_single_string(cell))
-        .find(|line| line.contains("Model interrupted to submit steer instructions."))
+        .find(|line| line.contains("模型已中断，以便提交引导说明。"))
         .expect("expected steer interrupt info message to be inserted");
     assert_snapshot!("interrupted_turn_pending_steers_message", info);
 }
@@ -11866,11 +11858,8 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
             delta: "**Investigating rendering code**".into(),
         }),
     });
-    chat.bottom_pane.set_composer_text(
-        "Summarize recent commits".to_string(),
-        Vec::new(),
-        Vec::new(),
-    );
+    chat.bottom_pane
+        .set_composer_text("总结最近的提交".to_string(), Vec::new(), Vec::new());
 
     let width: u16 = 80;
     let ui_height: u16 = chat.desired_height(width);

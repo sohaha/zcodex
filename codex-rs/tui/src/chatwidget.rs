@@ -438,10 +438,10 @@ impl RateLimitWarningState {
             if let Some(threshold) = highest_secondary {
                 let limit_label = secondary_window_minutes
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
+                    .unwrap_or_else(|| "每周".to_string());
                 let remaining_percent = 100.0 - threshold;
                 warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
+                    "注意：你的 {limit_label} 限额剩余已不足 {remaining_percent:.0}%。可运行 /status 查看详情。"
                 ));
             }
         }
@@ -460,7 +460,7 @@ impl RateLimitWarningState {
                     .unwrap_or_else(|| "5h".to_string());
                 let remaining_percent = 100.0 - threshold;
                 warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
+                    "注意：你的 {limit_label} 限额剩余已不足 {remaining_percent:.0}%。可运行 /status 查看详情。"
                 ));
             }
         }
@@ -483,11 +483,11 @@ pub(crate) fn get_limits_duration(windows_minutes: i64) -> String {
         let hours = std::cmp::max(1, adjusted / MINUTES_PER_HOUR);
         format!("{hours}h")
     } else if windows_minutes <= MINUTES_PER_WEEK.saturating_add(ROUNDING_BIAS_MINUTES) {
-        "weekly".to_string()
+        "每周".to_string()
     } else if windows_minutes <= MINUTES_PER_MONTH.saturating_add(ROUNDING_BIAS_MINUTES) {
-        "monthly".to_string()
+        "每月".to_string()
     } else {
-        "annual".to_string()
+        "每年".to_string()
     }
 }
 
@@ -1483,7 +1483,7 @@ impl ChatWidget {
             let send_name_and_id = |name: String| {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "线程分叉自 ".into(),
                     name.cyan(),
                     " (".into(),
                     forked_from_id_text.clone().cyan(),
@@ -1497,7 +1497,7 @@ impl ChatWidget {
             let send_id_only = || {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "线程分叉自 ".into(),
                     forked_from_id_text.clone().cyan(),
                 ]
                 .into();
@@ -2225,12 +2225,13 @@ impl ChatWidget {
         if reason != TurnAbortReason::ReviewEnded {
             if send_pending_steers_immediately {
                 self.add_to_history(history_cell::new_info_event(
-                    "Model interrupted to submit steer instructions.".to_owned(),
+                    "模型已中断，以便提交引导说明。".to_owned(),
                     /*hint*/ None,
                 ));
             } else {
                 self.add_to_history(history_cell::new_error_event(
-                    "Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.".to_owned(),
+                    "对话已中断——请告诉模型接下来该如何调整。若出现问题，可使用 `/feedback` 反馈。"
+                        .to_owned(),
                 ));
             }
         }
@@ -2488,7 +2489,7 @@ impl ChatWidget {
                         .get("connector_name")
                         .and_then(serde_json::Value::as_str)
                         .or_else(|| action.get("server").and_then(serde_json::Value::as_str))
-                        .unwrap_or("unknown server");
+                        .unwrap_or("未知服务器");
                     Some(format!("MCP {tool_name} on {label}"))
                 }
                 _ => None,
@@ -2615,11 +2616,11 @@ impl ChatWidget {
                     let server = action
                         .get("server")
                         .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown server");
+                        .unwrap_or("未知服务器");
                     let tool_name = action
                         .get("tool_name")
                         .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown tool");
+                        .unwrap_or("未知工具");
                     history_cell::new_guardian_denied_action_request(format!(
                         "codex to call MCP tool {server}.{tool_name}"
                     ))
@@ -2629,7 +2630,7 @@ impl ChatWidget {
                         .get("target")
                         .and_then(serde_json::Value::as_str)
                         .or_else(|| action.get("host").and_then(serde_json::Value::as_str))
-                        .unwrap_or("network target");
+                        .unwrap_or("网络目标");
                     history_cell::new_guardian_denied_action_request(format!(
                         "codex to access {target}"
                     ))
@@ -4210,7 +4211,7 @@ impl ChatWidget {
                     Err(err) => {
                         tracing::warn!("failed to paste image: {err}");
                         self.add_to_history(history_cell::new_error_event(format!(
-                            "Failed to paste image: {err}",
+                            "粘贴图片失败：{err}",
                         )));
                     }
                 }
@@ -8342,7 +8343,7 @@ impl ChatWidget {
             "• ".into(),
             "线程已重命名为 ".into(),
             name.cyan(),
-            ", to resume this thread run ".into(),
+            ", 可运行以下命令恢复此线程：".into(),
             resume_cmd.cyan(),
         ];
         PlainHistoryCell::new(vec![line.into()])
@@ -9442,14 +9443,14 @@ impl Notification {
 const AGENT_NOTIFICATION_PREVIEW_GRAPHEMES: usize = 200;
 
 const PLACEHOLDERS: [&str; 8] = [
-    "Explain this codebase",
-    "Summarize recent commits",
-    "Implement {feature}",
-    "Find and fix a bug in @filename",
-    "Write tests for @filename",
-    "Improve documentation in @filename",
-    "Run /review on my current changes",
-    "Use /skills to list available skills",
+    "解释这个代码库",
+    "总结最近的提交",
+    "实现 {feature}",
+    "查找并修复 @filename 中的 bug",
+    "为 @filename 编写测试",
+    "完善 @filename 的文档",
+    "对我当前的改动运行 /review",
+    "使用 /skills 列出可用技能",
 ];
 
 // Extract the first bold (Markdown) element in the form **...** from `s`.

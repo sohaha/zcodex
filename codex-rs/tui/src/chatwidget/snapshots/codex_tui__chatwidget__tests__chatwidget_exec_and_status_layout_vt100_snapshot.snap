@@ -39,6 +39,6 @@ expression: term.backend().vt100().screen().contents()
 • Investigating rendering code (0s • esc 可中断)
 
 
-› Summarize recent commits
+› 总结最近的提交
 
   tab 将消息加入队列                                           剩余上下文 100%
