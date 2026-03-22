@@ -61,6 +61,7 @@ Read only what you need:
 - If multiple pages differ, call out the difference and cite both.
 - Reference files are convenience guides only; for volatile guidance such as recommended models, upgrade instructions, or prompting advice, current OpenAI docs always win.
 - If docs do not cover the user’s need, say so and offer next steps.
+- Match the user's language when answering, but preserve product names, model IDs, API fields, header names, command literals, and code exactly unless official docs localize them.
 
 ## Tooling notes
 

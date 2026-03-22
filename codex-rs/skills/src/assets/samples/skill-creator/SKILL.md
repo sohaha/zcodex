@@ -53,6 +53,19 @@ When using subagents for validation, treat that as an evaluation surface. The go
 
 Prefer raw artifacts such as example prompts, outputs, diffs, logs, or traces. Give the minimum task-local context needed to perform the validation. Avoid passing the intended answer, suspected bug, intended fix, or your prior conclusions unless the validation explicitly requires them.
 
+### Handle Localization Deliberately
+
+If a skill tells Codex to update user-facing text, include explicit localization rules instead of vague instructions like "translate this." Good localization guidance should:
+
+- Prefer natural target-language phrasing over word-for-word translation
+- Preserve placeholders, Markdown structure, ANSI escapes, shortcuts, and code literals
+- Keep product names, command names, config keys, protocol fields, crate names, and identifiers unchanged unless the product already localizes them
+- Require terminology consistency across parallel implementations, snapshots, and tests
+- Tell Codex to update the real source first, then sync snapshots and assertions
+- Forbid "test-only localization" or weakening assertions to accept both languages unless the product intentionally supports both
+
+When a skill repeatedly touches localized UI, provide a compact glossary of the highest-frequency terms so Codex does not invent new translations mid-change.
+
 ### Anatomy of a Skill
 
 Every skill consists of a required SKILL.md file and optional bundled resources:

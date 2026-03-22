@@ -29,6 +29,8 @@ Which ones would you like installed?
 
 After installing a skill, tell the user: "Restart Codex to pick up new skills."
 
+If the surrounding conversation is not in English, respond in the user's language where natural, but keep repository names, command lines, flags, environment variables, and file paths literal.
+
 ## Scripts
 
 All of these scripts use network, so when running in the sandbox, request escalation when running them.
