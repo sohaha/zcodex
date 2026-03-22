@@ -75,9 +75,11 @@ fn select_device_and_config(
         .and_then(|name| find_device_by_name(&host, kind, name))
         .or_else(|| {
             let default_device = default_device(&host, kind);
-            if let Some(name) = configured_name && default_device.is_some() {
+            if let Some(name) = configured_name
+                && default_device.is_some()
+            {
                 warn!(
-                    "configured {} audio device `{name}` was unavailable; falling back to system default",
+                    "已配置的{}音频设备 `{name}` 不可用，已回退到系统默认设备",
                     kind.noun()
                 );
             }
