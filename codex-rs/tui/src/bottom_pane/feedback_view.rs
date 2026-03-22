@@ -431,7 +431,7 @@ pub(crate) fn feedback_selection_params(
         items: vec![
             make_feedback_item(
                 app_event_tx.clone(),
-                "Bug",
+                "故障",
                 "崩溃、报错、卡住，或 UI/行为异常。",
                 FeedbackCategory::Bug,
             ),
@@ -571,7 +571,7 @@ pub(crate) fn feedback_upload_consent_params(
                 ..Default::default()
             },
             super::SelectionItem {
-                name: "No".to_string(),
+                name: "否".to_string(),
                 actions: vec![no_action],
                 dismiss_on_select: true,
                 ..Default::default()
