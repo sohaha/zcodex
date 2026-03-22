@@ -22,7 +22,7 @@ pub(crate) fn new_debug_config_output(
 
     if let Some(proxy) = session_network_proxy {
         lines.push("".into());
-        lines.push("Session runtime:".bold().into());
+        lines.push("会话运行时：".bold().into());
         lines.push("  - network_proxy".into());
         let SessionNetworkProxyRuntime {
             http_addr,
@@ -55,29 +55,25 @@ fn session_all_proxy_url(http_addr: &str, socks_addr: &str, socks_enabled: bool)
 fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     let mut lines = vec!["/debug-config".magenta().into(), "".into()];
 
-    lines.push(
-        "Config layer stack (lowest precedence first):"
-            .bold()
-            .into(),
-    );
+    lines.push("配置层堆栈（优先级最低的在前）：".bold().into());
     let layers = stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ true,
     );
     if layers.is_empty() {
-        lines.push("  <none>".dim().into());
+        lines.push("  <无>".dim().into());
     } else {
         for (index, layer) in layers.iter().enumerate() {
             let source = format_config_layer_source(&layer.name);
             let status = if layer.is_disabled() {
-                "disabled"
+                "已禁用"
             } else {
-                "enabled"
+                "已启用"
             };
             lines.push(format!("  {}. {source} ({status})", index + 1).into());
             lines.extend(render_non_file_layer_details(layer));
             if let Some(reason) = &layer.disabled_reason {
-                lines.push(format!("     reason: {reason}").dim().into());
+                lines.push(format!("     原因: {reason}").dim().into());
             }
         }
     }
@@ -86,7 +82,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     let requirements_toml = stack.requirements_toml();
 
     lines.push("".into());
-    lines.push("Requirements:".bold().into());
+    lines.push("约束：".bold().into());
     let mut requirement_lines = Vec::new();
 
     if let Some(policies) = requirements_toml.allowed_approval_policies.as_ref() {
@@ -166,7 +162,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     }
 
     if requirement_lines.is_empty() {
-        lines.push("  <none>".dim().into());
+        lines.push("  <无>".dim().into());
     } else {
         lines.extend(requirement_lines);
     }
@@ -192,7 +188,7 @@ fn render_session_flag_details(config: &TomlValue) -> Vec<Line<'static>> {
     flatten_toml_key_values(config, /*prefix*/ None, &mut pairs);
 
     if pairs.is_empty() {
-        return vec!["     - <none>".dim().into()];
+        return vec!["     - <无>".dim().into()];
     }
 
     pairs
@@ -207,15 +203,15 @@ fn render_mdm_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
         .map(ToString::to_string)
         .unwrap_or_else(|| format_toml_value(&layer.config));
     if value.is_empty() {
-        return vec!["     MDM value: <empty>".dim().into()];
+        return vec!["     MDM 值: <空>".dim().into()];
     }
 
     if value.contains('\n') {
-        let mut lines = vec!["     MDM value:".into()];
+        let mut lines = vec!["     MDM 值:".into()];
         lines.extend(value.lines().map(|line| format!("       {line}").into()));
         lines
     } else {
-        vec![format!("     MDM value: {value}").into()]
+        vec![format!("     MDM 值: {value}").into()]
     }
 }
 
@@ -255,13 +251,13 @@ fn requirement_line(
 ) -> Line<'static> {
     let source = source
         .map(ToString::to_string)
-        .unwrap_or_else(|| "<unspecified>".to_string());
-    format!("  - {name}: {value} (source: {source})").into()
+        .unwrap_or_else(|| "<未指定>".to_string());
+    format!("  - {name}: {value}（来源: {source}）").into()
 }
 
 fn join_or_empty(values: Vec<String>) -> String {
     if values.is_empty() {
-        "<empty>".to_string()
+        "<空>".to_string()
     } else {
         values.join(", ")
     }
@@ -287,30 +283,30 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
             format!("MDM ({domain}:{key})")
         }
         ConfigLayerSource::System { file } => {
-            format!("system ({})", file.as_path().display())
+            format!("系统 ({})", file.as_path().display())
         }
         ConfigLayerSource::User { file } => {
-            format!("user ({})", file.as_path().display())
+            format!("用户 ({})", file.as_path().display())
         }
         ConfigLayerSource::Project { dot_codex_folder } => {
             format!(
-                "project ({}/config.toml)",
+                "项目 ({}/config.toml)",
                 dot_codex_folder.as_path().display()
             )
         }
-        ConfigLayerSource::SessionFlags => "session-flags".to_string(),
+        ConfigLayerSource::SessionFlags => "会话参数".to_string(),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!("legacy managed_config.toml ({})", file.as_path().display())
+            format!("旧版 managed_config.toml ({})", file.as_path().display())
         }
         ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "legacy managed_config.toml (MDM)".to_string()
+            "旧版 managed_config.toml (MDM)".to_string()
         }
     }
 }
 
 fn format_sandbox_mode_requirement(mode: SandboxModeRequirement) -> String {
     match mode {
-        SandboxModeRequirement::ReadOnly => "read-only".to_string(),
+        SandboxModeRequirement::ReadOnly => "只读".to_string(),
         SandboxModeRequirement::WorkspaceWrite => "workspace-write".to_string(),
         SandboxModeRequirement::DangerFullAccess => "danger-full-access".to_string(),
         SandboxModeRequirement::ExternalSandbox => "external-sandbox".to_string(),
@@ -468,11 +464,11 @@ mod tests {
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("(enabled)"));
-        assert!(rendered.contains("(disabled)"));
-        assert!(rendered.contains("reason: project is untrusted"));
-        assert!(rendered.contains("Requirements:"));
-        assert!(rendered.contains("  <none>"));
+        assert!(rendered.contains("(已启用)"));
+        assert!(rendered.contains("(已禁用)"));
+        assert!(rendered.contains("原因: project is untrusted"));
+        assert!(rendered.contains("约束："));
+        assert!(rendered.contains("  <无>"));
     }
 
     #[test]
@@ -561,26 +557,25 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_approval_policies: on-request (source: cloud requirements)")
+            rendered.contains("allowed_approval_policies: on-request（来源: cloud requirements）")
         );
         assert!(
             rendered.contains(
                 format!(
-                    "allowed_sandbox_modes: read-only (source: {})",
+                    "allowed_sandbox_modes: 只读（来源: {}）",
                     requirements_file.as_path().display()
                 )
                 .as_str(),
             )
         );
         assert!(
-            rendered.contains(
-                "allowed_web_search_modes: cached, disabled (source: cloud requirements)"
-            )
+            rendered
+                .contains("allowed_web_search_modes: cached, disabled（来源: cloud requirements）")
         );
-        assert!(rendered.contains("mcp_servers: docs (source: MDM managed_config.toml (legacy))"));
-        assert!(rendered.contains("enforce_residency: us (source: cloud requirements)"));
+        assert!(rendered.contains("mcp_servers: docs（来源: MDM managed_config.toml (legacy)）"));
+        assert!(rendered.contains("enforce_residency: us（来源: cloud requirements）"));
         assert!(rendered.contains(
-            "experimental_network: enabled=true, allowed_domains=[example.com] (source: cloud requirements)"
+            "experimental_network: enabled=true, allowed_domains=[example.com]（来源: cloud requirements）"
         ));
         assert!(!rendered.contains("  - rules:"));
     }
@@ -607,7 +602,7 @@ writable_roots = ["/tmp"]
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("session-flags (enabled)"));
+        assert!(rendered.contains("会话参数 (已启用)"));
         assert!(rendered.contains("     - model = \"gpt-5\""));
         assert!(rendered.contains("     - sandbox_workspace_write.network_access = true"));
         assert!(rendered.contains("sandbox_workspace_write.writable_roots"));
@@ -635,8 +630,8 @@ approval_policy = "never"
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("legacy managed_config.toml (MDM) (enabled)"));
-        assert!(rendered.contains("MDM value:"));
+        assert!(rendered.contains("旧版 managed_config.toml (MDM) (已启用)"));
+        assert!(rendered.contains("MDM 值:"));
         assert!(rendered.contains("# managed by MDM"));
         assert!(rendered.contains("model = \"managed_model\""));
         assert!(rendered.contains("approval_policy = \"never\""));
@@ -670,7 +665,7 @@ approval_policy = "never"
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_web_search_modes: disabled (source: cloud requirements)")
+            rendered.contains("allowed_web_search_modes: disabled（来源: cloud requirements）")
         );
     }
 

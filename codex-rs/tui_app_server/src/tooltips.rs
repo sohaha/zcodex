@@ -7,14 +7,13 @@ use rand::Rng;
 const IS_MACOS: bool = cfg!(target_os = "macos");
 const IS_WINDOWS: bool = cfg!(target_os = "windows");
 
-const PAID_TOOLTIP: &str = "*New* Try the **Codex App** with 2x rate limits until *April 2nd*. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
-const PAID_TOOLTIP_WINDOWS: &str = "*New* Try the **Codex App**, now available on **Windows**, with 2x rate limits until *April 2nd*. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
-const PAID_TOOLTIP_NON_MAC: &str = "*New* 2x rate limits until *April 2nd*.";
-const FAST_TOOLTIP: &str = "*New* Use **/fast** to enable our fastest inference at 2X plan usage.";
-const OTHER_TOOLTIP: &str = "*New* Build faster with the **Codex App**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
-const OTHER_TOOLTIP_NON_MAC: &str = "*New* Build faster with Codex.";
-const FREE_GO_TOOLTIP: &str =
-    "*New* For a limited time, Codex is included in your plan for free – let’s build together.";
+const PAID_TOOLTIP: &str = "*新功能* 立即试用 **Codex App**，截至 *4月2日* 可享 2 倍速率额度。运行 `codex app`，或访问 https://chatgpt.com/codex?app-landing-page=true";
+const PAID_TOOLTIP_WINDOWS: &str = "*新功能* **Codex App** 现已支持 **Windows**，截至 *4月2日* 可享 2 倍速率额度。运行 `codex app`，或访问 https://chatgpt.com/codex?app-landing-page=true";
+const PAID_TOOLTIP_NON_MAC: &str = "*新功能* 截至 *4月2日* 可享 2 倍速率额度。";
+const FAST_TOOLTIP: &str = "*新功能* 使用 **/fast** 即可开启最快推理速度，按 2 倍计划用量计费。";
+const OTHER_TOOLTIP: &str = "*新功能* 试试 **Codex App**，更快完成构建。运行 `codex app`，或访问 https://chatgpt.com/codex?app-landing-page=true";
+const OTHER_TOOLTIP_NON_MAC: &str = "*新功能* 使用 Codex，更快完成构建。";
+const FREE_GO_TOOLTIP: &str = "*新功能* 限时免费，Codex 已包含在你的套餐内，一起开始构建吧。";
 
 const RAW_TOOLTIPS: &str = include_str!("../tooltips.txt");
 
