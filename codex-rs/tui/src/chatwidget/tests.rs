@@ -1123,7 +1123,7 @@ async fn blocked_image_restore_preserves_mention_bindings() {
         .map(|lines| lines_to_single_string(lines))
         .expect("expected warning cell");
     assert!(
-        warning.contains("does not support image inputs"),
+        warning.contains("不支持图片输入"),
         "expected image warning, got: {warning:?}"
     );
 }
@@ -8132,11 +8132,11 @@ async fn model_reasoning_selection_popup_extra_high_warning_snapshot() {
         "expected localized reasoning popup title, got: {popup}"
     );
     assert!(
-        popup.contains("Extra high"),
+        normalized.contains("极高"),
         "expected popup to include the extra-high option, got: {popup}"
     );
     assert!(
-        normalized.contains("Extrahigh推理强度可能会快速消耗Plus计划的速率限制额度。"),
+        normalized.contains("极高推理强度可能会快速消耗Plus计划的速率限制额度。"),
         "expected popup to keep the extra-high warning, got: {popup}"
     );
 }
@@ -8151,12 +8151,13 @@ async fn reasoning_popup_shows_extra_high_with_space() {
     chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, 120);
+    let normalized = normalize_ui_text(&popup);
     assert!(
-        popup.contains("Extra high"),
-        "expected popup to include 'Extra high'; popup: {popup}"
+        normalized.contains("极高"),
+        "expected popup to include '极高'; popup: {popup}"
     );
     assert!(
-        !popup.contains("Extrahigh"),
+        !normalized.contains("Extrahigh"),
         "expected popup not to include 'Extrahigh'; popup: {popup}"
     );
 }
