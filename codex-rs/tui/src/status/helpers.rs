@@ -22,14 +22,14 @@ pub(crate) fn compose_model_display(
 ) -> (String, Vec<String>) {
     let mut details: Vec<String> = Vec::new();
     if let Some((_, effort)) = entries.iter().find(|(k, _)| *k == "reasoning effort") {
-        details.push(format!("推理 {}", effort.to_ascii_lowercase()));
+        details.push(format!("推理 {}", localize_reasoning_effort(effort)));
     }
     if let Some((_, summary)) = entries.iter().find(|(k, _)| *k == "reasoning summaries") {
         let summary = summary.trim();
         if summary.eq_ignore_ascii_case("none") || summary.eq_ignore_ascii_case("off") {
             details.push("摘要关闭".to_string());
         } else if !summary.is_empty() {
-            details.push(format!("摘要 {}", summary.to_ascii_lowercase()));
+            details.push(format!("摘要 {}", localize_reasoning_summary(summary)));
         }
     }
 
@@ -186,4 +186,46 @@ pub(crate) fn title_case(s: &str) -> String {
     };
     let rest: String = chars.as_str().to_ascii_lowercase();
     first.to_uppercase().collect::<String>() + &rest
+}
+
+pub(crate) fn localize_reasoning_effort(value: &str) -> String {
+    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("default") {
+        "默认".to_string()
+    } else if value.eq_ignore_ascii_case("minimal") {
+        "极低".to_string()
+    } else if value.eq_ignore_ascii_case("low") {
+        "低".to_string()
+    } else if value.eq_ignore_ascii_case("medium") {
+        "中".to_string()
+    } else if value.eq_ignore_ascii_case("high") {
+        "高".to_string()
+    } else if value.eq_ignore_ascii_case("xhigh") {
+        "极高".to_string()
+    } else {
+        value.to_ascii_lowercase()
+    }
+}
+
+pub(crate) fn localize_reasoning_summary(value: &str) -> String {
+    if value.eq_ignore_ascii_case("auto") {
+        "自动".to_string()
+    } else if value.eq_ignore_ascii_case("detailed") {
+        "详细".to_string()
+    } else if value.eq_ignore_ascii_case("brief") {
+        "简略".to_string()
+    } else {
+        value.to_ascii_lowercase()
+    }
+}
+
+pub(crate) fn localize_approval_policy(value: &str) -> String {
+    if value.eq_ignore_ascii_case("on-request") {
+        "按需批准".to_string()
+    } else if value.eq_ignore_ascii_case("never") {
+        "从不".to_string()
+    } else if value.eq_ignore_ascii_case("unless-trusted") {
+        "仅未受信任时".to_string()
+    } else {
+        value.to_string()
+    }
 }

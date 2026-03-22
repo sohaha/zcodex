@@ -10,9 +10,9 @@ expression: sanitized
 │ 访问 https://chatgpt.com/codex/settings/usage 获取最新        │
 │ 限额和积分信息                                                │
 │                                                               │
-│  模型:         gpt-5.1-codex-max (推理 high, 摘要 detailed)   │
+│  模型:         gpt-5.1-codex-max (推理 高, 摘要 详细)         │
 │  目录:         /workspace/tests                               │
-│  权限:         自定义 (只读, on-request)                      │
+│  权限:         自定义 (只读, 按需批准)                        │
 │  Agents.md:    ../AGENTS.md                                   │
 │                                                               │
 │  Token 用量:   1.9K 总计  (1K 输入 + 900 输出)                │

@@ -5677,11 +5677,11 @@ async fn exec_end_without_begin_does_not_flush_unrelated_running_exploring_cell(
     );
     let active = active_blob(&chat);
     assert!(
-        active.contains("• Exploring"),
+        active.contains("• 探索中"),
         "expected unrelated exploring call to remain active: {active:?}"
     );
     assert!(
-        active.contains("Read null"),
+        active.contains("读取 null"),
         "expected active exploring command to remain visible: {active:?}"
     );
     assert!(
@@ -5712,11 +5712,11 @@ async fn exec_end_without_begin_flushes_completed_unrelated_exploring_cell() {
     let first = lines_to_single_string(&cells[0]);
     let second = lines_to_single_string(&cells[1]);
     assert!(
-        first.contains("• Explored"),
+        first.contains("• 已探索"),
         "expected flushed exploring cell: {first:?}"
     );
     assert!(
-        first.contains("List ls -la"),
+        first.contains("列出 ls -la"),
         "expected flushed exploring cell: {first:?}"
     );
     assert!(
@@ -5746,15 +5746,15 @@ async fn overlapping_exploring_exec_end_is_not_misclassified_as_orphan() {
     );
     let active = active_blob(&chat);
     assert!(
-        active.contains("List ls -la"),
+        active.contains("列出 ls -la"),
         "expected first command still grouped: {active:?}"
     );
     assert!(
-        active.contains("Read foo.txt"),
+        active.contains("读取 foo.txt"),
         "expected second running command to stay in the same active cell: {active:?}"
     );
     assert!(
-        active.contains("• Exploring"),
+        active.contains("• 探索中"),
         "expected grouped exploring header to remain active: {active:?}"
     );
 
@@ -5803,7 +5803,7 @@ async fn exec_history_shows_unified_exec_tool_calls() {
 
     let blob = active_blob(&chat);
     assert!(
-        blob == "• Explored\n  └ List ls\n",
+        blob == "• 已探索\n  └ 列出 ls\n",
         "unexpected unified exec tool call blob: {blob:?}"
     );
 }

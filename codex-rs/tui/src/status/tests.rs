@@ -236,7 +236,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
 
     assert_eq!(
         permissions_text,
-        Some("自定义 (workspace-write（允许网络访问）, on-request)")
+        Some("自定义 (workspace-write（允许网络访问）, 按需批准)")
     );
 }
 
