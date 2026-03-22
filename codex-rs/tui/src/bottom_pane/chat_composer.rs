@@ -4423,7 +4423,7 @@ impl ChatComposer {
             } else {
                 self.input_disabled_placeholder
                     .as_deref()
-                    .unwrap_or("Input disabled.")
+                    .unwrap_or("输入已禁用。")
                     .to_string()
             };
             if !textarea_rect.is_empty() {
