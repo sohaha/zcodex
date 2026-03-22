@@ -2,7 +2,7 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: rendered
 ---
-• 正 在 审 核  2 个 审 批 请 求  (0s • esc to interrupt)
+• 正 在 审 核  2 个 审 批 请 求  (0s • esc 可 中 断 )
   └ • rm -rf '/tmp/guardian target 1'
     • rm -rf '/tmp/guardian target 2'
 

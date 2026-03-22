@@ -368,11 +368,11 @@ impl ExecCell {
         let title = if is_interaction {
             ""
         } else if self.is_active() {
-            "Running"
+            "运行中"
         } else if call.is_user_shell_command() {
-            "You ran"
+            "你执行了"
         } else {
-            "Ran"
+            "已执行"
         };
 
         let mut header_line = if is_interaction {

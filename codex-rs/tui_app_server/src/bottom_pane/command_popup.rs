@@ -225,7 +225,7 @@ impl CommandPopup {
                         let description = prompt
                             .description
                             .clone()
-                            .unwrap_or_else(|| "send saved prompt".to_string());
+                            .unwrap_or_else(|| "发送已保存提示词".to_string());
                         (
                             format!("/{PROMPTS_CMD_PREFIX}:{}", prompt.name),
                             description,
@@ -282,7 +282,7 @@ impl WidgetRef for CommandPopup {
             &rows,
             &self.state,
             MAX_POPUP_ROWS,
-            "no matches",
+            "无匹配项",
         );
     }
 }
@@ -446,7 +446,7 @@ mod tests {
         );
         let rows = popup.rows_from_matches(vec![(CommandItem::UserPrompt(0), None)]);
         let description = rows.first().and_then(|row| row.description.as_deref());
-        assert_eq!(description, Some("send saved prompt"));
+        assert_eq!(description, Some("发送已保存提示词"));
     }
 
     #[test]

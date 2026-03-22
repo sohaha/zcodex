@@ -3,15 +3,15 @@ source: tui_app_server/src/bottom_pane/approval_overlay.rs
 expression: "normalize_snapshot_paths(render_overlay_lines(&view, 120))"
 ---
 
-  Would you like to run the following command?
+  要 运 行 以 下 命 令 吗 ？
 
-  Reason: need filesystem access
+  原 因 ： need filesystem access
 
-  Permission rule: network; read `/tmp/readme.txt`; write `/tmp/out.txt`
+  权 限 规 则 ： network; 读 取  `/tmp/readme.txt`; 写 入  `/tmp/out.txt`
 
   $ cat /tmp/readme.txt
 
-› 1. Yes, proceed (y)
-  2. No, and tell Codex what to do differently (esc)
+› 1. 是 ， 继 续  (y)
+  2. 否 ， 并 告 诉  Codex 应 该 怎 么 做  (esc)
 
-  Press enter to confirm or esc to cancel
+  按  enter 确 认 ， 或 按  esc 取 消

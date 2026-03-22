@@ -2,4 +2,4 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: lines_to_single_string(&decision)
 ---
-✔ You approved codex to run echo hello world this time
+✔ 你已批准 Codex 执行 echo hello world（本次）

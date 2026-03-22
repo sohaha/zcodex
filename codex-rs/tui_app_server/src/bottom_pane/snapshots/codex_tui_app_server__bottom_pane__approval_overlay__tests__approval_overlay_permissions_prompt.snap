@@ -3,14 +3,14 @@ source: tui_app_server/src/bottom_pane/approval_overlay.rs
 expression: "normalize_snapshot_paths(render_overlay_lines(&view, 120))"
 ---
 
-  Would you like to grant these permissions?
+  要 授 予 这 些 权 限 吗 ？
 
-  Reason: need workspace access
+  原 因 ： need workspace access
 
-  Permission rule: network; read `/tmp/readme.txt`; write `/tmp/out.txt`
+  权 限 规 则 ： network; 读 取  `/tmp/readme.txt`; 写 入  `/tmp/out.txt`
 
-› 1. Yes, grant these permissions (y)
-  2. Yes, grant these permissions for this session (a)
-  3. No, continue without permissions (n)
+› 1. 是 ， 授 予 这 些 权 限  (y)
+  2. 是 ， 授 予 这 些 权 限  for this session (a)
+  3. 否 ， 不 授 予 权 限 并 继 续  (n)
 
-  Press enter to confirm or esc to cancel
+  按  enter 确 认 ， 或 按  esc 取 消

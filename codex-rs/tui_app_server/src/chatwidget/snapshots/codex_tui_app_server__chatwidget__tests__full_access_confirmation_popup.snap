@@ -8,8 +8,8 @@ expression: popup
   enabling full access. This significantly increases the risk of data loss,
   leaks, or unexpected behavior.
 
-› 1. Yes, continue anyway      Apply full access for this session
-  2. Yes, and don't ask again  Enable full access and remember this choice
-  3. Cancel                    Go back without enabling full access
+› 1. 是 ， 仍 然 继 续       为 当 前 会 话 启 用  full access
+  2. 是 ， 并 且 不 再 提 示   启 用  full access 并 记 住 此 选 择
+  3. Cancel            返 回 ， 不 启 用  full access
 
-  Press enter to confirm or esc to go back
+  按  enter 确 认 ， 按  esc 返 回

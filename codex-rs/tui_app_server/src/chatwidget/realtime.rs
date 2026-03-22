@@ -290,7 +290,7 @@ impl ChatWidget {
             RealtimeEvent::ConversationItemDone { .. } => {}
             RealtimeEvent::HandoffRequested(_) => {}
             RealtimeEvent::Error(message) => {
-                self.fail_realtime_conversation(format!("Realtime voice error: {message}"));
+                self.fail_realtime_conversation(format!("实时语音错误：{message}"));
             }
         }
     }

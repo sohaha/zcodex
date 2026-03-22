@@ -3,7 +3,7 @@ source: tui_app_server/src/chatwidget/tests.rs
 expression: terminal.backend()
 ---
 "                                                                                "
-"• Booting MCP server: alpha (0s • esc to interrupt)                             "
+"• Booting MCP server: alpha (0s • esc 可中断)                                   " Hidden by multi-width symbols: [(39, " "), (41, " "), (43, " ")]
 "                                                                                "
 "                                                                                "
 "› Ask Codex to do anything                                                      "

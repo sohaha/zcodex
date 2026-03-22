@@ -12,10 +12,10 @@ pub(crate) const MAX_POPUP_ROWS: usize = 8;
 /// Standard footer hint text used by popups.
 pub(crate) fn standard_popup_hint_line() -> Line<'static> {
     Line::from(vec![
-        "Press ".into(),
+        "按 ".into(),
         key_hint::plain(KeyCode::Enter).into(),
-        " to confirm or ".into(),
+        " 确认，按 ".into(),
         key_hint::plain(KeyCode::Esc).into(),
-        " to go back".into(),
+        " 返回".into(),
     ])
 }

@@ -89,7 +89,7 @@ mod audio_device {
         kind: RealtimeAudioDeviceKind,
     ) -> Result<Vec<String>, String> {
         Err(format!(
-            "Failed to load realtime {} devices: voice input is unavailable in this build",
+            "加载 realtime {} 设备失败：voice input is unavailable in this build",
             kind.noun()
         ))
     }
@@ -320,7 +320,7 @@ pub fn normalize_remote_addr(addr: &str) -> color_eyre::Result<String> {
         Ok(parsed) => parsed,
         Err(_) => {
             color_eyre::eyre::bail!(
-                "invalid remote address `{addr}`; expected `ws://host:port` or `wss://host:port`"
+                "远程地址 `{addr}` 无效；应为 `ws://host:port` 或 `wss://host:port`"
             );
         }
     };
@@ -334,9 +334,7 @@ pub fn normalize_remote_addr(addr: &str) -> color_eyre::Result<String> {
         return Ok(parsed.to_string());
     }
 
-    color_eyre::eyre::bail!(
-        "invalid remote address `{addr}`; expected `ws://host:port` or `wss://host:port`"
-    );
+    color_eyre::eyre::bail!("远程地址 `{addr}` 无效；应为 `ws://host:port` 或 `wss://host:port`");
 }
 
 async fn connect_remote_app_server(websocket_url: String) -> color_eyre::Result<AppServerClient> {
@@ -467,7 +465,7 @@ fn session_target_from_app_server_thread(
             warn!(
                 thread_id = thread.id,
                 %err,
-                "Ignoring app-server thread with invalid thread id during TUI session lookup"
+                "TUI 会话查找期间忽略了 thread id 无效的 app-server 线程"
             );
             None
         }
@@ -629,7 +627,7 @@ pub async fn run_main(
         Ok(v) => v,
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("Error parsing -c overrides: {e}");
+            eprintln!("解析 -c 覆盖选项失败：{e}");
             std::process::exit(1);
         }
     };
@@ -639,7 +637,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("查找 Codex 目录失败：{err}");
             std::process::exit(1);
         }
     };
@@ -666,11 +664,11 @@ pub async fn run_main(
                 .map(ConfigLoadError::config_error);
             if let Some(config_error) = config_error {
                 eprintln!(
-                    "Error loading config.toml:\n{}",
+                    "加载 config.toml 失败：\n{}",
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("Error loading config.toml: {err}");
+                eprintln!("加载 config.toml 失败：{err}");
             }
             std::process::exit(1);
         }
@@ -758,7 +756,7 @@ pub async fn run_main(
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
-                "Error loading rules:\n{}",
+                "加载规则失败：\n{}",
                 format_exec_policy_error_with_source(&err)
             );
             std::process::exit(1);
@@ -772,7 +770,7 @@ pub async fn run_main(
     {
         #[allow(clippy::print_stderr)]
         {
-            eprintln!("Error adding directories: {warning}");
+            eprintln!("添加目录失败：{warning}");
             std::process::exit(1);
         }
     }
@@ -1062,7 +1060,7 @@ async fn run_ratatui_app(
     shutdown_app_server_if_present(onboarding_app_server.take()).await;
 
     let mut missing_session_exit = |id_str: &str, action: &str| {
-        error!("Error finding conversation path: {id_str}");
+        error!("未找到会话路径：{id_str}");
         restore();
         session_log::log_session_end();
         let _ = tui.terminal.clear();
@@ -1072,7 +1070,7 @@ async fn run_ratatui_app(
             thread_name: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
+                "未找到 ID 为 {id_str} 的保存会话。运行 `codex {action}`（不带 ID）以选择现有会话。"
             )),
         })
     };
@@ -1552,7 +1550,7 @@ async fn load_config_or_exit_with_fallback_cwd(
     {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("Error loading configuration: {err}");
+            eprintln!("加载配置失败：{err}");
             std::process::exit(1);
         }
     }
@@ -1635,7 +1633,7 @@ mod tests {
             thread_id,
         };
 
-        assert_eq!(target.display_label(), format!("thread {thread_id}"));
+        assert_eq!(target.display_label(), format!("线程 {thread_id}"));
     }
 
     #[test]
@@ -1665,7 +1663,7 @@ mod tests {
                 .expect_err("websocket URLs without an explicit port should be rejected");
             assert!(
                 err.to_string()
-                    .contains("expected `ws://host:port` or `wss://host:port`")
+                    .contains("应为 `ws://host:port` 或 `wss://host:port`")
             );
         }
     }
@@ -1676,7 +1674,7 @@ mod tests {
             .expect_err("https URLs should be rejected");
         assert!(
             err.to_string()
-                .contains("expected `ws://host:port` or `wss://host:port`")
+                .contains("应为 `ws://host:port` 或 `wss://host:port`")
         );
     }
 
@@ -1686,7 +1684,7 @@ mod tests {
             normalize_remote_addr("127.0.0.1:4500").expect_err("host:port should be rejected");
         assert!(
             err.to_string()
-                .contains("expected `ws://host:port` or `wss://host:port`")
+                .contains("应为 `ws://host:port` 或 `wss://host:port`")
         );
     }
 

@@ -389,7 +389,7 @@ impl AuthModeWidget {
 
         if !self.is_api_login_allowed() {
             lines.push(
-                "  当前 workspace 禁用了 API key 登录。请使用 ChatGPT 登录后继续。"
+                "  当前工作区（workspace）禁用了 API key 登录。请使用 ChatGPT 登录后继续。"
                     .dim()
                     .into(),
             );

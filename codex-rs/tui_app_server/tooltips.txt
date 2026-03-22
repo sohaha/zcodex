@@ -1,24 +1,24 @@
-Use /compact when the conversation gets long to summarize history and free up context.
-Start a fresh idea with /new; the previous session stays in history.
-Use /feedback to send logs to the maintainers when something looks off.
-Switch models or reasoning effort quickly with /model.
-Use /permissions to control when Codex asks for confirmation.
-Run /review to get a code review of your current changes.
-Use /skills to list available skills or ask Codex to use one.
-Use /status to see the current model, approvals, and token usage.
-Use /statusline to configure which items appear in the status line.
-Use /fork to branch the current chat into a new thread.
-Use /init to create an AGENTS.md with project-specific guidance.
-Use /mcp to list configured MCP tools.
-Run `codex app` to open Codex Desktop (it installs on macOS if needed).
-Use /personality to customize how Codex communicates.
-Use /rename to rename your threads for easier thread resuming.
-Use the OpenAI docs MCP for API questions; enable it with `codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp`.
-Join the OpenAI community Discord: http://discord.gg/openai
-Visit the Codex community forum: https://community.openai.com/c/codex/37
-You can run any shell command from Codex using `!` (e.g. `!ls`)
-Type / to open the command popup; Tab autocompletes slash commands.
-When the composer is empty, press Esc to step back and edit your last message; Enter confirms.
-Press Tab to queue a message when a task is running; otherwise it sends immediately (except `!`).
-Paste an image with Ctrl+V to attach it to your next message.
-You can resume a previous conversation by running `codex resume`
+对话变长时可用 /compact 总结历史，释放上下文。
+用 /new 开一个全新话题；上一段会话仍会保留在历史中。
+发现异常时可用 /feedback 把日志发给维护者。
+用 /model 可快速切换模型或推理强度。
+用 /permissions 控制 Codex 何时向你请求确认。
+运行 /review 可对当前改动做代码审查。
+用 /skills 可列出可用 Skills，或让 Codex 使用某个 Skill。
+用 /status 查看当前模型、审批设置和 Token 用量。
+用 /statusline 配置状态栏显示哪些项目。
+用 /fork 可把当前聊天派生到一个新线程。
+用 /init 创建带项目专属说明的 AGENTS.md。
+用 /mcp 列出已配置的 MCP 工具。
+运行 `codex app` 可打开 Codex Desktop（macOS 需要时会自动安装）。
+用 /personality 自定义 Codex 的沟通方式。
+用 /rename 重命名线程，后续恢复线程时更容易区分。
+遇到 API 问题可使用 OpenAI docs MCP；可用 `codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp` 启用。
+加入 OpenAI 社区 Discord：http://discord.gg/openai
+访问 Codex 社区论坛：https://community.openai.com/c/codex/37
+你可以在 Codex 中用 `!` 执行任意 shell 命令（例如 `!ls`）
+输入 / 打开命令弹窗；Tab 可自动补全 slash command。
+当输入框为空时，按 Esc 可回退并编辑上一条消息；按 Enter 确认。
+任务运行中按 Tab 可将消息加入队列；否则会立即发送（`!` 除外）。
+按 Ctrl+V 粘贴图片，可把它附加到下一条消息。
+运行 `codex resume` 可恢复之前的对话。

@@ -53,7 +53,7 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(
             Paragraph::new(
-                "你信任此目录中的内容吗？处理不受信任的内容会显著增加 prompt injection 风险。"
+                "你信任此目录中的内容吗？处理不受信任的内容会显著增加 Prompt Injection（提示词注入）风险。"
                     .to_string(),
             )
             .wrap(Wrap { trim: true })

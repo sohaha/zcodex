@@ -66,7 +66,7 @@ impl VoiceCapture {
         let stream = build_input_stream(&device, &config, data.clone(), last_peak.clone())?;
         stream
             .play()
-            .map_err(|e| format!("failed to start input stream: {e}"))?;
+            .map_err(|e| format!("启动音频输入流失败：{e}"))?;
 
         Ok(Self {
             stream: Some(stream),
@@ -97,7 +97,7 @@ impl VoiceCapture {
         )?;
         stream
             .play()
-            .map_err(|e| format!("failed to start input stream: {e}"))?;
+            .map_err(|e| format!("启动音频输入流失败：{e}"))?;
 
         Ok(Self {
             stream: Some(stream),
@@ -117,7 +117,7 @@ impl VoiceCapture {
         let data = self
             .data
             .lock()
-            .map_err(|_| "failed to lock audio buffer".to_string())?
+            .map_err(|_| "音频缓冲区锁定失败".to_string())?
             .clone();
         Ok(RecordedAudio {
             data,
@@ -271,7 +271,7 @@ fn select_default_input_device_and_config()
     let host = cpal::default_host();
     let device = host
         .default_input_device()
-        .ok_or_else(|| "no input audio device available".to_string())?;
+        .ok_or_else(|| "当前没有可用的音频输入设备".to_string())?;
     let config = crate::audio_device::preferred_input_config(&device)?;
     Ok((device, config))
 }
@@ -304,7 +304,7 @@ fn build_input_stream(
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build input stream: {e}")),
+            .map_err(|e| format!("构建输入流失败：{e}")),
         cpal::SampleFormat::I16 => device
             .build_input_stream(
                 &config.clone().into(),
@@ -318,7 +318,7 @@ fn build_input_stream(
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build input stream: {e}")),
+            .map_err(|e| format!("构建输入流失败：{e}")),
         cpal::SampleFormat::U16 => device
             .build_input_stream(
                 &config.clone().into(),
@@ -331,8 +331,8 @@ fn build_input_stream(
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build input stream: {e}")),
-        _ => Err("unsupported input sample format".to_string()),
+            .map_err(|e| format!("构建输入流失败：{e}")),
+        _ => Err("不支持的输入采样格式".to_string()),
     }
 }
 
@@ -357,7 +357,7 @@ fn build_realtime_input_stream(
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build input stream: {e}")),
+            .map_err(|e| format!("构建输入流失败：{e}")),
         cpal::SampleFormat::I16 => device
             .build_input_stream(
                 &config.clone().into(),
@@ -369,7 +369,7 @@ fn build_realtime_input_stream(
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build input stream: {e}")),
+            .map_err(|e| format!("构建输入流失败：{e}")),
         cpal::SampleFormat::U16 => device
             .build_input_stream(
                 &config.clone().into(),
@@ -382,8 +382,8 @@ fn build_realtime_input_stream(
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build input stream: {e}")),
-        _ => Err("unsupported input sample format".to_string()),
+            .map_err(|e| format!("构建输入流失败：{e}")),
+        _ => Err("不支持的输入采样格式".to_string()),
     }
 }
 
@@ -496,9 +496,7 @@ impl RealtimeAudioPlayer {
         let output_channels = config.channels();
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let stream = build_output_stream(&device, &config, Arc::clone(&queue))?;
-        stream
-            .play()
-            .map_err(|e| format!("failed to start output stream: {e}"))?;
+        stream.play().map_err(|e| format!("启动输出流失败：{e}"))?;
         Ok(Self {
             _stream: stream,
             queue,
@@ -513,7 +511,7 @@ impl RealtimeAudioPlayer {
         }
         let raw_bytes = base64::engine::general_purpose::STANDARD
             .decode(&frame.data)
-            .map_err(|e| format!("failed to decode realtime audio: {e}"))?;
+            .map_err(|e| format!("解码实时音频失败：{e}"))?;
         if raw_bytes.len() % 2 != 0 {
             return Err("realtime audio frame had odd byte length".to_string());
         }
@@ -534,7 +532,7 @@ impl RealtimeAudioPlayer {
         let mut guard = self
             .queue
             .lock()
-            .map_err(|_| "failed to lock output audio queue".to_string())?;
+            .map_err(|_| "音频输出队列锁定失败".to_string())?;
         // TODO(aibrahim): Cap or trim this queue if we observe producer bursts outrunning playback.
         guard.extend(converted);
         Ok(())
@@ -561,7 +559,7 @@ fn build_output_stream(
                 move |err| error!("audio output error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build f32 output stream: {e}")),
+            .map_err(|e| format!("构建 f32 输出流失败：{e}")),
         cpal::SampleFormat::I16 => device
             .build_output_stream(
                 &config_any,
@@ -569,7 +567,7 @@ fn build_output_stream(
                 move |err| error!("audio output error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build i16 output stream: {e}")),
+            .map_err(|e| format!("构建 i16 输出流失败：{e}")),
         cpal::SampleFormat::U16 => device
             .build_output_stream(
                 &config_any,
@@ -577,8 +575,8 @@ fn build_output_stream(
                 move |err| error!("audio output error: {err}"),
                 None,
             )
-            .map_err(|e| format!("failed to build u16 output stream: {e}")),
-        other => Err(format!("unsupported output sample format: {other:?}")),
+            .map_err(|e| format!("构建 u16 输出流失败：{e}")),
+        other => Err(format!("不支持的输出采样格式：{other:?}")),
     }
 }
 
@@ -716,7 +714,7 @@ fn encode_wav_normalized(audio: &RecordedAudio) -> Result<Vec<u8>, String> {
     };
     let mut cursor = Cursor::new(&mut wav_bytes);
     let mut writer =
-        WavWriter::new(&mut cursor, spec).map_err(|_| "failed to create wav writer".to_string())?;
+        WavWriter::new(&mut cursor, spec).map_err(|_| "创建 wav 写入器失败".to_string())?;
 
     // Simple peak normalization with headroom to improve audibility on quiet inputs.
     let mut peak: i16 = 0;
@@ -740,11 +738,11 @@ fn encode_wav_normalized(audio: &RecordedAudio) -> Result<Vec<u8>, String> {
             .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
         writer
             .write_sample(v)
-            .map_err(|_| "failed writing wav sample".to_string())?;
+            .map_err(|_| "写入 wav 样本失败".to_string())?;
     }
     writer
         .finalize()
-        .map_err(|_| "failed to finalize wav".to_string())?;
+        .map_err(|_| "完成 wav 文件失败".to_string())?;
     Ok(wav_bytes)
 }
 
@@ -763,19 +761,19 @@ fn normalize_chatgpt_base_url(input: &str) -> String {
 }
 
 async fn resolve_auth() -> Result<TranscriptionAuthContext, String> {
-    let codex_home = find_codex_home().map_err(|e| format!("failed to find codex home: {e}"))?;
+    let codex_home = find_codex_home().map_err(|e| format!("查找 Codex 目录失败：{e}"))?;
     let auth = CodexAuth::from_auth_storage(&codex_home, AuthCredentialsStoreMode::Auto)
-        .map_err(|e| format!("failed to read auth.json: {e}"))?
+        .map_err(|e| format!("读取 auth.json 失败：{e}"))?
         .ok_or_else(|| "No Codex auth is configured; please run `codex login`".to_string())?;
 
     let chatgpt_account_id = auth.get_account_id();
 
     let token = auth
         .get_token()
-        .map_err(|e| format!("failed to get auth token: {e}"))?;
+        .map_err(|e| format!("获取认证 token 失败：{e}"))?;
     let config = Config::load_with_cli_overrides(Vec::new())
         .await
-        .map_err(|e| format!("failed to load config: {e}"))?;
+        .map_err(|e| format!("加载配置失败：{e}"))?;
     Ok(TranscriptionAuthContext {
         mode: auth.api_auth_mode(),
         bearer_token: token,
@@ -791,7 +789,7 @@ async fn transcribe_bytes(
 ) -> Result<String, String> {
     let auth = resolve_auth().await?;
     let client = build_reqwest_client_with_custom_ca(reqwest::Client::builder())
-        .map_err(|error| format!("failed to build transcription HTTP client: {error}"))?;
+        .map_err(|error| format!("构建转录 HTTP 客户端失败：{error}"))?;
     let audio_bytes = wav_bytes.len();
     let prompt_for_log = context.as_deref().unwrap_or("").to_string();
     let (endpoint, request) =
@@ -799,7 +797,7 @@ async fn transcribe_bytes(
             let part = reqwest::multipart::Part::bytes(wav_bytes)
                 .file_name("audio.wav")
                 .mime_str("audio/wav")
-                .map_err(|e| format!("failed to set mime: {e}"))?;
+                .map_err(|e| format!("设置 MIME 类型失败：{e}"))?;
             let form = reqwest::multipart::Form::new().part("file", part);
             let endpoint = format!("{}/transcribe", auth.chatgpt_base_url);
             let mut req = client
@@ -815,7 +813,7 @@ async fn transcribe_bytes(
             let part = reqwest::multipart::Part::bytes(wav_bytes)
                 .file_name("audio.wav")
                 .mime_str("audio/wav")
-                .map_err(|e| format!("failed to set mime: {e}"))?;
+                .map_err(|e| format!("设置 MIME 类型失败：{e}"))?;
             let mut form = reqwest::multipart::Form::new()
                 .text("model", AUDIO_MODEL)
                 .part("file", part);
@@ -842,21 +840,21 @@ async fn transcribe_bytes(
     let resp = request
         .send()
         .await
-        .map_err(|e| format!("transcription request failed: {e}"))?;
+        .map_err(|e| format!("转录请求失败：{e}"))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp
             .text()
             .await
-            .unwrap_or_else(|_| "<failed to read body>".to_string());
-        return Err(format!("transcription failed: {status} {body}"));
+            .unwrap_or_else(|_| "<读取正文失败>".to_string());
+        return Err(format!("转录失败：{status} {body}"));
     }
 
     let v: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("failed to parse json: {e}"))?;
+        .map_err(|e| format!("解析 JSON 失败：{e}"))?;
     let text = v
         .get("text")
         .and_then(|t| t.as_str())

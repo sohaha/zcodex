@@ -86,25 +86,20 @@ impl PendingAppServerRequests {
             ServerRequest::DynamicToolCall { request_id, .. } => {
                 Some(UnsupportedAppServerRequest {
                     request_id: request_id.clone(),
-                    message: "Dynamic tool calls are not available in app-server TUI yet."
-                        .to_string(),
+                    message: "app-server TUI 暂不支持动态工具调用。".to_string(),
                 })
             }
             ServerRequest::ChatgptAuthTokensRefresh { .. } => None,
             ServerRequest::ApplyPatchApproval { request_id, .. } => {
                 Some(UnsupportedAppServerRequest {
                     request_id: request_id.clone(),
-                    message:
-                        "Legacy patch approval requests are not available in app-server TUI yet."
-                            .to_string(),
+                    message: "app-server TUI 暂不支持旧版 patch 审批请求。".to_string(),
                 })
             }
             ServerRequest::ExecCommandApproval { request_id, .. } => {
                 Some(UnsupportedAppServerRequest {
                     request_id: request_id.clone(),
-                    message:
-                        "Legacy command approval requests are not available in app-server TUI yet."
-                            .to_string(),
+                    message: "app-server TUI 暂不支持旧版命令审批请求。".to_string(),
                 })
             }
         }
@@ -495,10 +490,7 @@ mod tests {
             .expect("dynamic tool calls should be rejected");
 
         assert_eq!(unsupported.request_id, AppServerRequestId::Integer(99));
-        assert_eq!(
-            unsupported.message,
-            "Dynamic tool calls are not available in app-server TUI yet."
-        );
+        assert_eq!(unsupported.message, "app-server TUI 暂不支持动态工具调用。");
     }
 
     #[test]

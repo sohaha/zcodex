@@ -109,12 +109,9 @@ impl OssSelectionWidget<'_> {
         ];
 
         let mut contents: Vec<Line> = vec![
-            Line::from(vec![
-                "? ".fg(Color::Blue),
-                "Select an open-source provider".bold(),
-            ]),
+            Line::from(vec!["? ".fg(Color::Blue), "选择开源提供方".bold()]),
             Line::from(""),
-            Line::from("  Choose which local AI server to use for your session."),
+            Line::from("  选择本次会话要使用的本地 AI 服务器。"),
             Line::from(""),
         ];
 
@@ -128,12 +125,10 @@ impl OssSelectionWidget<'_> {
             ]));
         }
         contents.push(Line::from(""));
-        contents.push(Line::from("  ● Running  ○ Not Running").add_modifier(Modifier::DIM));
+        contents.push(Line::from("  ● 运行中  ○ 未运行").add_modifier(Modifier::DIM));
 
         contents.push(Line::from(""));
-        contents.push(
-            Line::from("  Press Enter to select • Ctrl+C to exit").add_modifier(Modifier::DIM),
-        );
+        contents.push(Line::from("  按 Enter 选择 • Ctrl+C 退出").add_modifier(Modifier::DIM));
 
         let confirmation_prompt = Paragraph::new(contents).wrap(Wrap { trim: false });
 

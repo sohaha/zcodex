@@ -2,7 +2,7 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: popup
 ---
-  Select Reasoning Level for gpt-5.1-codex-max
+  为  gpt-5.1-codex-max 选 择 推 理 级 别
 
   1. Low                   Fast responses with lighter reasoning
   2. Medium (default)      Balances speed and reasoning depth for everyday
@@ -12,4 +12,4 @@ expression: popup
                            ⚠ Extra high reasoning effort can quickly consume
                            Plus plan rate limits.
 
-  Press enter to confirm or esc to go back
+  按  enter 确 认 ， 按  esc 返 回
