@@ -2,8 +2,8 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: combined
 ---
-• 正在运行 SessionStart 钩子: warming the shell
+• 正在运行 会话启动 钩子: warming the shell
 
-SessionStart hook (completed)
+会话启动 钩子（已完成）
   警告：Heads up from the hook
   钩子上下文：Remember the startup checklist.

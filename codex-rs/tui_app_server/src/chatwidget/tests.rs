@@ -11558,7 +11558,7 @@ async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()
     let first_log = drain_insert_history(&mut rx)
         .iter()
         .map(|lines| lines_to_single_string(lines))
-        .find(|line| line.contains("WebSocket timing:"))
+        .find(|line| line.contains("WebSocket 时序："))
         .expect("expected websocket timing log");
     assert!(first_log.contains("TTFT: 120ms (iapi)"));
     assert!(first_log.contains("TBT: 50ms (service)"));
@@ -11571,7 +11571,7 @@ async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()
     let second_log = drain_insert_history(&mut rx)
         .iter()
         .map(|lines| lines_to_single_string(lines))
-        .find(|line| line.contains("WebSocket timing:"))
+        .find(|line| line.contains("WebSocket 时序："))
         .expect("expected websocket timing log");
     assert!(second_log.contains("TTFT: 80ms (iapi)"));
 

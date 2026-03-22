@@ -1349,12 +1349,9 @@ fn app_server_collab_state_to_core(state: &AppServerCollabAgentState) -> AgentSt
         AppServerCollabAgentStatus::Running => AgentStatus::Running,
         AppServerCollabAgentStatus::Interrupted => AgentStatus::Interrupted,
         AppServerCollabAgentStatus::Completed => AgentStatus::Completed(state.message.clone()),
-        AppServerCollabAgentStatus::Errored => AgentStatus::Errored(
-            state
-                .message
-                .clone()
-                .unwrap_or_else(|| "Agent errored".into()),
-        ),
+        AppServerCollabAgentStatus::Errored => {
+            AgentStatus::Errored(state.message.clone().unwrap_or_else(|| "Agent 出错".into()))
+        }
         AppServerCollabAgentStatus::Shutdown => AgentStatus::Shutdown,
         AppServerCollabAgentStatus::NotFound => AgentStatus::NotFound,
     }
@@ -1734,7 +1731,7 @@ impl ChatWidget {
     fn log_websocket_timing_totals(&mut self, delta: RuntimeMetricsSummary) {
         if let Some(label) = history_cell::runtime_metrics_label(delta.responses_api_summary()) {
             self.add_plain_history_lines(vec![
-                vec!["• ".dim(), format!("WebSocket timing: {label}").dark_gray()].into(),
+                vec!["• ".dim(), format!("WebSocket 时序：{label}").dark_gray()].into(),
             ]);
         }
     }
@@ -2838,10 +2835,10 @@ impl ChatWidget {
                         .and_then(serde_json::Value::as_u64)
                         .unwrap_or(files.len() as u64);
                     Some(if files.len() == 1 {
-                        format!("apply_patch touching {}", files[0])
+                        format!("apply_patch 修改 {}", files[0])
                     } else {
                         format!(
-                            "apply_patch touching {change_count} changes across {} files",
+                            "apply_patch 在 {} 个文件中修改了 {change_count} 处",
                             files.len()
                         )
                     })
@@ -2849,7 +2846,7 @@ impl ChatWidget {
                 "network_access" => action
                     .get("target")
                     .and_then(serde_json::Value::as_str)
-                    .map(|target| format!("network access to {target}")),
+                    .map(|target| format!("访问网络目标 {target}")),
                 "mcp_tool_call" => {
                     let tool_name = action
                         .get("tool_name")
@@ -2859,7 +2856,7 @@ impl ChatWidget {
                         .and_then(serde_json::Value::as_str)
                         .or_else(|| action.get("server").and_then(serde_json::Value::as_str))
                         .unwrap_or("未知服务器");
-                    Some(format!("MCP {tool_name} on {label}"))
+                    Some(format!("在 {label} 上调用 MCP 工具 {tool_name}"))
                 }
                 _ => None,
             }
@@ -2991,7 +2988,7 @@ impl ChatWidget {
                         .and_then(serde_json::Value::as_str)
                         .unwrap_or("未知工具");
                     history_cell::new_guardian_denied_action_request(format!(
-                        "codex to call MCP tool {server}.{tool_name}"
+                        "codex 调用 MCP 工具 {server}.{tool_name}"
                     ))
                 }
                 Some("network_access") => {
@@ -3000,9 +2997,7 @@ impl ChatWidget {
                         .and_then(serde_json::Value::as_str)
                         .or_else(|| action.get("host").and_then(serde_json::Value::as_str))
                         .unwrap_or("网络目标");
-                    history_cell::new_guardian_denied_action_request(format!(
-                        "codex to access {target}"
-                    ))
+                    history_cell::new_guardian_denied_action_request(format!("codex 访问 {target}"))
                 }
                 _ => {
                     let summary = serde_json::to_string(&action)
@@ -3540,8 +3535,17 @@ impl ChatWidget {
     }
 
     fn on_hook_completed(&mut self, event: codex_protocol::protocol::HookCompletedEvent) {
-        let status = format!("{:?}", event.run.status).to_lowercase();
-        let header = format!("{} hook ({status})", hook_event_label(event.run.event_name));
+        let status = match event.run.status {
+            codex_protocol::protocol::HookRunStatus::Running => "运行中",
+            codex_protocol::protocol::HookRunStatus::Completed => "已完成",
+            codex_protocol::protocol::HookRunStatus::Failed => "失败",
+            codex_protocol::protocol::HookRunStatus::Blocked => "已阻止",
+            codex_protocol::protocol::HookRunStatus::Stopped => "已停止",
+        };
+        let header = format!(
+            "{} 钩子（{status}）",
+            hook_event_label(event.run.event_name)
+        );
         let mut lines: Vec<ratatui::text::Line<'static>> = vec![header.into()];
         for entry in event.run.entries {
             let prefix = match entry.kind {
@@ -6425,7 +6429,7 @@ impl ChatWidget {
                     self.submit_pending_steers_after_interrupt = false;
                     self.pending_steers.clear();
                     self.refresh_pending_input_preview();
-                    self.on_error("Turn aborted: replaced by a new task".to_owned())
+                    self.on_error("当前任务已中止：已被新任务替换。".to_owned())
                 }
                 TurnAbortReason::ReviewEnded => {
                     self.on_interrupted_turn(ev.reason);
@@ -6649,9 +6653,9 @@ impl ChatWidget {
             if output.findings.is_empty() {
                 let explanation = output.overall_explanation.trim().to_string();
                 if explanation.is_empty() {
-                    tracing::error!("Reviewer failed to output a response.");
+                    tracing::error!("审查器未能输出结果。");
                     self.add_to_history(history_cell::new_error_event(
-                        "Reviewer failed to output a response.".to_owned(),
+                        "审查器未能输出结果。".to_owned(),
                     ));
                 } else {
                     // Show explanation when there are no structured findings.
@@ -10644,9 +10648,9 @@ fn extract_first_bold(s: &str) -> Option<String> {
 
 fn hook_event_label(event_name: codex_protocol::protocol::HookEventName) -> &'static str {
     match event_name {
-        codex_protocol::protocol::HookEventName::SessionStart => "SessionStart",
-        codex_protocol::protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
-        codex_protocol::protocol::HookEventName::Stop => "Stop",
+        codex_protocol::protocol::HookEventName::SessionStart => "会话启动",
+        codex_protocol::protocol::HookEventName::UserPromptSubmit => "提交消息",
+        codex_protocol::protocol::HookEventName::Stop => "停止",
     }
 }
 
