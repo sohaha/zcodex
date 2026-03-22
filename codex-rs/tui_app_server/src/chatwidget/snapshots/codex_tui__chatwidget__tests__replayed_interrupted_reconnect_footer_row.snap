@@ -1,5 +1,6 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
+assertion_line: 7060
 expression: header
 ---
-› 让  Codex 处 理 任 何 事 情
+› 让 Codex 处理任何事情

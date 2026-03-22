@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/diff_render.rs
+source: tui/src/diff_render.rs
 expression: terminal.backend()
 ---
 "• Deleted tmp_delete_example.txt (+0 -3)                                        "

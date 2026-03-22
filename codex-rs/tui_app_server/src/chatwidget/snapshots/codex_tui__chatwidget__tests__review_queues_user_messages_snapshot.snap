@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: term.backend().vt100().screen().contents()
 ---
 
@@ -11,7 +11,7 @@ expression: term.backend().vt100().screen().contents()
 
 
 
-• 处理中 (0s • esc 可中断)
+• Working (0s • esc to interrupt)
 
 • Queued follow-up messages
   ↳ Queued while /review is running.
@@ -19,4 +19,4 @@ expression: term.backend().vt100().screen().contents()
 
 › 让 Codex 处理任何事情
 
-  ? 查看快捷键                                                 剩余上下文 100%
+  ? for shortcuts                                            100% context left

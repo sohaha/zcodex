@@ -1,15 +1,15 @@
 ---
-source: tui_app_server/src/bottom_pane/request_user_input/mod.rs
+source: tui/src/bottom_pane/request_user_input/mod.rs
 expression: "render_snapshot(&overlay, area)"
 ---
                                                                                 
-  要 在 仍 有 未 回 答 问 题 时 提 交 吗 ？                                                   
-  2 个 问 题 未 回 答                                                                 
+  Submit with unanswered questions?                                             
+  2 unanswered questions                                                        
                                                                                 
-  › 1. 继 续 提 交   提 交 时 仍 有  2 个 未 回 答 题 。                                       
-    2. 返 回       回 到 第 一 个 未 回 答 的 问 题 。                                        
-                                                                                
-                                                                                
+  › 1. Proceed  Submit with 2 unanswered questions.                             
+    2. Go back  Return to the first unanswered question.                        
                                                                                 
                                                                                 
-  按  enter 确 认 ， 按  esc 返 回
+                                                                                
+                                                                                
+  按 enter 确认，按 esc 返回

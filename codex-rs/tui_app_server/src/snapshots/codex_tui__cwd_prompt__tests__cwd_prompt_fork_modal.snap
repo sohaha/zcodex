@@ -1,14 +1,14 @@
 ---
-source: tui_app_server/src/cwd_prompt.rs
+source: tui/src/cwd_prompt.rs
 expression: terminal.backend()
 ---
 
-请选择用于分叉该会话的工作目录
+Choose working directory to fork this session
 
-  会话目录 = 上次会话记录的最新 cwd                                             
-  当前目录 = 你现在所在的工作目录
+  Session = latest cwd recorded in the forked session                           
+  Current = your current working directory
 
-› 1. 使用会话目录（/Users/example/session）                                     
-  2. 使用当前目录（/Users/example/current）
+› 1. Use session directory (/Users/example/session)                             
+  2. Use current directory (/Users/example/current)
 
-  按 enter 继续
+  Press enter to continue

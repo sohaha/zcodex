@@ -1,9 +1,9 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: snapshot
 ---
 History:
-• 已执行 echo repro-marker
+• Ran echo repro-marker
   └ repro-marker
 
 Active:

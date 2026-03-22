@@ -1,9 +1,10 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
+assertion_line: 8586
 expression: combined
 ---
-• 正在运行 SessionStart 钩子: warming the shell
+• Running SessionStart hook: warming the shell
 
 SessionStart hook (completed)
-  警告：Heads up from the hook
-  钩子上下文：Remember the startup checklist.
+  warning: Heads up from the hook
+  hook context: Remember the startup checklist.

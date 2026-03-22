@@ -1,9 +1,9 @@
 ---
-source: tui_app_server/src/bottom_pane/feedback_view.rs
+source: tui/src/bottom_pane/feedback_view.rs
 expression: rendered
 ---
 ▌ Tell us more (bug)
 ▌
 ▌ (optional) Write a short description to help us further
 
-按  enter 确 认 ， 按  esc 返 回
+按 enter 确认，按 esc 返回

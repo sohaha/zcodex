@@ -1,5 +1,6 @@
 ---
-source: tui_app_server/src/bottom_pane/footer.rs
+source: tui/src/bottom_pane/footer.rs
+assertion_line: 1207
 expression: terminal.backend()
 ---
-"  Robie [explorer]                                             剩余上下文 100%  " Hidden by multi-width symbols: [(64, " "), (66, " "), (68, " "), (70, " "), (72, " ")]
+"  Robie [explorer]                                           100% context left  "

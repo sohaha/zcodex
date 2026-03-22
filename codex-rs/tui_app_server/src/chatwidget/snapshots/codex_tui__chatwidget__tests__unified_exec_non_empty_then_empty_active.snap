@@ -1,6 +1,6 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: active_combined
 ---
-↳ 与后台终端交互 · just fix
+↳ Interacted with background terminal · just fix
   └ pwd

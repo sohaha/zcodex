@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/diff_render.rs
+source: tui/src/diff_render.rs
 expression: terminal.backend()
 ---
 "• Edited old_name.rs → new_name.rs (+1 -1)                                      "

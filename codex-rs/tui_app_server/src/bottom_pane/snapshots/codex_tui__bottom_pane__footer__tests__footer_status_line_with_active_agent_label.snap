@@ -1,5 +1,6 @@
 ---
-source: tui_app_server/src/bottom_pane/footer.rs
+source: tui/src/bottom_pane/footer.rs
+assertion_line: 1210
 expression: terminal.backend()
 ---
 "  Status line content · Robie [explorer]                                        "

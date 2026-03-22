@@ -1,14 +1,15 @@
 ---
-source: tui_app_server/src/bottom_pane/request_user_input/mod.rs
+source: tui/src/bottom_pane/request_user_input/mod.rs
+assertion_line: 2600
 expression: "render_snapshot(&overlay, area)"
 ---
                                                     
-  问 题  1/2（ 2 个 未 回 答 ）                             
+  Question 1/2 (2 unanswered)                       
   Choose an option.                                 
                                                     
     1. Option 1  First choice.                      
   › 2. Option 2  Second choice.                     
     3. Option 3  Third choice.                      
                                                     
-  Tab 添 加 备 注  | Enter 提 交 当 前 回 答                  
-  ←/→ to navigate questions | Esc 中 断
+  tab to add notes | enter to submit answer         
+  ←/→ to navigate questions | esc to interrupt

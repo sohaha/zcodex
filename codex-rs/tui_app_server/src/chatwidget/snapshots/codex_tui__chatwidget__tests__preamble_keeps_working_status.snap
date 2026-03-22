@@ -1,11 +1,11 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: terminal.backend()
 ---
 "                                                                                "
-"• 处理中 (0s • esc 可中断)                                                      " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (20, " "), (22, " "), (24, " ")]
+"• Working (0s • esc to interrupt)                                               "
 "                                                                                "
 "                                                                                "
-"› 让 Codex 处理任何事情                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
+"› 让 Codex 处理任何事情                                                      "
 "                                                                                "
-"  ? 查看快捷键                                                 剩余上下文 100%  " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (64, " "), (66, " "), (68, " "), (70, " "), (72, " ")]
+"  ? for shortcuts                                            100% context left  "

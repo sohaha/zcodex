@@ -1,5 +1,6 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: lines_to_single_string(&aborted_multi)
 ---
-✗ 你已取消执行请求：echo line1 ...
+✗ You canceled the request to run echo line1 ...
+

@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/markdown_render_tests.rs
+source: tui/src/markdown_render_tests.rs
 expression: rendered
 ---
 # H1: Markdown Streaming Test

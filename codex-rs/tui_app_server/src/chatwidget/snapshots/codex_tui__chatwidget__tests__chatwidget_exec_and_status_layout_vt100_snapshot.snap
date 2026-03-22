@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: term.backend().vt100().screen().contents()
 ---
 
@@ -36,9 +36,9 @@ expression: term.backend().vt100().screen().contents()
   └ Search Change Approved
     Read diff_render.rs
 
-• Investigating rendering code (0s • esc 可中断)
+• Investigating rendering code (0s • esc to interrupt)
 
 
 › Summarize recent commits
 
-  tab 将消息加入队列                                           剩余上下文 100%
+  tab to queue message                                       100% context left

@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/bottom_pane/chat_composer.rs
+source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                              "
@@ -10,4 +10,4 @@ expression: terminal.backend()
 "                              "
 "                              "
 "                              "
-"  tab 加入队列 · 计划模式     " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (18, " "), (20, " "), (22, " "), (24, " ")]
+"  tab to queue · Plan mode    "

@@ -1,5 +1,6 @@
 ---
-source: tui_app_server/src/history_cell.rs
+source: tui/src/history_cell.rs
+assertion_line: 1934
 expression: rendered
 ---
 • 已调用 metrics.summary({"metric":"trace.latency","window":"15m"})

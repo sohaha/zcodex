@@ -1,10 +1,10 @@
 ---
-source: tui_app_server/src/history_cell.rs
+source: tui/src/history_cell.rs
 expression: rendered
 ---
-• 已执行 echo
-  │ this_is_a_very_long
-  │ _single_token_that_
+• Ran echo
+  │ this_is_a_very_long_si
+  │ ngle_token_that_will_w
   │ … +2 lines
   └ error: first line on
     stderr

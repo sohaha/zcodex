@@ -1,8 +1,8 @@
 ---
-source: tui_app_server/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests.rs
 expression: combined
 ---
-↳ 与后台终端交互 · just fix
+↳ Interacted with background terminal · just fix
   └ pwd
 
-• 等待后台终端 · just fix
+• Waited for background terminal · just fix

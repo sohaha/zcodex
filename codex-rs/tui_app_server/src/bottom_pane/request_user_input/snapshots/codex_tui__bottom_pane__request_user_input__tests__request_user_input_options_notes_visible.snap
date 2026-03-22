@@ -1,19 +1,20 @@
 ---
-source: tui_app_server/src/bottom_pane/request_user_input/mod.rs
+source: tui/src/bottom_pane/request_user_input/mod.rs
+assertion_line: 2321
 expression: "render_snapshot(&overlay, area)"
 ---
                                                                                                                         
-  问 题  1/1（ 1 个 未 回 答 ）                                                                                                 
+  Question 1/1 (1 unanswered)                                                                                           
   Choose an option.                                                                                                     
                                                                                                                         
   › 1. Option 1  First choice.                                                                                          
     2. Option 2  Second choice.                                                                                         
     3. Option 3  Third choice.                                                                                          
                                                                                                                         
-  › 添 加 备 注                                                                                                             
+  › Add notes                                                                                                           
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
-  Tab 或  Esc 清 空 备 注  | Enter 提 交 当 前 回 答
+  tab or esc to clear notes | enter to submit answer

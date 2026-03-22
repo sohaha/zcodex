@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/bottom_pane/chat_composer.rs
+source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                                                                    "
@@ -10,4 +10,4 @@ expression: terminal.backend()
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
-"                                                                                   剩余上下文 100%  " Hidden by multi-width symbols: [(84, " "), (86, " "), (88, " "), (90, " "), (92, " ")]
+"                                                                                 100% context left  "

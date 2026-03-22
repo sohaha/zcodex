@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/app.rs
+source: tui/src/app.rs
 expression: model_migration_copy_to_plain_text(&copy)
 ---
 **Codex just got an upgrade. Introducing gpt-5.3-codex.**

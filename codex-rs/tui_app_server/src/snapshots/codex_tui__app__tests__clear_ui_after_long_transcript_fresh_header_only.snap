@@ -1,5 +1,5 @@
 ---
-source: tui_app_server/src/app.rs
+source: tui/src/app.rs
 expression: rendered
 ---
 ╭─────────────────────────────────────────────╮

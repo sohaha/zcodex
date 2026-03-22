@@ -1,13 +1,14 @@
 ---
-source: tui_app_server/src/onboarding/trust_directory.rs
+source: tui/src/onboarding/trust_directory.rs
+assertion_line: 218
 expression: terminal.backend()
 ---
-> 当前目录：/workspace/project
+> You are in /workspace/project
 
-  你信任此目录中的内容吗？处理不受信任的内容会显著增加 Prompt
-  Injection（提示词注入）风险。
+  Do you trust the contents of this directory? Working with untrusted
+  contents comes with higher risk of prompt injection.
 
-› 1. 是，继续                                                         
-  2. 否，退出
+› 1. Yes, continue                                                    
+  2. No, quit
 
-  按 enter 继续
+  Press enter to continue
