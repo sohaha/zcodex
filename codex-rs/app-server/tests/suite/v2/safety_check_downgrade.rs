@@ -5,7 +5,6 @@ use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::JSONRPCResponse;
-use codex_app_server_protocol::ModelRerouteReason;
 use codex_app_server_protocol::ModelReroutedNotification;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadItem;
@@ -72,7 +71,7 @@ async fn custom_provider_header_mismatch_does_not_emit_model_rerouted_notificati
         mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
     )
     .await??;
-    let turn_start: TurnStartResponse = to_response(turn_resp)?;
+    let _turn_start: TurnStartResponse = to_response(turn_resp)?;
 
     let rerouted = collect_turn_notifications_and_validate_no_warning_item(&mut mcp).await?;
     assert_eq!(rerouted, None);
@@ -136,7 +135,7 @@ async fn custom_provider_response_model_mismatch_does_not_emit_model_rerouted_no
         mcp.read_stream_until_response_message(RequestId::Integer(turn_req)),
     )
     .await??;
-    let turn_start: TurnStartResponse = to_response(turn_resp)?;
+    let _turn_start: TurnStartResponse = to_response(turn_resp)?;
 
     let rerouted = collect_turn_notifications_and_validate_no_warning_item(&mut mcp).await?;
     assert_eq!(rerouted, None);

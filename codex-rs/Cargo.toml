@@ -13,6 +13,7 @@ members = [
     "feedback",
     "features",
     "codex-backend-openapi-models",
+    "code-mode",
     "cloud-requirements",
     "cloud-tasks",
     "cloud-tasks-client",
@@ -46,6 +47,7 @@ members = [
     "otel",
     "tui",
     "tui_app_server",
+    "v8-poc",
     "utils/absolute-path",
     "utils/cargo-bin",
     "utils/git",
@@ -90,6 +92,8 @@ license = "Apache-2.0"
 app_test_support = { path = "app-server/tests/common" }
 codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
+codex-code-mode = { path = "code-mode" }
+codex-package-manager = { path = "package-manager" }
 codex-app-server = { path = "app-server" }
 codex-app-server-client = { path = "app-server-client" }
 codex-app-server-protocol = { path = "app-server-protocol" }
@@ -123,7 +127,6 @@ codex-mcp-server = { path = "mcp-server" }
 codex-network-proxy = { path = "network-proxy" }
 codex-ollama = { path = "ollama" }
 codex-otel = { path = "otel" }
-codex-package-manager = { path = "package-manager" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
@@ -139,6 +142,7 @@ codex-test-macros = { path = "test-macros" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-tui = { path = "tui" }
 codex-tui-app-server = { path = "tui_app_server" }
+codex-v8-poc = { path = "v8-poc" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }
 codex-utils-approval-presets = { path = "utils/approval-presets" }
 codex-utils-cache = { path = "utils/cache" }
@@ -249,6 +253,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 rmcp = { version = "0.15.0", default-features = false }
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 rusqlite = "0.32"
+v8 = "=146.4.0"
 rustls = { version = "0.23", default-features = false, features = [
     "ring",
     "std",
@@ -376,6 +381,7 @@ ignored = [
     "openssl-sys",
     "codex-utils-readiness",
     "codex-secrets",
+    "codex-v8-poc",
 ]
 
 [profile.release]

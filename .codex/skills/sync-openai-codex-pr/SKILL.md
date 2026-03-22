@@ -1,41 +1,43 @@
 ---
 name: sync-openai-codex-pr
-description: 在独立 worktree（从 web 迁出）同步 openai/codex main 到当前仓库：本地优先解决冲突；先做 code-review 评估改动范围与冲突性质；只有遇到“同功能两套实现必须二选一”才在 PR comment 阻塞并请求选择；CI 全绿后才允许 merge。
+description: 在独立 worktree（从 web 迁出）同步 openai/codex main 到当前仓库：本地优先解决冲突；先做 code-review 评估改动范围与冲突性质；只有遇到“同功能两套实现必须二选一”才阻塞并请求选择；完成验证后直接合并回原分支，并汇总合并功能与影响。
 ---
 
-# sync-openai-codex-pr（上游同步 PR）
+# sync-openai-codex-pr（上游同步）
 
 ## 目标
 - 拉取 `https://github.com/openai/codex.git` 的 `main` 并同步到当前仓库。
-- 在独立 `git worktree` 内完成合并、修冲突、推送、创建/更新 PR；不污染当前分支/工作区。
+- 在独立 `git worktree` 内完成合并、修冲突、验证；不污染当前分支/工作区。
 - 默认策略：**本地代码/行为优先**（除非你明确选择采纳上游实现）。
 - 同步完成后，对新增/变更的用户可见文案执行**汉化处理**：优先自然中文表达，保留不适合硬翻译的专有名词（命令名、协议名、产品名、crate 名、API 字段名等）。
-- 门禁：**CI required checks 全绿** 才能合并。
+- 完成后**直接合并回原分支**，不走 PR 流程。
+- 最终必须输出：**本次合并进来的功能**、**影响范围**、**是否有原功能丢失/覆盖/冲突**。
 
 ## 前置检查（开始前 2 分钟）
-- 确认 `gh auth status` 已登录且有权限创建 PR。
-- 确认当前仓库无未提交改动（避免误混入到 worktree 的提交）。
+- 确认当前仓库无会被误带入的已跟踪改动；若存在未跟踪目录/文件，先确认是否忽略。
 - 若 `openai` remote 已存在但指向错误，先修正地址。
+- 记录当前分支名，后续同步完成后要合并回它。
 
 ## 决策规则（先 code-review 再动手）
 - 先做**改动范围审计**：哪些目录/模块变了、风险点在哪（比如多 agent/agent teams、hooks/cleanup、TUI 命令 `/clear` `/theme` 等）。
 - 冲突分类（按优先级）：
   1) **机械冲突**（format/import/rename/move/并行改同一段但语义一致）：直接合并，保持最小 diff。
   2) **逻辑可融合**（两边改动互补，功能不重复）：融合到一个实现，默认保持本地行为不回退。
-  3) **同功能双实现（必须二选一）**：不要私自拍板；必须在 PR comment 里写清楚差异并 @你选择，然后**阻塞流程**等待决定。
- - 对每个冲突做最小化修复后，记录关键决策点到 PR 描述或 comment（方便复盘与评审）。
+  3) **同功能双实现（必须二选一）**：不要私自拍板；必须汇总差异并请求你选择，然后**阻塞流程**等待决定。
+- 对每个关键冲突做最小化修复后，记录关键决策点，便于最后汇总影响。
 
 ## 工作流
 
-### 1) 从 `web` 创建 worktree（不污染当前分支）
+### 1) 从当前分支创建 worktree（不污染当前分支）
 在仓库根目录执行：
 
 ```bash
 ts="$(date +%Y%m%d-%H%M%S)"
+base_branch="$(git branch --show-current)"
 branch="sync/openai-codex-$ts"
 path=".worktrees/sync-openai-codex-$ts"
-git fetch origin web
-git worktree add -b "$branch" "$path" origin/web
+git fetch origin "$base_branch"
+git worktree add -b "$branch" "$path" "origin/$base_branch"
 ```
 
 进入 worktree：
@@ -56,8 +58,8 @@ echo "openai/codex main: $openai_sha"
 ### 3) 先做改动范围审计（冲突前/后都做一次）
 
 ```bash
-git diff --name-status origin/web...openai/main
-git diff --stat origin/web...openai/main
+git diff --name-status "origin/$base_branch"...openai/main
+git diff --stat "origin/$base_branch"...openai/main
 ```
 
 如果你怀疑某些用户可见能力被“同步时舍弃”，在这里就能直接定位文件范围（例如 `/clear`、`/theme`、agent teams 等）。
@@ -69,19 +71,19 @@ git merge --no-edit openai/main
 ```
 
 如果出现冲突：
-1) 先列出冲突文件：`git status`  
-2) 对每个冲突做快速 code-review 分类（机械 / 逻辑可融合 / 同功能二选一）  
-3) 机械冲突、逻辑可融合：直接解决并继续  
-4) 只有“同功能二选一”才进入下一节的 PR comment 阻塞流程  
+1) 先列出冲突文件：`git status`
+2) 对每个冲突做快速 code-review 分类（机械 / 逻辑可融合 / 同功能二选一）
+3) 机械冲突、逻辑可融合：直接解决并继续
+4) 只有“同功能二选一”才停下来请求你选择
 
-### 5) 仅在“同功能二选一”时写阻塞性 PR comment
+### 5) 仅在“同功能二选一”时阻塞并请求选择
 当且仅当你确认两边是**同一个功能**的两套实现，且无法合理融合：
-- 在 PR comment 里写清楚：
+- 汇总并发给你：
   - 文件路径 + 关键函数/结构体
   - 行为差异（接口、边界条件、失败模式）
   - trade-off（复杂度、可维护性、性能、安全性、测试覆盖）
-  - 需要你拍板的选项：**保留本地** / **采用上游**
-- 在你选择前，停止继续推进（避免“默认本地优先”把上游同功能实现静默删掉）。
+  - 选项：**保留本地** / **采用上游**
+- 在你选择前，停止继续推进。
 
 ### 6) 最小化修复 + 格式化 + 目标测试
 Rust（改 Rust 代码后）：
@@ -128,103 +130,75 @@ just bazel-lock-check
   7) **状态标签也算文案**：`(current)`、`[default]`、`Running` 这类状态标签与列表项标题同等重要，必须一起统一，避免正文中文、状态仍英文。
   8) **测试文案也要同步**：若源码文案变化会影响 snapshot、断言、帮助文本测试，必须同步更新测试期望，避免“代码已汉化、测试仍断言英文”。
   9) **避免放宽断言规避问题**：不要把测试改成“中英文任一即可”来绕过本地化；应更新为精确中文预期，或做稳定的规范化后再精确断言。
-- `推荐执行顺序（默认）`：
-  1) 先扫源码中的真实用户文案，再看 snapshot/test，避免被快照噪音带偏。
-  2) 先处理 `tui` / `tui_app_server` 的平行实现，再处理单侧特有界面，减少术语漂移。
-  3) 先统一弹窗标题、选项名、状态标签，再处理描述、提示语、错误文案。
-  4) 最后统一 snapshot、断言、帮助输出与文档说明，确保输出与测试同时收口。
-- `文件优先级（默认）`：
-  1) **源码中的真实文案**：`chatwidget.rs`、`app.rs`、`bottom_pane/*`、`status/*`、`slash_command.rs`
-  2) **镜像实现**：`codex-rs/tui_app_server` 中与 `tui` 对应的并行文件
-  3) **测试与快照**：`tests.rs`、`snapshots/*.snap`
-  4) **文档说明**：帮助文案、README、技能说明
-- `译法判定规则（默认）`：
-  1) **可直接沿用仓内译法**：已有稳定中文时，直接复用，不做“更文艺”改写。
-  2) **无稳定译法时**：优先选短、稳、可重复复用的表达，避免一句一译。
-  3) **中英混排时**：产品名/命令名保留英文，其余语义尽量中文；不要出现“中文句子 + 英文状态尾巴”。
-  4) **占位符附近**：优先调整语序，不修改占位符名、反引号、Markdown、ANSI、快捷键表示。
-  5) **警告/错误提示**：优先准确和可执行，避免过度润色导致风险提示变弱。
-- `常见误区（默认禁止）`：
-  1) 只改 snapshot，不改源码。
-  2) 只改 `tui`，漏改 `tui_app_server` 的平行实现。
-  3) 把状态标签、括号标签、列表选中态留成英文。
-  4) 为了过测把断言放宽成“中英文任一即可”。
-  5) 批量替换误伤命令名、配置键、字段名、crate 名、代码标识符。
 - `双层自检（默认执行）`：
-  1) 固定关键词扫描（保底拦截历史高频漏网词）：
+  1) 固定关键词扫描：
      ```bash
      rg -n "Main \\[default\\]|\\[default\\]|\\bAgent spawn failed\\b|\\bAgent interaction failed\\b|\\bAgent resume failed\\b|\\bAgent close failed\\b|\\bAgent turn complete\\b|\\bSpawned\\b|\\bWaiting for\\b|\\bFinished waiting\\b|\\bResuming\\b|\\bResumed\\b|\\bClosed\\b|\\bNo agents completed yet\\b|\\bPending init\\b|\\bRunning\\b|\\bInterrupted\\b|\\bCompleted\\b|\\bNot found\\b" codex-rs/tui/src codex-rs/tui_app_server/src
      ```
-  2) 增量差异扫描（仅检查本次改动中新引入的英文用户文案，避免新词漏网）：
+  2) 增量差异扫描：
      ```bash
      git diff --unified=0 -- codex-rs/tui codex-rs/tui_app_server | rg -n "^\\+.*[A-Za-z]{4,}"
      ```
-- `工具回退（环境无 rg 时）`：
-  - 固定关键词扫描可回退为：
-    ```bash
-    git grep -nE "Main \\[default\\]|\\[default\\]|Agent spawn failed|Agent interaction failed|Agent resume failed|Agent close failed|Agent turn complete|Spawned|Waiting for|Finished waiting|Resuming|Resumed|Closed|No agents completed yet|Pending init|Running|Interrupted|Completed|Not found" -- codex-rs/tui/src codex-rs/tui_app_server/src
-    ```
-  - 增量英文扫描可回退为：
-    ```bash
-    git diff --unified=0 -- codex-rs/tui codex-rs/tui_app_server | grep -nE "^\\+.*[A-Za-z]{4,}"
-    ```
 - `保留英文（不要硬翻）`：命令名/子命令、配置键、协议字段、crate 名、代码标识符、产品名。
-- `术语建议（默认）`：
-  - `Agent` -> `智能体`
-  - `Spawned` -> `已创建`
-  - `Agent spawn failed` -> `创建智能体失败`
-  - `Main [default]` -> `主线程 [默认]`
-- `高频术语建议（优先统一）`：
-  - `Fast mode` -> `快速模式`
-  - `Plan mode` -> `计划模式`
-  - `Guardian Approvals` -> `Guardian 审批`
-  - `Windows sandbox` / `sandbox` -> `Windows 沙箱` / `沙箱`
-- `高频补充建议（默认）`：
-  - `Running` -> `运行中`
-  - `Interrupted` -> `已中断`
-  - `Completed` -> `已完成`
-  - `Closed` -> `已关闭`
-  - `Not found` -> `未找到`
-- `输出质量门槛（默认）`：
-  1) 不能出现“标题中文、描述英文、状态标签英文”的半汉化组合。
-  2) 不能出现“源码中文了，但 snapshot / 测试仍断言英文”的失配。
-  3) 不能为了过测而弱化断言、放宽成双语兼容，除非该界面产品要求双语。
-  4) 发现批量替换误伤代码标识符、命令名、字段名时，必须先回滚误改，再继续处理文案。
-- `完成判定（全部满足才算完成）`：
-  1) 源码、平行实现、snapshot、断言已同步。
-  2) 固定关键词扫描无新的真实漏网项。
-  3) 增量英文扫描未发现本次新增的英文用户文案，或已逐项说明为什么保留英文。
-  4) 相关测试/快照验证已重新通过。
 - 目标：自然中文，不做逐词直译；汉化后重新检查相关快照/测试，确保输出稳定。
 
-### 8) 提交 + 推送
+### 8) 汇总“合进来了什么”和“影响了什么”
+在 worktree 内完成验证后，必须先写出一份结构化总结，至少覆盖：
+1) **主要合并内容**：本次从上游带来了哪些功能/模块/基础设施变更。
+2) **关键冲突如何处理**：哪些地方是融合、哪些地方是保留本地、哪些地方是跟随上游重构。
+3) **影响范围**：协议、核心逻辑、TUI、测试、CI、依赖、Bazel 等哪些受影响。
+4) **是否有功能丢失/覆盖**：
+   - 明确写“未发现明显丢失/覆盖”，或
+   - 明确列出存在风险的点。
+5) **依据**：你实际跑过哪些验证、哪些没跑。
 
-```bash
-git status
-git add -A
-git commit -m "sync: openai/codex @ <sha>"
-git push -u origin HEAD
+默认输出结构：
+```text
+- 主要合并内容
+- 冲突与融合决策
+- 影响范围
+- 是否造成原逻辑丢失/覆盖
+- 验证依据与剩余风险
 ```
 
-### 9) 创建/更新 PR
-创建 PR：
+### 9) 直接合并回原分支（不走 PR）
+回到主工作区，将同步分支直接合回原分支：
 
 ```bash
-gh pr create --base web --head "$branch" --title "sync: openai/codex @ <sha>" --body "Sync upstream openai/codex main. Local code prioritized; see commit(s) for conflict resolutions."
+cd <repo-root>
+git checkout "$base_branch"
+git merge --no-ff --no-commit "$branch"
 ```
 
-PR 已存在时，直接 push 新 commit 即可触发更新。
+然后：
+- 确认工作区中只包含本次同步相关改动。
+- 把**技能文档更新**和**同步代码**一起纳入同一次提交。
+- 提交信息必须写成**完整说明型**，而不是只写短标题；正文应至少包含：
+  - 上游 commit
+  - 合并的主要功能
+  - 关键融合点
+  - 是否发现功能丢失/覆盖
+  - 实际验证情况
 
-### 10) CI 门禁（必须）
-只在 required checks 全绿后才允许 merge：
+建议格式：
 
 ```bash
-gh pr checks --repo <owner/repo> --watch <PR>
+git commit -m "sync: merge openai/codex main into $base_branch" \
+  -m "Upstream: <sha>" \
+  -m "Merged features: <功能 1>; <功能 2>; <功能 3>." \
+  -m "Conflict resolution: <关键融合点>." \
+  -m "Impact: <影响范围>." \
+  -m "Compatibility: <是否发现原功能丢失/覆盖>." \
+  -m "Verified with: <命令列表>."
 ```
 
-如果出现同功能二选一的阻塞 comment：等你选择后再继续修复/重跑 CI。
+如无后续用途，最后清理 worktree：
 
-## PR comment 模板（仅二选一场景）
+```bash
+git worktree remove "$path"
+```
+
+## 阻塞模板（仅二选一场景）
 ```
 同功能双实现冲突，需要选择：
 - 位置：<file>:<symbol>
