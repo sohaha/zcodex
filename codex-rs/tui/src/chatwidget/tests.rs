@@ -6644,8 +6644,9 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     // Esc once: child view closes, parent (review presets) remains.
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let header = render_bottom_first_row(&chat, 60);
+    let header = normalize_ui_text(&header);
     assert!(
-        header.contains("Select a review preset"),
+        header.contains("选择审查预设"),
         "expected to return to parent review popup: {header:?}"
     );
 
@@ -6672,16 +6673,18 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
 
     // Verify child view header.
     let header = render_bottom_first_row(&chat, 60);
+    let header = normalize_ui_text(&header);
     assert!(
-        header.contains("Select a base branch"),
+        header.contains("选择基准分支"),
         "expected branch picker header: {header:?}"
     );
 
     // Esc once: child view closes, parent remains.
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let header = render_bottom_first_row(&chat, 60);
+    let header = normalize_ui_text(&header);
     assert!(
-        header.contains("Select a review preset"),
+        header.contains("选择审查预设"),
         "expected to return to parent review popup: {header:?}"
     );
 
@@ -8568,7 +8571,7 @@ async fn permissions_selection_emits_history_cell_when_selection_changes() {
     );
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Permissions updated to"),
+        rendered.contains("权限已更新为"),
         "expected permissions selection history message, got: {rendered}"
     );
 }
@@ -8694,7 +8697,7 @@ async fn permissions_selection_emits_history_cell_when_current_is_selected() {
     );
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Permissions updated to"),
+        rendered.contains("权限已更新为"),
         "expected permissions update history message, got: {rendered}"
     );
 }
@@ -9007,9 +9010,9 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
         open_confirmation_event.expect("expected full access confirmation event");
     chat.open_full_access_confirmation(preset, return_to_permissions);
 
-    let popup = render_bottom_popup(&chat, 80);
+    let popup = normalize_ui_text(&render_bottom_popup(&chat, 80));
     assert!(
-        popup.contains("Enable full access?"),
+        popup.contains("启用完全访问？"),
         "expected full access confirmation popup, got: {popup}"
     );
 
@@ -9026,7 +9029,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
         lines_to_single_string(&cells_after_confirmation[0])
     };
     assert!(
-        rendered.contains("Permissions updated to Full Access"),
+        rendered.contains("权限已更新为 Full Access"),
         "expected full access update history message, got: {rendered}"
     );
 }

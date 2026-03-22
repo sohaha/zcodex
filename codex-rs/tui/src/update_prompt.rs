@@ -222,15 +222,15 @@ impl WidgetRef for &UpdatePromptScreen {
         ));
         column.push(selection_option_row(
             2,
-            "Skip until next version".to_string(),
+            "跳过直到下个版本".to_string(),
             self.highlighted == UpdateSelection::DontRemind,
         ));
         column.push("");
         column.push(
             Line::from(vec![
-                "Press ".dim(),
+                "按 ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
-                " to continue".dim(),
+                " 继续".dim(),
             ])
             .inset(Insets::tlbr(0, 2, 0, 0)),
         );

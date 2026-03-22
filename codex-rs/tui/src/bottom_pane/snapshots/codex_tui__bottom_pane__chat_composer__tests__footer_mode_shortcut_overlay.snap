@@ -3,7 +3,7 @@ source: tui/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                                                                    "
-"› Ask Codex to do anything                                                                          "
+"› 让 Codex 处理任何事情                                                                             " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
