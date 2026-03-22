@@ -3,7 +3,7 @@ source: tui/src/bottom_pane/list_selection_view.rs
 expression: render_lines(&view)
 ---
                                                 
-  Select Approval Mode                          
+  选 择 批 准 模 式                                   
                                                 
 › 1. Read Only (current)  可 读 取 文 件             
   2. 完 全 访 问              可 编 辑 文 件             

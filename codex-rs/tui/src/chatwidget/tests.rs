@@ -3286,9 +3286,9 @@ async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
     chat.on_rate_limit_snapshot(Some(snapshot(92.0)));
     chat.on_task_complete(None, false);
 
-    let popup = render_bottom_popup(&chat, 80);
+    let popup = normalize_ui_text(&render_bottom_popup(&chat, 80));
     assert!(
-        popup.contains("Approaching rate limits"),
+        popup.contains("接近速率限制"),
         "expected rate limit popup, got {popup:?}"
     );
     assert!(
@@ -6635,9 +6635,9 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     chat.show_review_custom_prompt();
 
     // Verify child view is on top.
-    let header = render_bottom_first_row(&chat, 60);
+    let header = normalize_ui_text(&render_bottom_first_row(&chat, 60));
     assert!(
-        header.contains("Custom review instructions"),
+        header.contains("自定义审查说明"),
         "expected custom prompt view header: {header:?}"
     );
 

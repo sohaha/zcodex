@@ -44,15 +44,15 @@ pub(crate) enum RealtimeAudioDeviceKind {
 impl RealtimeAudioDeviceKind {
     pub(crate) fn title(self) -> &'static str {
         match self {
-            Self::Microphone => "Microphone",
-            Self::Speaker => "Speaker",
+            Self::Microphone => "麦克风",
+            Self::Speaker => "扬声器",
         }
     }
 
     pub(crate) fn noun(self) -> &'static str {
         match self {
-            Self::Microphone => "microphone",
-            Self::Speaker => "speaker",
+            Self::Microphone => "麦克风",
+            Self::Speaker => "扬声器",
         }
     }
 }
