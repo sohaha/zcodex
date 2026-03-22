@@ -1060,7 +1060,7 @@ mod tests {
         ];
         ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Approval Mode".to_string()),
+                title: Some("选择批准模式".to_string()),
                 subtitle: subtitle.map(str::to_string),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
@@ -1248,7 +1248,7 @@ mod tests {
         ]);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Approval Mode".to_string()),
+                title: Some("选择批准模式".to_string()),
                 footer_note: Some(footer_note),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
@@ -1275,11 +1275,11 @@ mod tests {
         }];
         let mut view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Approval Mode".to_string()),
+                title: Some("选择批准模式".to_string()),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
                 is_searchable: true,
-                search_placeholder: Some("Type to search branches".to_string()),
+                search_placeholder: Some("输入以搜索分支".to_string()),
                 ..Default::default()
             },
             tx,
@@ -1429,7 +1429,7 @@ mod tests {
         ];
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Model and Effort".to_string()),
+                title: Some("选择模型与推理强度".to_string()),
                 items,
                 ..Default::default()
             },
@@ -1511,7 +1511,7 @@ mod tests {
         ];
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("Select Model and Effort".to_string()),
+                title: Some("选择模型与推理强度".to_string()),
                 items,
                 ..Default::default()
             },

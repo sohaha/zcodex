@@ -7287,14 +7287,14 @@ impl ChatWidget {
             tx.send(AppEvent::PersistRateLimitSwitchPromptHidden);
         })];
         let description = if preset.description.is_empty() {
-            Some("Uses fewer credits for upcoming turns.".to_string())
+            Some("减少接下来几轮的额度消耗。".to_string())
         } else {
             Some(preset.description)
         };
 
         let items = vec![
             SelectionItem {
-                name: format!("Switch to {switch_model}"),
+                name: format!("切换到 {switch_model}"),
                 description,
                 selected_description: None,
                 is_current: false,
@@ -7303,7 +7303,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Keep current model".to_string(),
+                name: "保留当前模型".to_string(),
                 description: None,
                 selected_description: None,
                 is_current: false,
@@ -7312,10 +7312,8 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Keep current model (never show again)".to_string(),
-                description: Some(
-                    "Hide future rate limit reminders about switching models.".to_string(),
-                ),
+                name: "保留当前模型（不再提示）".to_string(),
+                description: Some("隐藏后续关于切换模型的速率限制提醒。".to_string()),
                 selected_description: None,
                 is_current: false,
                 actions: never_actions,
@@ -7325,8 +7323,8 @@ impl ChatWidget {
         ];
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Approaching rate limits".to_string()),
-            subtitle: Some(format!("Switch to {switch_model} for lower credit usage?")),
+            title: Some("接近速率限制".to_string()),
+            subtitle: Some(format!("切换到 {switch_model} 以减少额度消耗？")),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -7487,8 +7485,8 @@ impl ChatWidget {
             .as_deref()
             .is_some_and(|name| device_names.iter().any(|device_name| device_name == name));
         let mut items = vec![SelectionItem {
-            name: "System default".to_string(),
-            description: Some("Use your operating system default device.".to_string()),
+            name: "系统默认".to_string(),
+            description: Some("使用操作系统默认设备。".to_string()),
             is_current: current_selection.is_none(),
             actions: vec![Box::new(move |tx| {
                 tx.send(AppEvent::PersistRealtimeAudioDeviceSelection { kind, name: None });
@@ -7501,11 +7499,11 @@ impl ChatWidget {
             && !current_available
         {
             items.push(SelectionItem {
-                name: format!("Unavailable: {selection}"),
-                description: Some("Configured device is not currently available.".to_string()),
+                name: format!("不可用：{selection}"),
+                description: Some("当前无法使用已配置的设备。".to_string()),
                 is_current: true,
                 is_disabled: true,
-                disabled_reason: Some("Reconnect the device or choose another one.".to_string()),
+                disabled_reason: Some("重新连接该设备或改选其他设备。".to_string()),
                 ..Default::default()
             });
         }
@@ -7528,10 +7526,8 @@ impl ChatWidget {
         }));
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from(format!("Select {}", kind.title()).bold()));
-        header.push(Line::from(
-            "Saved devices apply to realtime voice only.".dim(),
-        ));
+        header.push(Line::from(format!("选择{}", kind.title()).bold()));
+        header.push(Line::from("已保存的设备仅用于实时语音。".dim()));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -7547,28 +7543,23 @@ impl ChatWidget {
         })];
         let items = vec![
             SelectionItem {
-                name: "Restart now".to_string(),
-                description: Some(format!("Restart local {} audio now.", kind.noun())),
+                name: "立即重启".to_string(),
+                description: Some(format!("立即重启本地{}音频。", kind.noun())),
                 actions: restart_actions,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
-                name: "Apply later".to_string(),
-                description: Some(format!(
-                    "Keep the current {} until local audio starts again.",
-                    kind.noun()
-                )),
+                name: "稍后应用".to_string(),
+                description: Some(format!("在本地音频重新启动前保持当前{}。", kind.noun())),
                 dismiss_on_select: true,
                 ..Default::default()
             },
         ];
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from(format!("Restart {} now?", kind.title()).bold()));
-        header.push(Line::from(
-            "Configuration is saved. Restart local audio to use it immediately.".dim(),
-        ));
+        header.push(Line::from(format!("立即重启{}？", kind.title()).bold()));
+        header.push(Line::from("配置已保存。重启本地音频后即可立即生效。".dim()));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -9199,7 +9190,7 @@ impl ChatWidget {
 
     fn current_realtime_audio_selection_label(&self, kind: RealtimeAudioDeviceKind) -> String {
         self.current_realtime_audio_device_name(kind)
-            .unwrap_or_else(|| "System default".to_string())
+            .unwrap_or_else(|| "系统默认".to_string())
     }
 
     fn sync_fast_command_enabled(&mut self) {
@@ -10172,8 +10163,8 @@ impl ChatWidget {
         let mut items: Vec<SelectionItem> = Vec::new();
 
         items.push(SelectionItem {
-            name: "Review against a base branch".to_string(),
-            description: Some("(PR Style)".into()),
+            name: "审查相对基准分支的改动".to_string(),
+            description: Some("（PR 风格）".into()),
             actions: vec![Box::new({
                 let cwd = self.config.cwd.clone();
                 move |tx| {
@@ -10185,7 +10176,7 @@ impl ChatWidget {
         });
 
         items.push(SelectionItem {
-            name: "Review uncommitted changes".to_string(),
+            name: "审查未提交改动".to_string(),
             actions: vec![Box::new(move |tx: &AppEventSender| {
                 tx.review(ReviewRequest {
                     target: ReviewTarget::UncommittedChanges,
@@ -10198,7 +10189,7 @@ impl ChatWidget {
 
         // New: Review a specific commit (opens commit picker)
         items.push(SelectionItem {
-            name: "Review a commit".to_string(),
+            name: "审查某个提交".to_string(),
             actions: vec![Box::new({
                 let cwd = self.config.cwd.clone();
                 move |tx| {
@@ -10210,7 +10201,7 @@ impl ChatWidget {
         });
 
         items.push(SelectionItem {
-            name: "Custom review instructions".to_string(),
+            name: "自定义审查说明".to_string(),
             actions: vec![Box::new(move |tx| {
                 tx.send(AppEvent::OpenReviewCustomPrompt);
             })],
@@ -10300,8 +10291,8 @@ impl ChatWidget {
     pub(crate) fn show_review_custom_prompt(&mut self) {
         let tx = self.app_event_tx.clone();
         let view = CustomPromptView::new(
-            "Custom review instructions".to_string(),
-            "Type instructions and press Enter".to_string(),
+            "自定义审查说明".to_string(),
+            "输入说明并按 Enter".to_string(),
             /*context_label*/ None,
             Box::new(move |prompt: String| {
                 let trimmed = prompt.trim().to_string();
