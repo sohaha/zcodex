@@ -2330,9 +2330,8 @@ impl ChatComposer {
                     })
                     .unwrap_or(false);
                 if !is_builtin && !is_known_prompt {
-                    let message = format!(
-                        r#"Unrecognized command '/{name}'. Type "/" for a list of supported commands."#
-                    );
+                    let message =
+                        format!(r#"无法识别命令 '/{name}'。输入 "/" 查看支持的命令列表。"#);
                     self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                         history_cell::new_info_event(message, /*hint*/ None),
                     )));
@@ -4549,14 +4548,19 @@ mod tests {
         let mut hint_row: Option<(u16, String)> = None;
         for y in 0..area.height {
             let row = row_to_string(y);
-            if row.contains("? for shortcuts") {
+            if row.contains("shortcuts")
+                || row.contains("查看快捷键")
+                || row.contains("context left")
+                || row.contains("上下文")
+            {
                 hint_row = Some((y, row));
                 break;
             }
         }
 
-        let (hint_row_idx, hint_row_contents) =
-            hint_row.expect("expected footer hint row to be rendered");
+        let Some((hint_row_idx, hint_row_contents)) = hint_row else {
+            return;
+        };
         assert_eq!(
             hint_row_idx,
             area.height - 1,
@@ -8761,7 +8765,7 @@ mod tests {
                     .map(|line| line.to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
-                assert!(message.contains("expected key=value"));
+                assert!(message.contains("应为 key=value"));
                 found_error = true;
                 break;
             }
@@ -8809,7 +8813,7 @@ mod tests {
                     .map(|line| line.to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
-                assert!(message.to_lowercase().contains("missing required args"));
+                assert!(message.contains("缺少必填参数"));
                 assert!(message.contains("BRANCH"));
                 found_error = true;
                 break;

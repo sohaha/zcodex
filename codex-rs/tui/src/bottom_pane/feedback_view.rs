@@ -110,18 +110,18 @@ impl FeedbackNoteView {
         match result {
             Ok(()) => {
                 let prefix = if self.include_logs {
-                    "• Feedback uploaded."
+                    "• 反馈已上传。"
                 } else {
-                    "• Feedback recorded (no logs)."
+                    "• 反馈已记录（未附带日志）。"
                 };
                 let issue_url =
                     issue_url_for_category(self.category, &thread_id, self.feedback_audience);
                 let mut lines = vec![Line::from(match issue_url.as_ref() {
                     Some(_) if self.feedback_audience == FeedbackAudience::OpenAiEmployee => {
-                        format!("{prefix} Please report this in #codex-feedback:")
+                        format!("{prefix} 请在 #codex-feedback 中反馈：")
                     }
-                    Some(_) => format!("{prefix} Please open an issue using the following URL:"),
-                    None => format!("{prefix} Thanks for the feedback!"),
+                    Some(_) => format!("{prefix} 请使用以下链接创建 issue："),
+                    None => format!("{prefix} 感谢反馈！"),
                 })];
                 match issue_url {
                     Some(url) if self.feedback_audience == FeedbackAudience::OpenAiEmployee => {
@@ -129,7 +129,7 @@ impl FeedbackNoteView {
                             "".into(),
                             Line::from(vec!["  ".into(), url.cyan().underlined()]),
                             "".into(),
-                            Line::from("  Share this and add some info about your problem:"),
+                            Line::from("  请分享以下内容，并补充你的问题说明："),
                             Line::from(vec![
                                 "    ".into(),
                                 format!("https://go/codex-feedback/{thread_id}").bold(),
@@ -142,9 +142,9 @@ impl FeedbackNoteView {
                             Line::from(vec!["  ".into(), url.cyan().underlined()]),
                             "".into(),
                             Line::from(vec![
-                                "  Or mention your thread ID ".into(),
+                                "  或者在已有 issue 中提及你的线程 ID ".into(),
                                 std::mem::take(&mut thread_id).bold(),
-                                " in an existing issue.".into(),
+                                "。".into(),
                             ]),
                         ]);
                     }
@@ -152,7 +152,7 @@ impl FeedbackNoteView {
                         lines.extend([
                             "".into(),
                             Line::from(vec![
-                                "  Thread ID: ".into(),
+                                "  线程 ID：".into(),
                                 std::mem::take(&mut thread_id).bold(),
                             ]),
                         ]);
@@ -164,7 +164,7 @@ impl FeedbackNoteView {
             }
             Err(e) => {
                 self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
-                    history_cell::new_error_event(format!("Failed to upload feedback: {e}")),
+                    history_cell::new_error_event(format!("上传反馈失败：{e}")),
                 )));
             }
         }
@@ -529,9 +529,9 @@ pub(crate) fn feedback_upload_consent_params(
 
     // Build header listing files that would be sent if user consents.
     let mut header_lines: Vec<Box<dyn crate::render::renderable::Renderable>> = vec![
-        Line::from("Upload logs?".bold()).into(),
+        Line::from("上传日志吗？".bold()).into(),
         Line::from("").into(),
-        Line::from("The following files will be sent:".dim()).into(),
+        Line::from("将发送以下文件：".dim()).into(),
         Line::from(vec!["  • ".into(), "codex-logs.log".into()]).into(),
     ];
     if let Some(path) = rollout_path.as_deref()
@@ -550,7 +550,7 @@ pub(crate) fn feedback_upload_consent_params(
     }
     if should_show_feedback_connectivity_details(category, feedback_diagnostics) {
         header_lines.push(Line::from("").into());
-        header_lines.push(Line::from("Connectivity diagnostics".bold()).into());
+        header_lines.push(Line::from("网络连通性诊断".bold()).into());
         for diagnostic in feedback_diagnostics.diagnostics() {
             header_lines
                 .push(Line::from(vec!["  - ".into(), diagnostic.headline.clone().into()]).into());
@@ -564,11 +564,8 @@ pub(crate) fn feedback_upload_consent_params(
         footer_hint: Some(standard_popup_hint_line()),
         items: vec![
             super::SelectionItem {
-                name: "Yes".to_string(),
-                description: Some(
-                    "Share the current Codex session logs with the team for troubleshooting."
-                        .to_string(),
-                ),
+                name: "是".to_string(),
+                description: Some("共享当前 Codex 会话日志，便于团队排查问题。".to_string()),
                 actions: vec![yes_action],
                 dismiss_on_select: true,
                 ..Default::default()

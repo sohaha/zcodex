@@ -101,34 +101,22 @@ impl StatusLineItem {
     /// User-visible description shown in the popup.
     pub(crate) fn description(&self) -> &'static str {
         match self {
-            StatusLineItem::ModelName => "Current model name",
-            StatusLineItem::ModelWithReasoning => "Current model name with reasoning level",
-            StatusLineItem::CurrentDir => "Current working directory",
-            StatusLineItem::ProjectRoot => "Project root directory (omitted when unavailable)",
-            StatusLineItem::GitBranch => "Current Git branch (omitted when unavailable)",
-            StatusLineItem::ContextRemaining => {
-                "Percentage of context window remaining (omitted when unknown)"
-            }
-            StatusLineItem::ContextUsed => {
-                "Percentage of context window used (omitted when unknown)"
-            }
-            StatusLineItem::FiveHourLimit => {
-                "Remaining usage on 5-hour usage limit (omitted when unavailable)"
-            }
-            StatusLineItem::WeeklyLimit => {
-                "Remaining usage on weekly usage limit (omitted when unavailable)"
-            }
-            StatusLineItem::CodexVersion => "Codex application version",
-            StatusLineItem::ContextWindowSize => {
-                "Total context window size in tokens (omitted when unknown)"
-            }
-            StatusLineItem::UsedTokens => "Total tokens used in session (omitted when zero)",
-            StatusLineItem::TotalInputTokens => "Total input tokens used in session",
-            StatusLineItem::TotalOutputTokens => "Total output tokens used in session",
-            StatusLineItem::SessionId => {
-                "Current session identifier (omitted until session starts)"
-            }
-            StatusLineItem::FastMode => "Whether Fast mode is currently active",
+            StatusLineItem::ModelName => "当前模型名称",
+            StatusLineItem::ModelWithReasoning => "当前模型名称与推理级别",
+            StatusLineItem::CurrentDir => "当前工作目录",
+            StatusLineItem::ProjectRoot => "项目根目录（不可用时隐藏）",
+            StatusLineItem::GitBranch => "当前 Git 分支（不可用时隐藏）",
+            StatusLineItem::ContextRemaining => "剩余上下文窗口百分比（未知时隐藏）",
+            StatusLineItem::ContextUsed => "已用上下文窗口百分比（未知时隐藏）",
+            StatusLineItem::FiveHourLimit => "5 小时限额剩余（不可用时隐藏）",
+            StatusLineItem::WeeklyLimit => "每周限额剩余（不可用时隐藏）",
+            StatusLineItem::CodexVersion => "Codex 应用版本",
+            StatusLineItem::ContextWindowSize => "上下文窗口总 token（未知时隐藏）",
+            StatusLineItem::UsedTokens => "当前会话已用 token（为 0 时隐藏）",
+            StatusLineItem::TotalInputTokens => "当前会话输入 token 总数",
+            StatusLineItem::TotalOutputTokens => "当前会话输出 token 总数",
+            StatusLineItem::SessionId => "当前会话标识（未启动前隐藏）",
+            StatusLineItem::FastMode => "当前是否开启 Fast mode",
         }
     }
 }
@@ -219,13 +207,12 @@ impl StatusLineSetupView {
 
         Self {
             picker: MultiSelectPicker::builder(
-                "Configure Status Line".to_string(),
-                Some("Select which items to display in the status line.".to_string()),
+                "配置状态栏".to_string(),
+                Some("选择要在状态栏中显示的项目。".to_string()),
                 app_event_tx,
             )
             .instructions(vec![
-                "Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc to cancel."
-                    .into(),
+                "使用 ↑↓ 导航，←→ 调整位置，Space 选择，Enter 确认，Esc 取消。".into(),
             ])
             .items(items)
             .enable_ordering()

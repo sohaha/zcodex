@@ -77,7 +77,7 @@ mod audio_device {
         kind: RealtimeAudioDeviceKind,
     ) -> Result<Vec<String>, String> {
         Err(format!(
-            "Failed to load realtime {} devices: voice input is unavailable in this build",
+            "加载 realtime {} 设备失败：voice input is unavailable in this build",
             kind.noun()
         ))
     }
@@ -303,7 +303,7 @@ pub async fn run_main(
         Ok(v) => v,
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("Error parsing -c overrides: {e}");
+            eprintln!("解析 -c 覆盖选项失败：{e}");
             std::process::exit(1);
         }
     };
@@ -313,7 +313,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("查找 Codex 目录失败：{err}");
             std::process::exit(1);
         }
     };
@@ -340,11 +340,11 @@ pub async fn run_main(
                 .map(ConfigLoadError::config_error);
             if let Some(config_error) = config_error {
                 eprintln!(
-                    "Error loading config.toml:\n{}",
+                    "加载 config.toml 失败：\n{}",
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("Error loading config.toml: {err}");
+                eprintln!("加载 config.toml 失败：{err}");
             }
             std::process::exit(1);
         }
@@ -436,7 +436,7 @@ pub async fn run_main(
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
-                "Error loading rules:\n{}",
+                "加载规则失败：\n{}",
                 format_exec_policy_error_with_source(&err)
             );
             std::process::exit(1);
@@ -450,7 +450,7 @@ pub async fn run_main(
     {
         #[allow(clippy::print_stderr)]
         {
-            eprintln!("Error adding directories: {warning}");
+            eprintln!("添加目录失败：{warning}");
             std::process::exit(1);
         }
     }
@@ -701,7 +701,7 @@ async fn run_ratatui_app(
     };
 
     let mut missing_session_exit = |id_str: &str, action: &str| {
-        error!("Error finding conversation path: {id_str}");
+        error!("未找到会话路径：{id_str}");
         restore();
         session_log::log_session_end();
         let _ = tui.terminal.clear();
@@ -711,7 +711,7 @@ async fn run_ratatui_app(
             thread_name: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
-                "No saved session found with ID {id_str}. Run `codex {action}` without an ID to choose from existing sessions."
+                "未找到 ID 为 {id_str} 的保存会话。运行 `codex {action}`（不带 ID）以选择现有会话。"
             )),
         })
     };
@@ -771,9 +771,7 @@ async fn run_ratatui_app(
                             ),
                             None => {
                                 let rollout_path = item.path.display();
-                                error!(
-                                    "Error reading session metadata from latest rollout: {rollout_path}"
-                                );
+                                error!("读取最新 rollout 的会话元数据失败：{rollout_path}");
                                 restore();
                                 session_log::log_session_end();
                                 let _ = tui.terminal.clear();
@@ -783,7 +781,7 @@ async fn run_ratatui_app(
                                     thread_name: None,
                                     update_action: None,
                                     exit_reason: ExitReason::Fatal(format!(
-                                        "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex fork` to choose from existing sessions."
+                                        "在 {rollout_path} 找到最新保存会话，但读取其元数据失败。运行 `codex fork` 选择可用会话。"
                                     )),
                                 });
                             }
@@ -865,9 +863,7 @@ async fn run_ratatui_app(
                     }
                     None => {
                         let rollout_path = path.display();
-                        error!(
-                            "Error reading session metadata from latest rollout: {rollout_path}"
-                        );
+                        error!("读取最新 rollout 的会话元数据失败：{rollout_path}");
                         restore();
                         session_log::log_session_end();
                         let _ = tui.terminal.clear();
@@ -877,7 +873,7 @@ async fn run_ratatui_app(
                             thread_name: None,
                             update_action: None,
                             exit_reason: ExitReason::Fatal(format!(
-                                "Found latest saved session at {rollout_path}, but failed to read its metadata. Run `codex resume` to choose from existing sessions."
+                                "在 {rollout_path} 找到最新保存会话，但读取其元数据失败。运行 `codex resume` 选择可用会话。"
                             )),
                         });
                     }
@@ -1215,7 +1211,7 @@ async fn load_config_or_exit_with_fallback_cwd(
     {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("Error loading configuration: {err}");
+            eprintln!("加载配置失败：{err}");
             std::process::exit(1);
         }
     }

@@ -904,7 +904,7 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
         let action_label = state.action.action_label();
         let hint_line: Line = vec![
             key_hint::plain(KeyCode::Enter).into(),
-            format!(" to {action_label} ").dim(),
+            format!(" 以{action_label} ").dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Esc).into(),
             " 新建 ".dim(),
@@ -1172,7 +1172,7 @@ fn render_column_headers(
     if visibility.show_cwd {
         let label = format!(
             "{text:<width$}",
-            text = "CWD",
+            text = "目录(CWD)",
             width = metrics.max_cwd_width
         );
         spans.push(Span::from(label).bold());

@@ -190,6 +190,13 @@ const MULTI_AGENT_ENABLE_NOTICE: &str = "子智能体将在下一个会话中启
 const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "应用推理设置变更";
 const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "仅应用到 Plan mode 覆盖设置";
 const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "应用到全局默认值和 Plan mode 覆盖设置";
+
+fn localized_review_hint(hint: &str) -> &str {
+    match hint {
+        "current changes" => "当前改动",
+        _ => hint,
+    }
+}
 const CONNECTORS_SELECTION_VIEW_ID: &str = "connectors-selection";
 
 /// Choose the keybinding used to edit the most-recently queued message.
@@ -1865,7 +1872,7 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: PLAN_IMPLEMENTATION_YES.to_string(),
-                description: Some("Switch to Default and start coding.".to_string()),
+                description: Some("切换到 Default 并开始编码。".to_string()),
                 selected_description: None,
                 is_current: false,
                 actions: implement_actions,
@@ -1875,7 +1882,7 @@ impl ChatWidget {
             },
             SelectionItem {
                 name: PLAN_IMPLEMENTATION_NO.to_string(),
-                description: Some("Continue planning with the model.".to_string()),
+                description: Some("继续使用模型进行规划。".to_string()),
                 selected_description: None,
                 is_current: false,
                 actions: Vec::new(),
@@ -2716,7 +2723,7 @@ impl ChatWidget {
                 .set_interrupt_hint_visible(/*visible*/ true);
             self.terminal_title_status_kind = TerminalTitleStatusKind::WaitingForBackgroundTerminal;
             self.set_status(
-                "Waiting for background terminal".to_string(),
+                "等待后台终端".to_string(),
                 command_display.clone(),
                 StatusDetailsCapitalization::Preserve,
                 /*details_max_lines*/ 1,
@@ -2977,7 +2984,7 @@ impl ChatWidget {
 
     fn on_hook_started(&mut self, event: codex_protocol::protocol::HookStartedEvent) {
         let label = hook_event_label(event.run.event_name);
-        let mut message = format!("Running {label} hook");
+        let mut message = format!("正在运行 {label} 钩子");
         if let Some(status_message) = event.run.status_message
             && !status_message.is_empty()
         {
@@ -2994,11 +3001,11 @@ impl ChatWidget {
         let mut lines: Vec<ratatui::text::Line<'static>> = vec![header.into()];
         for entry in event.run.entries {
             let prefix = match entry.kind {
-                codex_protocol::protocol::HookOutputEntryKind::Warning => "warning: ",
-                codex_protocol::protocol::HookOutputEntryKind::Stop => "stop: ",
-                codex_protocol::protocol::HookOutputEntryKind::Feedback => "feedback: ",
-                codex_protocol::protocol::HookOutputEntryKind::Context => "hook context: ",
-                codex_protocol::protocol::HookOutputEntryKind::Error => "error: ",
+                codex_protocol::protocol::HookOutputEntryKind::Warning => "警告：",
+                codex_protocol::protocol::HookOutputEntryKind::Stop => "停止：",
+                codex_protocol::protocol::HookOutputEntryKind::Feedback => "反馈：",
+                codex_protocol::protocol::HookOutputEntryKind::Context => "钩子上下文：",
+                codex_protocol::protocol::HookOutputEntryKind::Error => "错误：",
             };
             lines.push(format!("  {prefix}{}", entry.text).into());
         }
@@ -3010,9 +3017,7 @@ impl ChatWidget {
         self.bottom_pane.ensure_status_indicator();
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ false);
-        let message = event
-            .message
-            .unwrap_or_else(|| "Undo in progress...".to_string());
+        let message = event.message.unwrap_or_else(|| "正在撤销...".to_string());
         self.terminal_title_status_kind = TerminalTitleStatusKind::Undoing;
         self.set_status_header(message);
     }
@@ -3024,9 +3029,9 @@ impl ChatWidget {
         self.refresh_terminal_title();
         let message = message.unwrap_or_else(|| {
             if success {
-                "Undo completed successfully.".to_string()
+                "撤销已成功完成。".to_string()
             } else {
-                "Undo failed.".to_string()
+                "撤销失败。".to_string()
             }
         });
         if success {
@@ -4481,8 +4486,8 @@ impl ChatWidget {
             SlashCommand::Plan => {
                 if !self.collaboration_modes_enabled() {
                     self.add_info_message(
-                        "Collaboration modes are disabled.".to_string(),
-                        Some("Enable collaboration modes to use /plan.".to_string()),
+                        "协作模式已禁用。".to_string(),
+                        Some("启用协作模式后即可使用 /plan。".to_string()),
                     );
                     return;
                 }
@@ -4490,7 +4495,7 @@ impl ChatWidget {
                     self.set_collaboration_mask(mask);
                 } else {
                     self.add_info_message(
-                        "Plan mode unavailable right now.".to_string(),
+                        "当前无法使用 Plan mode。".to_string(),
                         /*hint*/ None,
                     );
                 }
@@ -4498,8 +4503,8 @@ impl ChatWidget {
             SlashCommand::Collab => {
                 if !self.collaboration_modes_enabled() {
                     self.add_info_message(
-                        "Collaboration modes are disabled.".to_string(),
-                        Some("Enable collaboration modes to use /collab.".to_string()),
+                        "协作模式已禁用。".to_string(),
+                        Some("启用协作模式后即可使用 /collab。".to_string()),
                     );
                     return;
                 }
@@ -4534,9 +4539,7 @@ impl ChatWidget {
                     else {
                         // Avoid panicking in interactive UI; treat this as a recoverable
                         // internal error.
-                        self.add_error_message(
-                            "Internal error: missing the 'auto' approval preset.".to_string(),
-                        );
+                        self.add_error_message("内部错误：缺少 `auto` 审批预设。".to_string());
                         return;
                     };
 
@@ -4761,17 +4764,17 @@ impl ChatWidget {
                     "status" => {
                         let status = if matches!(self.config.service_tier, Some(ServiceTier::Fast))
                         {
-                            "on"
+                            "开启"
                         } else {
-                            "off"
+                            "关闭"
                         };
                         self.add_info_message(
-                            format!("Fast mode is {status}."),
+                            format!("Fast mode 当前为{status}。"),
                             /*hint*/ None,
                         );
                     }
                     _ => {
-                        self.add_error_message("Usage: /fast [on|off|status]".to_string());
+                        self.add_error_message("用法：/fast [on|off|status]".to_string());
                     }
                 }
             }
@@ -5480,7 +5483,7 @@ impl ChatWidget {
                 self.on_entered_review_mode(review_request, from_replay)
             }
             EventMsg::ExitedReviewMode(review) => self.on_exited_review_mode(review),
-            EventMsg::ContextCompacted(_) => self.on_agent_message("Context compacted".to_owned()),
+            EventMsg::ContextCompacted(_) => self.on_agent_message("上下文已压缩".to_owned()),
             EventMsg::CollabAgentSpawnBegin(CollabAgentSpawnBeginEvent {
                 call_id,
                 model,
@@ -5611,7 +5614,7 @@ impl ChatWidget {
         let hint = review
             .user_facing_hint
             .unwrap_or_else(|| codex_core::review_prompts::user_facing_hint(&review.target));
-        let banner = format!(">> Code review started: {hint} <<");
+        let banner = format!(">> 代码审查已开始：{} <<", localized_review_hint(&hint));
         self.add_to_history(history_cell::new_review_status_line(banner));
         self.request_redraw();
     }
@@ -5923,10 +5926,7 @@ impl ChatWidget {
 
     fn clean_background_terminals(&mut self) {
         self.submit_op(Op::CleanBackgroundTerminals);
-        self.add_info_message(
-            "Stopping all background terminals.".to_string(),
-            /*hint*/ None,
-        );
+        self.add_info_message("正在停止所有后台终端。".to_string(), /*hint*/ None);
     }
 
     fn stop_rate_limit_poller(&mut self) {
@@ -6190,16 +6190,13 @@ impl ChatWidget {
 
     pub(crate) fn open_personality_popup(&mut self) {
         if !self.is_session_configured() {
-            self.add_info_message(
-                "Personality selection is disabled until startup completes.".to_string(),
-                /*hint*/ None,
-            );
+            self.add_info_message("启动完成前无法选择人格。".to_string(), /*hint*/ None);
             return;
         }
         if !self.current_model_supports_personality() {
             let current_model = self.current_model();
             self.add_error_message(format!(
-                "Current model ({current_model}) doesn't support personalities. Try /model to pick a different model."
+                "当前模型（{current_model}）不支持人格。请尝试使用 /model 选择其他模型。"
             ));
             return;
         }
@@ -6246,8 +6243,8 @@ impl ChatWidget {
             .collect();
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Select Personality".bold()));
-        header.push(Line::from("Choose a communication style for Codex.".dim()));
+        header.push(Line::from("选择人格".bold()));
+        header.push(Line::from("为 Codex 选择一种交流风格。".dim()));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -6265,7 +6262,7 @@ impl ChatWidget {
         .into_iter()
         .map(|kind| {
             let description = Some(format!(
-                "Current: {}",
+                "当前：{}",
                 self.current_realtime_audio_selection_label(kind)
             ));
             let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
@@ -6282,8 +6279,8 @@ impl ChatWidget {
         .collect();
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Settings".to_string()),
-            subtitle: Some("Configure settings for Codex.".to_string()),
+            title: Some("设置".to_string()),
+            subtitle: Some("配置 Codex 设置。".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -6297,10 +6294,7 @@ impl ChatWidget {
                 self.open_realtime_audio_device_selection_with_names(kind, device_names);
             }
             Err(err) => {
-                self.add_error_message(format!(
-                    "Failed to load realtime {} devices: {err}",
-                    kind.noun()
-                ));
+                self.add_error_message(format!("加载 realtime {} 设备失败：{err}", kind.noun()));
             }
         }
     }
@@ -6524,10 +6518,8 @@ impl ChatWidget {
             });
         }
 
-        let header = self.model_menu_header(
-            "Select Model",
-            "Pick a quick auto mode or browse all models.",
-        );
+        let header =
+            self.model_menu_header("选择模型", "Pick a quick auto mode or browse all models.");
         self.bottom_pane.show_selection_view(SelectionViewParams {
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -6583,7 +6575,7 @@ impl ChatWidget {
         }
 
         let header = self.model_menu_header(
-            "Select Model and Effort",
+            "选择模型与推理强度",
             "Access legacy models by running codex -m <model_name> or in your config.toml",
         );
         self.bottom_pane.show_selection_view(SelectionViewParams {
@@ -6631,8 +6623,8 @@ impl ChatWidget {
             .collect();
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Select Collaboration Mode".to_string()),
-            subtitle: Some("Pick a collaboration preset.".to_string()),
+            title: Some("选择协作模式".to_string()),
+            subtitle: Some("选择一个协作预设。".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -6697,30 +6689,30 @@ impl ChatWidget {
             }
             None => "the selected reasoning".to_string(),
         };
-        let plan_only_description = format!("Always use {reasoning_phrase} in Plan mode.");
+        let plan_only_description = format!("仅在 Plan mode 中始终使用{reasoning_phrase}。");
         let plan_reasoning_source = if let Some(plan_override) =
             self.config.plan_mode_reasoning_effort
         {
             format!(
-                "user-chosen Plan override ({})",
+                "用户设置的 Plan 覆盖值（{}）",
                 Self::reasoning_effort_label(plan_override).to_lowercase()
             )
         } else if let Some(plan_mask) = collaboration_modes::plan_mask(self.models_manager.as_ref())
         {
             match plan_mask.reasoning_effort.flatten() {
                 Some(plan_effort) => format!(
-                    "built-in Plan default ({})",
+                    "内置 Plan 默认值（{}）",
                     Self::reasoning_effort_label(plan_effort).to_lowercase()
                 ),
-                None => "built-in Plan default (no reasoning)".to_string(),
+                None => "内置 Plan 默认值（无推理）".to_string(),
             }
         } else {
-            "built-in Plan default".to_string()
+            "内置 Plan 默认值".to_string()
         };
         let all_modes_description = format!(
-            "Set the global default reasoning level and the Plan mode override. This replaces the current {plan_reasoning_source}."
+            "同时设置全局默认推理级别与 Plan mode 覆盖值。这会替换当前的{plan_reasoning_source}。"
         );
-        let subtitle = format!("Choose where to apply {reasoning_phrase}.");
+        let subtitle = format!("选择将{reasoning_phrase}应用到哪里。");
 
         let plan_only_actions: Vec<SelectionAction> = vec![Box::new({
             let model = model.clone();
@@ -6790,7 +6782,7 @@ impl ChatWidget {
         };
         let warning_text = warn_effort.map(|effort| {
             let effort_label = Self::reasoning_effort_label(effort);
-            format!("⚠ {effort_label} reasoning effort can quickly consume Plus plan rate limits.")
+            format!("⚠ {effort_label} 推理强度可能会快速消耗 Plus 计划的速率限制额度。")
         });
         let warn_for_model = preset.model.starts_with("gpt-5.1-codex")
             || preset.model.starts_with("gpt-5.1-codex-max")
@@ -6922,9 +6914,7 @@ impl ChatWidget {
         }
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from(
-            format!("Select Reasoning Level for {model_slug}").bold(),
-        ));
+        header.push(Line::from(format!("为 {model_slug} 选择推理级别").bold()));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -7004,7 +6994,7 @@ impl ChatWidget {
                 continue;
             }
             let base_name = if preset.id == "auto" && windows_degraded_sandbox_enabled {
-                "Default (non-admin sandbox)".to_string()
+                "默认（非管理员沙箱）".to_string()
             } else {
                 preset.label.to_string()
             };
@@ -7155,7 +7145,7 @@ impl ChatWidget {
 
         let footer_note = show_elevate_sandbox_hint.then(|| {
             vec![
-                "The non-admin sandbox protects your files and prevents network access under most circumstances. However, it carries greater risk if prompt injected. To upgrade to the default sandbox, run ".dim(),
+                "非管理员沙箱会在大多数情况下保护你的文件并阻止网络访问，但若提示词被注入，风险更高。要升级到默认沙箱，请运行 ".dim(),
                 "/setup-default-sandbox".cyan(),
                 ".".dim(),
             ]
@@ -7163,7 +7153,7 @@ impl ChatWidget {
         });
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Update Model Permissions".to_string()),
+            title: Some("更新模型权限".to_string()),
             footer_note,
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -7343,14 +7333,14 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: "是，仍然继续".to_string(),
-                description: Some("Apply full access for this session".to_string()),
+                description: Some("为当前会话启用 full access".to_string()),
                 actions: accept_actions,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "是，并且不再提示".to_string(),
-                description: Some("Enable full access and remember this choice".to_string()),
+                description: Some("启用 full access 并记住此选择".to_string()),
                 actions: accept_and_remember_actions,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -7467,8 +7457,8 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Continue and don't warn again".to_string(),
-                description: Some(format!("Enable {mode_label} and remember this choice")),
+                name: "继续，并且不再提示".to_string(),
+                description: Some(format!("启用 {mode_label} 并记住此选择")),
                 actions: accept_and_remember_actions,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -8177,17 +8167,17 @@ impl ChatWidget {
 
     fn personality_label(personality: Personality) -> &'static str {
         match personality {
-            Personality::None => "None",
-            Personality::Friendly => "Friendly",
-            Personality::Pragmatic => "Pragmatic",
+            Personality::None => "无",
+            Personality::Friendly => "友好",
+            Personality::Pragmatic => "务实",
         }
     }
 
     fn personality_description(personality: Personality) -> &'static str {
         match personality {
-            Personality::None => "No personality instructions.",
-            Personality::Friendly => "Warm, collaborative, and helpful.",
-            Personality::Pragmatic => "Concise, task-focused, and direct.",
+            Personality::None => "不添加人格指令。",
+            Personality::Friendly => "温和、协作、乐于帮助。",
+            Personality::Pragmatic => "简洁、聚焦任务、直接明了。",
         }
     }
 
@@ -8230,7 +8220,7 @@ impl ChatWidget {
         if previous_mode != next_mode
             && (previous_model != next_model || previous_effort != next_effort)
         {
-            let mut message = format!("Model changed to {next_model}");
+            let mut message = format!("模型已切换为 {next_model}");
             if !next_model.starts_with("codex-auto-") {
                 let reasoning_label = match next_effort {
                     Some(ReasoningEffortConfig::Minimal) => "minimal",
@@ -8243,9 +8233,9 @@ impl ChatWidget {
                 message.push(' ');
                 message.push_str(reasoning_label);
             }
-            message.push_str(" for ");
+            message.push_str("，用于 ");
             message.push_str(next_mode.display_name());
-            message.push_str(" mode.");
+            message.push_str(" 模式。");
             self.add_info_message(message, /*hint*/ None);
         }
         self.request_redraw();
@@ -8367,8 +8357,8 @@ impl ChatWidget {
     pub(crate) fn add_connectors_output(&mut self) {
         if !self.connectors_enabled() {
             self.add_info_message(
-                "Apps are disabled.".to_string(),
-                Some("Enable the apps feature to use $ or /apps.".to_string()),
+                "应用功能已禁用。".to_string(),
+                Some("启用应用功能后即可使用 $ 或 /apps。".to_string()),
             );
             return;
         }
@@ -8414,15 +8404,15 @@ impl ChatWidget {
 
     fn connectors_loading_popup_params(&self) -> SelectionViewParams {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Apps".bold()));
-        header.push(Line::from("Loading installed and available apps...".dim()));
+        header.push(Line::from("应用".bold()));
+        header.push(Line::from("正在加载已安装和可用的应用...".dim()));
 
         SelectionViewParams {
             view_id: Some(CONNECTORS_SELECTION_VIEW_ID),
             header: Box::new(header),
             items: vec![SelectionItem {
-                name: "Loading apps...".to_string(),
-                description: Some("This updates when the full list is ready.".to_string()),
+                name: "正在加载应用...".to_string(),
+                description: Some("完整列表就绪后会自动更新。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             }],
@@ -8441,12 +8431,10 @@ impl ChatWidget {
             .filter(|connector| connector.is_accessible)
             .count();
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Apps".bold()));
+        header.push(Line::from("应用".bold()));
+        header.push(Line::from("使用 $ 将已安装的应用插入提示词。".dim()));
         header.push(Line::from(
-            "Use $ to insert an installed app into your prompt.".dim(),
-        ));
-        header.push(Line::from(
-            format!("Installed {installed} of {total} available apps.").dim(),
+            format!("共 {total} 个可用应用，已安装 {installed} 个。").dim(),
         ));
         let initial_selected_idx = selected_connector_id.and_then(|selected_connector_id| {
             connectors
@@ -8469,17 +8457,15 @@ impl ChatWidget {
             };
             let is_installed = connector.is_accessible;
             let selected_label = if is_installed {
-                format!(
-                    "{status_label}. Press Enter to open the app page to install, manage, or enable/disable this app."
-                )
+                format!("{status_label}。按 Enter 打开应用页面，可安装、管理或启用/禁用此应用。")
             } else {
-                format!("{status_label}. Press Enter to open the app page to install this app.")
+                format!("{status_label}。按 Enter 打开应用页面安装此应用。")
             };
-            let missing_label = format!("{status_label}. App link unavailable.");
+            let missing_label = format!("{status_label}。应用链接不可用。");
             let instructions = if connector.is_accessible {
-                "Manage this app in your browser."
+                "在浏览器中管理此应用。"
             } else {
-                "Install this app in your browser, then reload Codex."
+                "请先在浏览器中安装此应用，然后重新加载 Codex。"
             };
             if let Some(install_url) = connector.install_url.clone() {
                 let app_id = connector.id.clone();
@@ -8522,7 +8508,7 @@ impl ChatWidget {
             footer_hint: Some(Self::connectors_popup_hint_line()),
             items,
             is_searchable: true,
-            search_placeholder: Some("Type to search apps".to_string()),
+            search_placeholder: Some("输入以搜索应用".to_string()),
             col_width_mode: ColumnWidthMode::AutoAllRows,
             initial_selected_idx,
             ..Default::default()
@@ -8551,9 +8537,9 @@ impl ChatWidget {
 
     fn connectors_popup_hint_line() -> Line<'static> {
         Line::from(vec![
-            "Press ".into(),
+            "按 ".into(),
             key_hint::plain(KeyCode::Esc).into(),
-            " to close.".into(),
+            " 关闭。".into(),
         ])
     }
 
@@ -8568,12 +8554,12 @@ impl ChatWidget {
     fn connector_status_label(connector: &connectors::AppInfo) -> &'static str {
         if connector.is_accessible {
             if connector.is_enabled {
-                "Installed"
+                "已安装"
             } else {
-                "Installed · Disabled"
+                "已安装 · 已禁用"
             }
         } else {
-            "Can be installed"
+            "可安装"
         }
     }
 
@@ -9311,15 +9297,15 @@ impl Notification {
                 format!("Approval requested by {server_name}")
             }
             Notification::PlanModePrompt { title } => {
-                format!("Plan mode prompt: {title}")
+                format!("Plan mode 提示：{title}")
             }
             Notification::UserInputRequested {
                 question_count,
                 summary,
             } => match (*question_count, summary.as_deref()) {
-                (1, Some(summary)) => format!("Question requested: {summary}"),
-                (1, None) => "Question requested".to_string(),
-                (count, _) => format!("Questions requested: {count}"),
+                (1, Some(summary)) => format!("收到问题请求：{summary}"),
+                (1, None) => "收到问题请求".to_string(),
+                (count, _) => format!("收到 {count} 个问题请求"),
             },
         }
     }

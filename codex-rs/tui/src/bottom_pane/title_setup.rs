@@ -49,18 +49,14 @@ pub(crate) enum TerminalTitleItem {
 impl TerminalTitleItem {
     pub(crate) fn description(self) -> &'static str {
         match self {
-            TerminalTitleItem::AppName => "Codex app name",
-            TerminalTitleItem::Project => "Project name (falls back to current directory name)",
-            TerminalTitleItem::Spinner => {
-                "Animated task spinner (omitted while idle or when animations are off)"
-            }
-            TerminalTitleItem::Status => "Compact session status text (Ready, Working, Thinking)",
-            TerminalTitleItem::Thread => "Current thread title (omitted until available)",
-            TerminalTitleItem::GitBranch => "Current Git branch (omitted when unavailable)",
-            TerminalTitleItem::Model => "Current model name",
-            TerminalTitleItem::TaskProgress => {
-                "Latest task progress from update_plan (omitted until available)"
-            }
+            TerminalTitleItem::AppName => "Codex 应用名称",
+            TerminalTitleItem::Project => "项目名（不可用时降级为当前目录名称）",
+            TerminalTitleItem::Spinner => "任务旋转动画（空闲或关闭动画时隐藏）",
+            TerminalTitleItem::Status => "紧凑会话状态文本（Ready、Working、Thinking）",
+            TerminalTitleItem::Thread => "当前线程标题（未可用前隐藏）",
+            TerminalTitleItem::GitBranch => "当前 Git 分支（不可用时隐藏）",
+            TerminalTitleItem::Model => "当前模型名称",
+            TerminalTitleItem::TaskProgress => "update_plan 最新任务进度（未可用前隐藏）",
         }
     }
 
@@ -142,13 +138,12 @@ impl TerminalTitleSetupView {
 
         Self {
             picker: MultiSelectPicker::builder(
-                "Configure Terminal Title".to_string(),
-                Some("Select which items to display in the terminal title.".to_string()),
+                "配置终端标题".to_string(),
+                Some("选择要在终端标题中显示的内容。".to_string()),
                 app_event_tx,
             )
             .instructions(vec![
-                "Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc to cancel."
-                    .into(),
+                "使用 ↑↓ 浏览，←→ 移动，空格 选择，回车 确认，Esc 取消。".into(),
             ])
             .items(items)
             .enable_ordering()

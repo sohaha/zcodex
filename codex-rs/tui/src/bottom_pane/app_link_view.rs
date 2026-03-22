@@ -118,19 +118,19 @@ impl AppLinkView {
             AppLinkScreen::Link => {
                 if self.is_installed {
                     vec![
-                        "Manage on ChatGPT",
+                        "在 ChatGPT 中管理",
                         if self.is_enabled {
-                            "Disable app"
+                            "禁用应用"
                         } else {
-                            "Enable app"
+                            "启用应用"
                         },
-                        "Back",
+                        "返回",
                     ]
                 } else {
-                    vec!["Install on ChatGPT", "Back"]
+                    vec!["在 ChatGPT 中安装", "返回"]
                 }
             }
-            AppLinkScreen::InstallConfirmation => vec!["I already Installed it", "Back"],
+            AppLinkScreen::InstallConfirmation => vec!["我已安装", "返回"],
         }
     }
 
@@ -281,7 +281,7 @@ impl AppLinkView {
             lines.push(Line::from(""));
         }
         if self.is_installed {
-            for line in wrap("Use $ to insert this app into the prompt.", usable_width) {
+            for line in wrap("使用 $ 将此应用插入提示词。", usable_width) {
                 lines.push(Line::from(line.into_owned()));
             }
             lines.push(Line::from(""));
@@ -293,16 +293,14 @@ impl AppLinkView {
                 lines.push(Line::from(line.into_owned()));
             }
             for line in wrap(
-                "Newly installed apps can take a few minutes to appear in /apps.",
+                "新安装的应用可能需要几分钟后才会出现在 /apps 中。",
                 usable_width,
             ) {
                 lines.push(Line::from(line.into_owned()));
             }
             if !self.is_installed {
-                for line in wrap(
-                    "After installed, use $ to insert this app into the prompt.",
-                    usable_width,
-                ) {
+                for line in wrap("安装后，使用 $ 将此应用插入提示词。", usable_width)
+                {
                     lines.push(Line::from(line.into_owned()));
                 }
             }
@@ -316,11 +314,11 @@ impl AppLinkView {
         let usable_width = width.max(1) as usize;
         let mut lines: Vec<Line<'static>> = Vec::new();
 
-        lines.push(Line::from("Finish App Setup".bold()));
+        lines.push(Line::from("完成应用设置".bold()));
         lines.push(Line::from(""));
 
         for line in wrap(
-            "Complete app setup on ChatGPT in the browser window that just opened.",
+            "请在刚打开的浏览器窗口中，到 ChatGPT 完成应用设置。",
             usable_width,
         ) {
             lines.push(Line::from(line.into_owned()));
@@ -333,7 +331,7 @@ impl AppLinkView {
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from(vec!["Setup URL:".dim()]));
+        lines.push(Line::from(vec!["设置链接：".dim()]));
         let url_line = Line::from(vec![self.url.clone().cyan().underlined()]);
         lines.extend(adaptive_wrap_lines(
             vec![url_line],
@@ -375,17 +373,17 @@ impl AppLinkView {
 
     fn hint_line(&self) -> Line<'static> {
         Line::from(vec![
-            "Use ".into(),
+            "使用 ".into(),
             key_hint::plain(KeyCode::Tab).into(),
             " / ".into(),
             key_hint::plain(KeyCode::Up).into(),
             " ".into(),
             key_hint::plain(KeyCode::Down).into(),
-            " to move, ".into(),
+            " 移动，".into(),
             key_hint::plain(KeyCode::Enter).into(),
-            " to select, ".into(),
+            " 选择，".into(),
             key_hint::plain(KeyCode::Esc).into(),
-            " to close".into(),
+            " 关闭".into(),
         ])
     }
 }
@@ -528,7 +526,7 @@ impl crate::render::renderable::Renderable for AppLinkView {
                 &action_rows,
                 &action_state,
                 action_rows.len().max(1),
-                "No actions",
+                "无可用操作",
             );
         }
 
@@ -605,7 +603,7 @@ mod tests {
 
         assert_eq!(
             view.action_labels(),
-            vec!["Manage on ChatGPT", "Disable app", "Back"]
+            vec!["在 ChatGPT 中管理", "禁用应用", "返回"]
         );
     }
 
@@ -642,7 +640,7 @@ mod tests {
 
         assert_eq!(
             view.action_labels(),
-            vec!["Manage on ChatGPT", "Enable app", "Back"]
+            vec!["在 ChatGPT 中管理", "启用应用", "返回"]
         );
     }
 
@@ -849,7 +847,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: Some("Plan events and schedules.".to_string()),
-                instructions: "Enable this app to use it for the current request.".to_string(),
+                instructions: "请启用此应用以用于当前请求。".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: true,
                 is_enabled: false,
@@ -925,7 +923,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: Some("Plan events and schedules.".to_string()),
-                instructions: "Enable this app to use it for the current request.".to_string(),
+                instructions: "请启用此应用以用于当前请求。".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: true,
                 is_enabled: false,

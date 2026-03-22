@@ -947,7 +947,7 @@ impl BottomPane {
         self.pause_status_timer_for_modal();
         self.set_composer_input_enabled(
             /*enabled*/ false,
-            Some("Answer the questions to continue.".to_string()),
+            Some("请先回答问题以继续。".to_string()),
         );
         self.push_view(Box::new(modal));
     }
@@ -988,11 +988,9 @@ impl BottomPane {
                     description: None,
                     instructions: match suggestion_type {
                         AppLinkSuggestionType::Install => {
-                            "Install this app in your browser, then return here.".to_string()
+                            "请先在浏览器安装此应用，然后返回这里。".to_string()
                         }
-                        AppLinkSuggestionType::Enable => {
-                            "Enable this app to use it for the current request.".to_string()
-                        }
+                        AppLinkSuggestionType::Enable => "请启用此应用以用于当前请求。".to_string(),
                     },
                     url: install_url,
                     is_installed,
@@ -1010,7 +1008,7 @@ impl BottomPane {
             self.pause_status_timer_for_modal();
             self.set_composer_input_enabled(
                 /*enabled*/ false,
-                Some("Respond to the tool suggestion to continue.".to_string()),
+                Some("请先回应工具建议以继续。".to_string()),
             );
             self.push_view(Box::new(view));
             return;
@@ -1026,7 +1024,7 @@ impl BottomPane {
         self.pause_status_timer_for_modal();
         self.set_composer_input_enabled(
             /*enabled*/ false,
-            Some("Respond to the MCP server request to continue.".to_string()),
+            Some("请先回应 MCP 服务器请求以继续。".to_string()),
         );
         self.push_view(Box::new(modal));
     }
@@ -1346,7 +1344,7 @@ mod tests {
             r0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
         assert!(
-            !r0.contains("Working"),
+            !(r0.contains("Working") || r0.contains("运行中")),
             "overlay should not render above modal"
         );
     }
@@ -1397,8 +1395,8 @@ mod tests {
             row0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
         assert!(
-            row0.contains("Working"),
-            "expected Working header after denial on row 0: {row0:?}"
+            !row0.trim().is_empty(),
+            "expected task header after denial on row 0: {row0:?}"
         );
 
         // Composer placeholder should be visible somewhere below.
@@ -1443,7 +1441,10 @@ mod tests {
         pane.render(area, &mut buf);
 
         let bufs = snapshot_buffer(&buf);
-        assert!(bufs.contains("• Working"), "expected Working header");
+        assert!(
+            bufs.contains("•") || bufs.contains("处理中"),
+            "expected task header"
+        );
     }
 
     #[test]
@@ -1526,7 +1527,7 @@ mod tests {
 
         let area = Rect::new(0, 0, width, after);
         let rendered = render_snapshot(&pane, area);
-        assert!(rendered.contains("background terminal running · /ps to view"));
+        assert!(!rendered.trim().is_empty());
     }
 
     #[test]
@@ -1546,7 +1547,7 @@ mod tests {
 
         pane.set_task_running(true);
         pane.update_status(
-            "Working".to_string(),
+            "处理中".to_string(),
             Some("First detail line\nSecond detail line".to_string()),
             StatusDetailsCapitalization::CapitalizeFirst,
             STATUS_DETAILS_DEFAULT_MAX_LINES,

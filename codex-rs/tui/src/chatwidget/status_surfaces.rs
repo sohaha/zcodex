@@ -511,9 +511,9 @@ impl ChatWidget {
             StatusLineItem::SessionId => self.thread_id.map(|id| id.to_string()),
             StatusLineItem::FastMode => Some(
                 if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
-                    "Fast on".to_string()
+                    "Fast 开启".to_string()
                 } else {
-                    "Fast off".to_string()
+                    "Fast 关闭".to_string()
                 },
             ),
         }
@@ -561,25 +561,25 @@ impl ChatWidget {
     /// as `Ready` regardless of the last active status bucket.
     pub(super) fn terminal_title_status_text(&self) -> String {
         if self.mcp_startup_status.is_some() {
-            return "Starting".to_string();
+            return "启动中".to_string();
         }
 
         match self.terminal_title_status_kind {
             TerminalTitleStatusKind::Working if !self.bottom_pane.is_task_running() => {
-                "Ready".to_string()
+                "就绪".to_string()
             }
             TerminalTitleStatusKind::WaitingForBackgroundTerminal
                 if !self.bottom_pane.is_task_running() =>
             {
-                "Ready".to_string()
+                "就绪".to_string()
             }
             TerminalTitleStatusKind::Thinking if !self.bottom_pane.is_task_running() => {
-                "Ready".to_string()
+                "就绪".to_string()
             }
-            TerminalTitleStatusKind::Working => "Working".to_string(),
-            TerminalTitleStatusKind::WaitingForBackgroundTerminal => "Waiting".to_string(),
-            TerminalTitleStatusKind::Undoing => "Undoing".to_string(),
-            TerminalTitleStatusKind::Thinking => "Thinking".to_string(),
+            TerminalTitleStatusKind::Working => "处理中".to_string(),
+            TerminalTitleStatusKind::WaitingForBackgroundTerminal => "等待中".to_string(),
+            TerminalTitleStatusKind::Undoing => "撤销中".to_string(),
+            TerminalTitleStatusKind::Thinking => "思考中".to_string(),
         }
     }
 

@@ -171,18 +171,16 @@ impl ChatWidget {
 
     fn plugins_loading_popup_params(&self) -> SelectionViewParams {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
-        header.push(Line::from("Loading available plugins...".dim()));
-        header.push(Line::from(
-            "This first pass shows the ChatGPT marketplace only.".dim(),
-        ));
+        header.push(Line::from("插件".bold()));
+        header.push(Line::from("正在加载可用插件...".dim()));
+        header.push(Line::from("当前仅展示 ChatGPT 市场的插件。".dim()));
 
         SelectionViewParams {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(header),
             items: vec![SelectionItem {
-                name: "Loading plugins...".to_string(),
-                description: Some("This updates when the marketplace list is ready.".to_string()),
+                name: "正在加载插件...".to_string(),
+                description: Some("市场列表准备好后会更新此处。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             }],
@@ -192,9 +190,9 @@ impl ChatWidget {
 
     fn plugin_detail_loading_popup_params(&self, plugin_display_name: &str) -> SelectionViewParams {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
+        header.push(Line::from("插件".bold()));
         header.push(Line::from(
-            format!("Loading details for {plugin_display_name}...").dim(),
+            format!("正在加载 {plugin_display_name} 的详情...").dim(),
         ));
 
         SelectionViewParams {
@@ -214,14 +212,14 @@ impl ChatWidget {
 
     fn plugins_error_popup_params(&self, err: &str) -> SelectionViewParams {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
-        header.push(Line::from("Failed to load plugins.".dim()));
+        header.push(Line::from("插件".bold()));
+        header.push(Line::from("加载插件失败。".dim()));
 
         SelectionViewParams {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
             header: Box::new(header),
             items: vec![SelectionItem {
-                name: "Plugin marketplace unavailable".to_string(),
+                name: "插件市场暂不可用".to_string(),
                 description: Some(err.to_string()),
                 is_disabled: true,
                 ..Default::default()
@@ -236,11 +234,11 @@ impl ChatWidget {
         plugins_response: Option<&PluginListResponse>,
     ) -> SelectionViewParams {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
-        header.push(Line::from("Failed to load plugin details.".dim()));
+        header.push(Line::from("插件".bold()));
+        header.push(Line::from("加载插件详情失败。".dim()));
 
         let mut items = vec![SelectionItem {
-            name: "Plugin detail unavailable".to_string(),
+            name: "插件详情暂不可用".to_string(),
             description: Some(err.to_string()),
             is_disabled: true,
             ..Default::default()
@@ -248,9 +246,9 @@ impl ChatWidget {
         if let Some(plugins_response) = plugins_response.cloned() {
             let cwd = self.config.cwd.clone();
             items.push(SelectionItem {
-                name: "Back to plugins".to_string(),
-                description: Some("Return to the plugin list.".to_string()),
-                selected_description: Some("Return to the plugin list.".to_string()),
+                name: "返回插件列表".to_string(),
+                description: Some("回到插件列表。".to_string()),
+                selected_description: Some("回到插件列表。".to_string()),
                 actions: vec![Box::new(move |tx| {
                     tx.send(AppEvent::PluginsLoaded {
                         cwd: cwd.clone(),
@@ -288,12 +286,10 @@ impl ChatWidget {
             .count();
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
+        header.push(Line::from("插件".bold()));
+        header.push(Line::from("浏览来自 ChatGPT 市场的插件。".dim()));
         header.push(Line::from(
-            "Browse plugins from the ChatGPT marketplace.".dim(),
-        ));
-        header.push(Line::from(
-            format!("Installed {installed} of {total} available plugins.").dim(),
+            format!("已安装 {installed} / 共 {total} 个可用插件。").dim(),
         ));
         if let Some(remote_sync_error) = response.remote_sync_error.as_deref() {
             header.push(Line::from(
@@ -343,10 +339,8 @@ impl ChatWidget {
 
         if items.is_empty() {
             items.push(SelectionItem {
-                name: "No ChatGPT marketplace plugins available".to_string(),
-                description: Some(
-                    "This first pass only surfaces the ChatGPT plugin marketplace.".to_string(),
-                ),
+                name: "ChatGPT 市场暂无可用插件".to_string(),
+                description: Some("当前仅展示 ChatGPT 插件市场。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             });
@@ -358,7 +352,7 @@ impl ChatWidget {
             footer_hint: Some(plugins_popup_hint_line()),
             items,
             is_searchable: true,
-            search_placeholder: Some("Type to search plugins".to_string()),
+            search_placeholder: Some("输入以搜索插件".to_string()),
             col_width_mode: ColumnWidthMode::AutoAllRows,
             ..Default::default()
         }
@@ -385,9 +379,9 @@ impl ChatWidget {
         let cwd = self.config.cwd.clone();
         let plugins_response = plugins_response.clone();
         let mut items = vec![SelectionItem {
-            name: "Back to plugins".to_string(),
-            description: Some("Return to the plugin list.".to_string()),
-            selected_description: Some("Return to the plugin list.".to_string()),
+            name: "返回插件列表".to_string(),
+            description: Some("回到插件列表。".to_string()),
+            selected_description: Some("回到插件列表。".to_string()),
             actions: vec![Box::new(move |tx| {
                 tx.send(AppEvent::PluginsLoaded {
                     cwd: cwd.clone(),
@@ -428,7 +422,7 @@ impl ChatWidget {
 }
 
 fn plugins_popup_hint_line() -> Line<'static> {
-    Line::from("Press esc to close.")
+    Line::from("按 esc 关闭。")
 }
 
 fn marketplace_display_name(marketplace: &PluginMarketplaceEntry) -> String {
@@ -464,15 +458,15 @@ fn plugin_brief_description(plugin: &PluginSummary, marketplace_label: &str) -> 
 fn plugin_status_label(plugin: &PluginSummary) -> &'static str {
     if plugin.installed {
         if plugin.enabled {
-            "Installed"
+            "已安装"
         } else {
-            "Installed · Disabled"
+            "已安装 · 已禁用"
         }
     } else {
         match plugin.install_policy {
-            PluginInstallPolicy::NotAvailable => "Not installable",
-            PluginInstallPolicy::Available => "Can be installed",
-            PluginInstallPolicy::InstalledByDefault => "Available by default",
+            PluginInstallPolicy::NotAvailable => "不可安装",
+            PluginInstallPolicy::Available => "可安装",
+            PluginInstallPolicy::InstalledByDefault => "默认可用",
         }
     }
 }
@@ -517,7 +511,7 @@ fn plugin_detail_description(plugin: &PluginDetail) -> Option<String> {
 
 fn plugin_skill_summary(plugin: &PluginDetail) -> String {
     if plugin.skills.is_empty() {
-        "No plugin skills.".to_string()
+        "暂无插件 Skills。".to_string()
     } else {
         plugin
             .skills
@@ -530,7 +524,7 @@ fn plugin_skill_summary(plugin: &PluginDetail) -> String {
 
 fn plugin_app_summary(plugin: &PluginDetail) -> String {
     if plugin.apps.is_empty() {
-        "No plugin apps.".to_string()
+        "暂无插件 Apps。".to_string()
     } else {
         plugin
             .apps
@@ -543,7 +537,7 @@ fn plugin_app_summary(plugin: &PluginDetail) -> String {
 
 fn plugin_mcp_summary(plugin: &PluginDetail) -> String {
     if plugin.mcp_servers.is_empty() {
-        "No plugin MCP servers.".to_string()
+        "暂无插件 MCP 服务器。".to_string()
     } else {
         plugin.mcp_servers.join(", ")
     }

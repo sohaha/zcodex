@@ -1,6 +1,5 @@
 ---
 source: tui/src/bottom_pane/list_selection_view.rs
-assertion_line: 828
 expression: "render_lines_with_width(&view, 40)"
 ---
                                         
@@ -11,4 +10,4 @@ expression: "render_lines_with_width(&view, 40)"
                                         
   Note: Use /setup-default-sandbox to   
   allow network access.                 
-  Press enter to confirm or esc to go ba
+  按  enter 确 认 ， 按  esc 返 回

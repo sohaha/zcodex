@@ -2714,13 +2714,14 @@ mod tests {
 
         assert_eq!(rendered.len(), 1);
         assert!(!rendered[0].contains("Worked for"));
-        assert!(rendered[0].contains("Local tools: 3 calls (2.5s)"));
-        assert!(rendered[0].contains("Inference: 2 calls (1.2s)"));
-        assert!(rendered[0].contains("WebSocket: 1 events send (700ms)"));
-        assert!(rendered[0].contains("Streams: 6 events (900ms)"));
-        assert!(rendered[0].contains("4 events received (1.2s)"));
-        assert!(rendered[0].contains("Responses API overhead: 650ms"));
-        assert!(rendered[0].contains("Responses API inference: 1.9s"));
+        assert!(!rendered[0].contains("已运行"));
+        assert!(rendered[0].contains("本地工具：3 次 (2.5s)"));
+        assert!(rendered[0].contains("推理：2 次 (1.2s)"));
+        assert!(rendered[0].contains("WebSocket：发送 1 个事件 (700ms)"));
+        assert!(rendered[0].contains("流事件：6 次 (900ms)"));
+        assert!(rendered[0].contains("WebSocket：接收 4 个事件 (1.2s)"));
+        assert!(rendered[0].contains("Responses API 开销：650ms"));
+        assert!(rendered[0].contains("Responses API 推理耗时：1.9s"));
         assert!(rendered[0].contains("TTFT: 410ms (iapi) 460ms (service)"));
         assert!(rendered[0].contains("TBT: 1.2s (iapi) 1.2s (service)"));
     }
@@ -2731,7 +2732,7 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(200));
 
         assert_eq!(rendered.len(), 1);
-        assert!(rendered[0].contains("Worked for"));
+        assert!(rendered[0].contains("已运行"));
     }
 
     #[test]
@@ -2755,7 +2756,8 @@ mod tests {
         );
 
         let rendered = render_transcript(&cell).join("\n");
-        assert!(rendered.contains("Model just became available"));
+        assert!(rendered.contains("gpt-5"));
+        assert!(!rendered.contains("快速开始"));
     }
 
     #[tokio::test]
@@ -2790,7 +2792,7 @@ mod tests {
         );
 
         let rendered = render_transcript(&cell).join("\n");
-        assert!(!rendered.contains("Model just became available"));
+        assert!(!rendered.contains("模型刚刚可用"));
         assert!(rendered.contains("快速开始"));
     }
 
@@ -2809,7 +2811,7 @@ mod tests {
         );
 
         let rendered = render_transcript(&cell).join("\n");
-        assert!(!rendered.contains("Model just became available"));
+        assert!(!rendered.contains("模型刚刚可用"));
     }
 
     #[test]
@@ -3143,7 +3145,7 @@ mod tests {
         assert_eq!(
             rendered,
             vec![
-                "• Searched example search query with several generic words to".to_string(),
+                "• 已搜索 example search query with several generic words to".to_string(),
                 "  exercise wrapping".to_string(),
             ]
         );
@@ -3162,7 +3164,7 @@ mod tests {
         );
         let rendered = render_lines(&cell.display_lines(64));
 
-        assert_eq!(rendered, vec!["• Searched short query".to_string()]);
+        assert_eq!(rendered, vec!["• 已搜索 short query".to_string()]);
     }
 
     #[test]
@@ -3447,11 +3449,11 @@ mod tests {
         let lines = render_lines(&cell.display_lines(80));
         let model_line = lines
             .iter()
-            .find(|line| line.contains("model:"))
+            .find(|line| line.contains("模型:"))
             .expect("model line");
 
-        assert!(model_line.contains("gpt-4o high   fast"));
-        assert!(model_line.contains("/model to change"));
+        assert!(model_line.contains("gpt-4o high   极速"));
+        assert!(model_line.contains("/model 以切换"));
     }
 
     #[test]
@@ -3467,7 +3469,7 @@ mod tests {
         let lines = render_lines(&cell.display_lines(80));
         let model_line = lines
             .iter()
-            .find(|line| line.contains("model:"))
+            .find(|line| line.contains("模型:"))
             .expect("model line");
 
         assert!(model_line.contains("gpt-4o high"));

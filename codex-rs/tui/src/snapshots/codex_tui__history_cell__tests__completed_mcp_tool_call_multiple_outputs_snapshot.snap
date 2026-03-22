@@ -1,9 +1,8 @@
 ---
 source: tui/src/history_cell.rs
-assertion_line: 1850
 expression: rendered
 ---
-• Called
+• 已调用
   └ search.find_docs({"query":"ratatui
         styling","limit":3})
     Found styling guidance in styles.md and

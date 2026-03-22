@@ -226,7 +226,7 @@ impl ChatWidget {
         if !self.realtime_conversation.warned_audio_only_submission {
             self.realtime_conversation.warned_audio_only_submission = true;
             self.add_info_message(
-                "Realtime voice mode is audio-only. Use /realtime to stop.".to_string(),
+                "Realtime 语音模式仅支持音频。使用 /realtime 停止。".to_string(),
                 /*hint*/ None,
             );
         } else {
@@ -353,7 +353,7 @@ impl ChatWidget {
             RealtimeEvent::ConversationItemDone { .. } => {}
             RealtimeEvent::HandoffRequested(_) => {}
             RealtimeEvent::Error(message) => {
-                self.fail_realtime_conversation(format!("Realtime voice error: {message}"));
+                self.fail_realtime_conversation(format!("Realtime 语音错误：{message}"));
             }
         }
     }
