@@ -5,7 +5,7 @@ expression: term.backend().vt100().screen().contents()
 
 • 处理中 (0s • esc 可中断)
 
-• Queued follow-up messages
+• 已排队的后续消息
   ↳ Hello, world! 0
   ↳ Hello, world! 1
   ↳ Hello, world! 2

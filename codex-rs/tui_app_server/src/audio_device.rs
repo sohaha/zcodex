@@ -41,7 +41,7 @@ pub(crate) fn preferred_input_config(
 ) -> Result<cpal::SupportedStreamConfig, String> {
     let supported_configs = device
         .supported_input_configs()
-        .map_err(|err| format!("failed to enumerate input audio configs: {err}"))?;
+        .map_err(|err| format!("枚举输入音频配置失败：{err}"))?;
 
     supported_configs
         .filter_map(|range| {
@@ -62,7 +62,7 @@ pub(crate) fn preferred_input_config(
         .min_by_key(|(score, _)| *score)
         .map(|(_, config)| config)
         .or_else(|| device.default_input_config().ok())
-        .ok_or_else(|| "failed to get default input config".to_string())
+        .ok_or_else(|| "获取默认输入配置失败".to_string())
 }
 
 fn select_device_and_config(
@@ -115,11 +115,11 @@ fn devices(host: &cpal::Host, kind: RealtimeAudioDeviceKind) -> Result<Vec<cpal:
         RealtimeAudioDeviceKind::Microphone => host
             .input_devices()
             .map(|devices| devices.collect())
-            .map_err(|err| format!("failed to enumerate input audio devices: {err}")),
+            .map_err(|err| format!("枚举输入音频设备失败：{err}")),
         RealtimeAudioDeviceKind::Speaker => host
             .output_devices()
             .map(|devices| devices.collect())
-            .map_err(|err| format!("failed to enumerate output audio devices: {err}")),
+            .map_err(|err| format!("枚举输出音频设备失败：{err}")),
     }
 }
 
@@ -137,10 +137,10 @@ fn default_config(
     match kind {
         RealtimeAudioDeviceKind::Microphone => device
             .default_input_config()
-            .map_err(|err| format!("failed to get default input config: {err}")),
+            .map_err(|err| format!("获取默认输入配置失败：{err}")),
         RealtimeAudioDeviceKind::Speaker => device
             .default_output_config()
-            .map_err(|err| format!("failed to get default output config: {err}")),
+            .map_err(|err| format!("获取默认输出配置失败：{err}")),
     }
 }
 
@@ -159,18 +159,12 @@ fn preferred_input_sample_rate(range: &cpal::SupportedStreamConfigRange) -> cpal
 fn missing_device_error(kind: RealtimeAudioDeviceKind, configured_name: Option<&str>) -> String {
     match (kind, configured_name) {
         (RealtimeAudioDeviceKind::Microphone, Some(name)) => {
-            format!(
-                "configured microphone `{name}` was unavailable and no default input audio device was found"
-            )
+            format!("已配置的麦克风 `{name}` 不可用，且未找到默认输入音频设备")
         }
         (RealtimeAudioDeviceKind::Speaker, Some(name)) => {
-            format!(
-                "configured speaker `{name}` was unavailable and no default output audio device was found"
-            )
+            format!("已配置的扬声器 `{name}` 不可用，且未找到默认输出音频设备")
         }
-        (RealtimeAudioDeviceKind::Microphone, None) => {
-            "no input audio device available".to_string()
-        }
-        (RealtimeAudioDeviceKind::Speaker, None) => "no output audio device available".to_string(),
+        (RealtimeAudioDeviceKind::Microphone, None) => "没有可用的输入音频设备".to_string(),
+        (RealtimeAudioDeviceKind::Speaker, None) => "没有可用的输出音频设备".to_string(),
     }
 }

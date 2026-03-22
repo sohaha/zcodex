@@ -451,7 +451,7 @@ impl RequestUserInputOverlay {
         tips.push(enter_tip);
         if question_count > 1 {
             if self.has_options() && !self.focus_is_notes() {
-                tips.push(FooterTip::new("←/→ to navigate questions"));
+                tips.push(FooterTip::new("←/→ 切换问题"));
             } else if !self.has_options() {
                 tips.push(FooterTip::new("Ctrl+P / Ctrl+N 切换问题"));
             }
@@ -1763,7 +1763,7 @@ mod tests {
             vec![
                 "Tab 添加备注",
                 "Enter 提交当前回答",
-                "←/→ to navigate questions",
+                "←/→ 切换问题",
                 "Esc 中断",
             ]
         );

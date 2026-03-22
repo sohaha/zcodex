@@ -12,10 +12,10 @@ expression: sanitized
 │                                                         │
 │  模型:         gpt-5.1-codex-max (推理 none, 摘要 auto) │
 │  目录:         /workspace/tests                         │
-│  权限:         自定义 (read-only, on-request)           │
+│  权限:         自定义 (只读, on-request)                │
 │  Agents.md:    ../AGENTS.md                             │
 │                                                         │
-│  Token usage:   750 总计  (500 输入 + 250 输出)         │
-│  Context window:   剩余 100% (750 已用 / 272K)          │
+│  Token 用量:   750 总计  (500 输入 + 250 输出)          │
+│  上下文窗口:   剩余 100% (750 已用 / 272K)              │
 │  限额:         数据暂不可用                             │
 ╰─────────────────────────────────────────────────────────╯

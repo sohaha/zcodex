@@ -725,7 +725,7 @@ pub(crate) fn format_additional_permissions_rule(
         .and_then(|network| network.enabled)
         .unwrap_or(false)
     {
-        parts.push("network".to_string());
+        parts.push("网络".to_string());
     }
     if let Some(file_system) = additional_permissions.file_system.as_ref() {
         if let Some(read) = file_system.read.as_ref() {
@@ -751,15 +751,15 @@ pub(crate) fn format_additional_permissions_rule(
             MacOsPreferencesPermission::ReadOnly
         ) {
             let value = match macos.macos_preferences {
-                MacOsPreferencesPermission::ReadOnly => "readonly",
-                MacOsPreferencesPermission::ReadWrite => "readwrite",
-                MacOsPreferencesPermission::None => "none",
+                MacOsPreferencesPermission::ReadOnly => "只读",
+                MacOsPreferencesPermission::ReadWrite => "读写",
+                MacOsPreferencesPermission::None => "无",
             };
             parts.push(format!("macOS 偏好设置 {value}"));
         }
         match &macos.macos_automation {
             MacOsAutomationPermission::All => {
-                parts.push("macOS 自动化 all".to_string());
+                parts.push("macOS 自动化 全部".to_string());
             }
             MacOsAutomationPermission::BundleIds(bundle_ids) => {
                 if !bundle_ids.is_empty() {
@@ -779,9 +779,9 @@ pub(crate) fn format_additional_permissions_rule(
         }
         if !matches!(macos.macos_contacts, MacOsContactsPermission::None) {
             let value = match macos.macos_contacts {
-                MacOsContactsPermission::None => "none",
-                MacOsContactsPermission::ReadOnly => "readonly",
-                MacOsContactsPermission::ReadWrite => "readwrite",
+                MacOsContactsPermission::None => "无",
+                MacOsContactsPermission::ReadOnly => "只读",
+                MacOsContactsPermission::ReadWrite => "读写",
             };
             parts.push(format!("macOS 通讯录 {value}"));
         }
@@ -832,7 +832,7 @@ fn permissions_options() -> Vec<ApprovalOption> {
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "是，授予这些权限 for this session".to_string(),
+            label: "是，本次会话授予这些权限".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
@@ -1249,7 +1249,7 @@ mod tests {
             labels,
             vec![
                 "是，授予这些权限".to_string(),
-                "是，授予这些权限 for this session".to_string(),
+                "是，本次会话授予这些权限".to_string(),
                 "否，不授予权限并继续".to_string(),
             ]
         );
@@ -1323,7 +1323,7 @@ mod tests {
             "expected permission-rule line, got {rendered:?}"
         );
         assert!(
-            rendered.iter().any(|line| line.contains("network;")),
+            rendered.iter().any(|line| line.contains("网 络 ;")),
             "expected network permission text, got {rendered:?}"
         );
     }

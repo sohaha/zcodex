@@ -6,9 +6,9 @@ expression: "render_snapshot(&pane, area)"
   └ First detail line                           
     Second detail line                          
                                                 
-• Queued follow-up messages                     
+• 已 排 队 的 后 续 消 息                               
   ↳ Queued follow-up question                   
-    ⌥ + ↑ edit last queued message              
+    ⌥ + ↑ 编 辑 上 一 条 排 队 消 息                     
                                                 
 › 让  Codex 处 理 任 何 事 情                          
                                                 

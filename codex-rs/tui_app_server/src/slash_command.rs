@@ -97,14 +97,14 @@ impl SlashCommand {
             SlashCommand::Personality => "选择 Codex 的沟通风格",
             SlashCommand::Realtime => "切换实时语音模式（实验性）",
             SlashCommand::Settings => "配置实时麦克风/扬声器",
-            SlashCommand::Plan => "切换到 Plan mode",
+            SlashCommand::Plan => "切换到计划模式",
             SlashCommand::Collab => "切换协作模式（实验性）",
             SlashCommand::Agent | SlashCommand::MultiAgents => "切换当前活跃 agent 线程",
             SlashCommand::Approvals => "配置 Codex 被允许执行的操作",
             SlashCommand::Permissions => "配置 Codex 被允许执行的操作",
-            SlashCommand::ElevateSandbox => "设置提权 agent sandbox",
+            SlashCommand::ElevateSandbox => "设置提权沙箱",
             SlashCommand::SandboxReadRoot => {
-                "允许 sandbox 读取目录：/sandbox-add-read-dir <absolute_path>"
+                "允许沙箱读取目录：/sandbox-add-read-dir <absolute_path>"
             }
             SlashCommand::Experimental => "切换实验性功能",
             SlashCommand::Mcp => "列出已配置的 MCP 工具",
