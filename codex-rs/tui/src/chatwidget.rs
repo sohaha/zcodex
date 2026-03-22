@@ -181,15 +181,15 @@ use unicode_segmentation::UnicodeSegmentation;
 const DEFAULT_MODEL_DISPLAY_NAME: &str = "加载中";
 const PLAN_IMPLEMENTATION_TITLE: &str = "要执行这个计划吗？";
 const PLAN_IMPLEMENTATION_YES: &str = "是，执行这个计划";
-const PLAN_IMPLEMENTATION_NO: &str = "否，继续停留在 Plan mode";
+const PLAN_IMPLEMENTATION_NO: &str = "否，继续停留在计划模式";
 const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "请执行该计划。";
 const MULTI_AGENT_ENABLE_TITLE: &str = "要启用子智能体吗？";
 const MULTI_AGENT_ENABLE_YES: &str = "是，启用";
 const MULTI_AGENT_ENABLE_NO: &str = "暂不启用";
 const MULTI_AGENT_ENABLE_NOTICE: &str = "子智能体将在下一个会话中启用。";
 const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "应用推理设置变更";
-const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "仅应用到 Plan mode 覆盖设置";
-const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "应用到全局默认值和 Plan mode 覆盖设置";
+const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "仅应用到计划模式覆盖设置";
+const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "应用到全局默认值和计划模式覆盖设置";
 
 fn localized_review_hint(hint: &str) -> &str {
     match hint {
@@ -4494,10 +4494,7 @@ impl ChatWidget {
                 if let Some(mask) = collaboration_modes::plan_mask(self.models_manager.as_ref()) {
                     self.set_collaboration_mask(mask);
                 } else {
-                    self.add_info_message(
-                        "当前无法使用 Plan mode。".to_string(),
-                        /*hint*/ None,
-                    );
+                    self.add_info_message("当前无法使用计划模式。".to_string(), /*hint*/ None);
                 }
             }
             SlashCommand::Collab => {
@@ -6660,28 +6657,28 @@ impl ChatWidget {
             }
             None => "所选推理".to_string(),
         };
-        let plan_only_description = format!("仅在 Plan mode 中始终使用{reasoning_phrase}。");
+        let plan_only_description = format!("仅在计划模式中始终使用{reasoning_phrase}。");
         let plan_reasoning_source = if let Some(plan_override) =
             self.config.plan_mode_reasoning_effort
         {
             format!(
-                "用户设置的 Plan 覆盖值（{}）",
+                "用户设置的计划模式覆盖值（{}）",
                 Self::reasoning_effort_label(plan_override)
             )
         } else if let Some(plan_mask) = collaboration_modes::plan_mask(self.models_manager.as_ref())
         {
             match plan_mask.reasoning_effort.flatten() {
                 Some(plan_effort) => format!(
-                    "内置 Plan 默认值（{}）",
+                    "内置计划模式默认值（{}）",
                     Self::reasoning_effort_label(plan_effort)
                 ),
-                None => "内置 Plan 默认值（无推理）".to_string(),
+                None => "内置计划模式默认值（无推理）".to_string(),
             }
         } else {
-            "内置 Plan 默认值".to_string()
+            "内置计划模式默认值".to_string()
         };
         let all_modes_description = format!(
-            "同时设置全局默认推理级别与 Plan mode 覆盖值。这会替换当前的{plan_reasoning_source}。"
+            "同时设置全局默认推理级别与计划模式覆盖值。这会替换当前的{plan_reasoning_source}。"
         );
         let subtitle = format!("选择将{reasoning_phrase}应用到哪里。");
 
@@ -6914,7 +6911,7 @@ impl ChatWidget {
             ReasoningEffortConfig::Low => "更快响应，较轻推理",
             ReasoningEffortConfig::Medium => "平衡速度与推理深度，适合日常任务",
             ReasoningEffortConfig::High => "更深的推理深度，适合复杂问题",
-            ReasoningEffortConfig::XHigh => "超高推理深度，适合复杂问题",
+            ReasoningEffortConfig::XHigh => "极高推理深度，适合复杂问题",
         }
         .to_string()
     }
@@ -7109,7 +7106,7 @@ impl ChatWidget {
 
                 if guardian_approval_enabled {
                     items.push(SelectionItem {
-                        name: "Guardian Approvals".to_string(),
+                        name: "Guardian 审批".to_string(),
                         description: Some(
                             "与“默认”拥有相同的 workspace-write 权限，但符合条件的 `on-request` 批准会改由 guardian reviewer 子智能体处理。"
                                 .to_string(),
@@ -7123,7 +7120,7 @@ impl ChatWidget {
                         actions: Self::approval_preset_actions(
                             preset.approval,
                             preset.sandbox.clone(),
-                            "Guardian Approvals".to_string(),
+                            "Guardian 审批".to_string(),
                             ApprovalsReviewer::GuardianSubagent,
                         ),
                         dismiss_on_select: true,
@@ -7391,15 +7388,13 @@ impl ChatWidget {
             .unwrap_or_else(|| describe_policy(self.config.permissions.sandbox_policy.get()));
         let info_line = if failed_scan {
             Line::from(vec![
-                "We couldn't complete the world-writable scan, so protections cannot be verified. "
-                    .into(),
-                format!("The Windows sandbox cannot guarantee protection in {mode_label}.")
-                    .fg(Color::Red),
+                "我们无法完成全局可写目录扫描，因此无法验证保护是否生效。".into(),
+                format!("Windows 沙箱无法在 {mode_label} 下保证保护效果。").fg(Color::Red),
             ])
         } else {
             Line::from(vec![
-                "The Windows sandbox cannot protect writes to folders that are writable by Everyone.".into(),
-                " Consider removing write access for Everyone from the following folders:".into(),
+                "Windows 沙箱无法保护对所有用户（Everyone）均可写文件夹的写入。".into(),
+                " 建议移除以下文件夹对所有用户（Everyone）的写权限：".into(),
             ])
         };
         header_children.push(Box::new(
@@ -7414,7 +7409,7 @@ impl ChatWidget {
                 lines.push(Line::from(format!("  - {p}")));
             }
             if extra_count > 0 {
-                lines.push(Line::from(format!("and {extra_count} more")));
+                lines.push(Line::from(format!("以及另外 {extra_count} 项")));
             }
             header_children.push(Box::new(Paragraph::new(lines).wrap(Wrap { trim: false })));
         }
@@ -7498,11 +7493,8 @@ impl ChatWidget {
             let mut header = ColumnRenderable::new();
             header.push(*Box::new(
                 Paragraph::new(vec![
-                    line![
-                        "Windows 上的 Agent mode 使用实验性 sandbox 来限制网络和文件系统访问。"
-                            .bold()
-                    ],
-                    line!["Learn more: https://developers.openai.com/codex/windows"],
+                    line!["Windows 上的 Agent 模式使用实验性沙箱来限制网络和文件系统访问。".bold()],
+                    line!["了解更多： https://developers.openai.com/codex/windows"],
                 ])
                 .wrap(Wrap { trim: false }),
             ));
@@ -7510,7 +7502,7 @@ impl ChatWidget {
             let preset_clone = preset;
             let items = vec![
                 SelectionItem {
-                    name: "启用实验性 sandbox".to_string(),
+                    name: "启用实验性沙箱".to_string(),
                     description: None,
                     actions: vec![Box::new(move |tx| {
                         tx.send(AppEvent::EnableWindowsSandboxForAgentMode {
@@ -7550,11 +7542,11 @@ impl ChatWidget {
 
         let mut header = ColumnRenderable::new();
         header.push(*Box::new(
-            Paragraph::new(vec![
-                line!["设置 Codex agent sandbox 以保护你的文件并控制网络访问。了解更多 <https://developers.openai.com/codex/windows>"],
-            ])
-            .wrap(Wrap { trim: false }),
-        ));
+                Paragraph::new(vec![
+                    line!["设置 Codex 沙箱以保护你的文件并控制网络访问。了解更多 <https://developers.openai.com/codex/windows>"],
+                ])
+                .wrap(Wrap { trim: false }),
+            ));
 
         let accept_otel = self.session_telemetry.clone();
         let legacy_otel = self.session_telemetry.clone();
@@ -7562,7 +7554,7 @@ impl ChatWidget {
         let quit_otel = self.session_telemetry.clone();
         let items = vec![
             SelectionItem {
-                name: "设置默认 sandbox（需要管理员权限）".to_string(),
+                name: "设置默认沙箱（需要管理员权限）".to_string(),
                 description: None,
                 actions: vec![Box::new(move |tx| {
                     accept_otel.counter(
@@ -7578,7 +7570,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "使用非管理员 sandbox（若 prompt 注入风险更高）".to_string(),
+                name: "使用非管理员沙箱（若提示词注入风险更高）".to_string(),
                 description: None,
                 actions: vec![Box::new(move |tx| {
                     legacy_otel.counter(
@@ -7626,10 +7618,10 @@ impl ChatWidget {
         use ratatui_macros::line;
 
         let mut lines = Vec::new();
-        lines.push(line!["无法使用管理员权限完成 sandbox 设置".bold()]);
+        lines.push(line!["无法使用管理员权限完成沙箱设置".bold()]);
         lines.push(line![""]);
         lines.push(line![
-            "你仍可在非管理员 sandbox 中使用 Codex，但在 prompt 注入场景下风险更高。"
+            "你仍可在非管理员沙箱中使用 Codex，但在提示词注入场景下风险更高。"
         ]);
         lines.push(line![
             "了解更多 <https://developers.openai.com/codex/windows>"
@@ -7643,7 +7635,7 @@ impl ChatWidget {
         let quit_otel = self.session_telemetry.clone();
         let items = vec![
             SelectionItem {
-                name: "重试设置管理员 sandbox".to_string(),
+                name: "重试设置管理员沙箱".to_string(),
                 description: None,
                 actions: vec![Box::new({
                     let otel = self.session_telemetry.clone();
@@ -7663,7 +7655,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "在非管理员 sandbox 下使用 Codex".to_string(),
+                name: "在非管理员沙箱下使用 Codex".to_string(),
                 description: None,
                 actions: vec![Box::new({
                     let otel = self.session_telemetry.clone();
@@ -7737,7 +7729,7 @@ impl ChatWidget {
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ false);
         self.set_status(
-            "正在设置 sandbox...".to_string(),
+            "正在设置沙箱...".to_string(),
             Some("请稍候，这可能需要几分钟".to_string()),
             StatusDetailsCapitalization::CapitalizeFirst,
             STATUS_DETAILS_DEFAULT_MAX_LINES,
@@ -9300,7 +9292,7 @@ impl Notification {
                 format!("Approval requested by {server_name}")
             }
             Notification::PlanModePrompt { title } => {
-                format!("Plan mode 提示：{title}")
+                format!("计划模式提示：{title}")
             }
             Notification::UserInputRequested {
                 question_count,

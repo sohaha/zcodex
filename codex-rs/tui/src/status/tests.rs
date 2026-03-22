@@ -236,7 +236,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
 
     assert_eq!(
         permissions_text,
-        Some("自定义 (workspace-write with network access, on-request)")
+        Some("自定义 (workspace-write（允许网络访问）, on-request)")
     );
 }
 
@@ -1022,7 +1022,7 @@ async fn status_context_window_uses_last_usage() {
     let rendered_lines = render_lines(&composite.display_lines(80));
     let context_line = rendered_lines
         .into_iter()
-        .find(|line| line.contains("Context window") || line.contains("上下文窗口"))
+        .find(|line| line.contains("上下文窗口"))
         .expect("context line");
 
     assert!(

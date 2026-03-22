@@ -196,18 +196,18 @@ impl StatusHistoryCell {
             .iter()
             .find(|(k, _)| *k == "approval")
             .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| "<unknown>".to_string());
+            .unwrap_or_else(|| "<未知>".to_string());
         let sandbox = match config.permissions.sandbox_policy.get() {
             SandboxPolicy::DangerFullAccess => "danger-full-access".to_string(),
-            SandboxPolicy::ReadOnly { .. } => "read-only".to_string(),
+            SandboxPolicy::ReadOnly { .. } => "只读".to_string(),
             SandboxPolicy::WorkspaceWrite {
                 network_access: true,
                 ..
-            } => "workspace-write with network access".to_string(),
+            } => "workspace-write（允许网络访问）".to_string(),
             SandboxPolicy::WorkspaceWrite { .. } => "workspace-write".to_string(),
             SandboxPolicy::ExternalSandbox { network_access } => {
                 if matches!(network_access, NetworkAccess::Enabled) {
-                    "external-sandbox (network access enabled)".to_string()
+                    "external-sandbox（允许网络访问）".to_string()
                 } else {
                     "external-sandbox".to_string()
                 }
@@ -356,7 +356,7 @@ impl StatusHistoryCell {
                     let base_line = Line::from(base_spans.clone());
 
                     if let Some(resets_at) = resets_at.as_ref() {
-                        let resets_span = Span::from(format!("(resets {resets_at})")).dim();
+                        let resets_span = Span::from(format!("(重置于 {resets_at})")).dim();
                         let mut inline_spans = base_spans.clone();
                         inline_spans.push(Span::from(" ").dim());
                         inline_spans.push(resets_span.clone());
@@ -524,11 +524,11 @@ impl HistoryCell for StatusHistoryCell {
         lines.push(Line::from(Vec::<Span<'static>>::new()));
         // Hide token usage only for ChatGPT subscribers
         if !matches!(self.account, Some(StatusAccountDisplay::ChatGpt { .. })) {
-            lines.push(formatter.line("Token usage", self.token_usage_spans()));
+            lines.push(formatter.line("Token 用量", self.token_usage_spans()));
         }
 
         if let Some(spans) = self.context_window_spans() {
-            lines.push(formatter.line("Context window", spans));
+            lines.push(formatter.line("上下文窗口", spans));
         }
 
         lines.extend(self.rate_limit_lines(available_inner_width, &formatter));

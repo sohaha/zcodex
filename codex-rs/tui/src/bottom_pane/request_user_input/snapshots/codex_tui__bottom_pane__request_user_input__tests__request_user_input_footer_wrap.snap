@@ -10,5 +10,5 @@ expression: "render_snapshot(&overlay, area)"
   › 2. Option 2  Second choice.                     
     3. Option 3  Third choice.                      
                                                     
-  Tab 添 加 备 注  | Enter 提 交 当 前 回 答                  
-  ←/→ to navigate questions | Esc 中 断
+  Tab 添 加 备 注  | Enter 提 交 当 前 回 答  | ←/→ 切 换 问 题   
+  Esc 中 断

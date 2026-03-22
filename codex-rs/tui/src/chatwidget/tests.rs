@@ -1733,7 +1733,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
         })
-        .find(|line| line.contains("Context window"))
+        .find(|line| line.contains("上下文窗口") || line.contains("Context window"))
         .expect("context window line");
 
     assert!(
@@ -2736,7 +2736,7 @@ fn plan_mode_prompt_notification_uses_dedicated_type_name() {
     ])));
     assert_eq!(
         notification.display(),
-        format!("Plan mode 提示：{PLAN_IMPLEMENTATION_TITLE}")
+        format!("计划模式提示：{PLAN_IMPLEMENTATION_TITLE}")
     );
 }
 
@@ -2818,7 +2818,7 @@ async fn user_input_notification_overrides_pending_agent_turn_complete_notificat
             is_secret: false,
             options: Some(vec![RequestUserInputQuestionOption {
                 label: "Plan only".to_string(),
-                description: "Update only Plan mode.".to_string(),
+                description: "仅更新计划模式。".to_string(),
             }]),
         }],
     });
@@ -2848,7 +2848,7 @@ async fn handle_request_user_input_sets_pending_notification() {
             is_secret: false,
             options: Some(vec![RequestUserInputQuestionOption {
                 label: "Plan only".to_string(),
-                description: "Update only Plan mode.".to_string(),
+                description: "仅更新计划模式。".to_string(),
             }]),
         }],
     });
@@ -2874,10 +2874,10 @@ async fn plan_reasoning_scope_popup_mentions_selected_reasoning() {
     let popup = render_bottom_popup(&chat, 100);
     let normalized = normalize_ui_text(&popup);
     assert!(normalized.contains("选择将中推理应用到哪里。"));
-    assert!(normalized.contains("仅在Planmode中始终使用中推理。"));
-    assert!(normalized.contains("仅应用到Planmode覆盖设置"));
-    assert!(normalized.contains("应用到全局默认值和Planmode覆盖设置"));
-    assert!(normalized.contains("用户设置的Plan覆盖值（低）"));
+    assert!(normalized.contains("仅在计划模式中始终使用中推理。"));
+    assert!(normalized.contains("仅应用到计划模式覆盖设置"));
+    assert!(normalized.contains("应用到全局默认值和计划模式覆盖设置"));
+    assert!(normalized.contains("用户设置的计划模式覆盖值（低）"));
 }
 
 #[tokio::test]
@@ -2890,7 +2890,7 @@ async fn plan_reasoning_scope_popup_mentions_built_in_plan_default_when_no_overr
 
     let popup = render_bottom_popup(&chat, 100);
     let normalized = normalize_ui_text(&popup);
-    assert!(normalized.contains("内置Plan默认值（中）"));
+    assert!(normalized.contains("内置计划模式默认值（中）"));
 }
 
 #[tokio::test]
@@ -5566,7 +5566,7 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
         .join("\n");
     assert!(
         plan_messages.contains("模型已切换为 gpt-5.3-codex medium，用于 Plan 模式。"),
-        "expected reasoning-change notice in Plan mode, got: {plan_messages:?}"
+        "expected reasoning-change notice in 计划模式, got: {plan_messages:?}"
     );
 }
 
@@ -6758,6 +6758,7 @@ fn selected_permissions_popup_line(popup: &str) -> String {
             line.starts_with('›')
                 && (line.contains("默认")
                     || line.contains("只读")
+                    || line.contains("Guardian审批")
                     || line.contains("GuardianApprovals")
                     || line.contains("完全访问"))
         })
@@ -6774,13 +6775,16 @@ fn selected_permissions_popup_name(popup: &str) -> &'static str {
         .unwrap_or_else(|| {
             panic!("expected permissions popup row to include an indexed label: {popup}")
         });
-    if label.starts_with("只读") {
+    let normalized_label = label.replace(' ', "");
+    if normalized_label.starts_with("只读") {
         "只读"
-    } else if label.starts_with("默认") {
+    } else if normalized_label.starts_with("默认") {
         "默认"
-    } else if label.starts_with("Guardian Approvals") || label.starts_with("GuardianApprovals") {
-        "Guardian Approvals"
-    } else if label.starts_with("完全访问") {
+    } else if normalized_label.starts_with("Guardian审批")
+        || normalized_label.starts_with("GuardianApprovals")
+    {
+        "Guardian 审批"
+    } else if normalized_label.starts_with("完全访问") {
         "完全访问"
     } else {
         panic!("expected permissions popup row to contain a preset label: {popup}");
@@ -8044,7 +8048,7 @@ async fn windows_auto_mode_prompt_requests_enabling_sandbox_feature() {
         "expected auto mode prompt to mention Administrator permissions, popup: {popup}"
     );
     assert!(
-        popup.contains("非管理员 sandbox"),
+        popup.contains("非管理员沙箱"),
         "expected auto mode prompt to include non-admin fallback option, popup: {popup}"
     );
 }
@@ -8065,11 +8069,11 @@ async fn startup_prompts_for_windows_sandbox_when_agent_requested() {
         "expected startup prompt to mention Administrator permissions: {popup}"
     );
     assert!(
-        popup.contains("设置默认 sandbox"),
+        popup.contains("设置默认沙箱"),
         "expected startup prompt to offer default sandbox setup: {popup}"
     );
     assert!(
-        popup.contains("非管理员 sandbox"),
+        popup.contains("非管理员沙箱"),
         "expected startup prompt to offer non-admin fallback: {popup}"
     );
     assert!(
@@ -8727,7 +8731,7 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled() 
 
     assert!(
         !popup.contains("GuardianApprovals"),
-        "expected Guardian Approvals to stay hidden until the experimental feature is enabled: {popup}"
+        "expected Guardian 审批 to stay hidden until the experimental feature is enabled: {popup}"
     );
 }
 
@@ -8758,7 +8762,7 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled_ev
 
     assert!(
         !popup.contains("GuardianApprovals"),
-        "expected Guardian Approvals to stay hidden when the experimental feature is disabled: {popup}"
+        "expected Guardian 审批 to stay hidden when the experimental feature is disabled: {popup}"
     );
 }
 
@@ -8802,9 +8806,9 @@ async fn permissions_selection_marks_guardian_approvals_current_after_session_co
     let popup = render_bottom_popup(&chat, 120);
 
     assert!(
-        selected_permissions_popup_name(&popup) == "Guardian Approvals"
+        selected_permissions_popup_name(&popup) == "Guardian 审批"
             && selected_permissions_popup_line(&popup).contains("（当前）"),
-        "expected Guardian Approvals to be current after SessionConfigured sync: {popup}"
+        "expected Guardian 审批 to be current after SessionConfigured sync: {popup}"
     );
 }
 
@@ -8858,9 +8862,9 @@ async fn permissions_selection_marks_guardian_approvals_current_with_custom_work
     let popup = render_bottom_popup(&chat, 120);
 
     assert!(
-        selected_permissions_popup_name(&popup) == "Guardian Approvals"
+        selected_permissions_popup_name(&popup) == "Guardian 审批"
             && selected_permissions_popup_line(&popup).contains("（当前）"),
-        "expected Guardian Approvals to be current even with custom workspace-write details: {popup}"
+        "expected Guardian 审批 to be current even with custom workspace-write details: {popup}"
     );
 }
 
@@ -8889,16 +8893,16 @@ async fn permissions_selection_can_disable_guardian_approvals() {
     chat.open_permissions_popup();
     let popup = render_bottom_popup(&chat, 120);
     assert!(
-        selected_permissions_popup_name(&popup) == "Guardian Approvals"
+        selected_permissions_popup_name(&popup) == "Guardian 审批"
             && selected_permissions_popup_line(&popup).contains("（当前）"),
-        "expected permissions popup to open with Guardian Approvals selected: {popup}"
+        "expected permissions popup to open with Guardian 审批 selected: {popup}"
     );
 
     move_permissions_popup_selection_to(&mut chat, "默认", KeyCode::Up);
     let popup = render_bottom_popup(&chat, 120);
     assert!(
         selected_permissions_popup_name(&popup) == "默认",
-        "expected one Up from Guardian Approvals to select Default: {popup}"
+        "expected one Up from Guardian 审批 to select Default: {popup}"
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
@@ -8908,7 +8912,7 @@ async fn permissions_selection_can_disable_guardian_approvals() {
             event,
             AppEvent::UpdateApprovalsReviewer(ApprovalsReviewer::User)
         )),
-        "expected selecting Default from Guardian Approvals to switch back to manual approval review: {events:?}"
+        "expected selecting Default from Guardian 审批 to switch back to manual approval review: {events:?}"
     );
     assert!(
         !events
@@ -8947,11 +8951,11 @@ async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context
         "expected permissions popup to open with the current preset selected: {popup}"
     );
 
-    move_permissions_popup_selection_to(&mut chat, "Guardian Approvals", KeyCode::Down);
+    move_permissions_popup_selection_to(&mut chat, "Guardian 审批", KeyCode::Down);
     let popup = render_bottom_popup(&chat, 120);
     assert!(
-        selected_permissions_popup_name(&popup) == "Guardian Approvals",
-        "expected one Down from Default to select Guardian Approvals: {popup}"
+        selected_permissions_popup_name(&popup) == "Guardian 审批",
+        "expected one Down from Default to select Guardian 审批: {popup}"
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 

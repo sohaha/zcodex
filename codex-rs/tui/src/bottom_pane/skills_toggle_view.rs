@@ -56,10 +56,8 @@ pub(crate) struct SkillsToggleView {
 impl SkillsToggleView {
     pub(crate) fn new(items: Vec<SkillsToggleItem>, app_event_tx: AppEventSender) -> Self {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Enable/Disable Skills".bold()));
-        header.push(Line::from(
-            "Turn skills on or off. Your changes are saved automatically.".dim(),
-        ));
+        header.push(Line::from("启用/禁用技能".bold()));
+        header.push(Line::from("开启或关闭技能。你的更改会自动保存。".dim()));
 
         let mut view = Self {
             items,

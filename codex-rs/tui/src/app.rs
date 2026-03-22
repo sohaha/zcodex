@@ -149,8 +149,8 @@ struct GuardianApprovalsMode {
     sandbox_policy: SandboxPolicy,
 }
 
-/// Enabling the Guardian Approvals experiment in the TUI should also switch
-/// the current `/approvals` settings to the matching Guardian Approvals mode.
+/// Enabling the Guardian 审批 experiment in the TUI should also switch
+/// the current `/approvals` settings to the matching Guardian 审批 mode.
 /// Users
 /// can still change `/approvals` afterward; this just assumes that opting into
 /// the experiment means they want guardian review enabled immediately.
@@ -1011,7 +1011,7 @@ impl App {
         {
             tracing::warn!(%err, "failed to carry forward sandbox policy override");
             self.chat_widget
-                .add_error_message(format!("沿用 sandbox 策略覆盖设置失败：{err}"));
+                .add_error_message(format!("沿用沙箱策略覆盖设置失败：{err}"));
         }
     }
 
@@ -1079,7 +1079,7 @@ impl App {
         let mut approvals_reviewer_override = None;
         let mut sandbox_policy_override = None;
         let mut feature_updates_to_apply = Vec::with_capacity(updates.len());
-        // Guardian Approvals owns `approvals_reviewer`, but disabling the
+        // Guardian 审批 owns `approvals_reviewer`, but disabling the
         // feature from inside a profile should not silently clear a value
         // configured at the root scope.
         let (root_approvals_reviewer_blocks_profile_disable, profile_approvals_reviewer_configured) = {
@@ -1112,7 +1112,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "当前 profile 无法关闭 Guardian Approvals，因为 `approvals_reviewer` 配置在 active profile 之外。".to_string(),
+                        "当前 profile 无法关闭 Guardian 审批，因为 `approvals_reviewer` 配置在 active profile 之外。".to_string(),
                     );
                 continue;
             }
@@ -1144,7 +1144,7 @@ impl App {
                             .into(),
                     });
                     if previous_approvals_reviewer != guardian_approvals_preset.approvals_reviewer {
-                        permissions_history_label = Some("Guardian Approvals");
+                        permissions_history_label = Some("Guardian 审批");
                     }
                 } else if !effective_enabled {
                     if profile_approvals_reviewer_configured || self.active_profile.is_none() {
@@ -1167,7 +1167,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.approval_policy,
-                    "启用 Guardian Approvals 失败",
+                    "启用 Guardian 审批 失败",
                     "failed to set guardian approvals approval policy on staged config",
                 ) {
                     continue;
@@ -1175,7 +1175,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.sandbox_policy.clone(),
-                    "启用 Guardian Approvals 失败",
+                    "启用 Guardian 审批 失败",
                     "failed to set guardian approvals sandbox policy on staged config",
                 ) {
                     continue;
@@ -1232,7 +1232,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("启用 Guardian Approvals 失败：{err}"));
+                .add_error_message(format!("启用 Guardian 审批 失败：{err}"));
         }
 
         if approval_policy_override.is_some()
@@ -3182,7 +3182,7 @@ impl App {
                 {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("正在授予 sandbox 对 {path} 的读取权限..."),
+                            format!("正在授予沙箱对 {path} 的读取权限..."),
                             /*hint*/ None,
                         ));
 
@@ -3230,7 +3230,7 @@ impl App {
                     let hint = None;
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("已为 {} 授予 sandbox 读取权限", path.display()),
+                            format!("已为 {} 授予沙箱读取权限", path.display()),
                             hint,
                         ));
                 }
@@ -3335,7 +3335,7 @@ impl App {
                                 "failed to enable Windows sandbox feature"
                             );
                             self.chat_widget
-                                .add_error_message(format!("启用 Windows sandbox 功能失败：{err}"));
+                                .add_error_message(format!("启用 Windows 沙箱功能失败：{err}"));
                         }
                     }
                 }
@@ -3534,7 +3534,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut config,
                     policy,
-                    "设置 sandbox 策略失败",
+                    "设置沙箱策略失败",
                     "failed to set sandbox policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -3543,7 +3543,7 @@ impl App {
                 if let Err(err) = self.chat_widget.set_sandbox_policy(policy_for_chat) {
                     tracing::warn!(%err, "failed to set sandbox policy on chat config");
                     self.chat_widget
-                        .add_error_message(format!("设置 sandbox 策略失败：{err}"));
+                        .add_error_message(format!("设置沙箱策略失败：{err}"));
                     return Ok(AppRunControl::Continue);
                 }
                 self.runtime_sandbox_policy_override =
@@ -3702,11 +3702,11 @@ impl App {
                     );
                     if let Some(profile) = profile {
                         self.chat_widget.add_error_message(format!(
-                            "保存 profile `{profile}` 的 Plan mode 推理强度失败：{err}"
+                            "保存 profile `{profile}` 的计划模式推理强度失败：{err}"
                         ));
                     } else {
                         self.chat_widget
-                            .add_error_message(format!("保存 Plan mode 推理强度失败：{err}"));
+                            .add_error_message(format!("保存计划模式推理强度失败：{err}"));
                     }
                 }
             }
@@ -5829,7 +5829,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 Guardian Approvals"));
+        assert!(rendered.contains("权限已更新为 Guardian 审批"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
