@@ -3434,7 +3434,7 @@ impl App {
                         } else {
                             "关闭"
                         };
-                        let mut message = format!("Fast 模式已设置为 {status}");
+                        let mut message = format!("极速模式已设置为 {status}");
                         if let Some(profile) = profile {
                             message.push_str("（profile `");
                             message.push_str(profile);
@@ -3446,11 +3446,11 @@ impl App {
                         tracing::error!(error = %err, "failed to persist fast mode selection");
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "保存 profile `{profile}` 的 Fast 模式设置失败：{err}"
+                                "保存 profile `{profile}` 的极速模式设置失败：{err}"
                             ));
                         } else {
                             self.chat_widget
-                                .add_error_message(format!("保存默认 Fast 模式设置失败：{err}"));
+                                .add_error_message(format!("保存默认极速模式设置失败：{err}"));
                         }
                     }
                 }

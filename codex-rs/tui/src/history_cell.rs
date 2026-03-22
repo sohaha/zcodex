@@ -1087,7 +1087,7 @@ impl HistoryCell for TooltipHistoryCell {
             .max(1);
         let mut lines: Vec<Line<'static>> = Vec::new();
         append_markdown(
-            &format!("**Tip:** {}", self.tip),
+            &format!("**提示：**{}", self.tip),
             Some(wrap_width),
             Some(self.cwd.as_path()),
             &mut lines,
@@ -1461,16 +1461,16 @@ impl McpToolCallCell {
             rmcp::model::RawContent::Text(text) => {
                 format_and_truncate_tool_result(&text.text, TOOL_CALL_MAX_LINES, width)
             }
-            rmcp::model::RawContent::Image(_) => "<image content>".to_string(),
-            rmcp::model::RawContent::Audio(_) => "<audio content>".to_string(),
+            rmcp::model::RawContent::Image(_) => "<图片内容>".to_string(),
+            rmcp::model::RawContent::Audio(_) => "<音频内容>".to_string(),
             rmcp::model::RawContent::Resource(resource) => {
                 let uri = match resource.resource {
                     rmcp::model::ResourceContents::TextResourceContents { uri, .. } => uri,
                     rmcp::model::ResourceContents::BlobResourceContents { uri, .. } => uri,
                 };
-                format!("embedded resource: {uri}")
+                format!("嵌入资源：{uri}")
             }
-            rmcp::model::RawContent::ResourceLink(link) => format!("link: {}", link.uri),
+            rmcp::model::RawContent::ResourceLink(link) => format!("链接：{}", link.uri),
         }
     }
 }

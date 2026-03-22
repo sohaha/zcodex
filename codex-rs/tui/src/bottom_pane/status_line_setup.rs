@@ -116,7 +116,7 @@ impl StatusLineItem {
             StatusLineItem::TotalInputTokens => "当前会话输入 token 总数",
             StatusLineItem::TotalOutputTokens => "当前会话输出 token 总数",
             StatusLineItem::SessionId => "当前会话标识（未启动前隐藏）",
-            StatusLineItem::FastMode => "当前是否开启 Fast 模式",
+            StatusLineItem::FastMode => "当前是否开启极速模式",
         }
     }
 }

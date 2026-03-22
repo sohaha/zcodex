@@ -5,7 +5,7 @@ expression: terminal.backend()
 
 请选择用于分叉该会话的工作目录
 
-  会话目录 = 上次会话记录的最新 cwd                                             
+  会话目录 = 上次会话记录中的最近工作目录                                       
   当前目录 = 你现在所在的工作目录
 
 › 1. 使用会话目录（/Users/example/session）                                     

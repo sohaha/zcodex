@@ -200,7 +200,7 @@ impl WidgetRef for &CwdPromptScreen {
         ]));
         column.push("");
         column.push(
-            Line::from("会话目录 = 上次会话记录的最新 cwd")
+            Line::from("会话目录 = 上次会话记录中的最近工作目录")
                 .dim()
                 .inset(Insets::tlbr(
                     /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,

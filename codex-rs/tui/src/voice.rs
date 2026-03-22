@@ -244,7 +244,7 @@ pub fn transcribe_async(
         let duration_seconds = clip_duration_seconds(&audio);
         if duration_seconds < MIN_DURATION_SECONDS {
             let msg = format!(
-                "recording too short ({duration_seconds:.2}s); minimum is {MIN_DURATION_SECONDS:.2}s"
+                "录音过短（{duration_seconds:.2} 秒）；至少需要 {MIN_DURATION_SECONDS:.2} 秒"
             );
             info!("{msg}");
             tx.send(AppEvent::TranscriptionFailed { id, error: msg });
@@ -578,13 +578,13 @@ impl RealtimeAudioPlayer {
 
     pub(crate) fn enqueue_frame(&self, frame: &RealtimeAudioFrame) -> Result<(), String> {
         if frame.num_channels == 0 || frame.sample_rate == 0 {
-            return Err("invalid realtime audio frame format".to_string());
+            return Err("实时音频帧格式无效".to_string());
         }
         let raw_bytes = base64::engine::general_purpose::STANDARD
             .decode(&frame.data)
             .map_err(|e| format!("解码实时音频失败：{e}"))?;
         if raw_bytes.len() % 2 != 0 {
-            return Err("realtime audio frame had odd byte length".to_string());
+            return Err("实时音频帧字节长度不是偶数".to_string());
         }
         let mut pcm = Vec::with_capacity(raw_bytes.len() / 2);
         for pair in raw_bytes.chunks_exact(2) {
@@ -926,7 +926,7 @@ async fn resolve_auth() -> Result<TranscriptionAuthContext, String> {
     let codex_home = find_codex_home().map_err(|e| format!("查找 Codex 目录失败：{e}"))?;
     let auth = CodexAuth::from_auth_storage(&codex_home, AuthCredentialsStoreMode::Auto)
         .map_err(|e| format!("读取 auth.json 失败：{e}"))?
-        .ok_or_else(|| "No Codex auth is configured; please run `codex login`".to_string())?;
+        .ok_or_else(|| "尚未配置 Codex 登录；请先运行 `codex login`".to_string())?;
 
     let chatgpt_account_id = auth.get_account_id();
 
@@ -1024,7 +1024,7 @@ async fn transcribe_bytes(
         .to_string();
 
     if text.is_empty() {
-        Err("empty transcription result".to_string())
+        Err("转录结果为空".to_string())
     } else {
         Ok(text)
     }

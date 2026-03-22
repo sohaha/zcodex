@@ -4778,7 +4778,7 @@ impl ChatWidget {
                             "关闭"
                         };
                         self.add_info_message(
-                            format!("Fast 模式当前为{status}。"),
+                            format!("极速模式当前为{status}。"),
                             /*hint*/ None,
                         );
                     }
