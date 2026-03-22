@@ -1,3 +1,5 @@
 version = "0.31.0"
 source = "https://github.com/rtk-ai/rtk"
+upstream_ref = "v0.31.0"
+upstream_commit = "c85e348a91ee5c7afb5adc298e1e71d6782a594e"
 integration_mode = "codex-curated"
