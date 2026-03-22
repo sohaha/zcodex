@@ -64,13 +64,13 @@ static OSS_SELECT_OPTIONS: LazyLock<Vec<SelectOption>> = LazyLock::new(|| {
     vec![
         SelectOption {
             label: Line::from(vec!["L".underlined(), "M Studio".into()]),
-            description: "Local LM Studio server (default port 1234)",
+            description: "本地 LM Studio 服务器（默认端口 1234）",
             key: KeyCode::Char('l'),
             provider_id: LMSTUDIO_OSS_PROVIDER_ID,
         },
         SelectOption {
             label: Line::from(vec!["O".underlined(), "llama".into()]),
-            description: "Local Ollama server (Responses API, default port 11434)",
+            description: "本地 Ollama 服务器（Responses API，默认端口 11434）",
             key: KeyCode::Char('o'),
             provider_id: OLLAMA_OSS_PROVIDER_ID,
         },
@@ -99,11 +99,11 @@ impl OssSelectionWidget<'_> {
                 status: lmstudio_status,
             },
             ProviderOption {
-                name: "Ollama (Responses)".to_string(),
+                name: "Ollama（Responses）".to_string(),
                 status: ollama_status.clone(),
             },
             ProviderOption {
-                name: "Ollama (Chat)".to_string(),
+                name: "Ollama（Chat）".to_string(),
                 status: ollama_status,
             },
         ];

@@ -5275,7 +5275,7 @@ impl ChatWidget {
         let effective_mode = self.effective_collaboration_mode();
         if effective_mode.model().trim().is_empty() {
             self.add_error_message(
-                "Thread model is unavailable. Wait for the thread to finish syncing or choose a model before sending input.".to_string(),
+                "线程模型暂不可用。请等待线程同步完成，或先选择模型后再发送输入。".to_string(),
             );
             return;
         }
@@ -7576,7 +7576,7 @@ impl ChatWidget {
     fn model_menu_warning_line(&self) -> Option<Line<'static>> {
         let base_url = self.custom_openai_base_url()?;
         let warning = format!(
-            "Warning: OpenAI base URL is overridden to {base_url}. Selecting models may not be supported or work properly."
+            "警告：OpenAI base URL 已被覆盖为 {base_url}。选择模型可能不受支持，或无法正常工作。"
         );
         Some(Line::from(warning.red()))
     }
@@ -7662,7 +7662,7 @@ impl ChatWidget {
             let description = Some(format!("选择具体模型和推理强度（当前：{current_label}）"));
 
             items.push(SelectionItem {
-                name: "All models".to_string(),
+                name: "全部模型".to_string(),
                 description,
                 is_current,
                 actions,
@@ -8075,7 +8075,7 @@ impl ChatWidget {
             ReasoningEffortConfig::Low => "低",
             ReasoningEffortConfig::Medium => "中",
             ReasoningEffortConfig::High => "高",
-            ReasoningEffortConfig::XHigh => "Extra high",
+            ReasoningEffortConfig::XHigh => "极高",
         }
     }
 
@@ -8556,9 +8556,9 @@ impl ChatWidget {
         };
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
         let describe_policy = |policy: &SandboxPolicy| match policy {
-            SandboxPolicy::WorkspaceWrite { .. } => "Agent mode",
-            SandboxPolicy::ReadOnly { .. } => "Read-Only mode",
-            _ => "Agent mode",
+            SandboxPolicy::WorkspaceWrite { .. } => "Agent 模式",
+            SandboxPolicy::ReadOnly { .. } => "只读模式",
+            _ => "Agent 模式",
         };
         let mode_label = preset
             .as_ref()
@@ -8630,8 +8630,8 @@ impl ChatWidget {
 
         let items = vec![
             SelectionItem {
-                name: "Continue".to_string(),
-                description: Some(format!("Apply {mode_label} for this session")),
+                name: "继续".to_string(),
+                description: Some(format!("本次会话使用 {mode_label}")),
                 actions: accept_actions,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -8807,7 +8807,7 @@ impl ChatWidget {
             "你仍可在非管理员 sandbox 中使用 Codex，但在 prompt 注入场景下风险更高。"
         ]);
         lines.push(line![
-            "Learn more <https://developers.openai.com/codex/windows>"
+            "了解更多 <https://developers.openai.com/codex/windows>"
         ]);
 
         let mut header = ColumnRenderable::new();
@@ -9263,7 +9263,7 @@ impl ChatWidget {
 
     fn image_inputs_not_supported_message(&self) -> String {
         format!(
-            "Model {} does not support image inputs. Remove images or switch models.",
+            "模型 {} 不支持图片输入。请移除图片，或切换到其他模型。",
             self.current_model()
         )
     }

@@ -291,7 +291,7 @@ impl ChatWidget {
         ));
         if let Some(remote_sync_error) = response.remote_sync_error.as_deref() {
             header.push(Line::from(
-                format!("Using cached marketplace data: {remote_sync_error}").dim(),
+                format!("正在使用缓存的市场数据：{remote_sync_error}").dim(),
             ));
         }
 
@@ -389,19 +389,19 @@ impl ChatWidget {
         }];
 
         items.push(SelectionItem {
-            name: "Skills".to_string(),
+            name: "技能".to_string(),
             description: Some(plugin_skill_summary(plugin)),
             is_disabled: true,
             ..Default::default()
         });
         items.push(SelectionItem {
-            name: "Apps".to_string(),
+            name: "应用".to_string(),
             description: Some(plugin_app_summary(plugin)),
             is_disabled: true,
             ..Default::default()
         });
         items.push(SelectionItem {
-            name: "MCP Servers".to_string(),
+            name: "MCP 服务器".to_string(),
             description: Some(plugin_mcp_summary(plugin)),
             is_disabled: true,
             ..Default::default()
@@ -508,7 +508,7 @@ fn plugin_detail_description(plugin: &PluginDetail) -> Option<String> {
 
 fn plugin_skill_summary(plugin: &PluginDetail) -> String {
     if plugin.skills.is_empty() {
-        "暂无插件 Skills。".to_string()
+        "暂无插件技能。".to_string()
     } else {
         plugin
             .skills
@@ -521,7 +521,7 @@ fn plugin_skill_summary(plugin: &PluginDetail) -> String {
 
 fn plugin_app_summary(plugin: &PluginDetail) -> String {
     if plugin.apps.is_empty() {
-        "暂无插件 Apps。".to_string()
+        "暂无插件应用。".to_string()
     } else {
         plugin
             .apps

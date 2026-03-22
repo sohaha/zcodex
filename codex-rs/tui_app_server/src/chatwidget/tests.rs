@@ -1147,7 +1147,7 @@ async fn blocked_image_restore_preserves_mention_bindings() {
         .map(|lines| lines_to_single_string(lines))
         .expect("expected warning cell");
     assert!(
-        warning.contains("does not support image inputs"),
+        warning.contains("不支持图片输入"),
         "expected image warning, got: {warning:?}"
     );
 }
@@ -3013,7 +3013,7 @@ async fn submit_user_message_blocks_when_thread_model_is_unavailable() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        rendered.contains("Thread model is unavailable."),
+        rendered.contains("线程模型暂不可用。"),
         "expected unavailable-model error, got: {rendered:?}"
     );
 }
@@ -8725,12 +8725,13 @@ async fn reasoning_popup_shows_extra_high_with_space() {
     chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, 120);
+    let normalized = normalize_ui_text(&popup);
     assert!(
-        popup.contains("Extra high"),
-        "expected popup to include 'Extra high'; popup: {popup}"
+        normalized.contains("极高"),
+        "expected popup to include '极高'; popup: {popup}"
     );
     assert!(
-        !popup.contains("Extrahigh"),
+        !normalized.contains("Extrahigh"),
         "expected popup not to include 'Extrahigh'; popup: {popup}"
     );
 }
