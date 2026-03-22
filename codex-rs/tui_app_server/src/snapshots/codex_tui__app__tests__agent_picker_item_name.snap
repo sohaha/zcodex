@@ -1,5 +1,5 @@
 ---
-source: tui/src/app.rs
+source: tui_app_server/src/app.rs
 expression: snapshot
 ---
 主线程 [默认] | 00000000-0000-0000-0000-000000000123

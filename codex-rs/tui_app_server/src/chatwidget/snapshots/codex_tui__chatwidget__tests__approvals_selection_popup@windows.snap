@@ -1,6 +1,5 @@
 ---
-source: tui/src/chatwidget/tests.rs
-assertion_line: 7365
+source: tui_app_server/src/chatwidget/tests.rs
 expression: popup
 ---
   更新模型权限

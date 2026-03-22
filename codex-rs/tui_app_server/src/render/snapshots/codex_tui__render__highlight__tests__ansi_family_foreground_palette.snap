@@ -1,5 +1,5 @@
 ---
-source: tui/src/render/highlight.rs
+source: tui_app_server/src/render/highlight.rs
 expression: out
 ---
 ansi:

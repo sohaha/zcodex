@@ -1,20 +1,20 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: terminal.backend().vt100().screen().contents()
 ---
 
 
-  Would you like to make the following edits?
+  要应用以下修改吗？
 
-  Reason: The model wants to apply changes
+  原因：The model wants to apply changes
 
   README.md (+2 -0)
 
     1 +hello
     2 +world
 
-› 1. Yes, proceed (y)
-  2. Yes, and don't ask again for these files (a)
-  3. No, and tell Codex what to do differently (esc)
+› 1. 是，继续 (y)
+  2. 是，对这些文件不再询问 (a)
+  3. 否，并告诉 Codex 应该怎么做 (esc)
 
-  按 Enter 确认，按 Esc 取消
+  按 enter 确认，或按 esc 取消

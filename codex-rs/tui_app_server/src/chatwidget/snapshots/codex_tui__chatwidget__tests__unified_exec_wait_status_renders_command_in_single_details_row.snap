@@ -1,11 +1,11 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: rendered
 ---
-• Waiting for background terminal (0s • esc to …
+• 等 待 后 台 终 端  (0s • esc 可 中 断 ) · 1 个 后 台 终 端 …
   └ cargo test -p codex-core -- --exact…
 
 
-› 让 Codex 处理任何事情
+› 让  Codex 处 理 任 何 事 情
 
-  ? for shortcuts            100% context left
+  ? 查 看 快 捷 键                  剩 余 上 下 文  100%

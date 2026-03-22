@@ -1,11 +1,11 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: popup
 ---
-  Experimental features
-  Toggle experimental features. Changes are saved to config.toml.
+  实 验 性 功 能
+  切 换 实 验 性 功 能 。 更 改 会 保 存 到  config.toml。
 
 › [ ] Ghost snapshots  Capture undo snapshots each turn.
   [x] Shell tool       Allow the model to run shell commands.
 
-  Press space to select or enter to save for next conversation
+  按  space 选 择 ， 或 按  enter 保 存 到 下 次 对 话

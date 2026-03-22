@@ -1,18 +1,17 @@
 ---
-source: tui/src/model_migration.rs
+source: tui_app_server/src/model_migration.rs
 expression: terminal.backend()
 ---
 
-> Codex just got an upgrade. Introducing gpt-5.1-codex-max.
+> Codex 已升级，现已提供 gpt-5.1-codex-max。
 
-  Upgrade to gpt-5.2-codex for the latest and greatest
-  agentic coding model.
+  升级到 gpt-5.2-codex，体验最新最强的 agentic coding 模型。
 
-  You can continue using gpt-5.1-codex-mini if you prefer.
+  如果你愿意，也可以继续使用 gpt-5.1-codex-mini。
 
-  Choose how you'd like Codex to proceed.
+  请选择 Codex 的后续处理方式。
 
-› 1. Try new model
-  2. Use existing model
+› 1. 尝试新模型
+  2. 继续使用当前模型
 
-  Use ↑/↓ to move, press enter to confirm
+  使用 ↑/↓ 移动，按 enter 确认

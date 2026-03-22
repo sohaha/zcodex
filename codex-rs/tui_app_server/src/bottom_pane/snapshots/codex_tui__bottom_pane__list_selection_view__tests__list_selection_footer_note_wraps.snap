@@ -1,14 +1,12 @@
 ---
-source: tui/src/bottom_pane/list_selection_view.rs
-assertion_line: 828
+source: tui_app_server/src/bottom_pane/list_selection_view.rs
 expression: "render_lines_with_width(&view, 40)"
 ---
                                         
-  Select Approval Mode                  
+  选 择 批 准 模 式                           
                                         
-› 1. 只读（当前）  Codex can     
-                          read files    
+› 1. 只 读 （ 当 前 ）   可 读 取 文 件            
                                         
-  Note: Use /setup-default-sandbox to   
-  allow network access.                 
-  Press enter to confirm or esc to go ba
+  提 示 ： 运 行  /setup-default-sandbox 以 允 
+  许 联 网 访 问 。                           
+  按  enter 确 认 ， 按  esc 返 回

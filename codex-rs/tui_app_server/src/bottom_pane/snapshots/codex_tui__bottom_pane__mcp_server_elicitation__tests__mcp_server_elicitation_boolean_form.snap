@@ -1,19 +1,19 @@
 ---
-source: tui/src/bottom_pane/mcp_server_elicitation.rs
+source: tui_app_server/src/bottom_pane/mcp_server_elicitation.rs
 expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
 ---
                                                                                                                         
-  Field 1/1 (1 required unanswered)                                                                                     
+  字 段  1/1（ 1 个 必 填 未 答 ）                                                                                               
   Allow this request?                                                                                                   
                                                                                                                         
   Confirm                                                                                                               
   Approve the pending action.                                                                                           
-  › 1. True                                                                                                             
-    2. False                                                                                                            
+  › 1. 是                                                                                                                
+    2. 否                                                                                                                
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
-  enter to submit | esc to cancel
+  Enter 提 交  | Esc 取 消

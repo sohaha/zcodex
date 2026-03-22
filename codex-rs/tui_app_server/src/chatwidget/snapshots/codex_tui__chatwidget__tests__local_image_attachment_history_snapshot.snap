@@ -1,6 +1,6 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: combined
 ---
-• Viewed Image
+• 查看图片
   └ example.png

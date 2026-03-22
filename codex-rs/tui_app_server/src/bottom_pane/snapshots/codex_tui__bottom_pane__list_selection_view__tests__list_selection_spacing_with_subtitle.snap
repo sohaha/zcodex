@@ -1,12 +1,12 @@
 ---
-source: tui/src/bottom_pane/list_selection_view.rs
+source: tui_app_server/src/bottom_pane/list_selection_view.rs
 expression: render_lines(&view)
 ---
                                                 
-  Select Approval Mode                          
+  选 择 批 准 模 式                                   
   Switch between Codex approval presets         
                                                 
-› 1. 只读（当前）  可读取文件  
-  2. 完全访问          可编辑文件  
+› 1. 只 读 （ 当 前 ）   可 读 取 文 件                    
+  2. 完 全 访 问       可 编 辑 文 件                    
                                                 
-  按 enter 确认，按 esc 返回
+  按  enter 确 认 ， 按  esc 返 回

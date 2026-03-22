@@ -1,7 +1,8 @@
 ---
-source: tui/src/history_cell.rs
+source: tui_app_server/src/history_cell.rs
 expression: rendered
 ---
+
 › one two
   three
   four five

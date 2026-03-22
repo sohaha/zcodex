@@ -1,5 +1,5 @@
 ---
-source: tui/src/resume_picker.rs
+source: tui_app_server/src/resume_picker.rs
 expression: snapshot
 ---
-Failed to read session metadata from /tmp/missing.jsonl
+读取会话元数据失败：/tmp/missing.jsonl

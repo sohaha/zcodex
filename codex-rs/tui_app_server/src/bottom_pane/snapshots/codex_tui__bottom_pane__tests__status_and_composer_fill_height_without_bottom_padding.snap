@@ -1,10 +1,10 @@
 ---
-source: tui/src/bottom_pane/mod.rs
+source: tui_app_server/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-• Working (0s • esc to interr…
+• 处 理 中  (0s • esc 可 中 断 )    
                               
                               
-› 让 Codex 处理任何事情    
+› 让  Codex 处 理 任 何 事 情        
                               
-           100% context left
+             剩 余 上 下 文  100%

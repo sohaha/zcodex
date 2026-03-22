@@ -1,13 +1,10 @@
 ---
-source: tui/src/bottom_pane/list_selection_view.rs
+source: tui_app_server/src/bottom_pane/list_selection_view.rs
 expression: "render_lines_with_width(&view, 80)"
 ---
                                                                                 
-  Select Model and Effort                                                       
+  选 择 模 型 与 推 理 强 度                                                             
                                                                                 
-› 1. gpt-5.1-codex (current)  Optimized for Codex. Balance of reasoning         
-                              quality and coding ability.                       
-  2. gpt-5.1-codex-mini       Optimized for Codex. Cheaper, faster, but less    
-                              capable.                                          
-  3. gpt-4.1-codex            Legacy model. Use when you need compatibility     
-                              with older automations.
+› 1. gpt-5.1-codex（ 当 前 ）   为  Codex 优 化 ， 平 衡 推 理 质 量 与 编 码 能 力 。              
+  2. gpt-5.1-codex-mini     为  Codex 优 化 ， 更 便 宜 、 更 快 ， 但 能 力 稍 弱 。            
+  3. gpt-4.1-codex          旧 版 模 型 。 需 要 兼 容 较 早 的 自 动 化 流 程 时 使 用 。

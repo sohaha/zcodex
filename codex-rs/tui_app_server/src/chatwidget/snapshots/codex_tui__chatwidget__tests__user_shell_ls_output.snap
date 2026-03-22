@@ -1,7 +1,7 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: blob
 ---
-• You ran ls
+• 你执行了 ls
   └ file1
     file2

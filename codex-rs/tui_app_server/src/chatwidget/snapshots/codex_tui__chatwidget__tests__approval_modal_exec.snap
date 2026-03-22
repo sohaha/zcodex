@@ -1,17 +1,17 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: terminal.backend().vt100().screen().contents()
 ---
 
 
-  Would you like to run the following command?
+  要运行以下命令吗？
 
-  Reason: this is a test reason such as one that would be produced by the model
+  原因：this is a test reason such as one that would be produced by the model
 
   $ echo hello world
 
-› 1. Yes, proceed (y)
-  2. Yes, and don't ask again for commands that start with `echo hello world` (p)
-  3. No, and tell Codex what to do differently (esc)
+› 1. 是，继续 (y)
+  2. 是，对以 `echo hello world` 开头的命令不再询问 (p)
+  3. 否，并告诉 Codex 应该怎么做 (esc)
 
-  按 Enter 确认，按 Esc 取消
+  按 enter 确认，或按 esc 取消

@@ -1,8 +1,8 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: combined
 ---
-• Waited for background terminal · just fix
+• 等待后台终端 · just fix
 
-↳ Interacted with background terminal · just fix
+↳ 与后台终端交互 · just fix
   └ ls

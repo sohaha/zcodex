@@ -1,6 +1,6 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui_app_server/src/chatwidget/tests.rs
 expression: exec_blob
 ---
-• Ran sleep 1
+• 已执行 sleep 1
   └ (no output)

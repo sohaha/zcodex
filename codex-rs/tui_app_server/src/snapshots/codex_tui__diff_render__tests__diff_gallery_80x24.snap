@@ -1,5 +1,5 @@
 ---
-source: tui/src/diff_render.rs
+source: tui_app_server/src/diff_render.rs
 expression: terminal.backend()
 ---
 "• Edited 6 files (+9 -9)                                                        "

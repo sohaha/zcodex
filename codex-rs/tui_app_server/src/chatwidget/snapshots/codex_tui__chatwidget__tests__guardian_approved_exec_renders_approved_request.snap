@@ -1,6 +1,5 @@
 ---
-source: tui/src/chatwidget/tests.rs
-assertion_line: 9237
+source: tui_app_server/src/chatwidget/tests.rs
 expression: term.backend().vt100().screen().contents()
 ---
 
@@ -8,10 +7,10 @@ expression: term.backend().vt100().screen().contents()
 
 
 
-✔ Auto-reviewer approved codex to run rm -f /tmp/guardian-approved.sqlite this
-  time
+
+✔ 自动审查器已批准 Codex 执行 rm -f /tmp/guardian-approved.sqlite（本次）
 
 
 › 让 Codex 处理任何事情
 
-  ? for shortcuts                                                                                    100% context left
+  ? 查看快捷键                                                                                         剩余上下文 100%
