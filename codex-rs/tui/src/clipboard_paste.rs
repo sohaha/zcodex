@@ -13,10 +13,10 @@ pub enum PasteImageError {
 impl std::fmt::Display for PasteImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PasteImageError::ClipboardUnavailable(msg) => write!(f, "clipboard unavailable: {msg}"),
-            PasteImageError::NoImage(msg) => write!(f, "no image on clipboard: {msg}"),
-            PasteImageError::EncodeFailed(msg) => write!(f, "could not encode image: {msg}"),
-            PasteImageError::IoError(msg) => write!(f, "io error: {msg}"),
+            PasteImageError::ClipboardUnavailable(msg) => write!(f, "剪贴板不可用：{msg}"),
+            PasteImageError::NoImage(msg) => write!(f, "剪贴板中没有图片：{msg}"),
+            PasteImageError::EncodeFailed(msg) => write!(f, "无法编码图片：{msg}"),
+            PasteImageError::IoError(msg) => write!(f, "IO 错误：{msg}"),
         }
     }
 }

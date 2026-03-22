@@ -61,16 +61,16 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
     let error = match arboard::Clipboard::new() {
         Ok(mut clipboard) => match clipboard.set_text(text.to_string()) {
             Ok(()) => return Ok(()),
-            Err(err) => format!("clipboard unavailable: {err}"),
+            Err(err) => format!("剪贴板不可用：{err}"),
         },
-        Err(err) => format!("clipboard unavailable: {err}"),
+        Err(err) => format!("剪贴板不可用：{err}"),
     };
 
     #[cfg(target_os = "linux")]
     let error = if is_probably_wsl() {
         match copy_via_wsl_clipboard(text) {
             Ok(()) => return Ok(()),
-            Err(wsl_err) => format!("{error}; WSL fallback failed: {wsl_err}"),
+            Err(wsl_err) => format!("{error}；WSL 回退也失败了：{wsl_err}"),
         }
     } else {
         error
@@ -93,25 +93,21 @@ fn copy_via_osc52(text: &str) -> Result<(), String> {
     let mut tty = OpenOptions::new()
         .write(true)
         .open("/dev/tty")
-        .map_err(|e| {
-            format!("clipboard unavailable: failed to open /dev/tty for OSC 52 copy: {e}")
-        })?;
+        .map_err(|e| format!("剪贴板不可用：无法为 OSC 52 复制打开 /dev/tty：{e}"))?;
     #[cfg(unix)]
-    tty.write_all(sequence.as_bytes()).map_err(|e| {
-        format!("clipboard unavailable: failed to write OSC 52 escape sequence: {e}")
-    })?;
+    tty.write_all(sequence.as_bytes())
+        .map_err(|e| format!("剪贴板不可用：写入 OSC 52 转义序列失败：{e}"))?;
     #[cfg(unix)]
-    tty.flush().map_err(|e| {
-        format!("clipboard unavailable: failed to flush OSC 52 escape sequence: {e}")
-    })?;
+    tty.flush()
+        .map_err(|e| format!("剪贴板不可用：刷新 OSC 52 转义序列失败：{e}"))?;
     #[cfg(windows)]
-    stdout().write_all(sequence.as_bytes()).map_err(|e| {
-        format!("clipboard unavailable: failed to write OSC 52 escape sequence: {e}")
-    })?;
+    stdout()
+        .write_all(sequence.as_bytes())
+        .map_err(|e| format!("剪贴板不可用：写入 OSC 52 转义序列失败：{e}"))?;
     #[cfg(windows)]
-    stdout().flush().map_err(|e| {
-        format!("clipboard unavailable: failed to flush OSC 52 escape sequence: {e}")
-    })?;
+    stdout()
+        .flush()
+        .map_err(|e| format!("剪贴板不可用：刷新 OSC 52 转义序列失败：{e}"))?;
     Ok(())
 }
 
@@ -133,27 +129,25 @@ fn copy_via_wsl_clipboard(text: &str) -> Result<(), String> {
             "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; $text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text",
         ])
         .spawn()
-        .map_err(|e| format!("clipboard unavailable: failed to spawn powershell.exe: {e}"))?;
+        .map_err(|e| format!("剪贴板不可用：启动 powershell.exe 失败：{e}"))?;
 
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return Err("clipboard unavailable: failed to open powershell.exe stdin".to_string());
+        return Err("剪贴板不可用：无法打开 powershell.exe 的标准输入".to_string());
     };
 
     if let Err(err) = stdin.write_all(text.as_bytes()) {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!(
-            "clipboard unavailable: failed to write to powershell.exe: {err}"
-        ));
+        return Err(format!("剪贴板不可用：写入 powershell.exe 失败：{err}"));
     }
 
     drop(stdin);
 
     let output = child
         .wait_with_output()
-        .map_err(|e| format!("clipboard unavailable: failed to wait for powershell.exe: {e}"))?;
+        .map_err(|e| format!("剪贴板不可用：等待 powershell.exe 结束失败：{e}"))?;
 
     if output.status.success() {
         Ok(())
@@ -161,13 +155,9 @@ fn copy_via_wsl_clipboard(text: &str) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
             let status = output.status;
-            Err(format!(
-                "clipboard unavailable: powershell.exe exited with status {status}"
-            ))
+            Err(format!("剪贴板不可用：powershell.exe 退出状态为 {status}"))
         } else {
-            Err(format!(
-                "clipboard unavailable: powershell.exe failed: {stderr}"
-            ))
+            Err(format!("剪贴板不可用：powershell.exe 执行失败：{stderr}"))
         }
     }
 }

@@ -52,7 +52,7 @@ impl TerminalTitleItem {
             TerminalTitleItem::AppName => "Codex 应用名称",
             TerminalTitleItem::Project => "项目名（不可用时降级为当前目录名称）",
             TerminalTitleItem::Spinner => "任务旋转动画（空闲或关闭动画时隐藏）",
-            TerminalTitleItem::Status => "紧凑会话状态文本（Ready、Working、Thinking）",
+            TerminalTitleItem::Status => "紧凑会话状态文本（就绪、处理中、思考中）",
             TerminalTitleItem::Thread => "当前线程标题（未可用前隐藏）",
             TerminalTitleItem::GitBranch => "当前 Git 分支（不可用时隐藏）",
             TerminalTitleItem::Model => "当前模型名称",

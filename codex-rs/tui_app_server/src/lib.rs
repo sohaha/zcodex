@@ -89,7 +89,7 @@ mod audio_device {
         kind: RealtimeAudioDeviceKind,
     ) -> Result<Vec<String>, String> {
         Err(format!(
-            "加载 realtime {} 设备失败：voice input is unavailable in this build",
+            "加载 realtime {} 设备失败：此构建不支持语音输入",
             kind.noun()
         ))
     }
@@ -178,15 +178,15 @@ mod voice {
 
     impl VoiceCapture {
         pub fn start() -> Result<Self, String> {
-            Err("voice input is unavailable in this build".to_string())
+            Err("此构建不支持语音输入".to_string())
         }
 
         pub fn start_realtime(_config: &Config, _tx: AppEventSender) -> Result<Self, String> {
-            Err("voice input is unavailable in this build".to_string())
+            Err("此构建不支持语音输入".to_string())
         }
 
         pub fn stop(self) -> Result<RecordedAudio, String> {
-            Err("voice input is unavailable in this build".to_string())
+            Err("此构建不支持语音输入".to_string())
         }
 
         pub fn data_arc(&self) -> Arc<Mutex<Vec<i16>>> {
@@ -222,11 +222,11 @@ mod voice {
 
     impl RealtimeAudioPlayer {
         pub(crate) fn start(_config: &Config) -> Result<Self, String> {
-            Err("voice output is unavailable in this build".to_string())
+            Err("此构建不支持语音输出".to_string())
         }
 
         pub(crate) fn enqueue_frame(&self, _frame: &RealtimeAudioFrame) -> Result<(), String> {
-            Err("voice output is unavailable in this build".to_string())
+            Err("此构建不支持语音输出".to_string())
         }
 
         pub(crate) fn clear(&self) {}
@@ -240,7 +240,7 @@ mod voice {
     ) {
         tx.send(AppEvent::TranscriptionFailed {
             id,
-            error: "voice input is unavailable in this build".to_string(),
+            error: "此构建不支持语音输入".to_string(),
         });
     }
 }
