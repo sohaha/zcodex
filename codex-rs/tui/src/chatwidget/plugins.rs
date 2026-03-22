@@ -34,8 +34,8 @@ impl ChatWidget {
     pub(crate) fn add_plugins_output(&mut self) {
         if !self.config.features.enabled(Feature::Plugins) {
             self.add_info_message(
-                "Plugins are disabled.".to_string(),
-                Some("Enable the plugins feature to use /plugins.".to_string()),
+                "插件功能已禁用。".to_string(),
+                Some("启用插件功能后即可使用 /plugins。".to_string()),
             );
             return;
         }
