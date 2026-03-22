@@ -17,6 +17,6 @@ expression: term.backend().vt100().screen().contents()
   ↳ Queued while /review is running.
     ⌥ + ↑ edit last queued message
 
-› Ask Codex to do anything
+› 让 Codex 处理任何事情
 
   ? 查看快捷键                                                 剩余上下文 100%

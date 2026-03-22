@@ -364,9 +364,9 @@ impl ListSelectionView {
                     let prefix = if is_selected { '›' } else { ' ' };
                     let name = item.name.as_str();
                     let marker = if item.is_current {
-                        " (current)"
+                        "（当前）"
                     } else if item.is_default {
-                        " (default)"
+                        "（默认）"
                     } else {
                         ""
                     };
@@ -1044,7 +1044,7 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let items = vec![
             SelectionItem {
-                name: "Read Only".to_string(),
+                name: "只读".to_string(),
                 description: Some("可读取文件".to_string()),
                 is_current: true,
                 dismiss_on_select: true,
@@ -1235,16 +1235,16 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
-            name: "Read Only".to_string(),
+            name: "只读".to_string(),
             description: Some("可读取文件".to_string()),
             is_current: true,
             dismiss_on_select: true,
             ..Default::default()
         }];
         let footer_note = Line::from(vec![
-            "Note: ".dim(),
-            "Use /setup-default-sandbox".cyan(),
-            " to allow network access.".dim(),
+            "提示：运行 ".dim(),
+            "/setup-default-sandbox".cyan(),
+            " 以允许联网访问。".dim(),
         ]);
         let view = ListSelectionView::new(
             SelectionViewParams {
@@ -1267,7 +1267,7 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
-            name: "Read Only".to_string(),
+            name: "只读".to_string(),
             description: Some("可读取文件".to_string()),
             is_current: false,
             dismiss_on_select: true,
@@ -1300,7 +1300,7 @@ mod tests {
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
-                    name: "Read Only".to_string(),
+                    name: "只读".to_string(),
                     dismiss_on_select: true,
                     ..Default::default()
                 }],
@@ -1401,28 +1401,20 @@ mod tests {
         let items = vec![
             SelectionItem {
                 name: "gpt-5.1-codex".to_string(),
-                description: Some(
-                    "Optimized for Codex. Balance of reasoning quality and coding ability."
-                        .to_string(),
-                ),
+                description: Some("为 Codex 优化，平衡推理质量与编码能力。".to_string()),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-5.1-codex-mini".to_string(),
-                description: Some(
-                    "Optimized for Codex. Cheaper, faster, but less capable.".to_string(),
-                ),
+                description: Some("为 Codex 优化，更便宜、更快，但能力稍弱。".to_string()),
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-4.1-codex".to_string(),
-                description: Some(
-                    "Legacy model. Use when you need compatibility with older automations."
-                        .to_string(),
-                ),
+                description: Some("旧版模型。需要兼容较早的自动化流程时使用。".to_string()),
                 dismiss_on_select: true,
                 ..Default::default()
             },
@@ -1483,28 +1475,20 @@ mod tests {
         let items = vec![
             SelectionItem {
                 name: "gpt-5.1-codex".to_string(),
-                description: Some(
-                    "Optimized for Codex. Balance of reasoning quality and coding ability."
-                        .to_string(),
-                ),
+                description: Some("为 Codex 优化，平衡推理质量与编码能力。".to_string()),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-5.1-codex-mini".to_string(),
-                description: Some(
-                    "Optimized for Codex. Cheaper, faster, but less capable.".to_string(),
-                ),
+                description: Some("为 Codex 优化，更便宜、更快，但能力稍弱。".to_string()),
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-4.1-codex".to_string(),
-                description: Some(
-                    "Legacy model. Use when you need compatibility with older automations."
-                        .to_string(),
-                ),
+                description: Some("旧版模型。需要兼容较早的自动化流程时使用。".to_string()),
                 dismiss_on_select: true,
                 ..Default::default()
             },

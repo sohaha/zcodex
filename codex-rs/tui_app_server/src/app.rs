@@ -1246,7 +1246,7 @@ impl App {
                     }
                     feature_config.approvals_reviewer = ApprovalsReviewer::User;
                     if previous_approvals_reviewer != ApprovalsReviewer::User {
-                        permissions_history_label = Some("Default");
+                        permissions_history_label = Some("默认");
                     }
                 }
                 approvals_reviewer_override = Some(feature_config.approvals_reviewer);
@@ -6691,7 +6691,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 Default"));
+        assert!(rendered.contains("权限已更新为 默认"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -6973,7 +6973,7 @@ guardian_approval = true
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("权限已更新为 Default"));
+        assert!(rendered.contains("权限已更新为 默认"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));

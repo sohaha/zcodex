@@ -2,4 +2,4 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: "lines_to_single_string(&cells[0])"
 ---
-• 权限已更新为 Full Access
+• 权限已更新为 完全访问

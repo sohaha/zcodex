@@ -19,6 +19,6 @@ expression: term.backend().vt100().screen().contents()
 • 处理中 (0s • esc 可中断)
 
 
-› Ask Codex to do anything
+› 让 Codex 处理任何事情
 
   ? 查看快捷键                                                                                                             剩余上下文 100%

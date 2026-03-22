@@ -6,7 +6,7 @@ expression: render_lines(&view)
   选 择 批 准 模 式                                   
   Switch between Codex approval presets         
                                                 
-› 1. Read Only (current)  可 读 取 文 件             
-  2. 完 全 访 问              可 编 辑 文 件             
+› 1. 只 读 （ 当 前 ）   可 读 取 文 件                    
+  2. 完 全 访 问       可 编 辑 文 件                    
                                                 
   按  enter 确 认 ， 按  esc 返 回
