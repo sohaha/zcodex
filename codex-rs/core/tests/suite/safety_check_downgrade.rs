@@ -275,7 +275,7 @@ async fn custom_provider_model_mismatch_does_not_emit_openai_safety_warning() ->
             config.model_provider_id = "relay".to_string();
             config.model_provider = ModelProviderInfo {
                 name: "relay".into(),
-                base_url: Some(base_url.clone()),
+                base_url: Some(base_url),
                 env_key: None,
                 env_key_instructions: None,
                 experimental_bearer_token: Some("relay-token".into()),
