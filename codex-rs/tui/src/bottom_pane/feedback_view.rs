@@ -368,7 +368,7 @@ fn feedback_title_and_placeholder(category: FeedbackCategory) -> (String, String
             "（可选）写几句补充说明，帮助我们进一步了解情况".to_string(),
         ),
         FeedbackCategory::Bug => (
-            "补充说明（Bug）".to_string(),
+            "补充说明（故障）".to_string(),
             "（可选）写几句补充说明，帮助我们进一步定位问题".to_string(),
         ),
         FeedbackCategory::SafetyCheck => (

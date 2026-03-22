@@ -2,7 +2,7 @@
 source: tui_app_server/src/bottom_pane/feedback_view.rs
 expression: rendered
 ---
-▌ 补 充 说 明 （ Bug）
+▌ 补 充 说 明 （ 故 障 ）
 ▌
 ▌ （ 可 选 ） 写 几 句 补 充 说 明 ， 帮 助 我 们 进 一 步 定 位 问 题
 
