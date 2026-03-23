@@ -329,10 +329,7 @@ async fn collect_attempt_diffs(
     }
     attempts.sort_by(cmp_attempt);
     if attempts.is_empty() {
-        anyhow::bail!(
-            "No diff available for task {}; it may still be running.",
-            task_id.0
-        );
+        anyhow::bail!("任务 {} 暂无可用 diff；它可能仍在运行中。", task_id.0);
     }
     Ok(attempts)
 }
@@ -342,15 +339,15 @@ fn select_attempt(
     attempt: Option<usize>,
 ) -> anyhow::Result<&AttemptDiffData> {
     if attempts.is_empty() {
-        anyhow::bail!("No attempts available");
+        anyhow::bail!("没有可用的尝试记录");
     }
     let desired = attempt.unwrap_or(1);
     let idx = desired
         .checked_sub(1)
-        .ok_or_else(|| anyhow!("attempt must be at least 1"))?;
+        .ok_or_else(|| anyhow!("attempt 至少必须为 1"))?;
     if idx >= attempts.len() {
         anyhow::bail!(
-            "Attempt {desired} not available; only {} attempt(s) found",
+            "尝试编号 {desired} 不可用；仅找到 {} 次尝试",
             attempts.len()
         );
     }
@@ -2046,11 +2043,11 @@ fn pretty_lines_from_error(raw: &str) -> Vec<String> {
     let is_no_diff = raw.contains("No output_diff in response.");
     let is_no_msgs = raw.contains("No assistant text messages in response.");
     if is_no_diff {
-        lines.push("No diff available for this task.".to_string());
+        lines.push("此任务没有可用的 diff。".to_string());
     } else if is_no_msgs {
-        lines.push("No assistant messages found for this task.".to_string());
+        lines.push("此任务未找到助手消息。".to_string());
     } else {
-        lines.push("Failed to load task details.".to_string());
+        lines.push("加载任务详情失败。".to_string());
     }
 
     // Try to parse the embedded JSON body: find the first '{' after " body=" and decode.

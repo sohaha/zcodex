@@ -240,7 +240,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         Ok(v) => v,
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("Error parsing -c overrides: {e}");
+            eprintln!("解析 -c 覆盖项失败：{e}");
             std::process::exit(1);
         }
     };
@@ -256,7 +256,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home,
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("查找 codex home 失败：{err}");
             std::process::exit(1);
         }
     };
@@ -277,11 +277,11 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
                 .map(ConfigLoadError::config_error);
             if let Some(config_error) = config_error {
                 eprintln!(
-                    "Error loading config.toml:\n{}",
+                    "加载 config.toml 失败：\n{}",
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("Error loading config.toml: {err}");
+                eprintln!("加载 config.toml 失败：{err}");
             }
             std::process::exit(1);
         }
@@ -314,7 +314,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
             Some(provider)
         } else {
             return Err(anyhow::anyhow!(
-                "No default OSS provider configured. Use --local-provider=provider or set oss_provider to one of: {LMSTUDIO_OSS_PROVIDER_ID}, {OLLAMA_OSS_PROVIDER_ID} in config.toml"
+                "未配置默认 OSS 提供方。请使用 --local-provider=provider，或在 config.toml 中将 oss_provider 设置为 {LMSTUDIO_OSS_PROVIDER_ID}、{OLLAMA_OSS_PROVIDER_ID} 之一"
             ));
         }
     } else {
@@ -402,11 +402,11 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
     })) {
         Ok(Ok(otel)) => otel,
         Ok(Err(e)) => {
-            eprintln!("Could not create otel exporter: {e}");
+            eprintln!("无法创建 otel 导出器：{e}");
             None
         }
         Err(_) => {
-            eprintln!("Could not create otel exporter: panicked during initialization");
+            eprintln!("无法创建 otel 导出器：初始化过程中发生 panic");
             None
         }
     };
@@ -522,7 +522,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         };
         ensure_oss_provider_ready(provider_id, &config)
             .await
-            .map_err(|e| anyhow::anyhow!("OSS setup failed: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("OSS 初始化失败：{e}"))?;
     }
 
     let default_cwd = config.cwd.to_path_buf();
@@ -536,7 +536,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
         && !dangerously_bypass_approvals_and_sandbox
         && get_git_repo_root(&default_cwd).is_none()
     {
-        eprintln!("Not inside a trusted directory and --skip-git-repo-check was not specified.");
+        eprintln!("当前不在受信任目录中，且未指定 --skip-git-repo-check。");
         std::process::exit(1);
     }
 
