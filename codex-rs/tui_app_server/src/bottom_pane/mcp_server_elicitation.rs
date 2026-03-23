@@ -1790,8 +1790,8 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -1812,8 +1812,8 @@ mod tests {
                 response_mode: McpServerElicitationResponseMode::FormContent,
                 fields: vec![McpServerElicitationField {
                     id: "confirmed".to_string(),
-                    label: "Confirm".to_string(),
-                    prompt: "Approve the pending action.".to_string(),
+                    label: "确认".to_string(),
+                    prompt: "批准待处理操作。".to_string(),
                     required: true,
                     input: McpServerElicitationFieldInput::Select {
                         options: vec![
@@ -2090,8 +2090,8 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -2243,8 +2243,8 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -2290,7 +2290,7 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
+                            "title": "确认",
                         }
                     },
                 }),
@@ -2307,7 +2307,7 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
+                            "title": "确认",
                         }
                     },
                 }),
@@ -2324,7 +2324,7 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
+                            "title": "确认",
                         }
                     },
                 }),
@@ -2359,8 +2359,8 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
