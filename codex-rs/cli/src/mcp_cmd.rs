@@ -321,7 +321,7 @@ async fn run_add(config_overrides: &CliConfigOverrides, add_args: AddArgs) -> Re
         .await
         .with_context(|| format!("写入 MCP 服务器到 {} 失败", codex_home.display()))?;
 
-    println!("Added global MCP server '{name}'.");
+    println!("已添加全局 MCP 服务器“{name}”。");
 
     match oauth_login_support(&transport).await {
         McpOAuthLoginSupport::Supported(oauth_config) => {
@@ -379,9 +379,9 @@ async fn run_remove(config_overrides: &CliConfigOverrides, remove_args: RemoveAr
     }
 
     if removed {
-        println!("Removed global MCP server '{name}'.");
+        println!("已移除全局 MCP 服务器“{name}”。");
     } else {
-        println!("No MCP server named '{name}' found.");
+        println!("未找到名为“{name}”的 MCP 服务器。");
     }
 
     Ok(())
@@ -543,7 +543,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
     }
 
     if entries.is_empty() {
-        println!("No MCP servers configured yet. Try `codex mcp add my-tool -- my-command`.");
+        println!("尚未配置 MCP 服务器。可尝试运行 `codex mcp add my-tool -- my-command`。");
         return Ok(());
     }
 

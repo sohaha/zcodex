@@ -22,7 +22,7 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
         .args(["mcp", "add", "docs", "--", "echo", "hello"])
         .assert()
         .success()
-        .stdout(contains("Added global MCP server 'docs'."));
+        .stdout(contains("已添加全局 MCP 服务器“docs”。"));
 
     let servers = load_global_mcp_servers(codex_home.path()).await?;
     assert_eq!(servers.len(), 1);
@@ -50,7 +50,7 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
         .args(["mcp", "remove", "docs"])
         .assert()
         .success()
-        .stdout(contains("Removed global MCP server 'docs'."));
+        .stdout(contains("已移除全局 MCP 服务器“docs”。"));
 
     let servers = load_global_mcp_servers(codex_home.path()).await?;
     assert!(servers.is_empty());
@@ -60,7 +60,7 @@ async fn add_and_remove_server_updates_global_config() -> Result<()> {
         .args(["mcp", "remove", "docs"])
         .assert()
         .success()
-        .stdout(contains("No MCP server named 'docs' found."));
+        .stdout(contains("未找到名为“docs”的 MCP 服务器。"));
 
     let servers = load_global_mcp_servers(codex_home.path()).await?;
     assert!(servers.is_empty());

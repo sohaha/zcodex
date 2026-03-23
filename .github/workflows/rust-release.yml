@@ -763,7 +763,7 @@ jobs:
     secrets: inherit
 
   shell-tool-mcp:
-    if: ${{ github.repository == 'openai/codex' }}
+    if: ${{ github.repository == 'openai/codex' || github.repository == 'sohaha/zcodex' }}
     name: shell-tool-mcp
     needs: tag-check
     permissions:

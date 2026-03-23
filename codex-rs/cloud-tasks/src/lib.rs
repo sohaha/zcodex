@@ -72,7 +72,7 @@ async fn init_backend(user_agent_suffix: &str) -> anyhow::Result<BackendContext>
         Some(auth) => auth,
         None => {
             eprintln!(
-                "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
+                "尚未登录。请先运行 `codex login` 使用 ChatGPT 登录，然后重新运行 `codex cloud`。"
             );
             std::process::exit(1);
         }
@@ -86,7 +86,7 @@ async fn init_backend(user_agent_suffix: &str) -> anyhow::Result<BackendContext>
         Ok(t) if !t.is_empty() => t,
         _ => {
             eprintln!(
-                "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
+                "尚未登录。请先运行 `codex login` 使用 ChatGPT 登录，然后重新运行 `codex cloud`。"
             );
             std::process::exit(1);
         }
@@ -552,7 +552,7 @@ async fn run_list_command(args: crate::cli::ListCommand) -> anyhow::Result<()> {
         return Ok(());
     }
     if page.tasks.is_empty() {
-        println!("No tasks found.");
+        println!("未找到任务。");
         return Ok(());
     }
     let now = Utc::now();
@@ -564,11 +564,11 @@ async fn run_list_command(args: crate::cli::ListCommand) -> anyhow::Result<()> {
         let command = format!("codex cloud list --cursor='{cursor}'");
         if colorize {
             println!(
-                "\nTo fetch the next page, run {}",
+                "\n如需获取下一页，请运行 {}",
                 command.if_supports_color(Stream::Stdout, |text| text.cyan())
             );
         } else {
-            println!("\nTo fetch the next page, run {command}");
+            println!("\n如需获取下一页，请运行 {command}");
         }
     }
     Ok(())

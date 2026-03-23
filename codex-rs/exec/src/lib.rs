@@ -1555,32 +1555,30 @@ fn resolve_prompt(prompt_arg: Option<String>) -> String {
             let force_stdin = matches!(maybe_dash.as_deref(), Some("-"));
 
             if std::io::stdin().is_terminal() && !force_stdin {
-                eprintln!(
-                    "No prompt provided. Either specify one as an argument or pipe the prompt into stdin."
-                );
+                eprintln!("未提供提示词。请通过参数提供，或通过管道将提示词传入 stdin。");
                 std::process::exit(1);
             }
 
             if !force_stdin {
-                eprintln!("Reading prompt from stdin...");
+                eprintln!("正在从 stdin 读取提示词...");
             }
 
             let mut bytes = Vec::new();
             if let Err(e) = std::io::stdin().read_to_end(&mut bytes) {
-                eprintln!("Failed to read prompt from stdin: {e}");
+                eprintln!("从 stdin 读取提示词失败：{e}");
                 std::process::exit(1);
             }
 
             let buffer = match decode_prompt_bytes(&bytes) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("Failed to read prompt from stdin: {e}");
+                    eprintln!("从 stdin 读取提示词失败：{e}");
                     std::process::exit(1);
                 }
             };
 
             if buffer.trim().is_empty() {
-                eprintln!("No prompt provided via stdin.");
+                eprintln!("未通过 stdin 提供提示词。");
                 std::process::exit(1);
             }
             buffer
@@ -1601,7 +1599,7 @@ fn build_review_request(args: &ReviewArgs) -> anyhow::Result<ReviewRequest> {
     } else if let Some(prompt_arg) = args.prompt.clone() {
         let prompt = resolve_prompt(Some(prompt_arg)).trim().to_string();
         if prompt.is_empty() {
-            anyhow::bail!("Review prompt cannot be empty");
+            anyhow::bail!("评审提示词不能为空");
         }
         ReviewTarget::Custom {
             instructions: prompt,

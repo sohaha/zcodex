@@ -25,7 +25,7 @@ fn list_shows_empty_state() -> Result<()> {
     let output = cmd.args(["mcp", "list"]).output()?;
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout)?;
-    assert!(stdout.contains("No MCP servers configured yet."));
+    assert!(stdout.contains("尚未配置 MCP 服务器。"));
 
     Ok(())
 }
