@@ -980,6 +980,8 @@ fn localize_help_output(output: String) -> String {
         .replace("Commands:", "命令：")
         .replace("Arguments:", "参数：")
         .replace("Options:", "选项：")
+        .replace("[aliases:", "[别名：")
+        .replace("[default:", "[默认：")
         .replace(
             "Print this message or the help of the given subcommand(s)",
             "显示此消息或指定子命令的帮助",
