@@ -597,7 +597,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
                 lines.push(Line::from(""));
             }
             lines.extend([
-                Line::from(vec!["Server：".into(), server_name.clone().bold()]),
+                Line::from(vec!["服务器：".into(), server_name.clone().bold()]),
                 Line::from(""),
                 Line::from(message.clone()),
             ]);
