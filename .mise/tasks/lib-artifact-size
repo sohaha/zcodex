@@ -20,15 +20,24 @@ format_artifact_size() {
   printf '%s bytes\n' "$bytes"
 }
 
+format_artifact_size_megabytes() {
+  local bytes="$1"
+
+  awk -v bytes="$bytes" 'BEGIN { printf "%.2fM\n", bytes / 1024 / 1024 }'
+}
+
 print_artifact_size() {
   local task_name="$1"
   local path="$2"
   local bytes
   local size
+  local size_mb
 
   bytes="$(artifact_size_bytes "$path")" || return 1
   size="$(format_artifact_size "$bytes")"
+  size_mb="$(format_artifact_size_megabytes "$bytes")"
 
   echo "[$task_name] 构建完成: $path" >&2
-  echo "[$task_name] 文件大小: $size ($bytes bytes)" >&2
+  echo "[$task_name] 二进制路径: $path" >&2
+  echo "[$task_name] 二进制体积: $size_mb ($size, $bytes bytes)" >&2
 }
