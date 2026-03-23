@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -33,6 +34,7 @@ use codex_tui::update_action::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::path::PathBuf;
 use supports_color::Stream;
 
@@ -942,10 +944,59 @@ fn parse_multitool_cli_from_env() -> MultitoolCli {
         injected_args.push(raw_args[0].clone());
         injected_args.push(rtk_alias_name().into());
         injected_args.extend(raw_args.into_iter().skip(1));
-        MultitoolCli::parse_from(injected_args)
+        parse_multitool_cli(injected_args)
     } else {
-        MultitoolCli::parse_from(raw_args)
+        parse_multitool_cli(raw_args)
     }
+}
+
+fn parse_multitool_cli<I, T>(args: I) -> MultitoolCli
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let command = localized_multitool_command();
+    match command.try_get_matches_from(args) {
+        Ok(matches) => MultitoolCli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit()),
+        Err(err) => {
+            let rendered = localize_help_output(err.to_string());
+            let _ = std::io::stderr().write_all(rendered.as_bytes());
+            std::process::exit(err.exit_code());
+        }
+    }
+}
+
+fn localized_multitool_command() -> clap::Command {
+    localize_clap_command(MultitoolCli::command())
+}
+
+fn localize_clap_command(cmd: clap::Command) -> clap::Command {
+    cmd
+}
+
+fn localize_help_output(output: String) -> String {
+    output
+        .replace("Usage:", "用法：")
+        .replace("Commands:", "命令：")
+        .replace("Arguments:", "参数：")
+        .replace("Options:", "选项：")
+        .replace(
+            "Print this message or the help of the given subcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace("Print help for the subcommand(s)", "显示指定子命令的帮助")
+        .replace(
+            "Print help (see a summary with '-h')",
+            "显示帮助（使用 '-h' 查看摘要）",
+        )
+        .replace(
+            "Print help (see more with '--help')",
+            "显示帮助（使用 '--help' 查看更多）",
+        )
+        .replace("Print help", "显示帮助")
+        .replace("Print version", "显示版本")
+        .replace("Possible values:", "可选值：")
+        .replace("[possible values:", "[可选值：")
 }
 
 async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
@@ -1290,7 +1341,7 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
 }
 
 fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
+    let mut app = localized_multitool_command();
     let name = "codex";
     generate(cmd.shell, &mut app, name, &mut std::io::stdout());
 }
