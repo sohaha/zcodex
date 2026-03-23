@@ -197,12 +197,13 @@ struct DebugAppServerCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugAppServerSubcommand {
-    // Send message to app server V2.
+    /// 向 app server V2 发送消息。
     SendMessageV2(DebugAppServerSendMessageV2Command),
 }
 
 #[derive(Debug, Parser)]
 struct DebugAppServerSendMessageV2Command {
+    /// 要发送的用户消息。
     #[arg(value_name = "USER_MESSAGE", required = true)]
     user_message: String,
 }
