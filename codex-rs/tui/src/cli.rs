@@ -103,8 +103,8 @@ pub struct Cli {
 
     /// 禁用备用屏模式。
     ///
-    /// 以行内模式运行 TUI，并保留终端滚动历史。这对像 Zellij 这类严格遵循 xterm 规范、
-    /// 会在备用屏缓冲区中禁用滚动回溯的终端复用器很有用。
+    /// 以行内模式运行 TUI，并保留终端滚动历史。这对 Zellij 一类严格遵循 xterm 规范、
+    /// 会在备用屏缓冲区中禁用滚动回溯的终端复用器很有帮助。
     #[arg(long = "no-alt-screen", default_value_t = false)]
     pub no_alt_screen: bool,
 

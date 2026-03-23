@@ -161,7 +161,7 @@ enum Subcommand {
 
 #[derive(Debug, Parser)]
 struct CompletionCommand {
-    /// 生成补全脚本的目标终端类型
+    /// 要生成补全脚本的 shell 类型。
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
 }
@@ -181,7 +181,7 @@ struct DebugCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugSubcommand {
-    /// 工具：用于调试应用服务器。
+    /// 用于调试应用服务器的工具。
     AppServer(DebugAppServerCommand),
 
     /// 内部：重置本地记忆状态以重新开始。
