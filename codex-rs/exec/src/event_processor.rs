@@ -30,7 +30,7 @@ pub(crate) fn handle_last_message(last_agent_message: Option<&str>, output_file:
     write_last_message_file(message, Some(output_file));
     if last_agent_message.is_none() {
         eprintln!(
-            "Warning: no last agent message; wrote empty content to {}",
+            "警告：没有最后一条 agent 消息；已向 {} 写入空内容",
             output_file.display()
         );
     }
@@ -40,6 +40,6 @@ fn write_last_message_file(contents: &str, last_message_path: Option<&Path>) {
     if let Some(path) = last_message_path
         && let Err(e) = std::fs::write(path, contents)
     {
-        eprintln!("Failed to write last message file {path:?}: {e}");
+        eprintln!("写入最后一条消息文件失败 {path:?}: {e}");
     }
 }

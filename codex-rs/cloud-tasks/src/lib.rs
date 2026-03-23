@@ -966,7 +966,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     ));
                                     app.tasks = tasks;
                                     if app.selected >= app.tasks.len() { app.selected = app.tasks.len().saturating_sub(1); }
-                                    app.status = "Loaded tasks".to_string();
+                                    app.status = "已加载任务".to_string();
                                 }
                                 Err(e) => {
                                     append_error_log(format!("refresh load_tasks failed: {e}"));
@@ -980,10 +980,10 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                             match result {
                                 Ok(created) => {
                                     append_error_log(format!("new-task: created id={}", created.id.0));
-                                    app.status = format!("Submitted as {}", created.id.0);
+                                    app.status = format!("已提交为 {}", created.id.0);
                                     app.new_task = None;
                                     // Refresh tasks in background for current filter
-                                    app.status = format!("Submitted as {} — refreshing…", created.id.0);
+                                    app.status = format!("已提交为 {} —— 正在刷新…", created.id.0);
                                     app.refresh_inflight = true;
                                     app.list_generation = app.list_generation.saturating_add(1);
                                     needs_redraw = true;
@@ -1559,7 +1559,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                 conflict_paths: Vec::new(),
                                                 diff_override: m.diff_override,
                                             });
-                                            app.status = format!("Preflighting '{title}'...");
+                                            app.status = format!("正在预检“{title}”...");
                                         } else {
                                             app.apply_modal = Some(m);
                                         }
@@ -1569,7 +1569,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 KeyCode::Esc
                                 | KeyCode::Char('n')
                                 | KeyCode::Char('q')
-                                | KeyCode::Char('Q') => { app.apply_modal = None; app.status = "Apply canceled".to_string(); needs_redraw = true; }
+                                | KeyCode::Char('Q') => { app.apply_modal = None; app.status = "已取消应用".to_string(); needs_redraw = true; }
                                 _ => {}
                             }
                         } else if app.diff_overlay.is_some() {
@@ -1588,7 +1588,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                             match key.code {
                                 KeyCode::Char('a') => {
                                     if app.apply_inflight || app.apply_preflight_inflight {
-                                        app.status = "Finish the current apply/preflight before starting another.".to_string();
+                                        app.status = "请先完成当前应用/预检，再开始新的操作。".to_string();
                                         needs_redraw = true;
                                         continue;
                                     }
@@ -1616,7 +1616,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                     conflict_paths: Vec::new(),
                                                     diff_override,
                                                 });
-                                                app.status = format!("Preflighting '{title}'...");
+                                                app.status = format!("正在预检“{title}”...");
                                             }
                                         } else {
                                             app.status = "没有可应用的 diff。".to_string();
@@ -1961,7 +1961,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                         conflict_paths: Vec::new(),
                                                         diff_override,
                                                     });
-                                                    app.status = format!("Preflighting '{title}'...");
+                                                    app.status = format!("正在预检“{title}”...");
                                                 }
                                             }
                                             Ok(None) | Err(_) => {
@@ -2077,11 +2077,11 @@ fn pretty_lines_from_error(raw: &str) -> Vec<String> {
                         } else {
                             format!("{code}: {msg}")
                         };
-                        lines.push(format!("Assistant error: {summary}"));
+                        lines.push(format!("助手错误：{summary}"));
                     }
                 }
                 if let Some(status) = t.get("turn_status").and_then(|s| s.as_str()) {
-                    lines.push(format!("Status: {status}"));
+                    lines.push(format!("状态：{status}"));
                 }
                 if let Some(text) = t
                     .get("latest_event")
@@ -2089,7 +2089,7 @@ fn pretty_lines_from_error(raw: &str) -> Vec<String> {
                     .and_then(|s| s.as_str())
                     && !text.trim().is_empty()
                 {
-                    lines.push(format!("Latest event: {}", text.trim()));
+                    lines.push(format!("最新事件：{}", text.trim()));
                 }
             }
         }

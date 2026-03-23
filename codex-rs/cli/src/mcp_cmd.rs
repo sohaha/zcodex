@@ -574,8 +574,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                 let auth_status = auth_statuses
                     .get(name.as_str())
                     .map(|entry| entry.auth_status)
-                    .unwrap_or(McpAuthStatus::Unsupported)
-                    .to_string();
+                    .unwrap_or(McpAuthStatus::Unsupported);
                 stdio_rows.push([
                     name.clone(),
                     command.clone(),
@@ -583,7 +582,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                     env_display,
                     cwd_display,
                     status,
-                    auth_status,
+                    format_mcp_auth_status(auth_status).to_string(),
                 ]);
             }
             McpServerTransportConfig::StreamableHttp {
@@ -595,8 +594,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                 let auth_status = auth_statuses
                     .get(name.as_str())
                     .map(|entry| entry.auth_status)
-                    .unwrap_or(McpAuthStatus::Unsupported)
-                    .to_string();
+                    .unwrap_or(McpAuthStatus::Unsupported);
                 let bearer_token_display =
                     bearer_token_env_var.as_deref().unwrap_or("-").to_string();
                 http_rows.push([
@@ -604,7 +602,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                     url.clone(),
                     bearer_token_display,
                     status,
-                    auth_status,
+                    format_mcp_auth_status(auth_status).to_string(),
                 ]);
             }
         }
@@ -612,13 +610,13 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
 
     if !stdio_rows.is_empty() {
         let mut widths = [
-            "Name".len(),
-            "Command".len(),
-            "Args".len(),
-            "Env".len(),
-            "Cwd".len(),
-            "Status".len(),
-            "Auth".len(),
+            "名称".len(),
+            "命令".len(),
+            "参数".len(),
+            "环境变量".len(),
+            "目录".len(),
+            "状态".len(),
+            "认证".len(),
         ];
         for row in &stdio_rows {
             for (i, cell) in row.iter().enumerate() {
@@ -628,13 +626,13 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
 
         println!(
             "{name:<name_w$}  {command:<cmd_w$}  {args:<args_w$}  {env:<env_w$}  {cwd:<cwd_w$}  {status:<status_w$}  {auth:<auth_w$}",
-            name = "Name",
-            command = "Command",
-            args = "Args",
-            env = "Env",
-            cwd = "Cwd",
-            status = "Status",
-            auth = "Auth",
+            name = "名称",
+            command = "命令",
+            args = "参数",
+            env = "环境变量",
+            cwd = "目录",
+            status = "状态",
+            auth = "认证",
             name_w = widths[0],
             cmd_w = widths[1],
             args_w = widths[2],
@@ -671,11 +669,11 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
 
     if !http_rows.is_empty() {
         let mut widths = [
-            "Name".len(),
-            "Url".len(),
-            "Bearer Token Env Var".len(),
-            "Status".len(),
-            "Auth".len(),
+            "名称".len(),
+            "地址".len(),
+            "Bearer Token 环境变量".len(),
+            "状态".len(),
+            "认证".len(),
         ];
         for row in &http_rows {
             for (i, cell) in row.iter().enumerate() {
@@ -685,11 +683,11 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
 
         println!(
             "{name:<name_w$}  {url:<url_w$}  {token:<token_w$}  {status:<status_w$}  {auth:<auth_w$}",
-            name = "Name",
-            url = "Url",
-            token = "Bearer Token Env Var",
-            status = "Status",
-            auth = "Auth",
+            name = "名称",
+            url = "地址",
+            token = "Bearer Token 环境变量",
+            status = "状态",
+            auth = "认证",
             name_w = widths[0],
             url_w = widths[1],
             token_w = widths[2],
@@ -780,15 +778,22 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
 
     if !server.enabled {
         if let Some(reason) = server.disabled_reason.as_ref() {
-            println!("{name} (disabled: {reason})", name = get_args.name);
+            println!("{name}（已禁用：{reason}）", name = get_args.name);
         } else {
-            println!("{name} (disabled)", name = get_args.name);
+            println!("{name}（已禁用）", name = get_args.name);
         }
         return Ok(());
     }
 
     println!("{}", get_args.name);
-    println!("  enabled: {}", server.enabled);
+    println!(
+        "  启用状态: {}",
+        if server.enabled {
+            "true（已启用）"
+        } else {
+            "false（已禁用）"
+        }
+    );
     let format_tool_list = |tools: &Option<Vec<String>>| -> String {
         match tools {
             Some(list) if list.is_empty() => "[]".to_string(),
@@ -812,22 +817,22 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
             env_vars,
             cwd,
         } => {
-            println!("  transport: stdio");
-            println!("  command: {command}");
+            println!("  传输方式: stdio");
+            println!("  命令: {command}");
             let args_display = if args.is_empty() {
                 "-".to_string()
             } else {
                 args.join(" ")
             };
-            println!("  args: {args_display}");
+            println!("  参数: {args_display}");
             let cwd_display = cwd
                 .as_ref()
                 .map(|path| path.display().to_string())
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "-".to_string());
-            println!("  cwd: {cwd_display}");
+            println!("  目录: {cwd_display}");
             let env_display = format_env_display(env.as_ref(), env_vars);
-            println!("  env: {env_display}");
+            println!("  环境变量: {env_display}");
         }
         McpServerTransportConfig::StreamableHttp {
             url,
@@ -835,10 +840,10 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
             http_headers,
             env_http_headers,
         } => {
-            println!("  transport: streamable_http");
-            println!("  url: {url}");
+            println!("  传输方式: streamable_http");
+            println!("  地址: {url}");
             let bearer_token_display = bearer_token_env_var.as_deref().unwrap_or("-");
-            println!("  bearer_token_env_var: {bearer_token_display}");
+            println!("  Bearer Token 环境变量: {bearer_token_display}");
             let headers_display = match http_headers {
                 Some(map) if !map.is_empty() => {
                     let mut pairs: Vec<_> = map.iter().collect();
@@ -851,7 +856,7 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
                 }
                 _ => "-".to_string(),
             };
-            println!("  http_headers: {headers_display}");
+            println!("  HTTP 请求头: {headers_display}");
             let env_headers_display = match env_http_headers {
                 Some(map) if !map.is_empty() => {
                     let mut pairs: Vec<_> = map.iter().collect();
@@ -864,16 +869,16 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
                 }
                 _ => "-".to_string(),
             };
-            println!("  env_http_headers: {env_headers_display}");
+            println!("  环境变量请求头: {env_headers_display}");
         }
     }
     if let Some(timeout) = server.startup_timeout_sec {
-        println!("  startup_timeout_sec: {}", timeout.as_secs_f64());
+        println!("  启动超时（秒）: {}", timeout.as_secs_f64());
     }
     if let Some(timeout) = server.tool_timeout_sec {
-        println!("  tool_timeout_sec: {}", timeout.as_secs_f64());
+        println!("  工具超时（秒）: {}", timeout.as_secs_f64());
     }
-    println!("  remove: codex mcp remove {}", get_args.name);
+    println!("  删除命令: codex mcp remove {}", get_args.name);
 
     Ok(())
 }
@@ -908,10 +913,19 @@ fn validate_server_name(name: &str) -> Result<()> {
 
 fn format_mcp_status(config: &McpServerConfig) -> String {
     if config.enabled {
-        "enabled".to_string()
+        "已启用".to_string()
     } else if let Some(reason) = config.disabled_reason.as_ref() {
-        format!("disabled: {reason}")
+        format!("已禁用：{reason}")
     } else {
-        "disabled".to_string()
+        "已禁用".to_string()
+    }
+}
+
+fn format_mcp_auth_status(status: McpAuthStatus) -> &'static str {
+    match status {
+        McpAuthStatus::Unsupported => "不支持",
+        McpAuthStatus::NotLoggedIn => "未登录",
+        McpAuthStatus::BearerToken => "Bearer Token",
+        McpAuthStatus::OAuth => "OAuth",
     }
 }

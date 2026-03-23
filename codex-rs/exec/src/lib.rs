@@ -373,7 +373,7 @@ pub async fn run_main(cli: Cli, arg0_paths: Arg0DispatchPaths) -> anyhow::Result
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
-                "Error loading rules:\n{}",
+                "加载规则失败：\n{}",
                 format_exec_policy_error_with_source(&err)
             );
             std::process::exit(1);
@@ -1455,10 +1455,7 @@ fn load_output_schema(path: Option<PathBuf>) -> Option<Value> {
     let schema_str = match std::fs::read_to_string(&path) {
         Ok(contents) => contents,
         Err(err) => {
-            eprintln!(
-                "Failed to read output schema file {}: {err}",
-                path.display()
-            );
+            eprintln!("读取输出 schema 文件失败 {}: {err}", path.display());
             std::process::exit(1);
         }
     };
@@ -1466,10 +1463,7 @@ fn load_output_schema(path: Option<PathBuf>) -> Option<Value> {
     match serde_json::from_str::<Value>(&schema_str) {
         Ok(value) => Some(value),
         Err(err) => {
-            eprintln!(
-                "Output schema file {} is not valid JSON: {err}",
-                path.display()
-            );
+            eprintln!("输出 schema 文件 {} 不是有效的 JSON：{err}", path.display());
             std::process::exit(1);
         }
     }

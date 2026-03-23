@@ -67,16 +67,16 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     let list_output = list_cmd.args(["mcp", "list"]).output()?;
     assert!(list_output.status.success());
     let stdout = String::from_utf8(list_output.stdout)?;
-    assert!(stdout.contains("Name"));
+    assert!(stdout.contains("名称"));
     assert!(stdout.contains("docs"));
     assert!(stdout.contains("docs-server"));
     assert!(stdout.contains("TOKEN=*****"));
     assert!(stdout.contains("APP_TOKEN=*****"));
     assert!(stdout.contains("WORKSPACE_ID=*****"));
-    assert!(stdout.contains("Status"));
-    assert!(stdout.contains("Auth"));
-    assert!(stdout.contains("enabled"));
-    assert!(stdout.contains("Unsupported"));
+    assert!(stdout.contains("状态"));
+    assert!(stdout.contains("认证"));
+    assert!(stdout.contains("已启用"));
+    assert!(stdout.contains("不支持"));
 
     let mut list_json_cmd = codex_command(codex_home.path())?;
     let json_output = list_json_cmd.args(["mcp", "list", "--json"]).output()?;
@@ -119,14 +119,14 @@ async fn list_and_get_render_expected_output() -> Result<()> {
     assert!(get_output.status.success());
     let stdout = String::from_utf8(get_output.stdout)?;
     assert!(stdout.contains("docs"));
-    assert!(stdout.contains("transport: stdio"));
-    assert!(stdout.contains("command: docs-server"));
-    assert!(stdout.contains("args: --port 4000"));
-    assert!(stdout.contains("env: TOKEN=*****"));
+    assert!(stdout.contains("传输方式: stdio"));
+    assert!(stdout.contains("命令: docs-server"));
+    assert!(stdout.contains("参数: --port 4000"));
+    assert!(stdout.contains("环境变量: TOKEN=*****"));
     assert!(stdout.contains("APP_TOKEN=*****"));
     assert!(stdout.contains("WORKSPACE_ID=*****"));
-    assert!(stdout.contains("enabled: true"));
-    assert!(stdout.contains("remove: codex mcp remove docs"));
+    assert!(stdout.contains("启用状态: true（已启用）"));
+    assert!(stdout.contains("删除命令: codex mcp remove docs"));
 
     let mut get_json_cmd = codex_command(codex_home.path())?;
     get_json_cmd
@@ -160,7 +160,7 @@ async fn get_disabled_server_shows_single_line() -> Result<()> {
     let get_output = get_cmd.args(["mcp", "get", "docs"]).output()?;
     assert!(get_output.status.success());
     let stdout = String::from_utf8(get_output.stdout)?;
-    assert_eq!(stdout.trim_end(), "docs (disabled)");
+    assert_eq!(stdout.trim_end(), "docs（已禁用）");
 
     Ok(())
 }
