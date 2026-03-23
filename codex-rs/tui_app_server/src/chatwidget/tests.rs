@@ -8630,7 +8630,7 @@ async fn windows_auto_mode_prompt_requests_enabling_sandbox_feature() {
 
     let popup = render_bottom_popup(&chat, 120);
     assert!(
-        popup.contains("requires Administrator permissions"),
+        popup.contains("管理员权限"),
         "expected auto mode prompt to mention Administrator permissions, popup: {popup}"
     );
     assert!(
@@ -8651,7 +8651,7 @@ async fn startup_prompts_for_windows_sandbox_when_agent_requested() {
 
     let popup = render_bottom_popup(&chat, 120);
     assert!(
-        popup.contains("requires Administrator permissions"),
+        popup.contains("管理员权限"),
         "expected startup prompt to mention Administrator permissions: {popup}"
     );
     assert!(

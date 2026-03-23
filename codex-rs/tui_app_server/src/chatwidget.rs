@@ -8553,9 +8553,9 @@ impl ChatWidget {
         };
         let mut header_children: Vec<Box<dyn Renderable>> = Vec::new();
         let describe_policy = |policy: &SandboxPolicy| match policy {
-            SandboxPolicy::WorkspaceWrite { .. } => "Agent 模式",
+            SandboxPolicy::WorkspaceWrite { .. } => "智能体模式",
             SandboxPolicy::ReadOnly { .. } => "只读模式",
-            _ => "Agent 模式",
+            _ => "智能体模式",
         };
         let mode_label = preset
             .as_ref()
@@ -8668,7 +8668,7 @@ impl ChatWidget {
             let mut header = ColumnRenderable::new();
             header.push(*Box::new(
                 Paragraph::new(vec![
-                    line!["Windows 上的 Agent 模式使用实验性沙箱来限制网络和文件系统访问。".bold()],
+                    line!["Windows 上的智能体模式使用实验性沙箱来限制网络和文件系统访问。".bold()],
                     line!["了解更多： https://developers.openai.com/codex/windows"],
                 ])
                 .wrap(Wrap { trim: false }),
