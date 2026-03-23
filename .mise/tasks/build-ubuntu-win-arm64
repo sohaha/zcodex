@@ -21,4 +21,5 @@ output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex
 
 "$script_dir/rs-ext" cargo zigbuild -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
 
-print_artifact_size "build-ubuntu-win-arm64" "$output_bin"
+dist_bin="$(move_artifact_to_dist "$output_bin" "$target" "$repo_root")"
+print_artifact_size "build-ubuntu-win-arm64" "$dist_bin"

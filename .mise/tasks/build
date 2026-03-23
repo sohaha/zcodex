@@ -247,4 +247,6 @@ fi
 
 codex_bin="$(resolve_codex_bin "$@")"
 run_build "$codex_bin" "$@"
-print_artifact_size "build" "$codex_bin"
+if [ "${CODEX_SKIP_ARTIFACT_SIZE_PRINT:-0}" != "1" ]; then
+  print_artifact_size "build" "$codex_bin"
+fi

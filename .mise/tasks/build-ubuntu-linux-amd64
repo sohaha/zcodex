@@ -2,6 +2,9 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+codex_rs_dir="$repo_root/codex-rs"
+source "$script_dir/lib-artifact-size"
 target="x86_64-unknown-linux-gnu"
 
 ensure_default_release_args() {
@@ -23,4 +26,34 @@ if [ "$(uname -s)" != "Linux" ]; then
 fi
 
 mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
-"$script_dir/build" --target "$target" "${build_args[@]}"
+profile_dir="release"
+for arg in "${build_args[@]}"; do
+  case "$arg" in
+    --profile)
+      next_is_profile=1
+      ;;
+    --profile=*)
+      profile_dir="${arg#--profile=}"
+      next_is_profile=0
+      ;;
+    --release)
+      profile_dir="release"
+      next_is_profile=0
+      ;;
+    *)
+      if [ "${next_is_profile:-0}" -eq 1 ]; then
+        profile_dir="$arg"
+        next_is_profile=0
+      fi
+      ;;
+  esac
+done
+
+if [ "$profile_dir" = "dev" ]; then
+  profile_dir="debug"
+fi
+
+output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
+CODEX_SKIP_ARTIFACT_SIZE_PRINT=1 "$script_dir/build" --target "$target" "${build_args[@]}"
+dist_bin="$(move_artifact_to_dist "$output_bin" "$target" "$repo_root")"
+print_artifact_size "build-ubuntu-linux-amd64" "$dist_bin"

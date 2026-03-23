@@ -473,4 +473,5 @@ output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex
 "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
 ensure_data_const_read_only_flag "$output_bin"
 
-print_artifact_size "build-ubuntu-macos-arm64" "$output_bin"
+dist_bin="$(move_artifact_to_dist "$output_bin" "$target" "$repo_root")"
+print_artifact_size "build-ubuntu-macos-arm64" "$dist_bin"
