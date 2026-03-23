@@ -3,17 +3,12 @@
 # ```
 # git tag -a v0.1.0 -m "Release 0.1.0"
 # git push origin v0.1.0
-#
-# Back-compat:
-# git tag -a rust-v0.1.0 -m "Release 0.1.0"
-# git push origin rust-v0.1.0
 # ```
 
 name: rust-release
 on:
   push:
     tags:
-      - "rust-v*.*.*"
       - "v*.*.*"
   workflow_dispatch:
     inputs:
@@ -56,17 +51,15 @@ jobs:
             [[ "${GITHUB_REF_TYPE}" == "tag" ]] \
               || { echo "❌  Not a tag push"; exit 1; }
             release_tag="${GITHUB_REF_NAME}"
-            release_version="${release_tag#rust-v}"
-            release_version="${release_version#v}"
+            release_version="${release_tag#v}"
           fi
 
-          [[ "${release_tag}" =~ ^(rust-)?v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
-            || { echo "❌  Tag '${release_tag}' doesn't match expected format (vX.Y.Z or rust-vX.Y.Z)"; exit 1; }
+          [[ "${release_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
+            || { echo "❌  Tag '${release_tag}' doesn't match expected format (vX.Y.Z)"; exit 1; }
           [[ "${release_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
             || { echo "❌  Version '${release_version}' doesn't match expected format"; exit 1; }
 
-          tag_version="${release_tag#rust-v}"
-          tag_version="${tag_version#v}"
+          tag_version="${release_tag#v}"
           [[ "${tag_version}" == "${release_version}" ]] \
             || { echo "❌  release-tag '${release_tag}' does not match release-version '${release_version}'"; exit 1; }
 
@@ -829,9 +822,7 @@ jobs:
           notes_path="${RUNNER_TEMP}/release-notes.md"
 
           match=""
-          if [[ "${tag}" == rust-v* ]]; then
-            match="rust-v[0-9]*"
-          elif [[ "${tag}" == v* ]]; then
+          if [[ "${tag}" == v* ]]; then
             match="v[0-9]*"
           else
             echo "❌  Unexpected tag '${tag}'"

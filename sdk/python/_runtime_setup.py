@@ -121,7 +121,7 @@ def _installed_runtime_version(python_executable: str | Path) -> str | None:
 
 
 def _release_tag_candidates(version: str) -> tuple[str, ...]:
-    return (f"v{version}", f"rust-v{version}")
+    return (f"v{version}",)
 
 
 def _release_metadata(version: str) -> dict[str, object]:

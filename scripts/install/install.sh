@@ -17,9 +17,6 @@ normalize_version() {
     "" | latest)
       printf 'latest\n'
       ;;
-    rust-v*)
-      printf '%s\n' "${1#rust-v}"
-      ;;
     v*)
       printf '%s\n' "${1#v}"
       ;;

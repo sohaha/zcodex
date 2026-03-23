@@ -24,10 +24,6 @@ function Normalize-Version {
         return "latest"
     }
 
-    if ($RawVersion.StartsWith("rust-v")) {
-        return $RawVersion.Substring(6)
-    }
-
     if ($RawVersion.StartsWith("v")) {
         return $RawVersion.Substring(1)
     }
