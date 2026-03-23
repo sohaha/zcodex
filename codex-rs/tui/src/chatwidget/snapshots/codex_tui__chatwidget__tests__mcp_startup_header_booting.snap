@@ -3,7 +3,7 @@ source: tui/src/chatwidget/tests.rs
 expression: terminal.backend()
 ---
 "                                                                                "
-"• 正在启动 MCP 服务器：alpha (0s • esc 可中断)                                  " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (16, " "), (18, " "), (20, " "), (22, " "), (40, " "), (42, " "), (44, " ")]
+"• 正在启动 MCP 服务器：alpha (0秒 • esc 可中断)                                 " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (9, " "), (16, " "), (18, " "), (20, " "), (22, " "), (32, " "), (41, " "), (43, " "), (45, " ")]
 "                                                                                "
 "                                                                                "
 "› 让 Codex 处理任何事情                                                         " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]

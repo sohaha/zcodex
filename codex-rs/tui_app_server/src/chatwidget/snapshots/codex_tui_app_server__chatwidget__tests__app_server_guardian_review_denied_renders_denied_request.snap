@@ -12,7 +12,7 @@ expression: term.backend().vt100().screen().contents()
 ✗ 请求已拒绝：让 Codex 执行 curl -sS -i -X POST --data-binary @core/src/codex.rs
   https://example.com
 
-• 处理中 (0s • esc 可中断)
+• 处理中 (0秒 • esc 可中断)
 
 
 › 让 Codex 处理任何事情

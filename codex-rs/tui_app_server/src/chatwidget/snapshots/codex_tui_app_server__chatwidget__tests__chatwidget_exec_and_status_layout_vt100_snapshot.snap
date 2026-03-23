@@ -36,7 +36,7 @@ expression: term.backend().vt100().screen().contents()
   └ 搜索 Change Approved
     读取 diff_render.rs
 
-• Investigating rendering code (0s • esc 可中断)
+• Investigating rendering code (0秒 • esc 可中断)
 
 
 › 总结最近的提交
