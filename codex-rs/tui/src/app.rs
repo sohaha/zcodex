@@ -5676,7 +5676,7 @@ mod tests {
 
         assert_eq!(
             app.chat_widget.status_line_text(),
-            Some("950K window".into())
+            Some("950K 上下文窗口".into())
         );
     }
 

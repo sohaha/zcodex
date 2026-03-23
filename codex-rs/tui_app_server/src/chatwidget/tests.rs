@@ -1740,7 +1740,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
 
     assert_eq!(
         chat.status_line_value_for_item(&crate::bottom_pane::StatusLineItem::ContextWindowSize),
-        Some("950K window".to_string())
+        Some("950K 上下文窗口".to_string())
     );
     assert_eq!(chat.bottom_pane.context_window_percent(), Some(100));
 
@@ -11421,11 +11421,11 @@ async fn status_line_fast_mode_renders_on_and_off() {
     chat.config.tui_status_line = Some(vec!["fast-mode".to_string()]);
 
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("快速：关".to_string()));
+    assert_eq!(status_line_text(&chat), Some("极速：关".to_string()));
 
     chat.set_service_tier(Some(ServiceTier::Fast));
     chat.refresh_status_line();
-    assert_eq!(status_line_text(&chat), Some("快速：开".to_string()));
+    assert_eq!(status_line_text(&chat), Some("极速：开".to_string()));
 }
 
 #[tokio::test]
@@ -11464,7 +11464,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
 
     assert_eq!(
         status_line_text(&chat),
-        Some("gpt-5.4 xhigh fast · 100% left · /tmp/project".to_string())
+        Some("gpt-5.4 xhigh 极速 · 100% 剩余 · /tmp/project".to_string())
     );
 
     chat.set_model("gpt-5.3-codex");
@@ -11472,7 +11472,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
 
     assert_eq!(
         status_line_text(&chat),
-        Some("gpt-5.3-codex xhigh · 100% left · /tmp/project".to_string())
+        Some("gpt-5.3-codex xhigh · 100% 剩余 · /tmp/project".to_string())
     );
 }
 

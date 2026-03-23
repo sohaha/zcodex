@@ -445,7 +445,7 @@ impl ChatWidget {
                 let fast_label = if self
                     .should_show_fast_status(self.current_model(), self.config.service_tier)
                 {
-                    " fast"
+                    " 极速"
                 } else {
                     ""
                 };
@@ -465,15 +465,15 @@ impl ChatWidget {
                 if total <= 0 {
                     None
                 } else {
-                    Some(format!("{} used", format_tokens_compact(total)))
+                    Some(format!("{} 已用", format_tokens_compact(total)))
                 }
             }
             StatusLineItem::ContextRemaining => self
                 .status_line_context_remaining_percent()
-                .map(|remaining| format!("{remaining}% left")),
+                .map(|remaining| format!("{remaining}% 剩余")),
             StatusLineItem::ContextUsed => self
                 .status_line_context_used_percent()
-                .map(|used| format!("{used}% used")),
+                .map(|used| format!("{used}% 已用")),
             StatusLineItem::FiveHourLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
@@ -493,27 +493,27 @@ impl ChatWidget {
                 let label = window
                     .and_then(|window| window.window_minutes)
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
+                    .unwrap_or_else(|| "每周".to_string());
                 self.status_line_limit_display(window, &label)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
                 .status_line_context_window_size()
-                .map(|cws| format!("{} window", format_tokens_compact(cws))),
+                .map(|cws| format!("{} 上下文窗口", format_tokens_compact(cws))),
             StatusLineItem::TotalInputTokens => Some(format!(
-                "{} in",
+                "{} 输入",
                 format_tokens_compact(self.status_line_total_usage().input_tokens)
             )),
             StatusLineItem::TotalOutputTokens => Some(format!(
-                "{} out",
+                "{} 输出",
                 format_tokens_compact(self.status_line_total_usage().output_tokens)
             )),
             StatusLineItem::SessionId => self.thread_id.map(|id| id.to_string()),
             StatusLineItem::FastMode => Some(
                 if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
-                    "Fast 开启".to_string()
+                    "极速：开".to_string()
                 } else {
-                    "Fast 关闭".to_string()
+                    "极速：关".to_string()
                 },
             ),
         }

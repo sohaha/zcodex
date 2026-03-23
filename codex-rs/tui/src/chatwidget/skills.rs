@@ -133,7 +133,7 @@ impl ChatWidget {
         }
         let hint = None;
         self.add_info_message(
-            format!("已启用 {enabled_count} 个 Skills，已禁用 {disabled_count} 个 Skills"),
+            format!("已启用 {enabled_count} 个技能，已禁用 {disabled_count} 个技能"),
             hint,
         );
     }

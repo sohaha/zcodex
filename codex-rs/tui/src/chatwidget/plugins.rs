@@ -302,8 +302,7 @@ impl ChatWidget {
                 let display_name = plugin_display_name(plugin);
                 let status_label = plugin_status_label(plugin);
                 let description = plugin_brief_description(plugin, &marketplace_label);
-                let selected_description =
-                    format!("{status_label}. Press Enter to view plugin details.");
+                let selected_description = format!("{status_label}。按 Enter 查看插件详情。");
                 let search_value = format!(
                     "{display_name} {} {} {}",
                     plugin.id, plugin.name, marketplace_label

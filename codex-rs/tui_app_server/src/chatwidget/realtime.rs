@@ -199,7 +199,7 @@ impl ChatWidget {
     }
 
     fn realtime_footer_hint_items() -> Vec<(String, String)> {
-        vec![("/realtime".to_string(), "stop live voice".to_string())]
+        vec![("/realtime".to_string(), "停止实时语音".to_string())]
     }
 
     pub(super) fn start_realtime_conversation(&mut self) {

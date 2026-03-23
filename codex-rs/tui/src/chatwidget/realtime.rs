@@ -226,7 +226,7 @@ impl ChatWidget {
         if !self.realtime_conversation.warned_audio_only_submission {
             self.realtime_conversation.warned_audio_only_submission = true;
             self.add_info_message(
-                "Realtime 语音模式仅支持音频。使用 /realtime 停止。".to_string(),
+                "实时语音模式仅支持音频。使用 /realtime 停止。".to_string(),
                 /*hint*/ None,
             );
         } else {
@@ -247,7 +247,7 @@ impl ChatWidget {
         self.realtime_conversation.warned_audio_only_submission = false;
         self.set_footer_hint_override(Some(vec![(
             "/realtime".to_string(),
-            "stop live voice".to_string(),
+            "停止实时语音".to_string(),
         )]));
         self.submit_op(Op::RealtimeConversationStart(ConversationStartParams {
             prompt: REALTIME_CONVERSATION_PROMPT.to_string(),
@@ -318,7 +318,7 @@ impl ChatWidget {
         self.realtime_conversation.warned_audio_only_submission = false;
         self.set_footer_hint_override(Some(vec![(
             "/realtime".to_string(),
-            "stop live voice".to_string(),
+            "停止实时语音".to_string(),
         )]));
         self.start_realtime_local_audio();
         self.request_redraw();
