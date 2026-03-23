@@ -26,6 +26,41 @@ format_artifact_size_megabytes() {
   awk -v bytes="$bytes" 'BEGIN { printf "%.2fM\n", bytes / 1024 / 1024 }'
 }
 
+resolve_dist_artifact_path() {
+  local artifact_path="$1"
+  local target="$2"
+  local repo_root="$3"
+  local filename stem ext
+
+  filename="$(basename "$artifact_path")"
+  stem="$filename"
+  ext=""
+
+  if [[ "$filename" == *.* ]]; then
+    stem="${filename%.*}"
+    ext=".${filename##*.}"
+  fi
+
+  printf '%s/dist/%s-%s%s\n' "$repo_root" "$stem" "$target" "$ext"
+}
+
+move_artifact_to_dist() {
+  local artifact_path="$1"
+  local target="$2"
+  local repo_root="$3"
+  local dist_path
+
+  [ -f "$artifact_path" ] || {
+    echo "[build] 缺少构建产物: $artifact_path" >&2
+    return 1
+  }
+
+  dist_path="$(resolve_dist_artifact_path "$artifact_path" "$target" "$repo_root")"
+  mkdir -p "$(dirname "$dist_path")"
+  mv -f "$artifact_path" "$dist_path"
+  printf '%s\n' "$dist_path"
+}
+
 print_artifact_size() {
   local task_name="$1"
   local path="$2"
@@ -37,7 +72,9 @@ print_artifact_size() {
   size="$(format_artifact_size "$bytes")"
   size_mb="$(format_artifact_size_megabytes "$bytes")"
 
-  echo "[$task_name] 构建完成: $path" >&2
   echo "[$task_name] 二进制路径: $path" >&2
   echo "[$task_name] 二进制体积: $size_mb ($size, $bytes bytes)" >&2
+  if [[ "$path" == *apple-darwin* ]]; then
+    echo "[$task_name] 在 macOS 上使用前请执行: codesign --force --sign - $path" >&2
+  fi
 }

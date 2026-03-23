@@ -118,6 +118,12 @@ ZIG_PATH=/path/to/zig mise run deps ubuntu-macos-arm64
 mise run build ubuntu-macos-arm64 --release
 ```
 
+构建完成后，任务除了打印二进制路径外，还会额外提示你在 macOS 上运行：
+
+```bash
+codesign --force --sign - /path/to/codex
+```
+
 By default, the dependency task downloads a public prepackaged macOS SDK. If
 you need stricter provenance or a pinned SDK version, override the source with
 `MACOS_SDK_URL`, `MACOS_SDK_TARBALL`, or `MACOS_SDK_PATH`.
