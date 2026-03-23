@@ -93,7 +93,7 @@ pub struct Cli {
     #[clap(long = "cd", short = 'C', value_name = "DIR")]
     pub cwd: Option<PathBuf>,
 
-    /// 启用实时网页搜索。启用后，模型可直接使用原生 Responses `web_search` 工具（无需逐次批准）。
+    /// 启用实时网页搜索。启用后，模型可直接使用原生 Responses `web_search` 工具，无需逐次批准。
     #[arg(long = "search", default_value_t = false)]
     pub web_search: bool,
 

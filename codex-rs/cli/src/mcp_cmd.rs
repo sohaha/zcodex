@@ -79,7 +79,7 @@ pub struct GetArgs {
 #[derive(Debug, clap::Parser)]
 #[command(override_usage = "codex mcp add [OPTIONS] <NAME> (--url <URL> | -- <COMMAND>...)")]
 pub struct AddArgs {
-    /// MCP 服务器配置名称。
+    /// MCP 服务器配置的名称。
     pub name: String,
 
     #[command(flatten)]
@@ -106,7 +106,7 @@ pub struct AddMcpTransportArgs {
 #[derive(Debug, clap::Args)]
 pub struct AddMcpStdioArgs {
     /// 启动 MCP 服务器的命令。
-    /// 若为可流式 HTTP 服务器请使用 --url。
+    /// 若为可流式 HTTP 服务器，请使用 --url。
     #[arg(
             trailing_var_arg = true,
             num_args = 0..,

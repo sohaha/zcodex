@@ -59,7 +59,7 @@ use codex_terminal_detection::TerminalName;
 
 /// Codex 命令行工具
 ///
-/// 若未指定子命令，选项会转发到交互式 CLI。
+/// 若未指定子命令，选项会转发到交互式命令行界面。
 #[derive(Debug, Parser)]
 #[clap(
     author,
@@ -304,7 +304,7 @@ struct LoginCommand {
     )]
     api_key: Option<String>,
 
-    #[arg(long = "device-auth", help = "使用设备码流程登录")]
+    #[arg(long = "device-auth", help = "使用设备码流程登录。")]
     use_device_code: bool,
 
     /// 实验性：使用自定义 OAuth issuer 基础 URL（高级）
