@@ -684,8 +684,8 @@ npm publish
 
 For GitHub Actions based releases, use `.github/workflows/rust-release.yml`:
 
-- Tag-driven release: push `v1.2.3` or `rust-v1.2.3`; CI derives the Rust and npm package version from the tag automatically.
-- Manual release: run `workflow_dispatch` and provide `release-version`; `release-tag` is optional and defaults to `rust-v<release-version>`.
+- Tag-driven release: push `v1.2.3` (legacy `rust-v1.2.3` is still accepted); CI derives the Rust and npm package version from the tag automatically.
+- Manual release: run `workflow_dispatch` and provide `release-version`; `release-tag` is optional and defaults to `v<release-version>`.
 - Safety check: when `release-tag` is provided manually, CI verifies that the version embedded in the tag exactly matches `release-version` and fails fast otherwise.
 
 Manual release quick steps:
@@ -693,7 +693,7 @@ Manual release quick steps:
 1. Open GitHub Actions and select `rust-release`.
 2. Click `Run workflow`.
 3. Fill `release-version` with a value like `1.2.3` or `1.2.3-alpha.4`.
-4. Optionally fill `release-tag`; if omitted, CI uses `rust-v<release-version>`.
+4. Optionally fill `release-tag`; if omitted, CI uses `v<release-version>`.
 5. Run the workflow and verify the generated GitHub Release assets and npm publish step.
 
 ### Alternative build options

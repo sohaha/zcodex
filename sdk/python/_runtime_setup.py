@@ -120,33 +120,40 @@ def _installed_runtime_version(python_executable: str | Path) -> str | None:
     return json.loads(result.stdout)["version"]
 
 
+def _release_tag_candidates(version: str) -> tuple[str, ...]:
+    return (f"v{version}", f"rust-v{version}")
+
+
 def _release_metadata(version: str) -> dict[str, object]:
-    url = f"https://api.github.com/repos/{REPO_SLUG}/releases/tags/rust-v{version}"
     token = _github_token()
     attempts = [True, False] if token is not None else [False]
     last_error: urllib.error.HTTPError | None = None
 
-    for include_auth in attempts:
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "codex-python-runtime-setup",
-        }
-        if include_auth and token is not None:
-            headers["Authorization"] = f"Bearer {token}"
+    for tag in _release_tag_candidates(version):
+        url = f"https://api.github.com/repos/{REPO_SLUG}/releases/tags/{tag}"
+        for include_auth in attempts:
+            headers = {
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "codex-python-runtime-setup",
+            }
+            if include_auth and token is not None:
+                headers["Authorization"] = f"Bearer {token}"
 
-        request = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(request) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as exc:
-            last_error = exc
-            if include_auth and exc.code == 401:
-                continue
-            break
+            request = urllib.request.Request(url, headers=headers)
+            try:
+                with urllib.request.urlopen(request) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if include_auth and exc.code == 401:
+                    continue
+                if exc.code == 404:
+                    break
+                break
 
     assert last_error is not None
     raise RuntimeSetupError(
-        f"Failed to resolve release metadata for rust-v{version} from {REPO_SLUG}: "
+        f"Failed to resolve release metadata for version {version} from {REPO_SLUG}: "
         f"{last_error.code} {last_error.reason}"
     ) from last_error
 
@@ -155,24 +162,23 @@ def _download_release_archive(version: str, temp_root: Path) -> Path:
     asset_name = platform_asset_name()
     archive_path = temp_root / asset_name
 
-    browser_download_url = (
-        f"https://github.com/{REPO_SLUG}/releases/download/rust-v{version}/{asset_name}"
-    )
-    request = urllib.request.Request(
-        browser_download_url,
-        headers={"User-Agent": "codex-python-runtime-setup"},
-    )
-    try:
-        with urllib.request.urlopen(request) as response, archive_path.open("wb") as fh:
-            shutil.copyfileobj(response, fh)
-        return archive_path
-    except urllib.error.HTTPError:
-        pass
+    for tag in _release_tag_candidates(version):
+        browser_download_url = f"https://github.com/{REPO_SLUG}/releases/download/{tag}/{asset_name}"
+        request = urllib.request.Request(
+            browser_download_url,
+            headers={"User-Agent": "codex-python-runtime-setup"},
+        )
+        try:
+            with urllib.request.urlopen(request) as response, archive_path.open("wb") as fh:
+                shutil.copyfileobj(response, fh)
+            return archive_path
+        except urllib.error.HTTPError:
+            continue
 
     metadata = _release_metadata(version)
     assets = metadata.get("assets")
     if not isinstance(assets, list):
-        raise RuntimeSetupError(f"Release rust-v{version} returned malformed assets metadata.")
+        raise RuntimeSetupError(f"Release {version} returned malformed assets metadata.")
     asset = next(
         (
             item
@@ -183,7 +189,7 @@ def _download_release_archive(version: str, temp_root: Path) -> Path:
     )
     if asset is None:
         raise RuntimeSetupError(
-            f"Release rust-v{version} does not contain asset {asset_name} for this platform."
+            f"Release {version} does not contain asset {asset_name} for this platform."
         )
 
     api_url = asset.get("url")
@@ -206,34 +212,39 @@ def _download_release_archive(version: str, temp_root: Path) -> Path:
 
     if shutil.which("gh") is None:
         raise RuntimeSetupError(
-            f"Unable to download {asset_name} for rust-v{version}. "
+            f"Unable to download {asset_name} for version {version}. "
             "Provide GH_TOKEN/GITHUB_TOKEN or install/authenticate GitHub CLI."
         )
 
-    try:
-        subprocess.run(
-            [
-                "gh",
-                "release",
-                "download",
-                f"rust-v{version}",
-                "--repo",
-                REPO_SLUG,
-                "--pattern",
-                asset_name,
-                "--dir",
-                str(temp_root),
-            ],
-            check=True,
-            text=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise RuntimeSetupError(
-            f"gh release download failed for rust-v{version} asset {asset_name}.\n"
-            f"STDOUT:\n{exc.stdout}\nSTDERR:\n{exc.stderr}"
-        ) from exc
-    return archive_path
+    last_error: subprocess.CalledProcessError | None = None
+    for tag in _release_tag_candidates(version):
+        try:
+            subprocess.run(
+                [
+                    "gh",
+                    "release",
+                    "download",
+                    tag,
+                    "--repo",
+                    REPO_SLUG,
+                    "--pattern",
+                    asset_name,
+                    "--dir",
+                    str(temp_root),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            return archive_path
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+
+    assert last_error is not None
+    raise RuntimeSetupError(
+        f"gh release download failed for version {version} asset {asset_name}.\n"
+        f"STDOUT:\n{last_error.stdout}\nSTDERR:\n{last_error.stderr}"
+    ) from last_error
 
 
 def _extract_runtime_binary(archive_path: Path, temp_root: Path) -> Path:

@@ -22,7 +22,7 @@ on:
         required: true
         type: string
       release-tag:
-        description: Optional tag name for the GitHub release. Defaults to rust-v<release-version>.
+        description: Optional tag name for the GitHub release. Defaults to v<release-version>.
         required: false
         type: string
 
@@ -50,7 +50,7 @@ jobs:
             release_version="${{ inputs.release-version }}"
             release_tag="${{ inputs.release-tag }}"
             if [[ -z "${release_tag}" ]]; then
-              release_tag="rust-v${release_version}"
+              release_tag="v${release_version}"
             fi
           else
             [[ "${GITHUB_REF_TYPE}" == "tag" ]] \

@@ -45,7 +45,7 @@ function Get-ReleaseUrl {
         return "$($env:CODEX_BASE_URL.TrimEnd('/'))/$AssetName"
     }
 
-    return "https://github.com/sohaha/zcodex/releases/download/rust-v$ResolvedVersion/$AssetName"
+    return "https://github.com/sohaha/zcodex/releases/download/v$ResolvedVersion/$AssetName"
 }
 
 function Path-Contains {

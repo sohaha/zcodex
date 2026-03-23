@@ -8,7 +8,7 @@ on:
         required: false
         type: string
       release-tag:
-        description: Tag name to use when downloading release artifacts (defaults to rust-v<version>).
+        description: Tag name to use when downloading release artifacts (defaults to v<version>).
         required: false
         type: string
       publish:
@@ -61,7 +61,7 @@ jobs:
             if [[ "${GITHUB_REF_NAME:-}" =~ ^(rust-)?v.+ ]]; then
               release_tag="${GITHUB_REF_NAME}"
             else
-              release_tag="rust-v${version}"
+              release_tag="v${version}"
             fi
           fi
 
