@@ -71,7 +71,7 @@ pub struct GetArgs {
     /// 要查看的 MCP 服务器名称。
     pub name: String,
 
-    /// 以 JSON 输出服务器配置。
+    /// 以 JSON 格式输出服务器配置。
     #[arg(long)]
     pub json: bool,
 }

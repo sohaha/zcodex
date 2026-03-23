@@ -1000,6 +1000,11 @@ fn localize_help_output(output: String) -> String {
         .replace("Print version", "显示版本")
         .replace("Possible values:", "可选值：")
         .replace("[possible values:", "[可选值：")
+        .replace("error: invalid value", "错误：无效的值")
+        .replace(
+            "For more information, try '--help'.",
+            "更多信息请使用 '--help'。",
+        )
 }
 
 async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
