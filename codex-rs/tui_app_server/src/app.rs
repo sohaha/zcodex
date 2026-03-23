@@ -379,7 +379,7 @@ fn emit_skill_load_warnings(app_event_tx: &AppEventSender, errors: &[SkillErrorI
     let error_count = errors.len();
     app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
         crate::history_cell::new_warning_event(format!(
-            "由于 SKILL.md 文件无效，已跳过加载 {error_count} 个 skill。"
+            "由于 SKILL.md 文件无效，已跳过加载 {error_count} 个技能。"
         )),
     )));
 
@@ -421,7 +421,7 @@ fn emit_project_config_warnings(app_event_tx: &AppEventSender, config: &Config) 
 
     let mut message = concat!(
         "以下文件夹中的项目级 config.toml 已被禁用。",
-        "这些文件中的配置会被忽略，但 skills 和执行策略仍会加载。\n",
+        "这些文件中的配置会被忽略，但技能和执行策略仍会加载。\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {
@@ -4076,7 +4076,7 @@ impl App {
                         } else {
                             let selection = name.unwrap_or_else(|| "系统默认".to_string());
                             self.chat_widget.add_info_message(
-                                format!("Realtime {} 已设置为 {selection}", kind.noun()),
+                                format!("实时语音{}已设置为 {selection}", kind.noun()),
                                 /*hint*/ None,
                             );
                         }
@@ -4086,10 +4086,8 @@ impl App {
                             error = %err,
                             "failed to persist realtime audio selection"
                         );
-                        self.chat_widget.add_error_message(format!(
-                            "保存 realtime {} 失败：{err}",
-                            kind.noun()
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("保存实时语音{}失败：{err}", kind.noun()));
                     }
                 }
             }

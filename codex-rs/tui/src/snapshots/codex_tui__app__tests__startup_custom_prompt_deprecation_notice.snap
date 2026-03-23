@@ -1,7 +1,7 @@
 ---
 source: tui/src/app.rs
+assertion_line: 4617
 expression: rendered
 ---
-⚠ 自定义 prompts 已弃用，并将很快移除。
-在 `$CODEX_HOME/prompts` 中检测到 1 个自定义 prompt。可使用 `$skill-creator` skill 将每个自定义 prompt 转换为
-skill。
+⚠ 自定义提示词已弃用，并将很快移除。
+在 `$CODEX_HOME/prompts` 中检测到 1 个自定义提示词。可使用 `$skill-creator` 技能将每个自定义提示词转换为技能。
