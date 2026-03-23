@@ -183,15 +183,13 @@ async fn run_exec_command(args: crate::cli::ExecCommand) -> anyhow::Result<()> {
 async fn resolve_environment_id(ctx: &BackendContext, requested: &str) -> anyhow::Result<String> {
     let trimmed = requested.trim();
     if trimmed.is_empty() {
-        return Err(anyhow!("environment id must not be empty"));
+        return Err(anyhow!("环境 id 不能为空"));
     }
     let normalized = util::normalize_base_url(&ctx.base_url);
     let headers = util::build_chatgpt_headers().await;
     let environments = crate::env_detect::list_environments(&normalized, &headers).await?;
     if environments.is_empty() {
-        return Err(anyhow!(
-            "no cloud environments are available for this workspace"
-        ));
+        return Err(anyhow!("此工作区没有可用的云环境"));
     }
 
     if let Some(row) = environments.iter().find(|row| row.id == trimmed) {
@@ -218,7 +216,7 @@ async fn resolve_environment_id(ctx: &BackendContext, requested: &str) -> anyhow
                 Ok(first_id.clone())
             } else {
                 Err(anyhow!(
-                    "environment label '{trimmed}' is ambiguous; run `codex cloud` to pick the desired environment id"
+                    "环境标签 '{trimmed}' 有歧义；请运行 `codex cloud` 选择所需环境 id"
                 ))
             }
         }
@@ -253,7 +251,7 @@ fn resolve_query_input(query_arg: Option<String>) -> anyhow::Result<String> {
 fn parse_task_id(raw: &str) -> anyhow::Result<codex_cloud_tasks_client::TaskId> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        anyhow::bail!("task id must not be empty");
+        anyhow::bail!("任务 id 不能为空");
     }
     let without_fragment = trimmed.split('#').next().unwrap_or(trimmed);
     let without_query = without_fragment
@@ -266,7 +264,7 @@ fn parse_task_id(raw: &str) -> anyhow::Result<codex_cloud_tasks_client::TaskId> 
         .unwrap_or(without_query)
         .trim();
     if id.is_empty() {
-        anyhow::bail!("task id must not be empty");
+        anyhow::bail!("任务 id 不能为空");
     }
     Ok(codex_cloud_tasks_client::TaskId(id.to_string()))
 }
@@ -327,7 +325,7 @@ async fn collect_attempt_diffs(
     }
     attempts.sort_by(cmp_attempt);
     if attempts.is_empty() {
-        anyhow::bail!("任务 {} 暂无可用 diff；它可能仍在运行中。", task_id.0);
+        anyhow::bail!("任务 {} 暂无可用差异；它可能仍在运行中。", task_id.0);
     }
     Ok(attempts)
 }
@@ -363,7 +361,7 @@ fn task_status_label(status: &TaskStatus) -> &'static str {
 
 fn summary_line(summary: &codex_cloud_tasks_client::DiffSummary, colorize: bool) -> String {
     if summary.files_changed == 0 && summary.lines_added == 0 && summary.lines_removed == 0 {
-        let base = "no diff";
+        let base = "无差异";
         return if colorize {
             base.if_supports_color(Stream::Stdout, |t| t.dimmed())
                 .to_string()
@@ -388,15 +386,12 @@ fn summary_line(summary: &codex_cloud_tasks_client::DiffSummary, colorize: bool)
         let bullet = "•"
             .if_supports_color(Stream::Stdout, |t| t.dimmed())
             .to_string();
-        let file_label = format!("file{}", if files == 1 { "" } else { "s" })
+        let file_label = "文件"
             .if_supports_color(Stream::Stdout, |t| t.dimmed())
             .to_string();
         format!("{adds_str}/{dels_str}  {bullet}  {files} {file_label}")
     } else {
-        format!(
-            "+{adds}/-{dels} • {files} file{}",
-            if files == 1 { "" } else { "s" }
-        )
+        format!("+{adds}/-{dels} • {files} 文件")
     }
 }
 
@@ -798,7 +793,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
         codex_core::default_client::get_codex_user_agent()
     ));
     // Non-blocking initial load so the in-box spinner can animate
-    app.status = "Loading tasks…".to_string();
+    app.status = "正在加载任务…".to_string();
     app.refresh_inflight = true;
     // New list generation; reset background enrichment coordination
     app.list_generation = app.list_generation.saturating_add(1);
@@ -1053,7 +1048,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         }
                                     }
                                     app.env_filter = Some(sel.id);
-                                    app.status = "Loading tasks…".to_string();
+                                    app.status = "正在加载任务…".to_string();
                                     app.refresh_inflight = true;
                                     app.list_generation = app.list_generation.saturating_add(1);
                                     app.in_flight.clear();
@@ -1347,11 +1342,11 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 needs_redraw = true;
                             } else if app.apply_modal.is_some() {
                                 app.apply_modal = None;
-                                app.status = "Apply canceled".to_string();
+                                app.status = "已取消应用".to_string();
                                 needs_redraw = true;
                             } else if app.new_task.is_some() {
                                 app.new_task = None;
-                                app.status = "Canceled new task".to_string();
+                                app.status = "已取消新任务".to_string();
                                 needs_redraw = true;
                             } else if app.diff_overlay.is_some() {
                                 app.diff_overlay = None;
@@ -1378,11 +1373,8 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                             } else {
                                 let selected = app.best_of_n.saturating_sub(1).min(3);
                                 app.best_of_modal = Some(app::BestOfModalState { selected });
-                                app.status = format!(
-                                    "Select best-of attempts (current: {} attempt{})",
-                                    app.best_of_n,
-                                    if app.best_of_n == 1 { "" } else { "s" }
-                                );
+                                app.status =
+                                    format!("选择并行尝试数（当前：{} 次）", app.best_of_n);
                                 needs_redraw = true;
                             }
                             render_if_needed(&mut terminal, &mut app, &mut needs_redraw)?;
@@ -1427,10 +1419,8 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                             page.best_of_n = new_value;
                                         }
                                         append_error_log(format!("best-of.select: attempts={new_value}"));
-                                        app.status = format!(
-                                            "Best-of updated to {new_value} attempt{}",
-                                            if new_value == 1 { "" } else { "s" }
-                                        );
+                                        app.status =
+                                            format!("并行尝试数已更新为 {new_value} 次");
                                         needs_redraw = true;
                                     }
                                 }
@@ -1478,7 +1468,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                             match key.code {
                                 KeyCode::Esc => {
                                     app.new_task = None;
-                                    app.status = "Canceled new task".to_string();
+                                    app.status = "已取消新任务".to_string();
                                     needs_redraw = true;
                                 }
                                 _ => {
@@ -1493,7 +1483,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                     text.chars().count()
                                                 ));
                                                 page.submitting = true;
-                                                app.status = "Submitting new task…".to_string();
+                                                app.status = "正在提交新任务…".to_string();
                                                 let tx = tx.clone();
                                                 let backend = Arc::clone(&backend);
                                                 let best_of_n = page.best_of_n;
@@ -1579,7 +1569,8 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         ov.step_attempt(delta);
                                         let total = ov.attempt_display_total();
                                         let current = ov.selected_attempt + 1;
-                                        app.status = format!("Viewing attempt {current} of {total}");
+                                        app.status =
+                                            format!("正在查看第 {current}/{total} 次尝试");
                                         ov.sd.to_top();
                                         needs_redraw = true;
                                     }
@@ -1619,7 +1610,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                 app.status = format!("正在预检“{title}”...");
                                             }
                                         } else {
-                                            app.status = "没有可应用的 diff。".to_string();
+                                            app.status = "没有可应用的差异。".to_string();
                                         }
                                         needs_redraw = true;
                                     }
@@ -1723,7 +1714,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     } else {
                                         app.new_task = Some(crate::new_task::NewTaskPage::new(app.env_filter.clone(), app.best_of_n));
                                     }
-                                    app.status = "New Task: Enter to submit; Esc to cancel".to_string();
+                                    app.status = "新任务：按 Enter 提交；按 Esc 取消".to_string();
                                     needs_redraw = true;
                                 }
                                 KeyCode::Enter => {
@@ -1757,7 +1748,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                             page.env_id = app.env_filter.clone();
                                         }
                                         // Trigger tasks refresh with the selected filter
-                                        app.status = "Loading tasks…".to_string();
+                                        app.status = "正在加载任务…".to_string();
                                         app.refresh_inflight = true;
                                         app.list_generation = app.list_generation.saturating_add(1);
                                         app.in_flight.clear();
@@ -1795,7 +1786,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         "refresh.request: env={}",
                                         app.env_filter.clone().unwrap_or_else(|| "<all>".to_string())
                                     ));
-                                    app.status = "Refreshing…".to_string();
+                                    app.status = "正在刷新…".to_string();
                                     app.refresh_inflight = true;
                                     app.list_generation = app.list_generation.saturating_add(1);
                                     app.in_flight.clear();
@@ -1829,12 +1820,13 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 KeyCode::Char('n') => {
                                     let env_opt = app.env_filter.clone();
                                     app.new_task = Some(crate::new_task::NewTaskPage::new(env_opt, app.best_of_n));
-                                    app.status = "New Task: Enter to submit; Esc to cancel".to_string();
+                                    app.status = "新任务：按 Enter 提交；按 Esc 取消".to_string();
                                     needs_redraw = true;
                                 }
                                 KeyCode::Enter => {
                                     if let Some(task) = app.tasks.get(app.selected).cloned() {
-                                        app.status = format!("Loading details for {title}…", title = task.title);
+                                        app.status =
+                                            format!("正在加载“{title}”详情…", title = task.title);
                                         app.details_inflight = true;
                                         // Open empty overlay immediately; content arrives via events
                                         let overlay = app::DiffOverlay::new(
@@ -1929,7 +1921,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 }
                                 KeyCode::Char('a') => {
                                     if app.apply_inflight || app.apply_preflight_inflight {
-                                        app.status = "Finish the current apply/preflight before starting another.".to_string();
+                                        app.status = "请先完成当前应用/预检，再开始新的操作。".to_string();
                                         needs_redraw = true;
                                         continue;
                                     }
@@ -1965,7 +1957,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                 }
                                             }
                                             Ok(None) | Err(_) => {
-                                                app.status = "没有可应用的 diff".to_string();
+                                                app.status = "没有可应用的差异".to_string();
                                             }
                                         }
                                         needs_redraw = true;
@@ -2041,7 +2033,7 @@ fn pretty_lines_from_error(raw: &str) -> Vec<String> {
     let is_no_diff = raw.contains("No output_diff in response.");
     let is_no_msgs = raw.contains("No assistant text messages in response.");
     if is_no_diff {
-        lines.push("此任务没有可用的 diff。".to_string());
+        lines.push("此任务没有可用的差异。".to_string());
     } else if is_no_msgs {
         lines.push("此任务未找到助手消息。".to_string());
     } else {
@@ -2235,7 +2227,7 @@ mod tests {
             vec![
                 "[就绪] Example task".to_string(),
                 "Env  •  0s ago".to_string(),
-                "+5/-2 • 3 files".to_string(),
+                "+5/-2 • 3 文件".to_string(),
             ]
         );
     }
@@ -2260,7 +2252,7 @@ mod tests {
             vec![
                 "[待处理] No diff task".to_string(),
                 "env-2  •  0s ago".to_string(),
-                "no diff".to_string(),
+                "无差异".to_string(),
             ]
         );
     }
@@ -2303,12 +2295,12 @@ mod tests {
                 "https://chatgpt.com/codex/tasks/task_1".to_string(),
                 "  [就绪] Example task".to_string(),
                 "  Env  •  0s ago".to_string(),
-                "  +5/-2 • 3 files".to_string(),
+                "  +5/-2 • 3 文件".to_string(),
                 String::new(),
                 "https://chatgpt.com/codex/tasks/task_2".to_string(),
                 "  [待处理] No diff task".to_string(),
                 "  env-2  •  0s ago".to_string(),
-                "  no diff".to_string(),
+                "  无差异".to_string(),
             ]
         );
     }

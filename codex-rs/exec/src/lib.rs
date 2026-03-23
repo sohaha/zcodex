@@ -543,9 +543,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
     let mut request_ids = RequestIdSequencer::new();
     let mut client = InProcessAppServerClient::start(in_process_start_args)
         .await
-        .map_err(|err| {
-            anyhow::anyhow!("failed to initialize in-process app-server client: {err}")
-        })?;
+        .map_err(|err| anyhow::anyhow!("初始化进程内 app-server 客户端失败：{err}"))?;
 
     // Handle resume subcommand by resolving a rollout path and using explicit resume API.
     let (primary_thread_id, fallback_session_configured) =
@@ -1238,7 +1236,7 @@ async fn handle_server_request(
                         client,
                         request_id,
                         &method,
-                        format!("local chatgpt auth refresh task failed in exec: {err}"),
+                        format!("exec 中本地 ChatGPT 认证刷新任务失败：{err}"),
                     )
                     .await
                 }
@@ -1262,9 +1260,7 @@ async fn handle_server_request(
                             )
                             .await
                         }
-                        Err(err) => Err(format!(
-                            "failed to serialize chatgpt auth refresh response: {err}"
-                        )),
+                        Err(err) => Err(format!("序列化 ChatGPT 认证刷新响应失败：{err}")),
                     }
                 }
             }
@@ -1381,7 +1377,7 @@ fn local_external_chatgpt_tokens(
 
     let access_token = auth
         .get_token()
-        .map_err(|err| format!("failed to read external access token: {err}"))?;
+        .map_err(|err| format!("读取外部访问令牌失败：{err}"))?;
     let chatgpt_account_id = auth
         .get_account_id()
         .ok_or_else(|| "external token auth is missing chatgpt account id".to_string())?;
@@ -1429,7 +1425,7 @@ async fn resolve_resume_path(
         {
             Ok(path) => Ok(path),
             Err(e) => {
-                error!("Error listing threads: {e}");
+                error!("列出线程失败：{e}");
                 Ok(None)
             }
         }

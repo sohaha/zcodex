@@ -103,7 +103,7 @@ fn overlay_content(area: Rect) -> Rect {
 
 pub fn draw_new_task_page(frame: &mut Frame, area: Rect, app: &mut App) {
     let title_spans = {
-        let mut spans: Vec<ratatui::text::Span> = vec!["New Task".magenta().bold()];
+        let mut spans: Vec<ratatui::text::Span> = vec!["新建任务".magenta().bold()];
         if let Some(id) = app
             .new_task
             .as_ref()
@@ -121,16 +121,12 @@ pub fn draw_new_task_page(frame: &mut Frame, area: Rect, app: &mut App) {
             spans.push(label.dim());
         } else {
             spans.push("  • ".into());
-            spans.push("Env: none (press ctrl-o to choose)".red());
+            spans.push("环境：无（按 Ctrl+O 选择）".red());
         }
         if let Some(page) = app.new_task.as_ref() {
             spans.push("  • ".into());
             let attempts = page.best_of_n;
-            let label = format!(
-                "{} attempt{}",
-                attempts,
-                if attempts == 1 { "" } else { "s" }
-            );
+            let label = format!("{attempts} 次尝试");
             spans.push(label.cyan());
         }
         spans
@@ -190,10 +186,10 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
             .iter()
             .find(|r| &r.id == id)
             .and_then(|r| r.label.clone())
-            .unwrap_or_else(|| "Selected".to_string());
+            .unwrap_or_else(|| "已选".to_string());
         format!(" • {label}").dim()
     } else {
-        " • All".dim()
+        " • 全部".dim()
     };
     // Percent scrolled based on selection position in the list (0% at top, 100% at bottom).
     let percent_span = if app.tasks.len() <= 1 {
@@ -203,7 +199,7 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
         format!("  • {}%", p.clamp(0, 100)).dim()
     };
     let title_line = {
-        let base = Line::from(vec!["Cloud Tasks".into(), suffix_span, percent_span]);
+        let base = Line::from(vec!["云任务".into(), suffix_span, percent_span]);
         if dim_bg {
             base.style(Style::default().add_modifier(Modifier::DIM))
         } else {
@@ -229,47 +225,47 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &mut App) {
 
     // In-box spinner during initial/refresh loads
     if app.refresh_inflight {
-        draw_centered_spinner(frame, inner, &mut app.spinner_start, "Loading tasks…");
+        draw_centered_spinner(frame, inner, &mut app.spinner_start, "正在加载任务…");
     }
 }
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut help = vec![
         "↑/↓".dim(),
-        ": Move  ".dim(),
+        ": 移动  ".dim(),
         "r".dim(),
-        ": Refresh  ".dim(),
+        ": 刷新  ".dim(),
         "Enter".dim(),
-        ": Open  ".dim(),
+        ": 打开  ".dim(),
     ];
     // Apply hint; show disabled note when overlay is open without a diff.
     if let Some(ov) = app.diff_overlay.as_ref() {
         if !ov.current_can_apply() {
             help.push("a".dim());
-            help.push(": Apply (disabled)  ".dim());
+            help.push(": 应用（不可用）  ".dim());
         } else {
             help.push("a".dim());
-            help.push(": Apply  ".dim());
+            help.push(": 应用  ".dim());
         }
         if ov.attempt_count() > 1 {
             help.push("Tab".dim());
-            help.push(": Next attempt  ".dim());
+            help.push(": 下一次尝试  ".dim());
             help.push("[ ]".dim());
-            help.push(": Cycle attempts  ".dim());
+            help.push(": 切换尝试  ".dim());
         }
     } else {
         help.push("a".dim());
-        help.push(": Apply  ".dim());
+        help.push(": 应用  ".dim());
     }
-    help.push("o : Set Env  ".dim());
+    help.push("o : 设置环境  ".dim());
     if app.new_task.is_some() {
         help.push("Ctrl+N".dim());
-        help.push(format!(": Attempts {}x  ", app.best_of_n).dim());
-        help.push("(editing new task)  ".dim());
+        help.push(format!(": 尝试 {}x  ", app.best_of_n).dim());
+        help.push("（正在编辑新任务）  ".dim());
     } else {
-        help.push("n : New Task  ".dim());
+        help.push("n : 新建任务  ".dim());
     }
-    help.extend(vec!["q".dim(), ": Quit  ".dim()]);
+    help.extend(vec!["q".dim(), ": 退出  ".dim()]);
     // Split footer area into two rows: help+spinner (top) and status (bottom)
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -291,7 +287,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &mut App) {
         || app.apply_preflight_inflight
         || app.apply_inflight
     {
-        draw_inline_spinner(frame, top[1], &mut app.spinner_start, "Loading…");
+        draw_inline_spinner(frame, top[1], &mut app.spinner_start, "正在加载…");
     } else {
         frame.render_widget(Clear, top[1]);
     }
@@ -336,15 +332,15 @@ fn draw_diff_overlay(frame: &mut Frame, area: Rect, app: &mut App) {
     let title_ref = title.as_str();
     let mut title_spans: Vec<ratatui::text::Span> = if is_error {
         vec![
-            "Details ".magenta(),
-            "[FAILED]".red().bold(),
+            "详情 ".magenta(),
+            "[失败]".red().bold(),
             " ".into(),
             title_ref.magenta(),
         ]
     } else if ov_can_apply {
-        vec!["Diff: ".magenta(), title_ref.magenta()]
+        vec!["差异：".magenta(), title_ref.magenta()]
     } else {
-        vec!["Details: ".magenta(), title_ref.magenta()]
+        vec!["详情：".magenta(), title_ref.magenta()]
     };
     if let Some(p) = app
         .diff_overlay
@@ -375,26 +371,26 @@ fn draw_diff_overlay(frame: &mut Frame, area: Rect, app: &mut App) {
             let mut spans: Vec<ratatui::text::Span> = Vec::new();
             if has_diff && has_text {
                 let prompt_lbl = if matches!(ov.current_view, crate::app::DetailView::Prompt) {
-                    "[Prompt]".magenta().bold()
+                    "[提示]".magenta().bold()
                 } else {
-                    "Prompt".dim()
+                    "提示".dim()
                 };
                 let diff_lbl = if matches!(ov.current_view, crate::app::DetailView::Diff) {
-                    "[Diff]".magenta().bold()
+                    "[差异]".magenta().bold()
                 } else {
-                    "Diff".dim()
+                    "差异".dim()
                 };
                 spans.extend(vec![
                     prompt_lbl,
                     "  ".into(),
                     diff_lbl,
                     "  ".into(),
-                    "(← → to switch view)".dim(),
+                    "(← → 切换视图)".dim(),
                 ]);
             } else if has_text {
-                spans.push("Conversation".magenta().bold());
+                spans.push("对话".magenta().bold());
             } else {
-                spans.push("Diff".magenta().bold());
+                spans.push("差异".magenta().bold());
             }
             if let Some(total) = ov.expected_attempts().or({
                 if ov.attempts.is_empty() {
@@ -406,11 +402,11 @@ fn draw_diff_overlay(frame: &mut Frame, area: Rect, app: &mut App) {
             {
                 spans.extend(vec![
                     "  ".into(),
-                    format!("Attempt {}/{}", ov.selected_attempt + 1, total)
+                    format!("尝试 {}/{}", ov.selected_attempt + 1, total)
                         .bold()
                         .dim(),
                     "  ".into(),
-                    "(Tab/Shift-Tab or [ ] to cycle attempts)".dim(),
+                    "(Tab/Shift-Tab 或 [ ] 切换尝试)".dim(),
                 ]);
             }
             frame.render_widget(Paragraph::new(Line::from(spans)), rows[0]);
@@ -449,12 +445,7 @@ fn draw_diff_overlay(frame: &mut Frame, area: Rect, app: &mut App) {
         .map(|o| o.sd.wrapped_lines().is_empty())
         .unwrap_or(true);
     if app.details_inflight && raw_empty {
-        draw_centered_spinner(
-            frame,
-            content_area,
-            &mut app.spinner_start,
-            "Loading details…",
-        );
+        draw_centered_spinner(frame, content_area, &mut app.spinner_start, "正在加载详情…");
     } else {
         let scroll = app
             .diff_overlay
@@ -469,7 +460,7 @@ fn draw_diff_overlay(frame: &mut Frame, area: Rect, app: &mut App) {
 pub fn draw_apply_modal(frame: &mut Frame, area: Rect, app: &mut App) {
     use ratatui::widgets::Wrap;
     let inner = overlay_outer(area);
-    let title = Line::from("Apply Changes?".magenta().bold());
+    let title = Line::from("应用更改？".magenta().bold());
     let block = overlay_block().title(title);
     frame.render_widget(Clear, inner);
     frame.render_widget(block.clone(), inner);
@@ -477,14 +468,11 @@ pub fn draw_apply_modal(frame: &mut Frame, area: Rect, app: &mut App) {
 
     if let Some(m) = &app.apply_modal {
         // Header
-        let header = Paragraph::new(Line::from(
-            format!("Apply '{}' ?", m.title).magenta().bold(),
-        ))
-        .wrap(Wrap { trim: true });
+        let header = Paragraph::new(Line::from(format!("应用 '{}'？", m.title).magenta().bold()))
+            .wrap(Wrap { trim: true });
         // Footer instructions
-        let footer =
-            Paragraph::new(Line::from("Press Y to apply, P to preflight, N to cancel.").dim())
-                .wrap(Wrap { trim: true });
+        let footer = Paragraph::new(Line::from("按 Y 应用，按 P 预检，按 N 取消。".dim()))
+            .wrap(Wrap { trim: true });
 
         // Split into header/body/footer
         let rows = Layout::default()
@@ -499,11 +487,11 @@ pub fn draw_apply_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         frame.render_widget(header, rows[0]);
         // Body: spinner while preflight/apply runs; otherwise show result message and path lists
         if app.apply_preflight_inflight {
-            draw_centered_spinner(frame, rows[1], &mut app.spinner_start, "Checking…");
+            draw_centered_spinner(frame, rows[1], &mut app.spinner_start, "正在检查…");
         } else if app.apply_inflight {
-            draw_centered_spinner(frame, rows[1], &mut app.spinner_start, "Applying…");
+            draw_centered_spinner(frame, rows[1], &mut app.spinner_start, "正在应用…");
         } else if m.result_message.is_none() {
-            draw_centered_spinner(frame, rows[1], &mut app.spinner_start, "Loading…");
+            draw_centered_spinner(frame, rows[1], &mut app.spinner_start, "正在加载…");
         } else if let Some(msg) = &m.result_message {
             let mut body_lines: Vec<Line> = Vec::new();
             let first = match m.result_level {
@@ -520,7 +508,7 @@ pub fn draw_apply_modal(frame: &mut Frame, area: Rect, app: &mut App) {
                 if !m.conflict_paths.is_empty() {
                     body_lines.push(Line::from(""));
                     body_lines.push(
-                        Line::from(format!("Conflicts ({}):", m.conflict_paths.len()))
+                        Line::from(format!("冲突（{}）：", m.conflict_paths.len()))
                             .red()
                             .bold(),
                     );
@@ -532,7 +520,7 @@ pub fn draw_apply_modal(frame: &mut Frame, area: Rect, app: &mut App) {
                 if !m.skipped_paths.is_empty() {
                     body_lines.push(Line::from(""));
                     body_lines.push(
-                        Line::from(format!("Skipped ({}):", m.skipped_paths.len()))
+                        Line::from(format!("已跳过（{}）：", m.skipped_paths.len()))
                             .magenta()
                             .bold(),
                     );
@@ -660,12 +648,12 @@ fn conversation_header_line(
     let mut spans: Vec<Span> = vec!["╭ ".dim()];
     match speaker {
         ConversationSpeaker::User => {
-            spans.push("User".cyan().bold());
-            spans.push(" prompt".dim());
+            spans.push("用户".cyan().bold());
+            spans.push(" 提示".dim());
         }
         ConversationSpeaker::Assistant => {
-            spans.push("Assistant".magenta().bold());
-            spans.push(" response".dim());
+            spans.push("助手".magenta().bold());
+            spans.push(" 回复".dim());
             if let Some(attempt) = attempt
                 && let Some(status_span) = attempt_status_span(attempt.status)
             {
@@ -815,7 +803,7 @@ fn render_task_item(_app: &App, t: &codex_cloud_tasks_client::TaskSummary) -> Li
     meta.push(when);
     let meta_line = Line::from(meta);
 
-    // Subline: summary when present; otherwise show "no diff"
+    // Subline: summary when present; otherwise show "无差异"
     let sub = if t.summary.files_changed > 0
         || t.summary.lines_added > 0
         || t.summary.lines_removed > 0
@@ -832,10 +820,10 @@ fn render_task_item(_app: &App, t: &codex_cloud_tasks_client::TaskSummary) -> Li
             " ".into(),
             format!("{files}").into(),
             " ".into(),
-            "files".dim(),
+            "文件".dim(),
         ])
     } else {
-        Line::from("no diff".to_string().dim())
+        Line::from("无差异".to_string().dim())
     };
 
     // Insert a blank spacer line after the summary to separate tasks
@@ -897,7 +885,7 @@ pub fn draw_env_modal(frame: &mut Frame, area: Rect, app: &mut App) {
     let inner = overlay_outer(area);
 
     // Title: primary only; move long hints to a subheader inside content.
-    let title = Line::from(vec!["Select Environment".magenta().bold()]);
+    let title = Line::from(vec!["选择环境".magenta().bold()]);
     let block = overlay_block().title(title);
 
     frame.render_widget(Clear, inner);
@@ -905,12 +893,7 @@ pub fn draw_env_modal(frame: &mut Frame, area: Rect, app: &mut App) {
     let content = overlay_content(inner);
 
     if app.env_loading {
-        draw_centered_spinner(
-            frame,
-            content,
-            &mut app.spinner_start,
-            "Loading environments…",
-        );
+        draw_centered_spinner(frame, content, &mut app.spinner_start, "正在加载环境…");
         return;
     }
 
@@ -925,10 +908,8 @@ pub fn draw_env_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         .split(content);
 
     // Subheader with usage hints (dim cyan)
-    let subheader = Paragraph::new(Line::from(
-        "Type to search, Enter select, Esc cancel".cyan().dim(),
-    ))
-    .wrap(Wrap { trim: true });
+    let subheader = Paragraph::new(Line::from("输入搜索，Enter 选择，Esc 取消".cyan().dim()))
+        .wrap(Wrap { trim: true });
     frame.render_widget(subheader, rows[0]);
 
     let query = app
@@ -937,7 +918,7 @@ pub fn draw_env_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         .map(|m| m.query.clone())
         .unwrap_or_default();
     let ql = query.to_lowercase();
-    let search = Paragraph::new(format!("Search: {query}")).wrap(Wrap { trim: true });
+    let search = Paragraph::new(format!("搜索：{query}")).wrap(Wrap { trim: true });
     frame.render_widget(search, rows[1]);
 
     // Filter environments by query (case-insensitive substring over label/id/hints)
@@ -963,13 +944,13 @@ pub fn draw_env_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
 
     let mut items: Vec<ListItem> = Vec::new();
-    items.push(ListItem::new(Line::from("All Environments (Global)")));
+    items.push(ListItem::new(Line::from("所有环境（全局）")));
     for env in envs.iter() {
-        let primary = env.label.clone().unwrap_or_else(|| "<unnamed>".to_string());
+        let primary = env.label.clone().unwrap_or_else(|| "<未命名>".to_string());
         let mut spans: Vec<ratatui::text::Span> = vec![primary.into()];
         if env.is_pinned {
             spans.push("  ".into());
-            spans.push("PINNED".magenta().bold());
+            spans.push("已固定".magenta().bold());
         }
         spans.push("  ".into());
         spans.push(env.id.clone().dim());
@@ -1006,7 +987,7 @@ pub fn draw_best_of_modal(frame: &mut Frame, area: Rect, app: &mut App) {
     let modal_x = inner.x + (inner.width.saturating_sub(modal_width)) / 2;
     let modal_y = inner.y + (inner.height.saturating_sub(modal_height)) / 2;
     let modal_area = Rect::new(modal_x, modal_y, modal_width, modal_height);
-    let title = Line::from(vec!["Parallel Attempts".magenta().bold()]);
+    let title = Line::from(vec!["并行尝试".magenta().bold()]);
     let block = overlay_block().title(title);
 
     frame.render_widget(Clear, modal_area);
@@ -1018,21 +999,20 @@ pub fn draw_best_of_modal(frame: &mut Frame, area: Rect, app: &mut App) {
         .constraints([Constraint::Length(2), Constraint::Min(1)])
         .split(content);
 
-    let hint = Paragraph::new(Line::from("Use ↑/↓ to choose, 1-4 jump".cyan().dim()))
-        .wrap(Wrap { trim: true });
+    let hint =
+        Paragraph::new(Line::from("用 ↑/↓ 选择，1-4 跳转".cyan().dim())).wrap(Wrap { trim: true });
     frame.render_widget(hint, rows[0]);
 
     let selected = app.best_of_modal.as_ref().map(|m| m.selected).unwrap_or(0);
     let options = [1usize, 2, 3, 4];
     let mut items: Vec<ListItem> = Vec::new();
     for &attempts in &options {
-        let noun = if attempts == 1 { "attempt" } else { "attempts" };
-        let mut spans: Vec<ratatui::text::Span> = vec![format!("{attempts} {noun:<8}").into()];
+        let mut spans: Vec<ratatui::text::Span> = vec![format!("{attempts} 次尝试").into()];
         spans.push("  ".into());
-        spans.push(format!("{attempts}x parallel").dim());
+        spans.push(format!("{attempts}x 并行").dim());
         if attempts == app.best_of_n {
             spans.push("  ".into());
-            spans.push("Current".magenta().bold());
+            spans.push("当前".magenta().bold());
         }
         items.push(ListItem::new(Line::from(spans)));
     }
