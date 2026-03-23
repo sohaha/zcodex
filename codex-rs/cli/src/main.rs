@@ -381,7 +381,7 @@ enum AppServerSubcommand {
 
 #[derive(Debug, Args)]
 struct GenerateTsCommand {
-    /// 输出目录（写入 .ts 文件）
+    /// 输出目录（写入 TypeScript 文件）
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
