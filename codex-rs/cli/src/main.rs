@@ -1088,18 +1088,15 @@ async fn run_debug_clear_memories_command(
     };
 
     let mut message = if cleared_state_db {
-        format!("Cleared memory state from {}.", state_path.display())
+        format!("已清除 {} 中的记忆状态。", state_path.display())
     } else {
-        format!("No state db found at {}.", state_path.display())
+        format!("未在 {} 找到状态数据库。", state_path.display())
     };
 
     if removed_memory_root {
-        message.push_str(&format!(" Removed {}.", memory_root.display()));
+        message.push_str(&format!(" 已移除 {}。", memory_root.display()));
     } else {
-        message.push_str(&format!(
-            " No memory directory found at {}.",
-            memory_root.display()
-        ));
+        message.push_str(&format!(" 未在 {} 找到记忆目录。", memory_root.display()));
     }
 
     println!("{message}");

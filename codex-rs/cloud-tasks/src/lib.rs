@@ -232,20 +232,18 @@ fn resolve_query_input(query_arg: Option<String>) -> anyhow::Result<String> {
             let force_stdin = matches!(maybe_dash.as_deref(), Some("-"));
             if std::io::stdin().is_terminal() && !force_stdin {
                 return Err(anyhow!(
-                    "no query provided. Pass one as an argument or pipe it via stdin."
+                    "未提供查询内容。请通过参数传入，或通过管道从 stdin 提供。"
                 ));
             }
             if !force_stdin {
-                eprintln!("Reading query from stdin...");
+                eprintln!("正在从 stdin 读取查询内容...");
             }
             let mut buffer = String::new();
             std::io::stdin()
                 .read_to_string(&mut buffer)
-                .map_err(|e| anyhow!("failed to read query from stdin: {e}"))?;
+                .map_err(|e| anyhow!("从 stdin 读取查询内容失败：{e}"))?;
             if buffer.trim().is_empty() {
-                return Err(anyhow!(
-                    "no query provided via stdin (received empty input)."
-                ));
+                return Err(anyhow!("未通过 stdin 提供查询内容（收到空输入）。"));
             }
             Ok(buffer)
         }
@@ -972,7 +970,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 }
                                 Err(e) => {
                                     append_error_log(format!("refresh load_tasks failed: {e}"));
-                                    app.status = format!("Failed to load tasks: {e}");
+                                    app.status = format!("加载任务失败：{e}");
                                 }
                             }
                             needs_redraw = true;
@@ -1510,7 +1508,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                     let _ = tx.send(evt);
                                                 });
                                             } else {
-                                                app.status = "No environment selected".to_string();
+                                                app.status = "尚未选择环境".to_string();
                                             }
                                     }
                                     needs_redraw = true;
@@ -1621,7 +1619,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                 app.status = format!("Preflighting '{title}'...");
                                             }
                                         } else {
-                                            app.status = "No diff available to apply.".to_string();
+                                            app.status = "没有可应用的 diff。".to_string();
                                         }
                                         needs_redraw = true;
                                     }
@@ -1967,7 +1965,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                                 }
                                             }
                                             Ok(None) | Err(_) => {
-                                                app.status = "No diff available to apply".to_string();
+                                                app.status = "没有可应用的 diff".to_string();
                                             }
                                         }
                                         needs_redraw = true;

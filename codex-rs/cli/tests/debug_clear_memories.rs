@@ -111,7 +111,7 @@ INSERT INTO jobs (
     cmd.args(["debug", "clear-memories"])
         .assert()
         .success()
-        .stdout(contains("Cleared memory state"));
+        .stdout(contains("已清除"));
 
     let pool = SqlitePool::connect(&format!("sqlite://{}", db_path.display())).await?;
     let stage1_outputs_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM stage1_outputs")
