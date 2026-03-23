@@ -16,11 +16,27 @@ die() {
   exit 1
 }
 
+curl_github_auth_args() {
+  local url="${1:-}"
+
+  if [ -z "${GITHUB_TOKEN:-}" ]; then
+    return
+  fi
+
+  case "$url" in
+    https://github.com/* | https://api.github.com/* | https://raw.githubusercontent.com/*)
+      printf '%s\n' "--oauth2-bearer"
+      printf '%s\n' "$GITHUB_TOKEN"
+      ;;
+  esac
+}
+
 curl_download() {
   local url="$1"
   local output="$2"
   local label="$3"
   local -a args
+  local -a auth_args
   local -a resume_args
 
   mkdir -p "$(dirname "$output")"
@@ -36,26 +52,29 @@ curl_download() {
     args+=(--max-time "$download_max_time")
   fi
 
+  mapfile -t auth_args < <(curl_github_auth_args "$url")
+
   echo "[mise] 下载 $label: $url" >&2
 
   if [ ! -f "$output" ]; then
-    curl "${args[@]}" -o "$output" "$url"
+    curl "${args[@]}" "${auth_args[@]}" -o "$output" "$url"
     return
   fi
 
-  resume_args=("${args[@]}" -C -)
+  resume_args=("${args[@]}" "${auth_args[@]}" -C -)
   if curl "${resume_args[@]}" -o "$output" "$url"; then
     return
   fi
 
   echo "[mise] 断点续传失败，重试完整下载: $label" >&2
   rm -f "$output"
-  curl "${args[@]}" -o "$output" "$url"
+  curl "${args[@]}" "${auth_args[@]}" -o "$output" "$url"
 }
 
 curl_metadata() {
   local url="$1"
   local -a args
+  local -a auth_args
 
   args=(
     -fsSL
@@ -66,7 +85,8 @@ curl_metadata() {
     --max-time "$download_metadata_max_time"
   )
 
-  curl "${args[@]}" "$url"
+  mapfile -t auth_args < <(curl_github_auth_args "$url")
+  curl "${args[@]}" "${auth_args[@]}" "$url"
 }
 
 resolve_zig_host_arch() {
