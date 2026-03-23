@@ -67,7 +67,7 @@ pub struct Cli {
     #[arg(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 
-    /// 选择执行模型生成的 shell 命令时使用的沙箱策略。
+    /// 选择执行模型生成的命令行命令时使用的沙箱策略。
     #[arg(long = "sandbox", short = 's')]
     pub sandbox_mode: Option<codex_utils_cli::SandboxModeCliArg>,
 

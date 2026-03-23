@@ -260,11 +260,11 @@ struct SandboxArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum SandboxCommand {
-    /// 在 Seatbelt 下运行命令（仅 macOS）。
+    /// 在 macOS 的 Seatbelt 沙箱中运行命令。
     #[clap(visible_alias = "seatbelt")]
     Macos(SeatbeltCommand),
 
-    /// 在 Linux 沙箱下运行命令（默认使用 bubblewrap）。
+    /// 在 Linux 沙箱下运行命令（默认使用 `bubblewrap`）。
     #[clap(visible_alias = "landlock")]
     Linux(LandlockCommand),
 
@@ -338,7 +338,7 @@ struct AppServerCommand {
     #[command(subcommand)]
     subcommand: Option<AppServerSubcommand>,
 
-    /// 传输端点 URL。支持：`stdio://`（默认）、
+    /// 传输监听地址。支持：`stdio://`（默认）、
     /// `ws://IP:PORT`。
     #[arg(
         long = "listen",
@@ -368,13 +368,13 @@ struct AppServerCommand {
 #[derive(Debug, clap::Subcommand)]
 #[allow(clippy::enum_variant_names)]
 enum AppServerSubcommand {
-    /// [实验性] 为应用服务器协议生成 TypeScript 绑定。
+    /// [实验性] 为应用服务器协议生成 TypeScript 代码绑定。
     GenerateTs(GenerateTsCommand),
 
-    /// [实验性] 为应用服务器协议生成 JSON Schema。
+    /// [实验性] 为应用服务器协议生成 JSON Schema 文件。
     GenerateJsonSchema(GenerateJsonSchemaCommand),
 
-    /// [内部] 为 Codex 工具链生成内部 JSON Schema 产物。
+    /// [内部] 为 Codex 工具链生成内部 JSON Schema 文件。
     #[clap(hide = true)]
     GenerateInternalJsonSchema(GenerateInternalJsonSchemaCommand),
 }
@@ -385,7 +385,7 @@ struct GenerateTsCommand {
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
-    /// 可选：用于格式化生成文件的 Prettier 程序路径
+    /// 可选：用于格式化生成文件的 Prettier 可执行文件路径。
     #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
     prettier: Option<PathBuf>,
 
@@ -396,7 +396,7 @@ struct GenerateTsCommand {
 
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
-    /// 输出目录（写入 schema bundle）
+    /// 输出目录（写入 schema 汇总文件）
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
@@ -407,7 +407,7 @@ struct GenerateJsonSchemaCommand {
 
 #[derive(Debug, Args)]
 struct GenerateInternalJsonSchemaCommand {
-    /// 输出目录（写入内部 JSON Schema 产物）
+    /// 输出目录（写入内部 JSON Schema 文件）
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 }
@@ -532,7 +532,7 @@ struct FeatureToggles {
 
 #[derive(Debug, Default, Parser, Clone)]
 struct InteractiveRemoteOptions {
-    /// 将基于 app-server 的 TUI 连接到远程应用服务器 websocket 端点。
+    /// 将基于 app-server 的 TUI 连接到远程应用服务器 WebSocket 端点。
     ///
     /// 支持格式：`ws://host:port` 或 `wss://host:port`。
     #[arg(long = "remote", value_name = "ADDR")]
