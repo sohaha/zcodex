@@ -19,7 +19,7 @@ async fn features_enable_writes_feature_flag_to_config() -> Result<()> {
     cmd.args(["features", "enable", "unified_exec"])
         .assert()
         .success()
-        .stdout(contains("Enabled feature `unified_exec` in config.toml."));
+        .stdout(contains("已在 config.toml 中启用功能 `unified_exec`。"));
 
     let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
@@ -36,7 +36,7 @@ async fn features_disable_writes_feature_flag_to_config() -> Result<()> {
     cmd.args(["features", "disable", "shell_tool"])
         .assert()
         .success()
-        .stdout(contains("Disabled feature `shell_tool` in config.toml."));
+        .stdout(contains("已在 config.toml 中禁用功能 `shell_tool`。"));
 
     let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     assert!(config.contains("[features]"));
@@ -53,9 +53,7 @@ async fn features_enable_under_development_feature_prints_warning() -> Result<()
     cmd.args(["features", "enable", "runtime_metrics"])
         .assert()
         .success()
-        .stderr(contains(
-            "Under-development features enabled: runtime_metrics.",
-        ));
+        .stderr(contains("已启用开发中的功能：runtime_metrics。"));
 
     Ok(())
 }

@@ -557,7 +557,7 @@ impl FeatureToggles {
         if is_known_feature_key(feature) {
             Ok(())
         } else {
-            anyhow::bail!("Unknown feature flag: {feature}")
+            anyhow::bail!("未知的功能开关：{feature}")
         }
     }
 }
@@ -917,7 +917,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 rows.sort_unstable_by_key(|(name, _, _)| *name);
 
                 for (name, stage, enabled) in rows {
-                    println!("{name:<name_width$}  {stage:<stage_width$}  {enabled}");
+                    let status = if enabled { "已启用" } else { "未启用" };
+                    println!("{name:<name_width$}  {stage:<stage_width$}  {status}");
                 }
             }
             FeaturesSubcommand::Enable(FeatureSetArgs { feature }) => {
@@ -1015,7 +1016,7 @@ async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow
         .set_feature_enabled(feature, /*enabled*/ true)
         .apply()
         .await?;
-    println!("Enabled feature `{feature}` in config.toml.");
+    println!("已在 config.toml 中启用功能 `{feature}`。");
     maybe_print_under_development_feature_warning(&codex_home, interactive, feature);
     Ok(())
 }
@@ -1028,7 +1029,7 @@ async fn disable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyho
         .set_feature_enabled(feature, /*enabled*/ false)
         .apply()
         .await?;
-    println!("Disabled feature `{feature}` in config.toml.");
+    println!("已在 config.toml 中禁用功能 `{feature}`。");
     Ok(())
 }
 
@@ -1050,7 +1051,7 @@ fn maybe_print_under_development_feature_warning(
 
     let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
     eprintln!(
-        "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
+        "已启用开发中的功能：{feature}。开发中的功能尚未完善，行为可能不稳定。若要关闭此警告，请在 {} 中设置 `suppress_unstable_features_warning = true`。",
         config_path.display()
     );
 }
@@ -1829,6 +1830,6 @@ mod tests {
         let err = toggles
             .to_overrides()
             .expect_err("feature should be rejected");
-        assert_eq!(err.to_string(), "Unknown feature flag: does_not_exist");
+        assert_eq!(err.to_string(), "未知的功能开关：does_not_exist");
     }
 }
