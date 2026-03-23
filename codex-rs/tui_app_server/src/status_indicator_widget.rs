@@ -57,20 +57,20 @@ pub(crate) struct StatusIndicatorWidget {
 }
 
 // Format elapsed seconds into a compact human-friendly form used by the status line.
-// Examples: 0s, 59s, 1m 00s, 59m 59s, 1h 00m 00s, 2h 03m 09s
+// Examples: 0秒, 59秒, 1分 00秒, 59分 59秒, 1时 00分 00秒, 2时 03分 09秒
 pub fn fmt_elapsed_compact(elapsed_secs: u64) -> String {
     if elapsed_secs < 60 {
-        return format!("{elapsed_secs}s");
+        return format!("{elapsed_secs}秒");
     }
     if elapsed_secs < 3600 {
         let minutes = elapsed_secs / 60;
         let seconds = elapsed_secs % 60;
-        return format!("{minutes}m {seconds:02}s");
+        return format!("{minutes}分 {seconds:02}秒");
     }
     let hours = elapsed_secs / 3600;
     let minutes = (elapsed_secs % 3600) / 60;
     let seconds = elapsed_secs % 60;
-    format!("{hours}h {minutes:02}m {seconds:02}s")
+    format!("{hours}时 {minutes:02}分 {seconds:02}秒")
 }
 
 impl StatusIndicatorWidget {
@@ -302,16 +302,19 @@ mod tests {
 
     #[test]
     fn fmt_elapsed_compact_formats_seconds_minutes_hours() {
-        assert_eq!(fmt_elapsed_compact(0), "0s");
-        assert_eq!(fmt_elapsed_compact(1), "1s");
-        assert_eq!(fmt_elapsed_compact(59), "59s");
-        assert_eq!(fmt_elapsed_compact(60), "1m 00s");
-        assert_eq!(fmt_elapsed_compact(61), "1m 01s");
-        assert_eq!(fmt_elapsed_compact(3 * 60 + 5), "3m 05s");
-        assert_eq!(fmt_elapsed_compact(59 * 60 + 59), "59m 59s");
-        assert_eq!(fmt_elapsed_compact(3600), "1h 00m 00s");
-        assert_eq!(fmt_elapsed_compact(3600 + 60 + 1), "1h 01m 01s");
-        assert_eq!(fmt_elapsed_compact(25 * 3600 + 2 * 60 + 3), "25h 02m 03s");
+        assert_eq!(fmt_elapsed_compact(0), "0秒");
+        assert_eq!(fmt_elapsed_compact(1), "1秒");
+        assert_eq!(fmt_elapsed_compact(59), "59秒");
+        assert_eq!(fmt_elapsed_compact(60), "1分 00秒");
+        assert_eq!(fmt_elapsed_compact(61), "1分 01秒");
+        assert_eq!(fmt_elapsed_compact(3 * 60 + 5), "3分 05秒");
+        assert_eq!(fmt_elapsed_compact(59 * 60 + 59), "59分 59秒");
+        assert_eq!(fmt_elapsed_compact(3600), "1时 00分 00秒");
+        assert_eq!(fmt_elapsed_compact(3600 + 60 + 1), "1时 01分 01秒");
+        assert_eq!(
+            fmt_elapsed_compact(25 * 3600 + 2 * 60 + 3),
+            "25时 02分 03秒"
+        );
     }
 
     #[test]

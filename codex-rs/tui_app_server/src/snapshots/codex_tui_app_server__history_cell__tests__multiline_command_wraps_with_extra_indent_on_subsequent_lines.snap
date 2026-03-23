@@ -5,4 +5,4 @@ expression: rendered
 • 已执行 set -o pipefail
   │ cargo test
   │ --all-features --quiet
-  └ (no output)
+  └ （无输出）

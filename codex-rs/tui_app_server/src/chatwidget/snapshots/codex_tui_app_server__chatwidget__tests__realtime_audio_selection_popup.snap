@@ -2,10 +2,10 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: popup
 ---
-  Settings
-  Configure settings for Codex.
+  设置
+  配置 Codex 设置。
 
-› 1. Microphone  Current: System default
-  2. Speaker     Current: System default
+› 1. 麦克风  当前：系统默认
+  2. 扬声器  当前：系统默认
 
   按 enter 确认，按 esc 返回

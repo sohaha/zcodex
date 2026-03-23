@@ -2,9 +2,9 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  / for commands                             ! for shell commands               "
-"  shift + enter for newline                  tab to queue message               "
-"  @ for file paths                           ctrl + v to paste images           "
-"  ctrl + g to edit in external editor        esc again to edit previous message "
-"  ctrl + c to exit                                                              "
-"  ctrl + t to view transcript                                                   "
+"  / 查看命令                         ! 查看 shell 命令                          " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (40, " "), (42, " "), (51, " "), (53, " ")]
+"  shift + enter 换行                 tab 将消息加入队列                         " Hidden by multi-width symbols: [(17, " "), (19, " "), (42, " "), (44, " "), (46, " "), (48, " "), (50, " "), (52, " "), (54, " ")]
+"  @ 选择文件路径                     ctrl + v 粘贴图片                          " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (47, " "), (49, " "), (51, " "), (53, " ")]
+"  ctrl + g 在外部编辑器中编辑        esc 再按一次可编辑上一条消息               " Hidden by multi-width symbols: [(12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " "), (24, " "), (26, " "), (28, " "), (42, " "), (44, " "), (46, " "), (48, " "), (50, " "), (52, " "), (54, " "), (56, " "), (58, " "), (60, " "), (62, " "), (64, " ")]
+"  ctrl + c 退出                                                                 " Hidden by multi-width symbols: [(12, " "), (14, " ")]
+"  ctrl + t 查看会话记录                                                         " Hidden by multi-width symbols: [(12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " ")]

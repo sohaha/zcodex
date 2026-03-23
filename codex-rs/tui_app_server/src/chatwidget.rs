@@ -467,10 +467,10 @@ impl RateLimitWarningState {
             if let Some(threshold) = highest_secondary {
                 let limit_label = secondary_window_minutes
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
+                    .unwrap_or_else(|| "每周".to_string());
                 let remaining_percent = 100.0 - threshold;
                 warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
+                    "注意：你的 {limit_label} 限额剩余已不足 {remaining_percent:.0}%。可运行 /status 查看详情。"
                 ));
             }
         }
@@ -489,7 +489,7 @@ impl RateLimitWarningState {
                     .unwrap_or_else(|| "5h".to_string());
                 let remaining_percent = 100.0 - threshold;
                 warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
+                    "注意：你的 {limit_label} 限额剩余已不足 {remaining_percent:.0}%。可运行 /status 查看详情。"
                 ));
             }
         }
@@ -512,11 +512,11 @@ pub(crate) fn get_limits_duration(windows_minutes: i64) -> String {
         let hours = std::cmp::max(1, adjusted / MINUTES_PER_HOUR);
         format!("{hours}h")
     } else if windows_minutes <= MINUTES_PER_WEEK.saturating_add(ROUNDING_BIAS_MINUTES) {
-        "weekly".to_string()
+        "每周".to_string()
     } else if windows_minutes <= MINUTES_PER_MONTH.saturating_add(ROUNDING_BIAS_MINUTES) {
-        "monthly".to_string()
+        "每月".to_string()
     } else {
-        "annual".to_string()
+        "每年".to_string()
     }
 }
 
@@ -1349,12 +1349,9 @@ fn app_server_collab_state_to_core(state: &AppServerCollabAgentState) -> AgentSt
         AppServerCollabAgentStatus::Running => AgentStatus::Running,
         AppServerCollabAgentStatus::Interrupted => AgentStatus::Interrupted,
         AppServerCollabAgentStatus::Completed => AgentStatus::Completed(state.message.clone()),
-        AppServerCollabAgentStatus::Errored => AgentStatus::Errored(
-            state
-                .message
-                .clone()
-                .unwrap_or_else(|| "Agent errored".into()),
-        ),
+        AppServerCollabAgentStatus::Errored => {
+            AgentStatus::Errored(state.message.clone().unwrap_or_else(|| "Agent 出错".into()))
+        }
         AppServerCollabAgentStatus::Shutdown => AgentStatus::Shutdown,
         AppServerCollabAgentStatus::NotFound => AgentStatus::NotFound,
     }
@@ -1630,12 +1627,12 @@ impl ChatWidget {
                 .is_ok()
         {
             let label = if invalid_items.len() == 1 {
-                "item"
+                "项"
             } else {
-                "items"
+                "项配置"
             };
             let message = format!(
-                "Ignored invalid status line {label}: {}.",
+                "已忽略无效的状态栏{label}：{}。",
                 proper_join(invalid_items.as_slice())
             );
             self.on_warning(message);
@@ -1734,7 +1731,7 @@ impl ChatWidget {
     fn log_websocket_timing_totals(&mut self, delta: RuntimeMetricsSummary) {
         if let Some(label) = history_cell::runtime_metrics_label(delta.responses_api_summary()) {
             self.add_plain_history_lines(vec![
-                vec!["• ".dim(), format!("WebSocket timing: {label}").dark_gray()].into(),
+                vec!["• ".dim(), format!("WebSocket 时序：{label}").dark_gray()].into(),
             ]);
         }
     }
@@ -1798,6 +1795,7 @@ impl ChatWidget {
         self.refresh_model_display();
         self.sync_fast_command_enabled();
         self.sync_personality_command_enabled();
+        self.sync_plugins_command_enabled();
         self.refresh_plugin_mentions();
         let startup_tooltip_override = self.startup_tooltip_override.take();
         let show_fast_status = self.should_show_fast_status(&model_for_header, event.service_tier);
@@ -1862,7 +1860,7 @@ impl ChatWidget {
             let send_name_and_id = |name: String| {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "线程分叉自 ".into(),
                     name.cyan(),
                     " (".into(),
                     forked_from_id_text.clone().cyan(),
@@ -1876,7 +1874,7 @@ impl ChatWidget {
             let send_id_only = || {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "线程分叉自 ".into(),
                     forked_from_id_text.clone().cyan(),
                 ]
                 .into();
@@ -2267,9 +2265,7 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: MULTI_AGENT_ENABLE_YES.to_string(),
-                description: Some(
-                    "Save the setting now. You will need a new session to use it.".to_string(),
-                ),
+                description: Some("立即保存此设置。需要开启新会话后才能使用。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::UpdateFeatureFlags {
                         updates: vec![(Feature::Collab, true)],
@@ -2283,7 +2279,7 @@ impl ChatWidget {
             },
             SelectionItem {
                 name: MULTI_AGENT_ENABLE_NO.to_string(),
-                description: Some("Keep subagents disabled.".to_string()),
+                description: Some("保持子智能体禁用。".to_string()),
                 dismiss_on_select: true,
                 ..Default::default()
             },
@@ -2291,7 +2287,7 @@ impl ChatWidget {
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some(MULTI_AGENT_ENABLE_TITLE.to_string()),
-            subtitle: Some("Subagents are currently disabled in your config.".to_string()),
+            subtitle: Some("你的配置当前已禁用子智能体。".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -2480,7 +2476,7 @@ impl ChatWidget {
         self.finalize_turn();
 
         let message = if message.trim().is_empty() {
-            "Codex is currently experiencing high load.".to_string()
+            "Codex 当前负载较高。".to_string()
         } else {
             message
         };
@@ -2560,11 +2556,11 @@ impl ChatWidget {
                 }
                 let header = if total > 1 {
                     format!(
-                        "Starting MCP servers ({completed}/{total}): {}",
+                        "正在启动 MCP 服务器（{completed}/{total}）：{}",
                         to_show.join(", ")
                     )
                 } else {
-                    format!("Booting MCP server: {first}")
+                    format!("正在启动 MCP 服务器：{first}")
                 };
                 self.set_status_header(header);
             }
@@ -2577,16 +2573,16 @@ impl ChatWidget {
         let mut parts = Vec::new();
         if !ev.failed.is_empty() {
             let failed_servers: Vec<_> = ev.failed.iter().map(|f| f.server.clone()).collect();
-            parts.push(format!("failed: {}", failed_servers.join(", ")));
+            parts.push(format!("失败：{}", failed_servers.join(", ")));
         }
         if !ev.cancelled.is_empty() {
             self.on_warning(format!(
-                "MCP startup interrupted. The following servers were not initialized: {}",
+                "MCP 启动已中断。以下服务器未完成初始化：{}",
                 ev.cancelled.join(", ")
             ));
         }
         if !parts.is_empty() {
-            self.on_warning(format!("MCP startup incomplete ({})", parts.join("; ")));
+            self.on_warning(format!("MCP 启动未完成（{}）", parts.join("; ")));
         }
 
         self.mcp_startup_status = None;
@@ -2606,12 +2602,13 @@ impl ChatWidget {
         if reason != TurnAbortReason::ReviewEnded {
             if send_pending_steers_immediately {
                 self.add_to_history(history_cell::new_info_event(
-                    "Model interrupted to submit steer instructions.".to_owned(),
+                    "模型已中断，以便提交引导说明。".to_owned(),
                     /*hint*/ None,
                 ));
             } else {
                 self.add_to_history(history_cell::new_error_event(
-                    "Conversation interrupted - tell the model what to do differently. Something went wrong? Hit `/feedback` to report the issue.".to_owned(),
+                    "对话已中断——请告诉模型接下来该如何调整。若出现问题，可使用 `/feedback` 反馈。"
+                        .to_owned(),
                 ));
             }
         }
@@ -2838,10 +2835,10 @@ impl ChatWidget {
                         .and_then(serde_json::Value::as_u64)
                         .unwrap_or(files.len() as u64);
                     Some(if files.len() == 1 {
-                        format!("apply_patch touching {}", files[0])
+                        format!("apply_patch 修改 {}", files[0])
                     } else {
                         format!(
-                            "apply_patch touching {change_count} changes across {} files",
+                            "apply_patch 在 {} 个文件中修改了 {change_count} 处",
                             files.len()
                         )
                     })
@@ -2849,7 +2846,7 @@ impl ChatWidget {
                 "network_access" => action
                     .get("target")
                     .and_then(serde_json::Value::as_str)
-                    .map(|target| format!("network access to {target}")),
+                    .map(|target| format!("访问网络目标 {target}")),
                 "mcp_tool_call" => {
                     let tool_name = action
                         .get("tool_name")
@@ -2858,8 +2855,8 @@ impl ChatWidget {
                         .get("connector_name")
                         .and_then(serde_json::Value::as_str)
                         .or_else(|| action.get("server").and_then(serde_json::Value::as_str))
-                        .unwrap_or("unknown server");
-                    Some(format!("MCP {tool_name} on {label}"))
+                        .unwrap_or("未知服务器");
+                    Some(format!("在 {label} 上调用 MCP 工具 {tool_name}"))
                 }
                 _ => None,
             }
@@ -2985,13 +2982,13 @@ impl ChatWidget {
                     let server = action
                         .get("server")
                         .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown server");
+                        .unwrap_or("未知服务器");
                     let tool_name = action
                         .get("tool_name")
                         .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown tool");
+                        .unwrap_or("未知工具");
                     history_cell::new_guardian_denied_action_request(format!(
-                        "codex to call MCP tool {server}.{tool_name}"
+                        "codex 调用 MCP 工具 {server}.{tool_name}"
                     ))
                 }
                 Some("network_access") => {
@@ -2999,10 +2996,8 @@ impl ChatWidget {
                         .get("target")
                         .and_then(serde_json::Value::as_str)
                         .or_else(|| action.get("host").and_then(serde_json::Value::as_str))
-                        .unwrap_or("network target");
-                    history_cell::new_guardian_denied_action_request(format!(
-                        "codex to access {target}"
-                    ))
+                        .unwrap_or("网络目标");
+                    history_cell::new_guardian_denied_action_request(format!("codex 访问 {target}"))
                 }
                 _ => {
                     let summary = serde_json::to_string(&action)
@@ -3540,8 +3535,17 @@ impl ChatWidget {
     }
 
     fn on_hook_completed(&mut self, event: codex_protocol::protocol::HookCompletedEvent) {
-        let status = format!("{:?}", event.run.status).to_lowercase();
-        let header = format!("{} hook ({status})", hook_event_label(event.run.event_name));
+        let status = match event.run.status {
+            codex_protocol::protocol::HookRunStatus::Running => "运行中",
+            codex_protocol::protocol::HookRunStatus::Completed => "已完成",
+            codex_protocol::protocol::HookRunStatus::Failed => "失败",
+            codex_protocol::protocol::HookRunStatus::Blocked => "已阻止",
+            codex_protocol::protocol::HookRunStatus::Stopped => "已停止",
+        };
+        let header = format!(
+            "{} 钩子（{status}）",
+            hook_event_label(event.run.event_name)
+        );
         let mut lines: Vec<ratatui::text::Line<'static>> = vec![header.into()];
         for entry in event.run.entries {
             let prefix = match entry.kind {
@@ -4289,6 +4293,7 @@ impl ChatWidget {
             .set_collaboration_modes_enabled(/*enabled*/ true);
         widget.sync_fast_command_enabled();
         widget.sync_personality_command_enabled();
+        widget.sync_plugins_command_enabled();
         widget
             .bottom_pane
             .set_queued_message_edit_binding(widget.queued_message_edit_binding);
@@ -4354,7 +4359,7 @@ impl ChatWidget {
                     Err(err) => {
                         tracing::warn!("failed to paste image: {err}");
                         self.add_to_history(history_cell::new_error_event(format!(
-                            "Failed to paste image: {err}",
+                            "粘贴图片失败：{err}",
                         )));
                     }
                 }
@@ -4547,10 +4552,7 @@ impl ChatWidget {
 
     fn dispatch_command(&mut self, cmd: SlashCommand) {
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
-            let message = format!(
-                "'/{}' is disabled while a task is in progress.",
-                cmd.command()
-            );
+            let message = format!("任务进行中时无法使用 `/{}`。", cmd.command());
             self.add_to_history(history_cell::new_error_event(message));
             self.bottom_pane.drain_pending_submission_state();
             self.request_redraw();
@@ -4749,10 +4751,10 @@ impl ChatWidget {
                             if is_git_repo {
                                 diff_text
                             } else {
-                                "`/diff` — _not inside a git repository_".to_string()
+                                "`/diff` — _当前不在 Git 仓库中_".to_string()
                             }
                         }
-                        Err(e) => format!("Failed to compute diff: {e}"),
+                        Err(e) => format!("计算 diff 失败：{e}"),
                     };
                     tx.send(AppEvent::DiffResult(text));
                 });
@@ -4877,10 +4879,7 @@ impl ChatWidget {
             return;
         }
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
-            let message = format!(
-                "'/{}' is disabled while a task is in progress.",
-                cmd.command()
-            );
+            let message = format!("任务进行中时无法使用 `/{}`。", cmd.command());
             self.add_to_history(history_cell::new_error_event(message));
             self.request_redraw();
             return;
@@ -5687,7 +5686,7 @@ impl ChatWidget {
                             is_error: Some(false),
                             meta: None,
                         }),
-                        (None, None) => Err("MCP tool call completed without a result".to_string()),
+                        (None, None) => Err("MCP 工具调用已完成，但未返回结果".to_string()),
                     },
                 });
             }
@@ -6059,6 +6058,7 @@ impl ChatWidget {
             | ServerNotification::ContextCompacted(_)
             | ServerNotification::FuzzyFileSearchSessionUpdated(_)
             | ServerNotification::FuzzyFileSearchSessionCompleted(_)
+            | ServerNotification::ThreadRealtimeTranscriptUpdated(_)
             | ServerNotification::WindowsWorldWritableWarning(_)
             | ServerNotification::WindowsSandboxSetupCompleted(_)
             | ServerNotification::AccountLoginCompleted(_) => {}
@@ -6423,7 +6423,7 @@ impl ChatWidget {
                     self.submit_pending_steers_after_interrupt = false;
                     self.pending_steers.clear();
                     self.refresh_pending_input_preview();
-                    self.on_error("Turn aborted: replaced by a new task".to_owned())
+                    self.on_error("当前任务已中止：已被新任务替换。".to_owned())
                 }
                 TurnAbortReason::ReviewEnded => {
                     self.on_interrupted_turn(ev.reason);
@@ -6647,9 +6647,9 @@ impl ChatWidget {
             if output.findings.is_empty() {
                 let explanation = output.overall_explanation.trim().to_string();
                 if explanation.is_empty() {
-                    tracing::error!("Reviewer failed to output a response.");
+                    tracing::error!("审查器未能输出结果。");
                     self.add_to_history(history_cell::new_error_event(
-                        "Reviewer failed to output a response.".to_owned(),
+                        "审查器未能输出结果。".to_owned(),
                     ));
                 } else {
                     // Show explanation when there are no structured findings.
@@ -6672,7 +6672,7 @@ impl ChatWidget {
         self.restore_pre_review_token_info();
         // Append a finishing banner at the end of this turn.
         self.add_to_history(history_cell::new_review_status_line(
-            "<< Code review finished >>".to_string(),
+            "<< 代码审查已完成 >>".to_string(),
         ));
         self.request_redraw();
     }
@@ -7021,7 +7021,7 @@ impl ChatWidget {
                 let label = window
                     .and_then(|window| window.window_minutes)
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
+                    .unwrap_or_else(|| "每周".to_string());
                 self.status_line_limit_display(window, &label)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
@@ -8986,6 +8986,7 @@ impl ChatWidget {
             self.sync_personality_command_enabled();
         }
         if feature == Feature::Plugins {
+            self.sync_plugins_command_enabled();
             self.refresh_plugin_mentions();
         }
         if feature == Feature::PreventIdleSleep {
@@ -9214,6 +9215,11 @@ impl ChatWidget {
     fn sync_personality_command_enabled(&mut self) {
         self.bottom_pane
             .set_personality_command_enabled(self.config.features.enabled(Feature::Personality));
+    }
+
+    fn sync_plugins_command_enabled(&mut self) {
+        self.bottom_pane
+            .set_plugins_command_enabled(self.config.features.enabled(Feature::Plugins));
     }
 
     fn current_model_supports_personality(&self) -> bool {
@@ -9523,10 +9529,6 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    pub(crate) fn add_warning_message(&mut self, message: String) {
-        self.on_warning(message);
-    }
-
     fn add_app_server_stub_message(&mut self, feature: &str) {
         warn!(feature, "stubbed unsupported app-server TUI feature");
         self.add_error_message(format!("{feature}: {APP_SERVER_TUI_STUB_MESSAGE}"));
@@ -9540,7 +9542,7 @@ impl ChatWidget {
             "• ".into(),
             "线程已重命名为 ".into(),
             name.cyan(),
-            ", to resume this thread run ".into(),
+            ", 可运行以下命令恢复此线程：".into(),
             resume_cmd.cyan(),
         ];
         PlainHistoryCell::new(vec![line.into()])
@@ -10503,14 +10505,11 @@ impl Notification {
                     .unwrap_or_else(|| "智能体回合完成".to_string())
             }
             Notification::ExecApprovalRequested { command } => {
-                format!(
-                    "Approval requested: {}",
-                    truncate_text(command, /*max_graphemes*/ 30)
-                )
+                format!("需要审批：{}", truncate_text(command, /*max_graphemes*/ 30))
             }
             Notification::EditApprovalRequested { cwd, changes } => {
                 format!(
-                    "Codex wants to edit {}",
+                    "Codex 想要编辑 {}",
                     if changes.len() == 1 {
                         #[allow(clippy::unwrap_used)]
                         display_path_for(changes.first().unwrap(), cwd)
@@ -10520,7 +10519,7 @@ impl Notification {
                 )
             }
             Notification::ElicitationRequested { server_name } => {
-                format!("Approval requested by {server_name}")
+                format!("{server_name} 请求审批")
             }
             Notification::PlanModePrompt { title } => {
                 format!("计划模式提示：{title}")
@@ -10601,14 +10600,14 @@ impl Notification {
 const AGENT_NOTIFICATION_PREVIEW_GRAPHEMES: usize = 200;
 
 const PLACEHOLDERS: [&str; 8] = [
-    "Explain this codebase",
-    "Summarize recent commits",
-    "Implement {feature}",
-    "Find and fix a bug in @filename",
-    "Write tests for @filename",
-    "Improve documentation in @filename",
-    "Run /review on my current changes",
-    "Use /skills to list available skills",
+    "解释这个代码库",
+    "总结最近的提交",
+    "实现 {feature}",
+    "查找并修复 @filename 中的 bug",
+    "为 @filename 编写测试",
+    "完善 @filename 的文档",
+    "对我当前的改动运行 /review",
+    "使用 /skills 列出可用技能",
 ];
 
 // Extract the first bold (Markdown) element in the form **...** from `s`.
@@ -10643,9 +10642,9 @@ fn extract_first_bold(s: &str) -> Option<String> {
 
 fn hook_event_label(event_name: codex_protocol::protocol::HookEventName) -> &'static str {
     match event_name {
-        codex_protocol::protocol::HookEventName::SessionStart => "SessionStart",
-        codex_protocol::protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
-        codex_protocol::protocol::HookEventName::Stop => "Stop",
+        codex_protocol::protocol::HookEventName::SessionStart => "会话启动",
+        codex_protocol::protocol::HookEventName::UserPromptSubmit => "提交消息",
+        codex_protocol::protocol::HookEventName::Stop => "停止",
     }
 }
 

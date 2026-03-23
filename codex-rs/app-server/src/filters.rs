@@ -134,6 +134,7 @@ mod tests {
             parent_thread_id,
             depth: 1,
             parent_model: None,
+            agent_path: None,
             agent_nickname: None,
             agent_role: None,
         });

@@ -3,4 +3,4 @@ source: tui_app_server/src/history_cell.rs
 expression: rendered
 ---
 • 已执行 echo ok
-  └ (no output)
+  └ （无输出）

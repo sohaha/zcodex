@@ -430,7 +430,7 @@ mod tests {
                 "gpt-5.1-codex-mini",
                 "gpt-5.1-codex-max",
                 None,
-                Some("升级到 gpt-5.2-codex，体验最新最强的 agentic coding 模型。".to_string()),
+                Some("升级到 gpt-5.2-codex，体验最新最强的智能编程模型。".to_string()),
                 None,
                 "gpt-5.1-codex-max".to_string(),
                 Some("为 Codex 优化的旗舰模型，兼顾深度与速度。".to_string()),

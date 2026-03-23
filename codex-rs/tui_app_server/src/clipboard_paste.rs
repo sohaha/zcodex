@@ -13,10 +13,10 @@ pub enum PasteImageError {
 impl std::fmt::Display for PasteImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PasteImageError::ClipboardUnavailable(msg) => write!(f, "clipboard unavailable: {msg}"),
-            PasteImageError::NoImage(msg) => write!(f, "no image on clipboard: {msg}"),
-            PasteImageError::EncodeFailed(msg) => write!(f, "could not encode image: {msg}"),
-            PasteImageError::IoError(msg) => write!(f, "io error: {msg}"),
+            PasteImageError::ClipboardUnavailable(msg) => write!(f, "剪贴板不可用：{msg}"),
+            PasteImageError::NoImage(msg) => write!(f, "剪贴板中没有图片：{msg}"),
+            PasteImageError::EncodeFailed(msg) => write!(f, "无法编码图片：{msg}"),
+            PasteImageError::IoError(msg) => write!(f, "IO 错误：{msg}"),
         }
     }
 }
@@ -112,7 +112,7 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
 #[cfg(target_os = "android")]
 pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unsupported on Android".into(),
+        "Android 平台暂不支持从剪贴板粘贴图片".into(),
     ))
 }
 
@@ -232,7 +232,7 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
 pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     // Keep error consistent with paste_image_as_png.
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unsupported on Android".into(),
+        "Android 平台暂不支持从剪贴板粘贴图片".into(),
     ))
 }
 

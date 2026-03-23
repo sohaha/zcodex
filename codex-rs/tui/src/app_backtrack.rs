@@ -196,7 +196,7 @@ impl App {
 
         if self.backtrack.pending_rollback.is_some() {
             self.chat_widget
-                .add_error_message("Backtrack rollback already in progress.".to_string());
+                .add_error_message("回退到上一轮的操作已在进行中。".to_string());
             return;
         }
 

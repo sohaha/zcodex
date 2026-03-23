@@ -80,12 +80,12 @@ impl ChatWidget {
                 .is_ok()
         {
             let label = if invalid_items.len() == 1 {
-                "item"
+                "项"
             } else {
-                "items"
+                "项配置"
             };
             let message = format!(
-                "Ignored invalid status line {label}: {}.",
+                "已忽略无效的状态栏{label}：{}。",
                 proper_join(invalid_items)
             );
             self.on_warning(message);
@@ -101,12 +101,12 @@ impl ChatWidget {
                 .is_ok()
         {
             let label = if invalid_items.len() == 1 {
-                "item"
+                "项"
             } else {
-                "items"
+                "项配置"
             };
             let message = format!(
-                "Ignored invalid terminal title {label}: {}.",
+                "已忽略无效的终端标题{label}：{}。",
                 proper_join(invalid_items)
             );
             self.on_warning(message);

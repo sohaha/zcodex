@@ -3,7 +3,7 @@ source: tui_app_server/src/bottom_pane/chat_composer.rs
 expression: terminal.backend()
 ---
 "                                                                                                    "
-"› [Pasted Content 1003 chars][Pasted Content 1007 chars] another short paste                        "
+"› [粘贴内容 1003 字][粘贴内容 1007 字] another short paste                                          " Hidden by multi-width symbols: [(4, "o"), (6, "t"), (8, " "), (10, " "), (18, " "), (22, " "), (24, " "), (26, " "), (28, " "), (36, " ")]
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "

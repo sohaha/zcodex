@@ -2,8 +2,8 @@
 source: tui/src/bottom_pane/feedback_view.rs
 expression: rendered
 ---
-▌ Tell us more (safety check)
+▌ 补 充 说 明 （ 安 全 检 查 ）
 ▌
-▌ (optional) Share what was refused and why it should have b
+▌ （ 可 选 ） 说 明 被 拒 绝 的 内 容 ， 以 及 为 什 么 本 应 被 允 许
 
-按 enter 确认，按 esc 返回
+按  enter 确 认 ， 按  esc 返 回

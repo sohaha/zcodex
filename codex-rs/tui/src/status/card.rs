@@ -32,6 +32,7 @@ use super::helpers::compose_agents_summary;
 use super::helpers::compose_model_display;
 use super::helpers::format_directory_display;
 use super::helpers::format_tokens_compact;
+use super::helpers::localize_approval_policy;
 use super::rate_limits::RateLimitSnapshotDisplay;
 use super::rate_limits::StatusRateLimitData;
 use super::rate_limits::StatusRateLimitRow;
@@ -195,7 +196,7 @@ impl StatusHistoryCell {
         let approval = config_entries
             .iter()
             .find(|(k, _)| *k == "approval")
-            .map(|(_, v)| v.clone())
+            .map(|(_, v)| localize_approval_policy(v))
             .unwrap_or_else(|| "<未知>".to_string());
         let sandbox = match config.permissions.sandbox_policy.get() {
             SandboxPolicy::DangerFullAccess => "danger-full-access".to_string(),

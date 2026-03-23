@@ -1093,7 +1093,7 @@ impl HistoryCell for TooltipHistoryCell {
             .max(1);
         let mut lines: Vec<Line<'static>> = Vec::new();
         append_markdown(
-            &format!("**Tip:** {}", self.tip),
+            &format!("**提示：**{}", self.tip),
             Some(wrap_width),
             Some(self.cwd.as_path()),
             &mut lines,
@@ -1319,13 +1319,13 @@ impl HistoryCell for SessionHeaderHistoryCell {
         ];
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
-        const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
-        const DIR_LABEL: &str = "directory:";
+        const CHANGE_MODEL_HINT_EXPLANATION: &str = " 以切换";
+        const DIR_LABEL: &str = "目录:";
         let label_width = DIR_LABEL.len();
 
         let model_label = format!(
             "{model_label:<label_width$}",
-            model_label = "model:",
+            model_label = "模型:",
             label_width = label_width
         );
         let reasoning_label = self.reasoning_label();
@@ -1340,7 +1340,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             }
             if self.show_fast_status {
                 spans.push("   ".into());
-                spans.push(Span::styled("fast", self.model_style.magenta()));
+                spans.push(Span::styled("极速", self.model_style.magenta()));
             }
             spans.push("   ".dim());
             spans.push(CHANGE_MODEL_HINT_COMMAND.cyan());
@@ -1467,16 +1467,16 @@ impl McpToolCallCell {
             rmcp::model::RawContent::Text(text) => {
                 format_and_truncate_tool_result(&text.text, TOOL_CALL_MAX_LINES, width)
             }
-            rmcp::model::RawContent::Image(_) => "<image content>".to_string(),
-            rmcp::model::RawContent::Audio(_) => "<audio content>".to_string(),
+            rmcp::model::RawContent::Image(_) => "<图片内容>".to_string(),
+            rmcp::model::RawContent::Audio(_) => "<音频内容>".to_string(),
             rmcp::model::RawContent::Resource(resource) => {
                 let uri = match resource.resource {
                     rmcp::model::ResourceContents::TextResourceContents { uri, .. } => uri,
                     rmcp::model::ResourceContents::BlobResourceContents { uri, .. } => uri,
                 };
-                format!("embedded resource: {uri}")
+                format!("嵌入资源：{uri}")
             }
-            rmcp::model::RawContent::ResourceLink(link) => format!("link: {}", link.uri),
+            rmcp::model::RawContent::ResourceLink(link) => format!("链接：{}", link.uri),
         }
     }
 }
@@ -1838,7 +1838,7 @@ pub(crate) fn new_mcp_tools_output(
         let mut header: Vec<Span<'static>> = vec!["  • ".into(), server.clone().into()];
         if !cfg.enabled {
             header.push(" ".into());
-            header.push("(disabled)".red());
+            header.push("（已禁用）".red());
             lines.push(header.into());
             if let Some(reason) = cfg.disabled_reason.as_ref().map(ToString::to_string) {
                 lines.push(vec!["    • 原因：".into(), reason.dim()].into());
@@ -2299,7 +2299,7 @@ impl HistoryCell for RequestUserInputResultCell {
         }
 
         if self.interrupted && unanswered > 0 {
-            let summary = format!("interrupted with {unanswered} unanswered");
+            let summary = format!("已中断，仍有 {unanswered} 项未回答");
             lines.extend(wrap_with_prefix(
                 &summary,
                 width,
@@ -3101,8 +3101,7 @@ mod tests {
     #[test]
     fn error_event_oversized_input_snapshot() {
         let cell = new_error_event(
-            "Message exceeds the maximum length of 1048576 characters (1048577 provided)."
-                .to_string(),
+            "消息超出最大长度限制：最多 1048576 个字符，当前为 1048577 个字符。".to_string(),
         );
         let rendered = render_lines(&cell.display_lines(120)).join("\n");
         insta::assert_snapshot!(rendered);
@@ -3741,11 +3740,11 @@ mod tests {
         let lines = render_lines(&cell.display_lines(80));
         let model_line = lines
             .iter()
-            .find(|line| line.contains("model:"))
+            .find(|line| line.contains("模型:"))
             .expect("model line");
 
-        assert!(model_line.contains("gpt-4o high   fast"));
-        assert!(model_line.contains("/model to change"));
+        assert!(model_line.contains("gpt-4o high   极速"));
+        assert!(model_line.contains("/model 以切换"));
     }
 
     #[test]
@@ -3761,11 +3760,11 @@ mod tests {
         let lines = render_lines(&cell.display_lines(80));
         let model_line = lines
             .iter()
-            .find(|line| line.contains("model:"))
+            .find(|line| line.contains("模型:"))
             .expect("model line");
 
         assert!(model_line.contains("gpt-4o high"));
-        assert!(!model_line.contains("fast"));
+        assert!(!model_line.contains("极速"));
     }
 
     #[test]
