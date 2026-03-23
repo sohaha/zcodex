@@ -354,10 +354,10 @@ fn select_attempt(
 
 fn task_status_label(status: &TaskStatus) -> &'static str {
     match status {
-        TaskStatus::Pending => "PENDING",
-        TaskStatus::Ready => "READY",
-        TaskStatus::Applied => "APPLIED",
-        TaskStatus::Error => "ERROR",
+        TaskStatus::Pending => "待处理",
+        TaskStatus::Ready => "就绪",
+        TaskStatus::Applied => "已应用",
+        TaskStatus::Error => "错误",
     }
 }
 
@@ -656,7 +656,7 @@ fn spawn_preflight(
             Err(e) => app::AppEvent::ApplyPreflightFinished {
                 id: task_id,
                 title,
-                message: format!("Preflight failed: {e}"),
+                message: format!("预检失败：{e}"),
                 level: app::ApplyResultLevel::Error,
                 skipped: Vec::new(),
                 conflicts: Vec::new(),
@@ -677,11 +677,11 @@ fn spawn_apply(
     job: ApplyJob,
 ) -> bool {
     if app.apply_inflight {
-        app.status = "An apply is already running; wait for it to finish first.".to_string();
+        app.status = "已有应用任务在运行；请先等待其完成。".to_string();
         return false;
     }
     if app.apply_preflight_inflight {
-        app.status = "Finish the current preflight before starting another apply.".to_string();
+        app.status = "请先完成当前预检，再开始新的应用。".to_string();
         return false;
     }
 
@@ -999,7 +999,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 Err(msg) => {
                                     append_error_log(format!("new-task: submit failed: {msg}"));
                                     if let Some(page) = app.new_task.as_mut() { page.submitting = false; }
-                                    app.status = format!("Submit failed: {msg}. See error.log for details.");
+                                    app.status = format!("提交失败：{msg}。详见 error.log。");
                                     needs_redraw = true;
                                     let _ = frame_tx.send(Instant::now());
                                 }
@@ -1300,7 +1300,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 }
                                 Err(e) => {
                                     append_error_log(format!("apply_task failed for {}: {e}", id.0));
-                                    app.status = format!("Apply failed: {e}");
+                                    app.status = format!("应用失败：{e}");
                                 }
                             }
                             needs_redraw = true;
@@ -2106,7 +2106,7 @@ fn pretty_lines_from_error(raw: &str) -> Vec<String> {
     } else if lines.len() >= 2 {
         // Add a hint to refresh when still in progress.
         if lines.iter().any(|l| l.contains("in_progress")) {
-            lines.push("This task may still be running. Press 'r' to refresh.".to_string());
+            lines.push("该任务可能仍在运行中。按 'r' 刷新。".to_string());
         }
         // Avoid an empty overlay
         lines.push(String::new());
@@ -2233,7 +2233,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "[READY] Example task".to_string(),
+                "[就绪] Example task".to_string(),
                 "Env  •  0s ago".to_string(),
                 "+5/-2 • 3 files".to_string(),
             ]
@@ -2258,7 +2258,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "[PENDING] No diff task".to_string(),
+                "[待处理] No diff task".to_string(),
                 "env-2  •  0s ago".to_string(),
                 "no diff".to_string(),
             ]
@@ -2301,12 +2301,12 @@ mod tests {
             lines,
             vec![
                 "https://chatgpt.com/codex/tasks/task_1".to_string(),
-                "  [READY] Example task".to_string(),
+                "  [就绪] Example task".to_string(),
                 "  Env  •  0s ago".to_string(),
                 "  +5/-2 • 3 files".to_string(),
                 String::new(),
                 "https://chatgpt.com/codex/tasks/task_2".to_string(),
-                "  [PENDING] No diff task".to_string(),
+                "  [待处理] No diff task".to_string(),
                 "  env-2  •  0s ago".to_string(),
                 "  no diff".to_string(),
             ]

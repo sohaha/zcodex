@@ -226,14 +226,14 @@ impl EventProcessor for EventProcessorWithHumanOutput {
         }
         match msg {
             EventMsg::Error(ErrorEvent { message, .. }) => {
-                let prefix = "ERROR:".style(self.red);
+                let prefix = "错误：".style(self.red);
                 ts_msg!(self, "{prefix} {message}");
             }
             EventMsg::Warning(WarningEvent { message }) => {
                 ts_msg!(
                     self,
                     "{} {message}",
-                    "warning:".style(self.yellow).style(self.bold)
+                    "警告：".style(self.yellow).style(self.bold)
                 );
             }
             EventMsg::GuardianAssessment(_) => {}
@@ -242,7 +242,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                 ts_msg!(
                     self,
                     "{} {summary}",
-                    "deprecated:".style(self.magenta).style(self.bold)
+                    "已弃用：".style(self.magenta).style(self.bold)
                 );
                 if let Some(details) = details {
                     ts_msg!(self, "  {}", details.style(self.dimmed));
@@ -250,19 +250,17 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             }
             EventMsg::McpStartupUpdate(update) => {
                 let status_text = match update.status {
-                    codex_protocol::protocol::McpStartupStatus::Starting => "starting".to_string(),
-                    codex_protocol::protocol::McpStartupStatus::Ready => "ready".to_string(),
-                    codex_protocol::protocol::McpStartupStatus::Cancelled => {
-                        "cancelled".to_string()
-                    }
+                    codex_protocol::protocol::McpStartupStatus::Starting => "启动中".to_string(),
+                    codex_protocol::protocol::McpStartupStatus::Ready => "已就绪".to_string(),
+                    codex_protocol::protocol::McpStartupStatus::Cancelled => "已取消".to_string(),
                     codex_protocol::protocol::McpStartupStatus::Failed { ref error } => {
-                        format!("failed: {error}")
+                        format!("失败：{error}")
                     }
                 };
                 ts_msg!(
                     self,
                     "{} {} {}",
-                    "mcp:".style(self.cyan),
+                    "MCP：".style(self.cyan),
                     update.server,
                     status_text
                 );
@@ -270,21 +268,21 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             EventMsg::McpStartupComplete(summary) => {
                 let mut parts = Vec::new();
                 if !summary.ready.is_empty() {
-                    parts.push(format!("ready: {}", summary.ready.join(", ")));
+                    parts.push(format!("已就绪：{}", summary.ready.join(", ")));
                 }
                 if !summary.failed.is_empty() {
                     let servers: Vec<_> = summary.failed.iter().map(|f| f.server.clone()).collect();
-                    parts.push(format!("failed: {}", servers.join(", ")));
+                    parts.push(format!("失败：{}", servers.join(", ")));
                 }
                 if !summary.cancelled.is_empty() {
-                    parts.push(format!("cancelled: {}", summary.cancelled.join(", ")));
+                    parts.push(format!("已取消：{}", summary.cancelled.join(", ")));
                 }
                 let joined = if parts.is_empty() {
-                    "no servers".to_string()
+                    "无服务器".to_string()
                 } else {
-                    parts.join("; ")
+                    parts.join("；")
                 };
-                ts_msg!(self, "{} {}", "mcp startup:".style(self.cyan), joined);
+                ts_msg!(self, "{} {}", "MCP 启动：".style(self.cyan), joined);
             }
             EventMsg::BackgroundEvent(BackgroundEventEvent { message }) => {
                 ts_msg!(self, "{}", message.style(self.dimmed));
@@ -419,7 +417,7 @@ impl EventProcessor for EventProcessorWithHumanOutput {
 
                 let duration = format!(" in {}", format_duration(duration));
 
-                let status_str = if is_success { "success" } else { "failed" };
+                let status_str = if is_success { "成功" } else { "失败" };
                 let title_style = if is_success { self.green } else { self.red };
                 let title = format!(
                     "{} {status_str}{duration}:",
@@ -681,13 +679,13 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             EventMsg::TurnAborted(abort_reason) => {
                 match abort_reason.reason {
                     TurnAbortReason::Interrupted => {
-                        ts_msg!(self, "task interrupted");
+                        ts_msg!(self, "任务已中断");
                     }
                     TurnAbortReason::Replaced => {
-                        ts_msg!(self, "task aborted: replaced by a new task");
+                        ts_msg!(self, "任务已中止：已被新任务替换");
                     }
                     TurnAbortReason::ReviewEnded => {
-                        ts_msg!(self, "task aborted: review ended");
+                        ts_msg!(self, "任务已中止：评审已结束");
                     }
                 }
                 return CodexStatus::InitiateShutdown;
@@ -996,21 +994,21 @@ impl EventProcessorWithHumanOutput {
 
     fn hook_status_name(status: HookRunStatus) -> &'static str {
         match status {
-            HookRunStatus::Running => "running",
-            HookRunStatus::Completed => "completed",
-            HookRunStatus::Failed => "failed",
-            HookRunStatus::Blocked => "blocked",
-            HookRunStatus::Stopped => "stopped",
+            HookRunStatus::Running => "运行中",
+            HookRunStatus::Completed => "已完成",
+            HookRunStatus::Failed => "失败",
+            HookRunStatus::Blocked => "已阻止",
+            HookRunStatus::Stopped => "已停止",
         }
     }
 
     fn hook_entry_prefix(kind: HookOutputEntryKind) -> &'static str {
         match kind {
-            HookOutputEntryKind::Warning => "warning:",
-            HookOutputEntryKind::Stop => "stop:",
-            HookOutputEntryKind::Feedback => "feedback:",
-            HookOutputEntryKind::Context => "context:",
-            HookOutputEntryKind::Error => "error:",
+            HookOutputEntryKind::Warning => "警告：",
+            HookOutputEntryKind::Stop => "停止：",
+            HookOutputEntryKind::Feedback => "反馈：",
+            HookOutputEntryKind::Context => "上下文：",
+            HookOutputEntryKind::Error => "错误：",
         }
     }
 
@@ -1256,28 +1254,28 @@ fn format_collab_invocation(tool: &str, call_id: &str, prompt: Option<&str>) -> 
 
 fn format_collab_status(status: &AgentStatus) -> String {
     match status {
-        AgentStatus::PendingInit => "pending init".to_string(),
-        AgentStatus::Running => "running".to_string(),
-        AgentStatus::Interrupted => "interrupted".to_string(),
+        AgentStatus::PendingInit => "等待初始化".to_string(),
+        AgentStatus::Running => "运行中".to_string(),
+        AgentStatus::Interrupted => "已中断".to_string(),
         AgentStatus::Completed(Some(message)) => {
             let preview = truncate_preview(message.trim(), /*max_chars*/ 120);
             if preview.is_empty() {
-                "completed".to_string()
+                "已完成".to_string()
             } else {
-                format!("completed: \"{preview}\"")
+                format!("已完成：\"{preview}\"")
             }
         }
-        AgentStatus::Completed(None) => "completed".to_string(),
+        AgentStatus::Completed(None) => "已完成".to_string(),
         AgentStatus::Errored(message) => {
             let preview = truncate_preview(message.trim(), /*max_chars*/ 120);
             if preview.is_empty() {
-                "errored".to_string()
+                "出错".to_string()
             } else {
-                format!("errored: \"{preview}\"")
+                format!("出错：\"{preview}\"")
             }
         }
-        AgentStatus::Shutdown => "shutdown".to_string(),
-        AgentStatus::NotFound => "not found".to_string(),
+        AgentStatus::Shutdown => "已关闭".to_string(),
+        AgentStatus::NotFound => "未找到".to_string(),
     }
 }
 

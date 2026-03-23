@@ -323,7 +323,7 @@ fn draw_diff_overlay(frame: &mut Frame, area: Rect, app: &mut App) {
         .diff_overlay
         .as_ref()
         .and_then(|o| o.sd.wrapped_lines().first().cloned())
-        .map(|s| s.trim_start().starts_with("Task failed:"))
+        .map(|s| s.trim_start().starts_with("任务失败："))
         .unwrap_or(false)
         && !ov_can_apply;
     let title = app
@@ -741,11 +741,11 @@ fn conversation_text_spans(
 
 fn attempt_status_span(status: AttemptStatus) -> Option<ratatui::text::Span<'static>> {
     match status {
-        AttemptStatus::Completed => Some("Completed".green()),
-        AttemptStatus::Failed => Some("Failed".red().bold()),
-        AttemptStatus::InProgress => Some("In progress".magenta()),
-        AttemptStatus::Pending => Some("Pending".cyan()),
-        AttemptStatus::Cancelled => Some("Cancelled".dim()),
+        AttemptStatus::Completed => Some("已完成".green()),
+        AttemptStatus::Failed => Some("失败".red().bold()),
+        AttemptStatus::InProgress => Some("进行中".magenta()),
+        AttemptStatus::Pending => Some("待处理".cyan()),
+        AttemptStatus::Cancelled => Some("已取消".dim()),
         AttemptStatus::Unknown => None,
     }
 }
@@ -787,10 +787,10 @@ fn style_diff_line(raw: &str) -> Line<'static> {
 
 fn render_task_item(_app: &App, t: &codex_cloud_tasks_client::TaskSummary) -> ListItem<'static> {
     let status = match t.status {
-        TaskStatus::Ready => "READY".green(),
-        TaskStatus::Pending => "PENDING".magenta(),
-        TaskStatus::Applied => "APPLIED".blue(),
-        TaskStatus::Error => "ERROR".red(),
+        TaskStatus::Ready => "就绪".green(),
+        TaskStatus::Pending => "待处理".magenta(),
+        TaskStatus::Applied => "已应用".blue(),
+        TaskStatus::Error => "错误".red(),
     };
 
     // Title line: [STATUS] Title
