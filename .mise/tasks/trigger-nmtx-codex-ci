@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo="sohaha/nmtx"
+workflow="codex.yml"
+ref="master"
+version=""
+source_ref="web"
+targets="all"
+release_repo="sohaha/zcodex"
+release_tag=""
+dry_run=0
+token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+
+usage() {
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run trigger-nmtx-codex-ci --version <version> [options]
+
+选项:
+  --version <version>          必填，发布版本，例如 1.2.3 或 1.2.3-alpha.1
+  --source-ref <ref>           源分支，默认 web
+  --targets <targets>          目标平台，默认 all
+  --release-repo <repo>        发布仓库，默认 sohaha/zcodex
+  --release-tag <tag>          可选，默认由工作流推导为 v<version>
+  --ref <git-ref>              触发 nmtx 工作流所用分支，默认 master
+  --repo <owner/name>          GitHub 仓库，默认 sohaha/nmtx
+  --dry-run                    只打印请求，不实际触发
+  -h, --help                   显示帮助
+
+说明:
+  需要环境变量 GITHUB_TOKEN 或 GH_TOKEN。
+  触发的是 GitHub 仓库 sohaha/nmtx 的 .github/workflows/codex.yml workflow_dispatch。
+EOF
+}
+
+die() {
+  echo "[mise] $*" >&2
+  exit 1
+}
+
+require_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    die "缺少依赖: $1"
+  fi
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --version)
+      [ "$#" -ge 2 ] || die "--version 缺少参数"
+      version="$2"
+      shift 2
+      ;;
+    --source-ref)
+      [ "$#" -ge 2 ] || die "--source-ref 缺少参数"
+      source_ref="$2"
+      shift 2
+      ;;
+    --targets)
+      [ "$#" -ge 2 ] || die "--targets 缺少参数"
+      targets="$2"
+      shift 2
+      ;;
+    --release-repo)
+      [ "$#" -ge 2 ] || die "--release-repo 缺少参数"
+      release_repo="$2"
+      shift 2
+      ;;
+    --release-tag)
+      [ "$#" -ge 2 ] || die "--release-tag 缺少参数"
+      release_tag="$2"
+      shift 2
+      ;;
+    --ref)
+      [ "$#" -ge 2 ] || die "--ref 缺少参数"
+      ref="$2"
+      shift 2
+      ;;
+    --repo)
+      [ "$#" -ge 2 ] || die "--repo 缺少参数"
+      repo="$2"
+      shift 2
+      ;;
+    --dry-run)
+      dry_run=1
+      shift
+      ;;
+    -h|--help|help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      die "未知参数: $1"
+      ;;
+  esac
+done
+
+[ -n "$version" ] || {
+  usage
+  die "必须提供 --version"
+}
+
+case "$version" in
+  [0-9]*.[0-9]*.[0-9]*)
+    ;;
+  *)
+    die "version 格式看起来不正确: $version"
+    ;;
+esac
+
+require_command curl
+require_command jq
+
+payload="$(
+  jq -cn \
+    --arg ref "$ref" \
+    --arg version "$version" \
+    --arg source_ref "$source_ref" \
+    --arg targets "$targets" \
+    --arg release_repo "$release_repo" \
+    --arg release_tag "$release_tag" \
+    '
+      {
+        ref: $ref,
+        inputs: ({
+          version: $version,
+          source_ref: $source_ref,
+          targets: $targets,
+          release_repo: $release_repo,
+        } + if $release_tag == "" then {} else {release_tag: $release_tag} end),
+      }
+    '
+)"
+
+echo "[mise] repo=$repo workflow=$workflow ref=$ref version=$version source_ref=$source_ref targets=$targets release_repo=$release_repo"
+if [ -n "$release_tag" ]; then
+  echo "[mise] release_tag=$release_tag"
+fi
+
+if [ "$dry_run" -eq 1 ]; then
+  echo "[mise] dry-run payload=$payload"
+  exit 0
+fi
+
+[ -n "$token" ] || die "缺少 GitHub token，请设置 GITHUB_TOKEN 或 GH_TOKEN"
+
+status_code="$(
+  curl -sS \
+    -o /tmp/trigger-nmtx-codex-ci-response.json \
+    -w "%{http_code}" \
+    -X POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "Authorization: Bearer $token" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "https://api.github.com/repos/$repo/actions/workflows/$workflow/dispatches" \
+    -d "$payload"
+)"
+
+if [ "$status_code" != "204" ]; then
+  response="$(cat /tmp/trigger-nmtx-codex-ci-response.json 2>/dev/null || true)"
+  die "触发失败: HTTP $status_code ${response:+- $response}"
+fi
+
+echo "[mise] 已触发 $repo:$workflow"
