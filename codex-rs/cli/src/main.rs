@@ -110,7 +110,7 @@ enum Subcommand {
     /// 运行 Token 优化的命令包装器。
     Rtk(RtkArgs),
 
-    /// 以 MCP 服务器（stdio）模式启动 Codex。
+    /// 以 MCP 服务器（标准输入/输出）模式启动 Codex。
     McpServer,
 
     /// [实验性] 运行应用服务器或相关工具。
@@ -396,7 +396,7 @@ struct GenerateTsCommand {
 
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
-    /// 输出目录（写入 schema 汇总文件）
+    /// 输出目录（写入 Schema 汇总文件）
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
