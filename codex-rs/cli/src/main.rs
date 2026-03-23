@@ -336,7 +336,7 @@ struct AppServerCommand {
     subcommand: Option<AppServerSubcommand>,
 
     /// 传输端点 URL。支持：`stdio://`（默认）、
-    /// `ws://IP:PORT`.
+    /// `ws://IP:PORT`。
     #[arg(
         long = "listen",
         value_name = "URL",
@@ -346,19 +346,18 @@ struct AppServerCommand {
 
     /// 控制是否默认启用分析上报。
     ///
-    /// Analytics are disabled by default for app-server. Users have to explicitly opt in
-    /// via the `analytics` section in the config.toml file.
+    /// app-server 默认关闭分析上报。用户需要在 config.toml 的 `analytics`
+    /// 配置段中显式选择启用。
     ///
-    /// However, for first-party use cases like the VSCode IDE extension, we default analytics
-    /// to be enabled by default by setting this flag. Users can still opt out by setting this
-    /// in their config.toml:
+    /// 但对于 VSCode IDE 扩展这类第一方用例，我们可通过此标志让分析上报默认启用。
+    /// 用户仍可在 config.toml 中这样设置来选择退出：
     ///
     /// ```toml
     /// [analytics]
     /// enabled = false
     /// ```
     ///
-    /// See https://developers.openai.com/codex/config-advanced/#metrics for more details.
+    /// 详情见 https://developers.openai.com/codex/config-advanced/#metrics 。
     #[arg(long = "analytics-default-enabled")]
     analytics_default_enabled: bool,
 }
