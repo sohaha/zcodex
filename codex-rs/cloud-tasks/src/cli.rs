@@ -14,15 +14,15 @@ pub struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
-    /// Submit a new Codex Cloud task without launching the TUI.
+    /// 提交新的 Codex Cloud 任务而不启动 TUI。
     Exec(ExecCommand),
-    /// Show the status of a Codex Cloud task.
+    /// 查看 Codex Cloud 任务状态。
     Status(StatusCommand),
-    /// List Codex Cloud tasks.
+    /// 列出 Codex Cloud 任务。
     List(ListCommand),
-    /// Apply the diff for a Codex Cloud task locally.
+    /// 在本地应用 Codex Cloud 任务的 diff。
     Apply(ApplyCommand),
-    /// Show the unified diff for a Codex Cloud task.
+    /// 查看 Codex Cloud 任务的统一 diff。
     Diff(DiffCommand),
 }
 

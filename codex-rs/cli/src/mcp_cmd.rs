@@ -61,7 +61,7 @@ pub enum McpSubcommand {
 
 #[derive(Debug, clap::Parser)]
 pub struct ListArgs {
-    /// 以 JSON 输出已配置服务器。
+    /// 以 JSON 格式输出已配置的服务器。
     #[arg(long)]
     pub json: bool,
 }
@@ -157,7 +157,7 @@ pub struct LoginArgs {
 
 #[derive(Debug, clap::Parser)]
 pub struct LogoutArgs {
-    /// 要登出的 MCP 服务器名称。
+    /// 要退出登录的 MCP 服务器名称。
     pub name: String,
 }
 
