@@ -3597,7 +3597,7 @@ impl ChatComposer {
                     insert_text: format!("${skill_name}"),
                     search_terms,
                     path: Some(skill.path_to_skills_md.to_string_lossy().into_owned()),
-                    category_tag: Some("[Skill]".to_string()),
+                    category_tag: Some("[技能]".to_string()),
                     sort_rank: 1,
                 });
             }
@@ -3611,7 +3611,7 @@ impl ChatComposer {
                     .unwrap_or((plugin.config_name.as_str(), ""));
                 let mut capability_labels = Vec::new();
                 if plugin.has_skills {
-                    capability_labels.push("skills".to_string());
+                    capability_labels.push("技能".to_string());
                 }
                 if !plugin.mcp_server_names.is_empty() {
                     let mcp_server_count = plugin.mcp_server_names.len();
@@ -3673,7 +3673,7 @@ impl ChatComposer {
                     insert_text: format!("${slug}"),
                     search_terms,
                     path: Some(format!("app://{connector_id}")),
-                    category_tag: Some("[App]".to_string()),
+                    category_tag: Some("[应用]".to_string()),
                     sort_rank: 1,
                 });
             }
