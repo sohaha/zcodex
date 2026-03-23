@@ -1112,7 +1112,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "当前 profile 无法关闭 Guardian 审批，因为 `approvals_reviewer` 配置在 active profile 之外。".to_string(),
+                        "当前配置档无法关闭 Guardian 审批，因为 `approvals_reviewer` 配置在当前配置档之外。".to_string(),
                     );
                 continue;
             }
@@ -3363,7 +3363,7 @@ impl App {
                             message.push_str(label);
                         }
                         if let Some(profile) = profile {
-                            message.push_str("（profile `");
+                            message.push_str("（配置档 `");
                             message.push_str(profile);
                             message.push_str("`）");
                         }
@@ -3376,7 +3376,7 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "保存 profile `{profile}` 的模型失败：{err}"
+                                "保存配置档 `{profile}` 的模型失败：{err}"
                             ));
                         } else {
                             self.chat_widget
@@ -3397,7 +3397,7 @@ impl App {
                         let label = Self::personality_label(personality);
                         let mut message = format!("人格已设置为 {label}");
                         if let Some(profile) = profile {
-                            message.push_str("（profile `");
+                            message.push_str("（配置档 `");
                             message.push_str(profile);
                             message.push_str("`）");
                         }
@@ -3410,7 +3410,7 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "保存 profile `{profile}` 的人格失败：{err}"
+                                "保存配置档 `{profile}` 的人格失败：{err}"
                             ));
                         } else {
                             self.chat_widget
@@ -3436,7 +3436,7 @@ impl App {
                         };
                         let mut message = format!("极速模式已设置为 {status}");
                         if let Some(profile) = profile {
-                            message.push_str("（profile `");
+                            message.push_str("（配置档 `");
                             message.push_str(profile);
                             message.push_str("`）");
                         }
@@ -3446,7 +3446,7 @@ impl App {
                         tracing::error!(error = %err, "failed to persist fast mode selection");
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "保存 profile `{profile}` 的极速模式设置失败：{err}"
+                                "保存配置档 `{profile}` 的极速模式设置失败：{err}"
                             ));
                         } else {
                             self.chat_widget
@@ -3639,7 +3639,7 @@ impl App {
                         "failed to persist full access warning acknowledgement"
                     );
                     self.chat_widget
-                        .add_error_message(format!("保存 full access 确认偏好失败：{err}"));
+                        .add_error_message(format!("保存完整访问确认偏好失败：{err}"));
                 }
             }
             AppEvent::PersistWorldWritableWarningAcknowledged => {
@@ -3653,7 +3653,7 @@ impl App {
                         "failed to persist world-writable warning acknowledgement"
                     );
                     self.chat_widget
-                        .add_error_message(format!("保存 Agent mode 警告偏好失败：{err}"));
+                        .add_error_message(format!("保存智能体模式警告偏好失败：{err}"));
                 }
             }
             AppEvent::PersistRateLimitSwitchPromptHidden => {
@@ -3700,7 +3700,7 @@ impl App {
                     );
                     if let Some(profile) = profile {
                         self.chat_widget.add_error_message(format!(
-                            "保存 profile `{profile}` 的计划模式推理强度失败：{err}"
+                            "保存配置档 `{profile}` 的计划模式推理强度失败：{err}"
                         ));
                     } else {
                         self.chat_widget
