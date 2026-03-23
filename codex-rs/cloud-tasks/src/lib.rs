@@ -209,7 +209,7 @@ async fn resolve_environment_id(ctx: &BackendContext, requested: &str) -> anyhow
         .collect::<Vec<_>>();
     match label_matches.as_slice() {
         [] => Err(anyhow!(
-            "environment '{trimmed}' not found; run `codex cloud` to list available environments"
+            "未找到环境“{trimmed}”；请运行 `codex cloud` 查看可用环境"
         )),
         [single] => Ok(single.id.clone()),
         [first, rest @ ..] => {
@@ -616,11 +616,11 @@ fn spawn_preflight(
     job: ApplyJob,
 ) -> bool {
     if app.apply_inflight {
-        app.status = "An apply is already running; wait for it to finish first.".to_string();
+        app.status = "已有应用任务在运行；请先等待其完成。".to_string();
         return false;
     }
     if app.apply_preflight_inflight {
-        app.status = "A preflight is already running; wait for it to finish first.".to_string();
+        app.status = "已有预检任务在运行；请先等待其完成。".to_string();
         return false;
     }
 

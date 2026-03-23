@@ -30,9 +30,7 @@ async fn exits_non_zero_when_required_mcp_server_fails_to_initialize() -> anyhow
         .arg("tell me something")
         .assert()
         .code(1)
-        .stderr(contains(
-            "required MCP servers failed to initialize: required_broken",
-        ));
+        .stderr(contains("必需的 MCP 服务器初始化失败：required_broken"));
 
     Ok(())
 }

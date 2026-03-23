@@ -843,10 +843,7 @@ async fn run_exec_session(args: ExecRunArgs) -> anyhow::Result<()> {
                                 &update.status
                         {
                             error_seen = true;
-                            eprintln!(
-                                "Required MCP server '{}' failed to initialize: {error}",
-                                update.server
-                            );
+                            eprintln!("必需的 MCP 服务器“{}”初始化失败：{error}", update.server);
                             if let Err(err) = request_shutdown(
                                 &client,
                                 &mut request_ids,
@@ -1123,8 +1120,8 @@ fn decode_legacy_notification(
         serde_json::Value::String(normalized_method),
     );
 
-    let msg: EventMsg = serde_json::from_value(event_payload)
-        .map_err(|err| format!("failed to decode event: {err}"))?;
+    let msg: EventMsg =
+        serde_json::from_value(event_payload).map_err(|err| format!("解码事件失败：{err}"))?;
     Ok(DecodedLegacyNotification {
         conversation_id,
         event: Event {
@@ -1140,7 +1137,7 @@ fn canceled_mcp_server_elicitation_response() -> Result<Value, String> {
         content: None,
         meta: None,
     })
-    .map_err(|err| format!("failed to encode mcp elicitation response: {err}"))
+    .map_err(|err| format!("编码 MCP 追问响应失败：{err}"))
 }
 
 async fn request_shutdown(
@@ -1168,7 +1165,7 @@ async fn resolve_server_request(
     client
         .resolve_server_request(request_id, value)
         .await
-        .map_err(|err| format!("failed to resolve `{method}` server request: {err}"))
+        .map_err(|err| format!("处理 `{method}` 服务端请求失败：{err}"))
 }
 
 async fn reject_server_request(
@@ -1187,7 +1184,7 @@ async fn reject_server_request(
             },
         )
         .await
-        .map_err(|err| format!("failed to reject `{method}` server request: {err}"))
+        .map_err(|err| format!("拒绝 `{method}` 服务端请求失败：{err}"))
 }
 
 fn server_request_method_name(request: &ServerRequest) -> String {

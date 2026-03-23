@@ -8416,7 +8416,7 @@ mod tests {
 
     #[test]
     fn config_load_error_leaves_non_cloud_requirements_failures_unmarked() {
-        let err = std::io::Error::other("required MCP servers failed to initialize");
+        let err = std::io::Error::other("必需的 MCP 服务器初始化失败");
 
         let error = config_load_error(&err);
 

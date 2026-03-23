@@ -2099,9 +2099,7 @@ impl Session {
                     .map(|failure| format!("{}: {}", failure.server, failure.error))
                     .collect::<Vec<_>>()
                     .join("; ");
-                return Err(anyhow::anyhow!(
-                    "required MCP servers failed to initialize: {details}"
-                ));
+                return Err(anyhow::anyhow!("必需的 MCP 服务器初始化失败：{details}"));
             }
         }
         sess.schedule_startup_prewarm(session_configuration.base_instructions.clone())

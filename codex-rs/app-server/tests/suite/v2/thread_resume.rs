@@ -1405,9 +1405,7 @@ async fn thread_resume_fails_when_required_mcp_server_fails_to_initialize() -> R
     .await??;
 
     assert!(
-        err.error
-            .message
-            .contains("required MCP servers failed to initialize"),
+        err.error.message.contains("必需的 MCP 服务器初始化失败"),
         "unexpected error message: {}",
         err.error.message
     );

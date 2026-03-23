@@ -79,7 +79,7 @@ impl App {
         Self {
             tasks: Vec::new(),
             selected: 0,
-            status: "Press r to refresh".to_string(),
+            status: "按 r 刷新".to_string(),
             diff_overlay: None,
             spinner_start: None,
             refresh_inflight: false,
@@ -272,7 +272,7 @@ impl DiffOverlay {
         match self.current_view {
             DetailView::Diff => {
                 if diff_lines.is_empty() {
-                    self.sd.set_content(vec!["<no diff available>".to_string()]);
+                    self.sd.set_content(vec!["<无可用 diff>".to_string()]);
                 } else {
                     self.sd.set_content(diff_lines);
                 }
@@ -413,7 +413,7 @@ mod tests {
                 .tasks
                 .into_iter()
                 .find(|t| t.id == id)
-                .ok_or_else(|| CloudTaskError::Msg(format!("Task {} not found", id.0)))
+                .ok_or_else(|| CloudTaskError::Msg(format!("未找到任务 {}", id.0)))
         }
 
         async fn get_task_diff(
