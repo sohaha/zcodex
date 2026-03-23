@@ -150,7 +150,7 @@ pub struct LoginArgs {
     /// 要通过 OAuth 登录的 MCP 服务器名称。
     pub name: String,
 
-    /// 要请求的 OAuth scope 列表（逗号分隔）。
+    /// 要请求的 OAuth 权限范围列表（逗号分隔）。
     #[arg(long, value_delimiter = ',', value_name = "SCOPE,SCOPE")]
     pub scopes: Vec<String>,
 }

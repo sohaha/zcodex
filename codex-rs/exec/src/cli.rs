@@ -35,7 +35,7 @@ pub struct Cli {
     #[arg(long = "local-provider")]
     pub oss_provider: Option<String>,
 
-    /// 选择执行模型生成的 shell 命令时使用的沙箱策略。
+    /// 选择执行模型生成的命令时使用的沙箱策略。
     #[arg(long = "sandbox", short = 's', value_enum)]
     pub sandbox_mode: Option<codex_utils_cli::SandboxModeCliArg>,
 
@@ -89,7 +89,7 @@ pub struct Cli {
     #[arg(long = "progress-cursor", default_value_t = false)]
     pub progress_cursor: bool,
 
-    /// 以 JSONL 格式将事件输出到 stdout。
+    /// 以 JSONL 格式将事件输出到标准输出。
     #[arg(
         long = "json",
         alias = "experimental-json",
@@ -107,7 +107,7 @@ pub struct Cli {
     )]
     pub last_message_file: Option<PathBuf>,
 
-    /// 智能体的初始指令。若未作为参数提供（或使用 `-`），则从 stdin 读取。
+    /// 智能体的初始指令。若未作为参数提供（或使用 `-`），则从标准输入读取。
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
 }
@@ -148,7 +148,7 @@ struct ResumeArgsRaw {
     )]
     images: Vec<PathBuf>,
 
-    /// 恢复会话后要发送的提示词。若使用 `-`，则从 stdin 读取。
+    /// 恢复会话后要发送的提示词。若使用 `-`，则从标准输入读取。
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     prompt: Option<String>,
 }
@@ -168,7 +168,7 @@ pub struct ResumeArgs {
     /// 可选：附加到恢复后发送提示词的图片。
     pub images: Vec<PathBuf>,
 
-    /// 恢复会话后要发送的提示词。若使用 `-`，则从 stdin 读取。
+    /// 恢复会话后要发送的提示词。若使用 `-`，则从标准输入读取。
     pub prompt: Option<String>,
 }
 
@@ -242,7 +242,7 @@ pub struct ReviewArgs {
     #[arg(long = "title", value_name = "TITLE", requires = "commit")]
     pub commit_title: Option<String>,
 
-    /// 自定义评审说明。若使用 `-`，则从 stdin 读取。
+    /// 自定义评审说明。若使用 `-`，则从标准输入读取。
     #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
 }

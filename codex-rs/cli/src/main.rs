@@ -113,14 +113,14 @@ enum Subcommand {
     /// 以 MCP 服务器（stdio）模式启动 Codex。
     McpServer,
 
-    /// [实验性] 运行 app server 或相关工具。
+    /// [实验性] 运行应用服务器或相关工具。
     AppServer(AppServerCommand),
 
     /// 启动 Codex 桌面应用（若缺失会下载 macOS 安装包）。
     #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
-    /// 生成 shell 补全脚本。
+    /// 生成命令行补全脚本。
     Completion(CompletionCommand),
 
     /// 在 Codex 提供的沙箱中运行命令。
@@ -161,7 +161,7 @@ enum Subcommand {
 
 #[derive(Debug, Parser)]
 struct CompletionCommand {
-    /// 生成补全脚本的目标 shell
+    /// 生成补全脚本的目标终端类型
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
 }
@@ -181,7 +181,7 @@ struct DebugCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugSubcommand {
-    /// 工具：用于调试 app server。
+    /// 工具：用于调试应用服务器。
     AppServer(DebugAppServerCommand),
 
     /// 内部：重置本地记忆状态以重新开始。
@@ -197,7 +197,7 @@ struct DebugAppServerCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugAppServerSubcommand {
-    /// 向 app server V2 发送消息。
+    /// 向应用服务器 V2 发送消息。
     SendMessageV2(DebugAppServerSendMessageV2Command),
 }
 
@@ -292,7 +292,7 @@ struct LoginCommand {
 
     #[arg(
         long = "with-api-key",
-        help = "从 stdin 读取 API 密钥（例如：`printenv OPENAI_API_KEY | codex login --with-api-key`）"
+        help = "从标准输入读取 API 密钥（例如：`printenv OPENAI_API_KEY | codex login --with-api-key`）"
     )]
     with_api_key: bool,
 
@@ -334,7 +334,7 @@ struct LogoutCommand {
 
 #[derive(Debug, Parser)]
 struct AppServerCommand {
-    /// 省略时直接运行 app server；指定子命令可执行工具能力。
+    /// 省略时直接运行应用服务器；指定子命令可执行工具能力。
     #[command(subcommand)]
     subcommand: Option<AppServerSubcommand>,
 
@@ -368,10 +368,10 @@ struct AppServerCommand {
 #[derive(Debug, clap::Subcommand)]
 #[allow(clippy::enum_variant_names)]
 enum AppServerSubcommand {
-    /// [实验性] 为 app server 协议生成 TypeScript 绑定。
+    /// [实验性] 为应用服务器协议生成 TypeScript 绑定。
     GenerateTs(GenerateTsCommand),
 
-    /// [实验性] 为 app server 协议生成 JSON Schema。
+    /// [实验性] 为应用服务器协议生成 JSON Schema。
     GenerateJsonSchema(GenerateJsonSchemaCommand),
 
     /// [内部] 为 Codex 工具链生成内部 JSON Schema 产物。
@@ -532,7 +532,7 @@ struct FeatureToggles {
 
 #[derive(Debug, Default, Parser, Clone)]
 struct InteractiveRemoteOptions {
-    /// 将基于 app-server 的 TUI 连接到远程 app server websocket 端点。
+    /// 将基于 app-server 的 TUI 连接到远程应用服务器 websocket 端点。
     ///
     /// 支持格式：`ws://host:port` 或 `wss://host:port`。
     #[arg(long = "remote", value_name = "ADDR")]
