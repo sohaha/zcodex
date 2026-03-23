@@ -2,7 +2,7 @@
 source: tui/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-• 处 理 中  (0s • esc 可 中 断 )    
+• 处 理 中  (0秒  • esc 可 中 断 )   
                               
                               
 › 让  Codex 处 理 任 何 事 情        
