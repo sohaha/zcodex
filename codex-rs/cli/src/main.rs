@@ -303,7 +303,7 @@ struct LoginCommand {
     )]
     api_key: Option<String>,
 
-    #[arg(long = "device-auth")]
+    #[arg(long = "device-auth", help = "使用设备码流程登录")]
     use_device_code: bool,
 
     /// 实验性：使用自定义 OAuth issuer 基础 URL（高级）

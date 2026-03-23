@@ -45,11 +45,17 @@ pub struct McpCli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum McpSubcommand {
+    /// 列出已配置的 MCP 服务器。
     List(ListArgs),
+    /// 查看单个 MCP 服务器配置。
     Get(GetArgs),
+    /// 新增 MCP 服务器配置。
     Add(AddArgs),
+    /// 删除 MCP 服务器配置。
     Remove(RemoveArgs),
+    /// 通过 OAuth 登录 MCP 服务器。
     Login(LoginArgs),
+    /// 删除 MCP 服务器的 OAuth 凭据。
     Logout(LogoutArgs),
 }
 
