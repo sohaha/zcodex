@@ -36,7 +36,7 @@ pub struct ExecCommand {
     #[arg(long = "env", value_name = "ENV_ID")]
     pub environment: String,
 
-    /// 助手尝试次数（best-of-N）。
+    /// 助手尝试次数（从多次候选结果中择优）。
     #[arg(
         long = "attempts",
         default_value_t = 1usize,

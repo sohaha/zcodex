@@ -570,7 +570,7 @@ struct FeaturesCli {
 
 #[derive(Debug, Parser)]
 enum FeaturesSubcommand {
-    /// 列出已知功能及其阶段和生效状态。
+    /// 列出已知功能及其所处阶段与当前状态。
     List,
     /// 在 config.toml 中启用功能。
     Enable(FeatureSetArgs),

@@ -26,7 +26,7 @@ pub struct Cli {
     #[arg(long, short = 'm', global = true)]
     pub model: Option<String>,
 
-    /// 使用开源模型提供方。
+    /// 使用本地开源模型提供方。
     #[arg(long = "oss", default_value_t = false)]
     pub oss: bool,
 
@@ -89,7 +89,7 @@ pub struct Cli {
     #[arg(long = "progress-cursor", default_value_t = false)]
     pub progress_cursor: bool,
 
-    /// 以 JSONL 格式将事件输出到标准输出。
+    /// 以 JSONL 格式将事件写入标准输出。
     #[arg(
         long = "json",
         alias = "experimental-json",
@@ -114,7 +114,7 @@ pub struct Cli {
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Command {
-    /// 通过 ID 恢复先前会话，或使用 --last 选择最近一次会话。
+    /// 通过 ID 恢复先前的会话，或使用 --last 选择最近一次会话。
     Resume(ResumeArgs),
 
     /// 对当前仓库运行代码评审。
