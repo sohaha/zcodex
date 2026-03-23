@@ -106,7 +106,7 @@ pub struct AddMcpTransportArgs {
 #[derive(Debug, clap::Args)]
 pub struct AddMcpStdioArgs {
     /// 启动 MCP 服务器的命令。
-    /// 若为 streamable HTTP 服务器请使用 --url。
+    /// 若为可流式 HTTP 服务器请使用 --url。
     #[arg(
             trailing_var_arg = true,
             num_args = 0..,
@@ -125,12 +125,12 @@ pub struct AddMcpStdioArgs {
 
 #[derive(Debug, clap::Args)]
 pub struct AddMcpStreamableHttpArgs {
-    /// streamable HTTP MCP 服务器的 URL。
+    /// 可流式 HTTP MCP 服务器的 URL。
     #[arg(long)]
     pub url: String,
 
-    /// 可选：用于读取 bearer token 的环境变量。
-    /// 仅适用于 streamable HTTP 服务器。
+    /// 可选：用于读取 Bearer Token 的环境变量。
+    /// 仅适用于可流式 HTTP 服务器。
     #[arg(
         long = "bearer-token-env-var",
         value_name = "ENV_VAR",

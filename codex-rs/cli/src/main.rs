@@ -161,7 +161,7 @@ enum Subcommand {
 
 #[derive(Debug, Parser)]
 struct CompletionCommand {
-    /// 生成补全脚本的目标 Shell
+    /// 生成补全脚本的目标 shell
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
 }
@@ -385,7 +385,7 @@ struct GenerateTsCommand {
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
-    /// 可选：用于格式化生成文件的 Prettier 可执行文件路径
+    /// 可选：用于格式化生成文件的 Prettier 程序路径
     #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
     prettier: Option<PathBuf>,
 
