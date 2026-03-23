@@ -117,7 +117,7 @@ pub enum Command {
     /// 通过 ID 恢复先前的会话，或使用 --last 选择最近一次会话。
     Resume(ResumeArgs),
 
-    /// 对当前仓库运行代码评审。
+    /// 对当前仓库执行代码评审。
     Review(ReviewArgs),
 }
 
@@ -222,7 +222,7 @@ pub struct ReviewArgs {
     )]
     pub uncommitted: bool,
 
-    /// 基于给定基线分支评审变更。
+    /// 基于指定的基线分支评审变更。
     #[arg(
         long = "base",
         value_name = "BRANCH",

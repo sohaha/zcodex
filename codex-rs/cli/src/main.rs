@@ -197,7 +197,7 @@ struct DebugAppServerCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugAppServerSubcommand {
-    /// 向应用服务器 V2 发送消息。
+    /// 向应用服务器的 v2 接口发送消息。
     SendMessageV2(DebugAppServerSendMessageV2Command),
 }
 
@@ -389,7 +389,7 @@ struct GenerateTsCommand {
     #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
     prettier: Option<PathBuf>,
 
-    /// 在输出中包含实验性方法和字段
+    /// 在输出中包含实验性方法和字段。
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
@@ -400,7 +400,7 @@ struct GenerateJsonSchemaCommand {
     #[arg(short = 'o', long = "out", value_name = "DIR")]
     out_dir: PathBuf,
 
-    /// 在输出中包含实验性方法和字段
+    /// 在输出中包含实验性方法和字段。
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
