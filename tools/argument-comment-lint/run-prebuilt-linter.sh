@@ -5,12 +5,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 manifest_path="$repo_root/codex-rs/Cargo.toml"
 dotslash_manifest="$repo_root/tools/argument-comment-lint/argument-comment-lint"
+source_wrapper="$repo_root/tools/argument-comment-lint/run.sh"
 
 has_manifest_path=false
 has_package_selection=false
 has_library_selection=false
 has_no_deps=false
 expect_value=""
+
+fallback_to_source_wrapper() {
+    local reason="$1"
+    shift
+    echo "argument-comment-lint prebuilt wrapper unavailable: $reason" >&2
+    echo "falling back to source-built argument-comment-lint" >&2
+    exec "$source_wrapper" "$@"
+}
 
 for arg in "$@"; do
     if [[ -n "$expect_value" ]]; then
@@ -73,12 +82,7 @@ fi
 lint_args+=("$@")
 
 if ! command -v dotslash >/dev/null 2>&1; then
-    cat >&2 <<EOF
-argument-comment-lint prebuilt wrapper requires dotslash.
-Install dotslash, or use:
-  ./tools/argument-comment-lint/run.sh ...
-EOF
-    exit 1
+    fallback_to_source_wrapper "dotslash not found" "$@"
 fi
 
 if command -v rustup >/dev/null 2>&1; then
@@ -101,7 +105,9 @@ if command -v rustup >/dev/null 2>&1; then
     fi
 fi
 
-package_entrypoint="$(dotslash -- fetch "$dotslash_manifest")"
+if ! package_entrypoint="$(dotslash -- fetch "$dotslash_manifest")"; then
+    fallback_to_source_wrapper "failed to fetch prebuilt package via dotslash" "$@"
+fi
 bin_dir="$(cd "$(dirname "$package_entrypoint")" && pwd)"
 package_root="$(cd "$bin_dir/.." && pwd)"
 library_dir="$package_root/lib"
@@ -111,20 +117,21 @@ if [[ ! -x "$cargo_dylint" ]]; then
     cargo_dylint="$bin_dir/cargo-dylint.exe"
 fi
 if [[ ! -x "$cargo_dylint" ]]; then
-    echo "bundled cargo-dylint executable not found under $bin_dir" >&2
-    exit 1
+    fallback_to_source_wrapper "bundled cargo-dylint executable not found under $bin_dir" "$@"
 fi
 
 shopt -s nullglob
 libraries=("$library_dir"/*@*)
 shopt -u nullglob
 if [[ ${#libraries[@]} -eq 0 ]]; then
-    echo "no packaged Dylint library found in $library_dir" >&2
-    exit 1
+    fallback_to_source_wrapper "no packaged Dylint library found in $library_dir" "$@"
 fi
 if [[ ${#libraries[@]} -ne 1 ]]; then
-    echo "expected exactly one packaged Dylint library in $library_dir" >&2
-    exit 1
+    fallback_to_source_wrapper "expected exactly one packaged Dylint library in $library_dir" "$@"
+fi
+
+if ! "$cargo_dylint" dylint --version >/dev/null 2>&1; then
+    fallback_to_source_wrapper "bundled cargo-dylint is not runnable on this host" "$@"
 fi
 
 library_path="${libraries[0]}"
