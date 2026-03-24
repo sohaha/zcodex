@@ -1,61 +1,61 @@
-# Codex CLI (Rust Implementation)
+# Codex CLI（Rust 实现）
 
-We provide Codex CLI as a standalone, native executable to ensure a zero-dependency install.
+我们提供独立的原生可执行文件形式的 Codex CLI，以保证零依赖安装。
 
-## Installing Codex
+## 安装 Codex
 
-Today, the easiest way to install Codex is via `npm`:
+目前最简单的安装方式是通过 `npm`：
 
 ```shell
 npm i -g @sohaha/zcodex
 codex
 ```
 
-You can also install via Homebrew (`brew install --cask codex`) or download a platform-specific release directly from our [GitHub Releases](https://github.com/sohaha/zcodex/releases).
+你也可以通过 Homebrew（`brew install --cask codex`）安装，或直接从 [GitHub Releases](https://github.com/sohaha/zcodex/releases) 下载平台对应的发布包。
 
-## Documentation quickstart
+## 文档快速入口
 
-- First run with Codex? Start with [`docs/getting-started.md`](../docs/getting-started.md) (links to the walkthrough for prompts, keyboard shortcuts, and session management).
-- Want deeper control? See [`docs/config.md`](../docs/config.md) and [`docs/install.md`](../docs/install.md), including Ubuntu cross-build tasks for macOS arm64 and Windows amd64/arm64.
+- 第一次使用 Codex？从 [`docs/getting-started.md`](../docs/getting-started.md) 开始（包含提示词、快捷键与会话管理的引导）。
+- 需要更深入的控制？查看 [`docs/config.md`](../docs/config.md) 与 [`docs/install.md`](../docs/install.md)，包含 Ubuntu 交叉编译 macOS arm64 与 Windows amd64/arm64 的说明。
 
-## What's new in the Rust CLI
+## Rust CLI 有哪些新特性
 
-The Rust implementation is now the maintained Codex CLI and serves as the default experience. It includes a number of features that the legacy TypeScript CLI never supported.
+Rust 实现已成为 Codex CLI 的主线版本与默认体验，提供旧版 TypeScript CLI 没有的能力。
 
-### Config
+### 配置
 
-Codex supports a rich set of configuration options. Note that the Rust CLI uses `config.toml` instead of `config.json`. See [`docs/config.md`](../docs/config.md) for details.
+Codex 支持更完整的配置能力。注意 Rust CLI 使用 `config.toml` 而不是 `config.json`。详情见 [`docs/config.md`](../docs/config.md)。
 
-### Model Context Protocol Support
+### Model Context Protocol 支持
 
-#### MCP client
+#### MCP 客户端
 
-Codex CLI functions as an MCP client that allows the Codex CLI and IDE extension to connect to MCP servers on startup. See the [`configuration documentation`](../docs/config.md#connecting-to-mcp-servers) for details.
+Codex CLI 作为 MCP 客户端，可在启动时让 Codex CLI 与 IDE 扩展连接到 MCP 服务。详见 [`配置文档`](../docs/config.md#connecting-to-mcp-servers)。
 
-#### MCP server (experimental)
+#### MCP 服务端（实验性）
 
-Codex can be launched as an MCP _server_ by running `codex mcp-server`. This allows _other_ MCP clients to use Codex as a tool for another agent.
+运行 `codex mcp-server` 可将 Codex 作为 MCP _server_ 启动，让其他 MCP 客户端把 Codex 当作工具调用。
 
-Use the [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector) to try it out:
+可使用 [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector) 进行尝试：
 
 ```shell
 npx @modelcontextprotocol/inspector codex mcp-server
 ```
 
-Use `codex mcp` to add/list/get/remove MCP server launchers defined in `config.toml`, and `codex mcp-server` to run the MCP server directly.
+使用 `codex mcp` 管理 `config.toml` 中定义的 MCP server launcher（添加/列出/查看/删除），使用 `codex mcp-server` 直接运行 MCP 服务端。
 
-### Notifications
+### 通知
 
-You can enable notifications by configuring a script that is run whenever the agent finishes a turn. The [notify documentation](../docs/config.md#notify) includes a detailed example that explains how to get desktop notifications via [terminal-notifier](https://github.com/julienXX/terminal-notifier) on macOS. When Codex detects that it is running under WSL 2 inside Windows Terminal (`WT_SESSION` is set), the TUI automatically falls back to native Windows toast notifications so approval prompts and completed turns surface even though Windows Terminal does not implement OSC 9.
+你可以配置一个脚本，在代理完成一轮任务时触发通知。[通知文档](../docs/config.md#notify) 中提供了示例，说明如何在 macOS 上通过 [terminal-notifier](https://github.com/julienXX/terminal-notifier) 获取桌面通知。当 Codex 检测到在 Windows Terminal 的 WSL 2 环境中运行（设置了 `WT_SESSION`），TUI 会自动降级为原生 Windows toast 通知，即使 Windows Terminal 不支持 OSC 9，也能显示审批与完成提示。
 
-### `codex exec` to run Codex programmatically/non-interactively
+### 使用 `codex exec` 进行程序化/非交互运行
 
-To run Codex non-interactively, run `codex exec PROMPT` (you can also pass the prompt via `stdin`) and Codex will work on your task until it decides that it is done and exits. Output is printed to the terminal directly. You can set the `RUST_LOG` environment variable to see more about what's going on.
-Use `codex exec --ephemeral ...` to run without persisting session rollout files to disk.
+要以非交互方式运行 Codex，可执行 `codex exec PROMPT`（也可通过 `stdin` 传入 prompt）。Codex 会处理任务直到完成并退出，输出会直接打印到终端。你可以设置 `RUST_LOG` 以查看更多日志。
+使用 `codex exec --ephemeral ...` 可在不持久化会话产物的情况下运行。
 
-### Experimenting with the Codex Sandbox
+### 体验 Codex 沙箱
 
-To test to see what happens when a command is run under the sandbox provided by Codex, we provide the following subcommands in Codex CLI:
+我们提供以下子命令，用于测试命令在 Codex 沙箱中的行为：
 
 ```
 # macOS
@@ -67,36 +67,36 @@ codex sandbox linux [--full-auto] [COMMAND]...
 # Windows
 codex sandbox windows [--full-auto] [COMMAND]...
 
-# Legacy aliases
+# 旧别名
 codex debug seatbelt [--full-auto] [--log-denials] [COMMAND]...
 codex debug landlock [--full-auto] [COMMAND]...
 ```
 
-### Selecting a sandbox policy via `--sandbox`
+### 使用 `--sandbox` 选择沙箱策略
 
-The Rust CLI exposes a dedicated `--sandbox` (`-s`) flag that lets you pick the sandbox policy **without** having to reach for the generic `-c/--config` option:
+Rust CLI 提供独立的 `--sandbox`（`-s`）参数，无需使用通用的 `-c/--config` 也能选择沙箱策略：
 
 ```shell
-# Run Codex with the default, read-only sandbox
+# 使用默认只读沙箱运行 Codex
 codex --sandbox read-only
 
-# Allow the agent to write within the current workspace while still blocking network access
+# 允许代理在当前工作区写入，同时继续阻断网络
 codex --sandbox workspace-write
 
-# Danger! Disable sandboxing entirely (only do this if you are already running in a container or other isolated env)
+# 危险！彻底关闭沙箱（仅在容器或其他隔离环境中使用）
 codex --sandbox danger-full-access
 ```
 
-The same setting can be persisted in `~/.codex/config.toml` via the top-level `sandbox_mode = "MODE"` key, e.g. `sandbox_mode = "workspace-write"`.
-In `workspace-write`, Codex also includes `~/.codex/memories` in its writable roots so memory maintenance does not require an extra approval.
+同样也可以在 `~/.codex/config.toml` 中用顶层 `sandbox_mode = "MODE"` 持久化设置，例如 `sandbox_mode = "workspace-write"`。
+在 `workspace-write` 模式下，Codex 还会把 `~/.codex/memories` 加入可写目录，以避免记忆维护需要额外审批。
 
-## Code Organization
+## 代码结构
 
-This folder is the root of a Cargo workspace. It contains quite a bit of experimental code, but here are the key crates:
+该目录是一个 Cargo workspace 的根目录，包含部分实验性代码。核心 crate 如下：
 
-- [`core/`](./core) contains the business logic for Codex. Ultimately, we hope this to be a library crate that is generally useful for building other Rust/native applications that use Codex.
-- [`exec/`](./exec) "headless" CLI for use in automation.
-- [`tui/`](./tui) CLI that launches a fullscreen TUI built with [Ratatui](https://ratatui.rs/).
-- [`cli/`](./cli) CLI multitool that provides the aforementioned CLIs via subcommands.
+- [`core/`](./core) 包含 Codex 的业务逻辑。我们希望它最终成为可复用的库 crate，供其他 Rust/原生应用使用。
+- [`exec/`](./exec) 适用于自动化场景的“无界面”CLI。
+- [`tui/`](./tui) 全屏 TUI（使用 [Ratatui](https://ratatui.rs/)）。
+- [`cli/`](./cli) CLI 多功能入口，通过子命令提供上述功能。
 
-If you want to contribute or inspect behavior in detail, start by reading the module-level `README.md` files under each crate and run the project workspace from the top-level `codex-rs` directory so shared config, features, and build scripts stay aligned.
+如果你要贡献或深入排查行为，建议先阅读各 crate 下的 `README.md`，并从顶层 `codex-rs` 目录运行 workspace，以保证共享配置、特性与构建脚本对齐。

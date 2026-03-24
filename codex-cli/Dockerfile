@@ -3,7 +3,7 @@ FROM node:24-slim
 ARG TZ
 ENV TZ="$TZ"
 
-# Install basic development tools, ca-certificates, and iptables/ipset, then clean up apt cache to reduce image size
+# 安装基础开发工具、证书与 iptables/ipset，并清理 apt 缓存以缩小镜像体积
 RUN apt-get update && apt-get install -y --no-install-recommends \
   aggregate \
   ca-certificates \
@@ -25,20 +25,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   zsh \
   && rm -rf /var/lib/apt/lists/*
 
-# Ensure default node user has access to /usr/local/share
+# 确保默认 node 用户可访问 /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
   chown -R node:node /usr/local/share
 
 ARG USERNAME=node
 
-# Set up non-root user
+# 切换到非 root 用户
 USER node
 
-# Install global packages
+# 安装全局包
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 
-# Install codex
+# 安装 codex
 COPY dist/codex.tgz codex.tgz
 RUN npm install -g codex.tgz \
   && npm cache clean --force \
@@ -46,14 +46,13 @@ RUN npm install -g codex.tgz \
   && rm -rf /usr/local/share/npm-global/lib/node_modules/codex-cli/tests \
   && rm -rf /usr/local/share/npm-global/lib/node_modules/codex-cli/docs
 
-# Inside the container we consider the environment already sufficiently locked
-# down, therefore instruct Codex CLI to allow running without sandboxing.
+# 容器内默认已有足够隔离，因此允许 Codex CLI 在无额外沙箱的情况下运行。
 ENV CODEX_UNSAFE_ALLOW_NO_SANDBOX=1
 
-# Copy and set up firewall script as root.
+# 以 root 身份复制并设置防火墙脚本。
 USER root
 COPY scripts/init_firewall.sh /usr/local/bin/
 RUN chmod 500 /usr/local/bin/init_firewall.sh
 
-# Drop back to non-root.
+# 切回非 root 用户。
 USER node
