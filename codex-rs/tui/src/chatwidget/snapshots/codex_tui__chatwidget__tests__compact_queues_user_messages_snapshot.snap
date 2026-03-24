@@ -1,0 +1,22 @@
+---
+source: tui/src/chatwidget/tests.rs
+expression: term.backend().vt100().screen().contents()
+---
+
+
+
+
+
+
+
+
+
+
+• 处理中 (0秒 • esc 可中断)
+
+• 本轮结束后将提交的消息
+  ↳ Steer submitted while /compact was running.
+
+› 让 Codex 处理任何事情
+
+  ? 查看快捷键                                                 剩余上下文 100%

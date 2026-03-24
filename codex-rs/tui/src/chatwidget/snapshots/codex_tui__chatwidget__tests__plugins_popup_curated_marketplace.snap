@@ -1,0 +1,18 @@
+---
+source: tui/src/chatwidget/tests.rs
+expression: popup
+---
+  插 件
+  浏 览 来 自 可 用 市 场 的 插 件 。
+  已 安 装  1 / 共  4 个 可 用 插 件 。
+  正 在 使 用 缓 存 的 市 场 数 据 ： remote sync timed out
+
+  输 入 以 搜 索 插 件
+› Bravo Search · ChatGPT Marketplace     可 安 装 。 按  Enter 查 看 插 件 详 情 。
+  Alpha Sync · ChatGPT Marketplace       已 安 装  · 已 禁 用  · ChatGPT Marketplace · Already installed
+                                         but disabled.
+  Starter · ChatGPT Marketplace          默 认 可 用  · ChatGPT Marketplace · Included by default.
+  Hidden Repo Plugin · Repo Marketplace  可 安 装  · Repo Marketplace · Should not be shown in /
+                                         plugins.
+
+  按  esc 关 闭 。

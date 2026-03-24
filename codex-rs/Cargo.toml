@@ -43,6 +43,7 @@ members = [
     "rmcp-client",
     "responses-api-proxy",
     "rtk",
+    "sandboxing",
     "stdio-to-uds",
     "otel",
     "tui",
@@ -132,6 +133,7 @@ codex-protocol = { path = "protocol" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
 codex-rmcp-client = { path = "rmcp-client" }
 codex-rtk = { path = "rtk" }
+codex-sandboxing = { path = "sandboxing" }
 codex-secrets = { path = "secrets" }
 codex-shell-command = { path = "shell-command" }
 codex-shell-escalation = { path = "shell-escalation" }
@@ -291,7 +293,7 @@ strum_macros = "0.28.0"
 supports-color = "3.0.2"
 syntect = "5"
 sys-locale = "0.3.2"
-tar = "0.4.44"
+tar = "0.4.45"
 tempfile = "3.23.0"
 test-log = "0.2.19"
 textwrap = "0.16.2"
