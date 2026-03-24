@@ -195,6 +195,41 @@ model_reasoning_effort = "high"
 }
 
 #[tokio::test]
+async fn thread_start_accepts_non_claude_model_for_anthropic_provider() -> Result<()> {
+    let server = MockServer::start().await;
+
+    let codex_home = TempDir::new()?;
+    create_anthropic_config_toml(codex_home.path(), &server.uri())?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let req_id = mcp
+        .send_thread_start_request(ThreadStartParams {
+            model: Some("proxy/custom-anthropic".to_string()),
+            ..Default::default()
+        })
+        .await?;
+
+    let resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(req_id)),
+    )
+    .await??;
+    let ThreadStartResponse {
+        thread,
+        model_provider,
+        ..
+    } = to_response::<ThreadStartResponse>(resp)?;
+
+    assert!(!thread.id.is_empty(), "thread id should not be empty");
+    assert_eq!(model_provider, "anthropic");
+    assert_eq!(thread.model_provider, "anthropic");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn thread_start_accepts_flex_service_tier() -> Result<()> {
     let server = create_mock_responses_server_repeating_assistant("Done").await;
 
@@ -525,6 +560,29 @@ model_provider = "mock_provider"
 name = "Mock provider for test"
 base_url = "{server_uri}/v1"
 wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+"#
+        ),
+    )
+}
+
+fn create_anthropic_config_toml(codex_home: &Path, server_uri: &str) -> std::io::Result<()> {
+    let config_toml = codex_home.join("config.toml");
+    std::fs::write(
+        config_toml,
+        format!(
+            r#"
+model = "proxy/custom-anthropic"
+approval_policy = "never"
+sandbox_mode = "read-only"
+
+model_provider = "anthropic"
+
+[model_providers.anthropic]
+name = "Anthropic-compatible provider for test"
+base_url = "{server_uri}"
+wire_api = "anthropic"
 request_max_retries = 0
 stream_max_retries = 0
 "#
