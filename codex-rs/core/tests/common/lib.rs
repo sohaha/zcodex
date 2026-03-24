@@ -5,6 +5,7 @@ use anyhow::ensure;
 use codex_arg0::Arg0PathEntryGuard;
 use codex_utils_cargo_bin::CargoBinError;
 use ctor::ctor;
+use std::process::Command;
 use std::sync::OnceLock;
 use tempfile::TempDir;
 
@@ -27,6 +28,7 @@ pub mod tracing;
 pub mod zsh_fork;
 
 static TEST_ARG0_PATH_ENTRY: OnceLock<Option<Arg0PathEntryGuard>> = OnceLock::new();
+static STDIO_SERVER_BIN: OnceLock<Result<String, String>> = OnceLock::new();
 
 #[ctor]
 fn enable_deterministic_unified_exec_process_ids_for_tests() {
@@ -379,8 +381,50 @@ pub fn format_with_current_shell_display_non_login(command: &str) -> String {
         .expect("serialize current shell command without login")
 }
 
-pub fn stdio_server_bin() -> Result<String, CargoBinError> {
-    codex_utils_cargo_bin::cargo_bin("test_stdio_server").map(|p| p.to_string_lossy().to_string())
+pub fn stdio_server_bin() -> anyhow::Result<String> {
+    let result = STDIO_SERVER_BIN.get_or_init(resolve_stdio_server_bin);
+    result
+        .clone()
+        .map_err(|err| anyhow::anyhow!("failed to resolve test_stdio_server binary: {err}"))
+}
+
+fn resolve_stdio_server_bin() -> Result<String, String> {
+    if let Ok(path) = codex_utils_cargo_bin::cargo_bin("test_stdio_server") {
+        return Ok(path.to_string_lossy().to_string());
+    }
+
+    let repo_root = codex_utils_cargo_bin::repo_root()
+        .map_err(|err| format!("resolve repo root: {err}"))?
+        .join("codex-rs");
+    let output = Command::new("cargo")
+        .arg("build")
+        .arg("-p")
+        .arg("codex-rmcp-client")
+        .arg("--bin")
+        .arg("test_stdio_server")
+        .current_dir(&repo_root)
+        .output()
+        .map_err(|err| format!("spawn cargo build for test_stdio_server: {err}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "cargo build -p codex-rmcp-client --bin test_stdio_server failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let binary = repo_root
+        .join("target")
+        .join("debug")
+        .join(format!("test_stdio_server{}", std::env::consts::EXE_SUFFIX));
+    if binary.exists() {
+        Ok(binary.to_string_lossy().to_string())
+    } else {
+        Err(format!(
+            "test_stdio_server was built but not found at {}",
+            binary.display()
+        ))
+    }
 }
 
 pub mod fs_wait {
