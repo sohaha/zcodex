@@ -3504,7 +3504,7 @@ mod tests {
         };
 
         let result = CallToolResult {
-            content: vec![text_block("Found styling guidance in styles.md")],
+            content: vec![text_block("在 styles.md 中找到样式指南")],
             is_error: None,
             structured_content: None,
             meta: None,
@@ -3532,10 +3532,7 @@ mod tests {
         };
 
         let result = CallToolResult {
-            content: vec![
-                text_block("Here is the image:"),
-                image_block(SMALL_PNG_BASE64),
-            ],
+            content: vec![text_block("图片如下："), image_block(SMALL_PNG_BASE64)],
             is_error: None,
             structured_content: None,
             meta: None,
@@ -3638,9 +3635,7 @@ mod tests {
 
         let result = CallToolResult {
             content: vec![
-                text_block(
-                    "Found styling guidance in styles.md and additional notes in CONTRIBUTING.md.",
-                ),
+                text_block("在 styles.md 中找到样式指南，并在 CONTRIBUTING.md 中找到补充说明。"),
                 resource_link_block(
                     "file:///docs/styles.md",
                     "styles.md",
@@ -3677,7 +3672,7 @@ mod tests {
 
         let result = CallToolResult {
             content: vec![text_block(
-                "Line one of the response, which is quite long and needs wrapping.\nLine two continues the response with more detail.",
+                "响应的第一行很长，需要换行显示。\n第二行继续提供更多细节。",
             )],
             is_error: None,
             structured_content: None,
@@ -3708,8 +3703,8 @@ mod tests {
 
         let result = CallToolResult {
             content: vec![
-                text_block("Latency summary: p50=120ms, p95=480ms."),
-                text_block("No anomalies detected."),
+                text_block("延迟摘要：p50=120ms，p95=480ms。"),
+                text_block("未检测到异常。"),
             ],
             is_error: None,
             structured_content: None,
