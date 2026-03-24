@@ -224,13 +224,13 @@ Start a fresh thread when you need a new Codex conversation.
 { "method": "thread/started", "params": { "thread": { … } } }
 ```
 
-Valid `personality` values are `"friendly"`, `"pragmatic"`, and `"none"`. When `"none"` is selected, the personality placeholder is replaced with an empty string.
+`personality` 可选值为 `"friendly"`、`"pragmatic"`、`"none"`。选择 `"none"` 时，会用空字符串替换 personality 占位符。
 
-To continue a stored session, call `thread/resume` with the `thread.id` you previously recorded. The response shape matches `thread/start`, and no additional notifications are emitted. You can also pass the same configuration overrides supported by `thread/start`, including `approvalsReviewer`.
+要继续已存储的会话，请使用之前记录的 `thread.id` 调用 `thread/resume`。其响应结构与 `thread/start` 一致，并且不会额外发送通知。你也可以传入 `thread/start` 支持的配置覆盖项（包括 `approvalsReviewer`）。
 
-By default, resume uses the latest persisted `model` and `reasoningEffort` values associated with the thread. Supplying any of `model`, `modelProvider`, `config.model`, or `config.model_reasoning_effort` disables that persisted fallback and uses the explicit overrides plus normal config resolution instead.
+默认情况下，resume 会使用该 thread 最新持久化的 `modelProvider`、`model` 和 `reasoningEffort`。只要提供 `model`、`modelProvider`、`config.model` 或 `config.model_reasoning_effort` 其中任一字段，就会禁用该持久化回退，并改为使用显式覆盖与正常配置解析结果。
 
-Example:
+示例：
 
 ```json
 { "method": "thread/resume", "id": 11, "params": {
