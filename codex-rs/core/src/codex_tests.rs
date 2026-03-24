@@ -2963,6 +2963,24 @@ async fn notify_request_permissions_response_ignores_unmatched_call_id() {
 }
 
 #[tokio::test]
+async fn auto_compact_failure_continues_for_anthropic_provider_even_with_custom_model_slug() {
+    let (_session, mut turn_context) = make_session_and_context().await;
+    turn_context.provider =
+        crate::model_provider_info::ModelProviderInfo::create_anthropic_provider();
+    turn_context.model_info.slug = "proxy/custom-anthropic".to_string();
+
+    assert!(should_continue_after_auto_compact_failure(&turn_context));
+}
+
+#[tokio::test]
+async fn auto_compact_failure_does_not_continue_for_responses_provider_with_claude_like_slug() {
+    let (_session, mut turn_context) = make_session_and_context().await;
+    turn_context.model_info.slug = "claude-proxy-custom".to_string();
+
+    assert!(!should_continue_after_auto_compact_failure(&turn_context));
+}
+
+#[tokio::test]
 async fn request_permissions_emits_event_when_granular_policy_allows_requests() {
     let (session, mut turn_context, rx) = make_session_and_context_with_rx().await;
     *session.active_turn.lock().await = Some(ActiveTurn::default());

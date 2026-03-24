@@ -6184,7 +6184,7 @@ async fn try_run_auto_compact(
 }
 
 fn should_continue_after_auto_compact_failure(turn_context: &TurnContext) -> bool {
-    turn_context.model_info.slug.starts_with("claude-")
+    turn_context.provider.wire_api == crate::model_provider_info::WireApi::Anthropic
 }
 
 async fn run_auto_compact(
