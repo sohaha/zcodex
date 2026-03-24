@@ -573,7 +573,6 @@ fn create_anthropic_config_toml(codex_home: &Path, server_uri: &str) -> std::io:
         config_toml,
         format!(
             r#"
-model = "proxy/custom-anthropic"
 approval_policy = "never"
 sandbox_mode = "read-only"
 
@@ -581,6 +580,7 @@ model_provider = "anthropic"
 
 [model_providers.anthropic]
 name = "Anthropic-compatible provider for test"
+model = "proxy/custom-anthropic"
 base_url = "{server_uri}"
 wire_api = "anthropic"
 request_max_retries = 0

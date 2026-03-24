@@ -2080,7 +2080,6 @@ fn create_anthropic_config_toml(codex_home: &std::path::Path) -> std::io::Result
     std::fs::write(
         config_toml,
         r#"
-model = "proxy/custom-anthropic"
 approval_policy = "never"
 sandbox_mode = "read-only"
 
@@ -2088,6 +2087,7 @@ model_provider = "anthropic"
 
 [model_providers.anthropic]
 name = "Anthropic-compatible provider for test"
+model = "proxy/custom-anthropic"
 base_url = "http://127.0.0.1:9"
 wire_api = "anthropic"
 request_max_retries = 0
@@ -2122,6 +2122,7 @@ stream_max_retries = 0
 
 [model_providers.anthropic]
 name = "Anthropic-compatible provider for test"
+model = "proxy/custom-anthropic"
 base_url = "http://127.0.0.1:9"
 wire_api = "anthropic"
 request_max_retries = 0
