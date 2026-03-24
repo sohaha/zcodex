@@ -96,7 +96,7 @@ pub(crate) fn compose_account_display(
             let email = auth.get_account_email();
             let plan = plan
                 .map(|plan_type| title_case(format!("{plan_type:?}").as_str()))
-                .or_else(|| Some("Unknown".to_string()));
+                .or_else(|| Some("未知".to_string()));
             Some(StatusAccountDisplay::ChatGpt { email, plan })
         }
     }

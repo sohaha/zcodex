@@ -240,14 +240,14 @@ pub(crate) fn compose_rate_limit_data_many(
                     "{limit_bucket_label} {} 限额",
                     secondary_label
                         .clone()
-                        .unwrap_or_else(|| "weekly".to_string())
+                        .unwrap_or_else(|| "每周".to_string())
                 )
             } else {
                 format!(
                     "{} 限额",
                     secondary_label
                         .clone()
-                        .unwrap_or_else(|| "weekly".to_string())
+                        .unwrap_or_else(|| "每周".to_string())
                 )
             };
             rows.push(StatusRateLimitRow {

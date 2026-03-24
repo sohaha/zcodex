@@ -523,7 +523,7 @@ impl HistoryCell for StatusHistoryCell {
         }
 
         lines.push(Line::from(Vec::<Span<'static>>::new()));
-        // Hide token usage only for ChatGPT subscribers
+        // 仅对 ChatGPT 订阅用户隐藏 token 用量
         if !matches!(self.account, Some(StatusAccountDisplay::ChatGpt { .. })) {
             lines.push(formatter.line("Token 用量", self.token_usage_spans()));
         }

@@ -1,40 +1,40 @@
-Generate a file named AGENTS.md that serves as a contributor guide for this repository.
-Your goal is to produce a clear, concise, and well-structured document with descriptive headings and actionable explanations for each section.
-Follow the outline below, but adapt as needed — add sections if relevant, and omit those that do not apply to this project.
+生成一个名为 AGENTS.md 的文件，作为该仓库的贡献者指南。
+你的目标是输出清晰、简洁、结构良好的文档，并为每个章节提供可执行的说明。
+请遵循下方大纲，但可按需调整：相关内容可新增，不适用内容可省略。
 
-Document Requirements
+文档要求
 
-- Title the document "Repository Guidelines".
-- Use Markdown headings (#, ##, etc.) for structure.
-- Keep the document concise. 200-400 words is optimal.
-- Keep explanations short, direct, and specific to this repository.
-- Provide examples where helpful (commands, directory paths, naming patterns).
-- Maintain a professional, instructional tone.
+- 标题使用“Repository Guidelines”。
+- 使用 Markdown 标题（#, ## 等）组织结构。
+- 保持简洁，建议 200–400 字。
+- 说明要短、直接，并与该仓库相关。
+- 需要时给出示例（命令、目录路径、命名规范）。
+- 语气专业、指导性强。
 
-Recommended Sections
+推荐章节
 
-Project Structure & Module Organization
+项目结构与模块组织
 
-- Outline the project structure, including where the source code, tests, and assets are located.
+- 概述项目结构，包括源码、测试与资源所在位置。
 
-Build, Test, and Development Commands
+构建、测试与开发命令
 
-- List key commands for building, testing, and running locally (e.g., npm test, make build).
-- Briefly explain what each command does.
+- 列出本地构建、测试、运行的关键命令（如 npm test、make build）。
+- 简要说明每个命令的作用。
 
-Coding Style & Naming Conventions
+代码风格与命名规范
 
-- Specify indentation rules, language-specific style preferences, and naming patterns.
-- Include any formatting or linting tools used.
+- 说明缩进规则、语言风格偏好、命名模式。
+- 列出格式化或 lint 工具。
 
-Testing Guidelines
+测试指南
 
-- Identify testing frameworks and coverage requirements.
-- State test naming conventions and how to run tests.
+- 说明测试框架与覆盖要求。
+- 说明测试命名规范与运行方式。
 
-Commit & Pull Request Guidelines
+提交与 Pull Request 指南
 
-- Summarize commit message conventions found in the project’s Git history.
-- Outline pull request requirements (descriptions, linked issues, screenshots, etc.).
+- 概述 Git 历史中使用的提交信息规范。
+- 说明 PR 要求（描述、关联 issue、截图等）。
 
-(Optional) Add other sections if relevant, such as Security & Configuration Tips, Architecture Overview, or Agent-Specific Instructions.
+（可选）如有需要，可添加其他章节，例如安全与配置提示、架构概览或面向代理的说明。
