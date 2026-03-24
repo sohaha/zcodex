@@ -353,7 +353,7 @@ impl ChatWidget {
             RealtimeEvent::ConversationItemDone { .. } => {}
             RealtimeEvent::HandoffRequested(_) => {}
             RealtimeEvent::Error(message) => {
-                self.fail_realtime_conversation(format!("Realtime 语音错误：{message}"));
+                self.fail_realtime_conversation(format!("实时语音错误：{message}"));
             }
         }
     }
@@ -416,9 +416,7 @@ impl ChatWidget {
             Err(err) => {
                 self.realtime_conversation.meter_placeholder_id = None;
                 self.remove_transcription_placeholder(&placeholder_id);
-                self.fail_realtime_conversation(format!(
-                    "Failed to start microphone capture: {err}"
-                ));
+                self.fail_realtime_conversation(format!("启动麦克风采集失败：{err}"));
                 return;
             }
         };
@@ -481,9 +479,7 @@ impl ChatWidget {
                         self.realtime_conversation.audio_player = Some(player);
                     }
                     Err(err) => {
-                        self.fail_realtime_conversation(format!(
-                            "Failed to start speaker output: {err}"
-                        ));
+                        self.fail_realtime_conversation(format!("启动扬声器输出失败：{err}"));
                     }
                 }
             }

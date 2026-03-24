@@ -207,10 +207,10 @@ pub(crate) fn flush_terminal_input_buffer() {}
 /// Initialize the terminal (inline viewport; history stays in normal scrollback)
 pub fn init() -> Result<Terminal> {
     if !stdin().is_terminal() {
-        return Err(std::io::Error::other("stdin is not a terminal"));
+        return Err(std::io::Error::other("stdin 不是终端"));
     }
     if !stdout().is_terminal() {
-        return Err(std::io::Error::other("stdout is not a terminal"));
+        return Err(std::io::Error::other("stdout 不是终端"));
     }
     set_modes()?;
 

@@ -73,7 +73,7 @@ impl TerminalTitleItem {
             TerminalTitleItem::Thread => "调查偶发失败的测试",
             TerminalTitleItem::GitBranch => "feat/awesome-feature",
             TerminalTitleItem::Model => "gpt-5.2-codex",
-            TerminalTitleItem::TaskProgress => "Tasks 2/5",
+            TerminalTitleItem::TaskProgress => "任务 2/5",
         }
     }
 

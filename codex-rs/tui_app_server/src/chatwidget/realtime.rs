@@ -188,7 +188,7 @@ impl ChatWidget {
         if !self.realtime_conversation.warned_audio_only_submission {
             self.realtime_conversation.warned_audio_only_submission = true;
             self.add_info_message(
-                "Realtime voice mode is audio-only. Use /realtime to stop.".to_string(),
+                "实时语音模式仅支持音频。使用 /realtime 停止。".to_string(),
                 /*hint*/ None,
             );
         } else {
@@ -355,9 +355,7 @@ impl ChatWidget {
             Err(err) => {
                 self.realtime_conversation.meter_placeholder_id = None;
                 self.remove_transcription_placeholder(&placeholder_id);
-                self.fail_realtime_conversation(format!(
-                    "Failed to start microphone capture: {err}"
-                ));
+                self.fail_realtime_conversation(format!("启动麦克风采集失败：{err}"));
                 return;
             }
         };
@@ -414,9 +412,7 @@ impl ChatWidget {
                         self.realtime_conversation.audio_player = Some(player);
                     }
                     Err(err) => {
-                        self.fail_realtime_conversation(format!(
-                            "Failed to start speaker output: {err}"
-                        ));
+                        self.fail_realtime_conversation(format!("启动扬声器输出失败：{err}"));
                     }
                 }
             }

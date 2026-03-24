@@ -327,29 +327,29 @@ pub(crate) fn center_truncate_path(path: &str, max_width: usize) -> String {
     front_truncate(path, max_width)
 }
 
-/// Join a list of strings with proper English punctuation.
+/// 按中文语序连接字符串列表。
 /// Examples:
 /// - [] -> ""
 /// - ["apple"] -> "apple"
-/// - ["apple", "banana"] -> "apple and banana"
-/// - ["apple", "banana", "cherry"] -> "apple, banana and cherry"
+/// - ["apple", "banana"] -> "apple 和 banana"
+/// - ["apple", "banana", "cherry"] -> "apple、banana 和 cherry"
 pub(crate) fn proper_join<T: AsRef<str>>(items: &[T]) -> String {
     match items.len() {
         0 => String::new(),
         1 => items[0].as_ref().to_string(),
-        2 => format!("{} and {}", items[0].as_ref(), items[1].as_ref()),
+        2 => format!("{} 和 {}", items[0].as_ref(), items[1].as_ref()),
         _ => {
             let last = items[items.len() - 1].as_ref();
             let mut result = String::new();
 
             for (i, item) in items.iter().take(items.len() - 1).enumerate() {
                 if i > 0 {
-                    result.push_str(", ");
+                    result.push('、');
                 }
                 result.push_str(item.as_ref());
             }
 
-            format!("{result} and {last}")
+            format!("{result} 和 {last}")
         }
     }
 }
@@ -567,14 +567,14 @@ mod tests {
         let empty: Vec<String> = vec![];
         assert_eq!(proper_join(&empty), "");
         assert_eq!(proper_join(&["apple"]), "apple");
-        assert_eq!(proper_join(&["apple", "banana"]), "apple and banana");
+        assert_eq!(proper_join(&["apple", "banana"]), "apple 和 banana");
         assert_eq!(
             proper_join(&["apple", "banana", "cherry"]),
-            "apple, banana and cherry"
+            "apple、banana 和 cherry"
         );
         assert_eq!(
             proper_join(&["apple", "banana", "cherry", "date"]),
-            "apple, banana, cherry and date"
+            "apple、banana、cherry 和 date"
         );
     }
 }

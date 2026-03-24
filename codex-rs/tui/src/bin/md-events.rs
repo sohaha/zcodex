@@ -4,7 +4,7 @@ use std::io::{self};
 fn main() {
     let mut input = String::new();
     if let Err(err) = io::stdin().read_to_string(&mut input) {
-        eprintln!("failed to read stdin: {err}");
+        eprintln!("读取 stdin 失败：{err}");
         std::process::exit(1);
     }
 

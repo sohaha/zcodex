@@ -4934,7 +4934,7 @@ async fn realtime_error_closes_without_followup_closed_info() {
         .into_iter()
         .map(|lines| lines_to_single_string(&lines))
         .collect::<Vec<_>>();
-    assert_snapshot!(rendered.join("\n\n"), @"■ Realtime 语音错误：boom");
+    assert_snapshot!(rendered.join("\n\n"), @"■ 实时语音错误：boom");
 }
 
 #[cfg(not(target_os = "linux"))]
