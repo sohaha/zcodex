@@ -37,6 +37,15 @@ const FIRST_CONTINUATION_PROMPT: &str = "Retry with exactly the phrase meow meow
 const SECOND_CONTINUATION_PROMPT: &str = "Now tighten it to just: meow.";
 const BLOCKED_PROMPT_CONTEXT: &str = "Remember the blocked lighthouse note.";
 
+fn preferred_script_runner() -> Result<(String, &'static str)> {
+    if let Ok(python) = which("python").or_else(|_| which("python3")) {
+        return Ok((python.display().to_string(), "py"));
+    }
+
+    let node = which("node").context("find python/python3/node for hook test fixture")?;
+    Ok((node.display().to_string(), "mjs"))
+}
+
 fn write_stop_hook(home: &Path, block_prompts: &[&str]) -> Result<()> {
     let log_path = home.join("stop_hook_log.jsonl");
     let prompts_json =
@@ -120,13 +129,15 @@ if (invocationIndex < blockPrompts.length) {{
 }
 
 fn write_parallel_stop_hooks(home: &Path, prompts: &[&str]) -> Result<()> {
+    let (runner, extension) = preferred_script_runner()?;
     let hook_entries = prompts
         .iter()
         .enumerate()
         .map(|(index, prompt)| {
-            let script_path = home.join(format!("stop_hook_{index}.py"));
-            let script = format!(
-                r#"import json
+            let script_path = home.join(format!("stop_hook_{index}.{extension}"));
+            let script = if extension == "py" {
+                format!(
+                    r#"import json
 import sys
 
 payload = json.load(sys.stdin)
@@ -135,7 +146,20 @@ if payload["stop_hook_active"]:
 else:
     print(json.dumps({{"decision": "block", "reason": {prompt:?}}}))
 "#
-            );
+                )
+            } else {
+                format!(
+                    r#"import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+if (payload.stop_hook_active) {{
+    console.log(JSON.stringify({{ systemMessage: "done" }}));
+}} else {{
+    console.log(JSON.stringify({{ decision: "block", reason: {prompt:?} }}));
+}}
+"#
+                )
+            };
             fs::write(&script_path, script).with_context(|| {
                 format!(
                     "write stop hook script fixture at {}",
@@ -144,7 +168,7 @@ else:
             })?;
             Ok(serde_json::json!({
                 "type": "command",
-                "command": format!("python3 {}", script_path.display()),
+                "command": format!("{runner} {}", script_path.display()),
             }))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -166,15 +190,17 @@ fn write_user_prompt_submit_hook(
     blocked_prompt: &str,
     additional_context: &str,
 ) -> Result<()> {
-    let script_path = home.join("user_prompt_submit_hook.py");
+    let (runner, extension) = preferred_script_runner()?;
+    let script_path = home.join(format!("user_prompt_submit_hook.{extension}"));
     let log_path = home.join("user_prompt_submit_hook_log.jsonl");
     let log_path = log_path.display();
     let blocked_prompt_json =
         serde_json::to_string(blocked_prompt).context("serialize blocked prompt for test")?;
     let additional_context_json = serde_json::to_string(additional_context)
         .context("serialize user prompt submit additional context for test")?;
-    let script = format!(
-        r#"import json
+    let script = if extension == "py" {
+        format!(
+            r#"import json
 from pathlib import Path
 import sys
 
@@ -192,13 +218,33 @@ if payload.get("prompt") == {blocked_prompt_json}:
         }}
     }}))
 "#,
-    );
+        )
+    } else {
+        format!(
+            r#"import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+fs.appendFileSync(String.raw`{log_path}`, `${{JSON.stringify(payload)}}\n`, "utf8");
+
+if (payload.prompt === {blocked_prompt_json}) {{
+    console.log(JSON.stringify({{
+        decision: "block",
+        reason: "blocked by hook",
+        hookSpecificOutput: {{
+            hookEventName: "UserPromptSubmit",
+            additionalContext: {additional_context_json},
+        }},
+    }}));
+}}
+"#,
+        )
+    };
     let hooks = serde_json::json!({
         "hooks": {
             "UserPromptSubmit": [{
                 "hooks": [{
                     "type": "command",
-                    "command": format!("python3 {}", script_path.display()),
+                    "command": format!("{runner} {}", script_path.display()),
                     "statusMessage": "running user prompt submit hook",
                 }]
             }]
@@ -211,10 +257,12 @@ if payload.get("prompt") == {blocked_prompt_json}:
 }
 
 fn write_session_start_hook_recording_transcript(home: &Path) -> Result<()> {
-    let script_path = home.join("session_start_hook.py");
+    let (runner, extension) = preferred_script_runner()?;
+    let script_path = home.join(format!("session_start_hook.{extension}"));
     let log_path = home.join("session_start_hook_log.jsonl");
-    let script = format!(
-        r#"import json
+    let script = if extension == "py" {
+        format!(
+            r#"import json
 from pathlib import Path
 import sys
 
@@ -228,14 +276,34 @@ record = {{
 with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(record) + "\n")
 "#,
-        log_path = log_path.display(),
-    );
+            log_path = log_path.display(),
+        )
+    } else {
+        format!(
+            r#"import fs from "node:fs";
+
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+const transcriptPath = payload.transcript_path;
+const record = {{
+    transcript_path: transcriptPath,
+    exists: transcriptPath ? fs.existsSync(transcriptPath) : false,
+}};
+
+fs.appendFileSync(
+    String.raw`{log_path}`,
+    `${{JSON.stringify(record)}}\n`,
+    "utf8"
+);
+"#,
+            log_path = log_path.display(),
+        )
+    };
     let hooks = serde_json::json!({
         "hooks": {
             "SessionStart": [{
                 "hooks": [{
                     "type": "command",
-                    "command": format!("python3 {}", script_path.display()),
+                    "command": format!("{runner} {}", script_path.display()),
                     "statusMessage": "running session start hook",
                 }]
             }]

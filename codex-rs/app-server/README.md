@@ -230,6 +230,19 @@ Start a fresh thread when you need a new Codex conversation.
 
 默认情况下，resume 会使用该 thread 最新持久化的 `modelProvider`、`model` 和 `reasoningEffort`。可选配置 `resume_model_source = "current"` 会改为使用当前生效配置；`resume_model_source = "persisted"` 与默认安全行为一致；`resume_model_source = "disabled"` 或不填写时，保持当前默认行为。只要提供 `model`、`modelProvider`、`config.model` 或 `config.model_reasoning_effort` 其中任一字段，就会禁用该持久化回退，并改为使用显式覆盖与正常配置解析结果。
 
+`config.toml` 示例：
+
+```toml
+# 默认行为：继续使用 thread 持久化的模型元数据恢复
+resume_model_source = "disabled"
+
+# 显式写出“按持久化元数据恢复”
+# resume_model_source = "persisted"
+
+# 改为始终按当前配置恢复
+# resume_model_source = "current"
+```
+
 示例：
 
 ```json
