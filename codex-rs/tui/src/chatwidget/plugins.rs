@@ -9,17 +9,18 @@ use crate::history_cell;
 use crate::render::renderable::ColumnRenderable;
 use codex_app_server_protocol::PluginDetail;
 use codex_app_server_protocol::PluginInstallPolicy;
+use codex_app_server_protocol::PluginInstallResponse;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::PluginMarketplaceEntry;
 use codex_app_server_protocol::PluginReadResponse;
 use codex_app_server_protocol::PluginSummary;
-use codex_core::plugins::OPENAI_CURATED_MARKETPLACE_NAME;
+use codex_app_server_protocol::PluginUninstallResponse;
 use codex_features::Feature;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
 const PLUGINS_SELECTION_VIEW_ID: &str = "plugins-selection";
-const SUPPORTED_MARKETPLACE_NAME: &str = OPENAI_CURATED_MARKETPLACE_NAME;
 
 #[derive(Debug, Clone, Default)]
 pub(super) enum PluginsCacheState {
@@ -69,19 +70,25 @@ impl ChatWidget {
             return;
         }
 
+        let auth_flow_active = self.plugin_install_auth_flow.is_some();
+
         match result {
             Ok(response) => {
                 self.plugins_fetch_state.cache_cwd = Some(cwd);
                 self.plugins_cache = PluginsCacheState::Ready(response.clone());
-                self.refresh_plugins_popup_if_open(&response);
+                if !auth_flow_active {
+                    self.refresh_plugins_popup_if_open(&response);
+                }
             }
             Err(err) => {
-                self.plugins_fetch_state.cache_cwd = None;
-                self.plugins_cache = PluginsCacheState::Failed(err.clone());
-                let _ = self.bottom_pane.replace_selection_view_if_active(
-                    PLUGINS_SELECTION_VIEW_ID,
-                    self.plugins_error_popup_params(&err),
-                );
+                if !auth_flow_active {
+                    self.plugins_fetch_state.cache_cwd = None;
+                    self.plugins_cache = PluginsCacheState::Failed(err.clone());
+                    let _ = self.bottom_pane.replace_selection_view_if_active(
+                        PLUGINS_SELECTION_VIEW_ID,
+                        self.plugins_error_popup_params(&err),
+                    );
+                }
             }
         }
     }
@@ -130,6 +137,20 @@ impl ChatWidget {
             .replace_selection_view_if_active(PLUGINS_SELECTION_VIEW_ID, params);
     }
 
+    pub(crate) fn open_plugin_install_loading_popup(&mut self, plugin_display_name: &str) {
+        let params = self.plugin_install_loading_popup_params(plugin_display_name);
+        let _ = self
+            .bottom_pane
+            .replace_selection_view_if_active(PLUGINS_SELECTION_VIEW_ID, params);
+    }
+
+    pub(crate) fn open_plugin_uninstall_loading_popup(&mut self, plugin_display_name: &str) {
+        let params = self.plugin_uninstall_loading_popup_params(plugin_display_name);
+        let _ = self
+            .bottom_pane
+            .replace_selection_view_if_active(PLUGINS_SELECTION_VIEW_ID, params);
+    }
+
     pub(crate) fn on_plugin_detail_loaded(
         &mut self,
         cwd: PathBuf,
@@ -162,6 +183,291 @@ impl ChatWidget {
         }
     }
 
+    pub(crate) fn on_plugin_install_loaded(
+        &mut self,
+        cwd: PathBuf,
+        _marketplace_path: AbsolutePathBuf,
+        _plugin_name: String,
+        plugin_display_name: String,
+        result: Result<PluginInstallResponse, String>,
+    ) -> bool {
+        if self.config.cwd != cwd {
+            return true;
+        }
+
+        match result {
+            Ok(response) => {
+                self.plugin_install_apps_needing_auth = response.apps_needing_auth;
+                self.plugin_install_auth_flow = None;
+                if self.plugin_install_apps_needing_auth.is_empty() {
+                    self.add_info_message(
+                        format!("Installed {plugin_display_name} plugin."),
+                        Some("No additional app authentication is required.".to_string()),
+                    );
+                    true
+                } else {
+                    let app_names = self
+                        .plugin_install_apps_needing_auth
+                        .iter()
+                        .map(|app| app.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    self.add_info_message(
+                        format!("Installed {plugin_display_name} plugin."),
+                        Some(format!(
+                            "{} app(s) still need authentication: {app_names}",
+                            self.plugin_install_apps_needing_auth.len()
+                        )),
+                    );
+                    self.plugin_install_auth_flow = Some(super::PluginInstallAuthFlowState {
+                        plugin_display_name,
+                        next_app_index: 0,
+                    });
+                    self.open_plugin_install_auth_popup();
+                    false
+                }
+            }
+            Err(err) => {
+                self.plugin_install_apps_needing_auth.clear();
+                self.plugin_install_auth_flow = None;
+                let plugins_response = match self.plugins_cache_for_current_cwd() {
+                    PluginsCacheState::Ready(response) => Some(response),
+                    _ => None,
+                };
+                let _ = self.bottom_pane.replace_selection_view_if_active(
+                    PLUGINS_SELECTION_VIEW_ID,
+                    self.plugin_detail_error_popup_params(&err, plugins_response.as_ref()),
+                );
+                true
+            }
+        }
+    }
+
+    pub(crate) fn on_plugin_uninstall_loaded(
+        &mut self,
+        cwd: PathBuf,
+        plugin_display_name: String,
+        result: Result<PluginUninstallResponse, String>,
+    ) {
+        if self.config.cwd != cwd {
+            return;
+        }
+
+        match result {
+            Ok(_response) => {
+                self.plugin_install_apps_needing_auth.clear();
+                self.plugin_install_auth_flow = None;
+                self.add_info_message(
+                    format!("Uninstalled {plugin_display_name} plugin."),
+                    Some("Bundled apps remain installed.".to_string()),
+                );
+            }
+            Err(err) => {
+                let plugins_response = match self.plugins_cache_for_current_cwd() {
+                    PluginsCacheState::Ready(response) => Some(response),
+                    _ => None,
+                };
+                let _ = self.bottom_pane.replace_selection_view_if_active(
+                    PLUGINS_SELECTION_VIEW_ID,
+                    self.plugin_detail_error_popup_params(&err, plugins_response.as_ref()),
+                );
+            }
+        }
+    }
+
+    pub(crate) fn advance_plugin_install_auth_flow(&mut self) {
+        let should_finish = {
+            let Some(flow) = self.plugin_install_auth_flow.as_mut() else {
+                return;
+            };
+            flow.next_app_index += 1;
+            flow.next_app_index >= self.plugin_install_apps_needing_auth.len()
+        };
+
+        if should_finish {
+            self.finish_plugin_install_auth_flow(/*abandoned*/ false);
+            return;
+        }
+
+        self.open_plugin_install_auth_popup();
+    }
+
+    pub(crate) fn abandon_plugin_install_auth_flow(&mut self) {
+        self.finish_plugin_install_auth_flow(/*abandoned*/ true);
+    }
+
+    fn open_plugin_install_auth_popup(&mut self) {
+        let Some(params) = self.plugin_install_auth_popup_params() else {
+            self.finish_plugin_install_auth_flow(/*abandoned*/ false);
+            return;
+        };
+        if !self
+            .bottom_pane
+            .replace_selection_view_if_active(PLUGINS_SELECTION_VIEW_ID, params)
+            && let Some(params) = self.plugin_install_auth_popup_params()
+        {
+            self.bottom_pane.show_selection_view(params);
+        }
+    }
+
+    fn plugin_install_auth_popup_params(&self) -> Option<SelectionViewParams> {
+        let flow = self.plugin_install_auth_flow.as_ref()?;
+        let app = self
+            .plugin_install_apps_needing_auth
+            .get(flow.next_app_index)?;
+        let total = self.plugin_install_apps_needing_auth.len();
+        let current = flow.next_app_index + 1;
+        let is_installed = self.plugin_install_auth_app_is_installed(app.id.as_str());
+        let status_label = if is_installed {
+            "Already installed in this session."
+        } else {
+            "Not installed yet."
+        };
+        let description = app
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+
+        let mut header = ColumnRenderable::new();
+        header.push(Line::from("Plugins".bold()));
+        header.push(Line::from(
+            format!("{} plugin installed.", flow.plugin_display_name).bold(),
+        ));
+        header.push(Line::from(
+            format!("App setup {current}/{total}: {}", app.name).dim(),
+        ));
+        header.push(Line::from(status_label.dim()));
+
+        let mut items = vec![SelectionItem {
+            name: app.name.clone(),
+            description,
+            is_disabled: true,
+            ..Default::default()
+        }];
+
+        if let Some(install_url) = app.install_url.clone() {
+            let install_label = if is_installed {
+                "Manage on ChatGPT"
+            } else {
+                "Install on ChatGPT"
+            };
+            items.push(SelectionItem {
+                name: install_label.to_string(),
+                description: Some(
+                    "Open the same ChatGPT app management link used by /apps.".to_string(),
+                ),
+                selected_description: Some("Open the app page in your browser.".to_string()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::OpenUrlInBrowser {
+                        url: install_url.clone(),
+                    });
+                })],
+                ..Default::default()
+            });
+        } else {
+            items.push(SelectionItem {
+                name: "ChatGPT link unavailable".to_string(),
+                description: Some("This app did not provide an install/manage URL.".to_string()),
+                is_disabled: true,
+                ..Default::default()
+            });
+        }
+
+        if is_installed {
+            items.push(SelectionItem {
+                name: "Continue".to_string(),
+                description: Some("This app is already installed.".to_string()),
+                selected_description: Some("Advance to the next app.".to_string()),
+                actions: vec![Box::new(|tx| {
+                    tx.send(AppEvent::PluginInstallAuthAdvance {
+                        refresh_connectors: false,
+                    });
+                })],
+                ..Default::default()
+            });
+        } else {
+            items.push(SelectionItem {
+                name: "I've installed it".to_string(),
+                description: Some(
+                    "Trust your confirmation and continue to the next app.".to_string(),
+                ),
+                selected_description: Some(
+                    "Continue without waiting for refresh to complete.".to_string(),
+                ),
+                actions: vec![Box::new(|tx| {
+                    tx.send(AppEvent::PluginInstallAuthAdvance {
+                        refresh_connectors: true,
+                    });
+                })],
+                ..Default::default()
+            });
+        }
+
+        items.push(SelectionItem {
+            name: "Skip remaining app setup".to_string(),
+            description: Some("Stop this follow-up flow for this plugin.".to_string()),
+            selected_description: Some("Abandon remaining required app setup.".to_string()),
+            actions: vec![Box::new(|tx| {
+                tx.send(AppEvent::PluginInstallAuthAbandon);
+            })],
+            ..Default::default()
+        });
+
+        Some(SelectionViewParams {
+            view_id: Some(PLUGINS_SELECTION_VIEW_ID),
+            header: Box::new(header),
+            footer_hint: Some(plugins_popup_hint_line()),
+            items,
+            col_width_mode: ColumnWidthMode::AutoAllRows,
+            ..Default::default()
+        })
+    }
+
+    fn plugin_install_auth_app_is_installed(&self, app_id: &str) -> bool {
+        self.connectors_for_mentions().is_some_and(|connectors| {
+            connectors
+                .iter()
+                .any(|connector| connector.id == app_id && connector.is_accessible)
+        })
+    }
+
+    fn finish_plugin_install_auth_flow(&mut self, abandoned: bool) {
+        let Some(flow) = self.plugin_install_auth_flow.take() else {
+            return;
+        };
+        self.plugin_install_apps_needing_auth.clear();
+        if abandoned {
+            self.add_info_message(
+                format!(
+                    "Skipped remaining app setup for {} plugin.",
+                    flow.plugin_display_name
+                ),
+                Some("The plugin may not be usable until required apps are installed.".to_string()),
+            );
+        } else {
+            self.add_info_message(
+                format!(
+                    "Completed app setup flow for {} plugin.",
+                    flow.plugin_display_name
+                ),
+                Some("You can now continue managing plugins from /plugins.".to_string()),
+            );
+        }
+
+        let plugins_response = match self.plugins_cache_for_current_cwd() {
+            PluginsCacheState::Ready(response) => Some(response),
+            _ => None,
+        };
+        if let Some(plugins_response) = plugins_response {
+            let _ = self.bottom_pane.replace_selection_view_if_active(
+                PLUGINS_SELECTION_VIEW_ID,
+                self.plugins_popup_params(&plugins_response),
+            );
+        }
+    }
+
     fn refresh_plugins_popup_if_open(&mut self, response: &PluginListResponse) {
         let _ = self.bottom_pane.replace_selection_view_if_active(
             PLUGINS_SELECTION_VIEW_ID,
@@ -173,7 +479,7 @@ impl ChatWidget {
         let mut header = ColumnRenderable::new();
         header.push(Line::from("插件".bold()));
         header.push(Line::from("正在加载可用插件...".dim()));
-        header.push(Line::from("当前仅展示 ChatGPT 市场的插件。".dim()));
+        header.push(Line::from("正在发现可用插件市场。".dim()));
 
         SelectionViewParams {
             view_id: Some(PLUGINS_SELECTION_VIEW_ID),
@@ -201,6 +507,52 @@ impl ChatWidget {
             items: vec![SelectionItem {
                 name: "正在加载插件详情...".to_string(),
                 description: Some("插件详情请求完成后会更新此处。".to_string()),
+                is_disabled: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn plugin_install_loading_popup_params(
+        &self,
+        plugin_display_name: &str,
+    ) -> SelectionViewParams {
+        let mut header = ColumnRenderable::new();
+        header.push(Line::from("插件".bold()));
+        header.push(Line::from(
+            format!("正在安装 {plugin_display_name}...").dim(),
+        ));
+
+        SelectionViewParams {
+            view_id: Some(PLUGINS_SELECTION_VIEW_ID),
+            header: Box::new(header),
+            items: vec![SelectionItem {
+                name: "正在安装插件...".to_string(),
+                description: Some("插件安装完成后会更新此处。".to_string()),
+                is_disabled: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn plugin_uninstall_loading_popup_params(
+        &self,
+        plugin_display_name: &str,
+    ) -> SelectionViewParams {
+        let mut header = ColumnRenderable::new();
+        header.push(Line::from("插件".bold()));
+        header.push(Line::from(
+            format!("正在卸载 {plugin_display_name}...").dim(),
+        ));
+
+        SelectionViewParams {
+            view_id: Some(PLUGINS_SELECTION_VIEW_ID),
+            header: Box::new(header),
+            items: vec![SelectionItem {
+                name: "正在卸载插件...".to_string(),
+                description: Some("插件卸载完成后会更新此处。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             }],
@@ -267,11 +619,7 @@ impl ChatWidget {
     }
 
     fn plugins_popup_params(&self, response: &PluginListResponse) -> SelectionViewParams {
-        let marketplaces: Vec<&PluginMarketplaceEntry> = response
-            .marketplaces
-            .iter()
-            .filter(|marketplace| marketplace.name == SUPPORTED_MARKETPLACE_NAME)
-            .collect();
+        let marketplaces: Vec<&PluginMarketplaceEntry> = response.marketplaces.iter().collect();
 
         let total: usize = marketplaces
             .iter()
@@ -285,7 +633,7 @@ impl ChatWidget {
 
         let mut header = ColumnRenderable::new();
         header.push(Line::from("插件".bold()));
-        header.push(Line::from("浏览来自 ChatGPT 市场的插件。".dim()));
+        header.push(Line::from("浏览来自可用市场的插件。".dim()));
         header.push(Line::from(
             format!("已安装 {installed} / 共 {total} 个可用插件。").dim(),
         ));
@@ -336,8 +684,8 @@ impl ChatWidget {
 
         if items.is_empty() {
             items.push(SelectionItem {
-                name: "ChatGPT 市场暂无可用插件".to_string(),
-                description: Some("当前仅展示 ChatGPT 插件市场。".to_string()),
+                name: "当前没有可用插件".to_string(),
+                description: Some("已发现的插件市场中暂无可用插件。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             });
@@ -387,6 +735,57 @@ impl ChatWidget {
             })],
             ..Default::default()
         }];
+
+        if plugin.summary.installed {
+            let uninstall_cwd = self.config.cwd.clone();
+            let plugin_id = plugin.summary.id.clone();
+            let plugin_display_name = display_name;
+            items.push(SelectionItem {
+                name: "卸载插件".to_string(),
+                description: Some("立即移除此插件。".to_string()),
+                selected_description: Some("立即移除此插件。".to_string()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::OpenPluginUninstallLoading {
+                        plugin_display_name: plugin_display_name.clone(),
+                    });
+                    tx.send(AppEvent::FetchPluginUninstall {
+                        cwd: uninstall_cwd.clone(),
+                        plugin_id: plugin_id.clone(),
+                        plugin_display_name: plugin_display_name.clone(),
+                    });
+                })],
+                ..Default::default()
+            });
+        } else if plugin.summary.install_policy == PluginInstallPolicy::NotAvailable {
+            items.push(SelectionItem {
+                name: "安装插件".to_string(),
+                description: Some("此插件无法从当前市场安装。".to_string()),
+                is_disabled: true,
+                ..Default::default()
+            });
+        } else {
+            let install_cwd = self.config.cwd.clone();
+            let marketplace_path = plugin.marketplace_path.clone();
+            let plugin_name = plugin.summary.name.clone();
+            let plugin_display_name = display_name;
+            items.push(SelectionItem {
+                name: "安装插件".to_string(),
+                description: Some("立即安装此插件。".to_string()),
+                selected_description: Some("立即安装此插件。".to_string()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::OpenPluginInstallLoading {
+                        plugin_display_name: plugin_display_name.clone(),
+                    });
+                    tx.send(AppEvent::FetchPluginInstall {
+                        cwd: install_cwd.clone(),
+                        marketplace_path: marketplace_path.clone(),
+                        plugin_name: plugin_name.clone(),
+                        plugin_display_name: plugin_display_name.clone(),
+                    });
+                })],
+                ..Default::default()
+            });
+        }
 
         items.push(SelectionItem {
             name: "技能".to_string(),

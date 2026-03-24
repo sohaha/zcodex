@@ -870,7 +870,7 @@ impl Renderable for ListSelectionView {
                     &rows,
                     &self.state,
                     render_area.height as usize,
-                    "no matches",
+                    "无匹配结果",
                 ),
                 ColumnWidthMode::AutoAllRows => render_rows_stable_col_widths(
                     render_area,
@@ -878,7 +878,7 @@ impl Renderable for ListSelectionView {
                     &rows,
                     &self.state,
                     render_area.height as usize,
-                    "no matches",
+                    "无匹配结果",
                 ),
                 ColumnWidthMode::Fixed => render_rows_with_col_width_mode(
                     render_area,
@@ -886,7 +886,7 @@ impl Renderable for ListSelectionView {
                     &rows,
                     &self.state,
                     render_area.height as usize,
-                    "no matches",
+                    "无匹配结果",
                     ColumnWidthMode::Fixed,
                 ),
             };

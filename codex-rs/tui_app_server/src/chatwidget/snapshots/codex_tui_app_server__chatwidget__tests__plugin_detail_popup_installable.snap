@@ -1,0 +1,16 @@
+---
+source: tui_app_server/src/chatwidget/tests.rs
+expression: popup
+---
+  插 件
+  Figma · ChatGPT Marketplace
+  可 安 装
+  Turn Figma files into implementation context.
+
+› 1. 返 回 插 件 列 表   回 到 插 件 列 表 。
+  2. 安 装 插 件       立 即 安 装 此 插 件 。
+  3. 技 能           design-review, extract-copy
+  4. 应 用           Figma, Slack
+  5. MCP 服 务 器     figma-mcp, docs-mcp
+
+  按  esc 关 闭 。
