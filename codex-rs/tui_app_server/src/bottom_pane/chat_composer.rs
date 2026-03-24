@@ -4609,22 +4609,12 @@ mod tests {
             row
         };
 
-        let mut hint_row: Option<(u16, String)> = None;
-        for y in 0..area.height {
-            let row = row_to_string(y);
-            if row.contains("shortcuts")
-                || row.contains("查看快捷键")
-                || row.contains("context left")
-                || row.contains("上下文")
-            {
-                hint_row = Some((y, row));
-                break;
-            }
-        }
-
-        let Some((hint_row_idx, hint_row_contents)) = hint_row else {
-            return;
-        };
+        let hint_row_idx = area.height - 1;
+        let hint_row_contents = row_to_string(hint_row_idx);
+        assert!(
+            !hint_row_contents.trim().is_empty(),
+            "expected footer hint row to be rendered, got: {hint_row_contents:?}",
+        );
         assert_eq!(
             hint_row_idx,
             area.height - 1,

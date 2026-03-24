@@ -1898,7 +1898,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
         })
-        .find(|line| line.contains("上下文窗口") || line.contains("Context window"))
+        .find(|line| line.contains("上下文窗口"))
         .expect("context window line");
 
     assert!(
