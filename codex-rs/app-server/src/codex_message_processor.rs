@@ -188,7 +188,6 @@ use codex_core::SteerInputError;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::ThreadManager;
 use codex_core::ThreadSortKey as CoreThreadSortKey;
-use codex_core::WireApi;
 use codex_core::auth::AuthMode as CoreAuthMode;
 use codex_core::auth::CLIENT_ID;
 use codex_core::auth::login_with_api_key;
@@ -1978,21 +1977,6 @@ impl CodexMessageProcessor {
                 return;
             }
         };
-        if let Err(message) = validate_model_provider_request_shape(&config) {
-            listener_task_context
-                .outgoing
-                .send_error(
-                    request_id,
-                    JSONRPCErrorError {
-                        code: INVALID_REQUEST_ERROR_CODE,
-                        message,
-                        data: None,
-                    },
-                )
-                .await;
-            return;
-        }
-
         let dynamic_tools = dynamic_tools.unwrap_or_default();
         let core_dynamic_tools = if dynamic_tools.is_empty() {
             Vec::new()
@@ -3498,11 +3482,6 @@ impl CodexMessageProcessor {
                 return;
             }
         };
-        if let Err(message) = validate_model_provider_request_shape(&config) {
-            self.send_invalid_request_error(request_id, message).await;
-            return;
-        }
-
         let fallback_model_provider = config.model_provider_id.clone();
         let response_history = thread_history.clone();
 
@@ -4045,11 +4024,6 @@ impl CodexMessageProcessor {
                 return;
             }
         };
-        if let Err(message) = validate_model_provider_request_shape(&config) {
-            self.send_invalid_request_error(request_id, message).await;
-            return;
-        }
-
         let fallback_model_provider = config.model_provider_id.clone();
 
         let NewThread {
@@ -7886,57 +7860,6 @@ async fn derive_config_for_cwd(
         .await
 }
 
-fn validate_model_provider_request_shape(config: &Config) -> Result<(), String> {
-    let Some(model) = config.model.as_deref() else {
-        return Ok(());
-    };
-
-    if config.model_provider.wire_api != WireApi::Anthropic {
-        return Ok(());
-    }
-
-    if model_supported_by_active_catalog(config, model) || model.starts_with("claude-") {
-        return Ok(());
-    }
-
-    Err(format!(
-        "model `{model}` does not look compatible with Anthropic provider `{}`. \
-This would send an Anthropic `/messages` request with a non-Claude model. \
-Pass a matching `modelProvider`, or override `model` to a Claude model before starting/resuming the thread.",
-        config.model_provider_id
-    ))
-}
-
-fn model_supported_by_active_catalog(config: &Config, model: &str) -> bool {
-    config
-        .model_catalog
-        .iter()
-        .chain(config.model_catalog_merge.iter())
-        .flat_map(|catalog| catalog.models.iter())
-        .any(|candidate| model_matches_catalog_candidate(model, candidate.slug.as_str()))
-}
-
-fn model_matches_catalog_candidate(model: &str, candidate: &str) -> bool {
-    model.starts_with(candidate) || namespaced_model_matches_candidate(model, candidate)
-}
-
-fn namespaced_model_matches_candidate(model: &str, candidate: &str) -> bool {
-    let Some((prefix, suffix)) = model.split_once('/') else {
-        return false;
-    };
-    if prefix.is_empty()
-        || suffix.is_empty()
-        || suffix.contains('/')
-        || !prefix
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-    {
-        return false;
-    }
-
-    suffix.starts_with(candidate)
-}
-
 async fn read_history_cwd_from_state_db(
     config: &Config,
     thread_id: Option<ThreadId>,
@@ -8430,8 +8353,6 @@ mod tests {
     use anyhow::Result;
     use codex_app_server_protocol::ServerRequestPayload;
     use codex_app_server_protocol::ToolRequestUserInputParams;
-    use codex_protocol::openai_models::ModelInfo;
-    use codex_protocol::openai_models::ModelsResponse;
     use codex_protocol::openai_models::ReasoningEffort;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::SubAgentSource;
@@ -8462,91 +8383,6 @@ mod tests {
             defer_loading: false,
         }];
         validate_dynamic_tools(&tools).expect("valid schema");
-    }
-
-    async fn test_config_with_model_provider(
-        model: &str,
-        model_provider: &str,
-    ) -> std::io::Result<Config> {
-        let codex_home = TempDir::new().expect("temp dir");
-        codex_core::config::ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
-            .harness_overrides(ConfigOverrides {
-                model: Some(model.to_string()),
-                model_provider: Some(model_provider.to_string()),
-                ..Default::default()
-            })
-            .build()
-            .await
-    }
-
-    fn test_model_catalog_entry(slug: &str) -> ModelInfo {
-        serde_json::from_value(json!({
-            "slug": slug,
-            "display_name": slug,
-            "description": null,
-            "default_reasoning_level": null,
-            "supported_reasoning_levels": [],
-            "shell_type": "default",
-            "visibility": "list",
-            "supported_in_api": true,
-            "priority": 1,
-            "availability_nux": null,
-            "upgrade": null,
-            "base_instructions": "base instructions",
-            "model_messages": null,
-            "supports_reasoning_summaries": false,
-            "default_reasoning_summary": "auto",
-            "support_verbosity": false,
-            "default_verbosity": null,
-            "apply_patch_tool_type": null,
-            "web_search_tool_type": "text",
-            "truncation_policy": {"mode": "bytes", "limit": 10000},
-            "supports_parallel_tool_calls": false,
-            "supports_image_detail_original": false,
-            "context_window": 272000,
-            "auto_compact_token_limit": null,
-            "effective_context_window_percent": 95,
-            "experimental_supported_tools": [],
-            "input_modalities": ["text"],
-            "used_fallback_model_metadata": false,
-            "supports_search_tool": false
-        }))
-        .expect("deserialize test model catalog entry")
-    }
-
-    #[tokio::test]
-    async fn validate_model_provider_request_shape_rejects_non_claude_model_for_anthropic() {
-        let config = test_config_with_model_provider("gpt-5.2-codex", "anthropic")
-            .await
-            .expect("config should load");
-
-        let err =
-            validate_model_provider_request_shape(&config).expect_err("expected mismatch error");
-        assert!(err.contains("Anthropic"), "unexpected error: {err}");
-        assert!(err.contains("gpt-5.2-codex"), "unexpected error: {err}");
-    }
-
-    #[tokio::test]
-    async fn validate_model_provider_request_shape_allows_claude_model_for_anthropic() {
-        let config = test_config_with_model_provider("claude-sonnet-4-20250514", "anthropic")
-            .await
-            .expect("config should load");
-
-        validate_model_provider_request_shape(&config).expect("claude model should pass");
-    }
-
-    #[tokio::test]
-    async fn validate_model_provider_request_shape_allows_catalog_declared_model_for_anthropic() {
-        let mut config = test_config_with_model_provider("proxy/custom-anthropic", "anthropic")
-            .await
-            .expect("config should load");
-        config.model_catalog = Some(ModelsResponse {
-            models: vec![test_model_catalog_entry("custom-anthropic")],
-        });
-
-        validate_model_provider_request_shape(&config)
-            .expect("catalog-declared Anthropic model should pass");
     }
 
     #[test]
