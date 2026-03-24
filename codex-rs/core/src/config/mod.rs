@@ -2572,7 +2572,10 @@ impl Config {
 
         let forced_login_method = cfg.forced_login_method;
 
-        let model = model.or(config_profile.model).or(cfg.model);
+        let model = model
+            .or(config_profile.model)
+            .or_else(|| model_provider.model.clone())
+            .or(cfg.model);
         let service_tier = service_tier_override
             .unwrap_or_else(|| config_profile.service_tier.or(cfg.service_tier));
         let service_tier = match service_tier {

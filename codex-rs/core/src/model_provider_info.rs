@@ -83,6 +83,9 @@ impl<'de> Deserialize<'de> for WireApi {
 pub struct ModelProviderInfo {
     /// Friendly display name.
     pub name: String,
+    /// Optional default model slug to use when this provider is selected.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Base URL for the provider's OpenAI-compatible API.
     pub base_url: Option<String>,
     /// Environment variable that stores the user's API key for this provider.
@@ -311,6 +314,7 @@ impl ModelProviderInfo {
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
+            model: None,
             base_url,
             env_key: None,
             env_key_instructions: None,
@@ -346,6 +350,7 @@ impl ModelProviderInfo {
     pub fn create_anthropic_provider() -> ModelProviderInfo {
         ModelProviderInfo {
             name: ANTHROPIC_PROVIDER_NAME.into(),
+            model: None,
             base_url: std::env::var("ANTHROPIC_BASE_URL")
                 .ok()
                 .filter(|v| !v.trim().is_empty()),
@@ -435,6 +440,7 @@ pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> Mod
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "gpt-oss".into(),
+        model: None,
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,

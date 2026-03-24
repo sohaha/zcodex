@@ -9,6 +9,7 @@ base_url = "http://localhost:11434/v1"
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Ollama".into(),
+        model: None,
         base_url: Some("http://localhost:11434/v1".into()),
         env_key: None,
         env_key_instructions: None,
@@ -39,6 +40,7 @@ query_params = { api-version = "2025-04-01-preview" }
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Azure".into(),
+        model: None,
         base_url: Some("https://xxxxx.openai.azure.com/openai".into()),
         env_key: Some("AZURE_OPENAI_API_KEY".into()),
         env_key_instructions: None,
@@ -72,6 +74,7 @@ env_http_headers = { "X-Example-Env-Header" = "EXAMPLE_ENV_VAR" }
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Example".into(),
+        model: None,
         base_url: Some("https://example.com".into()),
         env_key: Some("API_KEY".into()),
         env_key_instructions: None,
@@ -104,6 +107,7 @@ api_key = "test-token"
         "#;
     let expected_provider = ModelProviderInfo {
         name: "Example".into(),
+        model: None,
         base_url: None,
         env_key: None,
         env_key_instructions: None,
@@ -128,6 +132,7 @@ api_key = "test-token"
 fn provider_supplied_auth_detects_configured_authorization_headers() {
     let provider = ModelProviderInfo {
         name: "Example".into(),
+        model: None,
         base_url: None,
         env_key: None,
         env_key_instructions: None,
@@ -153,6 +158,7 @@ fn provider_supplied_auth_detects_configured_authorization_headers() {
 fn provider_supplied_auth_ignores_unrelated_headers() {
     let provider = ModelProviderInfo {
         name: "Example".into(),
+        model: None,
         base_url: None,
         env_key: None,
         env_key_instructions: None,
@@ -191,6 +197,7 @@ wire_api = "chat"
 fn anthropic_provider_defaults_to_official_base_url() {
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
+        model: None,
         base_url: None,
         env_key: None,
         env_key_instructions: None,
@@ -217,6 +224,7 @@ fn anthropic_provider_defaults_to_official_base_url() {
 fn anthropic_provider_honors_configured_base_url() {
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
+        model: None,
         base_url: Some("https://proxy.example/v1".into()),
         env_key: None,
         env_key_instructions: None,
@@ -265,6 +273,7 @@ fn anthropic_provider_uses_api_key_for_authorization_and_x_api_key() {
     }
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
+        model: None,
         base_url: None,
         env_key: Some(API_KEY_ENV.to_string()),
         env_key_instructions: None,
@@ -312,6 +321,7 @@ fn anthropic_provider_uses_api_key_for_authorization_and_x_api_key() {
 fn anthropic_provider_preserves_explicit_authorization_header() {
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),
+        model: None,
         base_url: None,
         env_key: None,
         env_key_instructions: None,

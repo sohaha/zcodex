@@ -269,6 +269,7 @@ async fn request_fallback_switches_to_configured_provider_and_model() -> Result<
             config.fallback_provider_id = Some("fallback".to_string());
             config.fallback_provider = Some(codex_core::ModelProviderInfo {
                 name: "fallback".to_string(),
+                model: None,
                 base_url: Some(fallback_base_url),
                 env_key: Some("OPENAI_API_KEY".to_string()),
                 env_key_instructions: None,
@@ -342,6 +343,7 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
                     provider_id: "fallback-a".to_string(),
                     provider: codex_core::ModelProviderInfo {
                         name: "fallback-a".to_string(),
+                        model: None,
                         base_url: Some(fallback_a_base_url),
                         env_key: Some("OPENAI_API_KEY".to_string()),
                         env_key_instructions: None,
@@ -363,6 +365,7 @@ async fn request_fallback_walks_provider_chain_until_success() -> Result<()> {
                     provider_id: "fallback-b".to_string(),
                     provider: codex_core::ModelProviderInfo {
                         name: "fallback-b".to_string(),
+                        model: None,
                         base_url: Some(fallback_b_base_url),
                         env_key: Some("OPENAI_API_KEY".to_string()),
                         env_key_instructions: None,
@@ -449,6 +452,7 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
                     provider_id: "fallback-a".to_string(),
                     provider: codex_core::ModelProviderInfo {
                         name: "fallback-a".to_string(),
+                        model: None,
                         base_url: Some(fallback_a_base_url),
                         env_key: Some("OPENAI_API_KEY".to_string()),
                         env_key_instructions: None,
@@ -470,6 +474,7 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
                     provider_id: "fallback-b".to_string(),
                     provider: codex_core::ModelProviderInfo {
                         name: "fallback-b".to_string(),
+                        model: None,
                         base_url: Some(fallback_b_base_url),
                         env_key: Some("OPENAI_API_KEY".to_string()),
                         env_key_instructions: None,
@@ -497,6 +502,69 @@ async fn request_fallback_chain_preserves_primary_model_for_later_fallbacks() ->
     let fallback_b_request = fallback_b_mock.single_request();
     let fallback_b_body: Value = fallback_b_request.body_json();
     assert_eq!(fallback_b_body["model"].as_str(), Some("primary-model"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_fallback_chain_uses_provider_default_model_when_unspecified() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let primary_server = responses::start_mock_server().await;
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(ResponseTemplate::new(500).set_body_string("primary failed"))
+        .mount(&primary_server)
+        .await;
+
+    let fallback_server = responses::start_mock_server().await;
+    let fallback_mock = mount_sse_once(
+        &fallback_server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+
+    let mut builder = test_codex().with_config({
+        let fallback_base_url = format!("{}/v1", fallback_server.uri());
+        move |config| {
+            config.model = Some("primary-model".to_string());
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+            config.model_provider.supports_websockets = false;
+            config.fallback_providers = vec![codex_core::config::FallbackProviderConfig {
+                provider_id: "fallback".to_string(),
+                provider: codex_core::ModelProviderInfo {
+                    name: "fallback".to_string(),
+                    model: Some("provider-default-model".to_string()),
+                    base_url: Some(fallback_base_url),
+                    env_key: Some("OPENAI_API_KEY".to_string()),
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    wire_api: codex_core::WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: Some(0),
+                    stream_max_retries: Some(0),
+                    stream_idle_timeout_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                },
+                model: None,
+            }];
+        }
+    });
+    let test = builder.build(&primary_server).await?;
+
+    test.submit_turn("hello").await?;
+
+    let fallback_request = fallback_mock.single_request();
+    let fallback_body: Value = fallback_request.body_json();
+    assert_eq!(
+        fallback_body["model"].as_str(),
+        Some("provider-default-model")
+    );
 
     Ok(())
 }

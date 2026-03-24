@@ -38,6 +38,9 @@ model provider entries. For Anthropic-compatible setups, use
 unless you override the provider config. The built-in `anthropic` provider
 defaults to `https://api.anthropic.com/v1`, and you can override that with
 `ANTHROPIC_BASE_URL` or a custom `model_providers.<id>.base_url` entry.
+You can also set `model_providers.<id>.model` to give that provider its own
+default model; when present, it takes precedence over the global `model`
+setting for requests sent through that provider.
 
 To retry a failed primary request against another provider, set
 `fallback_provider` to a provider ID from `model_providers` (or a built-in
@@ -65,6 +68,7 @@ model_provider = "cn-relay"
 [model_providers.cn-relay]
 # Primary relay (OpenAI-compatible)
 name = "CN relay"
+model = "gpt-5.1"
 base_url = "https://relay.example.com/v1"
 env_key = "CN_RELAY_API_KEY"
 wire_api = "responses"

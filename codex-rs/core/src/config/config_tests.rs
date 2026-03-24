@@ -1740,6 +1740,7 @@ fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
             "anthropic".to_string(),
             ModelProviderInfo {
                 name: "Anthropic via Proxy".to_string(),
+                model: None,
                 base_url: Some("https://proxy.example/v1".to_string()),
                 env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
                 env_key_instructions: None,
@@ -1795,6 +1796,104 @@ fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
 }
 
 #[test]
+fn provider_model_overrides_global_model() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let cfg = ConfigToml {
+        model: Some("global-model".to_string()),
+        model_provider: Some("anthropic".to_string()),
+        model_providers: HashMap::from([(
+            "anthropic".to_string(),
+            ModelProviderInfo {
+                name: "Anthropic via Proxy".to_string(),
+                model: Some("provider-model".to_string()),
+                base_url: Some("https://proxy.example/v1".to_string()),
+                env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                wire_api: crate::WireApi::Anthropic,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.model.as_deref(), Some("provider-model"));
+
+    Ok(())
+}
+
+#[test]
+fn profile_model_overrides_provider_model() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cwd = TempDir::new()?;
+    let cfg = ConfigToml {
+        model: Some("global-model".to_string()),
+        profile: Some("anthropic".to_string()),
+        profiles: HashMap::from([(
+            "anthropic".to_string(),
+            ConfigProfile {
+                model: Some("profile-model".to_string()),
+                model_provider: Some("anthropic".to_string()),
+                ..Default::default()
+            },
+        )]),
+        model_providers: HashMap::from([(
+            "anthropic".to_string(),
+            ModelProviderInfo {
+                name: "Anthropic via Proxy".to_string(),
+                model: Some("provider-model".to_string()),
+                base_url: Some("https://proxy.example/v1".to_string()),
+                env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                wire_api: crate::WireApi::Anthropic,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..Default::default()
+        },
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.model.as_deref(), Some("profile-model"));
+
+    Ok(())
+}
+
+#[test]
 fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
@@ -1805,6 +1904,7 @@ fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
             "fallback".to_string(),
             ModelProviderInfo {
                 name: "Fallback Provider".to_string(),
+                model: None,
                 base_url: Some("https://fallback.example/v1".to_string()),
                 env_key: Some("FALLBACK_API_KEY".to_string()),
                 env_key_instructions: None,
@@ -1872,6 +1972,7 @@ fn resolves_fallback_provider_chain() -> std::io::Result<()> {
                 "fallback-a".to_string(),
                 ModelProviderInfo {
                     name: "Fallback A".to_string(),
+                    model: None,
                     base_url: Some("https://fallback-a.example/v1".to_string()),
                     env_key: Some("FALLBACK_A_API_KEY".to_string()),
                     env_key_instructions: None,
@@ -1892,6 +1993,7 @@ fn resolves_fallback_provider_chain() -> std::io::Result<()> {
                 "fallback-b".to_string(),
                 ModelProviderInfo {
                     name: "Fallback B".to_string(),
+                    model: None,
                     base_url: Some("https://fallback-b.example/v1".to_string()),
                     env_key: Some("FALLBACK_B_API_KEY".to_string()),
                     env_key_instructions: None,
@@ -1942,6 +2044,7 @@ fn preserves_legacy_fallback_when_same_provider_has_different_models() -> std::i
     let cwd = TempDir::new()?;
     let provider = ModelProviderInfo {
         name: "Shared Fallback".to_string(),
+        model: None,
         base_url: Some("https://fallback.example/v1".to_string()),
         env_key: Some("FALLBACK_API_KEY".to_string()),
         env_key_instructions: None,
@@ -4727,6 +4830,7 @@ model_verbosity = "high"
 
     let openai_custom_provider = ModelProviderInfo {
         name: "OpenAI custom".to_string(),
+        model: None,
         base_url: Some("https://api.openai.com/v1".to_string()),
         env_key: Some("OPENAI_API_KEY".to_string()),
         wire_api: crate::WireApi::Responses,

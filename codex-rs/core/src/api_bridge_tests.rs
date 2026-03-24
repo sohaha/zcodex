@@ -143,6 +143,7 @@ fn anthropic_auth_provider_does_not_duplicate_api_key_as_bearer() {
     let env_var = if cfg!(windows) { "USERNAME" } else { "USER" };
     let provider = ModelProviderInfo {
         name: "Anthropic".to_string(),
+        model: None,
         base_url: Some("https://api.anthropic.com/v1".to_string()),
         env_key: Some(env_var.to_string()),
         env_key_instructions: None,
@@ -167,6 +168,7 @@ fn anthropic_auth_provider_does_not_duplicate_api_key_as_bearer() {
 fn responses_auth_provider_ignores_empty_configured_bearer_token() {
     let provider = ModelProviderInfo {
         name: "OpenAI compatible".to_string(),
+        model: None,
         base_url: Some("https://example.com/v1".to_string()),
         env_key: None,
         env_key_instructions: None,

@@ -6654,6 +6654,7 @@ async fn next_fallback_turn_context(
         let fallback_model = fallback
             .model
             .clone()
+            .or_else(|| fallback.provider.model.clone())
             .unwrap_or_else(|| primary_requested_model.to_string());
         if fallback.provider_id == turn_context.config.model_provider_id
             && fallback_model == turn_context.model_info.slug

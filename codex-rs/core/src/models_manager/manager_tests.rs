@@ -75,6 +75,7 @@ fn assert_models_contain(actual: &[ModelInfo], expected: &[ModelInfo]) {
 fn provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "mock".into(),
+        model: None,
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,
@@ -95,6 +96,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
 fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "mock-anthropic".into(),
+        model: None,
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,

@@ -12,10 +12,11 @@
 在 `~/.codex/config.toml` 中启用内置 `anthropic` 模型提供方，并选择 Claude 模型：
 
 ```toml
-model = "claude-3-5-haiku-20241022"
+model_provider = "anthropic"
 
 [model_providers.anthropic]
 name = "Anthropic"
+model = "claude-3-5-haiku-20241022"
 wire_api = "anthropic"
 # 默认 base_url 为 https://api.anthropic.com/v1
 ```
@@ -23,7 +24,8 @@ wire_api = "anthropic"
 说明：
 
 - `wire_api = "anthropic"` 会使用 `/v1/messages` 的 Claude 接口。
-- `model` 需填写 Claude 模型名，例如 `claude-3-5-haiku-20241022`、`claude-sonnet-4-20250514`。
+- `model_providers.anthropic.model` 需填写 Claude 模型名，例如 `claude-3-5-haiku-20241022`、`claude-sonnet-4-20250514`。
+- 如果同时设置了全局 `model`，当前 provider 自己的 `model` 会优先生效。
 - 当 provider 配置了 `env_key` 时，Codex 会同时发送 `x-api-key` 与 `Authorization: Bearer ...`，
   以兼容官方 Anthropic API 以及 Claude Code 风格的兼容网关。
 

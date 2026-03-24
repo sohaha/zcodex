@@ -884,6 +884,11 @@
           "description": "Additional HTTP headers to include in requests to this provider where the (key, value) pairs are the header name and value.",
           "type": "object"
         },
+        "model": {
+          "default": null,
+          "description": "Optional default model slug to use when this provider is selected.",
+          "type": "string"
+        },
         "name": {
           "description": "Friendly display name.",
           "type": "string"

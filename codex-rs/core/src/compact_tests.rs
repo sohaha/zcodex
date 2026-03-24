@@ -189,6 +189,7 @@ fn build_token_limited_compacted_history_appends_summary_message() {
 fn should_use_remote_compact_task_for_anthropic_provider() {
     let provider = crate::model_provider_info::ModelProviderInfo {
         name: "Anthropic".to_string(),
+        model: None,
         base_url: Some("https://anthropic.example/v1".to_string()),
         env_key: None,
         env_key_instructions: None,

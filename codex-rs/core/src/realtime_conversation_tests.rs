@@ -62,6 +62,7 @@ fn ignores_empty_handoff_request_input_transcript() {
 fn realtime_api_key_ignores_empty_configured_bearer_token() {
     let provider = ModelProviderInfo {
         name: "OpenAI compatible".to_string(),
+        model: None,
         base_url: Some("https://example.com/v1".to_string()),
         env_key: None,
         env_key_instructions: None,
