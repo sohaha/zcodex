@@ -228,7 +228,7 @@ Start a fresh thread when you need a new Codex conversation.
 
 要继续已存储的会话，请使用之前记录的 `thread.id` 调用 `thread/resume`。其响应结构与 `thread/start` 一致，并且不会额外发送通知。你也可以传入 `thread/start` 支持的配置覆盖项（包括 `approvalsReviewer`）。
 
-默认情况下，resume 会使用该 thread 最新持久化的 `modelProvider`、`model` 和 `reasoningEffort`。只要提供 `model`、`modelProvider`、`config.model` 或 `config.model_reasoning_effort` 其中任一字段，就会禁用该持久化回退，并改为使用显式覆盖与正常配置解析结果。
+默认情况下，resume 会使用该 thread 最新持久化的 `modelProvider`、`model` 和 `reasoningEffort`。可选配置 `resume_model_source = "current"` 会改为使用当前生效配置；`resume_model_source = "persisted"` 与默认安全行为一致；`resume_model_source = "disabled"` 或不填写时，保持当前默认行为。只要提供 `model`、`modelProvider`、`config.model` 或 `config.model_reasoning_effort` 其中任一字段，就会禁用该持久化回退，并改为使用显式覆盖与正常配置解析结果。
 
 示例：
 

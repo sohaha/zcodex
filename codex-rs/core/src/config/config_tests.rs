@@ -3068,6 +3068,21 @@ model = "gpt-5.1-codex"
     Ok(())
 }
 
+#[test]
+fn config_toml_parses_resume_model_source() {
+    let parsed: ConfigToml = toml::from_str(
+        r#"
+resume_model_source = "current"
+"#,
+    )
+    .expect("config should parse");
+
+    assert_eq!(
+        parsed.resume_model_source,
+        Some(crate::config::types::ResumeModelSource::Current)
+    );
+}
+
 #[tokio::test]
 async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
     let codex_home = TempDir::new()?;
@@ -4836,6 +4851,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
             model_reasoning_effort: Some(ReasoningEffort::High),
+            resume_model_source: crate::config::types::ResumeModelSource::Disabled,
             plan_mode_reasoning_effort: None,
             model_reasoning_summary: Some(ReasoningSummary::Detailed),
             model_supports_reasoning_summaries: None,
@@ -4984,6 +5000,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
         model_reasoning_effort: None,
+        resume_model_source: crate::config::types::ResumeModelSource::Disabled,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
@@ -5130,6 +5147,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
         model_reasoning_effort: None,
+        resume_model_source: crate::config::types::ResumeModelSource::Disabled,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
@@ -5262,6 +5280,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
         model_reasoning_effort: Some(ReasoningEffort::High),
+        resume_model_source: crate::config::types::ResumeModelSource::Disabled,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: Some(ReasoningSummary::Detailed),
         model_supports_reasoning_summaries: None,

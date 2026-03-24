@@ -271,7 +271,7 @@ async fn thread_resume_accepts_non_claude_model_for_anthropic_provider() -> Resu
 #[tokio::test]
 async fn thread_resume_restores_persisted_model_metadata_over_current_defaults() -> Result<()> {
     let codex_home = TempDir::new()?;
-    create_dual_provider_resume_config_toml(codex_home.path())?;
+    create_dual_provider_resume_config_toml(codex_home.path(), "disabled")?;
 
     let conversation_id = create_fake_rollout(
         codex_home.path(),
@@ -329,6 +329,137 @@ async fn thread_resume_restores_persisted_model_metadata_over_current_defaults()
     assert_eq!(model_provider, "anthropic");
     assert_eq!(model, "proxy/custom-anthropic");
     assert_eq!(reasoning_effort, Some(ReasoningEffort::High));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_resume_restores_persisted_model_metadata_when_explicitly_configured() -> Result<()>
+{
+    let codex_home = TempDir::new()?;
+    create_dual_provider_resume_config_toml(codex_home.path(), "persisted")?;
+
+    let conversation_id = create_fake_rollout(
+        codex_home.path(),
+        "2025-01-05T12-00-00",
+        "2025-01-05T12:00:00Z",
+        "Saved user message",
+        Some("anthropic"),
+        None,
+    )?;
+    let thread_id = ThreadId::from_string(&conversation_id)?;
+    let rollout_file_path =
+        rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
+
+    let state_db =
+        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".into()).await?;
+    state_db.mark_backfill_complete(None).await?;
+    let mut builder = ThreadMetadataBuilder::new(
+        thread_id,
+        rollout_file_path,
+        Utc::now(),
+        RolloutSessionSource::Cli,
+    );
+    builder.cwd = PathBuf::from("/");
+    builder.model_provider = Some("anthropic".to_string());
+    builder.cli_version = Some("0.0.0".to_string());
+    let mut metadata = builder.build("mock_provider");
+    metadata.model = Some("proxy/custom-anthropic".to_string());
+    metadata.reasoning_effort = Some(ReasoningEffort::High);
+    state_db.upsert_thread(&metadata).await?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let resume_id = mcp
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: conversation_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let resume_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
+    )
+    .await??;
+    let ThreadResumeResponse {
+        thread,
+        model_provider,
+        model,
+        reasoning_effort,
+        ..
+    } = to_response::<ThreadResumeResponse>(resume_resp)?;
+
+    assert_eq!(thread.id, conversation_id);
+    assert_eq!(thread.model_provider, "anthropic");
+    assert_eq!(model_provider, "anthropic");
+    assert_eq!(model, "proxy/custom-anthropic");
+    assert_eq!(reasoning_effort, Some(ReasoningEffort::High));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_resume_uses_current_model_metadata_when_configured() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_dual_provider_resume_config_toml(codex_home.path(), "current")?;
+
+    let conversation_id = create_fake_rollout(
+        codex_home.path(),
+        "2025-01-05T12-00-00",
+        "2025-01-05T12:00:00Z",
+        "Saved user message",
+        Some("anthropic"),
+        None,
+    )?;
+    let thread_id = ThreadId::from_string(&conversation_id)?;
+    let rollout_file_path =
+        rollout_path(codex_home.path(), "2025-01-05T12-00-00", &conversation_id);
+
+    let state_db =
+        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".into()).await?;
+    state_db.mark_backfill_complete(None).await?;
+    let mut builder = ThreadMetadataBuilder::new(
+        thread_id,
+        rollout_file_path,
+        Utc::now(),
+        RolloutSessionSource::Cli,
+    );
+    builder.cwd = PathBuf::from("/");
+    builder.model_provider = Some("anthropic".to_string());
+    builder.cli_version = Some("0.0.0".to_string());
+    let mut metadata = builder.build("mock_provider");
+    metadata.model = Some("proxy/custom-anthropic".to_string());
+    metadata.reasoning_effort = Some(ReasoningEffort::High);
+    state_db.upsert_thread(&metadata).await?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let resume_id = mcp
+        .send_thread_resume_request(ThreadResumeParams {
+            thread_id: conversation_id.clone(),
+            ..Default::default()
+        })
+        .await?;
+    let resume_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
+    )
+    .await??;
+    let ThreadResumeResponse {
+        thread,
+        model_provider,
+        model,
+        reasoning_effort,
+        ..
+    } = to_response::<ThreadResumeResponse>(resume_resp)?;
+
+    assert_eq!(thread.id, conversation_id);
+    assert_eq!(thread.model_provider, "anthropic");
+    assert_eq!(model_provider, "mock_provider");
+    assert_eq!(model, "gpt-5.2-codex");
+    assert_eq!(reasoning_effort, Some(ReasoningEffort::Low));
 
     Ok(())
 }
@@ -1965,13 +2096,18 @@ stream_max_retries = 0
     )
 }
 
-fn create_dual_provider_resume_config_toml(codex_home: &std::path::Path) -> std::io::Result<()> {
+fn create_dual_provider_resume_config_toml(
+    codex_home: &std::path::Path,
+    resume_model_source: &str,
+) -> std::io::Result<()> {
     let config_toml = codex_home.join("config.toml");
     std::fs::write(
         config_toml,
-        r#"
+        format!(
+            r#"
 model = "gpt-5.2-codex"
 model_reasoning_effort = "low"
+resume_model_source = "{resume_model_source}"
 approval_policy = "never"
 sandbox_mode = "read-only"
 
@@ -1991,6 +2127,7 @@ wire_api = "anthropic"
 request_max_retries = 0
 stream_max_retries = 0
 "#,
+        ),
     )
 }
 

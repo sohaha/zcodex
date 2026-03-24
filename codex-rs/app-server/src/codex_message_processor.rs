@@ -197,6 +197,7 @@ use codex_core::config::NetworkProxyAuditMetadata;
 use codex_core::config::edit::ConfigEdit;
 use codex_core::config::edit::ConfigEditsBuilder;
 use codex_core::config::types::McpServerTransportConfig;
+use codex_core::config::types::ResumeModelSource;
 use codex_core::config_loader::CloudRequirementsLoadError;
 use codex_core::config_loader::CloudRequirementsLoadErrorCode;
 use codex_core::config_loader::CloudRequirementsLoader;
@@ -3588,6 +3589,9 @@ impl CodexMessageProcessor {
         request_overrides: &mut Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: &mut ConfigOverrides,
     ) -> Option<ThreadMetadata> {
+        if !should_apply_persisted_resume_model_metadata(&self.config) {
+            return None;
+        }
         let InitialHistory::Resumed(resumed_history) = thread_history else {
             return None;
         };
@@ -7575,6 +7579,10 @@ fn merge_persisted_resume_metadata(
     }
 }
 
+fn should_apply_persisted_resume_model_metadata(config: &Config) -> bool {
+    !matches!(config.resume_model_source, ResumeModelSource::Current)
+}
+
 fn has_model_resume_override(
     request_overrides: Option<&HashMap<String, serde_json::Value>>,
     typesafe_overrides: &ConfigOverrides,
@@ -8666,6 +8674,55 @@ mod tests {
         assert_eq!(typesafe_overrides.model, None);
         assert_eq!(request_overrides, None);
         Ok(())
+    }
+
+    async fn test_config_with_resume_model_source(
+        resume_model_source: Option<&str>,
+    ) -> std::io::Result<Config> {
+        let codex_home = TempDir::new().expect("temp dir");
+        let resume_model_source = resume_model_source
+            .map(|value| format!("resume_model_source = \"{value}\"\n"))
+            .unwrap_or_default();
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            format!(
+                r#"
+model = "gpt-5.2-codex"
+model_provider = "mock_provider"
+{resume_model_source}
+
+[model_providers.mock_provider]
+name = "Mock provider for test"
+base_url = "http://127.0.0.1:9/v1"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+"#,
+            ),
+        )?;
+        codex_core::config::ConfigBuilder::default()
+            .codex_home(codex_home.path().to_path_buf())
+            .build()
+            .await
+    }
+
+    #[tokio::test]
+    async fn should_apply_persisted_resume_model_metadata_defaults_to_safe_behavior() {
+        let config = test_config_with_resume_model_source(None)
+            .await
+            .expect("config should load");
+
+        assert!(should_apply_persisted_resume_model_metadata(&config));
+    }
+
+    #[tokio::test]
+    async fn should_apply_persisted_resume_model_metadata_respects_current_mode() {
+        let config = test_config_with_resume_model_source(Some("current"))
+            .await
+            .expect("config should load");
+
+        assert_eq!(config.resume_model_source, ResumeModelSource::Current);
+        assert!(!should_apply_persisted_resume_model_metadata(&config));
     }
 
     #[test]

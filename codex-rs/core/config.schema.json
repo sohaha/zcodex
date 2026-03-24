@@ -1463,6 +1463,14 @@
         }
       ]
     },
+    "ResumeModelSource": {
+      "enum": [
+        "disabled",
+        "persisted",
+        "current"
+      ],
+      "type": "string"
+    },
     "SandboxMode": {
       "enum": [
         "read-only",
@@ -2490,6 +2498,9 @@
       ],
       "default": null,
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+    },
+    "resume_model_source": {
+      "$ref": "#/definitions/ResumeModelSource"
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",
