@@ -1,7 +1,7 @@
 # AGENTS.md
 
-For information about AGENTS.md, see [this documentation](https://developers.openai.com/codex/guides/agents-md).
+AGENTS.md 说明见 [此文档](https://developers.openai.com/codex/guides/agents-md)。
 
-## Hierarchical agents message
+## 分层 agents 消息
 
-When the `child_agents_md` feature flag is enabled (via `[features]` in `config.toml`), Codex appends additional guidance about AGENTS.md scope and precedence to the user instructions message and emits that message even when no AGENTS.md is present.
+当启用 `child_agents_md` 功能标记（在 `config.toml` 的 `[features]` 中配置）时，Codex 会在用户指令消息中追加关于 AGENTS.md 作用域与优先级的说明，即使没有 AGENTS.md 也会发送该消息。

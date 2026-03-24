@@ -1,10 +1,10 @@
 <h1 align="center">OpenAI Codex CLI</h1>
-<p align="center">Lightweight coding agent that runs in your terminal</p>
+<p align="center">运行在终端里的轻量编程代理</p>
 
 <p align="center"><code>npm i -g @sohaha/zcodex</code></p>
 
 > [!IMPORTANT]
-> This is the documentation for the _legacy_ TypeScript implementation of the Codex CLI. It has been superseded by the _Rust_ implementation. See the [README in the root of the Codex repository](https://github.com/sohaha/zcodex/blob/main/README.md) for details.
+> 这是 Codex CLI _旧版_ TypeScript 实现的文档，已被 _Rust_ 实现取代。详情见 [Codex 仓库根目录 README](https://github.com/sohaha/zcodex/blob/main/README.md)。
 
 ![Codex demo GIF using: codex "explain this codebase to me"](../.github/demo.gif)
 
@@ -63,41 +63,41 @@
 
 ## Experimental technology disclaimer
 
-Codex CLI is an experimental project under active development. It is not yet stable, may contain bugs, incomplete features, or undergo breaking changes. We're building it in the open with the community and welcome:
+Codex CLI 是一个仍在积极开发的实验性项目，尚未稳定，可能包含 Bug、不完整功能或发生破坏性变更。我们与社区一起公开构建，欢迎：
 
-- Bug reports
-- Feature requests
-- Pull requests
-- Good vibes
+- Bug 报告
+- 功能需求
+- Pull Request
+- 友好互动
 
-Help us improve by filing issues or submitting PRs (see the section below for how to contribute)!
+欢迎提交 issue 或 PR 帮助改进（贡献方式见下文）。
 
 ## Quickstart
 
-Install globally:
+全局安装：
 
 ```shell
 npm install -g @sohaha/zcodex
 ```
 
-Next, set your OpenAI API key as an environment variable:
+然后把 OpenAI API Key 写入环境变量：
 
 ```shell
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-> **Note:** This command sets the key only for your current terminal session. You can add the `export` line to your shell's configuration file (e.g., `~/.zshrc`) but we recommend setting for the session. **Tip:** You can also place your API key into a `.env` file at the root of your project:
+> **注意：**该命令只对当前终端会话生效。你可以把 `export` 行写入 shell 配置文件（例如 `~/.zshrc`），但我们建议仅在会话内设置。**提示：**也可以把 API Key 放到项目根目录的 `.env` 文件：
 >
 > ```env
 > OPENAI_API_KEY=your-api-key-here
 > ```
 >
-> The CLI will automatically load variables from `.env` (via `dotenv/config`).
+> CLI 会自动从 `.env` 读取变量（通过 `dotenv/config`）。
 
 <details>
-<summary><strong>Use <code>--provider</code> to use other models</strong></summary>
+<summary><strong>使用 <code>--provider</code> 切换其他模型/提供方</strong></summary>
 
-> Codex also allows you to use other providers that support the OpenAI Chat Completions API. You can set the provider in the config file or use the `--provider` flag. The possible options for `--provider` are:
+> Codex 也支持 OpenAI Chat Completions API 兼容的其他提供方。你可以在配置文件里设置，或通过 `--provider` 指定。可选值包括：
 >
 > - openai (default)
 > - openrouter
@@ -109,15 +109,15 @@ export OPENAI_API_KEY="your-api-key-here"
 > - xai
 > - groq
 > - arceeai
-> - any other provider that is compatible with the OpenAI API
+> - 任何兼容 OpenAI API 的其他提供方
 >
-> If you use a provider other than OpenAI, you will need to set the API key for the provider in the config file or in the environment variable as:
+> 如果使用 OpenAI 以外的提供方，需要在配置或环境变量中设置对应的 API Key：
 >
 > ```shell
 > export <provider>_API_KEY="your-api-key-here"
 > ```
 >
-> If you use a provider not listed above, you must also set the base URL for the provider:
+> 如果使用未列出的提供方，还需要设置它的 base URL：
 >
 > ```shell
 > export <provider>_BASE_URL="https://your-provider-api-base-url"
@@ -126,13 +126,13 @@ export OPENAI_API_KEY="your-api-key-here"
 </details>
 <br />
 
-Run interactively:
+交互式运行：
 
 ```shell
 codex
 ```
 
-Or, run with a prompt as input (and optionally in `Full Auto` mode):
+或者传入提示词运行（可选 `Full Auto` 模式）：
 
 ```shell
 codex "explain this codebase to me"
@@ -142,108 +142,90 @@ codex "explain this codebase to me"
 codex --approval-mode full-auto "create the fanciest todo-list app"
 ```
 
-That's it - Codex will scaffold a file, run it inside a sandbox, install any
-missing dependencies, and show you the live result. Approve the changes and
-they'll be committed to your working directory.
+就这样——Codex 会生成文件、在沙箱内运行、安装缺失依赖，并展示实时结果。确认改动后会写入你的工作目录。
 
 ---
 
 ## Why Codex?
 
-Codex CLI is built for developers who already **live in the terminal** and want
-ChatGPT-level reasoning **plus** the power to actually run code, manipulate
-files, and iterate - all under version control. In short, it's _chat-driven
-development_ that understands and executes your repo.
+Codex CLI 面向那些**常驻终端**的开发者，提供 ChatGPT 级别的推理能力，同时能真正运行代码、操作文件并在版本控制下迭代。简而言之，它是能理解并执行仓库的“对话驱动开发”。
 
-- **Zero setup** - bring your OpenAI API key and it just works!
-- **Full auto-approval, while safe + secure** by running network-disabled and directory-sandboxed
-- **Multimodal** - pass in screenshots or diagrams to implement features ✨
+- **零配置**：提供 OpenAI API Key 即可使用
+- **全自动审批且安全**：默认禁用网络并限制目录沙箱
+- **多模态**：可输入截图或图示来实现功能 ✨
 
-And it's **fully open-source** so you can see and contribute to how it develops!
+并且**完全开源**，你可以看到并参与它的演进。
 
 ---
 
 ## Security model & permissions
 
-Codex lets you decide _how much autonomy_ the agent receives and auto-approval policy via the
-`--approval-mode` flag (or the interactive onboarding prompt):
+Codex 通过 `--approval-mode`（或交互式引导）让你决定代理的自主程度与自动审批策略：
 
-| Mode                      | What the agent may do without asking                                                                | Still requires approval                                                                         |
+| 模式                      | 代理可在无需询问下执行                                                                              | 仍需审批                                                                                        |
 | ------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Suggest** <br>(default) | <li>Read any file in the repo                                                                       | <li>**All** file writes/patches<li> **Any** arbitrary shell commands (aside from reading files) |
-| **Auto Edit**             | <li>Read **and** apply-patch writes to files                                                        | <li>**All** shell commands                                                                      |
-| **Full Auto**             | <li>Read/write files <li> Execute shell commands (network disabled, writes limited to your workdir) | -                                                                                               |
+| **Suggest** <br>(默认)    | <li>读取仓库内任意文件                                                                              | <li>**所有**写入/补丁<li> **任意** shell 命令（读取文件除外）                                     |
+| **Auto Edit**             | <li>读取并应用 apply-patch 写入                                                                     | <li>**所有** shell 命令                                                                          |
+| **Full Auto**             | <li>读写文件<li>执行 shell 命令（禁用网络，写入限制在工作目录）                                      | -                                                                                               |
 
-In **Full Auto** every command is run **network-disabled** and confined to the
-current working directory (plus temporary files) for defense-in-depth. Codex
-will also show a warning/confirmation if you start in **auto-edit** or
-**full-auto** while the directory is _not_ tracked by Git, so you always have a
-safety net.
+在 **Full Auto** 中，所有命令都会在**禁用网络**的环境下运行，并限制在当前工作目录（及临时文件）内以实现纵深防护。如果在未被 Git 跟踪的目录中启动 **auto-edit** 或 **full-auto**，Codex 会提示警告/确认，确保你有安全网。
 
-Coming soon: you'll be able to whitelist specific commands to auto-execute with
-the network enabled, once we're confident in additional safeguards.
+即将支持：在具备更多安全保障后，允许将特定命令加入白名单并在联网下自动执行。
 
 ### Platform sandboxing details
 
-The hardening mechanism Codex uses depends on your OS:
+Codex 的加固机制取决于操作系统：
 
-- **macOS 12+** - commands are wrapped with **Apple Seatbelt** (`sandbox-exec`).
+- **macOS 12+**：命令通过 **Apple Seatbelt**（`sandbox-exec`）封装执行。
 
-  - Everything is placed in a read-only jail except for a small set of
-    writable roots (`$PWD`, `$TMPDIR`, `~/.codex`, etc.).
-  - Outbound network is _fully blocked_ by default - even if a child process
-    tries to `curl` somewhere it will fail.
+  - 除少量可写目录（`$PWD`、`$TMPDIR`、`~/.codex` 等）外均为只读。
+  - 默认**完全阻断**出站网络，子进程即使尝试 `curl` 也会失败。
 
-- **Linux** - there is no sandboxing by default.
-  We recommend using Docker for sandboxing, where Codex launches itself inside a **minimal
-  container image** and mounts your repo _read/write_ at the same path. A
-  custom `iptables`/`ipset` firewall script denies all egress except the
-  OpenAI API. This gives you deterministic, reproducible runs without needing
-  root on the host. You can use the [`run_in_container.sh`](../codex-cli/scripts/run_in_container.sh) script to set up the sandbox.
+- **Linux**：默认无沙箱。建议使用 Docker 沙箱：Codex 会在**最小化容器镜像**中启动，并把你的仓库以同路径 _读写_ 挂载。自定义 `iptables`/`ipset` 防火墙脚本会阻断除 OpenAI API 之外的所有出站流量，在不需要宿主机 root 权限的情况下实现可复现运行。可使用 [`run_in_container.sh`](../codex-cli/scripts/run_in_container.sh) 进行配置。
 
 ---
 
 ## System requirements
 
-| Requirement                 | Details                                                         |
+| 要求                       | 说明                                                            |
 | --------------------------- | --------------------------------------------------------------- |
-| Operating systems           | macOS 12+, Ubuntu 20.04+/Debian 10+, or Windows 11 **via WSL2** |
-| Node.js                     | **16 or newer** (Node 20 LTS recommended)                       |
-| Git (optional, recommended) | 2.23+ for built-in PR helpers                                   |
-| RAM                         | 4-GB minimum (8-GB recommended)                                 |
+| 操作系统                   | macOS 12+、Ubuntu 20.04+/Debian 10+，或通过 **WSL2** 的 Windows 11 |
+| Node.js                    | **16 或更高**（推荐 Node 20 LTS）                               |
+| Git（可选，推荐）          | 2.23+（用于内置 PR 辅助）                                       |
+| 内存                        | 至少 4 GB（推荐 8 GB）                                          |
 
-> Never run `sudo npm install -g`; fix npm permissions instead.
+> 不要运行 `sudo npm install -g`，请先修复 npm 权限。
 
 ---
 
 ## CLI reference
 
-| Command                              | Purpose                             | Example                              |
+| 命令                                 | 作用                                | 示例                                 |
 | ------------------------------------ | ----------------------------------- | ------------------------------------ |
-| `codex`                              | Interactive REPL                    | `codex`                              |
-| `codex "..."`                        | Initial prompt for interactive REPL | `codex "fix lint errors"`            |
-| `codex -q "..."`                     | Non-interactive "quiet mode"        | `codex -q --json "explain utils.ts"` |
-| `codex completion <bash\|zsh\|fish>` | Print shell completion script       | `codex completion bash`              |
+| `codex`                              | 交互式 REPL                          | `codex`                              |
+| `codex "..."`                        | 交互式 REPL 的初始提示词             | `codex "fix lint errors"`            |
+| `codex -q "..."`                     | 非交互“静默模式”                     | `codex -q --json "explain utils.ts"` |
+| `codex completion <bash\|zsh\|fish>` | 输出 shell 补全脚本                  | `codex completion bash`              |
 
-Key flags: `--model/-m`, `--approval-mode/-a`, `--quiet/-q`, and `--notify`.
+常用参数：`--model/-m`、`--approval-mode/-a`、`--quiet/-q`、`--notify`。
 
 ---
 
 ## Memory & project docs
 
-You can give Codex extra instructions and guidance using `AGENTS.md` files. Codex looks for `AGENTS.md` files in the following places, and merges them top-down:
+你可以通过 `AGENTS.md` 给 Codex 额外指令与指导。Codex 会按以下位置自上而下合并：
 
-1. `~/.codex/AGENTS.md` - personal global guidance
-2. `AGENTS.md` at repo root - shared project notes
-3. `AGENTS.md` in the current working directory - sub-folder/feature specifics
+1. `~/.codex/AGENTS.md`：个人全局指引
+2. 仓库根目录 `AGENTS.md`：共享项目说明
+3. 当前工作目录 `AGENTS.md`：子目录/功能级说明
 
-Disable loading of these files with `--no-project-doc` or the environment variable `CODEX_DISABLE_PROJECT_DOC=1`.
+可通过 `--no-project-doc` 或环境变量 `CODEX_DISABLE_PROJECT_DOC=1` 禁用加载。
 
 ---
 
 ## Non-interactive / CI mode
 
-Run Codex head-less in pipelines. Example GitHub Action step:
+在流水线中以无 UI 方式运行 Codex。示例 GitHub Action：
 
 ```yaml
 - name: Update changelog via Codex
@@ -253,11 +235,11 @@ Run Codex head-less in pipelines. Example GitHub Action step:
     codex -a auto-edit --quiet "update CHANGELOG for next release"
 ```
 
-Set `CODEX_QUIET_MODE=1` to silence interactive UI noise.
+设置 `CODEX_QUIET_MODE=1` 可屏蔽交互 UI 输出。
 
 ## Tracing / verbose logging
 
-Setting the environment variable `DEBUG=true` prints full API request and response details:
+设置环境变量 `DEBUG=true` 可打印完整的 API 请求与响应详情：
 
 ```shell
 DEBUG=true codex
@@ -267,24 +249,24 @@ DEBUG=true codex
 
 ## Recipes
 
-Below are a few bite-size examples you can copy-paste. Replace the text in quotes with your own task. See the [prompting guide](https://github.com/sohaha/zcodex/blob/main/codex-cli/examples/prompting_guide.md) for more tips and usage patterns.
+下面是一些可直接复制粘贴的示例，把引号中的文字替换为你的任务即可。更多提示与用法见 [prompting guide](https://github.com/sohaha/zcodex/blob/main/codex-cli/examples/prompting_guide.md)。
 
-| ✨  | What you type                                                                   | What happens                                                               |
-| --- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1   | `codex "Refactor the Dashboard component to React Hooks"`                       | Codex rewrites the class component, runs `npm test`, and shows the diff.   |
-| 2   | `codex "Generate SQL migrations for adding a users table"`                      | Infers your ORM, creates migration files, and runs them in a sandboxed DB. |
-| 3   | `codex "Write unit tests for utils/date.ts"`                                    | Generates tests, executes them, and iterates until they pass.              |
-| 4   | `codex "Bulk-rename *.jpeg -> *.jpg with git mv"`                               | Safely renames files and updates imports/usages.                           |
-| 5   | `codex "Explain what this regex does: ^(?=.*[A-Z]).{8,}$"`                      | Outputs a step-by-step human explanation.                                  |
-| 6   | `codex "Carefully review this repo, and propose 3 high impact well-scoped PRs"` | Suggests impactful PRs in the current codebase.                            |
-| 7   | `codex "Look for vulnerabilities and create a security review report"`          | Finds and explains security bugs.                                          |
+| ✨  | 你输入的内容                                                                  | 执行结果                                           |
+| --- | ----------------------------------------------------------------------------- | -------------------------------------------------- |
+| 1   | `codex "Refactor the Dashboard component to React Hooks"`                      | 重写类组件、运行 `npm test` 并展示 diff。            |
+| 2   | `codex "Generate SQL migrations for adding a users table"`                     | 推断 ORM、生成迁移文件，并在沙箱 DB 中执行。         |
+| 3   | `codex "Write unit tests for utils/date.ts"`                                   | 生成测试、执行并迭代直到通过。                      |
+| 4   | `codex "Bulk-rename *.jpeg -> *.jpg with git mv"`                              | 安全重命名文件并更新引用/用法。                      |
+| 5   | `codex "Explain what this regex does: ^(?=.*[A-Z]).{8,}$"`                     | 输出逐步解释。                                     |
+| 6   | `codex "Carefully review this repo, and propose 3 high impact well-scoped PRs"`| 提供 3 个高影响且范围清晰的 PR 建议。               |
+| 7   | `codex "Look for vulnerabilities and create a security review report"`         | 发现并解释安全问题。                               |
 
 ---
 
 ## Installation
 
 <details open>
-<summary><strong>From npm (Recommended)</strong></summary>
+<summary><strong>通过 npm 安装（推荐）</strong></summary>
 
 ```bash
 npm install -g @sohaha/zcodex
@@ -299,35 +281,34 @@ pnpm add -g @sohaha/zcodex
 </details>
 
 <details>
-<summary><strong>Build from source</strong></summary>
+<summary><strong>从源码构建</strong></summary>
 
 ```bash
-# Clone the repository and navigate to the CLI package
+# 克隆仓库并进入 CLI 包目录
 git clone https://github.com/sohaha/zcodex.git
 cd zcodex/codex-cli
 
-# Enable corepack
+# 启用 corepack
 corepack enable
 
-# Install dependencies and build
+# 安装依赖并构建
 pnpm install
 pnpm build
 
-# Linux-only: download prebuilt sandboxing binaries (requires gh and zstd).
+# 仅 Linux：下载预编译沙箱二进制（需要 gh 和 zstd）。
 ./scripts/install_native_deps.sh
 
-# Get the usage and the options
+# 查看使用说明与参数
 node ./dist/cli.js --help
 
-# Run the locally-built CLI directly
+# 直接运行本地构建的 CLI
 node ./dist/cli.js
 
-# Or link the command globally for convenience
+# 或者全局链接，方便调用
 pnpm link
 ```
 
-For native Rust builds and Ubuntu cross-build tasks for macOS arm64 or Windows
-amd64/arm64, see [`docs/install.md`](../docs/install.md).
+Rust 原生构建以及 Ubuntu 交叉构建 macOS arm64 / Windows amd64/arm64 的说明见 [`docs/install.md`](../docs/install.md)。
 
 </details>
 
@@ -335,40 +316,40 @@ amd64/arm64, see [`docs/install.md`](../docs/install.md).
 
 ## Configuration guide
 
-Codex configuration files can be placed in the `~/.codex/` directory, supporting both YAML and JSON formats.
+Codex 配置文件放在 `~/.codex/`，支持 YAML 和 JSON。
 
 ### Basic configuration parameters
 
-| Parameter           | Type    | Default    | Description                      | Available Options                                                                              |
+| 参数                | 类型    | 默认值     | 说明                              | 可选值                                                                                         |
 | ------------------- | ------- | ---------- | -------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `model`             | string  | `o4-mini`  | AI model to use                  | Any model name supporting OpenAI API                                                           |
-| `approvalMode`      | string  | `suggest`  | AI assistant's permission mode   | `suggest` (suggestions only)<br>`auto-edit` (automatic edits)<br>`full-auto` (fully automatic) |
-| `fullAutoErrorMode` | string  | `ask-user` | Error handling in full-auto mode | `ask-user` (prompt for user input)<br>`ignore-and-continue` (ignore and proceed)               |
-| `notify`            | boolean | `true`     | Enable desktop notifications     | `true`/`false`                                                                                 |
+| `model`             | string  | `o4-mini`  | 使用的模型                        | 任意支持 OpenAI API 的模型名                                                                   |
+| `approvalMode`      | string  | `suggest`  | 代理权限模式                      | `suggest`（仅建议）<br>`auto-edit`（自动修改）<br>`full-auto`（全自动）                          |
+| `fullAutoErrorMode` | string  | `ask-user` | full-auto 出错处理方式            | `ask-user`（询问用户）<br>`ignore-and-continue`（忽略并继续）                                   |
+| `notify`            | boolean | `true`     | 桌面通知                          | `true`/`false`                                                                                 |
 
 ### Custom AI provider configuration
 
-In the `providers` object, you can configure multiple AI service providers. Each provider requires the following parameters:
+在 `providers` 中可以配置多个 AI 提供方。每个提供方需要以下参数：
 
-| Parameter | Type   | Description                             | Example                       |
+| 参数      | 类型   | 说明                                    | 示例                          |
 | --------- | ------ | --------------------------------------- | ----------------------------- |
-| `name`    | string | Display name of the provider            | `"OpenAI"`                    |
-| `baseURL` | string | API service URL                         | `"https://api.openai.com/v1"` |
-| `envKey`  | string | Environment variable name (for API key) | `"OPENAI_API_KEY"`            |
+| `name`    | string | 提供方显示名                            | `"OpenAI"`                    |
+| `baseURL` | string | API 服务 URL                            | `"https://api.openai.com/v1"` |
+| `envKey`  | string | API Key 的环境变量名                    | `"OPENAI_API_KEY"`            |
 
 ### History configuration
 
-In the `history` object, you can configure conversation history settings:
+在 `history` 中配置对话历史：
 
-| Parameter           | Type    | Description                                            | Example Value |
+| 参数                | 类型    | 说明                                                   | 示例值        |
 | ------------------- | ------- | ------------------------------------------------------ | ------------- |
-| `maxSize`           | number  | Maximum number of history entries to save              | `1000`        |
-| `saveHistory`       | boolean | Whether to save history                                | `true`        |
-| `sensitivePatterns` | array   | Patterns of sensitive information to filter in history | `[]`          |
+| `maxSize`           | number  | 最大历史条目数                                         | `1000`        |
+| `saveHistory`       | boolean | 是否保存历史                                           | `true`        |
+| `sensitivePatterns` | array   | 历史中过滤敏感信息的模式                               | `[]`          |
 
-### Configuration examples
+### 配置示例
 
-1. YAML format (save as `~/.codex/config.yaml`):
+1. YAML 格式（保存为 `~/.codex/config.yaml`）：
 
 ```yaml
 model: o4-mini
@@ -377,7 +358,7 @@ fullAutoErrorMode: ask-user
 notify: true
 ```
 
-2. JSON format (save as `~/.codex/config.json`):
+2. JSON 格式（保存为 `~/.codex/config.json`）：
 
 ```json
 {
@@ -388,9 +369,9 @@ notify: true
 }
 ```
 
-### Full configuration example
+### 完整配置示例
 
-Below is a comprehensive example of `config.json` with multiple custom providers:
+下面是包含多个自定义提供方的 `config.json` 示例：
 
 ```json
 {
@@ -456,18 +437,18 @@ Below is a comprehensive example of `config.json` with multiple custom providers
 }
 ```
 
-### Custom instructions
+### 自定义指令
 
-You can create a `~/.codex/AGENTS.md` file to define custom guidance for the agent:
+你可以创建 `~/.codex/AGENTS.md` 为代理定义自定义指引：
 
 ```markdown
 - Always respond with emojis
 - Only use git commands when explicitly requested
 ```
 
-### Environment variables setup
+### 环境变量设置
 
-For each AI provider, you need to set the corresponding API key in your environment variables. For example:
+对每个 AI 提供方，都需要在环境变量中设置对应的 API Key，例如：
 
 ```bash
 # OpenAI
@@ -475,12 +456,12 @@ export OPENAI_API_KEY="your-api-key-here"
 
 # Azure OpenAI
 export AZURE_OPENAI_API_KEY="your-azure-api-key-here"
-export AZURE_OPENAI_API_VERSION="2025-04-01-preview" (Optional)
+export AZURE_OPENAI_API_VERSION="2025-04-01-preview"（可选）
 
 # OpenRouter
 export OPENROUTER_API_KEY="your-openrouter-key-here"
 
-# Similarly for other providers
+# 其他提供方同理
 ```
 
 ---
@@ -488,35 +469,35 @@ export OPENROUTER_API_KEY="your-openrouter-key-here"
 ## FAQ
 
 <details>
-<summary>OpenAI released a model called Codex in 2021 - is this related?</summary>
+<summary>OpenAI 在 2021 年发布过 Codex 模型，这和这里有关吗？</summary>
 
-In 2021, OpenAI released Codex, an AI system designed to generate code from natural language prompts. That original Codex model was deprecated as of March 2023 and is separate from the CLI tool.
-
-</details>
-
-<details>
-<summary>Which models are supported?</summary>
-
-Any model available with [Responses API](https://platform.openai.com/docs/api-reference/responses). The default is `o4-mini`, but pass `--model gpt-4.1` or set `model: gpt-4.1` in your config file to override.
-
-</details>
-<details>
-<summary>Why does <code>o3</code> or <code>o4-mini</code> not work for me?</summary>
-
-It's possible that your [API account needs to be verified](https://help.openai.com/en/articles/10910291-api-organization-verification) in order to start streaming responses and seeing chain of thought summaries from the API. If you're still running into issues, please let us know!
+2021 年 OpenAI 发布了 Codex 模型，用于从自然语言生成代码。该模型已在 2023 年 3 月弃用，与这里的 CLI 工具不同。
 
 </details>
 
 <details>
-<summary>How do I stop Codex from editing my files?</summary>
+<summary>支持哪些模型？</summary>
 
-Codex runs model-generated commands in a sandbox. If a proposed command or file change doesn't look right, you can simply type **n** to deny the command or give the model feedback.
+[Responses API](https://platform.openai.com/docs/api-reference/responses) 提供的模型均可使用。默认是 `o4-mini`，可通过 `--model gpt-4.1` 或在配置里设置 `model: gpt-4.1` 覆盖。
 
 </details>
 <details>
-<summary>Does it work on Windows?</summary>
+<summary>为什么 <code>o3</code> 或 <code>o4-mini</code> 对我不可用？</summary>
 
-Not directly. It requires [Windows Subsystem for Linux (WSL2)](https://learn.microsoft.com/en-us/windows/wsl/install) - Codex is regularly tested on macOS and Linux with Node 20+, and also supports Node 16.
+可能需要先完成 [API 账号验证](https://help.openai.com/en/articles/10910291-api-organization-verification)，才能启用流式响应并获取思维链摘要。如果仍有问题，请告诉我们。
+
+</details>
+
+<details>
+<summary>如何阻止 Codex 修改文件？</summary>
+
+Codex 会在沙箱中执行模型生成的命令。如果某条命令或文件改动不合适，直接输入 **n** 拒绝，或给模型反馈即可。
+
+</details>
+<details>
+<summary>支持 Windows 吗？</summary>
+
+不直接支持。需要 [Windows Subsystem for Linux (WSL2)](https://learn.microsoft.com/en-us/windows/wsl/install)。Codex 常规测试环境为 macOS/Linux + Node 20+，也支持 Node 16。
 
 </details>
 
@@ -524,214 +505,211 @@ Not directly. It requires [Windows Subsystem for Linux (WSL2)](https://learn.mic
 
 ## Zero data retention (ZDR) usage
 
-Codex CLI **does** support OpenAI organizations with [Zero Data Retention (ZDR)](https://platform.openai.com/docs/guides/your-data#zero-data-retention) enabled. If your OpenAI organization has Zero Data Retention enabled and you still encounter errors such as:
+Codex CLI **支持**启用 [Zero Data Retention (ZDR)](https://platform.openai.com/docs/guides/your-data#zero-data-retention) 的 OpenAI 组织。如果已启用 ZDR 但仍遇到如下错误：
 
 ```
 OpenAI rejected the request. Error details: Status: 400, Code: unsupported_parameter, Type: invalid_request_error, Message: 400 Previous response cannot be used for this organization due to Zero Data Retention.
 ```
 
-You may need to upgrade to a more recent version with: `npm i -g @sohaha/zcodex@latest`
+可能需要升级到新版：`npm i -g @sohaha/zcodex@latest`
 
 ---
 
 ## Codex open source fund
 
-We're excited to launch a **$1 million initiative** supporting open source projects that use Codex CLI and other OpenAI models.
+我们很高兴推出 **100 万美元计划**，支持使用 Codex CLI 与其他 OpenAI 模型的开源项目。
 
-- Grants are awarded up to **$25,000** API credits.
-- Applications are reviewed **on a rolling basis**.
+- 最高可获得 **25,000 美元**的 API 额度资助。
+- 申请 **滚动审核**。
 
-**Interested? [Apply here](https://openai.com/form/codex-open-source-fund/).**
+**感兴趣？[点击申请](https://openai.com/form/codex-open-source-fund/)。**
 
 ---
 
 ## Contributing
 
-This project is under active development and the code will likely change pretty significantly. We'll update this message once that's complete!
+该项目仍在积极开发中，代码可能会发生较大变化。稳定后会更新此说明。
 
-More broadly we welcome contributions - whether you are opening your very first pull request or you're a seasoned maintainer. At the same time we care about reliability and long-term maintainability, so the bar for merging code is intentionally **high**. The guidelines below spell out what "high-quality" means in practice and should make the whole process transparent and friendly.
+总体而言我们欢迎贡献——无论你是第一次提交 PR，还是资深维护者。同时我们非常重视可靠性与长期可维护性，所以合并标准刻意 **较高**。下文将“高质量”的实践标准讲清楚，尽量让流程透明且友好。
 
 ### Development workflow
 
-- Create a _topic branch_ from `main` - e.g. `feat/interactive-prompt`.
-- Keep your changes focused. Multiple unrelated fixes should be opened as separate PRs.
-- Use `pnpm test:watch` during development for super-fast feedback.
-- We use **Vitest** for unit tests, **ESLint** + **Prettier** for style, and **TypeScript** for type-checking.
-- Before pushing, run the full test/type/lint suite:
+- 从 `main` 创建 _topic branch_，例如 `feat/interactive-prompt`。
+- 保持改动聚焦，互不相关的修复请拆成多个 PR。
+- 开发期间建议使用 `pnpm test:watch` 获得快速反馈。
+- 单测使用 **Vitest**，风格用 **ESLint** + **Prettier**，类型检查用 **TypeScript**。
+- 推送前运行完整测试/类型/格式检查：
 
 ### Git hooks with Husky
 
-This project uses [Husky](https://typicode.github.io/husky/) to enforce code quality checks:
+本项目使用 [Husky](https://typicode.github.io/husky/) 来强制代码质量检查：
 
-- **Pre-commit hook**: Automatically runs lint-staged to format and lint files before committing
-- **Pre-push hook**: Runs tests and type checking before pushing to the remote
+- **Pre-commit hook**：提交前自动运行 lint-staged 进行格式化与检查
+- **Pre-push hook**：推送前运行测试和类型检查
 
-These hooks help maintain code quality and prevent pushing code with failing tests. For more details, see [HUSKY.md](./HUSKY.md).
+这些钩子可维持代码质量，防止推送带失败测试的代码。详情见 [HUSKY.md](./HUSKY.md)。
 
 ```bash
 pnpm test && pnpm run lint && pnpm run typecheck
 ```
 
-- If you have **not** yet signed the Contributor License Agreement (CLA), add a PR comment containing the exact text
+- 如果你**还未**签署 CLA，请在 PR 中添加如下评论（原文一致）：
 
   ```text
   I have read the CLA Document and I hereby sign the CLA
   ```
 
-  The CLA-Assistant bot will turn the PR status green once all authors have signed.
+  所有作者签署后，CLA-Assistant 机器人会将 PR 状态标绿。
 
 ```bash
-# Watch mode (tests rerun on change)
+# 监听模式（代码变更时重跑测试）
 pnpm test:watch
 
-# Type-check without emitting files
+# 仅做类型检查，不生成文件
 pnpm typecheck
 
-# Automatically fix lint + prettier issues
+# 自动修复 lint + prettier 问题
 pnpm lint:fix
 pnpm format:fix
 ```
 
 ### Debugging
 
-To debug the CLI with a visual debugger, do the following in the `codex-cli` folder:
+在 `codex-cli` 目录中使用可视化调试器的步骤如下：
 
-- Run `pnpm run build` to build the CLI, which will generate `cli.js.map` alongside `cli.js` in the `dist` folder.
-- Run the CLI with `node --inspect-brk ./dist/cli.js` The program then waits until a debugger is attached before proceeding. Options:
-  - In VS Code, choose **Debug: Attach to Node Process** from the command palette and choose the option in the dropdown with debug port `9229` (likely the first option)
-  - Go to <chrome://inspect> in Chrome and find **localhost:9229** and click **trace**
+- 运行 `pnpm run build` 构建 CLI，会在 `dist` 中生成 `cli.js.map`。
+- 用 `node --inspect-brk ./dist/cli.js` 运行，程序会等待调试器连接。可选方式：
+  - VS Code：命令面板选择 **Debug: Attach to Node Process**，下拉选 `9229` 端口（通常第一个）。
+  - Chrome：打开 <chrome://inspect>，找到 **localhost:9229** 并点击 **trace**。
 
 ### Writing high-impact code changes
 
-1. **Start with an issue.** Open a new one or comment on an existing discussion so we can agree on the solution before code is written.
-2. **Add or update tests.** Every new feature or bug-fix should come with test coverage that fails before your change and passes afterwards. 100% coverage is not required, but aim for meaningful assertions.
-3. **Document behaviour.** If your change affects user-facing behaviour, update the README, inline help (`codex --help`), or relevant example projects.
-4. **Keep commits atomic.** Each commit should compile and the tests should pass. This makes reviews and potential rollbacks easier.
+1. **先从 issue 开始。** 新开或跟进已有讨论，先对方案达成一致再写代码。
+2. **补充/更新测试。** 新功能或修复应有测试覆盖：改动前失败、改动后通过。无需 100% 覆盖，但要有意义。
+3. **更新文档。** 若影响用户行为，请更新 README、内置帮助（`codex --help`）或示例项目。
+4. **提交原子化。** 每个提交都能编译并通过测试，便于评审与回滚。
 
 ### Opening a pull request
 
-- Fill in the PR template (or include similar information) - **What? Why? How?**
-- Run **all** checks locally (`npm test && npm run lint && npm run typecheck`). CI failures that could have been caught locally slow down the process.
-- Make sure your branch is up-to-date with `main` and that you have resolved merge conflicts.
-- Mark the PR as **Ready for review** only when you believe it is in a merge-able state.
+- 填写 PR 模板（或包含类似信息）：**What? Why? How?**
+- 本地运行 **全部**检查（`npm test && npm run lint && npm run typecheck`）。本地可捕获的失败会拖慢 CI。
+- 确保分支与 `main` 同步并解决冲突。
+- 仅在你认为可合并时标记为 **Ready for review**。
 
 ### Review process
 
-1. One maintainer will be assigned as a primary reviewer.
-2. We may ask for changes - please do not take this personally. We value the work, we just also value consistency and long-term maintainability.
-3. When there is consensus that the PR meets the bar, a maintainer will squash-and-merge.
+1. 会指派一名维护者作为主审。
+2. 可能会要求修改——请不要介意，我们同样重视一致性和长期可维护性。
+3. 达成共识后，维护者会 squash-and-merge。
 
 ### Community values
 
-- **Be kind and inclusive.** Treat others with respect; we follow the [Contributor Covenant](https://www.contributor-covenant.org/).
-- **Assume good intent.** Written communication is hard - err on the side of generosity.
-- **Teach & learn.** If you spot something confusing, open an issue or PR with improvements.
+- **友善包容。** 尊重他人；我们遵循 [Contributor Covenant](https://www.contributor-covenant.org/)。
+- **假定善意。** 文字沟通不易，多一点善意。
+- **教学相长。** 发现困惑之处，可开 issue 或 PR 改进。
 
 ### Getting help
 
-If you run into problems setting up the project, would like feedback on an idea, or just want to say _hi_ - please open a Discussion or jump into the relevant issue. We are happy to help.
+如果你在搭建项目时遇到问题、想要反馈想法，或只是打个招呼，请开 Discussion 或进入相关 issue，我们很乐意帮助。
 
-Together we can make Codex CLI an incredible tool. **Happy hacking!** :rocket:
+一起把 Codex CLI 做得更好。**Happy hacking!** :rocket:
 
 ### Contributor license agreement (CLA)
 
-All contributors **must** accept the CLA. The process is lightweight:
+所有贡献者**必须**签署 CLA，流程很轻量：
 
 1. Open your pull request.
-2. Paste the following comment (or reply `recheck` if you've signed before):
+2. 粘贴如下评论（若曾签过可回复 `recheck`）：
 
    ```text
    I have read the CLA Document and I hereby sign the CLA
    ```
 
-3. The CLA-Assistant bot records your signature in the repo and marks the status check as passed.
+3. CLA-Assistant 机器人会记录签名并将状态检查标记为通过。
 
-No special Git commands, email attachments, or commit footers required.
+无需特殊 Git 命令、邮件附件或提交脚注。
 
 #### Quick fixes
 
-| Scenario          | Command                                          |
+| 场景              | 命令                                           |
 | ----------------- | ------------------------------------------------ |
-| Amend last commit | `git commit --amend -s --no-edit && git push -f` |
+| 修改上次提交      | `git commit --amend -s --no-edit && git push -f` |
 
-The **DCO check** blocks merges until every commit in the PR carries the footer (with squash this is just the one).
+**DCO 检查**会阻止合并，直到 PR 中每个提交都带有 footer（squash 后只需一个）。
 
 ### Releasing `codex`
 
-To publish a new version of the CLI you first need to stage the npm package. A
-helper script in `codex-cli/scripts/` does all the heavy lifting. Inside the
-`codex-cli` folder run:
+发布 CLI 新版本前需先打包 npm 包。`codex-cli/scripts/` 中的脚本会完成大部分工作。在 `codex-cli` 目录中运行：
 
 ```bash
-# Classic, JS implementation that includes small, native binaries for Linux sandboxing.
+# 传统 JS 实现，包含 Linux 沙箱用的小型原生二进制。
 pnpm stage-release
 
-# Optionally specify the temp directory to reuse between runs.
+# 可指定临时目录以复用产物。
 RELEASE_DIR=$(mktemp -d)
 pnpm stage-release --tmp "$RELEASE_DIR"
 
-# "Fat" package that additionally bundles the native Rust CLI binaries for
-# Linux. End-users can then opt-in at runtime by setting CODEX_RUST=1.
+# “大包”版本：额外打包 Linux 版 Rust CLI 二进制。终端用户可通过设置 CODEX_RUST=1 启用。
 pnpm stage-release --native
 ```
 
-Go to the folder where the release is staged and verify that it works as intended. If so, run the following from the temp folder:
+进入打包产物目录验证功能正常后，在临时目录执行：
 
 ```
 cd "$RELEASE_DIR"
 npm publish
 ```
 
-For GitHub Actions based releases, use `.github/workflows/rust-release.yml`:
+基于 GitHub Actions 的发布请使用 `.github/workflows/rust-release.yml`：
 
-- Tag-driven release: push `v1.2.3`; CI derives the Rust and npm package version from the tag automatically.
-- Manual release: run `workflow_dispatch` and provide `release-version`; `release-tag` is optional and defaults to `v<release-version>`.
-- Safety check: when `release-tag` is provided manually, CI verifies that the version embedded in the tag exactly matches `release-version` and fails fast otherwise.
+- 标签发布：推送 `v1.2.3`；CI 自动从标签推导 Rust 与 npm 版本。
+- 手动发布：运行 `workflow_dispatch` 并填写 `release-version`；`release-tag` 可选，默认 `v<release-version>`。
+- 安全检查：手动提供 `release-tag` 时，CI 会校验标签内版本与 `release-version` 完全一致，否则快速失败。
 
-Manual release quick steps:
+手动发布简要步骤：
 
-1. Open GitHub Actions and select `rust-release`.
-2. Click `Run workflow`.
-3. Fill `release-version` with a value like `1.2.3` or `1.2.3-alpha.4`.
-4. Optionally fill `release-tag`; if omitted, CI uses `v<release-version>`.
-5. Run the workflow and verify the generated GitHub Release assets and npm publish step.
+1. 打开 GitHub Actions，选择 `rust-release`。
+2. 点击 `Run workflow`。
+3. 填写 `release-version`，如 `1.2.3` 或 `1.2.3-alpha.4`。
+4. 可选填写 `release-tag`；未填则使用 `v<release-version>`。
+5. 运行工作流并核对 GitHub Release 产物和 npm 发布步骤。
 
 ### Alternative build options
 
 #### Nix flake development
 
-Prerequisite: Nix >= 2.4 with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`).
+前置条件：Nix >= 2.4 且启用 flakes（`~/.config/nix/nix.conf` 中设置 `experimental-features = nix-command flakes`）。
 
-Enter a Nix development shell:
+进入 Nix 开发 shell：
 
 ```bash
-# Use either one of the commands according to which implementation you want to work with
-nix develop .#codex-cli # For entering codex-cli specific shell
-nix develop .#codex-rs # For entering codex-rs specific shell
+# 根据你要开发的实现选择其一
+nix develop .#codex-cli # 进入 codex-cli 专用 shell
+nix develop .#codex-rs # 进入 codex-rs 专用 shell
 ```
 
-This shell includes Node.js, installs dependencies, builds the CLI, and provides a `codex` command alias.
+该 shell 会包含 Node.js、安装依赖、构建 CLI，并提供 `codex` 命令别名。
 
-Build and run the CLI directly:
+直接构建并运行 CLI：
 
 ```bash
-# Use either one of the commands according to which implementation you want to work with
-nix build .#codex-cli # For building codex-cli
-nix build .#codex-rs # For building codex-rs
+# 根据你要开发的实现选择其一
+nix build .#codex-cli # 构建 codex-cli
+nix build .#codex-rs # 构建 codex-rs
 ./result/bin/codex --help
 ```
 
-Run the CLI via the flake app:
+通过 flake app 运行 CLI：
 
 ```bash
-# Use either one of the commands according to which implementation you want to work with
-nix run .#codex-cli # For running codex-cli
-nix run .#codex-rs # For running codex-rs
+# 根据你要开发的实现选择其一
+nix run .#codex-cli # 运行 codex-cli
+nix run .#codex-rs # 运行 codex-rs
 ```
 
-Use direnv with flakes
+使用 direnv + flakes
 
-If you have direnv installed, you can use the following `.envrc` to automatically enter the Nix shell when you `cd` into the project directory:
+若已安装 direnv，可使用以下 `.envrc` 在进入项目目录时自动进入 Nix shell：
 
 ```bash
 cd codex-rs
@@ -744,10 +722,10 @@ echo "use flake ../flake.nix#codex-rs" >> .envrc && direnv allow
 
 ## Security & responsible AI
 
-Have you discovered a vulnerability or have concerns about model output? Please e-mail **security@openai.com** and we will respond promptly.
+如发现安全漏洞或对模型输出有疑虑，请邮件联系 **security@openai.com**，我们会尽快响应。
 
 ---
 
 ## License
 
-This repository is licensed under the [Apache-2.0 License](LICENSE).
+本仓库采用 [Apache-2.0 License](LICENSE)。

@@ -1,3 +1,3 @@
-# Non-interactive mode
+# 非交互模式
 
-For information about non-interactive mode, see [this documentation](https://developers.openai.com/codex/noninteractive).
+非交互模式说明见 [此文档](https://developers.openai.com/codex/noninteractive)。

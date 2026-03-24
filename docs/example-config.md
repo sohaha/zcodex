@@ -1,3 +1,3 @@
-# Sample configuration
+# 示例配置
 
-For a sample configuration file, see [this documentation](https://developers.openai.com/codex/config-sample).
+示例配置文件见 [此文档](https://developers.openai.com/codex/config-sample)。

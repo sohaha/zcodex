@@ -1,97 +1,97 @@
-## Contributing
+## 贡献指南
 
-**External contributions are by invitation only**
+**外部贡献仅限受邀**
 
-At this time, the Codex team does not accept unsolicited code contributions.
+目前 Codex 团队不接受未受邀的代码贡献。
 
-If you would like to propose a new feature or a change in behavior, please open an issue describing the proposal or upvote an existing enhancement request. We prioritize new features based on community feedback, alignment with our roadmap, and consistency across all Codex surfaces (CLI, IDE extensions, web, etc.).
+如果你希望提出新功能或行为变更，请开 issue 说明提案，或为已有增强需求投票。我们会基于社区反馈、路线图匹配度以及各 Codex 端（CLI、IDE 扩展、Web 等）的一致性来决定优先级。
 
-If you encounter a bug, please open a bug report or verify that an existing report already covers the issue. If you would like to help, we encourage you to contribute by sharing analysis, reproduction details, root-cause hypotheses, or a high-level outline of a potential fix directly in the issue thread.
+如果遇到 Bug，请提交 bug 报告或确认已有报告已覆盖。如果愿意协助，我们鼓励你在 issue 里直接提供分析、复现细节、根因假设或修复方案纲要。
 
-The Codex team may invite an external contributor to submit a pull request when:
+在以下情况下，Codex 团队可能会邀请外部贡献者提交 PR：
 
-- the problem is well understood,
-- the proposed approach aligns with the team’s intended solution, and
-- the issue is deemed high-impact and high-priority.
+- 问题已充分理解；
+- 方案与团队预期一致；
+- 问题被认为高影响且高优先级。
 
-Pull requests that have not been explicitly invited by a member of the Codex team will be closed without review.
+未获得团队明确邀请的 PR 将不经评审直接关闭。
 
-**Why we do not generally accept external code contributions**
+**为何通常不接受外部代码贡献**
 
-In the past, the Codex team accepted external pull requests for bug fixes. While we appreciated the effort and engagement from the community, this model did not scale well.
+过去 Codex 团队曾接受外部修复类 PR。我们很感谢社区的投入，但这种模式难以规模化。
 
-Many contributions were made without full visibility into the architectural context, system-level constraints, or near-term roadmap considerations that guide Codex development. Others focused on issues that were low priority or affected a very small subset of users. Reviewing and iterating on these PRs often took more time than implementing the fix directly, and diverted attention from higher-priority work.
+不少贡献缺乏对架构背景、系统约束或近期路线图的充分了解；也有一些聚焦低优先级或影响很小的用户群体。评审与迭代这些 PR 往往比直接修复更耗时，也会分散对更高优先级工作的注意力。
 
-The most valuable contributions consistently came from community members who demonstrated deep understanding of a problem domain. That expertise is most helpful when shared early -- through detailed bug reports, analysis, and design discussion in issues. Identifying the right solution is typically the hard part; implementing it is comparatively straightforward with the help of Codex itself.
+最有价值的贡献通常来自对问题领域有深入理解的社区成员。这类专业经验若能通过详尽 bug 报告、分析和设计讨论尽早分享，价值最高。找到正确方案往往是难点，而实现本身在 Codex 帮助下相对容易。
 
-For these reasons, we focus external contributions on discussion, analysis, and feedback, and reserve code changes for cases where a targeted invitation makes sense.
+因此，我们更希望外部贡献集中在讨论、分析与反馈上，代码改动则保留给适合的定向邀请场景。
 
-### Development workflow
+### 开发流程
 
-If you are invited by a Codex team member to contribute a PR, here is the recommended development workflow.
+若你收到 Codex 团队成员的邀请，可参考以下开发流程。
 
-- Create a _topic branch_ from `main` - e.g. `feat/interactive-prompt`.
-- Keep your changes focused. Multiple unrelated fixes should be opened as separate PRs.
-- Ensure your change is free of lint warnings and test failures.
+- 从 `main` 创建 _topic branch_，例如 `feat/interactive-prompt`。
+- 保持改动聚焦，互不相关的修复请拆成不同 PR。
+- 确保无 lint 警告与测试失败。
 
-### Guidance for invited code contributions
+### 受邀贡献的指导
 
-1. **Start with an issue.** Open a new one or comment on an existing discussion so we can agree on the solution before code is written.
-2. **Add or update tests.** A bug fix should generally come with test coverage that fails before your change and passes afterwards. 100% coverage is not required, but aim for meaningful assertions.
-3. **Document behavior.** If your change affects user-facing behavior, update the README, inline help (`codex --help`), or relevant example projects.
-4. **Keep commits atomic.** Each commit should compile and the tests should pass. This makes reviews and potential rollbacks easier.
+1. **先从 issue 开始。** 新开或跟进已有讨论，在写代码前先达成方案一致。
+2. **补充/更新测试。** 修复应有测试覆盖：改动前失败、改动后通过。无需 100% 覆盖，但应有意义。
+3. **更新文档。** 若影响用户行为，请更新 README、内置帮助（`codex --help`）或相关示例。
+4. **提交原子化。** 每个提交都应能编译并通过测试，便于评审与回滚。
 
-### Model metadata updates
+### 模型元数据更新
 
-When a change updates model catalogs or model metadata (`/models` payloads, presets, or fixtures):
+当改动涉及模型目录或元数据（`/models` 返回、预设或夹具）时：
 
-- Set `input_modalities` explicitly for any model that does not support images.
-- Keep compatibility defaults in mind: omitted `input_modalities` currently implies text + image support.
-- Ensure client surfaces that accept images (for example, TUI paste/attach) consume the same capability signal.
-- Add/update tests that cover unsupported-image behavior and warning paths.
+- 对不支持图片的模型显式设置 `input_modalities`。
+- 注意兼容默认值：省略 `input_modalities` 目前表示同时支持文本 + 图片。
+- 确保接收图片的客户端（如 TUI 粘贴/附件）使用相同能力信号。
+- 添加/更新测试覆盖不支持图片的行为与告警路径。
 
-### Opening a pull request (by invitation only)
+### 提交 Pull Request（仅限受邀）
 
-- Fill in the PR template (or include similar information) - **What? Why? How?**
-- Include a link to a bug report or enhancement request in the issue tracker
-- Run **all** checks locally. Use the root `just` helpers so you stay consistent with the rest of the workspace: `just fmt`, `just fix -p <crate>` for the crate you touched, and the relevant tests (e.g., `cargo test -p codex-tui` or `just test` if you need a full sweep). CI failures that could have been caught locally slow down the process.
-- Make sure your branch is up-to-date with `main` and that you have resolved merge conflicts.
-- Mark the PR as **Ready for review** only when you believe it is in a merge-able state.
+- 填写 PR 模板（或包含类似信息）：**What? Why? How?**
+- 在 issue 里附上 bug 报告或增强需求的链接
+- 本地运行 **全部**检查。使用根目录 `just` 保持一致：`just fmt`、`just fix -p <crate>`，以及相关测试（如 `cargo test -p codex-tui` 或需要全量时 `just test`）。本地可捕获的失败会拖慢 CI。
+- 确保分支与 `main` 同步并解决冲突。
+- 仅在认为可合并时标记为 **Ready for review**。
 
-### Review process
+### 评审流程
 
-1. One maintainer will be assigned as a primary reviewer.
-2. If your invited PR introduces scope or behavior that was not previously discussed and approved, we may close the PR.
-3. We may ask for changes. Please do not take this personally. We value the work, but we also value consistency and long-term maintainability.
-4. When there is consensus that the PR meets the bar, a maintainer will squash-and-merge.
+1. 会指派一名维护者作为主审。
+2. 若受邀 PR 引入了未事先讨论/批准的范围或行为，可能会被关闭。
+3. 可能会要求修改，请别介意；我们既重视工作，也重视一致性和长期可维护性。
+4. 达成共识后，维护者会 squash-and-merge。
 
-### Community values
+### 社区价值观
 
-- **Be kind and inclusive.** Treat others with respect; we follow the [Contributor Covenant](https://www.contributor-covenant.org/).
-- **Assume good intent.** Written communication is hard - err on the side of generosity.
-- **Teach & learn.** If you spot something confusing, open an issue or discussion with suggestions or clarifications.
+- **友善包容。** 尊重他人；我们遵循 [Contributor Covenant](https://www.contributor-covenant.org/)。
+- **假定善意。** 文字沟通不易，多一点善意。
+- **教学相长。** 发现困惑之处，可开 issue 或 discussion 提供建议或澄清。
 
-### Getting help
+### 获取帮助
 
-If you run into problems setting up the project, would like feedback on an idea, or just want to say _hi_ - please open a Discussion topic or jump into the relevant issue. We are happy to help.
+如果你在搭建项目时遇到问题、想要反馈想法，或只是打个招呼，请开 Discussion 或进入相关 issue，我们很乐意帮助。
 
-Together we can make Codex CLI an incredible tool. **Happy hacking!** :rocket:
+一起把 Codex CLI 做得更好。**Happy hacking!** :rocket:
 
-### Contributor license agreement (CLA)
+### 贡献者许可协议（CLA）
 
-All contributors **must** accept the CLA. The process is lightweight:
+所有贡献者**必须**签署 CLA，流程很轻量：
 
-1. Open your pull request.
-2. Paste the following comment (or reply `recheck` if you've signed before):
+1. 打开你的 Pull Request。
+2. 粘贴如下评论（若曾签过可回复 `recheck`）：
 
    ```text
    I have read the CLA Document and I hereby sign the CLA
    ```
 
-3. The CLA-Assistant bot records your signature in the repo and marks the status check as passed.
+3. CLA-Assistant 机器人会记录签名并将状态检查标记为通过。
 
-No special Git commands, email attachments, or commit footers required.
+无需特殊 Git 命令、邮件附件或提交脚注。
 
-### Security & responsible AI
+### 安全与负责任 AI
 
-Have you discovered a vulnerability or have concerns about model output? Please e-mail **security@openai.com** and we will respond promptly.
+如发现安全漏洞或对模型输出有疑虑，请邮件联系 **security@openai.com**，我们会尽快响应。
