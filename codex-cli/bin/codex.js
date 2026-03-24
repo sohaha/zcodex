@@ -67,12 +67,12 @@ switch (platform) {
 }
 
 if (!targetTriple) {
-  throw new Error(`Unsupported platform: ${platform} (${arch})`);
+  throw new Error(`不支持的平台: ${platform} (${arch})`);
 }
 
 const platformPackage = PLATFORM_PACKAGE_BY_TARGET[targetTriple];
 if (!platformPackage) {
-  throw new Error(`Unsupported target triple: ${targetTriple}`);
+  throw new Error(`不支持的 target triple: ${targetTriple}`);
 }
 
 const codexBinaryName = process.platform === "win32" ? "codex.exe" : "codex";
@@ -98,7 +98,7 @@ try {
         ? "bun install -g @sohaha/zcodex@latest"
         : "npm install -g @sohaha/zcodex@latest";
     throw new Error(
-      `Missing optional dependency ${platformPackage}. Reinstall Codex: ${updateCommand}`,
+      `缺少可选依赖 ${platformPackage}。请重新安装 Codex: ${updateCommand}`,
     );
   }
 }
@@ -110,7 +110,7 @@ if (!vendorRoot) {
       ? "bun install -g @sohaha/zcodex@latest"
       : "npm install -g @sohaha/zcodex@latest";
   throw new Error(
-    `Missing optional dependency ${platformPackage}. Reinstall Codex: ${updateCommand}`,
+    `缺少可选依赖 ${platformPackage}。请重新安装 Codex: ${updateCommand}`,
   );
 }
 

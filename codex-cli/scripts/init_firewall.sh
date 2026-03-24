@@ -1,28 +1,28 @@
 #!/bin/bash
-set -euo pipefail  # Exit on error, undefined vars, and pipeline failures
-IFS=$'\n\t'       # Stricter word splitting
+set -euo pipefail  # 出错、未定义变量、管道失败时退出
+IFS=$'\n\t'       # 更严格的单词分割
 
-# Read allowed domains from file
+# 从文件读取允许的域名
 ALLOWED_DOMAINS_FILE="/etc/codex/allowed_domains.txt"
 if [ -f "$ALLOWED_DOMAINS_FILE" ]; then
     ALLOWED_DOMAINS=()
     while IFS= read -r domain; do
         ALLOWED_DOMAINS+=("$domain")
     done < "$ALLOWED_DOMAINS_FILE"
-    echo "Using domains from file: ${ALLOWED_DOMAINS[*]}"
+    echo "使用文件中的域名：${ALLOWED_DOMAINS[*]}"
 else
-    # Fallback to default domains
+    # 回退到默认域名
     ALLOWED_DOMAINS=("api.openai.com")
-    echo "Domains file not found, using default: ${ALLOWED_DOMAINS[*]}"
+    echo "未找到域名文件，使用默认值：${ALLOWED_DOMAINS[*]}"
 fi
 
-# Ensure we have at least one domain
+# 确保至少有一个域名
 if [ ${#ALLOWED_DOMAINS[@]} -eq 0 ]; then
-    echo "ERROR: No allowed domains specified"
+  echo "错误：未指定允许的域名"
     exit 1
 fi
 
-# Flush existing rules and delete existing ipsets
+# 清空现有规则并删除现有 ipset
 iptables -F
 iptables -X
 iptables -t nat -F
@@ -31,65 +31,65 @@ iptables -t mangle -F
 iptables -t mangle -X
 ipset destroy allowed-domains 2>/dev/null || true
 
-# First allow DNS and localhost before any restrictions
-# Allow outbound DNS
+# 在限制前先允许 DNS 与本地回环
+# 允许出站 DNS
 iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-# Allow inbound DNS responses
+# 允许入站 DNS 响应
 iptables -A INPUT -p udp --sport 53 -j ACCEPT
-# Allow localhost
+# 允许本地回环
 iptables -A INPUT -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 
-# Create ipset with CIDR support
+# 创建支持 CIDR 的 ipset
 ipset create allowed-domains hash:net
 
-# Resolve and add other allowed domains
+# 解析并添加其他允许的域名
 for domain in "${ALLOWED_DOMAINS[@]}"; do
-    echo "Resolving $domain..."
+  echo "解析域名 $domain..."
     ips=$(dig +short A "$domain")
     if [ -z "$ips" ]; then
-        echo "ERROR: Failed to resolve $domain"
+    echo "错误：解析 $domain 失败"
         exit 1
     fi
 
     while read -r ip; do
         if [[ ! "$ip" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-            echo "ERROR: Invalid IP from DNS for $domain: $ip"
+        echo "错误：DNS 返回的 IP 无效：$domain -> $ip"
             exit 1
         fi
-        echo "Adding $ip for $domain"
+    echo "为 $domain 添加 IP：$ip"
         ipset add allowed-domains "$ip"
     done < <(echo "$ips")
 done
 
-# Get host IP from default route
+# 从默认路由获取宿主机 IP
 HOST_IP=$(ip route | grep default | cut -d" " -f3)
 if [ -z "$HOST_IP" ]; then
-    echo "ERROR: Failed to detect host IP"
+  echo "错误：无法检测宿主机 IP"
     exit 1
 fi
 
 HOST_NETWORK=$(echo "$HOST_IP" | sed "s/\.[0-9]*$/.0\/24/")
-echo "Host network detected as: $HOST_NETWORK"
+echo "检测到宿主机网段：$HOST_NETWORK"
 
-# Set up remaining iptables rules
+# 设置剩余 iptables 规则
 iptables -A INPUT -s "$HOST_NETWORK" -j ACCEPT
 iptables -A OUTPUT -d "$HOST_NETWORK" -j ACCEPT
 
-# Set default policies to DROP first
+# 先将默认策略设为 DROP
 iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT DROP
 
-# First allow established connections for already approved traffic
+# 先允许已建立的连接，保证已放行流量可继续
 iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 
-# Then allow only specific outbound traffic to allowed domains
+# 仅允许到允许域名的出站流量
 iptables -A OUTPUT -m set --match-set allowed-domains dst -j ACCEPT
 
-# Append final REJECT rules for immediate error responses
-# For TCP traffic, send a TCP reset; for UDP, send ICMP port unreachable.
+# 追加最终 REJECT 规则，确保快速返回错误
+# TCP 发送 reset；UDP 发送 ICMP 端口不可达。
 iptables -A INPUT -p tcp -j REJECT --reject-with tcp-reset
 iptables -A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
 iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset
@@ -97,19 +97,19 @@ iptables -A OUTPUT -p udp -j REJECT --reject-with icmp-port-unreachable
 iptables -A FORWARD -p tcp -j REJECT --reject-with tcp-reset
 iptables -A FORWARD -p udp -j REJECT --reject-with icmp-port-unreachable
 
-echo "Firewall configuration complete"
-echo "Verifying firewall rules..."
+echo "防火墙配置完成"
+echo "正在验证防火墙规则..."
 if curl --connect-timeout 5 https://example.com >/dev/null 2>&1; then
-    echo "ERROR: Firewall verification failed - was able to reach https://example.com"
+    echo "错误：防火墙验证失败 - 仍可访问 https://example.com"
     exit 1
 else
-    echo "Firewall verification passed - unable to reach https://example.com as expected"
+    echo "防火墙验证通过 - 预期无法访问 https://example.com"
 fi
 
-# Always verify OpenAI API access is working
+# 始终验证 OpenAI API 可访问
 if ! curl --connect-timeout 5 https://api.openai.com >/dev/null 2>&1; then
-    echo "ERROR: Firewall verification failed - unable to reach https://api.openai.com"
+    echo "错误：防火墙验证失败 - 无法访问 https://api.openai.com"
     exit 1
 else
-    echo "Firewall verification passed - able to reach https://api.openai.com as expected"
+    echo "防火墙验证通过 - 预期可访问 https://api.openai.com"
 fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install Codex native binaries (Rust CLI plus ripgrep helpers)."""
+"""安装 Codex 原生二进制（Rust CLI 与 ripgrep 辅助）。"""
 
 import argparse
 from contextlib import contextmanager
@@ -36,10 +36,10 @@ BINARY_TARGETS = (
 
 @dataclass(frozen=True)
 class BinaryComponent:
-    artifact_prefix: str  # matches the artifact filename prefix (e.g. codex-<target>.zst)
-    dest_dir: str  # directory under vendor/<target>/ where the binary is installed
-    binary_basename: str  # executable name inside dest_dir (before optional .exe)
-    targets: tuple[str, ...] | None = None  # limit installation to specific targets
+    artifact_prefix: str  # 匹配制品文件名前缀（例如 codex-<target>.zst）
+    dest_dir: str  # 安装到 vendor/<target>/ 下的目录
+    binary_basename: str  # 可执行文件名（不含 .exe）
+    targets: tuple[str, ...] | None = None  # 限制仅安装指定 target
 
 
 WINDOWS_TARGETS = tuple(target for target in BINARY_TARGETS if "windows" in target)
@@ -80,25 +80,25 @@ RG_TARGET_PLATFORM_PAIRS: list[tuple[str, str]] = [
 RG_TARGET_TO_PLATFORM = {target: platform for target, platform in RG_TARGET_PLATFORM_PAIRS}
 DEFAULT_RG_TARGETS = [target for target, _ in RG_TARGET_PLATFORM_PAIRS]
 
-# urllib.request.urlopen() defaults to no timeout (can hang indefinitely), which is painful in CI.
+# urllib.request.urlopen() 默认无超时（可能无限阻塞），在 CI 中会很痛苦。
 DOWNLOAD_TIMEOUT_SECS = 60
 
 
 def _gha_enabled() -> bool:
-    # GitHub Actions supports "workflow commands" (e.g. ::group:: / ::error::) that make logs
-    # much easier to scan: groups collapse noisy sections and error annotations surface the
-    # failure in the UI without changing the actual exception/traceback output.
+    # GitHub Actions 支持“workflow commands”（如 ::group:: / ::error::），
+    # 便于日志阅读：分组可折叠噪声，错误注释会在 UI 中突出显示，
+    # 且不会改变实际异常/回溯输出。
     return os.environ.get("GITHUB_ACTIONS") == "true"
 
 
 def _gha_escape(value: str) -> str:
-    # Workflow commands require percent/newline escaping.
+    # workflow commands 需要对 % 和换行进行转义。
     return value.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def _gha_error(*, title: str, message: str) -> None:
-    # Emit a GitHub Actions error annotation. This does not replace stdout/stderr logs; it just
-    # adds a prominent summary line to the job UI so the root cause is easier to spot.
+    # 输出 GitHub Actions 错误注释。不会替代 stdout/stderr，只在作业 UI 中添加醒目摘要，
+    # 便于定位根因。
     if not _gha_enabled():
         return
     print(
@@ -109,8 +109,7 @@ def _gha_error(*, title: str, message: str) -> None:
 
 @contextmanager
 def _gha_group(title: str):
-    # Wrap a block in a collapsible log group on GitHub Actions. Outside of GHA this is a no-op
-    # so local output remains unchanged.
+    # 在 GitHub Actions 中将日志包裹为可折叠分组；本地运行则不做处理。
     if _gha_enabled():
         print(f"::group::{_gha_escape(title)}", flush=True)
     try:
@@ -121,12 +120,11 @@ def _gha_group(title: str):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Install native Codex binaries.")
+    parser = argparse.ArgumentParser(description="安装 Codex 原生二进制。")
     parser.add_argument(
         "--workflow-url",
         help=(
-            "GitHub Actions workflow URL that produced the artifacts. Defaults to a "
-            "known good run when omitted."
+            "生成制品的 GitHub Actions 工作流 URL。未提供时使用已验证的默认运行。"
         ),
     )
     parser.add_argument(
@@ -135,9 +133,8 @@ def parse_args() -> argparse.Namespace:
         action="append",
         choices=tuple(list(BINARY_COMPONENTS) + ["rg"]),
         help=(
-            "Limit installation to the specified components."
-            " May be repeated. Defaults to codex, codex-windows-sandbox-setup,"
-            " codex-command-runner, and rg."
+            "仅安装指定组件。可重复传入。默认包含 codex、codex-windows-sandbox-setup、"
+            "codex-command-runner 与 rg。"
         ),
     )
     parser.add_argument(
@@ -145,8 +142,7 @@ def parse_args() -> argparse.Namespace:
         nargs="?",
         type=Path,
         help=(
-            "Directory containing package.json for the staged package. If omitted, the "
-            "repository checkout is used."
+            "包含 package.json 的暂存目录。未提供时使用仓库目录。"
         ),
     )
     return parser.parse_args()
@@ -171,9 +167,9 @@ def main() -> int:
         workflow_url = DEFAULT_WORKFLOW_URL
 
     workflow_repo, workflow_id = resolve_workflow_run(workflow_url)
-    print(f"Downloading native artifacts from workflow {workflow_repo}#{workflow_id}...")
+    print(f"正在从工作流 {workflow_repo}#{workflow_id} 下载原生制品...")
 
-    with _gha_group(f"Download native artifacts from workflow {workflow_repo}#{workflow_id}"):
+    with _gha_group(f"下载工作流 {workflow_repo}#{workflow_id} 的原生制品"):
         with tempfile.TemporaryDirectory(prefix="codex-native-artifacts-") as artifacts_dir_str:
             artifacts_dir = Path(artifacts_dir_str)
             _download_artifacts(workflow_repo, workflow_id, artifacts_dir)
@@ -184,11 +180,11 @@ def main() -> int:
             )
 
     if "rg" in components:
-        with _gha_group("Fetch ripgrep binaries"):
-            print("Fetching ripgrep binaries...")
+        with _gha_group("获取 ripgrep 二进制"):
+            print("正在获取 ripgrep 二进制...")
             fetch_rg(vendor_dir, DEFAULT_RG_TARGETS, manifest_path=RG_MANIFEST)
 
-    print(f"Installed native dependencies into {vendor_dir}")
+    print(f"已安装原生依赖到 {vendor_dir}")
     return 0
 
 
@@ -198,13 +194,13 @@ def fetch_rg(
     *,
     manifest_path: Path,
 ) -> list[Path]:
-    """Download ripgrep binaries described by the DotSlash manifest."""
+    """下载 DotSlash manifest 中描述的 ripgrep 二进制。"""
 
     if targets is None:
         targets = DEFAULT_RG_TARGETS
 
     if not manifest_path.exists():
-        raise FileNotFoundError(f"DotSlash manifest not found: {manifest_path}")
+        raise FileNotFoundError(f"未找到 DotSlash manifest：{manifest_path}")
 
     manifest = _load_manifest(manifest_path)
     platforms = manifest.get("platforms", {})
@@ -219,18 +215,18 @@ def fetch_rg(
     for target in targets:
         platform_key = RG_TARGET_TO_PLATFORM.get(target)
         if platform_key is None:
-            raise ValueError(f"Unsupported ripgrep target '{target}'.")
+            raise ValueError(f"不支持的 ripgrep target：'{target}'。")
 
         platform_info = platforms.get(platform_key)
         if platform_info is None:
-            raise RuntimeError(f"Platform '{platform_key}' not found in manifest {manifest_path}.")
+            raise RuntimeError(f"在 manifest {manifest_path} 中找不到平台 '{platform_key}'。")
 
         task_configs.append((target, platform_key, platform_info))
 
     results: dict[str, Path] = {}
     max_workers = min(len(task_configs), max(1, (os.cpu_count() or 1)))
 
-    print("Installing ripgrep binaries for targets: " + ", ".join(targets))
+    print("正在安装 ripgrep 二进制，目标： " + ", ".join(targets))
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {
@@ -251,11 +247,11 @@ def fetch_rg(
                 results[target] = future.result()
             except Exception as exc:
                 _gha_error(
-                    title="ripgrep install failed",
+                    title="ripgrep 安装失败",
                     message=f"target={target} error={exc!r}",
                 )
-                raise RuntimeError(f"Failed to install ripgrep for target {target}.") from exc
-            print(f"  installed ripgrep for {target}")
+                raise RuntimeError(f"安装 ripgrep 失败，目标 {target}。") from exc
+            print(f"  已安装 ripgrep：{target}")
 
     return [results[target] for target in targets]
 
@@ -268,13 +264,13 @@ def resolve_workflow_run(workflow_url: str) -> tuple[str, str]:
             workflow_id = parts[4] if len(parts) >= 5 else ""
             if workflow_id:
                 return f"{parts[0]}/{parts[1]}", workflow_id
-        raise ValueError(f"Unsupported GitHub Actions workflow URL: {workflow_url}")
+        raise ValueError(f"不支持的 GitHub Actions 工作流 URL：{workflow_url}")
 
     workflow_id = workflow_url.strip().rstrip("/")
     if workflow_id.isdigit():
         return DEFAULT_WORKFLOW_REPO, workflow_id
 
-    raise ValueError(f"Unsupported workflow reference: {workflow_url}")
+    raise ValueError(f"不支持的工作流引用：{workflow_url}")
 
 
 def _download_artifacts(repo: str, workflow_id: str, dest_dir: Path) -> None:
@@ -303,7 +299,7 @@ def install_binary_components(
         component_targets = list(component.targets or BINARY_TARGETS)
 
         print(
-            f"Installing {component.binary_basename} binaries for targets: "
+            f"正在安装 {component.binary_basename} 二进制，目标： "
             + ", ".join(component_targets)
         )
         max_workers = min(len(component_targets), max(1, (os.cpu_count() or 1)))
@@ -320,7 +316,7 @@ def install_binary_components(
             }
             for future in as_completed(futures):
                 installed_path = future.result()
-                print(f"  installed {installed_path}")
+                print(f"  已安装 {installed_path}")
 
 
 def _install_single_binary(
@@ -333,7 +329,7 @@ def _install_single_binary(
     archive_name = _archive_name_for_target(component.artifact_prefix, target)
     archive_path = artifact_subdir / archive_name
     if not archive_path.exists():
-        raise FileNotFoundError(f"Expected artifact not found: {archive_path}")
+        raise FileNotFoundError(f"未找到预期制品：{archive_path}")
 
     dest_dir = vendor_dir / target / component.dest_dir
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -364,7 +360,7 @@ def _fetch_single_rg(
 ) -> Path:
     providers = platform_info.get("providers", [])
     if not providers:
-        raise RuntimeError(f"No providers listed for platform '{platform_key}' in {manifest_path}.")
+        raise RuntimeError(f"manifest {manifest_path} 中未列出平台 '{platform_key}' 的 providers。")
 
     url = providers[0]["url"]
     archive_format = platform_info.get("format", "zst")
@@ -384,18 +380,18 @@ def _fetch_single_rg(
         archive_filename = os.path.basename(urlparse(url).path)
         download_path = tmp_dir / archive_filename
         print(
-            f"  downloading ripgrep for {target} ({platform_key}) from {url}",
+            f"  正在下载 ripgrep：{target}（{platform_key}），来源 {url}",
             flush=True,
         )
         try:
             _download_file(url, download_path)
         except Exception as exc:
             _gha_error(
-                title="ripgrep download failed",
+                title="ripgrep 下载失败",
                 message=f"target={target} platform={platform_key} url={url} error={exc!r}",
             )
             raise RuntimeError(
-                "Failed to download ripgrep "
+                "下载 ripgrep 失败 "
                 f"(target={target}, platform={platform_key}, format={archive_format}, "
                 f"expected_size={expected_size!r}, digest={digest!r}, url={url}, dest={download_path})."
             ) from exc
@@ -405,7 +401,7 @@ def _fetch_single_rg(
             extract_archive(download_path, archive_format, archive_member, dest)
         except Exception as exc:
             raise RuntimeError(
-                "Failed to extract ripgrep "
+                "解压 ripgrep 失败 "
                 f"(target={target}, platform={platform_key}, format={archive_format}, "
                 f"member={archive_member!r}, url={url}, archive={download_path})."
             ) from exc
@@ -442,13 +438,13 @@ def extract_archive(
 
     if archive_format == "tar.gz":
         if not archive_member:
-            raise RuntimeError("Missing 'path' for tar.gz archive in DotSlash manifest.")
+            raise RuntimeError("DotSlash manifest 的 tar.gz 归档缺少 'path'。")
         with tarfile.open(archive_path, "r:gz") as tar:
             try:
                 member = tar.getmember(archive_member)
             except KeyError as exc:
                 raise RuntimeError(
-                    f"Entry '{archive_member}' not found in archive {archive_path}."
+                    f"归档 {archive_path} 中找不到条目 '{archive_member}'。"
                 ) from exc
             tar.extract(member, path=archive_path.parent, filter="data")
         extracted = archive_path.parent / archive_member
@@ -457,18 +453,18 @@ def extract_archive(
 
     if archive_format == "zip":
         if not archive_member:
-            raise RuntimeError("Missing 'path' for zip archive in DotSlash manifest.")
+            raise RuntimeError("DotSlash manifest 的 zip 归档缺少 'path'。")
         with zipfile.ZipFile(archive_path) as archive:
             try:
                 with archive.open(archive_member) as src, open(dest, "wb") as out:
                     shutil.copyfileobj(src, out)
             except KeyError as exc:
                 raise RuntimeError(
-                    f"Entry '{archive_member}' not found in archive {archive_path}."
+                    f"归档 {archive_path} 中找不到条目 '{archive_member}'。"
                 ) from exc
         return
 
-    raise RuntimeError(f"Unsupported archive format '{archive_format}'.")
+    raise RuntimeError(f"不支持的归档格式 '{archive_format}'。")
 
 
 def _load_manifest(manifest_path: Path) -> dict:
@@ -477,11 +473,11 @@ def _load_manifest(manifest_path: Path) -> dict:
     try:
         manifest = json.loads(stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Invalid DotSlash manifest output from {manifest_path}.") from exc
+        raise RuntimeError(f"DotSlash manifest 输出无效：{manifest_path}。") from exc
 
     if not isinstance(manifest, dict):
         raise RuntimeError(
-            f"Unexpected DotSlash manifest structure for {manifest_path}: {type(manifest)!r}"
+            f"DotSlash manifest 结构异常：{manifest_path}，类型 {type(manifest)!r}"
         )
 
     return manifest

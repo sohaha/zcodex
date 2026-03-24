@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage and optionally package the @sohaha/zcodex npm module."""
+"""暂存并可选打包 @sohaha/zcodex npm 模块。"""
 
 import argparse
 import json
@@ -16,8 +16,8 @@ RESPONSES_API_PROXY_NPM_ROOT = REPO_ROOT / "codex-rs" / "responses-api-proxy" / 
 CODEX_SDK_ROOT = REPO_ROOT / "sdk" / "typescript"
 CODEX_NPM_NAME = "@sohaha/zcodex"
 
-# `npm_name` is the local optional-dependency alias consumed by `bin/codex.js`.
-# The underlying package published to npm is always `@sohaha/zcodex`.
+# `npm_name` 是 `bin/codex.js` 使用的本地 optionalDependencies 别名。
+# 实际发布到 npm 的包始终是 `@sohaha/zcodex`。
 CODEX_PLATFORM_PACKAGES: dict[str, dict[str, str]] = {
     "codex-linux-x64": {
         "npm_name": "@sohaha/zcodex-linux-x64",
@@ -96,29 +96,28 @@ COMPONENT_DEST_DIR: dict[str, str] = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build or stage the Codex CLI npm package.")
+    parser = argparse.ArgumentParser(description="构建或暂存 Codex CLI npm 包。")
     parser.add_argument(
         "--package",
         choices=PACKAGE_CHOICES,
         default="codex",
-        help="Which npm package to stage (default: codex).",
+        help="要暂存的 npm 包（默认：codex）。",
     )
     parser.add_argument(
         "--version",
-        help="Version number to write to package.json inside the staged package.",
+        help="写入暂存 package.json 的版本号。",
     )
     parser.add_argument(
         "--release-version",
         help=(
-            "Version to stage for npm release."
+            "用于 npm 发布的暂存版本号。"
         ),
     )
     parser.add_argument(
         "--staging-dir",
         type=Path,
         help=(
-            "Directory to stage the package contents. Defaults to a new temporary directory "
-            "if omitted. The directory must be empty when provided."
+            "用于暂存包内容的目录。未指定则使用新的临时目录。指定目录时必须为空。"
         ),
     )
     parser.add_argument(
@@ -130,12 +129,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pack-output",
         type=Path,
-        help="Path where the generated npm tarball should be written.",
+        help="生成的 npm tarball 输出路径。",
     )
     parser.add_argument(
         "--vendor-src",
         type=Path,
-        help="Directory containing pre-installed native binaries to bundle (vendor root).",
+        help="包含预安装原生二进制的目录（vendor 根目录）。",
     )
     return parser.parse_args()
 
@@ -148,11 +147,11 @@ def main() -> int:
     release_version = args.release_version
     if release_version:
         if version and version != release_version:
-            raise RuntimeError("--version and --release-version must match when both are provided.")
+            raise RuntimeError("同时提供 --version 与 --release-version 时必须一致。")
         version = release_version
 
     if not version:
-        raise RuntimeError("Must specify --version or --release-version.")
+        raise RuntimeError("必须指定 --version 或 --release-version。")
 
     staging_dir, created_temp = prepare_staging_dir(args.staging_dir)
 
@@ -167,9 +166,9 @@ def main() -> int:
             if vendor_src is None:
                 components_str = ", ".join(native_components)
                 raise RuntimeError(
-                    "Native components "
-                    f"({components_str}) required for package '{package}'. Provide --vendor-src "
-                    "pointing to a directory containing pre-installed binaries."
+                    "该包需要原生组件 "
+                    f"({components_str})，请为包 '{package}' 提供 --vendor-src，"
+                    "指向包含预安装二进制的目录。"
                 )
 
             copy_native_binaries(
@@ -183,39 +182,39 @@ def main() -> int:
             staging_dir_str = str(staging_dir)
             if package == "codex":
                 print(
-                    f"Staged version {version} for release in {staging_dir_str}\n\n"
-                    "Verify the CLI:\n"
+                    f"已在 {staging_dir_str} 暂存用于发布的版本 {version}\n\n"
+                    "验证 CLI：\n"
                     f"    node {staging_dir_str}/bin/codex.js --version\n"
                     f"    node {staging_dir_str}/bin/codex.js --help\n\n"
                 )
             elif package == "codex-responses-api-proxy":
                 print(
-                    f"Staged version {version} for release in {staging_dir_str}\n\n"
-                    "Verify the responses API proxy:\n"
+                    f"已在 {staging_dir_str} 暂存用于发布的版本 {version}\n\n"
+                    "验证 responses API 代理：\n"
                     f"    node {staging_dir_str}/bin/codex-responses-api-proxy.js --help\n\n"
                 )
             elif package in CODEX_PLATFORM_PACKAGES:
                 print(
-                    f"Staged version {version} for release in {staging_dir_str}\n\n"
-                    "Verify native payload contents:\n"
+                    f"已在 {staging_dir_str} 暂存用于发布的版本 {version}\n\n"
+                    "验证原生文件内容：\n"
                     f"    ls {staging_dir_str}/vendor\n\n"
                 )
             else:
                 print(
-                    f"Staged version {version} for release in {staging_dir_str}\n\n"
-                    "Verify the SDK contents:\n"
+                    f"已在 {staging_dir_str} 暂存用于发布的版本 {version}\n\n"
+                    "验证 SDK 内容：\n"
                     f"    ls {staging_dir_str}/dist\n"
                     "    node -e \"import('./dist/index.js').then(() => console.log('ok'))\"\n\n"
                 )
         else:
-            print(f"Staged package in {staging_dir}")
+            print(f"已在 {staging_dir} 暂存包内容")
 
         if args.pack_output is not None:
             output_path = run_npm_pack(staging_dir, args.pack_output)
-            print(f"npm pack output written to {output_path}")
+            print(f"npm pack 输出已写入 {output_path}")
     finally:
         if created_temp:
-            # Preserve the staging directory for further inspection.
+            # 保留暂存目录以便后续检查。
             pass
 
     return 0
@@ -226,7 +225,7 @@ def prepare_staging_dir(staging_dir: Path | None) -> tuple[Path, bool]:
         staging_dir = staging_dir.resolve()
         staging_dir.mkdir(parents=True, exist_ok=True)
         if any(staging_dir.iterdir()):
-            raise RuntimeError(f"Staging directory {staging_dir} is not empty.")
+            raise RuntimeError(f"暂存目录 {staging_dir} 不为空。")
         return staging_dir, False
 
     temp_dir = Path(tempfile.mkdtemp(prefix="codex-npm-stage-"))
@@ -294,7 +293,7 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
         package_json_path = CODEX_SDK_ROOT / "package.json"
         stage_codex_sdk_sources(staging_dir)
     else:
-        raise RuntimeError(f"Unknown package '{package}'.")
+        raise RuntimeError(f"未知的包 '{package}'。")
 
     if package_json_path is not None:
         with open(package_json_path, "r", encoding="utf-8") as fh:
@@ -329,8 +328,7 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
 
 
 def compute_platform_package_version(version: str, platform_tag: str) -> str:
-    # npm forbids republishing the same package name/version, so each
-    # platform-specific tarball needs a unique version string.
+    # npm 禁止重复发布相同包名/版本，因此每个平台的 tarball 都需要唯一版本号。
     return f"{version}-{platform_tag}"
 
 
@@ -347,7 +345,7 @@ def stage_codex_sdk_sources(staging_dir: Path) -> None:
 
     dist_src = package_root / "dist"
     if not dist_src.exists():
-        raise RuntimeError("codex-sdk build did not produce a dist directory.")
+        raise RuntimeError("codex-sdk 构建未生成 dist 目录。")
 
     shutil.copytree(dist_src, staging_dir / "dist")
 
@@ -368,7 +366,7 @@ def copy_native_binaries(
 ) -> None:
     vendor_src = vendor_src.resolve()
     if not vendor_src.exists():
-        raise RuntimeError(f"Vendor source directory not found: {vendor_src}")
+        raise RuntimeError(f"未找到 vendor 源目录：{vendor_src}")
 
     components_set = {component for component in components if component in COMPONENT_DEST_DIR}
     if not components_set:
@@ -400,7 +398,7 @@ def copy_native_binaries(
             src_component_dir = target_dir / dest_dir_name
             if not src_component_dir.exists():
                 raise RuntimeError(
-                    f"Missing native component '{component}' in vendor source: {src_component_dir}"
+                    f"vendor 源中缺少原生组件 '{component}'：{src_component_dir}"
                 )
 
             dest_component_dir = dest_target_dir / dest_dir_name
@@ -412,7 +410,7 @@ def copy_native_binaries(
         missing_targets = sorted(target_filter - copied_targets)
         if missing_targets:
             missing_list = ", ".join(missing_targets)
-            raise RuntimeError(f"Missing target directories in vendor source: {missing_list}")
+            raise RuntimeError(f"vendor 源中缺少目标目录：{missing_list}")
 
 
 def run_npm_pack(staging_dir: Path, output_path: Path) -> Path:
@@ -429,18 +427,18 @@ def run_npm_pack(staging_dir: Path, output_path: Path) -> Path:
         try:
             pack_output = json.loads(stdout)
         except json.JSONDecodeError as exc:
-            raise RuntimeError("Failed to parse npm pack output.") from exc
+            raise RuntimeError("解析 npm pack 输出失败。") from exc
 
         if not pack_output:
-            raise RuntimeError("npm pack did not produce an output tarball.")
+            raise RuntimeError("npm pack 未生成输出 tarball。")
 
         tarball_name = pack_output[0].get("filename") or pack_output[0].get("name")
         if not tarball_name:
-            raise RuntimeError("Unable to determine npm pack output filename.")
+            raise RuntimeError("无法确定 npm pack 输出文件名。")
 
         tarball_path = pack_dir / tarball_name
         if not tarball_path.exists():
-            raise RuntimeError(f"Expected npm pack output not found: {tarball_path}")
+            raise RuntimeError(f"未找到预期的 npm pack 输出：{tarball_path}")
 
         shutil.move(str(tarball_path), output_path)
 

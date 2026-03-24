@@ -1,22 +1,22 @@
 #!/bin/bash
 set -e
 
-# Usage:
-#   ./run_in_container.sh [--work_dir directory] "COMMAND"
+# 用法：
+#   ./run_in_container.sh [--work_dir 目录] "命令"
 #
-#   Examples:
-#     ./run_in_container.sh --work_dir project/code "ls -la"
-#     ./run_in_container.sh "echo Hello, world!"
+# 示例：
+#   ./run_in_container.sh --work_dir project/code "ls -la"
+#   ./run_in_container.sh "echo Hello, world!"
 
-# Default the work directory to WORKSPACE_ROOT_DIR if not provided.
+# 未指定时，工作目录默认为 WORKSPACE_ROOT_DIR。
 WORK_DIR="${WORKSPACE_ROOT_DIR:-$(pwd)}"
-# Default allowed domains - can be overridden with OPENAI_ALLOWED_DOMAINS env var
+# 默认允许域名，可通过 OPENAI_ALLOWED_DOMAINS 覆盖
 OPENAI_ALLOWED_DOMAINS="${OPENAI_ALLOWED_DOMAINS:-api.openai.com}"
 
-# Parse optional flag.
+# 解析可选参数。
 if [ "$1" = "--work_dir" ]; then
   if [ -z "$2" ]; then
-    echo "Error: --work_dir flag provided but no directory specified."
+    echo "错误：指定了 --work_dir 但未提供目录。"
     exit 1
   fi
   WORK_DIR="$2"
@@ -25,38 +25,38 @@ fi
 
 WORK_DIR=$(realpath "$WORK_DIR")
 
-# Generate a unique container name based on the normalized work directory
+# 根据规范化的工作目录生成唯一容器名
 CONTAINER_NAME="codex_$(echo "$WORK_DIR" | sed 's/\//_/g' | sed 's/[^a-zA-Z0-9_-]//g')"
 
-# Define cleanup to remove the container on script exit, ensuring no leftover containers
+# 定义清理逻辑，脚本退出时删除容器，避免残留
 cleanup() {
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 }
-# Trap EXIT to invoke cleanup regardless of how the script terminates
+# 捕获 EXIT，无论如何退出都执行清理
 trap cleanup EXIT
 
-# Ensure a command is provided.
+# 确保传入了命令。
 if [ "$#" -eq 0 ]; then
-  echo "Usage: $0 [--work_dir directory] \"COMMAND\""
+  echo "用法：$0 [--work_dir 目录] \"命令\""
   exit 1
 fi
 
-# Check if WORK_DIR is set.
+# 检查 WORK_DIR 是否已设置。
 if [ -z "$WORK_DIR" ]; then
-  echo "Error: No work directory provided and WORKSPACE_ROOT_DIR is not set."
+  echo "错误：未提供工作目录且未设置 WORKSPACE_ROOT_DIR。"
   exit 1
 fi
 
-# Verify that OPENAI_ALLOWED_DOMAINS is not empty
+# 校验 OPENAI_ALLOWED_DOMAINS 不能为空
 if [ -z "$OPENAI_ALLOWED_DOMAINS" ]; then
-  echo "Error: OPENAI_ALLOWED_DOMAINS is empty."
+  echo "错误：OPENAI_ALLOWED_DOMAINS 为空。"
   exit 1
 fi
 
-# Kill any existing container for the working directory using cleanup(), centralizing removal logic.
+# 使用 cleanup() 清理该工作目录已有容器，统一删除逻辑。
 cleanup
 
-# Run the container with the specified directory mounted at the same path inside the container.
+# 运行容器，并将指定目录以相同路径挂载到容器内。
 docker run --name "$CONTAINER_NAME" -d \
   -e OPENAI_API_KEY \
   --cap-add=NET_ADMIN \
@@ -65,28 +65,28 @@ docker run --name "$CONTAINER_NAME" -d \
   codex \
   sleep infinity
 
-# Write the allowed domains to a file in the container
+# 将允许的域名写入容器内文件
 docker exec --user root "$CONTAINER_NAME" bash -c "mkdir -p /etc/codex"
 for domain in $OPENAI_ALLOWED_DOMAINS; do
-  # Validate domain format to prevent injection
+  # 校验域名格式，避免注入
   if [[ ! "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-    echo "Error: Invalid domain format: $domain"
+    echo "错误：域名格式无效：$domain"
     exit 1
   fi
   echo "$domain" | docker exec --user root -i "$CONTAINER_NAME" bash -c "cat >> /etc/codex/allowed_domains.txt"
 done
 
-# Set proper permissions on the domains file
+# 设置域名文件权限
 docker exec --user root "$CONTAINER_NAME" bash -c "chmod 444 /etc/codex/allowed_domains.txt && chown root:root /etc/codex/allowed_domains.txt"
 
-# Initialize the firewall inside the container as root user
+# 以 root 身份在容器内初始化防火墙
 docker exec --user root "$CONTAINER_NAME" bash -c "/usr/local/bin/init_firewall.sh"
 
-# Remove the firewall script after running it
+# 执行后移除防火墙脚本
 docker exec --user root "$CONTAINER_NAME" bash -c "rm -f /usr/local/bin/init_firewall.sh"
 
-# Execute the provided command in the container, ensuring it runs in the work directory.
-# We use a parameterized bash command to safely handle the command and directory.
+# 在容器内执行命令，确保在工作目录下运行。
+# 使用参数化 bash 命令安全处理命令与目录。
 
 quoted_args=""
 for arg in "$@"; do
