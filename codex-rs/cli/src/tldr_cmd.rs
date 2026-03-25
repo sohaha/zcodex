@@ -178,7 +178,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         kind,
         symbol: cmd.symbol.clone(),
     };
-    let mut daemon_response = query_daemon(
+    let daemon_response = query_daemon_with_autostart(
         &project_root,
         &TldrDaemonCommand::Analyze {
             key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
@@ -186,16 +186,6 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         },
     )
     .await?;
-    if daemon_response.is_none() && ensure_daemon_running(&project_root).await? {
-        daemon_response = query_daemon(
-            &project_root,
-            &TldrDaemonCommand::Analyze {
-                key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
-                request: request.clone(),
-            },
-        )
-        .await?;
-    }
     let (source, daemon_message, summary, engine_project_root) =
         if let Some(response) = daemon_response {
             let analysis = response
@@ -279,7 +269,7 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
         TldrDaemonSubcommand::Snapshot => TldrDaemonCommand::Snapshot,
     };
 
-    let Some(response) = query_daemon(&project_root, &command).await? else {
+    let Some(response) = query_daemon_with_autostart(&project_root, &command).await? else {
         bail!(
             "native-tldr daemon is unavailable for {}",
             project_root.display()
@@ -298,6 +288,17 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn query_daemon_with_autostart(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
+    let mut daemon_response = query_daemon(project_root, command).await?;
+    if daemon_response.is_none() && ensure_daemon_running(project_root).await? {
+        daemon_response = query_daemon(project_root, command).await?;
+    }
+    Ok(daemon_response)
 }
 
 fn analysis_cache_key(

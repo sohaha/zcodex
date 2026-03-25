@@ -100,6 +100,14 @@
       {
          "at" : "2026-03-25T11:58:50Z",
          "note" : "legacy shell approval failure fixed; mcp-server suite is green again, now continuing with stale-socket daemon lifecycle follow-up"
+      },
+      {
+         "at" : "2026-03-25T12:00:02Z",
+         "note" : "aligned `codex tldr daemon` subcommands with the same auto-start/retry path used by structure/context"
+      },
+      {
+         "at" : "2026-03-25T12:00:02Z",
+         "note" : "verified the CLI follow-up with targeted codex-cli tests and `just fix -p codex-cli`"
       }
    ],
    "feature" : "codex-cli-native-tldr"
