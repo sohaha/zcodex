@@ -2293,6 +2293,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "codex-file-search",
+ "ignore",
  "libc",
  "md5",
  "once_cell",
