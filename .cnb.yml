@@ -9,7 +9,7 @@
       - /root/.local/share/mise:copy-on-write
   runner:
     tags: cnb:arch:amd64
-    cpus: 20
+    cpus: 30
   env:
     GITHUB_REPOSITORY: sohaha/zcodex
   stages:
