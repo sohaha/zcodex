@@ -7,10 +7,11 @@
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：本轮并行已整合完成（semantic MCP、daemon 生命周期、主线程复核）
+- **当前执行方式**：本轮并行已整合完成（mcp-server 全量遗留、daemon 生命周期、主线程复核）
 - **最新代码提交**：`9c231e69d` `fix: harden native tldr daemon startup guards`
 
 ### 已完成验证
+- `cargo test -p codex-mcp-server`：已复跑，当前仅剩历史失败 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`
 - `cargo test -p codex-cli --bin codex tests::tldr_structure_parses_language_and_symbol -- --exact`：通过（auto-start 变更后复核）
 - `cargo test -p codex-cli --bin codex tests::tldr_daemon_ping_parses -- --exact`：通过（auto-start 变更后复核）
 - `cargo test -p codex-native-tldr`：通过（当前 10 个测试，含 semantic indexer）
@@ -39,12 +40,12 @@
 - `just fix -p codex-cli`：通过
 
 ### 当前下一批验证
-- 评估 daemon 生命周期与外部进程启动/回收策略
+- 继续补 daemon 生命周期与外部进程启动/回收策略
 - 深化 CLI/MCP 共用 daemon 生命周期管理
-- 视情况补全量 `cargo test -p codex-mcp-server` 复跑
+- 视情况单独定位历史失败 `test_shell_command_approval_triggers_elicitation`
 
 ### 当前遗留验证
-- `cargo test -p codex-mcp-server` 全量仍未复跑；已知历史遗留失败用例仍是 `test_shell_command_approval_triggers_elicitation`
+- `cargo test -p codex-mcp-server` 全量已复跑，当前唯一剩余失败是历史用例 `test_shell_command_approval_triggers_elicitation`
 - daemon auto-start 目前只在 Unix 路径启用，Windows 仍回退本地 engine
 - `just argument-comment-lint` 仍因仓库缺脚本无法验证
 
