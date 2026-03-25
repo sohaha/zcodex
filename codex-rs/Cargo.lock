@@ -1677,6 +1677,7 @@ dependencies = [
  "codex-features",
  "codex-login",
  "codex-mcp-server",
+ "codex-native-tldr",
  "codex-protocol",
  "codex-responses-api-proxy",
  "codex-rmcp-client",

@@ -33,6 +33,7 @@ codex-execpolicy = { workspace = true }
 codex-features = { workspace = true }
 codex-login = { workspace = true }
 codex-mcp-server = { workspace = true }
+codex-native-tldr = { workspace = true }
 codex-protocol = { workspace = true }
 codex-responses-api-proxy = { workspace = true }
 codex-rtk = { workspace = true }

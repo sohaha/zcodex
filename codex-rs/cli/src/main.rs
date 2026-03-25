@@ -43,10 +43,12 @@ mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
 mod mcp_cmd;
+mod tldr_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 
 use crate::mcp_cmd::McpCli;
+use crate::tldr_cmd::TldrCli;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -109,6 +111,9 @@ enum Subcommand {
 
     /// 运行 Token 优化的命令包装器。
     Rtk(RtkArgs),
+
+    /// 运行原生 TLDR 代码上下文分析命令。
+    Tldr(TldrCli),
 
     /// 以 MCP 服务器（标准输入/输出）模式启动 Codex。
     McpServer,
@@ -655,6 +660,10 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         }
         Some(Subcommand::Rtk(rtk_cli)) => {
             codex_rtk::run_from_os_args(rtk_cli.args)?;
+        }
+        Some(Subcommand::Tldr(tldr_cli)) => {
+            reject_remote_mode_for_subcommand(root_remote.as_deref(), "tldr")?;
+            tldr_cmd::run_tldr_command(tldr_cli).await?;
         }
         Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
             None => {
@@ -1787,6 +1796,41 @@ mod tests {
             panic!("expected features disable");
         };
         assert_eq!(feature, "shell_tool");
+    }
+
+    #[test]
+    fn tldr_structure_parses_language_and_symbol() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "tldr",
+            "structure",
+            "--project",
+            ".",
+            "--lang",
+            "rust",
+            "main",
+        ])
+        .expect("parse should succeed");
+
+        let Some(Subcommand::Tldr(tldr_cli)) = cli.subcommand else {
+            panic!("expected tldr subcommand");
+        };
+
+        let tldr_cmd::TldrSubcommand::Structure(args) = tldr_cli.subcommand else {
+            panic!("expected structure subcommand");
+        };
+
+        assert_eq!(args.symbol.as_deref(), Some("main"));
+        assert!(matches!(args.lang, tldr_cmd::CliLanguage::Rust));
+    }
+
+    #[test]
+    fn tldr_help_renders() {
+        let mut cmd = localized_multitool_command();
+        let render_result = cmd.render_long_help();
+        let help = render_result.to_string();
+
+        assert!(help.contains("tldr"));
     }
 
     #[test]
