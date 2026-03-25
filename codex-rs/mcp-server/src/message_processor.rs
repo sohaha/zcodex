@@ -36,6 +36,8 @@ use crate::codex_tool_config::CodexToolCallReplyParam;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
 use crate::outgoing_message::OutgoingMessageSender;
+use crate::tldr_tool::create_tool_for_tldr_tool_call_param;
+use crate::tldr_tool::run_tldr_tool;
 
 pub(crate) struct MessageProcessor {
     outgoing: Arc<OutgoingMessageSender>,
@@ -319,6 +321,7 @@ impl MessageProcessor {
             tools: vec![
                 create_tool_for_codex_tool_call_param(),
                 create_tool_for_codex_tool_call_reply_param(),
+                create_tool_for_tldr_tool_call_param(),
             ],
             next_cursor: None,
         };
@@ -337,6 +340,10 @@ impl MessageProcessor {
             "codex-reply" => {
                 self.handle_tool_call_codex_session_reply(id, arguments)
                     .await
+            }
+            "tldr" => {
+                let result = run_tldr_tool(arguments).await;
+                self.outgoing.send_response(id, result).await;
             }
             _ => {
                 let result = CallToolResult {

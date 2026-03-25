@@ -102,7 +102,7 @@ Clients should render events and, when present, surface approval requests (see n
 
 ## Tool responses
 
-The `codex` and `codex-reply` tools return standard MCP `CallToolResult` payloads. For compatibility with MCP clients that prefer `structuredContent`, Codex mirrors the content blocks inside `structuredContent` alongside the `threadId`.
+The `codex`, `codex-reply`, and `tldr` tools return standard MCP `CallToolResult` payloads. For compatibility with MCP clients that prefer `structuredContent`, Codex mirrors the content blocks inside `structuredContent`.
 
 Example:
 
@@ -115,6 +115,29 @@ Example:
   }
 }
 ```
+
+### `tldr` tool
+
+The `tldr` tool exposes native code-context analysis with daemon-first execution and local fallback. The current action surface is:
+
+- `tree`
+- `context`
+- `impact`
+- `semantic`
+- `ping`
+- `warm`
+- `snapshot`
+- `notify`
+
+Typical inputs:
+
+- `project` - absolute or relative project root
+- `language` - one of `rust|typescript|javascript|python|go|php|zig`
+- `symbol` - optional symbol name for `tree|context|impact`
+- `query` - semantic query string for `semantic`
+- `path` - dirty file path for `notify`
+
+For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
 
 ## Approvals (server -> client)
 

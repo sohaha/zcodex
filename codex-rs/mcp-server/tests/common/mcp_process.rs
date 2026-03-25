@@ -180,7 +180,7 @@ impl McpProcess {
                 "serverInfo": {
                     "name": "codex-mcp-server",
                     "title": "Codex",
-                    "version": "0.0.0",
+                    "version": build_version,
                     "user_agent": user_agent
                 },
                 "protocolVersion": ProtocolVersion::V_2025_03_26
@@ -203,20 +203,33 @@ impl McpProcess {
         &mut self,
         params: CodexToolCallParam,
     ) -> anyhow::Result<i64> {
-        let codex_tool_call_params = CallToolRequestParams {
-            meta: None,
-            name: "codex".into(),
-            arguments: Some(match serde_json::to_value(params)? {
-                serde_json::Value::Object(map) => map,
+        self.send_named_tool_call(
+            "codex",
+            match serde_json::to_value(params)? {
+                serde_json::Value::Object(map) => Some(map),
                 _ => unreachable!("params serialize to object"),
-            }),
-            task: None,
-        };
-        self.send_request(
-            "tools/call",
-            Some(serde_json::to_value(codex_tool_call_params)?),
+            },
         )
         .await
+    }
+
+    pub async fn send_named_tool_call(
+        &mut self,
+        name: &str,
+        arguments: Option<serde_json::Map<String, serde_json::Value>>,
+    ) -> anyhow::Result<i64> {
+        let tool_call_params = CallToolRequestParams {
+            meta: None,
+            name: name.to_string().into(),
+            arguments,
+            task: None,
+        };
+        self.send_request("tools/call", Some(serde_json::to_value(tool_call_params)?))
+            .await
+    }
+
+    pub async fn send_list_tools_request(&mut self) -> anyhow::Result<i64> {
+        self.send_request("tools/list", None).await
     }
 
     async fn send_request(

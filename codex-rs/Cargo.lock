@@ -2262,6 +2262,7 @@ dependencies = [
  "codex-arg0",
  "codex-core",
  "codex-features",
+ "codex-native-tldr",
  "codex-protocol",
  "codex-shell-command",
  "codex-utils-cli",

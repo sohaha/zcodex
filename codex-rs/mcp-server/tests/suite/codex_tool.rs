@@ -433,6 +433,102 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_is_listed() {
+    if let Err(err) = tldr_tool_is_listed().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_is_listed() -> anyhow::Result<()> {
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    let request_id = mcp_process.send_list_tools_request().await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    let tools = response.result["tools"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("tools/list should return an array"))?;
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool.get("name").and_then(serde_json::Value::as_str) == Some("tldr")),
+        "expected `tldr` tool in tools/list, got {tools:?}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_tree_falls_back_to_local_engine() {
+    if let Err(err) = tldr_tool_tree_falls_back_to_local_engine().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+    let project = TempDir::new()?;
+
+    let request_id = mcp_process
+        .send_named_tool_call(
+            "tldr",
+            Some(
+                serde_json::json!({
+                    "action": "tree",
+                    "project": project.path(),
+                    "language": "rust",
+                    "symbol": "main"
+                })
+                .as_object()
+                .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
+                .clone(),
+            ),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    assert_eq!(
+        response.result,
+        json!({
+            "content": [{
+                "text": "tree rust via local: Ast analysis is not implemented yet",
+                "type": "text"
+            }],
+            "isError": false,
+            "structuredContent": {
+                "action": "tree",
+                "fallbackStrategy": "structure + search",
+                "language": "rust",
+                "message": "daemon unavailable; used local engine",
+                "project": project.path().canonicalize()?,
+                "source": "local",
+                "summary": "Ast analysis is not implemented yet",
+                "supportLevel": "DataFlow",
+                "symbol": "main"
+            }
+        })
+    );
+
+    Ok(())
+}
+
 fn create_expected_patch_approval_elicitation_request_params(
     changes: HashMap<PathBuf, FileChange>,
     grant_root: Option<PathBuf>,
