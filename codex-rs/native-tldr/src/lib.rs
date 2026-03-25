@@ -13,6 +13,7 @@ use crate::daemon::DaemonConfig;
 use crate::lang_support::LanguageRegistry;
 use crate::mcp::TldrToolDescriptor;
 use crate::semantic::SemanticConfig;
+use crate::semantic::SemanticIndexer;
 use crate::session::SessionConfig;
 use anyhow::Result;
 use serde::Deserialize;
@@ -61,6 +62,10 @@ impl TldrEngine {
         TldrToolDescriptor::default()
     }
 
+    pub fn semantic_indexer(&self) -> SemanticIndexer {
+        SemanticIndexer::new(self.config.semantic.clone())
+    }
+
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {
         Ok(AnalysisResponse::placeholder(request.kind))
     }
@@ -104,6 +109,7 @@ mod tests {
     use crate::daemon::TldrDaemon;
     use crate::daemon::TldrDaemonCommand;
     use crate::lang_support::SupportedLanguage;
+    use crate::semantic::SemanticConfig;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
@@ -157,6 +163,17 @@ mod tests {
                 .expect("sample code should parse");
             assert_eq!(tree.root_node().has_error(), false);
         }
+    }
+
+    #[test]
+    fn semantic_indexer_matches_engine_config() {
+        let mut builder = TldrEngine::builder(PathBuf::from("/tmp/project"));
+        builder = builder.with_semantic(SemanticConfig::default().with_enabled(true));
+        let engine = builder.build();
+
+        let indexer = engine.semantic_indexer();
+        assert!(indexer.is_enabled());
+        assert!(indexer.describe().contains("enabled"));
     }
 
     #[tokio::test]

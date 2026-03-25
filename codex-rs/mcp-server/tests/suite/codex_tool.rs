@@ -9,18 +9,15 @@ use codex_mcp_server::ExecApprovalElicitRequestParams;
 use codex_mcp_server::ExecApprovalResponse;
 use codex_mcp_server::PatchApprovalElicitRequestParams;
 use codex_mcp_server::PatchApprovalResponse;
+use codex_native_tldr::api::AnalysisKind;
+use codex_native_tldr::api::AnalysisResponse;
+use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::TldrDaemonResponse;
+use codex_native_tldr::daemon::socket_path_for_project;
+use codex_native_tldr::session::SessionSnapshot;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::ReviewDecision;
 use codex_shell_command::parse_command;
-use pretty_assertions::assert_eq;
-use rmcp::model::JsonRpcResponse;
-use rmcp::model::JsonRpcVersion2_0;
-use rmcp::model::RequestId;
-use serde_json::json;
-use tempfile::TempDir;
-use tokio::time::timeout;
-use wiremock::MockServer;
-
 use core_test_support::skip_if_no_network;
 use mcp_test_support::McpProcess;
 use mcp_test_support::create_apply_patch_sse_response;
@@ -28,7 +25,19 @@ use mcp_test_support::create_final_assistant_message_sse_response;
 use mcp_test_support::create_mock_responses_server;
 use mcp_test_support::create_shell_command_sse_response;
 use mcp_test_support::format_with_current_shell;
-
+use pretty_assertions::assert_eq;
+use rmcp::model::JsonRpcResponse;
+use rmcp::model::JsonRpcVersion2_0;
+use rmcp::model::RequestId;
+use serde_json::json;
+use tempfile::TempDir;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::net::UnixListener;
+use tokio::task;
+use tokio::time::timeout;
+use wiremock::MockServer;
 // Allow ample time on slower CI or under load to avoid flakes.
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -526,6 +535,94 @@ async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
         })
     );
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_uses_daemon_when_available() {
+    if let Err(err) = tldr_tool_uses_daemon_when_available().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
+    let project = TempDir::new()?;
+    let canonical_project = project.path().canonicalize()?;
+    let socket_path = socket_path_for_project(&canonical_project);
+    if socket_path.exists() {
+        std::fs::remove_file(&socket_path)?;
+    }
+
+    let listener = UnixListener::bind(&socket_path)?;
+    let server_handle = task::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        let (reader, mut writer) = tokio::io::split(stream);
+        let mut lines = BufReader::new(reader).lines();
+        let line = lines
+            .next_line()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+        match command {
+            TldrDaemonCommand::Analyze { key: _, request } => {
+                assert_eq!(request.kind, AnalysisKind::Ast);
+            }
+            other => panic!("expected analyze, got {other:?}"),
+        }
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "daemon".to_string(),
+            analysis: Some(AnalysisResponse {
+                kind: AnalysisKind::Ast,
+                summary: "daemon summary".to_string(),
+            }),
+            snapshot: Some(SessionSnapshot {
+                cached_entries: 0,
+                dirty_files: 0,
+                last_query_at: None,
+            }),
+        };
+        writer
+            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    });
+
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    let request_id = mcp_process
+        .send_named_tool_call(
+            "tldr",
+            Some(serde_json::Map::from_iter([
+                ("action".to_string(), json!("tree")),
+                (
+                    "project".to_string(),
+                    json!(canonical_project.to_string_lossy()),
+                ),
+                ("language".to_string(), json!("rust")),
+                ("symbol".to_string(), json!("main")),
+            ])),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    let structured = response.result["structuredContent"]
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+    assert_eq!(structured["source"], "daemon");
+    assert_eq!(structured["summary"], "daemon summary");
+    assert_eq!(structured["message"], "daemon");
+    assert_eq!(structured["action"], "tree");
+
+    server_handle.await??;
     Ok(())
 }
 
