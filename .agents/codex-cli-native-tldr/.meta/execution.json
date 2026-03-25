@@ -164,6 +164,10 @@
       {
          "at": "2026-03-25T15:08:00Z",
          "note": "tightened stale/liveness closure: launcher now skips stale cleanup while lock is held, daemon status exposes health_reason/recovery_hint, and MCP ping success/missing-daemon tests are green"
+      },
+      {
+         "at": "2026-03-25T22:30:31Z",
+         "note": "completed selective sync from parcadei/llm-tldr for semantic embedding-unit metadata/text assembly; native-tldr, CLI, and MCP now return local semantic matches while keeping local lifecycle behavior"
       }
    ],
    "feature": "codex-cli-native-tldr"

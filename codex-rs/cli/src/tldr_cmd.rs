@@ -17,6 +17,7 @@ use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::load_tldr_config;
+use codex_native_tldr::semantic::SemanticSearchRequest;
 use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
@@ -257,21 +258,28 @@ fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
     let engine = TldrEngine::builder(project_root)
         .with_config(config)
         .build();
-    let enabled = engine.config().semantic.enabled;
+    let response = engine.semantic_search(SemanticSearchRequest {
+        language,
+        query: cmd.query,
+    })?;
     let payload = json!({
         "project": engine.config().project_root,
         "language": language.as_str(),
-        "query": cmd.query,
-        "enabled": enabled,
-        "message": "semantic search is not enabled in this build yet",
+        "query": response.query,
+        "enabled": response.enabled,
+        "indexedFiles": response.indexed_files,
+        "truncated": response.truncated,
+        "matches": response.matches,
+        "message": response.message,
     });
 
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("language: {}", language.as_str());
-        println!("semantic enabled: {enabled}");
-        println!("message: semantic search is not enabled in this build yet");
+        println!("semantic enabled: {}", response.enabled);
+        println!("message: {}", response.message);
+        println!("matches: {}", response.matches.len());
     }
 
     Ok(())

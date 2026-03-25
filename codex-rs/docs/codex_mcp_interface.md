@@ -127,6 +127,7 @@ The `tldr` tool exposes native code-context analysis with daemon-first execution
 - `ping`
 - `warm`
 - `snapshot`
+- `status`
 - `notify`
 
 Typical inputs:
@@ -138,6 +139,8 @@ Typical inputs:
 - `path` - dirty file path for `notify`
 
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
+For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `matches`, and per-match `path`/`line`/`snippet` metadata.
+For `status`, the structured output includes `snapshot` and `daemonStatus`.
 
 ## Approvals (server -> client)
 

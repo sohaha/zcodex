@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（已抽出 shared lifecycle manager，正在接线与验证）
+- **当前阶段**：Stage 3 / 执行中（semantic phase-1 已落地，继续补 daemon 生命周期边界）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -36,10 +36,15 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
-  - 主线程：推进 phase-1 稳定化，继续收口 stale/liveness/lock 恢复闭环与 MCP 最小测试缺口
-  - 下一步：整理本轮稳定性改动并拆分提交
+  - 新完成：selective sync 上游 llm-tldr `semantic.py` 的 EmbeddingUnit/五层文本组装思路，native-tldr/CLI/MCP 现可返回本地 semantic matches
+  - 主线程：推进 phase-1 稳定化，继续收口 stale/liveness/lock 恢复闭环与 daemon 外部进程边界
+  - 下一步：补 semantic / daemon 外部进程启动路径的进一步端到端覆盖
   - 持续：同步 `.agents` 文档与定向验证结果
 - **刚完成**：
+  - `semantic` phase-1 从 placeholder 升级为真实本地检索：native-tldr 现在会按语言扫描源码、构建 embedding-unit 风格 metadata，并返回 ranked matches
+  - CLI `codex tldr semantic` 与 MCP `tldr` `action=semantic` 已切到统一的 `engine.semantic_search(...)` 路径，默认关闭时给出显式启用提示
+  - MCP 新增“semantic enabled=true 返回 matches”端到端测试，原 disabled 路径断言同步更新
+  - `codex_mcp_interface.md` 已补 `status` action 与 `semantic` 输出字段说明，文档状态重新对齐代码
   - CLI stale 清理现在只会在“未持锁且确认 stale”时触发，避免在别的进程正持锁启动 daemon 时误删 metadata
   - daemon health/status 现在补充 `health_reason` / `recovery_hint`，CLI 与 MCP 都能直接暴露诊断信息
   - MCP 补齐 `ping` 成功 structuredContent 与 daemon missing 错误路径覆盖
@@ -77,7 +82,8 @@ dependencies: [prd, tech-review]
   - daemon launch 去重/等待 guard，避免重复拉起（提交 `7773701e7`）
   - 复跑 `cargo test -p codex-mcp-server` 全量，当前已全部通过
 - **紧随其后**：
-  - `semantic` / daemon 外部进程启动路径的进一步端到端覆盖
+  - `semantic` 结果面继续补 CLI 文本输出细节与 daemon 接线策略
+  - daemon 外部进程启动路径的进一步端到端覆盖
   - daemon 生命周期、跨平台 auto-start 与 MCP 协同策略补齐
   - CLI 侧对 stale socket/失效 daemon 的重拉起路径补更显式覆盖
 - **已知阻塞**：

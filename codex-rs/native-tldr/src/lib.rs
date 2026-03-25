@@ -18,6 +18,8 @@ use crate::lang_support::LanguageRegistry;
 use crate::mcp::TldrToolDescriptor;
 use crate::semantic::SemanticConfig;
 use crate::semantic::SemanticIndexer;
+use crate::semantic::SemanticSearchRequest;
+use crate::semantic::SemanticSearchResponse;
 use crate::session::SessionConfig;
 use anyhow::Result;
 use serde::Deserialize;
@@ -78,6 +80,14 @@ impl TldrEngine {
 
     pub fn semantic_indexer(&self) -> SemanticIndexer {
         SemanticIndexer::new(self.config.semantic.clone())
+    }
+
+    pub fn semantic_search(
+        &self,
+        request: SemanticSearchRequest,
+    ) -> Result<SemanticSearchResponse> {
+        self.semantic_indexer()
+            .search(&self.config.project_root, request)
     }
 
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {

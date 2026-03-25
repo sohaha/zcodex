@@ -1199,9 +1199,72 @@ async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
     assert_eq!(structured["source"], "local");
     assert_eq!(
         structured["message"],
-        "semantic search is not enabled in this build yet"
+        "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
     );
     assert_eq!(structured["enabled"], false);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_semantic_returns_matches_when_enabled() {
+    if let Err(err) = tldr_tool_semantic_returns_matches_when_enabled().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()> {
+    let project = TempDir::new()?;
+    std::fs::create_dir(project.path().join(".codex"))?;
+    std::fs::create_dir(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join(".codex/tldr.toml"),
+        "[semantic]\nenabled = true\n",
+    )?;
+    std::fs::write(
+        project.path().join("src/auth.rs"),
+        "fn verify_token() {\n    let auth_token = true;\n}\n",
+    )?;
+    let canonical_project = project.path().canonicalize()?;
+
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    let request_id = mcp_process
+        .send_named_tool_call(
+            "tldr",
+            Some(serde_json::Map::from_iter([
+                ("action".to_string(), json!("semantic")),
+                (
+                    "project".to_string(),
+                    json!(canonical_project.to_string_lossy()),
+                ),
+                ("language".to_string(), json!("rust")),
+                ("query".to_string(), json!("auth token")),
+            ])),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    let structured = response.result["structuredContent"]
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+    assert_eq!(structured["action"], "semantic");
+    assert_eq!(structured["enabled"], true);
+    assert_eq!(structured["indexedFiles"], 1);
+    assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+    assert_eq!(structured["matches"][0]["line"], 2);
+    assert_eq!(
+        structured["matches"][0]["snippet"],
+        "let auth_token = true;"
+    );
 
     Ok(())
 }

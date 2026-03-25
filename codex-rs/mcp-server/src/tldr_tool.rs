@@ -10,6 +10,7 @@ use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::load_tldr_config;
+use codex_native_tldr::semantic::SemanticSearchRequest;
 use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
@@ -248,20 +249,25 @@ async fn run_semantic_tool(
     let engine = TldrEngine::builder(project_root.clone())
         .with_config(config)
         .build();
+    let response = engine.semantic_search(SemanticSearchRequest { language, query })?;
     let structured_content = json!({
         "action": "semantic",
         "project": project_root,
         "language": language.as_str(),
-        "query": query,
-        "enabled": engine.config().semantic.enabled,
+        "query": response.query,
+        "enabled": response.enabled,
         "source": "local",
-        "message": "semantic search is not enabled in this build yet",
+        "indexedFiles": response.indexed_files,
+        "truncated": response.truncated,
+        "message": response.message,
+        "matches": response.matches,
     });
     Ok(success_result(
         format!(
-            "semantic {} enabled={}: semantic search is not enabled in this build yet",
+            "semantic {} enabled={}: {}",
             language.as_str(),
-            engine.config().semantic.enabled
+            response.enabled,
+            response.message
         ),
         structured_content,
     ))

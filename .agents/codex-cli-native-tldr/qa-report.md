@@ -7,10 +7,13 @@
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：主线程正在把 daemon 生命周期抽到 native-tldr 共享 manager，并切换 CLI 到共用实现
-- **最新代码提交**：`d246bb3e9` `feat: share native tldr lifecycle across mcp`
+- **当前执行方式**：主线程已把 semantic phase-1 落到 native-tldr/CLI/MCP，继续补 lifecycle 边界覆盖
+- **最新代码提交**：当前工作区含未提交变更（基于 `260c0b67c`）
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr`：通过（31 个测试；含 semantic embedding text/ranked matches 回归）
+- `cargo test -p codex-cli --bin codex`：通过（44 个测试）
+- `cargo test -p codex-mcp-server`：通过（28 个测试；含 semantic enabled 匹配返回）
 - `cargo test -p codex-native-tldr`：通过（22 个测试；含 daemon health reason/hint 与 stale cleanup 断言）
 - `cargo test -p codex-cli --bin codex`：通过（41 个测试；含 stale cleanup 在 lock-held 时不误删 metadata）
 - `cargo test -p codex-mcp-server`：通过（27 个测试；含 ping success/missing-daemon 回归）
@@ -74,8 +77,22 @@
 - `cargo test -p codex-cli --bin codex tests::tldr_help_renders -- --exact`：通过
 - `just fix -p codex-native-tldr-daemon`：通过
 - `just fix -p codex-cli`：通过
+- `cargo test -p codex-native-tldr`：通过（31 个测试；含 semantic embedding text / ranked matches / disabled gate）
+- `cargo test -p codex-cli --bin codex`：通过（45 个测试）
+- `cargo test -p codex-mcp-server`：通过（全量复跑成功；另定点验证两条 semantic 用例）
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_structured_content -- --exact --nocapture`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_returns_matches_when_enabled -- --exact --nocapture`：通过
+- `just fix -p codex-native-tldr`：通过（semantic phase-1 落地后复核）
+- `just fix -p codex-cli`：通过（CLI semantic 接线后复核）
+- `just fix -p codex-mcp-server`：通过（MCP semantic 接线后复核）
+- `cargo fmt --all`：通过（`just fmt` 先因 `tldr_cmd.rs` 语法错误暴露问题，修正后手动格式化完成）
+- `just argument-comment-lint`：失败（仓库仍缺少 `./tools/argument-comment-lint/run-prebuilt-linter.sh`）
 
 ### 当前验证结果
+- semantic disabled 路径现在返回显式启用提示，不再冒充“已启用但未实现”
+- semantic enabled 路径现在会扫描对应语言源码，返回 ranked matches、embedding-unit metadata 与 preview snippet
+- CLI 与 MCP 都走统一 `engine.semantic_search(...)`，避免两端结果结构继续漂移
+- MCP `tldr` 文档已补 `status` action 与 semantic 输出字段，代码/文档状态重新对齐
 - launcher stale 清理已改为“只在未持锁且确认 stale 时清理”，相关 CLI 生命周期测试已通过
 - daemon health/status 的 `health_reason` / `recovery_hint` 已在 native-tldr、CLI、MCP 路径验证通过
 - MCP 已补齐 `ping` 成功 structuredContent 和 daemon missing 错误路径
@@ -93,6 +110,8 @@
 - `just fix -p codex-cli`：通过
 
 ### 当前开发内快照
+- semantic phase-1 已不再是 placeholder：native-tldr 现会为函数/类型级别块生成最小 embedding text，并按 query 做本地打分
+- semantic 输出当前仍是 lightweight lexical ranking，而非真正 embedding / ANN 检索；这是有意保留的 phase-1 范围
 - stale/liveness/lock phase-1 闭环继续收紧：launcher 现在不会在 lock-held 场景误删 socket/pid
 - daemon status 已可向 CLI/MCP 给出更具体的恢复提示，便于排查“等待已有 daemon”与“需要清理 stale metadata”两类场景
 - 已新增 native-tldr 专用上游同步技能：`.codex/skills/sync-native-tldr-reference/`
@@ -107,8 +126,8 @@
 - `just fmt` 与本轮定向测试已完成；`just argument-comment-lint` 仍受仓库缺脚本阻塞
 
 ### 当前下一批验证
-- 本轮目标：抽 CLI/MCP 共用 lifecycle manager
-- 当前进行：继续补 shared config 的统一读取与 daemon status/dirty-reindex 闭环
+- 本轮目标：把 semantic phase-1 与 lifecycle phase-1 同步收口到可稳定回归的状态
+- 当前进行：继续补 daemon 外部进程启动路径与 semantic/daemon 协同的端到端覆盖
 - 后续：把 daemon 生命周期状态判断/自动启动统一到单一抽象，并继续把进程级锁从“降低概率”推进到“更强唯一性保证”
 
 ### 当前遗留验证
