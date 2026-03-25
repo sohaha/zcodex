@@ -45,6 +45,7 @@ dependencies: [prd, tech-review]
   - `SemanticIndexer` placeholder、配置链式 API、单测
   - MCP `tldr semantic` structuredContent 定向测试
   - auto-start 新增失败回退/冷却/启动状态追踪 guard（提交 `9c231e69d`）
+  - daemon launch 去重/等待 guard，避免重复拉起（提交 `7773701e7`）
   - 复跑 `cargo test -p codex-mcp-server` 全量，确认当前唯一剩余失败仍是历史用例 `test_shell_command_approval_triggers_elicitation`
 - **紧随其后**：
   - `semantic` / daemon 外部进程启动路径的进一步端到端覆盖

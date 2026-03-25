@@ -8,9 +8,10 @@
 ## 中间验证进度（实时）
 
 - **当前执行方式**：本轮并行已整合完成（mcp-server 全量遗留、daemon 生命周期、主线程复核）
-- **最新代码提交**：`9c231e69d` `fix: harden native tldr daemon startup guards`
+- **最新代码提交**：`7773701e7` `fix: avoid duplicate native tldr daemon launches`
 
 ### 已完成验证
+- `just fix -p codex-cli`：通过（launch guard 变更后复核）
 - `cargo test -p codex-mcp-server`：已复跑，当前仅剩历史失败 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`
 - `cargo test -p codex-cli --bin codex tests::tldr_structure_parses_language_and_symbol -- --exact`：通过（auto-start 变更后复核）
 - `cargo test -p codex-cli --bin codex tests::tldr_daemon_ping_parses -- --exact`：通过（auto-start 变更后复核）
