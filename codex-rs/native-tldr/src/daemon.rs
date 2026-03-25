@@ -20,6 +20,8 @@ use tokio::sync::Mutex;
 use tokio::net::TcpListener;
 #[cfg(unix)]
 use tokio::net::UnixListener;
+#[cfg(unix)]
+use tokio::net::UnixStream;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonConfig {
@@ -310,4 +312,149 @@ pub fn socket_path_for_project(project_root: &Path) -> PathBuf {
         md5_compute(project_root.to_string_lossy().as_bytes())
     );
     std::env::temp_dir().join(format!("codex-native-tldr-{}.sock", &hash[..8]))
+}
+
+#[cfg(unix)]
+pub async fn query_daemon(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+) -> Result<Option<TldrDaemonResponse>> {
+    let socket_path = socket_path_for_project(project_root);
+    if !socket_path.exists() {
+        return Ok(None);
+    }
+
+    let stream = match UnixStream::connect(&socket_path).await {
+        Ok(stream) => stream,
+        Err(err) if daemon_unavailable(&err) => return Ok(None),
+        Err(err) => {
+            return Err(err).with_context(|| format!("connect socket {}", socket_path.display()));
+        }
+    };
+
+    let (reader, mut writer) = tokio::io::split(stream);
+    writer
+        .write_all(format!("{}\n", serde_json::to_string(command)?).as_bytes())
+        .await
+        .with_context(|| format!("write daemon command to {}", socket_path.display()))?;
+
+    let mut lines = BufReader::new(reader).lines();
+    let Some(line) = lines
+        .next_line()
+        .await
+        .with_context(|| format!("read daemon response from {}", socket_path.display()))?
+    else {
+        return Ok(None);
+    };
+
+    let response = serde_json::from_str(&line)
+        .with_context(|| format!("decode daemon response from {}", socket_path.display()))?;
+    Ok(Some(response))
+}
+
+#[cfg(unix)]
+fn daemon_unavailable(err: &std::io::Error) -> bool {
+    matches!(
+        err.kind(),
+        std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::ConnectionReset
+            | std::io::ErrorKind::BrokenPipe
+    )
+}
+
+#[cfg(not(unix))]
+pub async fn query_daemon(
+    _project_root: &Path,
+    _command: &TldrDaemonCommand,
+) -> Result<Option<TldrDaemonResponse>> {
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TldrDaemonCommand;
+    use super::TldrDaemonResponse;
+    use super::query_daemon;
+    use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
+    use tokio::io::AsyncBufReadExt;
+    use tokio::io::AsyncWriteExt;
+    use tokio::io::BufReader;
+
+    #[cfg(unix)]
+    use super::socket_path_for_project;
+    #[cfg(unix)]
+    use tokio::net::UnixListener;
+
+    #[tokio::test]
+    async fn query_daemon_returns_none_when_socket_is_missing() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("missing-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect("missing socket should not error");
+
+        assert_eq!(response, None);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_round_trips_response_over_socket() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("client should connect");
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await
+                .expect("request should be readable")
+                .expect("request line should exist");
+            let command: TldrDaemonCommand =
+                serde_json::from_str(&line).expect("request should decode");
+            assert_eq!(command, TldrDaemonCommand::Ping);
+
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "pong".to_string(),
+                analysis: None,
+                snapshot: None,
+            };
+            writer
+                .write_all(
+                    format!("{}\n", serde_json::to_string(&response).expect("encode")).as_bytes(),
+                )
+                .await
+                .expect("response should write");
+        });
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect("daemon query should succeed")
+            .expect("daemon should respond");
+        server.await.expect("server should complete");
+
+        assert_eq!(
+            response,
+            TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "pong".to_string(),
+                analysis: None,
+                snapshot: None,
+            }
+        );
+
+        std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+    }
 }

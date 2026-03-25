@@ -1834,6 +1834,25 @@ mod tests {
     }
 
     #[test]
+    fn tldr_daemon_ping_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "tldr", "daemon", "ping"])
+            .expect("parse should succeed");
+
+        let Some(Subcommand::Tldr(tldr_cli)) = cli.subcommand else {
+            panic!("expected tldr subcommand");
+        };
+
+        let tldr_cmd::TldrSubcommand::Daemon(args) = tldr_cli.subcommand else {
+            panic!("expected daemon subcommand");
+        };
+
+        assert!(matches!(
+            args.subcommand,
+            tldr_cmd::TldrDaemonSubcommand::Ping
+        ));
+    }
+
+    #[test]
     fn feature_toggles_known_features_generate_overrides() {
         let toggles = FeatureToggles {
             enable: vec!["web_search_request".to_string()],
