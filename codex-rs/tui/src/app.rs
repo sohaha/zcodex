@@ -488,11 +488,7 @@ async fn emit_custom_prompt_deprecation_notice(app_event_tx: &AppEventSender, co
         return;
     }
 
-    let prompt_label = if prompt_count == 1 {
-        "个自定义提示词"
-    } else {
-        "个自定义提示词"
-    };
+    let prompt_label = "个自定义提示词";
     let details = format!(
         "在 `$CODEX_HOME/prompts` 中检测到 {prompt_count} {prompt_label}。可使用 `$skill-creator` 技能将每个自定义提示词转换为技能。"
     );
@@ -1033,6 +1029,7 @@ impl App {
             .await?;
         self.apply_runtime_policy_overrides(&mut config);
         self.config = config;
+        self.chat_widget.sync_plugin_mentions_config(&self.config);
         Ok(())
     }
 
@@ -3166,6 +3163,7 @@ impl App {
                     if let Err(err) = self.refresh_in_memory_config_from_disk().await {
                         tracing::warn!(error = %err, "failed to refresh config after plugin install");
                     }
+                    self.chat_widget.refresh_plugin_mentions();
                     self.chat_widget.submit_op(Op::ReloadUserConfig);
                 }
                 let should_refresh_plugin_detail = self.chat_widget.on_plugin_install_loaded(
@@ -3619,6 +3617,7 @@ impl App {
                             "failed to refresh config after plugin uninstall"
                         );
                     }
+                    self.chat_widget.refresh_plugin_mentions();
                     self.chat_widget.submit_op(Op::ReloadUserConfig);
                 }
                 self.chat_widget.on_plugin_uninstall_loaded(

@@ -2,7 +2,4 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: before
 ---
-  应 用
-  正 在 加 载 已 安 装 和 可 用 的 应 用 ...
-
-› 1. 正 在 加 载 应 用 ...  完 整 列 表 就 绪 后 会 自 动 更 新 。
+应用正在加载已安装和可用的应用...›正在加载应用...完整列表就绪后会自动更新。

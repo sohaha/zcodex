@@ -2610,7 +2610,7 @@ impl ChatComposer {
         if !self.is_task_running || cmd.available_during_task() {
             return false;
         }
-        let message = format!("任务进行中时无法使用 `/{}`。", cmd.command());
+        let message = format!("'/{}' is 任务进行中时无法使用.", cmd.command());
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
             history_cell::new_error_event(message),
         )));
@@ -3580,41 +3580,8 @@ impl ChatComposer {
 
     fn mention_items(&self) -> Vec<MentionItem> {
         let mut mentions = Vec::new();
-        let plugin_namespaces: HashSet<String> =
-            self.plugins.as_ref().map_or_else(HashSet::new, |plugins| {
-                plugins
-                    .iter()
-                    .filter_map(|plugin| {
-                        let (plugin_name, _) = plugin
-                            .config_name
-                            .split_once('@')
-                            .unwrap_or((plugin.config_name.as_str(), ""));
-                        let plugin_name = plugin_name.trim();
-                        if plugin_name.is_empty() {
-                            None
-                        } else {
-                            Some(plugin_name.to_ascii_lowercase())
-                        }
-                    })
-                    .collect()
-            });
-        let plugin_display_names: HashSet<String> =
-            self.plugins.as_ref().map_or_else(HashSet::new, |plugins| {
-                plugins
-                    .iter()
-                    .map(|plugin| plugin.display_name.to_ascii_lowercase())
-                    .collect()
-            });
-
         if let Some(skills) = self.skills.as_ref() {
             for skill in skills {
-                let is_plugin_namespaced_skill =
-                    skill.name.split_once(':').is_some_and(|(namespace, _)| {
-                        plugin_namespaces.contains(&namespace.to_ascii_lowercase())
-                    });
-                if is_plugin_namespaced_skill {
-                    continue;
-                }
                 let display_name = skill_display_name(skill).to_string();
                 let description = skill_description(skill);
                 let skill_name = skill.name.clone();
@@ -3643,29 +3610,29 @@ impl ChatComposer {
                     .unwrap_or((plugin.config_name.as_str(), ""));
                 let mut capability_labels = Vec::new();
                 if plugin.has_skills {
-                    capability_labels.push("技能".to_string());
+                    capability_labels.push("skills".to_string());
                 }
                 if !plugin.mcp_server_names.is_empty() {
                     let mcp_server_count = plugin.mcp_server_names.len();
                     capability_labels.push(if mcp_server_count == 1 {
-                        "1 个 MCP 服务".to_string()
+                        "1 MCP server".to_string()
                     } else {
-                        format!("{mcp_server_count} 个 MCP 服务")
+                        format!("{mcp_server_count} MCP servers")
                     });
                 }
                 if !plugin.app_connector_ids.is_empty() {
                     let app_count = plugin.app_connector_ids.len();
                     capability_labels.push(if app_count == 1 {
-                        "1 个应用".to_string()
+                        "1 app".to_string()
                     } else {
-                        format!("{app_count} 个应用")
+                        format!("{app_count} apps")
                     });
                 }
                 let description = plugin.description.clone().or_else(|| {
                     Some(if capability_labels.is_empty() {
-                        "插件".to_string()
+                        "Plugin".to_string()
                     } else {
-                        format!("插件 · {}", capability_labels.join(" · "))
+                        format!("Plugin · {}", capability_labels.join(" · "))
                     })
                 });
                 let mut search_terms = vec![plugin_name.to_string(), plugin.config_name.clone()];
@@ -3694,30 +3661,18 @@ impl ChatComposer {
                 if !connector.is_accessible || !connector.is_enabled {
                     continue;
                 }
-                let plugin_backed_connector = connector
-                    .plugin_display_names
-                    .iter()
-                    .any(|name| plugin_display_names.contains(&name.to_ascii_lowercase()));
-                if plugin_backed_connector {
-                    continue;
-                }
                 let display_name = connectors::connector_display_label(connector);
                 let description = Some(Self::connector_brief_description(connector));
                 let slug = codex_core::connectors::connector_mention_slug(connector);
                 let search_terms = vec![display_name.clone(), connector.id.clone(), slug.clone()];
                 let connector_id = connector.id.as_str();
-                let category_tag = if connector.plugin_display_names.is_empty() {
-                    "[应用]".to_string()
-                } else {
-                    "[插件]".to_string()
-                };
                 mentions.push(MentionItem {
                     display_name: display_name.clone(),
                     description,
                     insert_text: format!("${slug}"),
                     search_terms,
                     path: Some(format!("app://{connector_id}")),
-                    category_tag: Some(category_tag),
+                    category_tag: Some("[应用]".to_string()),
                     sort_rank: 1,
                 });
             }
@@ -3783,7 +3738,7 @@ impl ChatComposer {
 
     #[cfg(not(target_os = "linux"))]
     fn schedule_space_hold_timer(flag: Arc<AtomicBool>, frame: Option<FrameRequester>) {
-        const HOLD_DELAY_MILLIS: u64 = 500;
+        const HOLD_DELAY_MILLIS: u64 = 1_000;
         if let Ok(handle) = Handle::try_current() {
             let flag_clone = flag;
             let frame_clone = frame;
@@ -3871,7 +3826,7 @@ impl ChatComposer {
         }
     }
 
-    /// Called when the 500ms space hold timeout elapses.
+    /// Called when the 1s space hold timeout elapses.
     ///
     /// On terminals without key-release reporting, this only transitions into voice capture if we
     /// observed repeated Space events while pending; otherwise the keypress is treated as a typed
@@ -5419,14 +5374,14 @@ mod tests {
     }
 
     #[test]
-    fn mention_items_hide_plugin_owned_skill_and_app_duplicates() {
+    fn mention_items_show_plugin_owned_skill_and_app_duplicates() {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let sender = AppEventSender::new(tx);
         let mut composer = ChatComposer::new(
             true,
             sender,
             false,
-            "Ask Codex to do anything".to_string(),
+            "让 Codex 处理任何事情".to_string(),
             false,
         );
         composer.set_connectors_enabled(true);
@@ -5482,13 +5437,20 @@ mod tests {
         }));
 
         let mentions = composer.mention_items();
-        assert_eq!(mentions.len(), 1);
-        assert_eq!(mentions[0].display_name, "Google Calendar".to_string());
-        assert_eq!(mentions[0].category_tag, Some("[插件]".to_string()));
+        assert_eq!(mentions.len(), 3);
+        assert_eq!(mentions[0].category_tag, Some("[技能]".to_string()));
         assert_eq!(
             mentions[0].path,
+            Some("/tmp/repo/google-calendar/SKILL.md".to_string())
+        );
+        assert_eq!(mentions[0].display_name, "Google Calendar".to_string());
+        assert_eq!(mentions[1].category_tag, Some("[插件]".to_string()));
+        assert_eq!(
+            mentions[1].path,
             Some("plugin://google-calendar@debug".to_string())
         );
+        assert_eq!(mentions[2].category_tag, Some("[应用]".to_string()));
+        assert_eq!(mentions[2].path, Some("app://google_calendar".to_string()));
     }
 
     #[test]
@@ -5498,7 +5460,10 @@ mod tests {
             composer.set_plugin_mentions(Some(vec![PluginCapabilitySummary {
                 config_name: "sample@test".to_string(),
                 display_name: "Sample Plugin".to_string(),
-                description: Some("包含 Figma MCP 服务和常用工作流技能的插件".to_string()),
+                description: Some(
+                    "Plugin that includes the Figma MCP server and Skills for common workflows"
+                        .to_string(),
+                ),
                 has_skills: true,
                 mcp_server_names: vec!["sample".to_string()],
                 app_connector_ids: vec![codex_core::plugins::AppConnectorId(
@@ -8920,7 +8885,7 @@ mod tests {
                     .map(|line| line.to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
-                assert!(message.contains("缺少必填参数"));
+                assert!(message.to_lowercase().contains("缺少必填参数"));
                 assert!(message.contains("BRANCH"));
                 found_error = true;
                 break;

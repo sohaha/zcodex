@@ -89,7 +89,7 @@ mod audio_device {
         kind: RealtimeAudioDeviceKind,
     ) -> Result<Vec<String>, String> {
         Err(format!(
-            "加载 realtime {} 设备失败：此构建不支持语音输入",
+            "Failed to load realtime {} devices: voice input is unavailable in this build",
             kind.noun()
         ))
     }
@@ -178,15 +178,15 @@ mod voice {
 
     impl VoiceCapture {
         pub fn start() -> Result<Self, String> {
-            Err("此构建不支持语音输入".to_string())
+            Err("voice input is unavailable in this build".to_string())
         }
 
         pub fn start_realtime(_config: &Config, _tx: AppEventSender) -> Result<Self, String> {
-            Err("此构建不支持语音输入".to_string())
+            Err("voice input is unavailable in this build".to_string())
         }
 
         pub fn stop(self) -> Result<RecordedAudio, String> {
-            Err("此构建不支持语音输入".to_string())
+            Err("voice input is unavailable in this build".to_string())
         }
 
         pub fn data_arc(&self) -> Arc<Mutex<Vec<i16>>> {
@@ -222,11 +222,11 @@ mod voice {
 
     impl RealtimeAudioPlayer {
         pub(crate) fn start(_config: &Config) -> Result<Self, String> {
-            Err("此构建不支持语音输出".to_string())
+            Err("voice output is unavailable in this build".to_string())
         }
 
         pub(crate) fn enqueue_frame(&self, _frame: &RealtimeAudioFrame) -> Result<(), String> {
-            Err("此构建不支持语音输出".to_string())
+            Err("voice output is unavailable in this build".to_string())
         }
 
         pub(crate) fn clear(&self) {}
@@ -240,7 +240,7 @@ mod voice {
     ) {
         tx.send(AppEvent::TranscriptionFailed {
             id,
-            error: "此构建不支持语音输入".to_string(),
+            error: "voice input is unavailable in this build".to_string(),
         });
     }
 }
@@ -320,7 +320,7 @@ pub fn normalize_remote_addr(addr: &str) -> color_eyre::Result<String> {
         Ok(parsed) => parsed,
         Err(_) => {
             color_eyre::eyre::bail!(
-                "远程地址 `{addr}` 无效；应为 `ws://host:port` 或 `wss://host:port`"
+                "invalid remote address `{addr}`; expected `ws://host:port` or `wss://host:port`"
             );
         }
     };
@@ -334,7 +334,9 @@ pub fn normalize_remote_addr(addr: &str) -> color_eyre::Result<String> {
         return Ok(parsed.to_string());
     }
 
-    color_eyre::eyre::bail!("远程地址 `{addr}` 无效；应为 `ws://host:port` 或 `wss://host:port`");
+    color_eyre::eyre::bail!(
+        "invalid remote address `{addr}`; expected `ws://host:port` or `wss://host:port`"
+    );
 }
 
 async fn connect_remote_app_server(websocket_url: String) -> color_eyre::Result<AppServerClient> {
@@ -465,7 +467,7 @@ fn session_target_from_app_server_thread(
             warn!(
                 thread_id = thread.id,
                 %err,
-                "TUI 会话查找期间忽略了 thread id 无效的 app-server 线程"
+                "Ignoring app-server thread with invalid thread id during TUI session lookup"
             );
             None
         }
@@ -627,7 +629,7 @@ pub async fn run_main(
         Ok(v) => v,
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("解析 -c 覆盖选项失败：{e}");
+            eprintln!("Error parsing -c overrides: {e}");
             std::process::exit(1);
         }
     };
@@ -637,7 +639,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("查找 Codex 目录失败：{err}");
+            eprintln!("Error finding codex home: {err}");
             std::process::exit(1);
         }
     };
@@ -664,11 +666,11 @@ pub async fn run_main(
                 .map(ConfigLoadError::config_error);
             if let Some(config_error) = config_error {
                 eprintln!(
-                    "加载 config.toml 失败：\n{}",
+                    "Error loading config.toml:\n{}",
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("加载 config.toml 失败：{err}");
+                eprintln!("Error loading config.toml: {err}");
             }
             std::process::exit(1);
         }
@@ -756,7 +758,7 @@ pub async fn run_main(
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
-                "加载规则失败：\n{}",
+                "Error loading rules:\n{}",
                 format_exec_policy_error_with_source(&err)
             );
             std::process::exit(1);
@@ -770,7 +772,7 @@ pub async fn run_main(
     {
         #[allow(clippy::print_stderr)]
         {
-            eprintln!("添加目录失败：{warning}");
+            eprintln!("Error adding directories: {warning}");
             std::process::exit(1);
         }
     }
@@ -937,6 +939,7 @@ async fn run_ratatui_app(
     terminal.clear()?;
 
     let mut tui = Tui::new(terminal);
+    let mut terminal_restore_guard = TerminalRestoreGuard::new();
 
     #[cfg(not(debug_assertions))]
     {
@@ -947,7 +950,7 @@ async fn run_ratatui_app(
             match update_prompt::run_update_prompt_if_needed(&mut tui, &initial_config).await? {
                 UpdatePromptOutcome::Continue => {}
                 UpdatePromptOutcome::RunUpdate(action) => {
-                    crate::tui::restore()?;
+                    terminal_restore_guard.restore()?;
                     return Ok(AppExitInfo {
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
                         thread_id: None,
@@ -1015,7 +1018,7 @@ async fn run_ratatui_app(
         )
         .await?;
         if onboarding_result.should_exit {
-            restore();
+            terminal_restore_guard.restore_silently();
             session_log::log_session_end();
             let _ = tui.terminal.clear();
             return Ok(AppExitInfo {
@@ -1061,7 +1064,7 @@ async fn run_ratatui_app(
 
     let mut missing_session_exit = |id_str: &str, action: &str| {
         error!("未找到会话路径：{id_str}");
-        restore();
+        terminal_restore_guard.restore_silently();
         session_log::log_session_end();
         let _ = tui.terminal.clear();
         Ok(AppExitInfo {
@@ -1070,7 +1073,7 @@ async fn run_ratatui_app(
             thread_name: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
-                "未找到 ID 为 {id_str} 的保存会话。运行 `codex {action}`（不带 ID）以选择现有会话。"
+                "未找到 ID 为 {id_str} 的已保存会话。运行 `codex {action}` 且不要传入 ID，可从现有会话中选择。"
             )),
         })
     };
@@ -1136,7 +1139,7 @@ async fn run_ratatui_app(
             .await?
             {
                 resume_picker::SessionSelection::Exit => {
-                    restore();
+                    terminal_restore_guard.restore_silently();
                     session_log::log_session_end();
                     return Ok(AppExitInfo {
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
@@ -1188,7 +1191,7 @@ async fn run_ratatui_app(
         .await?
         {
             resume_picker::SessionSelection::Exit => {
-                restore();
+                terminal_restore_guard.restore_silently();
                 session_log::log_session_end();
                 return Ok(AppExitInfo {
                     token_usage: codex_protocol::protocol::TokenUsage::default(),
@@ -1234,7 +1237,7 @@ async fn run_ratatui_app(
                 {
                     ResolveCwdOutcome::Continue(cwd) => cwd,
                     ResolveCwdOutcome::Exit => {
-                        restore();
+                        terminal_restore_guard.restore_silently();
                         session_log::log_session_end();
                         return Ok(AppExitInfo {
                             token_usage: codex_protocol::protocol::TokenUsage::default(),
@@ -1302,7 +1305,7 @@ async fn run_ratatui_app(
     {
         Ok(app_server) => app_server,
         Err(err) => {
-            restore();
+            terminal_restore_guard.restore_silently();
             session_log::log_session_end();
             return Err(err);
         }
@@ -1325,7 +1328,7 @@ async fn run_ratatui_app(
     )
     .await;
 
-    restore();
+    terminal_restore_guard.restore_silently();
     // Mark the end of the recorded session.
     session_log::log_session_end();
     // ignore error when collecting usage – report underlying error instead
@@ -1467,6 +1470,38 @@ fn restore() {
     }
 }
 
+struct TerminalRestoreGuard {
+    active: bool,
+}
+
+impl TerminalRestoreGuard {
+    fn new() -> Self {
+        Self { active: true }
+    }
+
+    #[cfg_attr(debug_assertions, allow(dead_code))]
+    fn restore(&mut self) -> color_eyre::Result<()> {
+        if self.active {
+            crate::tui::restore()?;
+            self.active = false;
+        }
+        Ok(())
+    }
+
+    fn restore_silently(&mut self) {
+        if self.active {
+            restore();
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for TerminalRestoreGuard {
+    fn drop(&mut self) {
+        self.restore_silently();
+    }
+}
+
 /// Determine whether to use the terminal's alternate screen buffer.
 ///
 /// The alternate screen buffer provides a cleaner fullscreen experience without polluting
@@ -1550,7 +1585,7 @@ async fn load_config_or_exit_with_fallback_cwd(
     {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("加载配置失败：{err}");
+            eprintln!("Error loading configuration: {err}");
             std::process::exit(1);
         }
     }
@@ -1663,7 +1698,7 @@ mod tests {
                 .expect_err("websocket URLs without an explicit port should be rejected");
             assert!(
                 err.to_string()
-                    .contains("应为 `ws://host:port` 或 `wss://host:port`")
+                    .contains("expected `ws://host:port` or `wss://host:port`")
             );
         }
     }
@@ -1674,7 +1709,7 @@ mod tests {
             .expect_err("https URLs should be rejected");
         assert!(
             err.to_string()
-                .contains("应为 `ws://host:port` 或 `wss://host:port`")
+                .contains("expected `ws://host:port` or `wss://host:port`")
         );
     }
 
@@ -1684,7 +1719,7 @@ mod tests {
             normalize_remote_addr("127.0.0.1:4500").expect_err("host:port should be rejected");
         assert!(
             err.to_string()
-                .contains("应为 `ws://host:port` 或 `wss://host:port`")
+                .contains("expected `ws://host:port` or `wss://host:port`")
         );
     }
 
