@@ -290,7 +290,7 @@ impl SemanticIndexer {
             }
             builder
                 .add_line(None, trimmed)
-                .with_context(|| format!("add tldr ignore pattern {}", trimmed))?;
+                .with_context(|| format!("add tldr ignore pattern {trimmed}"))?;
         }
         builder
             .build()
