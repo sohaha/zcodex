@@ -176,6 +176,10 @@
       {
          "at": "2026-03-26T00:20:00Z",
          "note": "landed SemanticIndex cache reuse in native-tldr, shared TldrEngine reuse in daemon connection handling, and semantic embeddingUsed/embedding_score output coverage across CLI and MCP"
+      },
+      {
+         "at": "2026-03-25T23:45:46Z",
+         "note": "completed semantic index caching round: native-tldr now has a concrete SemanticIndex abstraction, daemon reuses shared engine/cache across connections, and CLI/MCP semantic outputs expose embeddingUsed/embedding_score with green tests"
       }
    ],
    "feature": "codex-cli-native-tldr"

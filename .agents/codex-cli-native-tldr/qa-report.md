@@ -3,14 +3,23 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：阶段 3 进行中（warm/reindex 与跨进程 launcher 竞争闭环已补齐）
+- **状态**：阶段 3 进行中（warm/reindex、跨进程 launcher 竞争、以及 semantic 索引缓存闭环已补齐）
 
 ## 中间验证进度（实时）
 
 - **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、以及跨进程 launcher 竞争测试一起落地
-- **最新代码提交**：`acb9243b7` `feat: add native tldr semantic phase 1 search`
+- **最新代码提交**：`29822e3ed` `feat: cache native tldr semantic indexes`
 
 ### 已完成验证
+- `codex rtk cargo test -p codex-native-tldr`：通过（35 个测试；新增 engine 级 semantic cache/reindex 回归）
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（47 个测试；CLI semantic 输出接线保持通过）
+- `codex rtk cargo test -p codex-mcp-server`：通过（28 个测试；MCP semantic `embeddingUsed` / `embedding_score` 断言通过）
+- `just fmt`：通过
+- `just fix -p codex-native-tldr`：通过
+- `just fix -p codex-cli`：通过
+- `just fix -p codex-mcp-server`：通过
+- `just argument-comment-lint`：失败（当前仓库 `Justfile` 无此 recipe）
+
 - `cargo test -p codex-native-tldr`：通过（35 个测试；含 `TldrEngine` 复用 `SemanticIndex` 缓存直到 reindex 的回归）
 - `cargo test -p codex-cli --bin codex`：通过（47 个测试）
 - `cargo test -p codex-mcp-server`：通过（28 个测试；含 semantic `embeddingUsed` / `embedding_score` 断言）
@@ -100,6 +109,9 @@
 - daemon 每个连接现复用共享 `TldrEngine`，不会再因为新建默认 engine 而丢失配置或缓存状态
 - CLI JSON / 文本输出与 MCP structuredContent 均已显式暴露 `embeddingUsed`，MCP e2e 还断言了 `embedding_score`
 - semantic disabled 路径现在返回显式启用提示，不再冒充“已启用但未实现”
+- `SemanticIndex` 现已成为明确的 build/query 边界；同一 `TldrEngine` 内首次查询后会缓存对应语言索引，`semantic_reindex()` 会重建并替换缓存
+- daemon 连接处理现复用共享 `TldrEngine`，不再在每个 socket 连接里重建默认 engine 丢失项目配置/缓存
+- CLI 与 MCP semantic 输出现在显式包含 `embeddingUsed`，MCP e2e 还校验了 `matches[*].embedding_score`
 - semantic enabled 路径现在会扫描对应语言源码，返回 ranked matches、embedding-unit metadata 与 preview snippet
 - CLI 与 MCP 都走统一 `engine.semantic_search(...)`，避免两端结果结构继续漂移
 - MCP `tldr` 文档已补 `status` action 与 semantic 输出字段，代码/文档状态重新对齐
