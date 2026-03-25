@@ -20,6 +20,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::process::Command;
@@ -185,17 +186,15 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         },
     )
     .await?;
-    if daemon_response.is_none() {
-        if ensure_daemon_running(&project_root).await? {
-            daemon_response = query_daemon(
-                &project_root,
-                &TldrDaemonCommand::Analyze {
-                    key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
-                    request: request.clone(),
-                },
-            )
-            .await?;
-        }
+    if daemon_response.is_none() && ensure_daemon_running(&project_root).await? {
+        daemon_response = query_daemon(
+            &project_root,
+            &TldrDaemonCommand::Analyze {
+                key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
+                request: request.clone(),
+            },
+        )
+        .await?;
     }
     let (source, daemon_message, summary, engine_project_root) =
         if let Some(response) = daemon_response {
@@ -370,23 +369,18 @@ static LAUNCH_FAILURES: Lazy<Mutex<HashMap<String, Instant>>> =
 static LAUNCHING_PROJECTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
 fn should_backoff(key: &str) -> bool {
-    LAUNCH_FAILURES
-        .lock()
-        .unwrap()
+    lock_map(&LAUNCH_FAILURES)
         .get(key)
         .map(|instant: &Instant| instant.elapsed() < DAEMON_LAUNCH_BACKOFF)
         .unwrap_or(false)
 }
 
 fn clear_backoff(key: &str) {
-    LAUNCH_FAILURES.lock().unwrap().remove(key);
+    lock_map(&LAUNCH_FAILURES).remove(key);
 }
 
 fn record_launch_failure(key: &str) {
-    LAUNCH_FAILURES
-        .lock()
-        .unwrap()
-        .insert(key.to_string(), Instant::now());
+    lock_map(&LAUNCH_FAILURES).insert(key.to_string(), Instant::now());
 }
 
 struct LaunchTracker {
@@ -395,14 +389,21 @@ struct LaunchTracker {
 
 impl LaunchTracker {
     fn new(key: String) -> Self {
-        LAUNCHING_PROJECTS.lock().unwrap().insert(key.clone());
+        lock_map(&LAUNCHING_PROJECTS).insert(key.clone());
         Self { key }
     }
 }
 
 impl Drop for LaunchTracker {
     fn drop(&mut self) {
-        LAUNCHING_PROJECTS.lock().unwrap().remove(&self.key);
+        lock_map(&LAUNCHING_PROJECTS).remove(&self.key);
+    }
+}
+
+fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
     }
 }
 
