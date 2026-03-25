@@ -149,6 +149,7 @@ mod tests {
     use crate::daemon::TldrDaemonCommand;
     use crate::lang_support::SupportedLanguage;
     use crate::semantic::SemanticConfig;
+    use crate::semantic::SemanticEmbeddingConfig;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
 
@@ -265,6 +266,9 @@ mod tests {
             feature_gate: "semantic-embed".to_string(),
             model: "minilm".to_string(),
             auto_reindex_threshold: 1,
+            embedding_enabled: true,
+            embedding: SemanticEmbeddingConfig::default(),
+            ignore: Vec::new(),
         };
         config.session = crate::session::SessionConfig {
             idle_timeout: std::time::Duration::from_secs(60),

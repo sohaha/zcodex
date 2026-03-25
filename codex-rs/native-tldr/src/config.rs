@@ -25,6 +25,14 @@ pub struct TldrDaemonConfigFile {
 pub struct TldrSemanticConfigFile {
     pub enabled: Option<bool>,
     pub auto_reindex_threshold: Option<usize>,
+    pub ignore: Option<Vec<String>>,
+    pub embedding: Option<TldrSemanticEmbeddingConfigFile>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct TldrSemanticEmbeddingConfigFile {
+    pub enabled: Option<bool>,
+    pub dimensions: Option<usize>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -74,6 +82,18 @@ fn apply_semantic_config(config: &mut SemanticConfig, file: TldrSemanticConfigFi
     if let Some(auto_reindex_threshold) = file.auto_reindex_threshold {
         config.auto_reindex_threshold = auto_reindex_threshold;
     }
+    if let Some(ignore) = file.ignore {
+        config.ignore = ignore;
+    }
+    if let Some(embedding) = file.embedding {
+        if let Some(enabled) = embedding.enabled {
+            config.embedding.enabled = enabled;
+            config.embedding_enabled = enabled;
+        }
+        if let Some(dimensions) = embedding.dimensions {
+            config.embedding.dimensions = dimensions;
+        }
+    }
 }
 
 fn apply_session_config(config: &mut SessionConfig, file: TldrSessionConfigFile) {
@@ -118,6 +138,11 @@ socket_mode = "manual"
 [semantic]
 enabled = true
 auto_reindex_threshold = 3
+ignore = ["generated.rs"]
+
+[semantic.embedding]
+enabled = true
+dimensions = 128
 
 [session]
 dirty_file_threshold = 5
@@ -131,6 +156,10 @@ idle_timeout_secs = 42
         assert_eq!(config.daemon.socket_mode, "manual");
         assert!(config.semantic.enabled);
         assert_eq!(config.semantic.auto_reindex_threshold, 3);
+        assert_eq!(config.semantic.ignore, vec!["generated.rs".to_string()]);
+        assert!(config.semantic.embedding.enabled);
+        assert!(config.semantic.embedding_enabled);
+        assert_eq!(config.semantic.embedding.dimensions, 128);
         assert_eq!(config.session.dirty_file_threshold, 5);
         assert_eq!(config.session.idle_timeout.as_secs(), 42);
     }

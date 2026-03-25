@@ -1,6 +1,9 @@
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
+use anyhow::Context;
 use anyhow::Result;
+use ignore::gitignore::Gitignore;
+use ignore::gitignore::GitignoreBuilder;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -10,11 +13,38 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SemanticEmbeddingConfig {
+    pub enabled: bool,
+    pub dimensions: usize,
+}
+
+impl Default for SemanticEmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dimensions: 64,
+        }
+    }
+}
+
+impl SemanticEmbeddingConfig {
+    pub fn new(enabled: bool, dimensions: usize) -> Self {
+        Self {
+            enabled,
+            dimensions,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SemanticConfig {
     pub enabled: bool,
     pub feature_gate: String,
     pub model: String,
     pub auto_reindex_threshold: usize,
+    pub embedding_enabled: bool,
+    pub embedding: SemanticEmbeddingConfig,
+    pub ignore: Vec<String>,
 }
 
 impl Default for SemanticConfig {
@@ -24,6 +54,9 @@ impl Default for SemanticConfig {
             feature_gate: "semantic-embed".to_string(),
             model: "minilm".to_string(),
             auto_reindex_threshold: 20,
+            embedding_enabled: SemanticEmbeddingConfig::default().enabled,
+            embedding: SemanticEmbeddingConfig::default(),
+            ignore: Vec::new(),
         }
     }
 }
@@ -36,6 +69,25 @@ impl SemanticConfig {
 
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
+        self
+    }
+
+    pub fn embedding_enabled(&self) -> bool {
+        self.embedding_enabled
+    }
+
+    pub fn embedding_dimensions(&self) -> usize {
+        self.embedding.dimensions
+    }
+
+    pub fn with_ignore(mut self, ignore: Vec<String>) -> Self {
+        self.ignore = ignore;
+        self
+    }
+
+    pub fn with_embedding(mut self, embedding: SemanticEmbeddingConfig) -> Self {
+        self.embedding = embedding;
+        self.embedding_enabled = self.embedding.enabled;
         self
     }
 }
@@ -57,6 +109,8 @@ pub struct SemanticReindexReport {
     pub started_at: SystemTime,
     pub finished_at: SystemTime,
     pub message: String,
+    pub embedding_enabled: bool,
+    pub embedding_dimensions: usize,
 }
 
 impl SemanticReindexReport {
@@ -70,6 +124,8 @@ impl SemanticReindexReport {
         indexed_units: usize,
         started_at: SystemTime,
         finished_at: SystemTime,
+        embedding_enabled: bool,
+        embedding_dimensions: usize,
     ) -> Self {
         Self {
             status: SemanticReindexStatus::Completed,
@@ -82,10 +138,16 @@ impl SemanticReindexReport {
             message: format!(
                 "semantic phase-1 reindex completed: {indexed_units} units across {indexed_files} files"
             ),
+            embedding_enabled,
+            embedding_dimensions,
         }
     }
 
-    pub fn failed(error: impl Into<String>) -> Self {
+    pub fn failed(
+        error: impl Into<String>,
+        embedding_enabled: bool,
+        embedding_dimensions: usize,
+    ) -> Self {
         let now = SystemTime::now();
         Self {
             status: SemanticReindexStatus::Failed,
@@ -96,6 +158,8 @@ impl SemanticReindexReport {
             started_at: now,
             finished_at: now,
             message: format!("semantic phase-1 reindex failed: {}", error.into()),
+            embedding_enabled,
+            embedding_dimensions,
         }
     }
 }
@@ -106,7 +170,7 @@ pub struct SemanticSearchRequest {
     pub query: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmbeddingUnit {
     pub path: PathBuf,
     pub language: SupportedLanguage,
@@ -119,6 +183,7 @@ pub struct EmbeddingUnit {
     pub dependencies: Vec<String>,
     pub cfg_summary: String,
     pub dfg_summary: String,
+    pub embedding_vector: Option<Vec<f32>>,
 }
 
 impl EmbeddingUnit {
@@ -145,7 +210,7 @@ impl EmbeddingUnit {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SemanticMatch {
     pub score: usize,
     pub path: PathBuf,
@@ -153,15 +218,17 @@ pub struct SemanticMatch {
     pub snippet: String,
     pub unit: EmbeddingUnit,
     pub embedding_text: String,
+    pub embedding_score: Option<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SemanticSearchResponse {
     pub enabled: bool,
     pub query: String,
     pub indexed_files: usize,
     pub truncated: bool,
     pub matches: Vec<SemanticMatch>,
+    pub embedding_used: bool,
     pub message: String,
 }
 
@@ -202,10 +269,40 @@ impl SemanticIndexer {
         )
     }
 
+    fn build_ignore_matcher(&self, project_root: &Path) -> Result<Gitignore> {
+        const DEFAULT_IGNORE: &[&str] =
+            &[".git/", "target/", "node_modules/", ".idea/", ".vscode/"];
+
+        let mut builder = GitignoreBuilder::new(project_root);
+        for pattern in DEFAULT_IGNORE {
+            builder
+                .add_line(None, pattern)
+                .with_context(|| format!("add default ignore pattern {pattern}"))?;
+        }
+        let ignore_file = project_root.join(".tldrignore");
+        if ignore_file.exists() {
+            builder.add(ignore_file);
+        }
+        for pattern in &self.config.ignore {
+            let trimmed = pattern.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            builder
+                .add_line(None, trimmed)
+                .with_context(|| format!("add tldr ignore pattern {}", trimmed))?;
+        }
+        builder
+            .build()
+            .with_context(|| format!("build ignore matcher for {}", project_root.display()))
+    }
+
     pub fn reindex(&self, project_root: &Path) -> Result<SemanticReindexReport> {
         if !self.is_enabled() {
             return Ok(SemanticReindexReport::failed(
                 "semantic reindexing is disabled in config",
+                self.config.embedding_enabled(),
+                self.config.embedding_dimensions(),
             ));
         }
         let started_at = SystemTime::now();
@@ -213,8 +310,15 @@ impl SemanticIndexer {
         let languages = registry.supported_languages();
         let mut indexed_files = 0;
         let mut indexed_units = 0;
+        let matcher = self.build_ignore_matcher(project_root)?;
         for language in &languages {
-            let (units, files) = collect_embedding_units(project_root, *language)?;
+            let (units, files) = collect_embedding_units(
+                project_root,
+                *language,
+                &matcher,
+                self.config.embedding_enabled(),
+                self.config.embedding_dimensions(),
+            )?;
             indexed_files += files;
             indexed_units += units.len();
         }
@@ -225,6 +329,8 @@ impl SemanticIndexer {
             indexed_units,
             started_at,
             finished_at,
+            self.config.embedding_enabled(),
+            self.config.embedding_dimensions(),
         ))
     }
 
@@ -240,14 +346,29 @@ impl SemanticIndexer {
                 indexed_files: 0,
                 truncated: false,
                 matches: Vec::new(),
+                embedding_used: false,
                 message:
                     "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
                         .to_string(),
             });
         }
 
-        let (units, indexed_files) = collect_embedding_units(project_root, request.language)?;
+        let matcher = self.build_ignore_matcher(project_root)?;
+        let embedding_enabled = self.config.embedding_enabled();
+        let embedding_dimensions = self.config.embedding_dimensions();
+        let (units, indexed_files) = collect_embedding_units(
+            project_root,
+            request.language,
+            &matcher,
+            embedding_enabled,
+            embedding_dimensions,
+        )?;
         let query = request.query;
+        let query_vector = if embedding_enabled {
+            Some(build_embedding_vector(&query, embedding_dimensions))
+        } else {
+            None
+        };
         let mut matches: Vec<_> = units
             .into_iter()
             .filter_map(|unit| {
@@ -257,6 +378,11 @@ impl SemanticIndexer {
                     return None;
                 }
                 let (line, snippet) = best_matching_line(&query, &unit);
+                let embedding_score = query_vector.as_ref().and_then(|query_vec| {
+                    unit.embedding_vector
+                        .as_deref()
+                        .map(|unit_vec| dot_product(query_vec, unit_vec))
+                });
                 Some(SemanticMatch {
                     score,
                     path: unit.path.clone(),
@@ -264,6 +390,7 @@ impl SemanticIndexer {
                     snippet,
                     unit,
                     embedding_text,
+                    embedding_score,
                 })
             })
             .collect();
@@ -284,6 +411,7 @@ impl SemanticIndexer {
             indexed_files,
             truncated,
             matches,
+            embedding_used: embedding_enabled,
             message: format!("semantic search returned {result_count} matches"),
         })
     }
@@ -292,9 +420,12 @@ impl SemanticIndexer {
 fn collect_embedding_units(
     project_root: &Path,
     language: SupportedLanguage,
+    matcher: &Gitignore,
+    embedding_enabled: bool,
+    embedding_dims: usize,
 ) -> Result<(Vec<EmbeddingUnit>, usize)> {
     let mut files = Vec::new();
-    collect_source_files(project_root, extension_for(language), &mut files)?;
+    collect_source_files(project_root, extension_for(language), &mut files, matcher)?;
     let indexed_files = files.len();
 
     let mut units = Vec::new();
@@ -323,6 +454,11 @@ fn collect_embedding_units(
                     .get(unit.symbol.as_deref().unwrap_or_default())
                     .cloned()
                     .unwrap_or_default();
+                unit.embedding_vector = embedding_vector_for_text(
+                    &unit.build_embedding_text(),
+                    embedding_enabled,
+                    embedding_dims,
+                );
                 unit
             })
             .collect(),
@@ -330,7 +466,12 @@ fn collect_embedding_units(
     ))
 }
 
-fn collect_source_files(root: &Path, extension: &str, files: &mut Vec<PathBuf>) -> Result<()> {
+fn collect_source_files(
+    root: &Path,
+    extension: &str,
+    files: &mut Vec<PathBuf>,
+    matcher: &Gitignore,
+) -> Result<()> {
     for entry in fs::read_dir(root)? {
         let entry = entry?;
         let path = entry.path();
@@ -342,7 +483,15 @@ fn collect_source_files(root: &Path, extension: &str, files: &mut Vec<PathBuf>) 
             ) {
                 continue;
             }
-            collect_source_files(&path, extension, files)?;
+            let matched = matcher.matched(&path, true);
+            if matched.is_ignore() && !matched.is_whitelist() {
+                continue;
+            }
+            collect_source_files(&path, extension, files, matcher)?;
+            continue;
+        }
+        let matched = matcher.matched(&path, false);
+        if matched.is_ignore() && !matched.is_whitelist() {
             continue;
         }
         if path.extension().and_then(|value| value.to_str()) == Some(extension) {
@@ -449,6 +598,7 @@ fn build_unit(
         code_preview,
         called_by: Vec::new(),
         calls,
+        embedding_vector: None,
     }
 }
 
@@ -633,6 +783,37 @@ fn tokenize(query: &str) -> Vec<String> {
         .collect()
 }
 
+fn embedding_vector_for_text(text: &str, enabled: bool, dims: usize) -> Option<Vec<f32>> {
+    if !enabled || dims == 0 {
+        return None;
+    }
+    let vector = build_embedding_vector(text, dims);
+    if vector.iter().all(|&value| value == 0.0) {
+        None
+    } else {
+        Some(vector)
+    }
+}
+
+fn build_embedding_vector(text: &str, dims: usize) -> Vec<f32> {
+    let mut vector = vec![0.0; dims.max(1)];
+    for token in tokenize(text) {
+        let idx = (hash_token(&token) % dims.max(1) as u64) as usize;
+        vector[idx] += 1.0;
+    }
+    vector
+}
+
+fn dot_product(left: &[f32], right: &[f32]) -> f32 {
+    left.iter().zip(right.iter()).map(|(a, b)| a * b).sum()
+}
+
+fn hash_token(token: &str) -> u64 {
+    token
+        .bytes()
+        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64))
+}
+
 fn extension_for(language: SupportedLanguage) -> &'static str {
     match language {
         SupportedLanguage::Rust => "rs",
@@ -657,6 +838,7 @@ fn join_or_none(values: &[String]) -> String {
 mod tests {
     use super::EmbeddingUnit;
     use super::SemanticConfig;
+    use super::SemanticEmbeddingConfig;
     use super::SemanticIndexer;
     use super::SemanticSearchRequest;
     use crate::lang_support::SupportedLanguage;
@@ -696,6 +878,7 @@ mod tests {
             dependencies: vec!["src".to_string(), "lib.rs".to_string()],
             cfg_summary: "1 lines sampled; 1 outgoing calls".to_string(),
             dfg_summary: "contains local assignments".to_string(),
+            embedding_vector: None,
         }
         .build_embedding_text();
 
@@ -768,5 +951,73 @@ mod tests {
             response.message,
             "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
         );
+    }
+
+    #[test]
+    fn tldrignore_filters_cross_process_files() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(tempdir.path().join(".tldrignore"), "src/ignored.rs\n")
+            .expect("tldrignore should write");
+        std::fs::write(src.join("kept.rs"), "fn kept() {}\n").expect("kept file should write");
+        std::fs::write(src.join("ignored.rs"), "fn skip() {}\n")
+            .expect("ignored file should write");
+
+        let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
+        let report = indexer
+            .reindex(tempdir.path())
+            .expect("reindex should succeed");
+
+        assert!(report.is_completed());
+        assert_eq!(report.indexed_files, 1);
+    }
+
+    #[test]
+    fn embedding_vectors_populated_when_enabled() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(
+            src.join("vector.rs"),
+            r#"
+fn handle_request() {
+    log();
+}
+
+fn log() {
+    println!("ready");
+}
+"#,
+        )
+        .expect("vector fixture should write");
+
+        let config = SemanticConfig::default()
+            .with_enabled(true)
+            .with_embedding(SemanticEmbeddingConfig::new(true, 16));
+        let indexer = SemanticIndexer::new(config);
+        let response = indexer
+            .search(
+                tempdir.path(),
+                SemanticSearchRequest {
+                    language: SupportedLanguage::Rust,
+                    query: "handle_request".to_string(),
+                },
+            )
+            .expect("search should succeed");
+
+        assert!(response.embedding_used);
+        assert!(!response.matches.is_empty());
+        let first = &response.matches[0];
+        let vector = first
+            .unit
+            .embedding_vector
+            .as_ref()
+            .expect("embedding vector should be generated");
+        assert!(!vector.is_empty());
+        let score = first
+            .embedding_score
+            .expect("embedding score should be available");
+        assert!(score > 0.0);
     }
 }
