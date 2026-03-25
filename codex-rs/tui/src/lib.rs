@@ -77,7 +77,7 @@ mod audio_device {
         kind: RealtimeAudioDeviceKind,
     ) -> Result<Vec<String>, String> {
         Err(format!(
-            "加载 realtime {} 设备失败：此构建不支持语音输入",
+            "Failed to load realtime {} devices: voice input is unavailable in this build",
             kind.noun()
         ))
     }
@@ -174,7 +174,7 @@ mod voice {
 
     impl VoiceCapture {
         pub fn start() -> Result<Self, String> {
-            Err("此构建不支持语音输入".to_string())
+            Err("voice input is unavailable in this build".to_string())
         }
 
         pub fn start_realtime(
@@ -182,11 +182,11 @@ mod voice {
             _tx: AppEventSender,
             _input_behavior: RealtimeInputBehavior,
         ) -> Result<Self, String> {
-            Err("此构建不支持语音输入".to_string())
+            Err("voice input is unavailable in this build".to_string())
         }
 
         pub fn stop(self) -> Result<RecordedAudio, String> {
-            Err("此构建不支持语音输入".to_string())
+            Err("voice input is unavailable in this build".to_string())
         }
 
         pub fn data_arc(&self) -> Arc<Mutex<Vec<i16>>> {
@@ -225,11 +225,11 @@ mod voice {
             _config: &Config,
             _queued_samples: Arc<AtomicUsize>,
         ) -> Result<Self, String> {
-            Err("此构建不支持语音输出".to_string())
+            Err("voice output is unavailable in this build".to_string())
         }
 
         pub(crate) fn enqueue_frame(&self, _frame: &RealtimeAudioFrame) -> Result<(), String> {
-            Err("此构建不支持语音输出".to_string())
+            Err("voice output is unavailable in this build".to_string())
         }
 
         pub(crate) fn clear(&self) {}
@@ -243,7 +243,7 @@ mod voice {
     ) {
         tx.send(AppEvent::TranscriptionFailed {
             id,
-            error: "此构建不支持语音输入".to_string(),
+            error: "voice input is unavailable in this build".to_string(),
         });
     }
 }
@@ -303,7 +303,7 @@ pub async fn run_main(
         Ok(v) => v,
         #[allow(clippy::print_stderr)]
         Err(e) => {
-            eprintln!("解析 -c 覆盖选项失败：{e}");
+            eprintln!("Error parsing -c overrides: {e}");
             std::process::exit(1);
         }
     };
@@ -313,7 +313,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("查找 Codex 目录失败：{err}");
+            eprintln!("Error finding codex home: {err}");
             std::process::exit(1);
         }
     };
@@ -340,11 +340,11 @@ pub async fn run_main(
                 .map(ConfigLoadError::config_error);
             if let Some(config_error) = config_error {
                 eprintln!(
-                    "加载 config.toml 失败：\n{}",
+                    "Error loading config.toml:\n{}",
                     format_config_error_with_source(config_error)
                 );
             } else {
-                eprintln!("加载 config.toml 失败：{err}");
+                eprintln!("Error loading config.toml: {err}");
             }
             std::process::exit(1);
         }
@@ -436,7 +436,7 @@ pub async fn run_main(
         Ok(None) => {}
         Ok(Some(err)) | Err(err) => {
             eprintln!(
-                "加载规则失败：\n{}",
+                "Error loading rules:\n{}",
                 format_exec_policy_error_with_source(&err)
             );
             std::process::exit(1);
@@ -450,7 +450,7 @@ pub async fn run_main(
     {
         #[allow(clippy::print_stderr)]
         {
-            eprintln!("添加目录失败：{warning}");
+            eprintln!("Error adding directories: {warning}");
             std::process::exit(1);
         }
     }
@@ -610,6 +610,7 @@ async fn run_ratatui_app(
     terminal.clear()?;
 
     let mut tui = Tui::new(terminal);
+    let mut terminal_restore_guard = TerminalRestoreGuard::new();
 
     #[cfg(not(debug_assertions))]
     {
@@ -620,7 +621,7 @@ async fn run_ratatui_app(
             match update_prompt::run_update_prompt_if_needed(&mut tui, &initial_config).await? {
                 UpdatePromptOutcome::Continue => {}
                 UpdatePromptOutcome::RunUpdate(action) => {
-                    crate::tui::restore()?;
+                    terminal_restore_guard.restore()?;
                     return Ok(AppExitInfo {
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
                         thread_id: None,
@@ -661,7 +662,7 @@ async fn run_ratatui_app(
         )
         .await?;
         if onboarding_result.should_exit {
-            restore();
+            terminal_restore_guard.restore_silently();
             session_log::log_session_end();
             let _ = tui.terminal.clear();
             return Ok(AppExitInfo {
@@ -702,7 +703,7 @@ async fn run_ratatui_app(
 
     let mut missing_session_exit = |id_str: &str, action: &str| {
         error!("未找到会话路径：{id_str}");
-        restore();
+        terminal_restore_guard.restore_silently();
         session_log::log_session_end();
         let _ = tui.terminal.clear();
         Ok(AppExitInfo {
@@ -711,7 +712,7 @@ async fn run_ratatui_app(
             thread_name: None,
             update_action: None,
             exit_reason: ExitReason::Fatal(format!(
-                "未找到 ID 为 {id_str} 的保存会话。运行 `codex {action}`（不带 ID）以选择现有会话。"
+                "未找到 ID 为 {id_str} 的已保存会话。运行 `codex {action}` 且不要传入 ID，可从现有会话中选择。"
             )),
         })
     };
@@ -772,7 +773,7 @@ async fn run_ratatui_app(
                             None => {
                                 let rollout_path = item.path.display();
                                 error!("读取最新 rollout 的会话元数据失败：{rollout_path}");
-                                restore();
+                                terminal_restore_guard.restore_silently();
                                 session_log::log_session_end();
                                 let _ = tui.terminal.clear();
                                 return Ok(AppExitInfo {
@@ -781,7 +782,7 @@ async fn run_ratatui_app(
                                     thread_name: None,
                                     update_action: None,
                                     exit_reason: ExitReason::Fatal(format!(
-                                        "在 {rollout_path} 找到最新保存会话，但读取其元数据失败。运行 `codex fork` 选择可用会话。"
+                                        "已找到最新保存的会话 {rollout_path}，但读取其元数据失败。运行 `codex fork` 可从现有会话中选择。"
                                     )),
                                 });
                             }
@@ -794,7 +795,7 @@ async fn run_ratatui_app(
         } else if cli.fork_picker {
             match resume_picker::run_fork_picker(&mut tui, &config, cli.fork_show_all).await? {
                 resume_picker::SessionSelection::Exit => {
-                    restore();
+                    terminal_restore_guard.restore_silently();
                     session_log::log_session_end();
                     return Ok(AppExitInfo {
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
@@ -864,7 +865,7 @@ async fn run_ratatui_app(
                     None => {
                         let rollout_path = path.display();
                         error!("读取最新 rollout 的会话元数据失败：{rollout_path}");
-                        restore();
+                        terminal_restore_guard.restore_silently();
                         session_log::log_session_end();
                         let _ = tui.terminal.clear();
                         return Ok(AppExitInfo {
@@ -873,7 +874,7 @@ async fn run_ratatui_app(
                             thread_name: None,
                             update_action: None,
                             exit_reason: ExitReason::Fatal(format!(
-                                "在 {rollout_path} 找到最新保存会话，但读取其元数据失败。运行 `codex resume` 选择可用会话。"
+                                "已找到最新保存的会话 {rollout_path}，但读取其元数据失败。运行 `codex resume` 可从现有会话中选择。"
                             )),
                         });
                     }
@@ -884,7 +885,7 @@ async fn run_ratatui_app(
     } else if cli.resume_picker {
         match resume_picker::run_resume_picker(&mut tui, &config, cli.resume_show_all).await? {
             resume_picker::SessionSelection::Exit => {
-                restore();
+                terminal_restore_guard.restore_silently();
                 session_log::log_session_end();
                 return Ok(AppExitInfo {
                     token_usage: codex_protocol::protocol::TokenUsage::default(),
@@ -926,7 +927,7 @@ async fn run_ratatui_app(
             {
                 ResolveCwdOutcome::Continue(cwd) => cwd,
                 ResolveCwdOutcome::Exit => {
-                    restore();
+                    terminal_restore_guard.restore_silently();
                     session_log::log_session_end();
                     return Ok(AppExitInfo {
                         token_usage: codex_protocol::protocol::TokenUsage::default(),
@@ -1000,7 +1001,7 @@ async fn run_ratatui_app(
     )
     .await;
 
-    restore();
+    terminal_restore_guard.restore_silently();
     // Mark the end of the recorded session.
     session_log::log_session_end();
     // ignore error when collecting usage – report underlying error instead
@@ -1125,6 +1126,38 @@ fn restore() {
     }
 }
 
+struct TerminalRestoreGuard {
+    active: bool,
+}
+
+impl TerminalRestoreGuard {
+    fn new() -> Self {
+        Self { active: true }
+    }
+
+    #[cfg_attr(debug_assertions, allow(dead_code))]
+    fn restore(&mut self) -> color_eyre::Result<()> {
+        if self.active {
+            crate::tui::restore()?;
+            self.active = false;
+        }
+        Ok(())
+    }
+
+    fn restore_silently(&mut self) {
+        if self.active {
+            restore();
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for TerminalRestoreGuard {
+    fn drop(&mut self) {
+        self.restore_silently();
+    }
+}
+
 /// Determine whether to use the terminal's alternate screen buffer.
 ///
 /// The alternate screen buffer provides a cleaner fullscreen experience without polluting
@@ -1211,7 +1244,7 @@ async fn load_config_or_exit_with_fallback_cwd(
     {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("加载配置失败：{err}");
+            eprintln!("Error loading configuration: {err}");
             std::process::exit(1);
         }
     }

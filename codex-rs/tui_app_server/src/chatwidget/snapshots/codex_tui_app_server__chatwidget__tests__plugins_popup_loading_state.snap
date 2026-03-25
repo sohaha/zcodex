@@ -2,4 +2,4 @@
 source: tui_app_server/src/chatwidget/tests.rs
 expression: popup
 ---
-插件正在加载可用插件...正在发现可用插件市场。›1.正在加载插件...市场列表准备好后会更新此处。
+插件正在加载可用插件...首次加载仅显示ChatGPT市场。›正在加载插件...市场列表准备好后会更新此处。
