@@ -309,6 +309,20 @@ fn analysis_cache_key(
     format!("{}:{kind:?}:{symbol}", language.as_str())
 }
 
+async fn wait_for_existing_launch(key: &str) -> Result<bool> {
+    if !lock_map(&LAUNCHING_PROJECTS).contains(key) {
+        return Ok(false);
+    }
+    loop {
+        {
+            if !lock_map(&LAUNCHING_PROJECTS).contains(key) {
+                return Ok(true);
+            }
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+}
+
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     let socket_path = socket_path_for_project(project_root);
     if socket_path.exists() {
@@ -317,6 +331,9 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     let key = project_key(project_root)?;
     if should_backoff(&key) {
         return Ok(false);
+    }
+    if wait_for_existing_launch(&key).await? {
+        return Ok(socket_path.exists());
     }
     try_start_native_tldr_daemon(project_root, socket_path).await
 }
@@ -412,6 +429,9 @@ mod lifecycle_tests {
     use super::clear_backoff;
     use super::record_launch_failure;
     use super::should_backoff;
+    use super::LaunchTracker;
+    use super::wait_for_existing_launch;
+    use std::time::Duration;
 
     #[test]
     fn backoff_release_sequence() {
@@ -421,5 +441,22 @@ mod lifecycle_tests {
         assert!(should_backoff(key));
         clear_backoff(key);
         assert!(!should_backoff(key));
+    }
+
+    #[tokio::test]
+    async fn wait_for_existing_launch_detects_tracker() {
+        let key = "daemon-lifecycle-test";
+        let handle = tokio::spawn(async move {
+            let _tracker = LaunchTracker::new(key.to_string());
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        });
+
+        assert!(wait_for_existing_launch(key).await.unwrap());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn wait_for_existing_launch_returns_false_without_tracker() {
+        assert!(!wait_for_existing_launch("no-tracker").await.unwrap());
     }
 }
