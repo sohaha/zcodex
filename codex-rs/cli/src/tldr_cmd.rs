@@ -12,13 +12,17 @@ use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_utils_cargo_bin::cargo_bin;
+use once_cell::sync::Lazy;
 use serde_json::json;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Mutex;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::process::Command;
-use tokio::time::Duration;
 use tokio::time::sleep;
 
 #[derive(Debug, Parser)]
@@ -311,11 +315,18 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     if socket_path.exists() {
         return Ok(true);
     }
+    let key = project_key(project_root)?;
+    if should_backoff(&key) {
+        return Ok(false);
+    }
     try_start_native_tldr_daemon(project_root, socket_path).await
 }
 
 #[cfg(unix)]
 async fn try_start_native_tldr_daemon(project_root: &Path, socket_path: PathBuf) -> Result<bool> {
+    let key = project_key(project_root)?;
+    let _tracker = LaunchTracker::new(key.clone());
+
     let daemon_bin = cargo_bin("codex-native-tldr-daemon")?;
     let mut child = Command::new(daemon_bin)
         .arg("--project")
@@ -333,14 +344,81 @@ async fn try_start_native_tldr_daemon(project_root: &Path, socket_path: PathBuf)
     let timeout = Duration::from_secs(3);
     while start.elapsed() < timeout {
         if socket_path.exists() {
+            clear_backoff(&key);
             return Ok(true);
         }
         sleep(Duration::from_millis(50)).await;
     }
+
+    record_launch_failure(&key);
     Ok(false)
 }
 
 #[cfg(not(unix))]
 async fn try_start_native_tldr_daemon(_project_root: &Path, _socket_path: PathBuf) -> Result<bool> {
     Ok(false)
+}
+
+fn project_key(project_root: &Path) -> Result<String> {
+    Ok(project_root.to_string_lossy().to_string())
+}
+
+const DAEMON_LAUNCH_BACKOFF: Duration = Duration::from_secs(5);
+
+static LAUNCH_FAILURES: Lazy<Mutex<HashMap<String, Instant>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+static LAUNCHING_PROJECTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
+
+fn should_backoff(key: &str) -> bool {
+    LAUNCH_FAILURES
+        .lock()
+        .unwrap()
+        .get(key)
+        .map(|instant: &Instant| instant.elapsed() < DAEMON_LAUNCH_BACKOFF)
+        .unwrap_or(false)
+}
+
+fn clear_backoff(key: &str) {
+    LAUNCH_FAILURES.lock().unwrap().remove(key);
+}
+
+fn record_launch_failure(key: &str) {
+    LAUNCH_FAILURES
+        .lock()
+        .unwrap()
+        .insert(key.to_string(), Instant::now());
+}
+
+struct LaunchTracker {
+    key: String,
+}
+
+impl LaunchTracker {
+    fn new(key: String) -> Self {
+        LAUNCHING_PROJECTS.lock().unwrap().insert(key.clone());
+        Self { key }
+    }
+}
+
+impl Drop for LaunchTracker {
+    fn drop(&mut self) {
+        LAUNCHING_PROJECTS.lock().unwrap().remove(&self.key);
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::clear_backoff;
+    use super::record_launch_failure;
+    use super::should_backoff;
+
+    #[test]
+    fn backoff_release_sequence() {
+        let key = "unit-test-key";
+        assert!(!should_backoff(key));
+        record_launch_failure(key);
+        assert!(should_backoff(key));
+        clear_backoff(key);
+        assert!(!should_backoff(key));
+    }
 }

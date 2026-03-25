@@ -1692,6 +1692,7 @@ dependencies = [
  "codex-utils-cli",
  "codex-windows-sandbox",
  "libc",
+ "once_cell",
  "owo-colors",
  "predicates",
  "pretty_assertions",

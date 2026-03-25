@@ -878,6 +878,59 @@ async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_semantic_structured_content() {
+    if let Err(err) = tldr_tool_semantic_structured_content().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
+    let project = TempDir::new()?;
+    let canonical_project = project.path().canonicalize()?;
+
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    let request_id = mcp_process
+        .send_named_tool_call(
+            "tldr",
+            Some(serde_json::Map::from_iter([
+                ("action".to_string(), json!("semantic")),
+                (
+                    "project".to_string(),
+                    json!(canonical_project.to_string_lossy()),
+                ),
+                ("language".to_string(), json!("rust")),
+                ("query".to_string(), json!("find auth")),
+            ])),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    let structured = response.result["structuredContent"]
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+    assert_eq!(structured["action"], "semantic");
+    assert_eq!(structured["language"], "rust");
+    assert_eq!(structured["query"], "find auth");
+    assert_eq!(structured["source"], "local");
+    assert_eq!(
+        structured["message"],
+        "semantic search is not enabled in this build yet"
+    );
+    assert_eq!(structured["enabled"], false);
+
+    Ok(())
+}
+
 fn create_expected_patch_approval_elicitation_request_params(
     changes: HashMap<PathBuf, FileChange>,
     grant_root: Option<PathBuf>,

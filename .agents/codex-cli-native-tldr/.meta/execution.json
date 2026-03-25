@@ -1,0 +1,78 @@
+{
+   "parameters" : {
+      "skipUI" : false,
+      "skipDeploy" : false,
+      "quick" : false
+   },
+   "feature" : "codex-cli-native-tldr",
+   "stages" : {
+      "1" : {
+         "startTime" : "2026-03-25T09:00:16Z",
+         "endTime" : "2026-03-25T09:00:16Z",
+         "status" : "completed"
+      },
+      "4" : {
+         "status" : "pending",
+         "endTime" : null,
+         "startTime" : null
+      },
+      "3" : {
+         "status" : "in_progress",
+         "endTime" : null,
+         "startTime" : "2026-03-25T10:40:00Z"
+      },
+      "2" : {
+         "status" : "completed",
+         "startTime" : "2026-03-25T09:05:08Z",
+         "endTime" : "2026-03-25T09:05:08Z"
+      }
+   },
+   "humanInterventions" : [
+      {
+         "at" : "2026-03-25T11:20:00Z",
+         "note" : "daemon client and CLI fallback landed; next focus is T-005 MCP tool integration"
+      },
+      {
+         "note" : "committed daemon-first CLI integration as bf690e5c7",
+         "at" : "2026-03-25T11:35:00Z"
+      },
+      {
+         "note" : "T-005 landed: MCP tldr tool registered with daemon-first/local-fallback behavior and targeted tests",
+         "at" : "2026-03-25T10:35:00Z"
+      },
+      {
+         "at" : "2026-03-25T10:50:00Z",
+         "note" : "committed MCP tldr tool integration as facc10ad7"
+      },
+      {
+         "at" : "2026-03-25T11:05:00Z",
+         "note" : "spawned parallel sessions for T-006 semantic work and MCP/daemon validation"
+      },
+      {
+         "note" : "parallel round integrated: semantic placeholder landed and daemon-available MCP test passed",
+         "at" : "2026-03-25T11:20:00Z"
+      },
+      {
+         "at" : "2026-03-25T11:35:00Z",
+         "note" : "committed semantic placeholder expansion as b83144203"
+      },
+      {
+         "at" : "2026-03-25T11:50:00Z",
+         "note" : "started another parallel round for MCP e2e coverage and daemon auto-start exploration"
+      },
+      {
+         "note" : "integrated MCP warm/notify/snapshot coverage and Unix daemon auto-start path; latest code commit is 3e640e4d4",
+         "at" : "2026-03-25T12:05:00Z"
+      },
+      {
+         "at" : "2026-03-25T12:20:00Z",
+         "note" : "started another parallel round for semantic MCP coverage and daemon lifecycle exploration"
+      }
+   ],
+   "qualityGates" : {
+      "gate0" : null,
+      "gate1" : null,
+      "gate2" : null
+   },
+   "createdAt" : "2026-03-25T08:53:01Z"
+}
