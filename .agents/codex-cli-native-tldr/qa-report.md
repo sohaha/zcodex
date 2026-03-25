@@ -8,7 +8,7 @@
 ## 中间验证进度（实时）
 
 - **当前执行方式**：主线程已把 semantic phase-1 落到 native-tldr/CLI/MCP，继续补 lifecycle 边界覆盖
-- **最新代码提交**：当前工作区含未提交变更（基于 `260c0b67c`）
+- **最新代码提交**：`acb9243b7` `feat: add native tldr semantic phase 1 search`
 
 ### 已完成验证
 - `cargo test -p codex-native-tldr`：通过（31 个测试；含 semantic embedding text/ranked matches 回归）
