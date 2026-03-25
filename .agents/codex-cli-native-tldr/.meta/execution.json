@@ -116,6 +116,14 @@
       {
          "at" : "2026-03-25T12:18:05Z",
          "note" : "CLI autostart helper tests landed for both retry-success and no-retry-on-failed-start branches"
+      },
+      {
+         "at" : "2026-03-25T12:24:49Z",
+         "note" : "started daemon pid-file and liveness validation work so CLI can distinguish live daemons from stale socket artifacts"
+      },
+      {
+         "at" : "2026-03-25T12:27:15Z",
+         "note" : "daemon pid-file lifecycle and CLI liveness checks landed; stale cleanup now removes both socket and pid artifacts"
       }
    ],
    "feature" : "codex-cli-native-tldr"

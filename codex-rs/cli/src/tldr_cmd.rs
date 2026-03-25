@@ -7,6 +7,7 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
@@ -352,21 +353,22 @@ async fn wait_for_existing_launch(key: &str) -> Result<bool> {
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     let socket_path = socket_path_for_project(project_root);
-    if socket_path.exists() {
+    if daemon_metadata_looks_alive(project_root) {
         return Ok(true);
     }
+    cleanup_stale_daemon_artifacts(project_root);
     let key = project_key(project_root)?;
     if should_backoff(&key) {
         return Ok(false);
     }
     if wait_for_existing_launch(&key).await? {
-        return Ok(socket_path.exists());
+        return Ok(daemon_metadata_looks_alive(project_root));
     }
     try_start_native_tldr_daemon(project_root, socket_path).await
 }
 
 #[cfg(unix)]
-async fn try_start_native_tldr_daemon(project_root: &Path, socket_path: PathBuf) -> Result<bool> {
+async fn try_start_native_tldr_daemon(project_root: &Path, _socket_path: PathBuf) -> Result<bool> {
     let key = project_key(project_root)?;
     let _tracker = LaunchTracker::new(key.clone());
 
@@ -386,7 +388,7 @@ async fn try_start_native_tldr_daemon(project_root: &Path, socket_path: PathBuf)
     let start = Instant::now();
     let timeout = Duration::from_secs(3);
     while start.elapsed() < timeout {
-        if socket_path.exists() {
+        if daemon_metadata_looks_alive(project_root) {
             clear_backoff(&key);
             return Ok(true);
         }
@@ -427,6 +429,51 @@ fn record_launch_failure(key: &str) {
     lock_map(&LAUNCH_FAILURES).insert(key.to_string(), Instant::now());
 }
 
+fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
+    let socket_path = socket_path_for_project(project_root);
+    if !socket_path.exists() {
+        return false;
+    }
+
+    let pid_path = pid_path_for_project(project_root);
+    let Ok(pid) = std::fs::read_to_string(&pid_path)
+        .map(|content| content.trim().to_string())
+        .and_then(|content| content.parse::<i32>().map_err(std::io::Error::other))
+    else {
+        return false;
+    };
+
+    pid_is_alive(pid)
+}
+
+fn cleanup_stale_daemon_artifacts(project_root: &Path) {
+    cleanup_file_if_exists(socket_path_for_project(project_root));
+    cleanup_file_if_exists(pid_path_for_project(project_root));
+}
+
+fn cleanup_file_if_exists(path: PathBuf) {
+    if let Err(err) = std::fs::remove_file(&path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        let _ = err;
+    }
+}
+
+fn pid_is_alive(pid: i32) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    if result == 0 {
+        true
+    } else {
+        matches!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EPERM)
+        )
+    }
+}
+
 struct LaunchTracker {
     key: String,
 }
@@ -454,13 +501,17 @@ fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::LaunchTracker;
+    use super::cleanup_stale_daemon_artifacts;
     use super::clear_backoff;
+    use super::daemon_metadata_looks_alive;
     use super::query_daemon_with_hooks;
     use super::record_launch_failure;
     use super::should_backoff;
     use super::wait_for_existing_launch;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
+    use codex_native_tldr::daemon::pid_path_for_project;
+    use codex_native_tldr::daemon::socket_path_for_project;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
@@ -583,5 +634,37 @@ mod lifecycle_tests {
         assert_eq!(response, None);
         assert_eq!(query_calls.load(Ordering::SeqCst), 1);
         assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn daemon_metadata_requires_live_pid_and_socket() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, std::process::id().to_string()).unwrap();
+
+        assert!(daemon_metadata_looks_alive(project_root));
+
+        std::fs::write(&pid_path, "999999").unwrap();
+        assert!(!daemon_metadata_looks_alive(project_root));
+    }
+
+    #[test]
+    fn cleanup_stale_daemon_artifacts_removes_socket_and_pid() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, "123").unwrap();
+
+        cleanup_stale_daemon_artifacts(project_root);
+
+        assert!(!socket_path.exists());
+        assert!(!pid_path.exists());
     }
 }

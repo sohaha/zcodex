@@ -11,6 +11,9 @@
 - **最新代码提交**：`7773701e7` `fix: avoid duplicate native tldr daemon launches`（当前工作区还有未提交修复）
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr`：通过（新增 pid path/hash 测试后复跑，共 12 个测试）
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::daemon_metadata_requires_live_pid_and_socket -- --exact`：通过
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::cleanup_stale_daemon_artifacts_removes_socket_and_pid -- --exact`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::query_daemon_with_hooks_retries_after_autostart -- --exact`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::query_daemon_with_hooks_skips_retry_when_autostart_fails -- --exact`：通过
 - `cargo test -p codex-cli --bin codex tests::tldr_help_renders -- --exact`：通过（daemon 子命令 auto-start 收口后复核）
@@ -43,9 +46,11 @@
 - `codex-native-tldr::daemon::query_daemon` 缺 socket 时返回 `None`，通过
 - `query_daemon` Unix socket round-trip，`Ping -> pong`，通过
 - `query_daemon` 遇到 stale socket 时会清理 socket 文件并返回 `None`，通过
+- daemon 进程启动后会为每个 project 写 pid file，退出时清理 pid file
 - `codex tldr daemon` 子命令已复用 auto-start/重试路径，与 `structure/context` 行为对齐
 - CLI `structure/context/daemon` 现在统一走 `query_daemon_with_autostart()` helper，daemon 生命周期入口一致
 - CLI helper 已覆盖两条关键分支：auto-start 成功时会重试 query，auto-start 失败时不会多余重试
+- CLI 现在要求 socket + pid 同时有效才认定 daemon 存活，stale artifact 清理也会同时删除 pid
 - MCP shell approval 历史失败已确认根因是当前环境 `bwrap` 无法创建 user namespace；测试已改为 `danger-full-access` sandbox 以验证 approval 流程本身
 - `cargo test -p codex-cli --bin codex tests::tldr_daemon_ping_parses -- --exact`：通过
 - `just fix -p codex-native-tldr`：通过
@@ -53,7 +58,7 @@
 
 ### 当前下一批验证
 - 本轮目标：继续补 daemon 生命周期与外部进程启动/回收策略
-- 当前进行：补 CLI stale socket/auto-start 重试测试覆盖
+- 当前进行：抽 CLI/MCP 共用 lifecycle manager
 - 后续：深化 CLI/MCP 共用 daemon 生命周期管理
 
 ### 当前遗留验证

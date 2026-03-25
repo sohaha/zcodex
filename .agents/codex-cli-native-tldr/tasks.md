@@ -36,10 +36,14 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
-  - 会话 A：补 CLI stale socket/auto-start 重试测试
-  - 会话 B：准备下一轮 daemon 生命周期验证
-  - 主线程：同步 `.agents` 文档并验证当前测试补强
+  - 会话 A：整理 daemon pid/liveness 收口结果
+  - 会话 B：准备下一轮 lifecycle manager 抽象
+  - 主线程：同步 `.agents` 文档并提交当前 daemon 生命周期改进
 - **刚完成**：
+  - daemon 现在会写入/清理 project 级 pid file，CLI 启动前会同时校验 socket + pid 存活性，避免把死 daemon 误判为在线
+  - stale daemon 清理从“只删 socket”扩展为“删 socket + pid”，为外部进程回收策略继续铺路
+  - 补齐 CLI `daemon_metadata_looks_alive()` / `cleanup_stale_daemon_artifacts()` 单测
+  - 补齐 native-tldr pid path/hash 规则测试
   - 补齐 CLI `query_daemon_with_autostart()` 测试钩子与两条生命周期单测（重试成功 / 启动失败不重试）
   - `codex tldr daemon ping/warm/snapshot` 现在也会走 daemon auto-start/重试路径，不再只对 `structure/context` 生效
   - 修复 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`：测试配置改为 `sandbox_mode = "danger-full-access"`，避开当前环境 `bwrap`/userns 限制导致的假失败

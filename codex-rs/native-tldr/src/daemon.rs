@@ -93,11 +93,7 @@ impl TldrDaemon {
     }
 
     pub fn socket_path(&self) -> PathBuf {
-        let hash = format!(
-            "{:x}",
-            md5_compute(self.project_root.to_string_lossy().as_bytes())
-        );
-        std::env::temp_dir().join(format!("codex-native-tldr-{}.sock", &hash[..8]))
+        socket_path_for_project(&self.project_root)
     }
 
     pub async fn handle_command(&self, command: TldrDaemonCommand) -> Result<TldrDaemonResponse> {
@@ -171,12 +167,18 @@ impl TldrDaemon {
     #[cfg(unix)]
     async fn run_unix(&self) -> Result<()> {
         let socket_path = self.socket_path();
+        let pid_path = pid_path_for_project(&self.project_root);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)
                 .with_context(|| format!("remove stale socket {}", socket_path.display()))?;
         }
+        if pid_path.exists() {
+            std::fs::remove_file(&pid_path)
+                .with_context(|| format!("remove stale pid file {}", pid_path.display()))?;
+        }
         let listener = UnixListener::bind(&socket_path)
             .with_context(|| format!("bind socket {}", socket_path.display()))?;
+        write_pid_file(&pid_path)?;
 
         loop {
             tokio::select! {
@@ -198,6 +200,10 @@ impl TldrDaemon {
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)
                 .with_context(|| format!("cleanup socket {}", socket_path.display()))?;
+        }
+        if pid_path.exists() {
+            std::fs::remove_file(&pid_path)
+                .with_context(|| format!("cleanup pid file {}", pid_path.display()))?;
         }
 
         Ok(())
@@ -307,11 +313,26 @@ where
 }
 
 pub fn socket_path_for_project(project_root: &Path) -> PathBuf {
+    let hash = daemon_project_hash(project_root);
+    std::env::temp_dir().join(format!("codex-native-tldr-{hash}.sock"))
+}
+
+pub fn pid_path_for_project(project_root: &Path) -> PathBuf {
+    let hash = daemon_project_hash(project_root);
+    std::env::temp_dir().join(format!("codex-native-tldr-{hash}.pid"))
+}
+
+fn daemon_project_hash(project_root: &Path) -> String {
     let hash = format!(
         "{:x}",
         md5_compute(project_root.to_string_lossy().as_bytes())
     );
-    std::env::temp_dir().join(format!("codex-native-tldr-{}.sock", &hash[..8]))
+    hash[..8].to_string()
+}
+
+fn write_pid_file(pid_path: &Path) -> Result<()> {
+    std::fs::write(pid_path, std::process::id().to_string())
+        .with_context(|| format!("write pid file {}", pid_path.display()))
 }
 
 #[cfg(unix)]
@@ -320,6 +341,7 @@ pub async fn query_daemon(
     command: &TldrDaemonCommand,
 ) -> Result<Option<TldrDaemonResponse>> {
     let socket_path = socket_path_for_project(project_root);
+    let pid_path = pid_path_for_project(project_root);
     if !socket_path.exists() {
         return Ok(None);
     }
@@ -328,6 +350,7 @@ pub async fn query_daemon(
         Ok(stream) => stream,
         Err(err) if daemon_unavailable(&err) => {
             cleanup_stale_socket(&socket_path);
+            cleanup_stale_pid_file(&pid_path);
             return Ok(None);
         }
         Err(err) => {
@@ -348,6 +371,7 @@ pub async fn query_daemon(
         .with_context(|| format!("read daemon response from {}", socket_path.display()))?
     else {
         cleanup_stale_socket(&socket_path);
+        cleanup_stale_pid_file(&pid_path);
         return Ok(None);
     };
 
@@ -359,6 +383,15 @@ pub async fn query_daemon(
 #[cfg(unix)]
 fn cleanup_stale_socket(socket_path: &Path) {
     if let Err(err) = std::fs::remove_file(socket_path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        let _ = err;
+    }
+}
+
+#[cfg(unix)]
+fn cleanup_stale_pid_file(pid_path: &Path) {
+    if let Err(err) = std::fs::remove_file(pid_path)
         && err.kind() != std::io::ErrorKind::NotFound
     {
         let _ = err;
@@ -395,6 +428,7 @@ mod tests {
     use tokio::io::AsyncWriteExt;
     use tokio::io::BufReader;
 
+    use super::pid_path_for_project;
     #[cfg(unix)]
     use super::socket_path_for_project;
     #[cfg(unix)]
@@ -495,5 +529,27 @@ mod tests {
 
         assert_eq!(response, None);
         assert!(!socket_path.exists(), "stale socket should be removed");
+    }
+
+    #[test]
+    fn pid_path_uses_same_project_hash_scheme() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("hash-project");
+
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+
+        let socket_stem = socket_path.file_stem().and_then(|value| value.to_str());
+        let pid_stem = pid_path.file_stem().and_then(|value| value.to_str());
+
+        assert_eq!(socket_stem, pid_stem);
+        assert_eq!(
+            socket_path.extension().and_then(|value| value.to_str()),
+            Some("sock")
+        );
+        assert_eq!(
+            pid_path.extension().and_then(|value| value.to_str()),
+            Some("pid")
+        );
     }
 }
