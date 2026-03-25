@@ -441,9 +441,9 @@ fn record_test_daemon_spawn(project_root: &Path) {
             .create(true)
             .append(true)
             .open(PathBuf::from(path))
-        {
-            let _ = writeln!(file, "{} {}", project_root.display(), std::process::id());
-        }
+    {
+        let _ = writeln!(file, "{} {}", project_root.display(), std::process::id());
+    }
 }
 
 #[cfg(unix)]

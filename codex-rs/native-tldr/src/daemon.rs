@@ -422,7 +422,11 @@ fn warm_with_reindex(
                 (report.message.clone(), Some(report))
             }
             Err(err) => {
-                let failure = SemanticReindexReport::failed(err.to_string());
+                let failure = SemanticReindexReport::failed(
+                    err.to_string(),
+                    engine.config().semantic.embedding_enabled,
+                    engine.config().semantic.embedding.dimensions,
+                );
                 (failure.message.clone(), Some(failure))
             }
         }
@@ -929,9 +933,14 @@ mod tests {
             .await
             .expect("warm should return a report");
 
-        assert_eq!(warm.snapshot.as_ref().map(|snapshot| snapshot.dirty_files), Some(1));
         assert_eq!(
-            warm.snapshot.as_ref().map(|snapshot| snapshot.reindex_pending),
+            warm.snapshot.as_ref().map(|snapshot| snapshot.dirty_files),
+            Some(1)
+        );
+        assert_eq!(
+            warm.snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.reindex_pending),
             Some(true)
         );
         assert_eq!(
