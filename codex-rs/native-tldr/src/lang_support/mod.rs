@@ -1,7 +1,16 @@
+mod go;
+mod javascript;
+mod php;
+mod python;
+mod rust;
+mod typescript;
+mod zig;
+
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use thiserror::Error;
 use tree_sitter::Parser;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -90,6 +99,14 @@ static LANGUAGE_SUPPORT: Lazy<BTreeMap<&'static str, LanguageSupport>> = Lazy::n
 #[derive(Debug, Default)]
 pub struct LanguageRegistry;
 
+#[derive(Debug, Error)]
+pub enum ParserInitError {
+    #[error("unsupported language: {language}")]
+    UnsupportedLanguage { language: &'static str },
+    #[error("failed to set tree-sitter language: {0}")]
+    SetLanguage(tree_sitter::LanguageError),
+}
+
 impl LanguageRegistry {
     pub fn support_for(language: SupportedLanguage) -> &'static LanguageSupport {
         LANGUAGE_SUPPORT
@@ -97,8 +114,16 @@ impl LanguageRegistry {
             .expect("supported languages must exist in the registry")
     }
 
-    pub fn parser_for(&self, _language: SupportedLanguage) -> Parser {
-        Parser::new()
+    pub fn parser_for(&self, language: SupportedLanguage) -> Result<Parser, ParserInitError> {
+        match language {
+            SupportedLanguage::Rust => rust::parser(),
+            SupportedLanguage::TypeScript => typescript::parser(),
+            SupportedLanguage::JavaScript => javascript::parser(),
+            SupportedLanguage::Python => python::parser(),
+            SupportedLanguage::Go => go::parser(),
+            SupportedLanguage::Php => php::parser(),
+            SupportedLanguage::Zig => zig::parser(),
+        }
     }
 
     pub fn supported_languages(&self) -> Vec<SupportedLanguage> {
@@ -106,5 +131,17 @@ impl LanguageRegistry {
             .values()
             .map(|support| support.language)
             .collect()
+    }
+
+    pub fn sample_for(&self, language: SupportedLanguage) -> &'static str {
+        match language {
+            SupportedLanguage::Rust => rust::sample(),
+            SupportedLanguage::TypeScript => typescript::sample(),
+            SupportedLanguage::JavaScript => javascript::sample(),
+            SupportedLanguage::Python => python::sample(),
+            SupportedLanguage::Go => go::sample(),
+            SupportedLanguage::Php => php::sample(),
+            SupportedLanguage::Zig => zig::sample(),
+        }
     }
 }

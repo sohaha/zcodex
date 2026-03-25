@@ -140,4 +140,20 @@ mod tests {
         assert_eq!(response.kind, AnalysisKind::Ast);
         assert_eq!(response.summary, "Ast analysis is not implemented yet");
     }
+
+    #[test]
+    fn registry_initializes_all_language_parsers() {
+        let engine = TldrEngine::builder(PathBuf::from("/tmp/project")).build();
+
+        for language in engine.registry().supported_languages() {
+            let mut parser = engine
+                .registry()
+                .parser_for(language)
+                .expect("parser should initialize");
+            let tree = parser
+                .parse(engine.registry().sample_for(language), None)
+                .expect("sample code should parse");
+            assert_eq!(tree.root_node().has_error(), false);
+        }
+    }
 }
