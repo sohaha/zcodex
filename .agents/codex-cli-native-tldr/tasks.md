@@ -36,10 +36,11 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
-  - 会话 A：整理 CLI daemon auto-start 收口结果
+  - 会话 A：补 CLI stale socket/auto-start 重试测试
   - 会话 B：准备下一轮 daemon 生命周期验证
-  - 主线程：同步 `.agents` 文档并提交当前收口变更
+  - 主线程：同步 `.agents` 文档并验证当前测试补强
 - **刚完成**：
+  - 补齐 CLI `query_daemon_with_autostart()` 测试钩子与两条生命周期单测（重试成功 / 启动失败不重试）
   - `codex tldr daemon ping/warm/snapshot` 现在也会走 daemon auto-start/重试路径，不再只对 `structure/context` 生效
   - 修复 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`：测试配置改为 `sandbox_mode = "danger-full-access"`，避开当前环境 `bwrap`/userns 限制导致的假失败
   - `native-tldr` daemon stale socket 生命周期修复：`query_daemon()` 在连接拒绝/空响应时会清理陈旧 socket，避免 CLI 被死 socket 卡在 fallback 路径

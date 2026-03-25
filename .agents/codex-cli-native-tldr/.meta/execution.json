@@ -108,6 +108,14 @@
       {
          "at" : "2026-03-25T12:00:02Z",
          "note" : "verified the CLI follow-up with targeted codex-cli tests and `just fix -p codex-cli`"
+      },
+      {
+         "at" : "2026-03-25T12:16:03Z",
+         "note" : "started adding explicit CLI tests for daemon autostart retry behavior via injectable query/start hooks"
+      },
+      {
+         "at" : "2026-03-25T12:18:05Z",
+         "note" : "CLI autostart helper tests landed for both retry-success and no-retry-on-failed-start branches"
       }
    ],
    "feature" : "codex-cli-native-tldr"

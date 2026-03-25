@@ -16,8 +16,10 @@ use once_cell::sync::Lazy;
 use serde_json::json;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
@@ -294,9 +296,33 @@ async fn query_daemon_with_autostart(
     project_root: &Path,
     command: &TldrDaemonCommand,
 ) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
-    let mut daemon_response = query_daemon(project_root, command).await?;
-    if daemon_response.is_none() && ensure_daemon_running(project_root).await? {
-        daemon_response = query_daemon(project_root, command).await?;
+    query_daemon_with_hooks(
+        project_root,
+        command,
+        |project_root, command| Box::pin(query_daemon(project_root, command)),
+        |project_root| Box::pin(ensure_daemon_running(project_root)),
+    )
+    .await
+}
+
+type QueryDaemonFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>> + 'a>,
+>;
+type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + 'a>>;
+
+async fn query_daemon_with_hooks<Q, E>(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+    query: Q,
+    ensure_running: E,
+) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let mut daemon_response = query(project_root, command).await?;
+    if daemon_response.is_none() && ensure_running(project_root).await? {
+        daemon_response = query(project_root, command).await?;
     }
     Ok(daemon_response)
 }
@@ -429,10 +455,17 @@ fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
 mod lifecycle_tests {
     use super::LaunchTracker;
     use super::clear_backoff;
+    use super::query_daemon_with_hooks;
     use super::record_launch_failure;
     use super::should_backoff;
     use super::wait_for_existing_launch;
+    use codex_native_tldr::daemon::TldrDaemonCommand;
+    use codex_native_tldr::daemon::TldrDaemonResponse;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
+    use tempfile::tempdir;
 
     #[test]
     fn backoff_release_sequence() {
@@ -459,5 +492,96 @@ mod lifecycle_tests {
     #[tokio::test]
     async fn wait_for_existing_launch_returns_false_without_tracker() {
         assert!(!wait_for_existing_launch("no-tracker").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn query_daemon_with_hooks_retries_after_autostart() {
+        let tempdir = tempdir().unwrap();
+        let command = TldrDaemonCommand::Ping;
+        let query_calls = Arc::new(AtomicUsize::new(0));
+        let ensure_calls = Arc::new(AtomicUsize::new(0));
+
+        let query_response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "pong".to_string(),
+            analysis: None,
+            snapshot: None,
+        };
+
+        let response = query_daemon_with_hooks(
+            tempdir.path(),
+            &command,
+            {
+                let query_calls = Arc::clone(&query_calls);
+                let query_response = query_response.clone();
+                move |_project_root, _command| {
+                    let query_calls = Arc::clone(&query_calls);
+                    let query_response = query_response.clone();
+                    Box::pin(async move {
+                        let call_index = query_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(if call_index == 0 {
+                            None
+                        } else {
+                            Some(query_response)
+                        })
+                    })
+                }
+            },
+            {
+                let ensure_calls = Arc::clone(&ensure_calls);
+                move |_project_root| {
+                    let ensure_calls = Arc::clone(&ensure_calls);
+                    Box::pin(async move {
+                        ensure_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(true)
+                    })
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response, Some(query_response));
+        assert_eq!(query_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn query_daemon_with_hooks_skips_retry_when_autostart_fails() {
+        let tempdir = tempdir().unwrap();
+        let command = TldrDaemonCommand::Ping;
+        let query_calls = Arc::new(AtomicUsize::new(0));
+        let ensure_calls = Arc::new(AtomicUsize::new(0));
+
+        let response = query_daemon_with_hooks(
+            tempdir.path(),
+            &command,
+            {
+                let query_calls = Arc::clone(&query_calls);
+                move |_project_root, _command| {
+                    let query_calls = Arc::clone(&query_calls);
+                    Box::pin(async move {
+                        query_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(None)
+                    })
+                }
+            },
+            {
+                let ensure_calls = Arc::clone(&ensure_calls);
+                move |_project_root| {
+                    let ensure_calls = Arc::clone(&ensure_calls);
+                    Box::pin(async move {
+                        ensure_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(false)
+                    })
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(response, None);
+        assert_eq!(query_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
     }
 }
