@@ -3,9 +3,14 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::daemon_lock_is_held;
+use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
+use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
+use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
 use rmcp::model::JsonObject;
@@ -15,8 +20,13 @@ use schemars::r#gen::SchemaSettings;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
+use tokio::time::sleep;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -98,6 +108,18 @@ pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
     }
 }
 
+type QueryDaemonFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>>
+            + Send
+            + 'a,
+    >,
+>;
+type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+
+static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
+    Lazy::new(DaemonLifecycleManager::default);
+
 pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResult {
     let args = match arguments.map(serde_json::Value::Object) {
         Some(json_val) => match serde_json::from_value::<TldrToolCallParam>(json_val) {
@@ -164,7 +186,7 @@ async fn run_analysis_tool(
         kind,
         symbol: symbol.clone(),
     };
-    let daemon_response = query_daemon(
+    let daemon_response = query_daemon_with_lifecycle(
         &project_root,
         &TldrDaemonCommand::Analyze {
             key: analysis_cache_key(kind, language, symbol.as_deref()),
@@ -240,7 +262,7 @@ async fn run_daemon_tool(
     command: TldrDaemonCommand,
     action: &str,
 ) -> Result<CallToolResult> {
-    let Some(response) = query_daemon(&project_root, &command).await? else {
+    let Some(response) = query_daemon_with_lifecycle(&project_root, &command).await? else {
         return Err(anyhow::anyhow!(
             "native-tldr daemon is unavailable for {}",
             project_root.display()
@@ -259,6 +281,55 @@ async fn run_daemon_tool(
         .unwrap_or("ok")
         .to_string();
     Ok(success_result(text, structured_content))
+}
+
+async fn query_daemon_with_lifecycle(
+    project_root: &std::path::Path,
+    command: &TldrDaemonCommand,
+) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
+    query_daemon_with_hooks(
+        project_root,
+        command,
+        |project_root, command| Box::pin(query_daemon(project_root, command)),
+        |project_root| Box::pin(wait_for_external_daemon(project_root)),
+    )
+    .await
+}
+
+async fn query_daemon_with_hooks<Q, E>(
+    project_root: &std::path::Path,
+    command: &TldrDaemonCommand,
+    query: Q,
+    ensure_running: E,
+) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>
+where
+    Q: for<'a> Fn(&'a std::path::Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a std::path::Path) -> EnsureDaemonFuture<'a>,
+{
+    DAEMON_LIFECYCLE_MANAGER
+        .query_or_spawn_with_hooks(project_root, command, query, ensure_running)
+        .await
+}
+
+async fn wait_for_external_daemon(project_root: &std::path::Path) -> Result<bool> {
+    if !daemon_lock_is_held(project_root)? {
+        return Ok(false);
+    }
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(3);
+    while start.elapsed() < timeout {
+        if daemon_metadata_looks_alive(project_root) {
+            return Ok(true);
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    Ok(false)
+}
+
+fn daemon_metadata_looks_alive(project_root: &std::path::Path) -> bool {
+    socket_path_for_project(project_root).exists() && pid_path_for_project(project_root).exists()
 }
 
 fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
@@ -364,7 +435,14 @@ mod tests {
     use super::TldrToolCallParam;
     use super::TldrToolLanguage;
     use super::create_tool_for_tldr_tool_call_param;
+    use super::query_daemon_with_hooks;
+    use codex_native_tldr::daemon::TldrDaemonCommand;
+    use codex_native_tldr::daemon::TldrDaemonResponse;
     use pretty_assertions::assert_eq;
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
+    use tempfile::tempdir;
 
     #[test]
     fn verify_tldr_tool_json_schema() {
@@ -429,5 +507,95 @@ mod tests {
                 "query": "where is auth"
             })
         );
+    }
+
+    #[tokio::test]
+    async fn query_daemon_with_hooks_retries_when_external_daemon_becomes_ready() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let command = TldrDaemonCommand::Ping;
+        let query_calls = Arc::new(AtomicUsize::new(0));
+        let ensure_calls = Arc::new(AtomicUsize::new(0));
+        let query_response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "pong".to_string(),
+            analysis: None,
+            snapshot: None,
+        };
+
+        let response = query_daemon_with_hooks(
+            tempdir.path(),
+            &command,
+            {
+                let query_calls = Arc::clone(&query_calls);
+                let query_response = query_response.clone();
+                move |_project_root, _command| {
+                    let query_calls = Arc::clone(&query_calls);
+                    let query_response = query_response.clone();
+                    Box::pin(async move {
+                        let call_index = query_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(if call_index == 0 {
+                            None
+                        } else {
+                            Some(query_response)
+                        })
+                    })
+                }
+            },
+            {
+                let ensure_calls = Arc::clone(&ensure_calls);
+                move |_project_root| {
+                    let ensure_calls = Arc::clone(&ensure_calls);
+                    Box::pin(async move {
+                        ensure_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(true)
+                    })
+                }
+            },
+        )
+        .await
+        .expect("query_daemon_with_hooks should succeed");
+
+        assert_eq!(response, Some(query_response));
+        assert_eq!(query_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn query_daemon_with_hooks_skips_retry_when_no_external_daemon_is_starting() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let command = TldrDaemonCommand::Ping;
+        let query_calls = Arc::new(AtomicUsize::new(0));
+        let ensure_calls = Arc::new(AtomicUsize::new(0));
+
+        let response = query_daemon_with_hooks(
+            tempdir.path(),
+            &command,
+            {
+                let query_calls = Arc::clone(&query_calls);
+                move |_project_root, _command| {
+                    let query_calls = Arc::clone(&query_calls);
+                    Box::pin(async move {
+                        query_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(None)
+                    })
+                }
+            },
+            {
+                let ensure_calls = Arc::clone(&ensure_calls);
+                move |_project_root| {
+                    let ensure_calls = Arc::clone(&ensure_calls);
+                    Box::pin(async move {
+                        ensure_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(false)
+                    })
+                }
+            },
+        )
+        .await
+        .expect("query_daemon_with_hooks should succeed");
+
+        assert_eq!(response, None);
+        assert_eq!(query_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
     }
 }

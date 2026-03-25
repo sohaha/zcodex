@@ -7,6 +7,7 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
@@ -352,6 +353,10 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
 
 #[cfg(unix)]
 async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
+    if daemon_lock_is_held(project_root)? {
+        return wait_for_daemon_startup(project_root).await;
+    }
+
     let daemon_bin = cargo_bin("codex-native-tldr-daemon")?;
     let mut child = Command::new(daemon_bin)
         .arg("--project")
@@ -365,6 +370,15 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
         let _ = child.wait().await;
     });
 
+    wait_for_daemon_startup(project_root).await
+}
+
+#[cfg(not(unix))]
+async fn try_start_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
+    Ok(false)
+}
+
+async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
     let start = Instant::now();
     let timeout = Duration::from_secs(3);
     while start.elapsed() < timeout {
@@ -374,11 +388,6 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
         sleep(Duration::from_millis(50)).await;
     }
 
-    Ok(false)
-}
-
-#[cfg(not(unix))]
-async fn try_start_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
     Ok(false)
 }
 

@@ -346,6 +346,14 @@ fn write_pid_file(pid_path: &Path) -> Result<()> {
 }
 
 fn acquire_daemon_lock(project_root: &Path) -> Result<Option<File>> {
+    try_open_daemon_lock(project_root)
+}
+
+pub fn daemon_lock_is_held(project_root: &Path) -> Result<bool> {
+    Ok(try_open_daemon_lock(project_root)?.is_none())
+}
+
+fn try_open_daemon_lock(project_root: &Path) -> Result<Option<File>> {
     let lock_path = lock_path_for_project(project_root);
     let lock_file = OpenOptions::new()
         .read(true)
@@ -448,6 +456,7 @@ pub async fn query_daemon(
 mod tests {
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
+    use super::daemon_lock_is_held;
     use super::lock_path_for_project;
     use super::query_daemon;
     use pretty_assertions::assert_eq;
@@ -586,5 +595,23 @@ mod tests {
             lock_path.extension().and_then(|value| value.to_str()),
             Some("lock")
         );
+    }
+
+    #[test]
+    fn daemon_lock_reports_when_project_lock_is_held() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("lock-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = lock_path_for_project(&project_root);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("lock file should open");
+
+        lock_file.try_lock().expect("lock should be acquired");
+        assert!(daemon_lock_is_held(&project_root).expect("lock query should succeed"));
     }
 }
