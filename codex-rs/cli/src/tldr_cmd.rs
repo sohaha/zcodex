@@ -426,10 +426,10 @@ fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
 
 #[cfg(test)]
 mod lifecycle_tests {
+    use super::LaunchTracker;
     use super::clear_backoff;
     use super::record_launch_failure;
     use super::should_backoff;
-    use super::LaunchTracker;
     use super::wait_for_existing_launch;
     use std::time::Duration;
 

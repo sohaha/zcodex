@@ -326,7 +326,10 @@ pub async fn query_daemon(
 
     let stream = match UnixStream::connect(&socket_path).await {
         Ok(stream) => stream,
-        Err(err) if daemon_unavailable(&err) => return Ok(None),
+        Err(err) if daemon_unavailable(&err) => {
+            cleanup_stale_socket(&socket_path);
+            return Ok(None);
+        }
         Err(err) => {
             return Err(err).with_context(|| format!("connect socket {}", socket_path.display()));
         }
@@ -344,12 +347,22 @@ pub async fn query_daemon(
         .await
         .with_context(|| format!("read daemon response from {}", socket_path.display()))?
     else {
+        cleanup_stale_socket(&socket_path);
         return Ok(None);
     };
 
     let response = serde_json::from_str(&line)
         .with_context(|| format!("decode daemon response from {}", socket_path.display()))?;
     Ok(Some(response))
+}
+
+#[cfg(unix)]
+fn cleanup_stale_socket(socket_path: &Path) {
+    if let Err(err) = std::fs::remove_file(socket_path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        let _ = err;
+    }
 }
 
 #[cfg(unix)]
@@ -456,5 +469,31 @@ mod tests {
         );
 
         std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_removes_stale_socket_when_daemon_is_unavailable() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("stale-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        drop(listener);
+        assert!(
+            socket_path.exists(),
+            "socket path should remain after listener drop"
+        );
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect("stale socket should not error");
+
+        assert_eq!(response, None);
+        assert!(!socket_path.exists(), "stale socket should be removed");
     }
 }

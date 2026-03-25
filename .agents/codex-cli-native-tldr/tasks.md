@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（mcp-server 全量已复跑，当前只剩历史 shell approval 失败）
+- **当前阶段**：Stage 3 / 执行中（历史 shell approval 失败已清理，本轮继续做 daemon 生命周期收口）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -36,9 +36,13 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
-  - 深化 daemon 生命周期与外部进程回收策略
-  - 评估 CLI/MCP 共用 daemon 生命周期管理
+  - 会话 A：补 CLI stale socket 自动恢复覆盖
+  - 会话 B：整理验证结果、准备提交
+  - 主线程：整合并行结果、复测、继续同步 `.agents` 文档
 - **刚完成**：
+  - 修复 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`：测试配置改为 `sandbox_mode = "danger-full-access"`，避开当前环境 `bwrap`/userns 限制导致的假失败
+  - `native-tldr` daemon stale socket 生命周期修复：`query_daemon()` 在连接拒绝/空响应时会清理陈旧 socket，避免 CLI 被死 socket 卡在 fallback 路径
+  - 为 stale socket 清理补充 `codex-native-tldr` 单测
   - CLI `codex tldr structure/context` 在 daemon 不可用时尝试自动启动 `codex-native-tldr-daemon` 并重试，提交 `3e640e4d4`
   - MCP `warm` / `notify` / `snapshot` 端到端测试
   - MCP `tldr` daemon 可用路径测试（真实 Unix socket mock）
@@ -46,10 +50,11 @@ dependencies: [prd, tech-review]
   - MCP `tldr semantic` structuredContent 定向测试
   - auto-start 新增失败回退/冷却/启动状态追踪 guard（提交 `9c231e69d`）
   - daemon launch 去重/等待 guard，避免重复拉起（提交 `7773701e7`）
-  - 复跑 `cargo test -p codex-mcp-server` 全量，确认当前唯一剩余失败仍是历史用例 `test_shell_command_approval_triggers_elicitation`
+  - 复跑 `cargo test -p codex-mcp-server` 全量，当前已全部通过
 - **紧随其后**：
   - `semantic` / daemon 外部进程启动路径的进一步端到端覆盖
   - daemon 生命周期、跨平台 auto-start 与 MCP 协同策略补齐
+  - CLI 侧对 stale socket/失效 daemon 的重拉起路径补更显式覆盖
 - **已知阻塞**：
   - `just argument-comment-lint` 依赖脚本 `./tools/argument-comment-lint/run-prebuilt-linter.sh` 缺失
   - `just bazel-lock-check` 依赖脚本 `./scripts/check-module-bazel-lock.sh` 缺失
