@@ -168,6 +168,8 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
     use tempfile::tempdir;
+    use tokio::sync::Notify;
+    use tokio::time::sleep;
 
     #[tokio::test]
     async fn query_or_spawn_with_hooks_retries_after_launch() {
@@ -180,6 +182,7 @@ mod tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: None,
             daemon_status: None,
             reindex_report: None,
@@ -263,6 +266,74 @@ mod tests {
         assert_eq!(response, None);
         assert_eq!(query_calls.load(Ordering::SeqCst), 1);
         assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ensure_running_serializes_concurrent_launches() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().to_path_buf();
+        let manager = Arc::new(DaemonLifecycleManager::default());
+        let launch_count = Arc::new(AtomicUsize::new(0));
+        let alive_flag = Arc::new(AtomicBool::new(false));
+        let launch_notify = Arc::new(Notify::new());
+
+        let manager_clone = Arc::clone(&manager);
+        let project_clone = project_root.clone();
+        let launch_count_clone = Arc::clone(&launch_count);
+        let alive_clone = Arc::clone(&alive_flag);
+        let alive_for_launch = Arc::clone(&alive_flag);
+        let notify_clone = Arc::clone(&launch_notify);
+        let first = tokio::spawn(async move {
+            manager_clone
+                .ensure_running(
+                    &project_clone,
+                    move |_path| alive_clone.load(Ordering::SeqCst),
+                    |_path| {},
+                    move |_path| {
+                        let launch_count = Arc::clone(&launch_count_clone);
+                        let alive = Arc::clone(&alive_for_launch);
+                        let notify = Arc::clone(&notify_clone);
+                        Box::pin(async move {
+                            launch_count.fetch_add(1, Ordering::SeqCst);
+                            notify.notify_waiters();
+                            sleep(Duration::from_millis(200)).await;
+                            alive.store(true, Ordering::SeqCst);
+                            Ok(true)
+                        })
+                    },
+                )
+                .await
+        });
+
+        launch_notify.notified().await;
+
+        let manager_clone = Arc::clone(&manager);
+        let project_clone = project_root.clone();
+        let alive_clone = Arc::clone(&alive_flag);
+        let second = tokio::spawn(async move {
+            manager_clone
+                .ensure_running(
+                    &project_clone,
+                    move |_path| alive_clone.load(Ordering::SeqCst),
+                    |_path| {},
+                    |_path| {
+                        Box::pin(async move {
+                            panic!("second ensure_running should not launch a daemon");
+                        })
+                    },
+                )
+                .await
+        });
+
+        first
+            .await
+            .unwrap()
+            .expect("first ensure_running should succeed");
+        second
+            .await
+            .unwrap()
+            .expect("second ensure_running should succeed");
+        assert_eq!(launch_count.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
