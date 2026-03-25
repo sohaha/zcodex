@@ -11,6 +11,9 @@
 - **最新代码提交**：`acb9243b7` `feat: add native tldr semantic phase 1 search`
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr`：通过（35 个测试；含 `TldrEngine` 复用 `SemanticIndex` 缓存直到 reindex 的回归）
+- `cargo test -p codex-cli --bin codex`：通过（47 个测试）
+- `cargo test -p codex-mcp-server`：通过（28 个测试；含 semantic `embeddingUsed` / `embedding_score` 断言）
 - `cargo test -p codex-native-tldr`：通过（31 个测试；含 warm->reindex report 回归）
 - `cargo test -p codex-cli --bin codex`：通过（47 个测试；含跨进程 launcher 竞争测试）
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_daemon_running_only_spawns_once_across_processes -- --exact --nocapture`：通过
@@ -93,6 +96,9 @@
 - `just argument-comment-lint`：失败（仓库仍缺少 `./tools/argument-comment-lint/run-prebuilt-linter.sh`）
 
 ### 当前验证结果
+- semantic search 现已围绕显式 `SemanticIndex` build/query 边界运行；同一 `TldrEngine` 后续查询会复用缓存，直到 `semantic_reindex()` 重建
+- daemon 每个连接现复用共享 `TldrEngine`，不会再因为新建默认 engine 而丢失配置或缓存状态
+- CLI JSON / 文本输出与 MCP structuredContent 均已显式暴露 `embeddingUsed`，MCP e2e 还断言了 `embedding_score`
 - semantic disabled 路径现在返回显式启用提示，不再冒充“已启用但未实现”
 - semantic enabled 路径现在会扫描对应语言源码，返回 ranked matches、embedding-unit metadata 与 preview snippet
 - CLI 与 MCP 都走统一 `engine.semantic_search(...)`，避免两端结果结构继续漂移

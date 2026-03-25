@@ -232,6 +232,15 @@ pub struct SemanticSearchResponse {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct SemanticIndex {
+    pub language: SupportedLanguage,
+    pub indexed_files: usize,
+    pub units: Vec<EmbeddingUnit>,
+    pub embedding_enabled: bool,
+    pub embedding_dimensions: usize,
+}
+
 /// Minimal semantic indexer that ports the upstream embedding-unit shape and
 /// five-layer text assembly without introducing heavyweight embedding deps yet.
 #[derive(Debug, Clone)]
@@ -297,80 +306,99 @@ impl SemanticIndexer {
             .with_context(|| format!("build ignore matcher for {}", project_root.display()))
     }
 
-    pub fn reindex(&self, project_root: &Path) -> Result<SemanticReindexReport> {
-        if !self.is_enabled() {
-            return Ok(SemanticReindexReport::failed(
-                "semantic reindexing is disabled in config",
-                self.config.embedding_enabled(),
-                self.config.embedding_dimensions(),
-            ));
+    fn disabled_response(&self, query: String) -> SemanticSearchResponse {
+        SemanticSearchResponse {
+            enabled: false,
+            query,
+            indexed_files: 0,
+            truncated: false,
+            matches: Vec::new(),
+            embedding_used: false,
+            message: "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
+                .to_string(),
         }
-        let started_at = SystemTime::now();
-        let registry = LanguageRegistry;
-        let languages = registry.supported_languages();
-        let mut indexed_files = 0;
-        let mut indexed_units = 0;
-        let matcher = self.build_ignore_matcher(project_root)?;
-        for language in &languages {
-            let (units, files) = collect_embedding_units(
-                project_root,
-                *language,
-                &matcher,
-                self.config.embedding_enabled(),
-                self.config.embedding_dimensions(),
-            )?;
-            indexed_files += files;
-            indexed_units += units.len();
-        }
-        let finished_at = SystemTime::now();
-        Ok(SemanticReindexReport::completed(
-            languages,
-            indexed_files,
-            indexed_units,
-            started_at,
-            finished_at,
-            self.config.embedding_enabled(),
-            self.config.embedding_dimensions(),
-        ))
     }
 
-    pub fn search(
+    pub fn build_index(
         &self,
         project_root: &Path,
-        request: SemanticSearchRequest,
-    ) -> Result<SemanticSearchResponse> {
-        if !self.is_enabled() {
-            return Ok(SemanticSearchResponse {
-                enabled: false,
-                query: request.query,
-                indexed_files: 0,
-                truncated: false,
-                matches: Vec::new(),
-                embedding_used: false,
-                message:
-                    "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
-                        .to_string(),
-            });
-        }
-
+        language: SupportedLanguage,
+    ) -> Result<SemanticIndex> {
         let matcher = self.build_ignore_matcher(project_root)?;
         let embedding_enabled = self.config.embedding_enabled();
         let embedding_dimensions = self.config.embedding_dimensions();
         let (units, indexed_files) = collect_embedding_units(
             project_root,
-            request.language,
+            language,
             &matcher,
             embedding_enabled,
             embedding_dimensions,
         )?;
-        let query = request.query;
-        let query_vector = if embedding_enabled {
-            Some(build_embedding_vector(&query, embedding_dimensions))
+
+        Ok(SemanticIndex {
+            language,
+            indexed_files,
+            units,
+            embedding_enabled,
+            embedding_dimensions,
+        })
+    }
+
+    pub fn reindex_all(
+        &self,
+        project_root: &Path,
+    ) -> Result<(Vec<SemanticIndex>, SemanticReindexReport)> {
+        if !self.is_enabled() {
+            return Ok((
+                Vec::new(),
+                SemanticReindexReport::failed(
+                    "semantic reindexing is disabled in config",
+                    self.config.embedding_enabled(),
+                    self.config.embedding_dimensions(),
+                ),
+            ));
+        }
+        let started_at = SystemTime::now();
+        let registry = LanguageRegistry;
+        let languages = registry.supported_languages();
+        let mut indexes = Vec::with_capacity(languages.len());
+        let mut indexed_files = 0;
+        let mut indexed_units = 0;
+        for language in &languages {
+            let index = self.build_index(project_root, *language)?;
+            indexed_files += index.indexed_files;
+            indexed_units += index.units.len();
+            indexes.push(index);
+        }
+        let finished_at = SystemTime::now();
+        Ok((
+            indexes,
+            SemanticReindexReport::completed(
+                languages,
+                indexed_files,
+                indexed_units,
+                started_at,
+                finished_at,
+                self.config.embedding_enabled(),
+                self.config.embedding_dimensions(),
+            ),
+        ))
+    }
+
+    pub fn reindex(&self, project_root: &Path) -> Result<SemanticReindexReport> {
+        self.reindex_all(project_root).map(|(_, report)| report)
+    }
+
+    pub fn search_index(&self, index: &SemanticIndex, query: String) -> SemanticSearchResponse {
+        let query_vector = if index.embedding_enabled {
+            Some(build_embedding_vector(&query, index.embedding_dimensions))
         } else {
             None
         };
-        let mut matches: Vec<_> = units
-            .into_iter()
+        let mut matches: Vec<_> = index
+            .units
+            .iter()
+            .cloned()
             .filter_map(|unit| {
                 let embedding_text = unit.build_embedding_text();
                 let score = score_match(&query, &unit, &embedding_text);
@@ -398,6 +426,12 @@ impl SemanticIndexer {
             right
                 .score
                 .cmp(&left.score)
+                .then_with(|| {
+                    right
+                        .embedding_score
+                        .unwrap_or_default()
+                        .total_cmp(&left.embedding_score.unwrap_or_default())
+                })
                 .then_with(|| left.path.cmp(&right.path))
                 .then_with(|| left.line.cmp(&right.line))
         });
@@ -405,15 +439,28 @@ impl SemanticIndexer {
         matches.truncate(5);
         let result_count = matches.len();
 
-        Ok(SemanticSearchResponse {
+        SemanticSearchResponse {
             enabled: true,
             query,
-            indexed_files,
+            indexed_files: index.indexed_files,
             truncated,
             matches,
-            embedding_used: embedding_enabled,
+            embedding_used: index.embedding_enabled,
             message: format!("semantic search returned {result_count} matches"),
-        })
+        }
+    }
+
+    pub fn search(
+        &self,
+        project_root: &Path,
+        request: SemanticSearchRequest,
+    ) -> Result<SemanticSearchResponse> {
+        if !self.is_enabled() {
+            return Ok(self.disabled_response(request.query));
+        }
+
+        let index = self.build_index(project_root, request.language)?;
+        Ok(self.search_index(&index, request.query))
     }
 }
 

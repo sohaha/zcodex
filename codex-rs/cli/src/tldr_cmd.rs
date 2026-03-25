@@ -270,6 +270,7 @@ fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
         "enabled": response.enabled,
         "indexedFiles": response.indexed_files,
         "truncated": response.truncated,
+        "embeddingUsed": response.embedding_used,
         "matches": response.matches,
         "message": response.message,
     });
@@ -280,7 +281,13 @@ fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
         println!("language: {}", language.as_str());
         println!("semantic enabled: {}", response.enabled);
         println!("message: {}", response.message);
+        println!("embedding used: {}", response.embedding_used);
         println!("matches: {}", response.matches.len());
+        for (index, semantic_match) in response.matches.iter().enumerate() {
+            if let Some(score) = semantic_match.embedding_score {
+                println!("match {index} embedding score: {score:.3}");
+            }
+        }
     }
 
     Ok(())

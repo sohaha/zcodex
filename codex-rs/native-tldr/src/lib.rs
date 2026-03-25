@@ -15,8 +15,10 @@ pub use crate::config::load_tldr_config;
 use crate::daemon::DaemonConfig;
 use crate::daemon::TldrDaemonConfigSummary;
 use crate::lang_support::LanguageRegistry;
+use crate::lang_support::SupportedLanguage;
 use crate::mcp::TldrToolDescriptor;
 use crate::semantic::SemanticConfig;
+use crate::semantic::SemanticIndex;
 use crate::semantic::SemanticIndexer;
 use crate::semantic::SemanticReindexReport;
 use crate::semantic::SemanticSearchRequest;
@@ -25,7 +27,10 @@ use crate::session::SessionConfig;
 use anyhow::Result;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TldrConfig {
@@ -60,6 +65,17 @@ impl TldrConfig {
 pub struct TldrEngine {
     config: TldrConfig,
     registry: LanguageRegistry,
+    semantic_indexes: Arc<RwLock<BTreeMap<SupportedLanguage, SemanticIndex>>>,
+}
+
+impl Clone for TldrEngine {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            registry: LanguageRegistry,
+            semantic_indexes: Arc::clone(&self.semantic_indexes),
+        }
+    }
 }
 
 impl TldrEngine {
@@ -87,12 +103,45 @@ impl TldrEngine {
         &self,
         request: SemanticSearchRequest,
     ) -> Result<SemanticSearchResponse> {
-        self.semantic_indexer()
-            .search(&self.config.project_root, request)
+        let indexer = self.semantic_indexer();
+        if !indexer.is_enabled() {
+            return indexer.search(&self.config.project_root, request);
+        }
+
+        let language = request.language;
+        let cached = self
+            .semantic_indexes
+            .read()
+            .expect("semantic index cache lock should not be poisoned")
+            .get(&language)
+            .cloned();
+        let index = if let Some(index) = cached {
+            index
+        } else {
+            let index = indexer.build_index(&self.config.project_root, language)?;
+            self.semantic_indexes
+                .write()
+                .expect("semantic index cache lock should not be poisoned")
+                .insert(language, index.clone());
+            index
+        };
+
+        Ok(indexer.search_index(&index, request.query))
     }
 
     pub fn semantic_reindex(&self) -> Result<SemanticReindexReport> {
-        self.semantic_indexer().reindex(&self.config.project_root)
+        let (indexes, report) = self
+            .semantic_indexer()
+            .reindex_all(&self.config.project_root)?;
+        let mut cache = self
+            .semantic_indexes
+            .write()
+            .expect("semantic index cache lock should not be poisoned");
+        cache.clear();
+        for index in indexes {
+            cache.insert(index.language, index);
+        }
+        Ok(report)
     }
 
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {
@@ -136,6 +185,7 @@ impl TldrEngineBuilder {
         TldrEngine {
             config: self.config,
             registry: LanguageRegistry,
+            semantic_indexes: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 }
@@ -150,8 +200,10 @@ mod tests {
     use crate::lang_support::SupportedLanguage;
     use crate::semantic::SemanticConfig;
     use crate::semantic::SemanticEmbeddingConfig;
+    use crate::semantic::SemanticSearchRequest;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
     fn engine_builder_uses_expected_defaults() {
@@ -214,6 +266,51 @@ mod tests {
         let indexer = engine.semantic_indexer();
         assert!(indexer.is_enabled());
         assert!(indexer.describe().contains("enabled"));
+    }
+
+    #[test]
+    fn semantic_search_reuses_cached_index_until_reindex() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            "fn login() {\n    validate(user);\n}\n",
+        )
+        .expect("fixture should be written");
+        let engine = TldrEngine::builder(tempdir.path().to_path_buf())
+            .with_semantic(SemanticConfig::default().with_enabled(true))
+            .build();
+
+        let first = engine
+            .semantic_search(SemanticSearchRequest {
+                language: SupportedLanguage::Rust,
+                query: "login".to_string(),
+            })
+            .expect("first search should succeed");
+        assert_eq!(first.matches[0].unit.symbol.as_deref(), Some("login"));
+
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            "fn logout() {\n    audit(user);\n}\n",
+        )
+        .expect("updated fixture should be written");
+        let cached = engine
+            .semantic_search(SemanticSearchRequest {
+                language: SupportedLanguage::Rust,
+                query: "login".to_string(),
+            })
+            .expect("cached search should succeed");
+        assert_eq!(cached.matches[0].unit.symbol.as_deref(), Some("login"));
+
+        let report = engine.semantic_reindex().expect("reindex should succeed");
+        assert!(report.is_completed());
+        let refreshed = engine
+            .semantic_search(SemanticSearchRequest {
+                language: SupportedLanguage::Rust,
+                query: "logout".to_string(),
+            })
+            .expect("refreshed search should succeed");
+        assert_eq!(refreshed.matches[0].unit.symbol.as_deref(), Some("logout"));
     }
 
     #[tokio::test]

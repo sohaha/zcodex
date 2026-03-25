@@ -259,6 +259,7 @@ async fn run_semantic_tool(
         "source": "local",
         "indexedFiles": response.indexed_files,
         "truncated": response.truncated,
+        "embeddingUsed": response.embedding_used,
         "message": response.message,
         "matches": response.matches,
     });

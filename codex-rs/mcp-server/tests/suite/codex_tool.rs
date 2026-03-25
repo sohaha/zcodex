@@ -1214,6 +1214,7 @@ async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
         "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
     );
     assert_eq!(structured["enabled"], false);
+    assert_eq!(structured["embeddingUsed"], false);
 
     Ok(())
 }
@@ -1231,7 +1232,7 @@ async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()>
     std::fs::create_dir(project.path().join("src"))?;
     std::fs::write(
         project.path().join(".codex/tldr.toml"),
-        "[semantic]\nenabled = true\n",
+        "[semantic]\nenabled = true\n[semantic.embedding]\nenabled = true\ndimensions = 16\n",
     )?;
     std::fs::write(
         project.path().join("src/auth.rs"),
@@ -1270,6 +1271,7 @@ async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()>
         .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
     assert_eq!(structured["action"], "semantic");
     assert_eq!(structured["enabled"], true);
+    assert_eq!(structured["embeddingUsed"], true);
     assert_eq!(structured["indexedFiles"], 1);
     assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
     assert_eq!(structured["matches"][0]["line"], 2);
@@ -1277,6 +1279,10 @@ async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()>
         structured["matches"][0]["snippet"],
         "let auth_token = true;"
     );
+    assert!(matches!(
+        structured["matches"][0]["embedding_score"].as_f64(),
+        Some(score) if score > 0.0
+    ));
 
     Ok(())
 }

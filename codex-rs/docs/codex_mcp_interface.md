@@ -139,7 +139,7 @@ Typical inputs:
 - `path` - dirty file path for `notify`
 
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
-For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `matches`, and per-match `path`/`line`/`snippet` metadata.
+For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata.
 For `status`, the structured output includes `snapshot` and `daemonStatus`.
 
 ## Approvals (server -> client)

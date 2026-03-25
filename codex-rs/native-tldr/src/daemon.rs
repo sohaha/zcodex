@@ -163,8 +163,7 @@ impl TldrDaemon {
             TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
             TldrDaemonCommand::Warm => {
                 let mut session = self.session.lock().await;
-                let (message, reindex_report) =
-                    warm_with_reindex(&mut session, &self.engine, &self.project_root);
+                let (message, reindex_report) = warm_with_reindex(&mut session, &self.engine);
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
                     message,
@@ -249,7 +248,7 @@ impl TldrDaemon {
                 accept_result = listener.accept() => {
                     let (stream, _) = accept_result?;
                     let session = Arc::clone(&self.session);
-                    let engine = TldrEngine::builder(self.project_root.clone()).build();
+                    let engine = self.engine.clone();
                     tokio::spawn(async move {
                         let _ = serve_connection(stream, session, engine).await;
                     });
@@ -281,7 +280,7 @@ impl TldrDaemon {
                 accept_result = listener.accept() => {
                     let (stream, _) = accept_result?;
                     let session = Arc::clone(&self.session);
-                    let engine = TldrEngine::builder(self.project_root.clone()).build();
+                    let engine = self.engine.clone();
                     tokio::spawn(async move {
                         let _ = serve_connection(stream, session, engine).await;
                     });
@@ -306,7 +305,7 @@ async fn handle_with_session(
         TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
         TldrDaemonCommand::Warm => {
             let mut guard = session.lock().await;
-            let (message, reindex_report) = warm_with_reindex(&mut guard, engine, project_root);
+            let (message, reindex_report) = warm_with_reindex(&mut guard, engine);
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
                 message,
@@ -411,10 +410,9 @@ fn notify_session_message(session: &mut Session, path: PathBuf) -> String {
 fn warm_with_reindex(
     session: &mut Session,
     engine: &TldrEngine,
-    project_root: &Path,
 ) -> (String, Option<SemanticReindexReport>) {
     if session.reindex_pending() {
-        match engine.semantic_indexer().reindex(project_root) {
+        match engine.semantic_reindex() {
             Ok(report) => {
                 if report.is_completed() {
                     session.complete_reindex(report.clone());

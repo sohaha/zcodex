@@ -172,6 +172,10 @@
       {
          "at": "2026-03-25T23:03:18Z",
          "note": "completed warm/reindex phase-1 execution loop plus cross-process launcher competition coverage; warm now returns observable reindex reports and CLI verifies only one spawn across concurrent processes"
+      },
+      {
+         "at": "2026-03-26T00:20:00Z",
+         "note": "landed SemanticIndex cache reuse in native-tldr, shared TldrEngine reuse in daemon connection handling, and semantic embeddingUsed/embedding_score output coverage across CLI and MCP"
       }
    ],
    "feature": "codex-cli-native-tldr"

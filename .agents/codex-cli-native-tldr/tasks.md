@@ -36,11 +36,14 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
+  - 新完成：semantic phase-1 增加 `SemanticIndex` 抽象，`TldrEngine` 现会缓存每种语言的索引，`semantic_reindex()` 会重建并替换缓存
+  - 新完成：daemon 连接处理改为复用共享 `TldrEngine`，`Warm` 走真实缓存重建路径，不再丢失项目配置或索引状态
+  - 新完成：CLI / MCP semantic 输出补齐 `embeddingUsed`，match 结果补显式 `embedding_score` 暴露与断言
   - 新完成：daemon `Warm` 不再只是清状态，现会执行一次 phase-1 semantic reindex 并把报告暴露给 snapshot/status/warm
   - 新完成：CLI 补了双进程 launcher 竞争测试，验证同一 project 并发 auto-start 最终只发生一次真实 spawn
   - 新完成：selective sync 上游 llm-tldr `semantic.py` 的 EmbeddingUnit/五层文本组装思路，native-tldr/CLI/MCP 现可返回本地 semantic matches
-  - 主线程：推进 phase-1 稳定化，继续收口 stale/liveness/lock 恢复闭环与 daemon 外部进程边界
-  - 下一步：补 semantic / daemon 外部进程启动路径的进一步端到端覆盖
+  - 主线程：继续收口 phase-1 稳定化，准备下一轮 semantic/daemon 端到端覆盖
+  - 下一步：决定是否把 semantic search 也纳入 daemon 复用路径，或继续推进更强的跨进程唯一性验证
   - 持续：同步 `.agents` 文档与定向验证结果
 - **刚完成**：
   - `semantic` phase-1 从 placeholder 升级为真实本地检索：native-tldr 现在会按语言扫描源码、构建 embedding-unit 风格 metadata，并返回 ranked matches
