@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use crate::api::AnalysisResponse;
+use crate::semantic::SemanticReindexReport;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirtyState {
@@ -38,6 +39,7 @@ pub struct SessionSnapshot {
     pub dirty_file_threshold: usize,
     pub reindex_pending: bool,
     pub last_query_at: Option<SystemTime>,
+    pub last_reindex: Option<SemanticReindexReport>,
 }
 
 #[derive(Debug)]
@@ -46,6 +48,7 @@ pub struct Session {
     cache: HashMap<String, AnalysisResponse>,
     dirty_files: BTreeSet<PathBuf>,
     last_query_at: Option<SystemTime>,
+    last_reindex: Option<SemanticReindexReport>,
 }
 
 impl Session {
@@ -55,6 +58,7 @@ impl Session {
             cache: HashMap::new(),
             dirty_files: BTreeSet::new(),
             last_query_at: None,
+            last_reindex: None,
         }
     }
 
@@ -63,7 +67,7 @@ impl Session {
     }
 
     pub fn reindex_pending(&self) -> bool {
-        self.should_invalidate_cache()
+        !self.dirty_files.is_empty()
     }
 
     pub fn store_analysis(&mut self, key: String, response: AnalysisResponse) {
@@ -73,8 +77,12 @@ impl Session {
 
     pub fn mark_dirty(&mut self, path: PathBuf) -> DirtyState {
         self.dirty_files.insert(path);
-        let reindex_pending = self.should_invalidate_cache();
-        let invalidated_entries = if reindex_pending { self.cache.len() } else { 0 };
+        let reindex_pending = self.reindex_pending();
+        let invalidated_entries = if self.should_invalidate_cache() {
+            self.cache.len()
+        } else {
+            0
+        };
         let cache_invalidated = invalidated_entries > 0;
         if cache_invalidated {
             self.cache.clear();
@@ -102,9 +110,21 @@ impl Session {
             cached_entries: self.cache.len(),
             dirty_files: self.dirty_files.len(),
             dirty_file_threshold: self.config.dirty_file_threshold,
-            reindex_pending: self.should_invalidate_cache(),
+            reindex_pending: self.reindex_pending(),
             last_query_at: self.last_query_at,
+            last_reindex: self.last_reindex.clone(),
         }
+    }
+
+    pub fn complete_reindex(&mut self, report: SemanticReindexReport) {
+        self.cache.clear();
+        self.dirty_files.clear();
+        self.last_reindex = Some(report);
+        self.last_query_at = Some(SystemTime::now());
+    }
+
+    pub fn last_reindex_report(&self) -> Option<SemanticReindexReport> {
+        self.last_reindex.clone()
     }
 }
 

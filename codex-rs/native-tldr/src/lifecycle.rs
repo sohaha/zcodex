@@ -182,6 +182,7 @@ mod tests {
             analysis: None,
             snapshot: None,
             daemon_status: None,
+            reindex_report: None,
         };
 
         let response = manager

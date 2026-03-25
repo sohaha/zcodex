@@ -291,6 +291,7 @@ async fn run_daemon_tool(
         "message": response.message,
         "snapshot": response.snapshot,
         "daemonStatus": response.daemon_status,
+        "reindexReport": response.reindex_report,
     });
     let text = structured_content
         .get("message")
@@ -543,6 +544,7 @@ mod tests {
             analysis: None,
             snapshot: None,
             daemon_status: None,
+            reindex_report: None,
         };
 
         let response = query_daemon_with_hooks(

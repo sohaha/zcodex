@@ -1,3 +1,4 @@
+use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
 use anyhow::Result;
 use serde::Deserialize;
@@ -6,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SemanticConfig {
@@ -35,6 +37,66 @@ impl SemanticConfig {
     pub fn with_model(mut self, model: impl Into<String>) -> Self {
         self.model = model.into();
         self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum SemanticReindexStatus {
+    Completed,
+    Failed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SemanticReindexReport {
+    pub status: SemanticReindexStatus,
+    pub languages: Vec<SupportedLanguage>,
+    pub indexed_files: usize,
+    pub indexed_units: usize,
+    pub truncated: bool,
+    pub started_at: SystemTime,
+    pub finished_at: SystemTime,
+    pub message: String,
+}
+
+impl SemanticReindexReport {
+    pub fn is_completed(&self) -> bool {
+        matches!(self.status, SemanticReindexStatus::Completed)
+    }
+
+    pub fn completed(
+        languages: Vec<SupportedLanguage>,
+        indexed_files: usize,
+        indexed_units: usize,
+        started_at: SystemTime,
+        finished_at: SystemTime,
+    ) -> Self {
+        Self {
+            status: SemanticReindexStatus::Completed,
+            languages,
+            indexed_files,
+            indexed_units,
+            truncated: false,
+            started_at,
+            finished_at,
+            message: format!(
+                "semantic phase-1 reindex completed: {indexed_units} units across {indexed_files} files"
+            ),
+        }
+    }
+
+    pub fn failed(error: impl Into<String>) -> Self {
+        let now = SystemTime::now();
+        Self {
+            status: SemanticReindexStatus::Failed,
+            languages: LanguageRegistry.supported_languages(),
+            indexed_files: 0,
+            indexed_units: 0,
+            truncated: false,
+            started_at: now,
+            finished_at: now,
+            message: format!("semantic phase-1 reindex failed: {}", error.into()),
+        }
     }
 }
 
@@ -138,6 +200,32 @@ impl SemanticIndexer {
             self.config.auto_reindex_threshold,
             self.config.feature_gate
         )
+    }
+
+    pub fn reindex(&self, project_root: &Path) -> Result<SemanticReindexReport> {
+        if !self.is_enabled() {
+            return Ok(SemanticReindexReport::failed(
+                "semantic reindexing is disabled in config",
+            ));
+        }
+        let started_at = SystemTime::now();
+        let registry = LanguageRegistry;
+        let languages = registry.supported_languages();
+        let mut indexed_files = 0;
+        let mut indexed_units = 0;
+        for language in &languages {
+            let (units, files) = collect_embedding_units(project_root, *language)?;
+            indexed_files += files;
+            indexed_units += units.len();
+        }
+        let finished_at = SystemTime::now();
+        Ok(SemanticReindexReport::completed(
+            languages,
+            indexed_files,
+            indexed_units,
+            started_at,
+            finished_at,
+        ))
     }
 
     pub fn search(

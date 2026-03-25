@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（semantic phase-1 已落地，继续补 daemon 生命周期边界）
+- **当前阶段**：Stage 3 / 执行中（semantic phase-1 已落地，warm/reindex 与跨进程 launcher 竞争闭环已补齐）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -36,6 +36,8 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
+  - 新完成：daemon `Warm` 不再只是清状态，现会执行一次 phase-1 semantic reindex 并把报告暴露给 snapshot/status/warm
+  - 新完成：CLI 补了双进程 launcher 竞争测试，验证同一 project 并发 auto-start 最终只发生一次真实 spawn
   - 新完成：selective sync 上游 llm-tldr `semantic.py` 的 EmbeddingUnit/五层文本组装思路，native-tldr/CLI/MCP 现可返回本地 semantic matches
   - 主线程：推进 phase-1 稳定化，继续收口 stale/liveness/lock 恢复闭环与 daemon 外部进程边界
   - 下一步：补 semantic / daemon 外部进程启动路径的进一步端到端覆盖

@@ -582,8 +582,10 @@ async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
                 dirty_file_threshold: 20,
                 reindex_pending: false,
                 last_query_at: None,
+                last_reindex: None,
             }),
             daemon_status: None,
+            reindex_report: None,
         };
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
@@ -670,8 +672,10 @@ async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
                 dirty_file_threshold: 20,
                 reindex_pending: false,
                 last_query_at: None,
+                last_reindex: None,
             }),
             daemon_status: None,
+            reindex_report: None,
         };
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
@@ -763,8 +767,10 @@ async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
                 dirty_file_threshold: 20,
                 reindex_pending: false,
                 last_query_at: None,
+                last_reindex: None,
             }),
             daemon_status: None,
+            reindex_report: None,
         };
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
@@ -848,8 +854,10 @@ async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
                 dirty_file_threshold: 20,
                 reindex_pending: false,
                 last_query_at: None,
+                last_reindex: None,
             }),
             daemon_status: None,
+            reindex_report: None,
         };
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
@@ -931,8 +939,10 @@ async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
                 dirty_file_threshold: 20,
                 reindex_pending: false,
                 last_query_at: None,
+                last_reindex: None,
             }),
             daemon_status: None,
+            reindex_report: None,
         };
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
@@ -1074,6 +1084,7 @@ async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
                 dirty_file_threshold: 20,
                 reindex_pending: false,
                 last_query_at: None,
+                last_reindex: None,
             }),
             daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                 project_root: canonical_project_for_server.clone(),
@@ -1104,6 +1115,7 @@ async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
                     session_dirty_file_threshold: 20,
                 },
             }),
+            reindex_report: None,
         };
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())

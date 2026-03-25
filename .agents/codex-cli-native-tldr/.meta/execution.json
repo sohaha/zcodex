@@ -168,6 +168,10 @@
       {
          "at": "2026-03-25T22:30:31Z",
          "note": "completed selective sync from parcadei/llm-tldr for semantic embedding-unit metadata/text assembly; native-tldr, CLI, and MCP now return local semantic matches while keeping local lifecycle behavior"
+      },
+      {
+         "at": "2026-03-25T23:03:18Z",
+         "note": "completed warm/reindex phase-1 execution loop plus cross-process launcher competition coverage; warm now returns observable reindex reports and CLI verifies only one spawn across concurrent processes"
       }
    ],
    "feature": "codex-cli-native-tldr"

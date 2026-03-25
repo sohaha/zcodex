@@ -3,14 +3,18 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：阶段 3 进行中（daemon 接线已完成）
+- **状态**：阶段 3 进行中（warm/reindex 与跨进程 launcher 竞争闭环已补齐）
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：主线程已把 semantic phase-1 落到 native-tldr/CLI/MCP，继续补 lifecycle 边界覆盖
+- **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、以及跨进程 launcher 竞争测试一起落地
 - **最新代码提交**：`acb9243b7` `feat: add native tldr semantic phase 1 search`
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr`：通过（31 个测试；含 warm->reindex report 回归）
+- `cargo test -p codex-cli --bin codex`：通过（47 个测试；含跨进程 launcher 竞争测试）
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_daemon_running_only_spawns_once_across_processes -- --exact --nocapture`：通过
+- `cargo test -p codex-mcp-server`：通过（28 个测试；warm/status structuredContent 已兼容 reindexReport）
 - `cargo test -p codex-native-tldr`：通过（31 个测试；含 semantic embedding text/ranked matches 回归）
 - `cargo test -p codex-cli --bin codex`：通过（44 个测试）
 - `cargo test -p codex-mcp-server`：通过（28 个测试；含 semantic enabled 匹配返回）
@@ -78,7 +82,7 @@
 - `just fix -p codex-native-tldr-daemon`：通过
 - `just fix -p codex-cli`：通过
 - `cargo test -p codex-native-tldr`：通过（31 个测试；含 semantic embedding text / ranked matches / disabled gate）
-- `cargo test -p codex-cli --bin codex`：通过（45 个测试）
+- `cargo test -p codex-cli --bin codex`：通过（45 个测试，当时基线）
 - `cargo test -p codex-mcp-server`：通过（全量复跑成功；另定点验证两条 semantic 用例）
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_structured_content -- --exact --nocapture`：通过
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_returns_matches_when_enabled -- --exact --nocapture`：通过

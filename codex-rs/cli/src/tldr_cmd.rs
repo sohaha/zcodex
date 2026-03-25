@@ -24,6 +24,7 @@ use serde_json::json;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::future::Future;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -305,6 +306,7 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&response)?);
     } else {
         let daemon_status = response.daemon_status;
+        let reindex_report = response.reindex_report;
         let snapshot = response.snapshot;
         println!("status: {}", response.status);
         println!("message: {}", response.message);
@@ -349,6 +351,12 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
             println!("dirty files: {}", snapshot.dirty_files);
             println!("dirty threshold: {}", snapshot.dirty_file_threshold);
             println!("reindex pending: {}", snapshot.reindex_pending);
+        }
+        if let Some(reindex_report) = reindex_report {
+            println!("reindex status: {:?}", reindex_report.status);
+            println!("reindex files: {}", reindex_report.indexed_files);
+            println!("reindex units: {}", reindex_report.indexed_units);
+            println!("reindex message: {}", reindex_report.message);
         }
     }
 
@@ -415,6 +423,29 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
         .await
 }
 
+const CODEX_TLDR_TEST_DAEMON_BIN_ENV: &str = "CODEX_TLDR_TEST_DAEMON_BIN";
+const CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCH_COUNTER";
+
+fn daemon_launcher_bin_for_tests() -> Result<PathBuf> {
+    #[cfg(test)]
+    if let Some(path) = std::env::var_os(CODEX_TLDR_TEST_DAEMON_BIN_ENV) {
+        return Ok(PathBuf::from(path));
+    }
+    Ok(cargo_bin("codex-native-tldr-daemon")?)
+}
+
+fn record_test_daemon_spawn(project_root: &Path) {
+    #[cfg(test)]
+    if let Some(path) = std::env::var_os(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV)
+        && let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(PathBuf::from(path))
+        {
+            let _ = writeln!(file, "{} {}", project_root.display(), std::process::id());
+        }
+}
+
 #[cfg(unix)]
 async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     if daemon_lock_is_held(project_root)? {
@@ -434,7 +465,7 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
 
     cleanup_stale_daemon_artifacts(project_root);
 
-    let daemon_bin = cargo_bin("codex-native-tldr-daemon")?;
+    let daemon_bin = daemon_launcher_bin_for_tests()?;
     let mut child = Command::new(daemon_bin)
         .arg("--project")
         .arg(project_root)
@@ -442,6 +473,7 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
+    record_test_daemon_spawn(project_root);
 
     tokio::spawn(async move {
         let _ = child.wait().await;
@@ -558,15 +590,40 @@ mod lifecycle_tests {
     use super::cleanup_stale_daemon_artifacts;
     use super::daemon_metadata_looks_alive;
     use super::launcher_lock_path_for_project;
+    use super::query_daemon_with_autostart;
     use super::query_daemon_with_hooks;
+    use crate::tldr_cmd::CODEX_TLDR_TEST_DAEMON_BIN_ENV;
+    use anyhow::Result;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::daemon::pid_path_for_project;
     use codex_native_tldr::daemon::socket_path_for_project;
+    use std::path::Path;
+    use std::path::PathBuf;
+    use std::process::Stdio;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
+    use std::thread::sleep;
+    use std::time::Duration;
+    use std::time::Instant;
     use tempfile::tempdir;
+    #[cfg(unix)]
+    use tokio::io::AsyncBufReadExt;
+    #[cfg(unix)]
+    use tokio::io::AsyncWriteExt;
+    #[cfg(unix)]
+    use tokio::io::BufReader;
+    #[cfg(unix)]
+    use tokio::net::UnixListener;
+
+    const CODEX_TLDR_TEST_PROJECT_ROOT_ENV: &str = "CODEX_TLDR_TEST_PROJECT_ROOT";
+    const CODEX_TLDR_TEST_START_SIGNAL_ENV: &str = "CODEX_TLDR_TEST_START_SIGNAL";
+    const CODEX_TLDR_TEST_DONE_SIGNAL_ENV: &str = "CODEX_TLDR_TEST_DONE_SIGNAL";
+    const CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCH_COUNTER";
+    const CODEX_TLDR_TEST_FAKE_DAEMON_PROJECT_ROOT_ENV: &str =
+        "CODEX_TLDR_TEST_FAKE_DAEMON_PROJECT_ROOT";
+    const CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV: &str = "CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE";
 
     #[tokio::test]
     async fn query_daemon_with_hooks_retries_after_autostart() {
@@ -581,6 +638,7 @@ mod lifecycle_tests {
             analysis: None,
             snapshot: None,
             daemon_status: None,
+            reindex_report: None,
         };
 
         let response = query_daemon_with_hooks(
@@ -780,5 +838,190 @@ mod lifecycle_tests {
         assert!(!daemon_metadata_looks_alive(project_root));
         assert!(socket_path.exists());
         assert!(pid_path.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ensure_daemon_running_only_spawns_once_across_processes() -> Result<()> {
+        if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
+            return Ok(());
+        }
+
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let start_signal = project.path().join("start_signal");
+        let counter_path = project.path().join("launch_counter.log");
+        let fake_daemon_release = project.path().join("fake_daemon.release");
+        let fake_daemon_bin = project.path().join("fake_daemon.sh");
+        let done_paths = [
+            project.path().join("child0.done"),
+            project.path().join("child1.done"),
+        ];
+        std::fs::remove_file(&start_signal).ok();
+        std::fs::remove_file(&counter_path).ok();
+        std::fs::remove_file(&fake_daemon_release).ok();
+        for done in &done_paths {
+            std::fs::remove_file(done).ok();
+        }
+        write_fake_daemon_wrapper(
+            std::env::current_exe()?.as_path(),
+            &fake_daemon_bin,
+            &fake_daemon_release,
+        )?;
+
+        let mut children = Vec::new();
+        for done in &done_paths {
+            let child = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("tldr_cmd::lifecycle_tests::cross_process_launcher_contender")
+                .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+                .env(CODEX_TLDR_TEST_START_SIGNAL_ENV, &start_signal)
+                .env(CODEX_TLDR_TEST_DONE_SIGNAL_ENV, done)
+                .env(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path)
+                .env(CODEX_TLDR_TEST_DAEMON_BIN_ENV, &fake_daemon_bin)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            children.push((child, done.clone()));
+        }
+
+        std::fs::write(&start_signal, "go")?;
+        for (_, done) in &children {
+            wait_for_signal(done);
+        }
+
+        for (mut child, _) in children {
+            let status = child.wait()?;
+            assert!(status.success());
+        }
+
+        let spawn_count = std::fs::read_to_string(&counter_path)?.lines().count();
+        assert_eq!(spawn_count, 1, "only one daemon spawn is allowed");
+
+        assert!(socket_path_for_project(&canonical_project).exists());
+        assert!(pid_path_for_project(&canonical_project).exists());
+
+        std::fs::write(&fake_daemon_release, "release")?;
+        cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cross_process_launcher_contender() -> Result<()> {
+        let project_root = match std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV) {
+            Some(path) => PathBuf::from(path),
+            None => return Ok(()),
+        };
+        let start_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_START_SIGNAL_ENV).expect("start signal env should exist"),
+        );
+        let done_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_DONE_SIGNAL_ENV).expect("done signal env should exist"),
+        );
+
+        wait_for_signal(&start_signal);
+
+        let response = query_daemon_with_autostart(&project_root, &TldrDaemonCommand::Ping)
+            .await?
+            .expect("daemon should return response");
+
+        assert_eq!(response.message, "pong");
+
+        std::fs::write(&done_signal, "done")?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn fake_daemon_process() -> Result<()> {
+        let Some(project_root) = std::env::var_os(CODEX_TLDR_TEST_FAKE_DAEMON_PROJECT_ROOT_ENV)
+        else {
+            return Ok(());
+        };
+        let project_root = PathBuf::from(project_root);
+        let release_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV)
+                .expect("fake daemon release env should exist"),
+        );
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        std::fs::remove_file(&socket_path).ok();
+        std::fs::remove_file(&pid_path).ok();
+
+        let listener = UnixListener::bind(&socket_path)?;
+        std::fs::write(&pid_path, std::process::id().to_string())?;
+
+        loop {
+            if release_signal.exists() {
+                break;
+            }
+
+            if let Ok(accept_result) =
+                tokio::time::timeout(Duration::from_millis(50), listener.accept()).await
+            {
+                let (stream, _) = accept_result?;
+                let (reader, mut writer) = tokio::io::split(stream);
+                let mut lines = BufReader::new(reader).lines();
+                if let Some(line) = lines.next_line().await? {
+                    let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+                    let message = match command {
+                        TldrDaemonCommand::Ping => "pong",
+                        TldrDaemonCommand::Warm => "warm",
+                        TldrDaemonCommand::Snapshot => "snapshot",
+                        TldrDaemonCommand::Status => "status",
+                        TldrDaemonCommand::Analyze { .. } => "analyze",
+                        TldrDaemonCommand::Notify { .. } => "notify",
+                    };
+                    let response = TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: message.to_string(),
+                        analysis: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    };
+                    writer
+                        .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                        .await?;
+                }
+            }
+        }
+
+        std::fs::remove_file(&socket_path).ok();
+        std::fs::remove_file(&pid_path).ok();
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn write_fake_daemon_wrapper(
+        current_exe: &Path,
+        script_path: &Path,
+        release_signal: &Path,
+    ) -> Result<()> {
+        let script = format!(
+            "#!/bin/sh\nexport {project_env}=\"$2\"\nexport {release_env}=\"{release}\"\nexec \"{exe}\" --exact tldr_cmd::lifecycle_tests::fake_daemon_process --nocapture\n",
+            project_env = CODEX_TLDR_TEST_FAKE_DAEMON_PROJECT_ROOT_ENV,
+            release_env = CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV,
+            release = release_signal.display(),
+            exe = current_exe.display(),
+        );
+        std::fs::write(script_path, script)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(script_path)?.permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(script_path, permissions)?;
+        }
+        Ok(())
+    }
+
+    fn wait_for_signal(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !path.exists() && Instant::now() < deadline {
+            sleep(Duration::from_millis(10));
+        }
+        assert!(path.exists(), "timed out waiting for {}", path.display());
     }
 }

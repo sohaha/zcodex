@@ -2,6 +2,7 @@ use crate::TldrConfig;
 use crate::TldrEngine;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+use crate::semantic::SemanticReindexReport;
 use crate::session::Session;
 use crate::session::SessionConfig;
 use anyhow::Context;
@@ -66,6 +67,7 @@ pub struct TldrDaemonResponse {
     pub analysis: Option<AnalysisResponse>,
     pub snapshot: Option<crate::session::SessionSnapshot>,
     pub daemon_status: Option<TldrDaemonStatus>,
+    pub reindex_report: Option<SemanticReindexReport>,
 }
 
 impl TldrDaemonResponse {
@@ -76,6 +78,7 @@ impl TldrDaemonResponse {
             analysis: None,
             snapshot: None,
             daemon_status: None,
+            reindex_report: None,
         }
     }
 }
@@ -160,13 +163,15 @@ impl TldrDaemon {
             TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
             TldrDaemonCommand::Warm => {
                 let mut session = self.session.lock().await;
-                let message = warm_session_message(&mut session);
+                let (message, reindex_report) =
+                    warm_with_reindex(&mut session, &self.engine, &self.project_root);
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
                     message,
                     analysis: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
+                    reindex_report,
                 })
             }
             TldrDaemonCommand::Analyze { key, request } => {
@@ -182,6 +187,7 @@ impl TldrDaemon {
                     analysis: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
+                    reindex_report: session.last_reindex_report(),
                 })
             }
             TldrDaemonCommand::Snapshot => {
@@ -300,13 +306,14 @@ async fn handle_with_session(
         TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
         TldrDaemonCommand::Warm => {
             let mut guard = session.lock().await;
-            let message = warm_session_message(&mut guard);
+            let (message, reindex_report) = warm_with_reindex(&mut guard, engine, project_root);
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
                 message,
                 analysis: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
+                reindex_report,
             })
         }
         TldrDaemonCommand::Analyze { key, request } => {
@@ -322,6 +329,7 @@ async fn handle_with_session(
                 analysis: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
+                reindex_report: guard.last_reindex_report(),
             })
         }
         TldrDaemonCommand::Snapshot => {
@@ -362,6 +370,7 @@ fn analyze_with_session(
             analysis: Some(cached),
             snapshot: Some(session.snapshot()),
             daemon_status: None,
+            reindex_report: session.last_reindex_report(),
         });
     }
 
@@ -378,6 +387,7 @@ fn analyze_with_session(
         analysis: Some(analysis),
         snapshot: Some(session.snapshot()),
         daemon_status: None,
+        reindex_report: session.last_reindex_report(),
     })
 }
 
@@ -390,16 +400,37 @@ fn notify_session_message(session: &mut Session, path: PathBuf) -> String {
         );
     }
     if dirty_state.reindex_pending {
-        return "dirty threshold reached; reindex pending".to_string();
+        return format!(
+            "marked dirty ({})；phase-1 reindex pending",
+            dirty_state.dirty_files
+        );
     }
     format!("marked dirty ({})", dirty_state.dirty_files)
 }
 
-fn warm_session_message(session: &mut Session) -> String {
-    if session.clear_dirty_files() {
-        return "reindex state cleared".to_string();
+fn warm_with_reindex(
+    session: &mut Session,
+    engine: &TldrEngine,
+    project_root: &Path,
+) -> (String, Option<SemanticReindexReport>) {
+    if session.reindex_pending() {
+        match engine.semantic_indexer().reindex(project_root) {
+            Ok(report) => {
+                if report.is_completed() {
+                    session.complete_reindex(report.clone());
+                }
+                (report.message.clone(), Some(report))
+            }
+            Err(err) => {
+                let failure = SemanticReindexReport::failed(err.to_string());
+                (failure.message.clone(), Some(failure))
+            }
+        }
+    } else if let Some(report) = session.last_reindex_report() {
+        (report.message.clone(), Some(report))
+    } else {
+        ("already warm".to_string(), None)
     }
-    "already warm".to_string()
 }
 
 async fn serve_connection<T>(
@@ -546,10 +577,6 @@ fn build_daemon_status(
     config: &TldrConfig,
     snapshot: &crate::session::SessionSnapshot,
 ) -> Result<TldrDaemonStatus> {
-    let semantic_indexer = TldrEngine::builder(project_root.to_path_buf())
-        .with_config(config.clone())
-        .build()
-        .semantic_indexer();
     let socket_path = socket_path_for_project(project_root);
     let pid_path = pid_path_for_project(project_root);
     let health = daemon_health(project_root)?;
@@ -567,7 +594,7 @@ fn build_daemon_status(
         stale_pid: health.stale_pid,
         health_reason: health.health_reason.clone(),
         recovery_hint: health.recovery_hint,
-        semantic_reindex_pending: semantic_indexer.should_reindex(snapshot.dirty_files),
+        semantic_reindex_pending: snapshot.reindex_pending,
         last_query_at: snapshot.last_query_at,
         config: config.daemon_config_summary(),
     })
@@ -739,6 +766,7 @@ mod tests {
                 analysis: None,
                 snapshot: None,
                 daemon_status: None,
+                reindex_report: None,
             };
             writer
                 .write_all(
@@ -762,6 +790,7 @@ mod tests {
                 analysis: None,
                 snapshot: None,
                 daemon_status: None,
+                reindex_report: None,
             }
         );
 
@@ -838,13 +867,51 @@ mod tests {
                     .snapshot
                     .expect("analyze snapshot should exist")
                     .last_query_at,
+                last_reindex: None,
             })
         );
     }
 
     #[tokio::test]
     async fn warm_clears_reindex_pending_state() {
-        let mut config = crate::TldrConfig::for_project(std::env::temp_dir().join("warm-project"));
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let src_dir = project.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(src_dir.join("main.rs"), "fn main() {}\n").expect("fixture should exist");
+
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should succeed");
+
+        assert!(warm.reindex_report.is_some());
+        let snapshot = warm.snapshot.expect("warm snapshot should exist");
+        assert_eq!(snapshot.cached_entries, 0);
+        assert_eq!(snapshot.dirty_files, 0);
+        assert_eq!(snapshot.dirty_file_threshold, 1);
+        assert_eq!(snapshot.reindex_pending, false);
+        assert!(snapshot.last_query_at.is_some());
+        assert_eq!(snapshot.last_reindex, warm.reindex_report);
+    }
+
+    #[tokio::test]
+    async fn warm_keeps_reindex_pending_when_reindex_fails() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
         config.session = crate::session::SessionConfig {
             idle_timeout: std::time::Duration::from_secs(60),
             dirty_file_threshold: 1,
@@ -860,18 +927,16 @@ mod tests {
         let warm = daemon
             .handle_command(TldrDaemonCommand::Warm)
             .await
-            .expect("warm should succeed");
+            .expect("warm should return a report");
 
-        assert_eq!(warm.message, "reindex state cleared");
+        assert_eq!(warm.snapshot.as_ref().map(|snapshot| snapshot.dirty_files), Some(1));
         assert_eq!(
-            warm.snapshot,
-            Some(crate::session::SessionSnapshot {
-                cached_entries: 0,
-                dirty_files: 0,
-                dirty_file_threshold: 1,
-                reindex_pending: false,
-                last_query_at: None,
-            })
+            warm.snapshot.as_ref().map(|snapshot| snapshot.reindex_pending),
+            Some(true)
+        );
+        assert_eq!(
+            warm.reindex_report.as_ref().map(|report| &report.status),
+            Some(&crate::semantic::SemanticReindexStatus::Failed)
         );
     }
 
