@@ -3,6 +3,7 @@
 pub mod api;
 pub mod daemon;
 pub mod lang_support;
+pub mod lifecycle;
 pub mod mcp;
 pub mod semantic;
 pub mod session;

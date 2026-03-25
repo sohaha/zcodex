@@ -12,18 +12,15 @@ use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
+use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::process::Stdio;
-use std::sync::Mutex;
-use std::sync::MutexGuard;
 use std::time::Duration;
 use std::time::Instant;
 use tokio::process::Command;
@@ -307,9 +304,16 @@ async fn query_daemon_with_autostart(
 }
 
 type QueryDaemonFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>> + 'a>,
+    Box<
+        dyn Future<Output = Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>>
+            + Send
+            + 'a,
+    >,
 >;
-type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + 'a>>;
+type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+
+static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
+    Lazy::new(DaemonLifecycleManager::default);
 
 async fn query_daemon_with_hooks<Q, E>(
     project_root: &Path,
@@ -321,11 +325,9 @@ where
     Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
     E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
 {
-    let mut daemon_response = query(project_root, command).await?;
-    if daemon_response.is_none() && ensure_running(project_root).await? {
-        daemon_response = query(project_root, command).await?;
-    }
-    Ok(daemon_response)
+    DAEMON_LIFECYCLE_MANAGER
+        .query_or_spawn_with_hooks(project_root, command, query, ensure_running)
+        .await
 }
 
 fn analysis_cache_key(
@@ -337,41 +339,19 @@ fn analysis_cache_key(
     format!("{}:{kind:?}:{symbol}", language.as_str())
 }
 
-async fn wait_for_existing_launch(key: &str) -> Result<bool> {
-    if !lock_map(&LAUNCHING_PROJECTS).contains(key) {
-        return Ok(false);
-    }
-    loop {
-        {
-            if !lock_map(&LAUNCHING_PROJECTS).contains(key) {
-                return Ok(true);
-            }
-        }
-        sleep(Duration::from_millis(25)).await;
-    }
-}
-
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
-    let socket_path = socket_path_for_project(project_root);
-    if daemon_metadata_looks_alive(project_root) {
-        return Ok(true);
-    }
-    cleanup_stale_daemon_artifacts(project_root);
-    let key = project_key(project_root)?;
-    if should_backoff(&key) {
-        return Ok(false);
-    }
-    if wait_for_existing_launch(&key).await? {
-        return Ok(daemon_metadata_looks_alive(project_root));
-    }
-    try_start_native_tldr_daemon(project_root, socket_path).await
+    DAEMON_LIFECYCLE_MANAGER
+        .ensure_running(
+            project_root,
+            daemon_metadata_looks_alive,
+            cleanup_stale_daemon_artifacts,
+            |project_root| Box::pin(try_start_native_tldr_daemon(project_root)),
+        )
+        .await
 }
 
 #[cfg(unix)]
-async fn try_start_native_tldr_daemon(project_root: &Path, _socket_path: PathBuf) -> Result<bool> {
-    let key = project_key(project_root)?;
-    let _tracker = LaunchTracker::new(key.clone());
-
+async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     let daemon_bin = cargo_bin("codex-native-tldr-daemon")?;
     let mut child = Command::new(daemon_bin)
         .arg("--project")
@@ -389,44 +369,17 @@ async fn try_start_native_tldr_daemon(project_root: &Path, _socket_path: PathBuf
     let timeout = Duration::from_secs(3);
     while start.elapsed() < timeout {
         if daemon_metadata_looks_alive(project_root) {
-            clear_backoff(&key);
             return Ok(true);
         }
         sleep(Duration::from_millis(50)).await;
     }
 
-    record_launch_failure(&key);
     Ok(false)
 }
 
 #[cfg(not(unix))]
-async fn try_start_native_tldr_daemon(_project_root: &Path, _socket_path: PathBuf) -> Result<bool> {
+async fn try_start_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
     Ok(false)
-}
-
-fn project_key(project_root: &Path) -> Result<String> {
-    Ok(project_root.to_string_lossy().to_string())
-}
-
-const DAEMON_LAUNCH_BACKOFF: Duration = Duration::from_secs(5);
-
-static LAUNCH_FAILURES: Lazy<Mutex<HashMap<String, Instant>>> =
-    Lazy::new(|| Mutex::new(HashMap::new()));
-static LAUNCHING_PROJECTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
-
-fn should_backoff(key: &str) -> bool {
-    lock_map(&LAUNCH_FAILURES)
-        .get(key)
-        .map(|instant: &Instant| instant.elapsed() < DAEMON_LAUNCH_BACKOFF)
-        .unwrap_or(false)
-}
-
-fn clear_backoff(key: &str) {
-    lock_map(&LAUNCH_FAILURES).remove(key);
-}
-
-fn record_launch_failure(key: &str) {
-    lock_map(&LAUNCH_FAILURES).insert(key.to_string(), Instant::now());
 }
 
 fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
@@ -474,40 +427,11 @@ fn pid_is_alive(pid: i32) -> bool {
     }
 }
 
-struct LaunchTracker {
-    key: String,
-}
-
-impl LaunchTracker {
-    fn new(key: String) -> Self {
-        lock_map(&LAUNCHING_PROJECTS).insert(key.clone());
-        Self { key }
-    }
-}
-
-impl Drop for LaunchTracker {
-    fn drop(&mut self) {
-        lock_map(&LAUNCHING_PROJECTS).remove(&self.key);
-    }
-}
-
-fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    }
-}
-
 #[cfg(test)]
 mod lifecycle_tests {
-    use super::LaunchTracker;
     use super::cleanup_stale_daemon_artifacts;
-    use super::clear_backoff;
     use super::daemon_metadata_looks_alive;
     use super::query_daemon_with_hooks;
-    use super::record_launch_failure;
-    use super::should_backoff;
-    use super::wait_for_existing_launch;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::daemon::pid_path_for_project;
@@ -515,35 +439,7 @@ mod lifecycle_tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
-    use std::time::Duration;
     use tempfile::tempdir;
-
-    #[test]
-    fn backoff_release_sequence() {
-        let key = "unit-test-key";
-        assert!(!should_backoff(key));
-        record_launch_failure(key);
-        assert!(should_backoff(key));
-        clear_backoff(key);
-        assert!(!should_backoff(key));
-    }
-
-    #[tokio::test]
-    async fn wait_for_existing_launch_detects_tracker() {
-        let key = "daemon-lifecycle-test";
-        let handle = tokio::spawn(async move {
-            let _tracker = LaunchTracker::new(key.to_string());
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        });
-
-        assert!(wait_for_existing_launch(key).await.unwrap());
-        handle.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn wait_for_existing_launch_returns_false_without_tracker() {
-        assert!(!wait_for_existing_launch("no-tracker").await.unwrap());
-    }
 
     #[tokio::test]
     async fn query_daemon_with_hooks_retries_after_autostart() {
