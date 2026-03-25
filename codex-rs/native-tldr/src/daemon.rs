@@ -1,6 +1,25 @@
+use crate::TldrEngine;
+use crate::api::AnalysisRequest;
+use crate::api::AnalysisResponse;
+use crate::session::Session;
 use crate::session::SessionConfig;
+use anyhow::Context;
+use anyhow::Result;
+use md5::compute as md5_compute;
 use serde::Deserialize;
 use serde::Serialize;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::sync::Mutex;
+
+#[cfg(not(unix))]
+use tokio::net::TcpListener;
+#[cfg(unix)]
+use tokio::net::UnixListener;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonConfig {
@@ -17,4 +36,278 @@ impl Default for DaemonConfig {
             session: SessionConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "cmd", rename_all = "snake_case")]
+pub enum TldrDaemonCommand {
+    Ping,
+    Warm,
+    Analyze {
+        key: String,
+        request: AnalysisRequest,
+    },
+    Notify {
+        path: PathBuf,
+    },
+    Snapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TldrDaemonResponse {
+    pub status: String,
+    pub message: String,
+    pub analysis: Option<AnalysisResponse>,
+    pub snapshot: Option<crate::session::SessionSnapshot>,
+}
+
+impl TldrDaemonResponse {
+    fn ok(message: impl Into<String>) -> Self {
+        Self {
+            status: "ok".to_string(),
+            message: message.into(),
+            analysis: None,
+            snapshot: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TldrDaemon {
+    project_root: PathBuf,
+    engine: TldrEngine,
+    session: Arc<Mutex<Session>>,
+}
+
+impl TldrDaemon {
+    pub fn new(project_root: PathBuf) -> Self {
+        let engine = TldrEngine::builder(project_root.clone()).build();
+        let session = Session::new(SessionConfig::default());
+        Self {
+            project_root,
+            engine,
+            session: Arc::new(Mutex::new(session)),
+        }
+    }
+
+    pub fn socket_path(&self) -> PathBuf {
+        let hash = format!(
+            "{:x}",
+            md5_compute(self.project_root.to_string_lossy().as_bytes())
+        );
+        std::env::temp_dir().join(format!("codex-native-tldr-{}.sock", &hash[..8]))
+    }
+
+    pub async fn handle_command(&self, command: TldrDaemonCommand) -> Result<TldrDaemonResponse> {
+        match command {
+            TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
+            TldrDaemonCommand::Warm => {
+                let mut session = self.session.lock().await;
+                session.clear_dirty_files();
+                Ok(TldrDaemonResponse {
+                    snapshot: Some(session.snapshot()),
+                    ..TldrDaemonResponse::ok("warmed")
+                })
+            }
+            TldrDaemonCommand::Analyze { key, request } => {
+                let mut session = self.session.lock().await;
+                if let Some(cached) = session.cached_analysis(&key).cloned() {
+                    return Ok(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "cache hit".to_string(),
+                        analysis: Some(cached),
+                        snapshot: Some(session.snapshot()),
+                    });
+                }
+
+                let analysis = self.engine.analyze(request)?;
+                session.store_analysis(key, analysis.clone());
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: "computed".to_string(),
+                    analysis: Some(analysis),
+                    snapshot: Some(session.snapshot()),
+                })
+            }
+            TldrDaemonCommand::Notify { path } => {
+                let mut session = self.session.lock().await;
+                session.mark_dirty(path);
+                let message = if session.should_reindex() {
+                    "dirty threshold reached"
+                } else {
+                    "marked dirty"
+                };
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: message.to_string(),
+                    analysis: None,
+                    snapshot: Some(session.snapshot()),
+                })
+            }
+            TldrDaemonCommand::Snapshot => {
+                let session = self.session.lock().await;
+                Ok(TldrDaemonResponse {
+                    snapshot: Some(session.snapshot()),
+                    ..TldrDaemonResponse::ok("snapshot")
+                })
+            }
+        }
+    }
+
+    pub async fn run_until_shutdown(&self) -> Result<()> {
+        #[cfg(unix)]
+        {
+            self.run_unix().await
+        }
+
+        #[cfg(not(unix))]
+        {
+            self.run_tcp().await
+        }
+    }
+
+    #[cfg(unix)]
+    async fn run_unix(&self) -> Result<()> {
+        let socket_path = self.socket_path();
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)
+                .with_context(|| format!("remove stale socket {}", socket_path.display()))?;
+        }
+        let listener = UnixListener::bind(&socket_path)
+            .with_context(|| format!("bind socket {}", socket_path.display()))?;
+
+        loop {
+            tokio::select! {
+                accept_result = listener.accept() => {
+                    let (stream, _) = accept_result?;
+                    let session = Arc::clone(&self.session);
+                    let engine = TldrEngine::builder(self.project_root.clone()).build();
+                    tokio::spawn(async move {
+                        let _ = serve_connection(stream, session, engine).await;
+                    });
+                }
+                signal = tokio::signal::ctrl_c() => {
+                    signal?;
+                    break;
+                }
+            }
+        }
+
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)
+                .with_context(|| format!("cleanup socket {}", socket_path.display()))?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    async fn run_tcp(&self) -> Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        loop {
+            tokio::select! {
+                accept_result = listener.accept() => {
+                    let (stream, _) = accept_result?;
+                    let session = Arc::clone(&self.session);
+                    let engine = TldrEngine::builder(self.project_root.clone()).build();
+                    tokio::spawn(async move {
+                        let _ = serve_connection(stream, session, engine).await;
+                    });
+                }
+                signal = tokio::signal::ctrl_c() => {
+                    signal?;
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+async fn handle_with_session(
+    session: &Arc<Mutex<Session>>,
+    engine: &TldrEngine,
+    command: TldrDaemonCommand,
+) -> Result<TldrDaemonResponse> {
+    match command {
+        TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
+        TldrDaemonCommand::Warm => {
+            let mut guard = session.lock().await;
+            guard.clear_dirty_files();
+            Ok(TldrDaemonResponse {
+                snapshot: Some(guard.snapshot()),
+                ..TldrDaemonResponse::ok("warmed")
+            })
+        }
+        TldrDaemonCommand::Analyze { key, request } => {
+            let mut guard = session.lock().await;
+            if let Some(cached) = guard.cached_analysis(&key).cloned() {
+                return Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: "cache hit".to_string(),
+                    analysis: Some(cached),
+                    snapshot: Some(guard.snapshot()),
+                });
+            }
+            let analysis = engine.analyze(request)?;
+            guard.store_analysis(key, analysis.clone());
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "computed".to_string(),
+                analysis: Some(analysis),
+                snapshot: Some(guard.snapshot()),
+            })
+        }
+        TldrDaemonCommand::Notify { path } => {
+            let mut guard = session.lock().await;
+            guard.mark_dirty(path);
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: if guard.should_reindex() {
+                    "dirty threshold reached".to_string()
+                } else {
+                    "marked dirty".to_string()
+                },
+                analysis: None,
+                snapshot: Some(guard.snapshot()),
+            })
+        }
+        TldrDaemonCommand::Snapshot => {
+            let guard = session.lock().await;
+            Ok(TldrDaemonResponse {
+                snapshot: Some(guard.snapshot()),
+                ..TldrDaemonResponse::ok("snapshot")
+            })
+        }
+    }
+}
+
+async fn serve_connection<T>(
+    stream: T,
+    session: Arc<Mutex<Session>>,
+    engine: TldrEngine,
+) -> Result<()>
+where
+    T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let (reader, mut writer) = tokio::io::split(stream);
+    let mut lines = BufReader::new(reader).lines();
+
+    while let Some(line) = lines.next_line().await? {
+        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+        let response = handle_with_session(&session, &engine, command).await?;
+        writer
+            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+            .await?;
+    }
+
+    Ok(())
+}
+
+pub fn socket_path_for_project(project_root: &Path) -> PathBuf {
+    let hash = format!(
+        "{:x}",
+        md5_compute(project_root.to_string_lossy().as_bytes())
+    );
+    std::env::temp_dir().join(format!("codex-native-tldr-{}.sock", &hash[..8]))
 }

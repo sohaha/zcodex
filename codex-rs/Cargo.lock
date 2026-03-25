@@ -2288,9 +2288,12 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "codex-file-search",
+ "md5",
  "once_cell",
  "pretty_assertions",
  "serde",
+ "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tree-sitter",
@@ -2302,6 +2305,16 @@ dependencies = [
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "tree-sitter-zig",
+]
+
+[[package]]
+name = "codex-native-tldr-daemon"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "codex-native-tldr",
+ "tokio",
 ]
 
 [[package]]

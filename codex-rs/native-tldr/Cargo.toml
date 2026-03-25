@@ -14,10 +14,12 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 codex-file-search = { workspace = true }
+md5 = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
 tree-sitter = { workspace = true }
 tree-sitter-go = { workspace = true }
 tree-sitter-javascript = { workspace = true }
@@ -30,3 +32,4 @@ tree-sitter-zig = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
+tempfile = { workspace = true }

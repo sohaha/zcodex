@@ -101,6 +101,8 @@ mod tests {
     use super::TldrEngine;
     use crate::api::AnalysisKind;
     use crate::api::AnalysisRequest;
+    use crate::daemon::TldrDaemon;
+    use crate::daemon::TldrDaemonCommand;
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
@@ -155,5 +157,47 @@ mod tests {
                 .expect("sample code should parse");
             assert_eq!(tree.root_node().has_error(), false);
         }
+    }
+
+    #[tokio::test]
+    async fn daemon_caches_analysis_results() {
+        let daemon = TldrDaemon::new(PathBuf::from("/tmp/project"));
+        let first = daemon
+            .handle_command(TldrDaemonCommand::Analyze {
+                key: "rust:main".to_string(),
+                request: AnalysisRequest {
+                    kind: AnalysisKind::Ast,
+                    symbol: Some("main".to_string()),
+                },
+            })
+            .await
+            .expect("first analyze should succeed");
+        let second = daemon
+            .handle_command(TldrDaemonCommand::Analyze {
+                key: "rust:main".to_string(),
+                request: AnalysisRequest {
+                    kind: AnalysisKind::Ast,
+                    symbol: Some("main".to_string()),
+                },
+            })
+            .await
+            .expect("second analyze should succeed");
+
+        assert_eq!(first.message, "computed");
+        assert_eq!(second.message, "cache hit");
+    }
+
+    #[tokio::test]
+    async fn daemon_marks_dirty_files() {
+        let daemon = TldrDaemon::new(PathBuf::from("/tmp/project"));
+        let response = daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+
+        assert_eq!(response.status, "ok");
+        assert_eq!(response.snapshot.expect("snapshot present").dirty_files, 1);
     }
 }
