@@ -8,6 +8,8 @@ use anyhow::Result;
 use md5::compute as md5_compute;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fs::File;
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -168,6 +170,9 @@ impl TldrDaemon {
     async fn run_unix(&self) -> Result<()> {
         let socket_path = self.socket_path();
         let pid_path = pid_path_for_project(&self.project_root);
+        let Some(_daemon_lock) = acquire_daemon_lock(&self.project_root)? else {
+            return Ok(());
+        };
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)
                 .with_context(|| format!("remove stale socket {}", socket_path.display()))?;
@@ -322,6 +327,11 @@ pub fn pid_path_for_project(project_root: &Path) -> PathBuf {
     std::env::temp_dir().join(format!("codex-native-tldr-{hash}.pid"))
 }
 
+pub fn lock_path_for_project(project_root: &Path) -> PathBuf {
+    let hash = daemon_project_hash(project_root);
+    std::env::temp_dir().join(format!("codex-native-tldr-{hash}.lock"))
+}
+
 fn daemon_project_hash(project_root: &Path) -> String {
     let hash = format!(
         "{:x}",
@@ -333,6 +343,23 @@ fn daemon_project_hash(project_root: &Path) -> String {
 fn write_pid_file(pid_path: &Path) -> Result<()> {
     std::fs::write(pid_path, std::process::id().to_string())
         .with_context(|| format!("write pid file {}", pid_path.display()))
+}
+
+fn acquire_daemon_lock(project_root: &Path) -> Result<Option<File>> {
+    let lock_path = lock_path_for_project(project_root);
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("open daemon lock {}", lock_path.display()))?;
+
+    match lock_file.try_lock() {
+        Ok(()) => Ok(Some(lock_file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
 }
 
 #[cfg(unix)]
@@ -421,6 +448,7 @@ pub async fn query_daemon(
 mod tests {
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
+    use super::lock_path_for_project;
     use super::query_daemon;
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
@@ -538,11 +566,14 @@ mod tests {
 
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
+        let lock_path = lock_path_for_project(&project_root);
 
         let socket_stem = socket_path.file_stem().and_then(|value| value.to_str());
         let pid_stem = pid_path.file_stem().and_then(|value| value.to_str());
+        let lock_stem = lock_path.file_stem().and_then(|value| value.to_str());
 
         assert_eq!(socket_stem, pid_stem);
+        assert_eq!(socket_stem, lock_stem);
         assert_eq!(
             socket_path.extension().and_then(|value| value.to_str()),
             Some("sock")
@@ -550,6 +581,10 @@ mod tests {
         assert_eq!(
             pid_path.extension().and_then(|value| value.to_str()),
             Some("pid")
+        );
+        assert_eq!(
+            lock_path.extension().and_then(|value| value.to_str()),
+            Some("lock")
         );
     }
 }
