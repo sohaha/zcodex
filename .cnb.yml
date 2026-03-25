@@ -68,3 +68,10 @@ $:
           runner:
               tags: cnb:arch:amd64
               cpus: 10
+          stages:
+            - name: link codex session
+              script: |
+                set -eu
+                mkdir -p /root/.cnb/codex-session/zcodex
+                mkdir -p /root/.codex
+                ln -sfn /root/.cnb/codex-session/zcodex /root/.codex/session
