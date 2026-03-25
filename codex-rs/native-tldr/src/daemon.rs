@@ -1,3 +1,4 @@
+use crate::TldrConfig;
 use crate::TldrEngine;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
@@ -55,6 +56,7 @@ pub enum TldrDaemonCommand {
         path: PathBuf,
     },
     Snapshot,
+    Status,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,6 +65,7 @@ pub struct TldrDaemonResponse {
     pub message: String,
     pub analysis: Option<AnalysisResponse>,
     pub snapshot: Option<crate::session::SessionSnapshot>,
+    pub daemon_status: Option<TldrDaemonStatus>,
 }
 
 impl TldrDaemonResponse {
@@ -72,7 +75,54 @@ impl TldrDaemonResponse {
             message: message.into(),
             analysis: None,
             snapshot: None,
+            daemon_status: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TldrDaemonConfigSummary {
+    pub auto_start: bool,
+    pub socket_mode: String,
+    pub semantic_enabled: bool,
+    pub semantic_auto_reindex_threshold: usize,
+    pub session_dirty_file_threshold: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TldrDaemonStatus {
+    pub project_root: PathBuf,
+    pub socket_path: PathBuf,
+    pub pid_path: PathBuf,
+    pub lock_path: PathBuf,
+    pub socket_exists: bool,
+    pub pid_is_live: bool,
+    pub lock_is_held: bool,
+    pub healthy: bool,
+    pub stale_socket: bool,
+    pub stale_pid: bool,
+    pub health_reason: Option<String>,
+    pub recovery_hint: Option<String>,
+    pub semantic_reindex_pending: bool,
+    pub last_query_at: Option<std::time::SystemTime>,
+    pub config: TldrDaemonConfigSummary,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonHealth {
+    pub socket_exists: bool,
+    pub pid_is_live: bool,
+    pub lock_is_held: bool,
+    pub healthy: bool,
+    pub stale_socket: bool,
+    pub stale_pid: bool,
+    pub health_reason: Option<String>,
+    pub recovery_hint: Option<String>,
+}
+
+impl DaemonHealth {
+    pub fn should_cleanup_artifacts(&self) -> bool {
+        !self.lock_is_held && (self.stale_socket || self.stale_pid)
     }
 }
 
@@ -85,8 +135,15 @@ pub struct TldrDaemon {
 
 impl TldrDaemon {
     pub fn new(project_root: PathBuf) -> Self {
-        let engine = TldrEngine::builder(project_root.clone()).build();
-        let session = Session::new(SessionConfig::default());
+        Self::from_config(TldrConfig::for_project(project_root))
+    }
+
+    pub fn from_config(config: TldrConfig) -> Self {
+        let project_root = config.project_root.clone();
+        let engine = TldrEngine::builder(project_root.clone())
+            .with_config(config.clone())
+            .build();
+        let session = Session::new(config.session);
         Self {
             project_root,
             engine,
@@ -117,6 +174,7 @@ impl TldrDaemon {
                         message: "cache hit".to_string(),
                         analysis: Some(cached),
                         snapshot: Some(session.snapshot()),
+                        daemon_status: None,
                     });
                 }
 
@@ -127,6 +185,7 @@ impl TldrDaemon {
                     message: "computed".to_string(),
                     analysis: Some(analysis),
                     snapshot: Some(session.snapshot()),
+                    daemon_status: None,
                 })
             }
             TldrDaemonCommand::Notify { path } => {
@@ -142,6 +201,7 @@ impl TldrDaemon {
                     message: message.to_string(),
                     analysis: None,
                     snapshot: Some(session.snapshot()),
+                    daemon_status: None,
                 })
             }
             TldrDaemonCommand::Snapshot => {
@@ -149,6 +209,19 @@ impl TldrDaemon {
                 Ok(TldrDaemonResponse {
                     snapshot: Some(session.snapshot()),
                     ..TldrDaemonResponse::ok("snapshot")
+                })
+            }
+            TldrDaemonCommand::Status => {
+                let session = self.session.lock().await;
+                let snapshot = session.snapshot();
+                Ok(TldrDaemonResponse {
+                    snapshot: Some(snapshot.clone()),
+                    daemon_status: Some(build_daemon_status(
+                        &self.project_root,
+                        self.engine.config(),
+                        &snapshot,
+                    )?),
+                    ..TldrDaemonResponse::ok("status")
                 })
             }
         }
@@ -238,6 +311,7 @@ impl TldrDaemon {
 }
 
 async fn handle_with_session(
+    project_root: &Path,
     session: &Arc<Mutex<Session>>,
     engine: &TldrEngine,
     command: TldrDaemonCommand,
@@ -260,6 +334,7 @@ async fn handle_with_session(
                     message: "cache hit".to_string(),
                     analysis: Some(cached),
                     snapshot: Some(guard.snapshot()),
+                    daemon_status: None,
                 });
             }
             let analysis = engine.analyze(request)?;
@@ -269,6 +344,7 @@ async fn handle_with_session(
                 message: "computed".to_string(),
                 analysis: Some(analysis),
                 snapshot: Some(guard.snapshot()),
+                daemon_status: None,
             })
         }
         TldrDaemonCommand::Notify { path } => {
@@ -283,6 +359,7 @@ async fn handle_with_session(
                 },
                 analysis: None,
                 snapshot: Some(guard.snapshot()),
+                daemon_status: None,
             })
         }
         TldrDaemonCommand::Snapshot => {
@@ -290,6 +367,19 @@ async fn handle_with_session(
             Ok(TldrDaemonResponse {
                 snapshot: Some(guard.snapshot()),
                 ..TldrDaemonResponse::ok("snapshot")
+            })
+        }
+        TldrDaemonCommand::Status => {
+            let guard = session.lock().await;
+            let snapshot = guard.snapshot();
+            Ok(TldrDaemonResponse {
+                snapshot: Some(snapshot.clone()),
+                daemon_status: Some(build_daemon_status(
+                    project_root,
+                    engine.config(),
+                    &snapshot,
+                )?),
+                ..TldrDaemonResponse::ok("status")
             })
         }
     }
@@ -308,7 +398,13 @@ where
 
     while let Some(line) = lines.next_line().await? {
         let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        let response = handle_with_session(&session, &engine, command).await?;
+        let response = handle_with_session(
+            engine.config().project_root.as_path(),
+            &session,
+            &engine,
+            command,
+        )
+        .await?;
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
             .await?;
@@ -351,6 +447,113 @@ fn acquire_daemon_lock(project_root: &Path) -> Result<Option<File>> {
 
 pub fn daemon_lock_is_held(project_root: &Path) -> Result<bool> {
     Ok(try_open_daemon_lock(project_root)?.is_none())
+}
+
+pub fn daemon_health(project_root: &Path) -> Result<DaemonHealth> {
+    let socket_exists = socket_path_for_project(project_root).exists();
+    let pid_is_live = read_live_pid(&pid_path_for_project(project_root)).unwrap_or(false);
+    let lock_is_held = daemon_lock_is_held(project_root)?;
+    let healthy = socket_exists && pid_is_live;
+    let (health_reason, recovery_hint) = if healthy {
+        (None, None)
+    } else {
+        health_diagnostics(socket_exists, pid_is_live, lock_is_held)
+    };
+    Ok(DaemonHealth {
+        socket_exists,
+        pid_is_live,
+        lock_is_held,
+        healthy,
+        stale_socket: socket_exists && !pid_is_live,
+        stale_pid: !socket_exists && pid_is_live,
+        health_reason,
+        recovery_hint,
+    })
+}
+
+fn health_diagnostics(
+    socket_exists: bool,
+    pid_is_live: bool,
+    lock_is_held: bool,
+) -> (Option<String>, Option<String>) {
+    if socket_exists && !pid_is_live {
+        return (
+            Some("stale socket without live daemon".to_string()),
+            Some("remove stale socket/pid files and restart the daemon".to_string()),
+        );
+    }
+    if !socket_exists && pid_is_live {
+        return (
+            Some("pid file exists but socket is missing".to_string()),
+            Some("cleanup pid/socket files before restarting the daemon".to_string()),
+        );
+    }
+    if lock_is_held {
+        return (
+            Some("daemon lock held; another process may be starting it".to_string()),
+            Some("wait for the existing daemon or release the lock manually".to_string()),
+        );
+    }
+    (
+        Some("daemon unavailable (missing socket and pid)".to_string()),
+        Some("start codex-native-tldr-daemon or inspect logs".to_string()),
+    )
+}
+
+pub fn read_live_pid(pid_path: &Path) -> Option<bool> {
+    let pid = std::fs::read_to_string(pid_path)
+        .ok()?
+        .trim()
+        .parse::<i32>()
+        .ok()?;
+    Some(pid_is_alive(pid))
+}
+
+fn pid_is_alive(pid: i32) -> bool {
+    if pid <= 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
+    if result == 0 {
+        true
+    } else {
+        matches!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::EPERM)
+        )
+    }
+}
+
+fn build_daemon_status(
+    project_root: &Path,
+    config: &TldrConfig,
+    snapshot: &crate::session::SessionSnapshot,
+) -> Result<TldrDaemonStatus> {
+    let semantic_indexer = TldrEngine::builder(project_root.to_path_buf())
+        .with_config(config.clone())
+        .build()
+        .semantic_indexer();
+    let socket_path = socket_path_for_project(project_root);
+    let pid_path = pid_path_for_project(project_root);
+    let health = daemon_health(project_root)?;
+
+    Ok(TldrDaemonStatus {
+        project_root: project_root.to_path_buf(),
+        socket_path,
+        pid_path,
+        lock_path: lock_path_for_project(project_root),
+        socket_exists: health.socket_exists,
+        pid_is_live: health.pid_is_live,
+        lock_is_held: health.lock_is_held,
+        healthy: health.healthy,
+        stale_socket: health.stale_socket,
+        stale_pid: health.stale_pid,
+        health_reason: health.health_reason.clone(),
+        recovery_hint: health.recovery_hint,
+        semantic_reindex_pending: semantic_indexer.should_reindex(snapshot.dirty_files),
+        last_query_at: snapshot.last_query_at,
+        config: config.daemon_config_summary(),
+    })
 }
 
 fn try_open_daemon_lock(project_root: &Path) -> Result<Option<File>> {
@@ -456,10 +659,12 @@ pub async fn query_daemon(
 mod tests {
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
+    use super::daemon_health;
     use super::daemon_lock_is_held;
     use super::lock_path_for_project;
     use super::query_daemon;
     use pretty_assertions::assert_eq;
+    use std::fs::OpenOptions;
     use tempfile::tempdir;
     use tokio::io::AsyncBufReadExt;
     use tokio::io::AsyncWriteExt;
@@ -514,6 +719,7 @@ mod tests {
                 message: "pong".to_string(),
                 analysis: None,
                 snapshot: None,
+                daemon_status: None,
             };
             writer
                 .write_all(
@@ -536,6 +742,7 @@ mod tests {
                 message: "pong".to_string(),
                 analysis: None,
                 snapshot: None,
+                daemon_status: None,
             }
         );
 
@@ -613,5 +820,72 @@ mod tests {
 
         lock_file.try_lock().expect("lock should be acquired");
         assert!(daemon_lock_is_held(&project_root).expect("lock query should succeed"));
+    }
+
+    #[test]
+    fn daemon_health_marks_stale_socket_without_live_pid() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("stale-health-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+
+        std::fs::write(&socket_path, "").expect("socket path should be writable");
+        std::fs::write(&pid_path, "999999").expect("pid path should be writable");
+
+        let health = daemon_health(&project_root).expect("health should load");
+        assert!(!health.healthy);
+        assert!(health.stale_socket);
+        assert!(!health.stale_pid);
+        assert!(health.should_cleanup_artifacts());
+    }
+
+    #[test]
+    fn daemon_health_reports_reason_for_stale_socket() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("stale-reason-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+
+        std::fs::write(&socket_path, "").expect("socket path should be writable");
+        std::fs::write(&pid_path, "999999").expect("pid path should be writable");
+
+        let health = daemon_health(&project_root).expect("health should load");
+        assert_eq!(
+            health.health_reason.as_deref(),
+            Some("stale socket without live daemon")
+        );
+        assert_eq!(
+            health.recovery_hint.as_deref(),
+            Some("remove stale socket/pid files and restart the daemon")
+        );
+    }
+
+    #[test]
+    fn daemon_health_reports_lock_hint_when_lock_is_held() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("lock-reason-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = lock_path_for_project(&project_root);
+        let _lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("lock file should open");
+
+        _lock_file.try_lock().expect("lock should be acquired");
+        let health = daemon_health(&project_root).expect("health should load");
+        assert_eq!(
+            health.health_reason.as_deref(),
+            Some("daemon lock held; another process may be starting it")
+        );
+        assert_eq!(
+            health.recovery_hint.as_deref(),
+            Some("wait for the existing daemon or release the lock manually")
+        );
+        assert!(!health.should_cleanup_artifacts());
     }
 }

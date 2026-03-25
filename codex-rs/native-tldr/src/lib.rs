@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
 pub mod api;
+pub mod config;
 pub mod daemon;
 pub mod lang_support;
 pub mod lifecycle;
@@ -10,7 +11,9 @@ pub mod session;
 
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+pub use crate::config::load_tldr_config;
 use crate::daemon::DaemonConfig;
+use crate::daemon::TldrDaemonConfigSummary;
 use crate::lang_support::LanguageRegistry;
 use crate::mcp::TldrToolDescriptor;
 use crate::semantic::SemanticConfig;
@@ -36,6 +39,16 @@ impl TldrConfig {
             session: SessionConfig::default(),
             daemon: DaemonConfig::default(),
             semantic: SemanticConfig::default(),
+        }
+    }
+
+    pub fn daemon_config_summary(&self) -> TldrDaemonConfigSummary {
+        TldrDaemonConfigSummary {
+            auto_start: self.daemon.auto_start,
+            socket_mode: self.daemon.socket_mode.clone(),
+            semantic_enabled: self.semantic.enabled,
+            semantic_auto_reindex_threshold: self.semantic.auto_reindex_threshold,
+            session_dirty_file_threshold: self.session.dirty_file_threshold,
         }
     }
 }
@@ -91,6 +104,16 @@ impl TldrEngineBuilder {
 
     pub fn with_daemon(mut self, daemon: DaemonConfig) -> Self {
         self.config.daemon = daemon;
+        self
+    }
+
+    pub fn with_session(mut self, session: SessionConfig) -> Self {
+        self.config.session = session;
+        self
+    }
+
+    pub fn with_config(mut self, config: TldrConfig) -> Self {
+        self.config = config;
         self
     }
 
@@ -217,5 +240,40 @@ mod tests {
 
         assert_eq!(response.status, "ok");
         assert_eq!(response.snapshot.expect("snapshot present").dirty_files, 1);
+    }
+
+    #[tokio::test]
+    async fn daemon_status_reports_config_and_reindex_state() {
+        let mut config = crate::TldrConfig::for_project(PathBuf::from("/tmp/project"));
+        config.semantic = SemanticConfig {
+            enabled: true,
+            feature_gate: "semantic-embed".to_string(),
+            model: "minilm".to_string(),
+            auto_reindex_threshold: 1,
+        };
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+        let response = daemon
+            .handle_command(TldrDaemonCommand::Status)
+            .await
+            .expect("status should succeed");
+
+        let snapshot = response.snapshot.expect("snapshot should exist");
+        let daemon_status = response.daemon_status.expect("daemon status should exist");
+        assert!(snapshot.reindex_pending);
+        assert!(daemon_status.semantic_reindex_pending);
+        assert!(daemon_status.config.semantic_enabled);
+        assert_eq!(daemon_status.config.semantic_auto_reindex_threshold, 1);
+        assert_eq!(daemon_status.config.session_dirty_file_threshold, 1);
     }
 }

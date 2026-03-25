@@ -2293,6 +2293,7 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "codex-file-search",
+ "libc",
  "md5",
  "once_cell",
  "pretty_assertions",
@@ -2301,6 +2302,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "toml 0.9.11+spec-1.1.0",
  "tree-sitter",
  "tree-sitter-go",
  "tree-sitter-javascript",

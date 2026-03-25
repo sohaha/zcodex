@@ -171,6 +171,7 @@ mod tests {
             message: "pong".to_string(),
             analysis: None,
             snapshot: None,
+            daemon_status: None,
         };
 
         let response = manager

@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（历史 shell approval 失败已清理，本轮继续做 daemon 生命周期收口）
+- **当前阶段**：Stage 3 / 执行中（已抽出 shared lifecycle manager，正在接线与验证）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -36,14 +36,33 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
-  - 会话 A：整理 daemon pid/liveness 收口结果
-  - 会话 B：准备下一轮 lifecycle manager 抽象
-  - 主线程：同步 `.agents` 文档并提交当前 daemon 生命周期改进
+  - 主线程：推进 phase-1 稳定化，继续收口 stale/liveness/lock 恢复闭环与 MCP 最小测试缺口
+  - 下一步：整理本轮稳定性改动并拆分提交
+  - 持续：同步 `.agents` 文档与定向验证结果
 - **刚完成**：
+  - CLI stale 清理现在只会在“未持锁且确认 stale”时触发，避免在别的进程正持锁启动 daemon 时误删 metadata
+  - daemon health/status 现在补充 `health_reason` / `recovery_hint`，CLI 与 MCP 都能直接暴露诊断信息
+  - MCP 补齐 `ping` 成功 structuredContent 与 daemon missing 错误路径覆盖
+  - `codex-cli` 新增“持锁时不清理 stale 文件”的生命周期测试，补上 launcher 与 daemon 的 lock/stale 闭环
+  - 最小 shared config 已落地：CLI / daemon / MCP 现可统一读取 `project/.codex/tldr.toml`
+  - daemon health/status 继续补强，现已区分 `healthy`、`stale_socket`、`stale_pid`
+- daemon health/status 继续补强，现已额外返回 `health_reason` 与 `recovery_hint`，CLI／MCP 现可打印这些诊断提示并在新单测中覆盖
+- 新增 native-tldr 专用同步技能 `sync-native-tldr-reference`，并要求每次同步后回写 upstream hash 到 `STATE.md`
+  - native-tldr phase-1 已开始暴露 `status`：daemon 侧新增 `Status` 命令，CLI/MCP 已接入状态面
+  - session snapshot 现在包含 dirty threshold 与 reindex pending，可用于第一阶段 dirty/reindex 协同观察
+  - `mcp-server` 已接入 shared lifecycle manager，但保持“不负责 auto-start”，仅复用 query/retry/backoff/外部 daemon 等待逻辑
+  - CLI launcher 现在会先探测 project lock 是否已被其他进程持有；若是，则先等待 daemon 就绪而不是盲目重复 spawn
+  - 并行会话进一步确认：MCP 当前阶段不应承担进程管理，优先共享生命周期抽象即可
+  - daemon 侧已增加 project 级 lockfile 入口，开始把“避免重复启动”从单进程内扩展到跨独立进程
+  - 并行会话结论已收敛：MCP 当前更适合先复用 lifecycle 抽象，不急着承担 auto-start
+  - `codex-native-tldr::lifecycle::DaemonLifecycleManager` 草稿已重写为最小共享抽象，统一承载 query-retry、进程内 launch dedupe 与 backoff
+  - `codex-cli` 已切换到 shared lifecycle manager，移除本地重复的 launch tracker / backoff 状态实现
+  - 新增 shared lifecycle 单测，覆盖 query-retry / 启动失败不重试 / 单进程单 project 只发起一次 launch
   - daemon 现在会写入/清理 project 级 pid file，CLI 启动前会同时校验 socket + pid 存活性，避免把死 daemon 误判为在线
   - stale daemon 清理从“只删 socket”扩展为“删 socket + pid”，为外部进程回收策略继续铺路
   - 补齐 CLI `daemon_metadata_looks_alive()` / `cleanup_stale_daemon_artifacts()` 单测
   - 补齐 native-tldr pid path/hash 规则测试
+  - 已确认当前“避免重复启动”原本只保证**单进程内**；现在开始补进程级 lock 收口跨独立 CLI/MCP 进程竞态
   - 补齐 CLI `query_daemon_with_autostart()` 测试钩子与两条生命周期单测（重试成功 / 启动失败不重试）
   - `codex tldr daemon ping/warm/snapshot` 现在也会走 daemon auto-start/重试路径，不再只对 `structure/context` 生效
   - 修复 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`：测试配置改为 `sandbox_mode = "danger-full-access"`，避开当前环境 `bwrap`/userns 限制导致的假失败

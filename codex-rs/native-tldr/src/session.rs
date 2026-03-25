@@ -27,6 +27,8 @@ impl Default for SessionConfig {
 pub struct SessionSnapshot {
     pub cached_entries: usize,
     pub dirty_files: usize,
+    pub dirty_file_threshold: usize,
+    pub reindex_pending: bool,
     pub last_query_at: Option<SystemTime>,
 }
 
@@ -73,6 +75,8 @@ impl Session {
         SessionSnapshot {
             cached_entries: self.cache.len(),
             dirty_files: self.dirty_files.len(),
+            dirty_file_threshold: self.config.dirty_file_threshold,
+            reindex_pending: self.should_reindex(),
             last_query_at: self.last_query_at,
         }
     }

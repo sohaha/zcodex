@@ -1,0 +1,7 @@
+interface:
+  display_name: "同步 Native TLDR 参考实现"
+  short_description: "同步 llm-tldr 参考实现并更新记录 hash"
+  default_prompt: "Use $sync-native-tldr-reference to sync the upstream native-tldr reference into this repo and update the recorded upstream hash/state."
+
+policy:
+  allow_implicit_invocation: true

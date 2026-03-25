@@ -7,10 +7,43 @@
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：主线程已清理历史失败并继续收口 daemon 生命周期
-- **最新代码提交**：`7773701e7` `fix: avoid duplicate native tldr daemon launches`（当前工作区还有未提交修复）
+- **当前执行方式**：主线程正在把 daemon 生命周期抽到 native-tldr 共享 manager，并切换 CLI 到共用实现
+- **最新代码提交**：`d246bb3e9` `feat: share native tldr lifecycle across mcp`
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr`：通过（22 个测试；含 daemon health reason/hint 与 stale cleanup 断言）
+- `cargo test -p codex-cli --bin codex`：通过（41 个测试；含 stale cleanup 在 lock-held 时不误删 metadata）
+- `cargo test -p codex-mcp-server`：通过（27 个测试；含 ping success/missing-daemon 回归）
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::cleanup_stale_daemon_artifacts_keeps_files_while_lock_is_held -- --exact -q`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_ping_reports_status -- --exact -q`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_ping_errors_when_daemon_missing -- --exact -q`：通过
+- `cargo test -p codex-native-tldr daemon::tests::daemon_health_marks_stale_socket_without_live_pid -- --exact -q`：通过
+- `cargo test -p codex-native-tldr daemon::tests::daemon_health_reports_lock_hint_when_lock_is_held -- --exact -q`：通过
+- `just fix -p codex-native-tldr`：通过
+- `just fix -p codex-cli`：通过
+- `just fix -p codex-mcp-server`：通过
+- `just argument-comment-lint`：失败（仓库缺少 `./tools/argument-comment-lint/run-prebuilt-linter.sh`）
+- `cargo test -p codex-native-tldr daemon::tests::daemon_health_marks_stale_socket_without_live_pid -- --exact -q`：通过
+- `just fix -p codex-native-tldr-daemon`：通过（shared config 接入 daemon 入口后复核）
+- `cargo test -p codex-native-tldr tests::daemon_status_reports_config_and_reindex_state -- --exact -q`：通过
+- `cargo test -p codex-cli --bin codex tests::tldr_daemon_status_parses -- --exact -q`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_status_returns_daemon_status -- --exact -q`：通过
+- `just fix -p codex-native-tldr`：通过（status/session 可观测性变更后复核）
+- `just fix -p codex-cli`：通过（CLI status 接线后复核）
+- `just fix -p codex-mcp-server`：通过（MCP status 接线后复核）
+- `cargo test -p codex-native-tldr`：通过（含 daemon lock query 新测试，共 16 个测试）
+- `cargo test -p codex-mcp-server tldr_tool::tests -- --nocapture`：通过（MCP shared lifecycle 4 条单测）
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_uses_daemon_when_available -- --exact`：通过（MCP daemon 可用路径回归）
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::query_daemon_with_hooks_retries_after_autostart -- --exact -q`：通过（CLI lifecycle 回归）
+- `just fix -p codex-cli`：通过（launcher lock-aware 变更后复核）
+- `just fix -p codex-mcp-server`：通过（MCP shared lifecycle 接线后复核）
+- `cargo test -p codex-native-tldr`：通过（新增 daemon lock path 后复跑，共 15 个测试）
+- `cargo test -p codex-cli --bin codex tests::tldr_daemon_ping_parses -- --exact`：通过（daemon 进程级 lock 接入后复核）
+- `just fix -p codex-native-tldr`：通过（daemon lock 变更后复核）
+- `cargo test -p codex-native-tldr lifecycle::tests -- --nocapture`：通过（shared lifecycle manager 3 条单测）
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests -- --nocapture`：通过（CLI 生命周期 4 条单测）
+- `just fix -p codex-native-tldr`：通过（shared lifecycle 抽取后复核）
+- `just fix -p codex-cli`：通过（CLI 切 shared manager 后复核）
 - `cargo test -p codex-native-tldr`：通过（新增 pid path/hash 测试后复跑，共 12 个测试）
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::daemon_metadata_requires_live_pid_and_socket -- --exact`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::cleanup_stale_daemon_artifacts_removes_socket_and_pid -- --exact`：通过
@@ -43,6 +76,9 @@
 - `just fix -p codex-cli`：通过
 
 ### 当前验证结果
+- launcher stale 清理已改为“只在未持锁且确认 stale 时清理”，相关 CLI 生命周期测试已通过
+- daemon health/status 的 `health_reason` / `recovery_hint` 已在 native-tldr、CLI、MCP 路径验证通过
+- MCP 已补齐 `ping` 成功 structuredContent 和 daemon missing 错误路径
 - `codex-native-tldr::daemon::query_daemon` 缺 socket 时返回 `None`，通过
 - `query_daemon` Unix socket round-trip，`Ping -> pong`，通过
 - `query_daemon` 遇到 stale socket 时会清理 socket 文件并返回 `None`，通过
@@ -56,13 +92,28 @@
 - `just fix -p codex-native-tldr`：通过
 - `just fix -p codex-cli`：通过
 
+### 当前开发内快照
+- stale/liveness/lock phase-1 闭环继续收紧：launcher 现在不会在 lock-held 场景误删 socket/pid
+- daemon status 已可向 CLI/MCP 给出更具体的恢复提示，便于排查“等待已有 daemon”与“需要清理 stale metadata”两类场景
+- 已新增 native-tldr 专用上游同步技能：`.codex/skills/sync-native-tldr-reference/`
+- 最小 shared config 已通过 `project/.codex/tldr.toml` 接入 CLI / daemon / MCP
+- daemon health/status 现已显式暴露 `healthy` / `stale_socket` / `stale_pid`
+- `native-tldr` daemon 现已支持 `Status` 命令，开始暴露配置摘要、锁状态、pid/socket 存活与 reindex pending
+- `codex-native-tldr` 新增 `lifecycle.rs`，开始承载共用 query-retry / launch dedupe / backoff
+- `codex-cli` 已删除本地重复生命周期状态实现，切到 shared manager
+- `native-tldr` daemon 启动路径已开始持有 project 级 lockfile，降低跨独立进程重复拉起多个 daemon 的概率
+- `codex-cli` launcher 已能感知 project lock：别的进程正在启动 daemon 时，本进程先等待 daemon 就绪，不再立即重复 spawn
+- `mcp-server` 已接到 shared lifecycle manager，但仍不承担 auto-start，只等待外部 daemon 就绪后重试 query
+- `just fmt` 与本轮定向测试已完成；`just argument-comment-lint` 仍受仓库缺脚本阻塞
+
 ### 当前下一批验证
-- 本轮目标：继续补 daemon 生命周期与外部进程启动/回收策略
-- 当前进行：抽 CLI/MCP 共用 lifecycle manager
-- 后续：深化 CLI/MCP 共用 daemon 生命周期管理
+- 本轮目标：抽 CLI/MCP 共用 lifecycle manager
+- 当前进行：继续补 shared config 的统一读取与 daemon status/dirty-reindex 闭环
+- 后续：把 daemon 生命周期状态判断/自动启动统一到单一抽象，并继续把进程级锁从“降低概率”推进到“更强唯一性保证”
 
 ### 当前遗留验证
 - daemon auto-start 目前只在 Unix 路径启用，Windows 仍回退本地 engine
+- shared lifecycle manager 已覆盖 CLI + MCP，但跨独立进程场景仍未做到严格“全局唯一启动”保证
 - `just argument-comment-lint` 仍因仓库缺脚本无法验证
 
 ### 已知环境问题

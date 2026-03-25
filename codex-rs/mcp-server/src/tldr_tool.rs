@@ -3,13 +3,13 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
-use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
-use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use codex_native_tldr::load_tldr_config;
 use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
@@ -38,6 +38,7 @@ pub enum TldrToolAction {
     Ping,
     Warm,
     Snapshot,
+    Status,
     Notify,
 }
 
@@ -160,6 +161,9 @@ async fn run_tldr_tool_inner(args: TldrToolCallParam) -> Result<CallToolResult> 
         TldrToolAction::Snapshot => {
             run_daemon_tool(project_root, TldrDaemonCommand::Snapshot, "snapshot").await
         }
+        TldrToolAction::Status => {
+            run_daemon_tool(project_root, TldrDaemonCommand::Status, "status").await
+        }
         TldrToolAction::Notify => {
             let path = args
                 .path
@@ -201,7 +205,10 @@ async fn run_analysis_tool(
             .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
         ("daemon", response.message, analysis.summary)
     } else {
-        let engine = TldrEngine::builder(project_root.clone()).build();
+        let config = load_tldr_config(&project_root)?;
+        let engine = TldrEngine::builder(project_root.clone())
+            .with_config(config)
+            .build();
         let response = engine.analyze(request)?;
         (
             "local",
@@ -237,7 +244,10 @@ async fn run_semantic_tool(
     let query = args
         .query
         .ok_or_else(|| anyhow::anyhow!("`query` is required for action=semantic"))?;
-    let engine = TldrEngine::builder(project_root.clone()).build();
+    let config = load_tldr_config(&project_root)?;
+    let engine = TldrEngine::builder(project_root.clone())
+        .with_config(config)
+        .build();
     let structured_content = json!({
         "action": "semantic",
         "project": project_root,
@@ -274,6 +284,7 @@ async fn run_daemon_tool(
         "status": response.status,
         "message": response.message,
         "snapshot": response.snapshot,
+        "daemonStatus": response.daemon_status,
     });
     let text = structured_content
         .get("message")
@@ -329,7 +340,9 @@ async fn wait_for_external_daemon(project_root: &std::path::Path) -> Result<bool
 }
 
 fn daemon_metadata_looks_alive(project_root: &std::path::Path) -> bool {
-    socket_path_for_project(project_root).exists() && pid_path_for_project(project_root).exists()
+    daemon_health(project_root)
+        .map(|health| health.healthy)
+        .unwrap_or(false)
 }
 
 fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
@@ -377,6 +390,7 @@ fn action_name(action: &TldrToolAction) -> &'static str {
         TldrToolAction::Ping => "ping",
         TldrToolAction::Warm => "warm",
         TldrToolAction::Snapshot => "snapshot",
+        TldrToolAction::Status => "status",
         TldrToolAction::Notify => "notify",
     }
 }
@@ -420,7 +434,8 @@ fn tldr_tool_output_schema() -> Arc<JsonObject> {
             "source": { "type": "string" },
             "status": { "type": "string" },
             "message": { "type": "string" },
-            "summary": { "type": "string" }
+            "summary": { "type": "string" },
+            "daemonStatus": { "type": "object" }
         },
     });
     match schema {
@@ -453,7 +468,7 @@ mod tests {
           "inputSchema": {
             "properties": {
               "action": {
-                "enum": ["tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "notify"],
+                "enum": ["tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "status", "notify"],
                 "type": "string"
               },
               "language": {
@@ -472,6 +487,7 @@ mod tests {
           "outputSchema": {
             "properties": {
               "action": { "type": "string" },
+              "daemonStatus": { "type": "object" },
               "message": { "type": "string" },
               "project": { "type": "string" },
               "source": { "type": "string" },
@@ -520,6 +536,7 @@ mod tests {
             message: "pong".to_string(),
             analysis: None,
             snapshot: None,
+            daemon_status: None,
         };
 
         let response = query_daemon_with_hooks(

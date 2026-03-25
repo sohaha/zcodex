@@ -7,6 +7,7 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
@@ -14,6 +15,7 @@ use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use codex_native_tldr::load_tldr_config;
 use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
@@ -138,6 +140,9 @@ pub enum TldrDaemonSubcommand {
 
     /// 返回当前 session 快照。
     Snapshot,
+
+    /// 返回 daemon 健康状态与配置摘要。
+    Status,
 }
 
 pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
@@ -175,6 +180,7 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
 async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Result<()> {
     let language: SupportedLanguage = cmd.lang.into();
     let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
     let request = AnalysisRequest {
         kind,
         symbol: cmd.symbol.clone(),
@@ -199,7 +205,9 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
                 project_root.clone(),
             )
         } else {
-            let engine = TldrEngine::builder(project_root.clone()).build();
+            let engine = TldrEngine::builder(project_root.clone())
+                .with_config(config.clone())
+                .build();
             let response = engine.analyze(request)?;
             (
                 "local",
@@ -241,7 +249,11 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
 
 fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
     let language: SupportedLanguage = cmd.lang.into();
-    let engine = TldrEngine::builder(cmd.project.canonicalize()?).build();
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let engine = TldrEngine::builder(project_root)
+        .with_config(config)
+        .build();
     let enabled = engine.config().semantic.enabled;
     let payload = json!({
         "project": engine.config().project_root,
@@ -268,6 +280,7 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
         TldrDaemonSubcommand::Ping => TldrDaemonCommand::Ping,
         TldrDaemonSubcommand::Warm => TldrDaemonCommand::Warm,
         TldrDaemonSubcommand::Snapshot => TldrDaemonCommand::Snapshot,
+        TldrDaemonSubcommand::Status => TldrDaemonCommand::Status,
     };
 
     let Some(response) = query_daemon_with_autostart(&project_root, &command).await? else {
@@ -280,11 +293,51 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&response)?);
     } else {
+        let daemon_status = response.daemon_status;
+        let snapshot = response.snapshot;
         println!("status: {}", response.status);
         println!("message: {}", response.message);
-        if let Some(snapshot) = response.snapshot {
+        if let Some(daemon_status) = daemon_status {
+            println!("project: {}", daemon_status.project_root.display());
+            println!("socket: {}", daemon_status.socket_path.display());
+            println!("socket exists: {}", daemon_status.socket_exists);
+            println!("pid live: {}", daemon_status.pid_is_live);
+            println!("lock held: {}", daemon_status.lock_is_held);
+            println!("healthy: {}", daemon_status.healthy);
+            println!("stale socket: {}", daemon_status.stale_socket);
+            println!("stale pid: {}", daemon_status.stale_pid);
+            if let Some(reason) = daemon_status.health_reason.as_deref() {
+                println!("health reason: {reason}");
+            }
+            if let Some(hint) = daemon_status.recovery_hint.as_deref() {
+                println!("recovery hint: {hint}");
+            }
+            println!(
+                "session reindex pending: {}",
+                snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.reindex_pending)
+                    .unwrap_or(false)
+            );
+            println!(
+                "semantic reindex pending: {}",
+                daemon_status.semantic_reindex_pending
+            );
+            if let Some(last_query_at) = daemon_status.last_query_at {
+                println!("last query at: {last_query_at:?}");
+            }
+            println!("auto start: {}", daemon_status.config.auto_start);
+            println!("socket mode: {}", daemon_status.config.socket_mode);
+            println!(
+                "semantic enabled: {}",
+                daemon_status.config.semantic_enabled
+            );
+        }
+        if let Some(snapshot) = snapshot {
             println!("cached entries: {}", snapshot.cached_entries);
             println!("dirty files: {}", snapshot.dirty_files);
+            println!("dirty threshold: {}", snapshot.dirty_file_threshold);
+            println!("reindex pending: {}", snapshot.reindex_pending);
         }
     }
 
@@ -392,23 +445,18 @@ async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
 }
 
 fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
-    let socket_path = socket_path_for_project(project_root);
-    if !socket_path.exists() {
-        return false;
-    }
-
-    let pid_path = pid_path_for_project(project_root);
-    let Ok(pid) = std::fs::read_to_string(&pid_path)
-        .map(|content| content.trim().to_string())
-        .and_then(|content| content.parse::<i32>().map_err(std::io::Error::other))
-    else {
-        return false;
-    };
-
-    pid_is_alive(pid)
+    daemon_health(project_root)
+        .map(|health| health.healthy)
+        .unwrap_or(false)
 }
 
 fn cleanup_stale_daemon_artifacts(project_root: &Path) {
+    let Ok(health) = daemon_health(project_root) else {
+        return;
+    };
+    if !health.should_cleanup_artifacts() {
+        return;
+    }
     cleanup_file_if_exists(socket_path_for_project(project_root));
     cleanup_file_if_exists(pid_path_for_project(project_root));
 }
@@ -418,21 +466,6 @@ fn cleanup_file_if_exists(path: PathBuf) {
         && err.kind() != std::io::ErrorKind::NotFound
     {
         let _ = err;
-    }
-}
-
-fn pid_is_alive(pid: i32) -> bool {
-    if pid <= 0 {
-        return false;
-    }
-    let result = unsafe { libc::kill(pid as libc::pid_t, 0) };
-    if result == 0 {
-        true
-    } else {
-        matches!(
-            std::io::Error::last_os_error().raw_os_error(),
-            Some(libc::EPERM)
-        )
     }
 }
 
@@ -462,6 +495,7 @@ mod lifecycle_tests {
             message: "pong".to_string(),
             analysis: None,
             snapshot: None,
+            daemon_status: None,
         };
 
         let response = query_daemon_with_hooks(
@@ -571,5 +605,30 @@ mod lifecycle_tests {
 
         assert!(!socket_path.exists());
         assert!(!pid_path.exists());
+    }
+
+    #[test]
+    fn cleanup_stale_daemon_artifacts_keeps_files_while_lock_is_held() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        let lock_path = codex_native_tldr::daemon::lock_path_for_project(project_root);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .unwrap();
+
+        lock_file.try_lock().unwrap();
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, "999999").unwrap();
+
+        cleanup_stale_daemon_artifacts(project_root);
+
+        assert!(socket_path.exists());
+        assert!(pid_path.exists());
     }
 }
