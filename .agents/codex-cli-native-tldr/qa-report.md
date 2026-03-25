@@ -7,8 +7,8 @@
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：进入下一轮并行（semantic MCP、daemon 生命周期、主线程整合）
-- **最新代码提交**：`3e640e4d4` `feat: auto-start native tldr daemon`
+- **当前执行方式**：本轮并行已整合完成（semantic MCP、daemon 生命周期、主线程复核）
+- **最新代码提交**：`9c231e69d` `fix: harden native tldr daemon startup guards`
 
 ### 已完成验证
 - `cargo test -p codex-cli --bin codex tests::tldr_structure_parses_language_and_symbol -- --exact`：通过（auto-start 变更后复核）
@@ -39,9 +39,9 @@
 - `just fix -p codex-cli`：通过
 
 ### 当前下一批验证
-- 本轮目标：补 `semantic` 的 MCP 端到端验证
-- 本轮目标：评估 daemon 生命周期与外部进程启动/回收策略
-- 后续：CLI/MCP 共用 daemon 生命周期管理
+- 评估 daemon 生命周期与外部进程启动/回收策略
+- 深化 CLI/MCP 共用 daemon 生命周期管理
+- 视情况补全量 `cargo test -p codex-mcp-server` 复跑
 
 ### 当前遗留验证
 - `cargo test -p codex-mcp-server` 全量仍未复跑；已知历史遗留失败用例仍是 `test_shell_command_approval_triggers_elicitation`
