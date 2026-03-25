@@ -67,17 +67,27 @@ impl DaemonLifecycleManager {
         if is_alive(project_root) {
             return Ok(true);
         }
-        cleanup(project_root);
 
         let key = project_key(project_root);
-        if self.should_backoff(&key) {
-            return Ok(false);
-        }
         if wait_for_existing_launch(&key).await {
             return Ok(is_alive(project_root));
         }
+        if self.should_backoff(&key) {
+            return Ok(false);
+        }
 
         let _tracker = LaunchTracker::new(key.clone());
+        if is_alive(project_root) {
+            self.clear_backoff(&key);
+            return Ok(true);
+        }
+
+        cleanup(project_root);
+        if is_alive(project_root) {
+            self.clear_backoff(&key);
+            return Ok(true);
+        }
+
         if launch(project_root).await? {
             self.clear_backoff(&key);
             return Ok(true);
@@ -260,11 +270,13 @@ mod tests {
         let project_root = tempdir.path().to_path_buf();
         let manager = Arc::new(DaemonLifecycleManager::new(Duration::from_millis(5)));
         let alive = Arc::new(AtomicBool::new(false));
+        let cleanup_calls = Arc::new(AtomicUsize::new(0));
         let launch_calls = Arc::new(AtomicUsize::new(0));
 
         let task1 = tokio::spawn({
             let manager = Arc::clone(&manager);
             let alive = Arc::clone(&alive);
+            let cleanup_calls = Arc::clone(&cleanup_calls);
             let launch_calls = Arc::clone(&launch_calls);
             let project_root = project_root.clone();
             async move {
@@ -275,7 +287,12 @@ mod tests {
                             let alive = Arc::clone(&alive);
                             move |_| alive.load(Ordering::SeqCst)
                         },
-                        |_| {},
+                        {
+                            let cleanup_calls = Arc::clone(&cleanup_calls);
+                            move |_| {
+                                cleanup_calls.fetch_add(1, Ordering::SeqCst);
+                            }
+                        },
                         {
                             let alive = Arc::clone(&alive);
                             let launch_calls = Arc::clone(&launch_calls);
@@ -298,6 +315,7 @@ mod tests {
         let task2 = tokio::spawn({
             let manager = Arc::clone(&manager);
             let alive = Arc::clone(&alive);
+            let cleanup_calls = Arc::clone(&cleanup_calls);
             let launch_calls = Arc::clone(&launch_calls);
             let project_root = project_root.clone();
             async move {
@@ -308,7 +326,12 @@ mod tests {
                             let alive = Arc::clone(&alive);
                             move |_| alive.load(Ordering::SeqCst)
                         },
-                        |_| {},
+                        {
+                            let cleanup_calls = Arc::clone(&cleanup_calls);
+                            move |_| {
+                                cleanup_calls.fetch_add(1, Ordering::SeqCst);
+                            }
+                        },
                         {
                             let alive = Arc::clone(&alive);
                             let launch_calls = Arc::clone(&launch_calls);
@@ -331,6 +354,7 @@ mod tests {
         let (first, second) = tokio::join!(task1, task2);
         assert!(first.expect("first task should join"));
         assert!(second.expect("second task should join"));
+        assert_eq!(cleanup_calls.load(Ordering::SeqCst), 1);
         assert_eq!(launch_calls.load(Ordering::SeqCst), 1);
     }
 }

@@ -160,45 +160,25 @@ impl TldrDaemon {
             TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
             TldrDaemonCommand::Warm => {
                 let mut session = self.session.lock().await;
-                session.clear_dirty_files();
-                Ok(TldrDaemonResponse {
-                    snapshot: Some(session.snapshot()),
-                    ..TldrDaemonResponse::ok("warmed")
-                })
-            }
-            TldrDaemonCommand::Analyze { key, request } => {
-                let mut session = self.session.lock().await;
-                if let Some(cached) = session.cached_analysis(&key).cloned() {
-                    return Ok(TldrDaemonResponse {
-                        status: "ok".to_string(),
-                        message: "cache hit".to_string(),
-                        analysis: Some(cached),
-                        snapshot: Some(session.snapshot()),
-                        daemon_status: None,
-                    });
-                }
-
-                let analysis = self.engine.analyze(request)?;
-                session.store_analysis(key, analysis.clone());
+                let message = warm_session_message(&mut session);
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
-                    message: "computed".to_string(),
-                    analysis: Some(analysis),
+                    message,
+                    analysis: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
                 })
             }
+            TldrDaemonCommand::Analyze { key, request } => {
+                let mut session = self.session.lock().await;
+                analyze_with_session(&mut session, &self.engine, key, request)
+            }
             TldrDaemonCommand::Notify { path } => {
                 let mut session = self.session.lock().await;
-                session.mark_dirty(path);
-                let message = if session.should_reindex() {
-                    "dirty threshold reached"
-                } else {
-                    "marked dirty"
-                };
+                let message = notify_session_message(&mut session, path);
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
-                    message: message.to_string(),
+                    message,
                     analysis: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
@@ -320,43 +300,25 @@ async fn handle_with_session(
         TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
         TldrDaemonCommand::Warm => {
             let mut guard = session.lock().await;
-            guard.clear_dirty_files();
-            Ok(TldrDaemonResponse {
-                snapshot: Some(guard.snapshot()),
-                ..TldrDaemonResponse::ok("warmed")
-            })
-        }
-        TldrDaemonCommand::Analyze { key, request } => {
-            let mut guard = session.lock().await;
-            if let Some(cached) = guard.cached_analysis(&key).cloned() {
-                return Ok(TldrDaemonResponse {
-                    status: "ok".to_string(),
-                    message: "cache hit".to_string(),
-                    analysis: Some(cached),
-                    snapshot: Some(guard.snapshot()),
-                    daemon_status: None,
-                });
-            }
-            let analysis = engine.analyze(request)?;
-            guard.store_analysis(key, analysis.clone());
+            let message = warm_session_message(&mut guard);
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
-                message: "computed".to_string(),
-                analysis: Some(analysis),
+                message,
+                analysis: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
             })
         }
+        TldrDaemonCommand::Analyze { key, request } => {
+            let mut guard = session.lock().await;
+            analyze_with_session(&mut guard, engine, key, request)
+        }
         TldrDaemonCommand::Notify { path } => {
             let mut guard = session.lock().await;
-            guard.mark_dirty(path);
+            let message = notify_session_message(&mut guard, path);
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
-                message: if guard.should_reindex() {
-                    "dirty threshold reached".to_string()
-                } else {
-                    "marked dirty".to_string()
-                },
+                message,
                 analysis: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
@@ -383,6 +345,61 @@ async fn handle_with_session(
             })
         }
     }
+}
+
+fn analyze_with_session(
+    session: &mut Session,
+    engine: &TldrEngine,
+    key: String,
+    request: AnalysisRequest,
+) -> Result<TldrDaemonResponse> {
+    if !session.reindex_pending()
+        && let Some(cached) = session.cached_analysis(&key).cloned()
+    {
+        return Ok(TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "cache hit".to_string(),
+            analysis: Some(cached),
+            snapshot: Some(session.snapshot()),
+            daemon_status: None,
+        });
+    }
+
+    let analysis = engine.analyze(request)?;
+    let message = if session.reindex_pending() {
+        "computed (cache bypassed: reindex pending)"
+    } else {
+        session.store_analysis(key, analysis.clone());
+        "computed"
+    };
+    Ok(TldrDaemonResponse {
+        status: "ok".to_string(),
+        message: message.to_string(),
+        analysis: Some(analysis),
+        snapshot: Some(session.snapshot()),
+        daemon_status: None,
+    })
+}
+
+fn notify_session_message(session: &mut Session, path: PathBuf) -> String {
+    let dirty_state = session.mark_dirty(path);
+    if dirty_state.cache_invalidated {
+        return format!(
+            "dirty threshold reached; invalidated {} cached analyses; reindex pending",
+            dirty_state.invalidated_entries
+        );
+    }
+    if dirty_state.reindex_pending {
+        return "dirty threshold reached; reindex pending".to_string();
+    }
+    format!("marked dirty ({})", dirty_state.dirty_files)
+}
+
+fn warm_session_message(session: &mut Session) -> String {
+    if session.clear_dirty_files() {
+        return "reindex state cleared".to_string();
+    }
+    "already warm".to_string()
 }
 
 async fn serve_connection<T>(
@@ -657,6 +674,7 @@ pub async fn query_daemon(
 
 #[cfg(test)]
 mod tests {
+    use super::TldrDaemon;
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
     use super::daemon_health;
@@ -665,6 +683,7 @@ mod tests {
     use super::query_daemon;
     use pretty_assertions::assert_eq;
     use std::fs::OpenOptions;
+    use std::path::PathBuf;
     use tempfile::tempdir;
     use tokio::io::AsyncBufReadExt;
     use tokio::io::AsyncWriteExt;
@@ -773,6 +792,147 @@ mod tests {
 
         assert_eq!(response, None);
         assert!(!socket_path.exists(), "stale socket should be removed");
+    }
+
+    #[tokio::test]
+    async fn notify_invalidates_cached_analyses_when_threshold_is_reached() {
+        let mut config =
+            crate::TldrConfig::for_project(std::env::temp_dir().join("notify-project"));
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        let daemon = TldrDaemon::from_config(config);
+
+        let analyze = daemon
+            .handle_command(TldrDaemonCommand::Analyze {
+                key: "rust:main".to_string(),
+                request: crate::api::AnalysisRequest {
+                    kind: crate::api::AnalysisKind::Ast,
+                    symbol: Some("main".to_string()),
+                },
+            })
+            .await
+            .expect("analyze should succeed");
+        assert_eq!(analyze.message, "computed");
+
+        let notify = daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+
+        assert_eq!(
+            notify.message,
+            "dirty threshold reached; invalidated 1 cached analyses; reindex pending"
+        );
+        assert_eq!(
+            notify.snapshot,
+            Some(crate::session::SessionSnapshot {
+                cached_entries: 0,
+                dirty_files: 1,
+                dirty_file_threshold: 1,
+                reindex_pending: true,
+                last_query_at: analyze
+                    .snapshot
+                    .expect("analyze snapshot should exist")
+                    .last_query_at,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn warm_clears_reindex_pending_state() {
+        let mut config = crate::TldrConfig::for_project(std::env::temp_dir().join("warm-project"));
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should succeed");
+
+        assert_eq!(warm.message, "reindex state cleared");
+        assert_eq!(
+            warm.snapshot,
+            Some(crate::session::SessionSnapshot {
+                cached_entries: 0,
+                dirty_files: 0,
+                dirty_file_threshold: 1,
+                reindex_pending: false,
+                last_query_at: None,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn analyze_bypasses_cache_while_reindex_is_pending() {
+        let mut config =
+            crate::TldrConfig::for_project(std::env::temp_dir().join("pending-reindex-project"));
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        let daemon = TldrDaemon::from_config(config);
+
+        let first = daemon
+            .handle_command(TldrDaemonCommand::Analyze {
+                key: "rust:main".to_string(),
+                request: crate::api::AnalysisRequest {
+                    kind: crate::api::AnalysisKind::Ast,
+                    symbol: Some("main".to_string()),
+                },
+            })
+            .await
+            .expect("first analyze should succeed");
+        assert_eq!(first.message, "computed");
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+
+        let second = daemon
+            .handle_command(TldrDaemonCommand::Analyze {
+                key: "rust:main".to_string(),
+                request: crate::api::AnalysisRequest {
+                    kind: crate::api::AnalysisKind::Ast,
+                    symbol: Some("main".to_string()),
+                },
+            })
+            .await
+            .expect("second analyze should succeed");
+        let third = daemon
+            .handle_command(TldrDaemonCommand::Analyze {
+                key: "rust:main".to_string(),
+                request: crate::api::AnalysisRequest {
+                    kind: crate::api::AnalysisKind::Ast,
+                    symbol: Some("main".to_string()),
+                },
+            })
+            .await
+            .expect("third analyze should succeed");
+
+        assert_eq!(second.message, "computed (cache bypassed: reindex pending)");
+        assert_eq!(third.message, "computed (cache bypassed: reindex pending)");
+        let snapshot = third.snapshot.expect("third snapshot should exist");
+        assert_eq!(snapshot.cached_entries, 0);
+        assert_eq!(snapshot.dirty_files, 1);
+        assert_eq!(snapshot.dirty_file_threshold, 1);
+        assert_eq!(snapshot.reindex_pending, true);
+        assert_eq!(snapshot.last_query_at.is_some(), true);
     }
 
     #[test]

@@ -9,6 +9,7 @@ use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
+use codex_native_tldr::daemon::lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
@@ -19,6 +20,8 @@ use codex_native_tldr::load_tldr_config;
 use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
+use std::fs::File;
+use std::fs::OpenOptions;
 use std::future::Future;
 use std::path::Path;
 use std::path::PathBuf;
@@ -410,6 +413,19 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
         return wait_for_daemon_startup(project_root).await;
     }
 
+    let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
+        return wait_for_daemon_startup(project_root).await;
+    };
+
+    if daemon_metadata_looks_alive(project_root) {
+        return Ok(true);
+    }
+    if daemon_lock_is_held(project_root)? {
+        return wait_for_daemon_startup_during_launch(project_root).await;
+    }
+
+    cleanup_stale_daemon_artifacts(project_root);
+
     let daemon_bin = cargo_bin("codex-native-tldr-daemon")?;
     let mut child = Command::new(daemon_bin)
         .arg("--project")
@@ -423,7 +439,9 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
         let _ = child.wait().await;
     });
 
-    wait_for_daemon_startup(project_root).await
+    let started = wait_for_daemon_startup_during_launch(project_root).await;
+    drop(launcher_lock);
+    started
 }
 
 #[cfg(not(unix))]
@@ -432,10 +450,21 @@ async fn try_start_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
 }
 
 async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
+    wait_for_daemon_startup_with_launcher_lock(project_root, false).await
+}
+
+async fn wait_for_daemon_startup_during_launch(project_root: &Path) -> Result<bool> {
+    wait_for_daemon_startup_with_launcher_lock(project_root, true).await
+}
+
+async fn wait_for_daemon_startup_with_launcher_lock(
+    project_root: &Path,
+    ignore_launcher_lock: bool,
+) -> Result<bool> {
     let start = Instant::now();
     let timeout = Duration::from_secs(3);
     while start.elapsed() < timeout {
-        if daemon_metadata_looks_alive(project_root) {
+        if daemon_metadata_looks_alive_with_launcher_lock(project_root, ignore_launcher_lock) {
             return Ok(true);
         }
         sleep(Duration::from_millis(50)).await;
@@ -445,12 +474,35 @@ async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
 }
 
 fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
-    daemon_health(project_root)
-        .map(|health| health.healthy)
-        .unwrap_or(false)
+    daemon_metadata_looks_alive_with_launcher_lock(project_root, false)
+}
+
+fn daemon_metadata_looks_alive_with_launcher_lock(
+    project_root: &Path,
+    ignore_launcher_lock: bool,
+) -> bool {
+    match daemon_health(project_root) {
+        Ok(health) => {
+            if health.healthy {
+                return true;
+            }
+            if !ignore_launcher_lock && launcher_lock_is_held(project_root).unwrap_or(false) {
+                return false;
+            }
+            if health.should_cleanup_artifacts() {
+                cleanup_stale_daemon_artifacts(project_root);
+            }
+            false
+        }
+        Err(_) => false,
+    }
 }
 
 fn cleanup_stale_daemon_artifacts(project_root: &Path) {
+    if launcher_lock_is_held(project_root).unwrap_or(false) {
+        return;
+    }
+
     let Ok(health) = daemon_health(project_root) else {
         return;
     };
@@ -459,6 +511,30 @@ fn cleanup_stale_daemon_artifacts(project_root: &Path) {
     }
     cleanup_file_if_exists(socket_path_for_project(project_root));
     cleanup_file_if_exists(pid_path_for_project(project_root));
+}
+
+fn launcher_lock_path_for_project(project_root: &Path) -> PathBuf {
+    lock_path_for_project(project_root).with_extension("launch.lock")
+}
+
+fn try_open_launcher_lock(project_root: &Path) -> Result<Option<File>> {
+    let lock_path = launcher_lock_path_for_project(project_root);
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)?;
+
+    match lock_file.try_lock() {
+        Ok(()) => Ok(Some(lock_file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn launcher_lock_is_held(project_root: &Path) -> Result<bool> {
+    Ok(try_open_launcher_lock(project_root)?.is_none())
 }
 
 fn cleanup_file_if_exists(path: PathBuf) {
@@ -473,6 +549,7 @@ fn cleanup_file_if_exists(path: PathBuf) {
 mod lifecycle_tests {
     use super::cleanup_stale_daemon_artifacts;
     use super::daemon_metadata_looks_alive;
+    use super::launcher_lock_path_for_project;
     use super::query_daemon_with_hooks;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
@@ -592,6 +669,22 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn daemon_metadata_cleans_stale_socket_and_pid() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path().join("stale-clean-project");
+        std::fs::create_dir(&project_root).unwrap();
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, "999999").unwrap();
+
+        assert!(!daemon_metadata_looks_alive(&project_root));
+        assert!(!socket_path.exists());
+        assert!(!pid_path.exists());
+    }
+
+    #[test]
     fn cleanup_stale_daemon_artifacts_removes_socket_and_pid() {
         let tempdir = tempdir().unwrap();
         let project_root = tempdir.path();
@@ -628,6 +721,55 @@ mod lifecycle_tests {
 
         cleanup_stale_daemon_artifacts(project_root);
 
+        assert!(socket_path.exists());
+        assert!(pid_path.exists());
+    }
+
+    #[test]
+    fn cleanup_stale_daemon_artifacts_keeps_files_while_launcher_lock_is_held() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        let lock_path = launcher_lock_path_for_project(project_root);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .unwrap();
+
+        lock_file.try_lock().unwrap();
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, "999999").unwrap();
+
+        cleanup_stale_daemon_artifacts(project_root);
+
+        assert!(socket_path.exists());
+        assert!(pid_path.exists());
+    }
+
+    #[test]
+    fn daemon_metadata_keeps_stale_files_while_launcher_lock_is_held() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        let lock_path = launcher_lock_path_for_project(project_root);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .unwrap();
+
+        lock_file.try_lock().unwrap();
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, "999999").unwrap();
+
+        assert!(!daemon_metadata_looks_alive(project_root));
         assert!(socket_path.exists());
         assert!(pid_path.exists());
     }
