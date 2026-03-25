@@ -8,10 +8,18 @@ use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::query_daemon;
+use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
+use codex_utils_cargo_bin::cargo_bin;
 use serde_json::json;
+use std::path::Path;
 use std::path::PathBuf;
+use std::process::Stdio;
+use std::time::Instant;
+use tokio::process::Command;
+use tokio::time::Duration;
+use tokio::time::sleep;
 
 #[derive(Debug, Parser)]
 pub struct TldrCli {
@@ -165,7 +173,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         kind,
         symbol: cmd.symbol.clone(),
     };
-    let daemon_response = query_daemon(
+    let mut daemon_response = query_daemon(
         &project_root,
         &TldrDaemonCommand::Analyze {
             key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
@@ -173,6 +181,18 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         },
     )
     .await?;
+    if daemon_response.is_none() {
+        if ensure_daemon_running(&project_root).await? {
+            daemon_response = query_daemon(
+                &project_root,
+                &TldrDaemonCommand::Analyze {
+                    key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
+                    request: request.clone(),
+                },
+            )
+            .await?;
+        }
+    }
     let (source, daemon_message, summary, engine_project_root) =
         if let Some(response) = daemon_response {
             let analysis = response
@@ -284,4 +304,43 @@ fn analysis_cache_key(
 ) -> String {
     let symbol = symbol.unwrap_or("*");
     format!("{}:{kind:?}:{symbol}", language.as_str())
+}
+
+async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
+    let socket_path = socket_path_for_project(project_root);
+    if socket_path.exists() {
+        return Ok(true);
+    }
+    try_start_native_tldr_daemon(project_root, socket_path).await
+}
+
+#[cfg(unix)]
+async fn try_start_native_tldr_daemon(project_root: &Path, socket_path: PathBuf) -> Result<bool> {
+    let daemon_bin = cargo_bin("codex-native-tldr-daemon")?;
+    let mut child = Command::new(daemon_bin)
+        .arg("--project")
+        .arg(project_root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(3);
+    while start.elapsed() < timeout {
+        if socket_path.exists() {
+            return Ok(true);
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+    Ok(false)
+}
+
+#[cfg(not(unix))]
+async fn try_start_native_tldr_daemon(_project_root: &Path, _socket_path: PathBuf) -> Result<bool> {
+    Ok(false)
 }
