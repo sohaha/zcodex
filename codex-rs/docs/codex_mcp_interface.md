@@ -55,11 +55,14 @@ npx @modelcontextprotocol/inspector codex mcp-server
 
 Use the separate `codex mcp` subcommand to manage configured MCP server launchers in `config.toml`.
 
-`codex-mcp-server` does not include the `tldr` MCP tool by default. To enable it in the standalone server binary, build with the `tldr` feature:
+`codex-mcp-server` does not include the `tldr` MCP tool by default. To enable it, either build the standalone server binary with the `tldr` feature or propagate the feature through `codex-cli`:
 
 ```bash
 cargo build --release -p codex-mcp-server --features tldr
 ./target/release/codex-mcp-server
+
+cargo build --release -p codex-cli --features tldr
+./target/release/codex mcp-server
 ```
 
 To smoke-test the native-tldr sidecar used by the optional `tldr` MCP tool:

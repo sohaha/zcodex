@@ -15,6 +15,10 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+default = []
+tldr = ["codex-mcp-server/tldr"]
+
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
