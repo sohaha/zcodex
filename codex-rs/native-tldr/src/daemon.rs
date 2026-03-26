@@ -948,8 +948,11 @@ mod tests {
 
     #[tokio::test]
     async fn notify_invalidates_cached_analyses_when_threshold_is_reached() {
-        let mut config =
-            crate::TldrConfig::for_project(std::env::temp_dir().join("notify-project"));
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(project.path().join("src")).expect("src dir should exist");
+        std::fs::write(project.path().join("src/main.rs"), "fn main() {}\n")
+            .expect("fixture should exist");
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
         config.session = crate::session::SessionConfig {
             idle_timeout: std::time::Duration::from_secs(60),
             dirty_file_threshold: 1,
@@ -961,6 +964,7 @@ mod tests {
                 key: "rust:main".to_string(),
                 request: crate::api::AnalysisRequest {
                     kind: crate::api::AnalysisKind::Ast,
+                    language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                 },
             })
@@ -1199,8 +1203,11 @@ mod tests {
 
     #[tokio::test]
     async fn analyze_bypasses_cache_while_reindex_is_pending() {
-        let mut config =
-            crate::TldrConfig::for_project(std::env::temp_dir().join("pending-reindex-project"));
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(project.path().join("src")).expect("src dir should exist");
+        std::fs::write(project.path().join("src/main.rs"), "fn main() {}\n")
+            .expect("fixture should exist");
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
         config.session = crate::session::SessionConfig {
             idle_timeout: std::time::Duration::from_secs(60),
             dirty_file_threshold: 1,
@@ -1212,6 +1219,7 @@ mod tests {
                 key: "rust:main".to_string(),
                 request: crate::api::AnalysisRequest {
                     kind: crate::api::AnalysisKind::Ast,
+                    language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                 },
             })
@@ -1231,6 +1239,7 @@ mod tests {
                 key: "rust:main".to_string(),
                 request: crate::api::AnalysisRequest {
                     kind: crate::api::AnalysisKind::Ast,
+                    language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                 },
             })
@@ -1241,6 +1250,7 @@ mod tests {
                 key: "rust:main".to_string(),
                 request: crate::api::AnalysisRequest {
                     kind: crate::api::AnalysisKind::Ast,
+                    language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                 },
             })

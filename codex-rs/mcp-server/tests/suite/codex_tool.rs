@@ -536,6 +536,8 @@ async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
         dir: _dir,
     } = create_mcp_process(Vec::new()).await?;
     let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/main.rs"), "fn main() {}\n")?;
 
     let request_id = mcp_process
         .send_named_tool_call(
@@ -559,11 +561,12 @@ async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
     )
     .await??;
 
+    let summary = "structure summary: found 1 match(es) for `main` in 1 indexed files; function main @ src/main.rs:1 calls [none]";
     assert_eq!(
         response.result,
         json!({
             "content": [{
-                "text": "tree rust via local: Ast analysis is not implemented yet",
+                "text": format!("tree rust via local: {summary}"),
                 "type": "text"
             }],
             "isError": false,
@@ -574,7 +577,7 @@ async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
                 "message": "daemon unavailable; used local engine",
                 "project": project.path().canonicalize()?,
                 "source": "local",
-                "summary": "Ast analysis is not implemented yet",
+                "summary": summary,
                 "supportLevel": "DataFlow",
                 "symbol": "main"
             }

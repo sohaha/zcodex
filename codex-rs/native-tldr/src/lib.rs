@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used))]
 
+pub mod analysis;
 pub mod api;
 pub mod config;
 pub mod daemon;
@@ -10,6 +11,7 @@ pub mod semantic;
 pub mod session;
 pub mod wire;
 
+use crate::analysis::analyze_project;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
 pub use crate::config::load_tldr_config;
@@ -146,7 +148,7 @@ impl TldrEngine {
     }
 
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {
-        Ok(AnalysisResponse::placeholder(request.kind))
+        analyze_project(&self.config.project_root, &self.config, request)
     }
 }
 
@@ -231,16 +233,22 @@ mod tests {
 
     #[test]
     fn analyze_returns_placeholder_summary() {
-        let engine = TldrEngine::builder(PathBuf::from("/tmp/project")).build();
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "fn main() {}\n")
+            .expect("fixture should be written");
+        let engine = TldrEngine::builder(tempdir.path().to_path_buf()).build();
         let response = engine
             .analyze(AnalysisRequest {
                 kind: AnalysisKind::Ast,
+                language: SupportedLanguage::Rust,
                 symbol: Some("main".to_string()),
             })
-            .expect("placeholder analysis should succeed");
+            .expect("analysis should succeed");
 
         assert_eq!(response.kind, AnalysisKind::Ast);
-        assert_eq!(response.summary, "Ast analysis is not implemented yet");
+        assert!(response.summary.contains("structure summary:"));
+        assert!(response.summary.contains("main"));
     }
 
     #[test]
@@ -318,12 +326,17 @@ mod tests {
 
     #[tokio::test]
     async fn daemon_caches_analysis_results() {
-        let daemon = TldrDaemon::new(PathBuf::from("/tmp/project"));
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/main.rs"), "fn main() {}\n")
+            .expect("fixture should be written");
+        let daemon = TldrDaemon::new(tempdir.path().to_path_buf());
         let first = daemon
             .handle_command(TldrDaemonCommand::Analyze {
                 key: "rust:main".to_string(),
                 request: AnalysisRequest {
                     kind: AnalysisKind::Ast,
+                    language: SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                 },
             })
@@ -334,6 +347,7 @@ mod tests {
                 key: "rust:main".to_string(),
                 request: AnalysisRequest {
                     kind: AnalysisKind::Ast,
+                    language: SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                 },
             })

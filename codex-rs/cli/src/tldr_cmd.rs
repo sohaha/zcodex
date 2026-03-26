@@ -214,6 +214,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
     let config = load_tldr_config(&project_root)?;
     let request = AnalysisRequest {
         kind,
+        language,
         symbol: cmd.symbol.clone(),
     };
     let daemon_response = query_daemon_with_autostart(

@@ -193,6 +193,7 @@ async fn run_analysis_tool(
     };
     let request = AnalysisRequest {
         kind,
+        language,
         symbol: symbol.clone(),
     };
     let daemon_response = query_daemon_with_lifecycle(

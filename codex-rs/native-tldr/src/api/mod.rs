@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use serde::Serialize;
 
+use crate::lang_support::SupportedLanguage;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AnalysisKind {
@@ -14,6 +16,7 @@ pub enum AnalysisKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AnalysisRequest {
     pub kind: AnalysisKind,
+    pub language: SupportedLanguage,
     pub symbol: Option<String>,
 }
 
@@ -21,13 +24,4 @@ pub struct AnalysisRequest {
 pub struct AnalysisResponse {
     pub kind: AnalysisKind,
     pub summary: String,
-}
-
-impl AnalysisResponse {
-    pub fn placeholder(kind: AnalysisKind) -> Self {
-        Self {
-            kind,
-            summary: format!("{kind:?} analysis is not implemented yet"),
-        }
-    }
 }

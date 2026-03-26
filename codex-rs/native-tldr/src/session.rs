@@ -162,7 +162,10 @@ mod tests {
         });
         session.store_analysis(
             "rust:main".to_string(),
-            AnalysisResponse::placeholder(AnalysisKind::Ast),
+            AnalysisResponse {
+                kind: AnalysisKind::Ast,
+                summary: "structure summary".to_string(),
+            },
         );
 
         let dirty_state = session.mark_dirty(PathBuf::from("src/main.rs"));
@@ -196,7 +199,10 @@ mod tests {
         });
         session.store_analysis(
             "rust:main".to_string(),
-            AnalysisResponse::placeholder(AnalysisKind::Ast),
+            AnalysisResponse {
+                kind: AnalysisKind::Ast,
+                summary: "structure summary".to_string(),
+            },
         );
         session.mark_dirty(PathBuf::from("src/main.rs"));
 
