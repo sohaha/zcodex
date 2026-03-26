@@ -587,6 +587,7 @@ async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
                 reindex_pending: false,
                 last_query_at: None,
                 last_reindex: None,
+                last_reindex_attempt: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -918,6 +919,123 @@ async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyho
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_status_surfaces_last_failed_reindex_attempt() {
+    if let Err(err) = tldr_tool_status_surfaces_last_failed_reindex_attempt().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_status_surfaces_last_failed_reindex_attempt() -> anyhow::Result<()> {
+    let project = TempDir::new()?;
+    let canonical_project = project.path().canonicalize()?;
+    let socket_path = socket_path_for_project(&canonical_project);
+    if socket_path.exists() {
+        std::fs::remove_file(&socket_path)?;
+    }
+
+    let daemon = TldrDaemon::from_config(TldrConfig::for_project(canonical_project.clone()));
+    let listener = UnixListener::bind(&socket_path)?;
+    let server_handle = task::spawn(async move {
+        for _ in 0..3 {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            let response = daemon.handle_command(command).await?;
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    async fn call_tldr(
+        mcp_process: &mut McpProcess,
+        params: serde_json::Map<String, serde_json::Value>,
+    ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+        let request_id = mcp_process
+            .send_named_tool_call("tldr", Some(params))
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+        response.result["structuredContent"]
+            .as_object()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))
+    }
+
+    let notify = call_tldr(
+        &mut mcp_process,
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("notify")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+            ("path".to_string(), json!("src/missing.rs")),
+        ]),
+    )
+    .await?;
+    assert_eq!(notify["snapshot"]["reindex_pending"], true);
+
+    let warm = call_tldr(
+        &mut mcp_process,
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("warm")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+        ]),
+    )
+    .await?;
+    assert_eq!(warm["reindexReport"]["status"], "Failed");
+    assert_eq!(warm["snapshot"]["reindex_pending"], true);
+    assert_eq!(warm["snapshot"]["last_reindex"], serde_json::Value::Null);
+    assert_eq!(
+        warm["snapshot"]["last_reindex_attempt"],
+        warm["reindexReport"]
+    );
+    assert_eq!(warm["daemonStatus"]["semantic_reindex_pending"], true);
+
+    let status = call_tldr(
+        &mut mcp_process,
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("status")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+        ]),
+    )
+    .await?;
+    assert_eq!(status["reindexReport"]["status"], "Failed");
+    assert_eq!(status["snapshot"]["reindex_pending"], true);
+    assert_eq!(status["snapshot"]["last_reindex"], serde_json::Value::Null);
+    assert_eq!(
+        status["snapshot"]["last_reindex_attempt"],
+        status["reindexReport"]
+    );
+    assert_eq!(status["daemonStatus"]["semantic_reindex_pending"], true);
+
+    server_handle.await??;
+    Ok(())
+}
+
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_tldr_tool_warm_returns_snapshot() {
@@ -961,6 +1079,7 @@ async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
                 reindex_pending: false,
                 last_query_at: None,
                 last_reindex: None,
+                last_reindex_attempt: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -1057,6 +1176,7 @@ async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
                 reindex_pending: false,
                 last_query_at: None,
                 last_reindex: None,
+                last_reindex_attempt: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -1145,6 +1265,7 @@ async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
                 reindex_pending: false,
                 last_query_at: None,
                 last_reindex: None,
+                last_reindex_attempt: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -1231,6 +1352,7 @@ async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
                 reindex_pending: false,
                 last_query_at: None,
                 last_reindex: None,
+                last_reindex_attempt: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -1377,6 +1499,7 @@ async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
                 reindex_pending: false,
                 last_query_at: None,
                 last_reindex: None,
+                last_reindex_attempt: None,
             }),
             daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                 project_root: canonical_project_for_server.clone(),

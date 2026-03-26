@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（MCP semantic daemon cache reuse 黑盒回归、双进程 launcher wait 竞态回归、以及 reindex 完成确认链路已落地，继续收口 phase-1 稳定化，并把外部 daemon lock owner 场景也纳入更强跨进程唯一性验证）
+- **当前阶段**：Stage 3 / 执行中（MCP semantic daemon cache reuse 黑盒回归、双进程 launcher wait 竞态回归、以及 reindex 完成确认链路已落地，继续收口 phase-1 稳定化，并把外部 daemon lock owner 场景已纳入更强跨进程唯一性验证；MCP/文档侧开始补 last_reindex_attempt 失败观测）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -43,8 +43,8 @@ dependencies: [prd, tech-review]
   - 新完成：daemon `Warm` 不再只是清状态，现会执行一次 phase-1 semantic reindex 并把报告暴露给 snapshot/status/warm
   - 新完成：CLI 补了双进程 launcher 竞争测试，验证同一 project 并发 auto-start 最终只发生一次真实 spawn
   - 新完成：selective sync 上游 llm-tldr `semantic.py` 的 EmbeddingUnit/五层文本组装思路，native-tldr/CLI/MCP 现可返回本地 semantic matches
-  - 主线程：已补“外部 daemon lock owner 完成 boot 时其他进程零 spawn 且成功复用”的跨进程回归，继续围绕 phase-1 稳定化与跨进程唯一性补强推进
-  - 下一步：把 reindex 失败后的最近一次尝试结果也推进到可追溯状态，或继续补 daemon 外部持锁路径的更多边界观测
+  - 主线程：已补 MCP status 对最近失败 reindex 尝试的黑盒观测，native-tldr/CLI/MCP 三侧关于 reindex attempt 的状态语义已基本对齐
+  - 下一步：继续补 last_reindex_attempt 在更多客户端面（如 CLI 文本）上的可见性，或继续扩展 daemon 外部持锁路径的更多边界观测
   - 持续：同步 `.agents` 文档与定向验证结果
 - **刚完成**：
   - `semantic` phase-1 从 placeholder 升级为真实本地检索：native-tldr 现在会按语言扫描源码、构建 embedding-unit 风格 metadata，并返回 ranked matches

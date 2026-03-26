@@ -8,9 +8,13 @@
 ## 中间验证进度（实时）
 
 - **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、跨进程 launcher 竞争测试、双进程 launcher wait 竞态观测，以及 MCP semantic daemon cache reuse 黑盒回归一起落地
-- **最新代码提交**：待提交（本轮新增 external daemon lock owner 零 spawn 复用回归）
+- **最新代码提交**：待提交（本轮新增 MCP failed reindex attempt 可追溯观测）
 
 ### 已完成验证
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_status_surfaces_last_failed_reindex_attempt -- --exact -q`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm -- --exact -q`：通过
+- `codex rtk cargo test -p codex-mcp-server`：通过（31 个测试）
+- `just fix -p codex-mcp-server`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_running_never_spawns_when_external_daemon_lock_owner_finishes_boot -- --exact -q`：通过
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（56 个测试）
 - `just fix -p codex-cli`：通过
