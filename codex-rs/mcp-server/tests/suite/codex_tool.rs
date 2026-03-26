@@ -9,8 +9,10 @@ use codex_mcp_server::ExecApprovalElicitRequestParams;
 use codex_mcp_server::ExecApprovalResponse;
 use codex_mcp_server::PatchApprovalElicitRequestParams;
 use codex_mcp_server::PatchApprovalResponse;
+use codex_native_tldr::TldrConfig;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisResponse;
+use codex_native_tldr::daemon::TldrDaemon;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::TldrDaemonResponse;
 use codex_native_tldr::daemon::socket_path_for_project;
@@ -747,6 +749,146 @@ async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
         structured["matches"][0]["embedding_score"].as_f64(),
         Some(score) if score > 0.0
     ));
+
+    server_handle.await??;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() {
+    if let Err(err) = tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyhow::Result<()> {
+    let project = TempDir::new()?;
+    std::fs::create_dir(project.path().join(".codex"))?;
+    std::fs::create_dir(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join(".codex/tldr.toml"),
+        "[semantic]\nenabled = true\n",
+    )?;
+    let source_file = project.path().join("src/auth.rs");
+    std::fs::write(
+        &source_file,
+        "fn verify_token() {\n    let auth_token = true;\n}\n",
+    )?;
+    let canonical_project = project.path().canonicalize()?;
+    let socket_path = socket_path_for_project(&canonical_project);
+    if socket_path.exists() {
+        std::fs::remove_file(&socket_path)?;
+    }
+
+    let mut config = TldrConfig::for_project(canonical_project.clone());
+    config.semantic = codex_native_tldr::semantic::SemanticConfig::default().with_enabled(true);
+    let daemon = TldrDaemon::from_config(config);
+
+    let listener = UnixListener::bind(&socket_path)?;
+    let server_handle = task::spawn(async move {
+        for _ in 0..5 {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            let response = daemon.handle_command(command).await?;
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+        }
+        Ok::<(), anyhow::Error>(())
+    });
+
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    async fn call_tldr(
+        mcp_process: &mut McpProcess,
+        params: serde_json::Map<String, serde_json::Value>,
+    ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+        let request_id = mcp_process
+            .send_named_tool_call("tldr", Some(params))
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+        response.result["structuredContent"]
+            .as_object()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))
+    }
+
+    let semantic_params = || {
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("semantic")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+            ("language".to_string(), json!("rust")),
+            ("query".to_string(), json!("auth_token")),
+        ])
+    };
+
+    let first = call_tldr(&mut mcp_process, semantic_params()).await?;
+    assert_eq!(first["source"], "daemon");
+    assert_eq!(first["matches"][0]["path"], "src/auth.rs");
+    assert_eq!(first["matches"][0]["snippet"], "let auth_token = true;");
+
+    std::fs::write(
+        &source_file,
+        "fn verify_token() {\n    let session_cookie = true;\n}\n",
+    )?;
+
+    let second = call_tldr(&mut mcp_process, semantic_params()).await?;
+    assert_eq!(second["source"], "daemon");
+    assert_eq!(second["matches"][0]["snippet"], "let auth_token = true;");
+
+    let notify = call_tldr(
+        &mut mcp_process,
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("notify")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+            ("path".to_string(), json!("src/auth.rs")),
+        ]),
+    )
+    .await?;
+    assert_eq!(notify["action"], "notify");
+
+    let warm = call_tldr(
+        &mut mcp_process,
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("warm")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+        ]),
+    )
+    .await?;
+    assert_eq!(warm["action"], "warm");
+
+    let third = call_tldr(&mut mcp_process, semantic_params()).await?;
+    assert_eq!(third["source"], "daemon");
+    assert_eq!(
+        third["matches"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("matches should be an array"))?
+            .len(),
+        0
+    );
 
     server_handle.await??;
     Ok(())
