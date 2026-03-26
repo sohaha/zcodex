@@ -1,7 +1,7 @@
 mod request;
 mod stream;
 
-pub(crate) use request::*;
+pub use request::*;
 pub(crate) use stream::*;
 
 #[cfg(test)]

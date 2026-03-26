@@ -41,6 +41,7 @@ mod translator;
 
 use self::adapter::CompatEndpoint;
 use self::adapter::UpstreamAdapter;
+use self::translator::ResponseTranslation;
 
 const HOP_BY_HOP_HEADERS: &[&str] = &[
     "connection",
@@ -313,7 +314,7 @@ async fn proxy_request(
         }
     };
 
-    response_from_upstream(upstream_response).await
+    response_from_upstream(upstream_response, translated_request.response_translation).await
 }
 
 fn authorize(state: &OpenAiCompatState, headers: &HeaderMap) -> Result<(), ApiError> {
@@ -561,7 +562,10 @@ fn is_hop_by_hop_header(name: &HeaderName) -> bool {
         .any(|candidate| name.as_str().eq_ignore_ascii_case(candidate))
 }
 
-async fn response_from_upstream(upstream: reqwest::Response) -> Response<Body> {
+async fn response_from_upstream(
+    upstream: reqwest::Response,
+    response_translation: ResponseTranslation,
+) -> Response<Body> {
     let status = upstream.status();
     let headers = upstream.headers().clone();
     let mut response = Response::builder().status(status.as_u16());
@@ -571,10 +575,48 @@ async fn response_from_upstream(upstream: reqwest::Response) -> Response<Body> {
         }
     }
 
-    match response.body(Body::from_stream(upstream.bytes_stream())) {
-        Ok(response) => response,
-        Err(err) => {
-            ApiError::internal(format!("failed to build proxy response: {err}")).to_response()
+    match response_translation {
+        ResponseTranslation::Passthrough => {
+            match response.body(Body::from_stream(upstream.bytes_stream())) {
+                Ok(response) => response,
+                Err(err) => ApiError::internal(format!("failed to build proxy response: {err}"))
+                    .to_response(),
+            }
+        }
+        _ => {
+            if !status.is_success() {
+                return match response.body(Body::from_stream(upstream.bytes_stream())) {
+                    Ok(response) => response,
+                    Err(err) => {
+                        ApiError::internal(format!("failed to build proxy response: {err}"))
+                            .to_response()
+                    }
+                };
+            }
+
+            let upstream_body = match upstream.text().await {
+                Ok(body) => body,
+                Err(err) => {
+                    return ApiError::bad_gateway(format!(
+                        "failed to read upstream response body: {err}"
+                    ))
+                    .to_response();
+                }
+            };
+            let translated_body =
+                match response_translation.translate_success_response_body(&upstream_body) {
+                    Ok(Some(body)) => body,
+                    Ok(None) => upstream_body,
+                    Err(err) => return err.to_response(),
+                };
+            response = response.header(axum::http::header::CONTENT_TYPE, "application/json");
+            match response.body(Body::from(translated_body)) {
+                Ok(response) => response,
+                Err(err) => {
+                    ApiError::internal(format!("failed to build translated proxy response: {err}"))
+                        .to_response()
+                }
+            }
         }
     }
 }

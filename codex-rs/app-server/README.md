@@ -76,7 +76,7 @@ Notes:
 - The selected provider must have an explicit `base_url`. `wire_api = "responses"` and `wire_api = "chat"` are supported; `wire_api = "anthropic"` is not.
 - Optional local bearer auth can be enabled with `--auth-token-env ENV_NAME`, which requires `Authorization: Bearer ...` on incoming requests.
 - For `wire_api = "responses"`, the proxy forwards `/v1/responses` and `/v1/chat/completions` to the upstream when available.
-- For `wire_api = "chat"`, the proxy forwards `/v1/chat/completions` and rejects `/v1/responses` with a `400`. The error explicitly tells callers to switch to `/v1/chat/completions`; native `/v1/responses -> chat upstream` translation is not wired in yet.
+- For `wire_api = "chat"`, the proxy forwards `/v1/chat/completions` directly. It also translates non-streaming `/v1/responses` requests onto the chat upstream and maps the JSON response back into a Responses-style payload. Streaming `/v1/responses` is still rejected with a `400`; callers should use `/v1/chat/completions` for streaming.
 
 ## Core Primitives
 

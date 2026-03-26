@@ -39,6 +39,7 @@ axum = { workspace = true, default-features = false, features = [
     "tokio",
     "ws",
 ] }
+codex-api = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-cloud-requirements = { workspace = true }
 codex-core = { workspace = true }

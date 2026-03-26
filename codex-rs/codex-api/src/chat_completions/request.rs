@@ -17,20 +17,18 @@ use std::collections::HashSet;
 
 const CHAT_TOOL_INPUT_FIELD: &str = "input";
 
-pub(crate) struct ChatCompletionsRequest {
-    pub(crate) body: Value,
-    pub(crate) custom_tool_names: HashSet<String>,
-    pub(crate) tool_search_tool_names: HashSet<String>,
-    pub(crate) local_shell_tool_names: HashSet<String>,
+pub struct ChatCompletionsRequest {
+    pub body: Value,
+    pub custom_tool_names: HashSet<String>,
+    pub tool_search_tool_names: HashSet<String>,
+    pub local_shell_tool_names: HashSet<String>,
 }
 
-pub(crate) fn build_request(
-    request: &ResponsesApiRequest,
-) -> Result<ChatCompletionsRequest, ApiError> {
+pub fn build_request(request: &ResponsesApiRequest) -> Result<ChatCompletionsRequest, ApiError> {
     build_request_with_stream(request, /*stream*/ true)
 }
 
-pub(crate) fn build_request_with_stream(
+pub fn build_request_with_stream(
     request: &ResponsesApiRequest,
     stream: bool,
 ) -> Result<ChatCompletionsRequest, ApiError> {

@@ -7,6 +7,8 @@ use futures::stream;
 use pretty_assertions::assert_eq;
 use reqwest::header::CACHE_CONTROL;
 use reqwest::header::CONTENT_TYPE;
+use serde_json::Value;
+use serde_json::json;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -223,18 +225,93 @@ async fn proxy_forwards_chat_completions_to_provider() {
 }
 
 #[tokio::test]
-async fn chat_wire_api_rejects_responses_endpoint() {
+async fn chat_wire_api_translates_responses_endpoint_to_chat_upstream() {
+    let (request_tx, request_rx) = oneshot::channel::<Value>();
+    let request_tx = Arc::new(Mutex::new(Some(request_tx)));
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post({
+            let request_tx = request_tx.clone();
+            move |body: String| {
+                let request_tx = request_tx.clone();
+                async move {
+                    if let Some(tx) = request_tx.lock().await.take() {
+                        let parsed = serde_json::from_str::<Value>(&body).expect("body json");
+                        let _ = tx.send(parsed);
+                    }
+                    axum::Json(json!({
+                        "id": "chatcmpl-1",
+                        "object": "chat.completion",
+                        "created": 123,
+                        "model": "gpt-chat",
+                        "choices": [{
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "hello from chat"
+                            },
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {
+                            "prompt_tokens": 11,
+                            "prompt_tokens_details": { "cached_tokens": 2 },
+                            "completion_tokens": 5,
+                            "completion_tokens_details": { "reasoning_tokens": 1 },
+                            "total_tokens": 16
+                        }
+                    }))
+                }
+            }
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+
     let response = proxy_request(
-        chat_state("https://example.com/v1".to_string()),
+        chat_state(format!("http://{upstream_addr}/v1")),
         Method::POST,
         CompatEndpoint::Responses,
         None,
         HeaderMap::new(),
-        Some("{}".to_string()),
+        Some(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": false,
+                "include": []
+            })
+            .to_string(),
+        ),
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let body: Value = serde_json::from_slice(&body).expect("json body");
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["status"], "completed");
+    assert_eq!(body["model"], "gpt-chat");
+    assert_eq!(body["output"][0]["type"], "message");
+    assert_eq!(body["output"][0]["role"], "assistant");
+    assert_eq!(body["output"][0]["content"][0]["text"], "hello from chat");
+    assert_eq!(body["usage"]["input_tokens"], 11);
+    assert_eq!(body["usage"]["input_tokens_details"]["cached_tokens"], 2);
+
+    let upstream_request = request_rx.await.expect("upstream request");
+    assert_eq!(upstream_request["model"], "gpt-chat");
+    assert_eq!(upstream_request["messages"][0]["role"], "system");
+    assert_eq!(upstream_request["messages"][1]["role"], "user");
+    assert_eq!(upstream_request["stream"], Value::Bool(false));
 }
 
 #[tokio::test]
@@ -369,7 +446,24 @@ async fn chat_wire_api_running_server_rejects_responses_endpoint() {
     let response = reqwest::Client::new()
         .post(format!("http://{proxy_addr}/v1/responses"))
         .header(CONTENT_TYPE, "application/json")
-        .body("{}")
+        .body(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": true,
+                "include": []
+            })
+            .to_string(),
+        )
         .send()
         .await
         .expect("proxy request should succeed");
@@ -377,7 +471,7 @@ async fn chat_wire_api_running_server_rejects_responses_endpoint() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(
         response.text().await.expect("body"),
-        "{\"error\":{\"message\":\"current upstream provider uses wire_api = \\\"chat\\\"; /v1/responses is not available yet, use /v1/chat/completions instead\",\"type\":\"invalid_request_error\"}}"
+        "{\"error\":{\"message\":\"current upstream provider uses wire_api = \\\"chat\\\"; streamed /v1/responses translation is not available yet, use /v1/chat/completions for streaming\",\"type\":\"invalid_request_error\"}}"
     );
 }
 
@@ -693,7 +787,7 @@ fn ensure_supported_provider_accepts_chat_wire_api() {
 }
 
 #[test]
-fn chat_adapter_resolves_chat_completions_but_not_responses() {
+fn chat_adapter_resolves_responses_via_chat_completions_path() {
     let adapter = UpstreamAdapter::chat();
     assert_eq!(
         adapter
@@ -702,14 +796,12 @@ fn chat_adapter_resolves_chat_completions_but_not_responses() {
             .path,
         "/chat/completions"
     );
-    let err = match adapter.resolve_request(CompatEndpoint::Responses) {
-        Ok(_) => panic!("responses endpoint should be rejected for chat upstream"),
-        Err(err) => err,
-    };
-    assert_eq!(err.status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        err.message,
-        "current upstream provider uses wire_api = \"chat\"; /v1/responses is not available yet, use /v1/chat/completions instead"
+        adapter
+            .resolve_request(CompatEndpoint::Responses)
+            .expect("translated responses request")
+            .path,
+        "/chat/completions"
     );
 }
 

@@ -13,19 +13,22 @@ pub(super) struct UpstreamAdapter {
 struct UpstreamAdapterSpec {
     wire_api_name: &'static str,
     responses_path: Option<&'static str>,
+    responses_translator: Option<UpstreamTranslator>,
 }
 
 const RESPONSES_ADAPTER: UpstreamAdapterSpec = UpstreamAdapterSpec {
     wire_api_name: "responses",
     responses_path: Some("/responses"),
+    responses_translator: Some(UpstreamTranslator::Passthrough),
 };
 
 const CHAT_ADAPTER: UpstreamAdapterSpec = UpstreamAdapterSpec {
     wire_api_name: "chat",
-    responses_path: None,
+    responses_path: Some("/chat/completions"),
+    responses_translator: Some(UpstreamTranslator::ResponsesToChat),
 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum CompatEndpoint {
     Models,
     Responses,
@@ -64,10 +67,8 @@ impl UpstreamAdapter {
         endpoint: CompatEndpoint,
     ) -> Result<ResolvedUpstreamRequest, ApiError> {
         let path = endpoint.resolve_path(self.spec)?;
-        Ok(ResolvedUpstreamRequest {
-            path,
-            translator: UpstreamTranslator::passthrough(),
-        })
+        let translator = endpoint.resolve_translator(self.spec)?;
+        Ok(ResolvedUpstreamRequest { path, translator })
     }
 }
 
@@ -84,6 +85,19 @@ impl CompatEndpoint {
                 .responses_path
                 .ok_or_else(|| ApiError::bad_request(self.unsupported_message())),
             Self::ChatCompletions => Ok("/chat/completions"),
+        }
+    }
+
+    fn resolve_translator(
+        self,
+        spec: &UpstreamAdapterSpec,
+    ) -> Result<UpstreamTranslator, ApiError> {
+        match self {
+            Self::Models | Self::ChatCompletions => Ok(UpstreamTranslator::passthrough()),
+            Self::Responses => spec
+                .responses_translator
+                .clone()
+                .ok_or_else(|| ApiError::bad_request(self.unsupported_message())),
         }
     }
 
