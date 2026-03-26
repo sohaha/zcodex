@@ -688,6 +688,8 @@ mod lifecycle_tests {
     use std::path::PathBuf;
     use std::process::Stdio;
     use std::sync::Arc;
+    use std::sync::Mutex;
+    use std::sync::MutexGuard;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
     use std::thread::sleep;
@@ -725,6 +727,34 @@ mod lifecycle_tests {
         "CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL";
     const CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL_ENV: &str =
         "CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL";
+
+    static LIFECYCLE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct LifecycleTestGuard {
+        _local: MutexGuard<'static, ()>,
+        _cross_process: File,
+    }
+
+    fn lifecycle_test_guard() -> LifecycleTestGuard {
+        let local = LIFECYCLE_TEST_LOCK
+            .lock()
+            .expect("lifecycle test lock should not be poisoned");
+        let lock_path = std::env::temp_dir().join("codex-native-tldr-artifact-tests.lock");
+        let cross_process = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .expect("cross-process lifecycle test lock should be opened");
+        cross_process
+            .lock()
+            .expect("cross-process lifecycle test lock should be acquired");
+        LifecycleTestGuard {
+            _local: local,
+            _cross_process: cross_process,
+        }
+    }
 
     #[test]
     fn render_daemon_response_text_surfaces_last_reindex_attempts() {
@@ -981,14 +1011,17 @@ mod lifecycle_tests {
     }
 
     #[test]
-    fn try_open_launcher_lock_creates_missing_nested_parent_dir() {
+    fn try_open_launcher_lock_creates_lock_file_in_shared_scope_dir() {
+        let _guard = lifecycle_test_guard();
         let tempdir = tempdir().unwrap();
         let project_root = tempdir.path().join("nested-launcher-lock-project");
         std::fs::create_dir(&project_root).unwrap();
         let lock_path = launcher_lock_path_for_project(&project_root);
         let parent = lock_path.parent().unwrap().to_path_buf();
-        std::fs::remove_dir_all(&parent).ok();
-        assert!(!parent.exists());
+        std::fs::create_dir_all(&parent).unwrap();
+        std::fs::remove_file(&lock_path).ok();
+        assert!(parent.exists());
+        assert!(!lock_path.exists());
 
         let lock = super::try_open_launcher_lock(&project_root).unwrap();
 
@@ -1061,6 +1094,7 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn ensure_daemon_running_only_spawns_once_across_processes() -> Result<()> {
+        let _guard = lifecycle_test_guard();
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
             return Ok(());
         }
@@ -1127,6 +1161,7 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn ensure_daemon_running_only_spawns_once_with_two_launcher_contenders() -> Result<()> {
+        let _guard = lifecycle_test_guard();
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
             return Ok(());
         }
@@ -1196,6 +1231,7 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn ensure_running_records_launcher_wait_in_two_process_race() -> Result<()> {
+        let _guard = lifecycle_test_guard();
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
             return Ok(());
         }
@@ -1297,6 +1333,7 @@ mod lifecycle_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn ensure_running_never_spawns_when_external_daemon_lock_owner_finishes_boot()
     -> Result<()> {
+        let _guard = lifecycle_test_guard();
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
             return Ok(());
         }
@@ -1397,6 +1434,7 @@ mod lifecycle_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn ensure_running_recovers_when_external_lock_owner_loses_artifact_dir_mid_boot()
     -> Result<()> {
+        let _guard = lifecycle_test_guard();
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
             return Ok(());
         }
@@ -1507,6 +1545,7 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn ensure_daemon_running_only_spawns_once_even_with_three_processes() -> Result<()> {
+        let _guard = lifecycle_test_guard();
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
             return Ok(());
         }
@@ -1577,6 +1616,7 @@ mod lifecycle_tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn ensure_running_waits_when_launcher_lock_and_daemon_alive() -> Result<()> {
+        let _guard = lifecycle_test_guard();
         let project = tempdir()?;
         let canonical_project = project.path().canonicalize()?;
         let socket_path = socket_path_for_project(&canonical_project);

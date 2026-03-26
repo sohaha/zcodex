@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 use std::env;
+use std::fs::File;
+use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
 
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use codex_mcp_server::CodexToolCallParam;
@@ -43,6 +47,34 @@ use tokio::time::timeout;
 use wiremock::MockServer;
 // Allow ample time on slower CI or under load to avoid flakes.
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+static TLDR_ARTIFACT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+struct TldrArtifactTestGuard {
+    _local: MutexGuard<'static, ()>,
+    _cross_process: File,
+}
+
+fn tldr_artifact_test_guard() -> TldrArtifactTestGuard {
+    let local = TLDR_ARTIFACT_TEST_LOCK
+        .lock()
+        .expect("tldr artifact test lock should not be poisoned");
+    let lock_path = env::temp_dir().join("codex-native-tldr-artifact-tests.lock");
+    let cross_process = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .expect("cross-process tldr artifact test lock should be opened");
+    cross_process
+        .lock()
+        .expect("cross-process tldr artifact test lock should be acquired");
+    TldrArtifactTestGuard {
+        _local: local,
+        _cross_process: cross_process,
+    }
+}
 
 fn bind_test_unix_listener(socket_path: &Path) -> anyhow::Result<UnixListener> {
     if let Some(parent) = socket_path.parent() {
@@ -556,6 +588,7 @@ async fn test_tldr_tool_uses_daemon_when_available() {
 }
 
 async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);
@@ -651,6 +684,7 @@ async fn test_tldr_tool_semantic_uses_daemon_when_available() {
 }
 
 async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);
@@ -772,6 +806,7 @@ async fn test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() {
 }
 
 async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     std::fs::create_dir(project.path().join(".codex"))?;
     std::fs::create_dir(project.path().join("src"))?;
@@ -936,6 +971,7 @@ async fn test_tldr_tool_status_surfaces_last_failed_reindex_attempt() {
 }
 
 async fn tldr_tool_status_surfaces_last_failed_reindex_attempt() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);
@@ -1055,6 +1091,7 @@ async fn test_tldr_tool_warm_returns_snapshot() {
 
 #[cfg(unix)]
 async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);
@@ -1148,6 +1185,7 @@ async fn test_tldr_tool_notify_includes_path() {
 
 #[cfg(unix)]
 async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let target_path = canonical_project.join("src/lib.rs");
@@ -1241,6 +1279,7 @@ async fn test_tldr_tool_snapshot_returns_snapshot() {
 
 #[cfg(unix)]
 async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);
@@ -1328,6 +1367,7 @@ async fn test_tldr_tool_ping_reports_status() {
 
 #[cfg(unix)]
 async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);
@@ -1414,6 +1454,7 @@ async fn test_tldr_tool_ping_errors_when_daemon_missing() {
 }
 
 async fn tldr_tool_ping_errors_when_daemon_missing() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
 
@@ -1473,6 +1514,7 @@ async fn test_tldr_tool_status_returns_daemon_status() {
 
 #[cfg(unix)]
 async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
+    let _guard = tldr_artifact_test_guard();
     let project = TempDir::new()?;
     let canonical_project = project.path().canonicalize()?;
     let socket_path = socket_path_for_project(&canonical_project);

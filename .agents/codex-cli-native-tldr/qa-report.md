@@ -3,14 +3,17 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：阶段 3 进行中（semantic 已接入 daemon 复用路径，并继续补强跨进程 launcher/daemon 全局唯一性闭环）
+- **状态**：阶段 3 已完成（默认并行 `cargo test` 套件已稳定通过；阶段 4 尚未执行）
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、跨进程 launcher 竞争测试、双进程 launcher wait 竞态观测，以及 MCP semantic daemon cache reuse 黑盒回归一起落地
-- **最新代码提交**：待提交（本轮新增 MCP failed reindex attempt 可追溯观测）
+- **当前执行方式**：本轮聚焦修复默认并行测试下的脆弱回归：`native-tldr` 去掉对全局 build counter 的断言依赖，`cli` 生命周期测试为会继承进程环境/拉子进程的场景增加串行保护
+- **最新代码提交**：待提交（本轮修复阶段 3 默认并行测试互扰）
 
 ### 已完成验证
+- `codex rtk cargo test -p codex-native-tldr`：通过（50 个测试；`semantic_command_reuses_cached_index_across_requests` 不再依赖全局 build counter）
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（61 个测试；生命周期回归在默认并行套件下稳定通过）
+- `codex rtk cargo test -p codex-mcp-server`：通过（31 个测试）
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_status_surfaces_last_failed_reindex_attempt -- --exact -q`：通过
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm -- --exact -q`：通过
 - `codex rtk cargo test -p codex-mcp-server`：通过（31 个测试）

@@ -2,7 +2,11 @@
    "qualityGates" : {
       "gate0" : null,
       "gate2" : null,
-      "gate1" : null
+      "gate1" : {
+         "status" : "passed",
+         "at" : "2026-03-26T08:10:45Z",
+         "note" : "default cargo test suites passed per crate: codex-native-tldr (50), codex-cli (61), codex-mcp-server (31)"
+      }
    },
    "parameters" : {
       "quick" : false,
@@ -11,8 +15,8 @@
    },
    "stages" : {
       "3" : {
-         "endTime" : null,
-         "status" : "in_progress",
+         "endTime" : "2026-03-26T08:10:45Z",
+         "status" : "completed",
          "startTime" : "2026-03-25T10:40:00Z"
       },
       "4" : {
@@ -227,6 +231,10 @@
       {
          "at" : "2026-03-26T12:10:00Z",
          "note" : "completed T-009/T-010 hardening round: daemon artifacts moved to per-user scope roots, lock/launch.lock were separated from project artifact dirs, and recovery regressions now cover missing parents, deleted lock files, and external lock-owner boot after project artifact dir removal"
+      },
+      {
+         "at" : "2026-03-26T08:10:45Z",
+         "note" : "stabilized phase-1 default cargo test coverage: native-tldr semantic cache reuse test no longer depends on global build counters, and CLI lifecycle regressions now serialize env-inheriting child-process tests"
       }
    ],
    "feature" : "codex-cli-native-tldr",

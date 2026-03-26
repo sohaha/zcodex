@@ -832,8 +832,6 @@ mod tests {
     #[cfg(unix)]
     use super::socket_path_for_project;
     use crate::semantic::SemanticSearchRequest;
-    use crate::semantic::reset_semantic_index_build_count;
-    use crate::semantic::semantic_index_build_count;
     #[cfg(unix)]
     use tokio::net::UnixListener;
 
@@ -1305,8 +1303,6 @@ mod tests {
         )
         .expect("fixture should exist");
 
-        reset_semantic_index_build_count();
-
         let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
         config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
         let daemon = TldrDaemon::from_config(config);
@@ -1329,7 +1325,13 @@ mod tests {
             );
         }
 
-        assert_eq!(semantic_index_build_count(), 1);
+        let cached_languages = daemon
+            .engine
+            .semantic_indexes
+            .read()
+            .expect("semantic index cache lock should not be poisoned")
+            .len();
+        assert_eq!(cached_languages, 1);
     }
 
     #[test]
