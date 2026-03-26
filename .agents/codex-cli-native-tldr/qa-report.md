@@ -7,10 +7,22 @@
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、跨进程 launcher 竞争测试，以及 MCP semantic daemon cache reuse 黑盒回归一起落地
-- **最新代码提交**：`e49926fee` `test: cover mcp semantic daemon cache reuse`
+- **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、跨进程 launcher 竞争测试、双进程 launcher wait 竞态观测，以及 MCP semantic daemon cache reuse 黑盒回归一起落地
+- **最新代码提交**：待提交（本轮包含双进程 launcher wait 回归与 reindex 完成确认观测）
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr daemon::tests::warm_clears_reindex_pending_state -- --exact -q`：通过
+- `cargo test -p codex-native-tldr daemon::tests::warm_keeps_reindex_pending_when_reindex_fails -- --exact -q`：通过
+- `cargo test -p codex-native-tldr daemon::tests::status_surfaces_last_completed_reindex_after_warm -- --exact -q`：通过
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_daemon_running_only_spawns_once_with_two_launcher_contenders -- --exact -q`：通过
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_running_records_launcher_wait_in_two_process_race -- --exact -q`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm -- --exact -q`：通过
+- `codex rtk cargo test -p codex-native-tldr`：通过（39 个测试）
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（54 个测试）
+- `codex rtk cargo test -p codex-mcp-server`：通过（30 个测试）
+- `just fix -p codex-native-tldr`：通过
+- `just fix -p codex-cli`：通过
+- `just fix -p codex-mcp-server`：通过
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_uses_daemon_when_available -- --exact -q`：通过
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm -- --exact -q`：通过
 - `codex rtk cargo test -p codex-mcp-server`：通过（30 个测试；新增 MCP semantic daemon cache reuse 黑盒 e2e）

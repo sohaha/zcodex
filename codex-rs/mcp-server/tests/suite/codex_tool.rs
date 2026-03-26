@@ -786,7 +786,7 @@ async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyho
 
     let listener = UnixListener::bind(&socket_path)?;
     let server_handle = task::spawn(async move {
-        for _ in 0..5 {
+        for _ in 0..6 {
             let (stream, _) = listener.accept().await?;
             let (reader, mut writer) = tokio::io::split(stream);
             let mut lines = BufReader::new(reader).lines();
@@ -866,6 +866,8 @@ async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyho
     )
     .await?;
     assert_eq!(notify["action"], "notify");
+    assert_eq!(notify["snapshot"]["reindex_pending"], true);
+    assert_eq!(notify["reindexReport"], serde_json::Value::Null);
 
     let warm = call_tldr(
         &mut mcp_process,
@@ -879,6 +881,28 @@ async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyho
     )
     .await?;
     assert_eq!(warm["action"], "warm");
+    assert_eq!(warm["snapshot"]["reindex_pending"], false);
+    assert_eq!(warm["daemonStatus"]["semantic_reindex_pending"], false);
+    assert_eq!(warm["reindexReport"]["status"], "Completed");
+    assert_eq!(warm["snapshot"]["last_reindex"], warm["reindexReport"]);
+
+    let status = call_tldr(
+        &mut mcp_process,
+        serde_json::Map::from_iter([
+            ("action".to_string(), json!("status")),
+            (
+                "project".to_string(),
+                json!(canonical_project.to_string_lossy()),
+            ),
+        ]),
+    )
+    .await?;
+    assert_eq!(status["action"], "status");
+    assert_eq!(status["snapshot"]["reindex_pending"], false);
+    assert_eq!(status["daemonStatus"]["semantic_reindex_pending"], false);
+    assert_eq!(status["reindexReport"]["status"], "Completed");
+    assert_eq!(status["snapshot"]["last_reindex"], status["reindexReport"]);
+    assert_eq!(status["snapshot"]["last_reindex"], warm["reindexReport"]);
 
     let third = call_tldr(&mut mcp_process, semantic_params()).await?;
     assert_eq!(third["source"], "daemon");

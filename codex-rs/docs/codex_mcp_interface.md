@@ -140,8 +140,7 @@ Typical inputs:
 
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
 For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `source`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata. `source` is either `daemon` (cached `SemanticIndex`) or `local`.
-For `status`, the structured output includes `snapshot` and `daemonStatus`, the latter now detailing `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons.
-For `status`, the structured output includes `snapshot` and `daemonStatus`.
+For `status`, the structured output includes `snapshot`, `daemonStatus`, and the latest `reindexReport` when a `warm`-triggered semantic reindex has already completed. `daemonStatus` details `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons.
 
 ## Approvals (server -> client)
 

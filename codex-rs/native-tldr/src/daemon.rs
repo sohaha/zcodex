@@ -171,13 +171,18 @@ impl TldrDaemon {
             TldrDaemonCommand::Warm => {
                 let mut session = self.session.lock().await;
                 let (message, reindex_report) = warm_with_reindex(&mut session, &self.engine);
+                let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
                     message,
                     analysis: None,
                     semantic: None,
-                    snapshot: Some(session.snapshot()),
-                    daemon_status: None,
+                    snapshot: Some(snapshot.clone()),
+                    daemon_status: Some(build_daemon_status(
+                        &self.project_root,
+                        self.engine.config(),
+                        &snapshot,
+                    )?),
                     reindex_report,
                 })
             }
@@ -210,6 +215,7 @@ impl TldrDaemon {
                 let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
                     snapshot: Some(snapshot.clone()),
+                    reindex_report: session.last_reindex_report(),
                     daemon_status: Some(build_daemon_status(
                         &self.project_root,
                         self.engine.config(),
@@ -327,13 +333,18 @@ async fn handle_with_session(
         TldrDaemonCommand::Warm => {
             let mut guard = session.lock().await;
             let (message, reindex_report) = warm_with_reindex(&mut guard, engine);
+            let snapshot = guard.snapshot();
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
                 message,
                 analysis: None,
                 semantic: None,
-                snapshot: Some(guard.snapshot()),
-                daemon_status: None,
+                snapshot: Some(snapshot.clone()),
+                daemon_status: Some(build_daemon_status(
+                    project_root,
+                    engine.config(),
+                    &snapshot,
+                )?),
                 reindex_report,
             })
         }
@@ -366,6 +377,7 @@ async fn handle_with_session(
             let snapshot = guard.snapshot();
             Ok(TldrDaemonResponse {
                 snapshot: Some(snapshot.clone()),
+                reindex_report: guard.last_reindex_report(),
                 daemon_status: Some(build_daemon_status(
                     project_root,
                     engine.config(),
@@ -950,6 +962,53 @@ mod tests {
         assert_eq!(snapshot.reindex_pending, false);
         assert!(snapshot.last_query_at.is_some());
         assert_eq!(snapshot.last_reindex, warm.reindex_report);
+    }
+
+    #[tokio::test]
+    async fn status_surfaces_last_completed_reindex_after_warm() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let src_dir = project.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(src_dir.join("main.rs"), "fn main() {}\n").expect("fixture should exist");
+
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should succeed");
+        let status = daemon
+            .handle_command(TldrDaemonCommand::Status)
+            .await
+            .expect("status should succeed");
+
+        assert_eq!(status.reindex_report, warm.reindex_report);
+        assert_eq!(
+            status
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.last_reindex.clone()),
+            warm.reindex_report
+        );
+        assert_eq!(
+            status
+                .snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.reindex_pending),
+            Some(false)
+        );
     }
 
     #[tokio::test]

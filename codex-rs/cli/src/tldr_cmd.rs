@@ -465,6 +465,7 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
 
 const CODEX_TLDR_TEST_DAEMON_BIN_ENV: &str = "CODEX_TLDR_TEST_DAEMON_BIN";
 const CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCH_COUNTER";
+const CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER";
 
 fn daemon_launcher_bin_for_tests() -> Result<PathBuf> {
     #[cfg(test)]
@@ -486,6 +487,18 @@ fn record_test_daemon_spawn(project_root: &Path) {
     }
 }
 
+fn record_test_launcher_wait(project_root: &Path) {
+    #[cfg(test)]
+    if let Some(path) = std::env::var_os(CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV)
+        && let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(PathBuf::from(path))
+    {
+        let _ = writeln!(file, "{} {}", project_root.display(), std::process::id());
+    }
+}
+
 #[cfg(unix)]
 async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     if daemon_lock_is_held(project_root)? {
@@ -493,6 +506,7 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     }
 
     let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
+        record_test_launcher_wait(project_root);
         return wait_for_daemon_startup(project_root).await;
     };
 
@@ -663,9 +677,16 @@ mod lifecycle_tests {
     const CODEX_TLDR_TEST_START_SIGNAL_ENV: &str = "CODEX_TLDR_TEST_START_SIGNAL";
     const CODEX_TLDR_TEST_DONE_SIGNAL_ENV: &str = "CODEX_TLDR_TEST_DONE_SIGNAL";
     const CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCH_COUNTER";
+    const CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER";
     const CODEX_TLDR_TEST_FAKE_DAEMON_PROJECT_ROOT_ENV: &str =
         "CODEX_TLDR_TEST_FAKE_DAEMON_PROJECT_ROOT";
     const CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV: &str = "CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE";
+    const CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE_ENV: &str =
+        "CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE";
+    const CODEX_TLDR_TEST_FAKE_DAEMON_SPAWNED_SIGNAL_ENV: &str =
+        "CODEX_TLDR_TEST_FAKE_DAEMON_SPAWNED_SIGNAL";
+    const CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL_ENV: &str =
+        "CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL";
 
     #[tokio::test]
     async fn query_daemon_with_hooks_retries_after_autostart() {
@@ -950,6 +971,175 @@ mod lifecycle_tests {
     }
 
     #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ensure_daemon_running_only_spawns_once_with_two_launcher_contenders() -> Result<()> {
+        if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
+            return Ok(());
+        }
+
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let start_signal = project.path().join("start_signal_launcher");
+        let counter_path = project.path().join("launch_counter_launcher.log");
+        let fake_daemon_release = project.path().join("fake_daemon_launcher.release");
+        let fake_daemon_bin = project.path().join("fake_daemon_launcher.sh");
+        let done_paths = [
+            project.path().join("launcher_child0.done"),
+            project.path().join("launcher_child1.done"),
+        ];
+        std::fs::remove_file(&start_signal).ok();
+        std::fs::remove_file(&counter_path).ok();
+        std::fs::remove_file(&fake_daemon_release).ok();
+        for done in &done_paths {
+            std::fs::remove_file(done).ok();
+        }
+        write_fake_daemon_wrapper(
+            std::env::current_exe()?.as_path(),
+            &fake_daemon_bin,
+            &fake_daemon_release,
+        )?;
+
+        let mut children = Vec::new();
+        for done in &done_paths {
+            let child = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("tldr_cmd::lifecycle_tests::cross_process_ensure_running_contender")
+                .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+                .env(CODEX_TLDR_TEST_START_SIGNAL_ENV, &start_signal)
+                .env(CODEX_TLDR_TEST_DONE_SIGNAL_ENV, done)
+                .env(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path)
+                .env(CODEX_TLDR_TEST_DAEMON_BIN_ENV, &fake_daemon_bin)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            children.push((child, done.clone()));
+        }
+
+        std::fs::write(&start_signal, "go")?;
+        for (_, done) in &children {
+            wait_for_signal(done);
+        }
+
+        for (mut child, _) in children {
+            let status = child.wait()?;
+            assert!(status.success());
+        }
+
+        let spawn_count = std::fs::read_to_string(&counter_path)?.lines().count();
+        assert_eq!(
+            spawn_count, 1,
+            "only one launcher contender should spawn the daemon"
+        );
+
+        assert!(socket_path_for_project(&canonical_project).exists());
+        assert!(pid_path_for_project(&canonical_project).exists());
+
+        std::fs::write(&fake_daemon_release, "release")?;
+        cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn ensure_running_records_launcher_wait_in_two_process_race() -> Result<()> {
+        if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
+            return Ok(());
+        }
+
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let start_signal = project.path().join("start_signal_direct");
+        let counter_path = project.path().join("launch_counter_direct.log");
+        let launcher_wait_counter = project.path().join("launcher_wait_counter_direct.log");
+        let fake_daemon_release = project.path().join("fake_daemon_direct.release");
+        let fake_daemon_boot_release = project.path().join("fake_daemon_direct.boot_release");
+        let fake_daemon_spawned = project.path().join("fake_daemon_direct.spawned");
+        let fake_daemon_bin = project.path().join("fake_daemon_direct.sh");
+        let done_paths = [
+            project.path().join("direct_child0.done"),
+            project.path().join("direct_child1.done"),
+        ];
+        let entered_paths = [
+            project.path().join("direct_child0.entered"),
+            project.path().join("direct_child1.entered"),
+        ];
+        std::fs::remove_file(&start_signal).ok();
+        std::fs::remove_file(&counter_path).ok();
+        std::fs::remove_file(&launcher_wait_counter).ok();
+        std::fs::remove_file(&fake_daemon_release).ok();
+        std::fs::remove_file(&fake_daemon_boot_release).ok();
+        std::fs::remove_file(&fake_daemon_spawned).ok();
+        for path in done_paths.iter().chain(entered_paths.iter()) {
+            std::fs::remove_file(path).ok();
+        }
+        write_fake_daemon_wrapper(
+            std::env::current_exe()?.as_path(),
+            &fake_daemon_bin,
+            &fake_daemon_release,
+        )?;
+
+        let mut children = Vec::new();
+        for (done, entered) in done_paths.iter().zip(entered_paths.iter()) {
+            let child = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("tldr_cmd::lifecycle_tests::cross_process_ensure_running_contender")
+                .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+                .env(CODEX_TLDR_TEST_START_SIGNAL_ENV, &start_signal)
+                .env(CODEX_TLDR_TEST_DONE_SIGNAL_ENV, done)
+                .env(CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL_ENV, entered)
+                .env(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path)
+                .env(
+                    CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV,
+                    &launcher_wait_counter,
+                )
+                .env(CODEX_TLDR_TEST_DAEMON_BIN_ENV, &fake_daemon_bin)
+                .env(
+                    CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE_ENV,
+                    &fake_daemon_boot_release,
+                )
+                .env(
+                    CODEX_TLDR_TEST_FAKE_DAEMON_SPAWNED_SIGNAL_ENV,
+                    &fake_daemon_spawned,
+                )
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            children.push(child);
+        }
+
+        std::fs::write(&start_signal, "go")?;
+        for entered in &entered_paths {
+            wait_for_signal(entered);
+        }
+        wait_for_signal(&fake_daemon_spawned);
+        std::fs::write(&fake_daemon_boot_release, "boot")?;
+        for done in &done_paths {
+            wait_for_signal(done);
+        }
+
+        for mut child in children {
+            let status = child.wait()?;
+            assert!(status.success());
+        }
+
+        let spawn_count = std::fs::read_to_string(&counter_path)?.lines().count();
+        assert_eq!(spawn_count, 1, "only one daemon spawn is allowed");
+        let launcher_wait_count = std::fs::read_to_string(&launcher_wait_counter)?
+            .lines()
+            .count();
+        assert_eq!(
+            launcher_wait_count, 1,
+            "exactly one contender should wait on the launcher lock"
+        );
+        assert!(socket_path_for_project(&canonical_project).exists());
+        assert!(pid_path_for_project(&canonical_project).exists());
+
+        std::fs::write(&fake_daemon_release, "release")?;
+        cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn ensure_daemon_running_only_spawns_once_even_with_three_processes() -> Result<()> {
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
@@ -1079,6 +1269,35 @@ mod lifecycle_tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn cross_process_ensure_running_contender() -> Result<()> {
+        let project_root = match std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV) {
+            Some(path) => PathBuf::from(path),
+            None => return Ok(()),
+        };
+        let start_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_START_SIGNAL_ENV).expect("start signal env should exist"),
+        );
+        let done_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_DONE_SIGNAL_ENV).expect("done signal env should exist"),
+        );
+        let entered_signal =
+            std::env::var_os(CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL_ENV).map(PathBuf::from);
+
+        wait_for_signal(&start_signal);
+        if let Some(entered_signal) = entered_signal {
+            std::fs::write(entered_signal, "entered")?;
+        }
+
+        let started = ensure_daemon_running(&project_root).await?;
+        assert!(started, "launcher contender should observe a live daemon");
+        assert!(daemon_metadata_looks_alive(&project_root));
+
+        std::fs::write(&done_signal, "done")?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn try_start_daemon_does_not_spawn_while_daemon_lock_is_held() -> Result<()> {
         let project = tempdir()?;
         let canonical_project = project.path().canonicalize()?;
@@ -1116,10 +1335,26 @@ mod lifecycle_tests {
             std::env::var(CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV)
                 .expect("fake daemon release env should exist"),
         );
+        let boot_release =
+            std::env::var_os(CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE_ENV).map(PathBuf::from);
+        let spawned_signal =
+            std::env::var_os(CODEX_TLDR_TEST_FAKE_DAEMON_SPAWNED_SIGNAL_ENV).map(PathBuf::from);
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
         std::fs::remove_file(&socket_path).ok();
         std::fs::remove_file(&pid_path).ok();
+
+        if let Some(path) = &spawned_signal {
+            std::fs::write(path, std::process::id().to_string())?;
+        }
+        if let Some(boot_release) = boot_release {
+            while !boot_release.exists() && !release_signal.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            if release_signal.exists() {
+                return Ok(());
+            }
+        }
 
         let listener = UnixListener::bind(&socket_path)?;
         std::fs::write(&pid_path, std::process::id().to_string())?;
