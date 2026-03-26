@@ -81,6 +81,21 @@ fn chat_state(base_url: String) -> OpenAiCompatState {
     }
 }
 
+fn state_with_local_auth(base_url: String, auth_token: &str) -> OpenAiCompatState {
+    OpenAiCompatState {
+        upstream: Arc::new(UpstreamConfig {
+            provider_id: "test-provider".to_string(),
+            provider: provider(base_url),
+            adapter: UpstreamAdapter::responses(),
+            auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "ignored-auth",
+            )),
+        }),
+        auth_token: Some(Arc::<str>::from(auth_token)),
+        client: Client::builder().build().expect("client"),
+    }
+}
+
 async fn spawn_router(router: Router) -> (SocketAddr, JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -265,6 +280,84 @@ async fn chat_wire_api_running_server_rejects_responses_endpoint() {
         .expect("proxy request should succeed");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn running_server_requires_local_bearer_auth_when_configured() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{\"data\":[]}"))
+        .mount(&server)
+        .await;
+
+    let (proxy_addr, _proxy_handle) = spawn_router(app_router(state_with_local_auth(
+        format!("{}/v1", server.uri()),
+        "secret",
+    )))
+    .await;
+
+    let unauthorized = reqwest::Client::new()
+        .get(format!("http://{proxy_addr}/v1/models"))
+        .send()
+        .await
+        .expect("request should complete");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+
+    let authorized = reqwest::Client::new()
+        .get(format!("http://{proxy_addr}/v1/models"))
+        .bearer_auth("secret")
+        .send()
+        .await
+        .expect("authorized request should complete");
+    assert_eq!(authorized.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn response_header_filtering_keeps_allowlisted_headers_only() {
+    let upstream_router = Router::new().route(
+        "/v1/models",
+        get(|| async {
+            (
+                [
+                    ("content-type", "application/json"),
+                    ("request-id", "req-123"),
+                    ("x-request-id", "xreq-456"),
+                    ("set-cookie", "secret=cookie"),
+                    ("x-internal-debug", "drop-me"),
+                ],
+                "{\"data\":[]}",
+            )
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .get(format!("http://{proxy_addr}/v1/models"))
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("request-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("req-123")
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get("x-request-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("xreq-456")
+    );
+    assert!(response.headers().get("set-cookie").is_none());
+    assert!(response.headers().get("x-internal-debug").is_none());
 }
 
 #[tokio::test]
