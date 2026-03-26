@@ -998,6 +998,40 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn try_open_launcher_lock_recovers_after_lock_file_is_deleted() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path().join("deleted-launcher-lock-project");
+        std::fs::create_dir(&project_root).unwrap();
+        let lock_path = launcher_lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&lock_path, "").unwrap();
+        std::fs::remove_file(&lock_path).unwrap();
+        assert!(!lock_path.exists());
+
+        let lock = super::try_open_launcher_lock(&project_root).unwrap();
+
+        assert!(lock.is_some());
+        assert!(lock_path.exists());
+    }
+
+    #[test]
+    fn launcher_lock_is_held_recovers_after_lock_file_is_deleted() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path().join("deleted-launcher-lock-state-project");
+        std::fs::create_dir(&project_root).unwrap();
+        let lock_path = launcher_lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&lock_path, "").unwrap();
+        std::fs::remove_file(&lock_path).unwrap();
+        assert!(!lock_path.exists());
+
+        let lock_is_held = super::launcher_lock_is_held(&project_root).unwrap();
+
+        assert!(!lock_is_held);
+        assert!(lock_path.exists());
+    }
+
+    #[test]
     fn daemon_metadata_keeps_stale_files_while_launcher_lock_is_held() {
         let tempdir = tempdir().unwrap();
         let project_root = tempdir.path();

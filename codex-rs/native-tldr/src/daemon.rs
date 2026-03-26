@@ -812,9 +812,9 @@ mod tests {
     use super::TldrDaemon;
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
+    use super::daemon_artifact_scope_dir_for_runtime_dir;
     use super::daemon_health;
     use super::daemon_lock_is_held;
-    use super::daemon_artifact_scope_dir_for_runtime_dir;
     use super::daemon_project_hash;
     use super::lock_path_for_project;
     use super::query_daemon;
@@ -1419,8 +1419,9 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let runtime_dir = tempdir.path().join("runtime");
         std::fs::create_dir_all(&runtime_dir).expect("runtime dir should be created");
-        let scope_dir =
-            daemon_artifact_scope_dir_for_runtime_dir(Some(&runtime_dir), unsafe { libc::geteuid() });
+        let scope_dir = daemon_artifact_scope_dir_for_runtime_dir(Some(&runtime_dir), unsafe {
+            libc::geteuid()
+        });
 
         assert!(scope_dir.starts_with(&runtime_dir));
     }
@@ -1431,7 +1432,11 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let relative_runtime_dir = tempdir.path().join("relative-runtime-dir");
         let scope_dir = daemon_artifact_scope_dir_for_runtime_dir(
-            Some(relative_runtime_dir.strip_prefix("/").unwrap_or(&relative_runtime_dir)),
+            Some(
+                relative_runtime_dir
+                    .strip_prefix("/")
+                    .unwrap_or(&relative_runtime_dir),
+            ),
             unsafe { libc::geteuid() },
         );
 
@@ -1465,9 +1470,13 @@ mod tests {
         std::fs::create_dir_all(&runtime_dir).expect("runtime dir should be created");
         let project_root = tempdir.path().join("lock-parent-recovery-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
-        let scope_dir =
-            daemon_artifact_scope_dir_for_runtime_dir(Some(&runtime_dir), unsafe { libc::geteuid() });
-        let lock_file_name = format!("codex-native-tldr-{}.lock", daemon_project_hash(&project_root));
+        let scope_dir = daemon_artifact_scope_dir_for_runtime_dir(Some(&runtime_dir), unsafe {
+            libc::geteuid()
+        });
+        let lock_file_name = format!(
+            "codex-native-tldr-{}.lock",
+            daemon_project_hash(&project_root)
+        );
         let lock_path = scope_dir.join(&lock_file_name);
 
         create_artifact_parent(&lock_path);
@@ -1475,7 +1484,9 @@ mod tests {
         assert!(scope_dir.starts_with(&runtime_dir));
         assert!(lock_path.starts_with(&scope_dir));
         assert_eq!(
-            lock_path.file_name().map(|value| value.to_string_lossy().into_owned()),
+            lock_path
+                .file_name()
+                .map(|value| value.to_string_lossy().into_owned()),
             Some(lock_file_name)
         );
     }
