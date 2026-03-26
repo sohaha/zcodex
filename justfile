@@ -60,6 +60,34 @@ core-test-fast *args:
       cargo test -p codex-core --test all "$@"; \
     fi
 
+# Fast local loop for codex-app-server. Uses more disk for build caches to
+# reduce repeated compile time.
+app-server-test-fast *args:
+    if command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/.cache/codex-rs/sccache}"; \
+    fi; \
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/codex-rs/target}"; \
+    if cargo nextest --version >/dev/null 2>&1; then \
+      cargo nextest run -p codex-app-server --no-fail-fast --test all "$@"; \
+    else \
+      cargo test -p codex-app-server --test all "$@"; \
+    fi
+
+# Fast local loop for codex-native-tldr. Uses more disk for build caches to
+# reduce repeated compile time.
+native-tldr-test-fast *args:
+    if command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/.cache/codex-rs/sccache}"; \
+    fi; \
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/codex-rs/target}"; \
+    if cargo nextest --version >/dev/null 2>&1; then \
+      cargo nextest run -p codex-native-tldr --no-fail-fast "$@"; \
+    else \
+      cargo test -p codex-native-tldr "$@"; \
+    fi
+
 # Build and run Codex from source using Bazel.
 # Note we have to use the combination of `[no-cd]` and `--run_under="cd $PWD &&"`
 # to ensure that Bazel runs the command in the current working directory.

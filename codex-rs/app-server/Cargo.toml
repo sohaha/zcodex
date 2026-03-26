@@ -7,10 +7,14 @@ license.workspace = true
 [[bin]]
 name = "codex-app-server"
 path = "src/main.rs"
+test = false
+bench = false
 
 [[bin]]
 name = "codex-app-server-test-notify-capture"
 path = "src/bin/notify_capture.rs"
+test = false
+bench = false
 
 [lib]
 name = "codex_app_server"
