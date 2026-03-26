@@ -109,6 +109,19 @@ fn build_upstream_url_preserves_duplicate_query_keys_and_caller_precedence() {
     );
 }
 
+#[test]
+fn build_upstream_url_rejects_invalid_query_string() {
+    let err = build_upstream_url(
+        &provider("https://example.com/v1".to_string()),
+        "/chat/completions",
+        Some("bad=%ZZ"),
+    )
+    .expect_err("invalid query should fail");
+
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert!(err.message.contains("invalid query string"));
+}
+
 #[tokio::test]
 async fn build_upstream_headers_prefers_provider_bearer_token() {
     let upstream = UpstreamConfig {

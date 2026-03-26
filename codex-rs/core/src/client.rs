@@ -1311,7 +1311,7 @@ impl ModelClientSession {
     ) -> Result<ResponseStream> {
         let wire_api = self.client.state.provider.wire_api;
         match wire_api {
-            WireApi::Responses | WireApi::Chat => {
+            WireApi::Responses => {
                 if self.client.responses_websocket_enabled() {
                     let request_trace = current_span_w3c_trace_context();
                     match self
@@ -1346,6 +1346,9 @@ impl ModelClientSession {
                 )
                 .await
             }
+            WireApi::Chat => Err(crate::error::CodexErr::InvalidRequest(
+                "providers with wire_api = \"chat\" are only supported by `codex app-server openai-compat`; the Codex runtime still requires wire_api = \"responses\"".to_string(),
+            )),
             WireApi::Anthropic => {
                 self.stream_responses_api(
                     prompt,

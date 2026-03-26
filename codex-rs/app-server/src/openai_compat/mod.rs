@@ -430,7 +430,7 @@ fn build_upstream_url(
     let mut url = Url::parse(&format!("{trimmed_base}/{trimmed_path}"))
         .map_err(|err| ApiError::internal(format!("invalid upstream URL: {err}")))?;
 
-    let query_pairs = merge_query_pairs(raw_query, provider.query_params.as_ref());
+    let query_pairs = merge_query_pairs(raw_query, provider.query_params.as_ref())?;
     if !query_pairs.is_empty() {
         let mut pairs = url.query_pairs_mut();
         for (key, value) in query_pairs {
@@ -444,8 +444,8 @@ fn build_upstream_url(
 fn merge_query_pairs(
     raw_query: Option<&str>,
     provider_query: Option<&HashMap<String, String>>,
-) -> Vec<(String, String)> {
-    let mut merged = parse_query_pairs(raw_query);
+) -> Result<Vec<(String, String)>, ApiError> {
+    let mut merged = parse_query_pairs(raw_query)?;
     let mut caller_keys = merged
         .iter()
         .map(|(key, _)| key.clone())
@@ -460,22 +460,50 @@ fn merge_query_pairs(
         }
     }
 
-    merged
+    Ok(merged)
 }
 
-fn parse_query_pairs(raw_query: Option<&str>) -> Vec<(String, String)> {
+fn parse_query_pairs(raw_query: Option<&str>) -> Result<Vec<(String, String)>, ApiError> {
     let Some(query) = raw_query.filter(|query| !query.is_empty()) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
 
+    validate_query_string(query)?;
     Url::parse(&format!("http://localhost/?{query}"))
-        .ok()
         .map(|url| {
             url.query_pairs()
                 .map(|(key, value)| (key.into_owned(), value.into_owned()))
                 .collect()
         })
-        .unwrap_or_default()
+        .map_err(|err| ApiError::bad_request(format!("invalid query string: {err}")))
+}
+
+fn validate_query_string(query: &str) -> Result<(), ApiError> {
+    let bytes = query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let Some(first) = bytes.get(index + 1) else {
+                return Err(ApiError::bad_request(
+                    "invalid query string: incomplete percent-encoding",
+                ));
+            };
+            let Some(second) = bytes.get(index + 2) else {
+                return Err(ApiError::bad_request(
+                    "invalid query string: incomplete percent-encoding",
+                ));
+            };
+            if !first.is_ascii_hexdigit() || !second.is_ascii_hexdigit() {
+                return Err(ApiError::bad_request(
+                    "invalid query string: invalid percent-encoding",
+                ));
+            }
+            index += 3;
+            continue;
+        }
+        index += 1;
+    }
+    Ok(())
 }
 
 fn should_forward_request_header(name: &HeaderName) -> bool {
