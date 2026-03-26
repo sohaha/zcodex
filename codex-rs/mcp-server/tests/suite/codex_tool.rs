@@ -561,7 +561,7 @@ async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
     )
     .await??;
 
-    let summary = "structure summary: found 1 match(es) for `main` in 1 indexed files; function main @ src/main.rs:1 calls [none]";
+    let summary = "structure summary: found 1 match(es) for `main` in 1 indexed files; function main @ src/main.rs:1-1 module [none] visibility [<none>] signature [fn main()] calls [none]";
     assert_eq!(
         response.result,
         json!({
@@ -798,8 +798,20 @@ async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
                         path: PathBuf::from("src/auth.rs"),
                         language: SupportedLanguage::Rust,
                         symbol: Some("verify_token".to_string()),
+                        qualified_symbol: Some("auth::verify_token".to_string()),
+                        symbol_aliases: vec![
+                            "verify_token".to_string(),
+                            "auth::verify_token".to_string(),
+                        ],
                         kind: "function".to_string(),
                         line: 1,
+                        span_end_line: 3,
+                        module_path: vec!["auth".to_string()],
+                        visibility: Some("pub".to_string()),
+                        signature: Some("pub fn verify_token()".to_string()),
+                        docs: vec!["Validates auth token".to_string()],
+                        imports: vec!["use crate::auth::token;".to_string()],
+                        references: vec!["Token".to_string()],
                         code_preview: "fn verify_token() {\n    let auth_token = true;\n}"
                             .to_string(),
                         calls: Vec::new(),
