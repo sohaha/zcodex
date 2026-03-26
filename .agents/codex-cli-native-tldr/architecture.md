@@ -17,7 +17,7 @@ dependencies: [prd]
 > 下游 Agent 请优先阅读本节，需要细节时再查阅完整文档。
 
 - **架构模式**：本地单机「daemon-first」多进程架构（CLI/MCP 入口 → 可选 daemon 复用内存缓存 → 不可用则本地引擎 fallback），无数据库/无 HTTP 服务/无 UI。
-- **模块边界**：`codex-native-tldr`（核心引擎/协议/生命周期）｜`codex-native-tldr-daemon`（Unix socket 守护进程）｜`codex-cli`（命令行入口与 auto-start）｜`codex-mcp-server`（MCP tool 入口，不负责 auto-start）。
+- **模块边界**：`codex-native-tldr`（核心引擎/协议/生命周期）｜`codex-cli`（命令行入口、hidden `tldr internal-daemon` 与 auto-start）｜`codex-mcp-server`（MCP tool 入口，不负责 auto-start）。
 - **生命周期与 artifacts**：Unix 优先使用 `$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`，否则回退到 `temp_dir()/codex-native-tldr/<uid>/`；非 Unix 使用 `temp_dir()/codex-native-tldr/`。其中 `socket/pid` 放在 `<project-hash>/` 子目录，`lock/launch.lock` 放在用户级 scope 根目录，避免项目 artifact 目录被外部删除时互斥语义一并丢失；status/health 字段对外可观测（healthy/stale_socket/stale_pid/lock_is_held + reason/hint）。
 - **Semantic I/O 与缓存/reindex**：semantic 以 `language+query` 为输入，对外通过 `TldrSemanticResponseView` / `TldrDaemonResponseView` 做显式投影，只暴露稳定字段（如 `path`、`line`、`snippet`、`embedding_score`），默认不透出 `unit`、`embedding_text` 等内部重字段；索引在 `TldrEngine` 内按语言缓存，daemon 复用同一 engine 缓存；reindex 由 `session.reindex_pending` 驱动，`Warm` 会触发 `engine.semantic_reindex()` 并记录 `SemanticReindexReport`。
 - **Unix 主路径与非 Unix fallback**：daemon 查询与 auto-start 当前为 Unix 主路径（Unix socket）；非 Unix 下 `query_daemon` 固定返回 `None`，CLI/MCP 走本地引擎；daemon 的 TCP 监听实现存在但当前未接入客户端查询链路。
@@ -42,7 +42,7 @@ graph TB
     end
 
     subgraph Daemon[daemon 层]
-        D[codex-native-tldr-daemon<br/>Unix socket server]
+        D[codex hidden internal-daemon<br/>Unix socket server]
         Sock[(runtime-or-temp/codex-native-tldr/<uid>/<project-hash>/...sock)]
         Pid[(runtime-or-temp/codex-native-tldr/<uid>/<project-hash>/...pid)]
         Lock[(runtime-or-temp/codex-native-tldr/<uid>/...lock)]
@@ -108,10 +108,8 @@ codex-rs/
       semantic.rs             # semantic index/search/reindex
       wire.rs                 # semantic/status 对外稳定 view 与 JSON payload 投影
       lang_support/           # 语言注册与支持等级
-  native-tldr-daemon/
-    src/main.rs               # daemon 二进制入口（--project）
   cli/
-    src/tldr_cmd.rs           # codex tldr 子命令、daemon auto-start、launcher lock、输出格式
+    src/tldr_cmd.rs           # codex tldr 子命令、hidden internal-daemon、auto-start、launcher lock、输出格式
   mcp-server/
     src/tldr_tool.rs          # MCP tool: tldr（actions: semantic/status/...），不负责 auto-start
   docs/
@@ -334,14 +332,14 @@ classDiagram
 | 环境/模式 | 用途 | 入口 | 说明 |
 |------|------|-----|------|
 | 本地 CLI（无 daemon） | 最小可用 | `codex tldr ...` | non-Unix 或 daemon 不可用时的默认模式：本地引擎直接执行。 |
-| 本地 CLI + daemon（Unix） | 性能/复用缓存 | CLI auto-start + Unix socket | CLI 可自动 spawn `codex-native-tldr-daemon` 并复用缓存/索引。 |
+| 本地 CLI + daemon（Unix） | 性能/复用缓存 | CLI auto-start + Unix socket | CLI 可自动重入当前 `codex` 的 hidden `tldr internal-daemon` 模式并复用缓存/索引。 |
 | MCP + 外部 daemon（Unix） | Agent/客户端集成 | MCP tool `tldr` | MCP 不负责 auto-start，仅复用 query/retry/backoff 逻辑等待 daemon。 |
 
 ### 7.2 部署流程
 
 ```mermaid
 graph LR
-    A[构建 codex] --> B[分发 codex-cli + codex-native-tldr-daemon]
+    A[构建 codex] --> B[分发单一 codex-cli]
     B --> C[用户执行 codex tldr ...]
     C --> D{Unix 且允许 auto-start?}
     D -->|是| E[CLI spawn daemon + 建立 socket/pid/lock]

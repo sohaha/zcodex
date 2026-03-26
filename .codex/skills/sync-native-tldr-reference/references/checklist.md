@@ -27,7 +27,7 @@ Use this checklist for each upstream native-tldr reference sync.
 ## Implementation
 
 - Update `codex-rs/native-tldr` first
-- Update `codex-rs/native-tldr-daemon` if needed
+- Update `codex-rs/cli/src/tldr_cmd.rs` internal daemon path if needed
 - Update `codex-rs/cli/src/tldr_cmd.rs` if CLI behavior changed
 - Update `codex-rs/mcp-server/src/tldr_tool.rs` if MCP behavior changed
 - Update docs/state:

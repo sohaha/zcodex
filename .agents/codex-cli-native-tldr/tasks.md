@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（已对齐真实状态）
 
-- **当前阶段**：Stage 3 / 已完成（默认并行 `cargo test` 套件已稳定通过；Stage 4 尚未启动）
+- **当前阶段**：Stage 4 / pending（Stage 1/2/3 已完成；默认并行 `cargo test` 套件已稳定通过）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -75,7 +75,7 @@ dependencies: [prd, tech-review]
   - 修复 `suite::codex_tool::test_shell_command_approval_triggers_elicitation`：测试配置改为 `sandbox_mode = "danger-full-access"`，避开当前环境 `bwrap`/userns 限制导致的假失败
   - `native-tldr` daemon stale socket 生命周期修复：`query_daemon()` 在连接拒绝/空响应时会清理陈旧 socket，避免 CLI 被死 socket 卡在 fallback 路径
   - 为 stale socket 清理补充 `codex-native-tldr` 单测
-  - CLI `codex tldr structure/context` 在 daemon 不可用时尝试自动启动 `codex-native-tldr-daemon` 并重试，提交 `3e640e4d4`
+  - CLI `codex tldr structure/context` 在 daemon 不可用时尝试重入当前 `codex` 的 hidden `tldr internal-daemon` 模式并重试，提交 `3e640e4d4`
   - MCP `warm` / `notify` / `snapshot` 端到端测试
   - MCP `tldr` daemon 可用路径测试（真实 Unix socket mock）
   - `SemanticIndexer` placeholder、配置链式 API、单测
@@ -222,7 +222,7 @@ dependencies: [prd, tech-review]
 |----------|------|------|
 | `codex-native-tldr/src/session.rs` | 创建 | 维护 dirty list、content-hash index 与 memoization |
 | `codex-native-tldr/src/daemon.rs` | 创建 | tokio socket server，接受 `warm`, `context`, `slice`, `semantic` 命令 |
-| `codex-native-tldr-daemon/src/main.rs` | 创建 | 启动 daemon、写 socket path、处理 pidfile |
+| `codex-cli/src/tldr_cmd.rs` | 修改 | 内置 hidden `tldr internal-daemon` 入口并启动 daemon、写 socket path、处理 pidfile |
 
 **实现步骤**：
 1. 设计 `Session` 结构，包含 `cache: HashMap<String, AnalysisResult>`, `dirty_count`, `last_query_at`, 以及 reindex trigger。
@@ -332,7 +332,7 @@ graph TD
 | 文件路径 | 关联任务 | 说明 |
 |----------|----------|------|
 | `codex-native-tldr/Cargo.toml` | T-001 | 注册新的分析 crate |
-| `codex-native-tldr-daemon/src/main.rs` | T-004 | 启动守护进程 |
+| `codex-cli/src/tldr_cmd.rs` | T-004 | 启动内置 hidden daemon 模式 |
 | `codex-rs/mcp-server/src/tools/tldr.rs` | T-005 | MCP tool handler |
 | `codex-native-tldr/src/semantic.rs` | T-006 | Semantic placeholder 模块 |
 

@@ -3,7 +3,7 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：阶段 3 已完成（默认并行 `cargo test` 套件已稳定通过；阶段 4 尚未执行）
+- **状态**：Stage 4 / pending（Stage 1/2/3 已完成；默认并行 `cargo test` 套件已稳定通过）
 
 ## 中间验证进度（实时）
 
@@ -96,7 +96,7 @@
 - `just fix -p codex-mcp-server`：通过
 - `just argument-comment-lint`：失败（仓库缺少 `./tools/argument-comment-lint/run-prebuilt-linter.sh`）
 - `cargo test -p codex-native-tldr daemon::tests::daemon_health_marks_stale_socket_without_live_pid -- --exact -q`：通过
-- `just fix -p codex-native-tldr-daemon`：通过（shared config 接入 daemon 入口后复核）
+- `just fix -p codex-cli`：通过（internal daemon 入口收口后复核）
 - `cargo test -p codex-native-tldr tests::daemon_status_reports_config_and_reindex_state -- --exact -q`：通过
 - `cargo test -p codex-cli --bin codex tests::tldr_daemon_status_parses -- --exact -q`：通过
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_status_returns_daemon_status -- --exact -q`：通过
@@ -141,10 +141,10 @@
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_notify_includes_path -- --exact`：通过
 - `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_snapshot_returns_snapshot -- --exact`：通过
 - `just fmt`：通过
-- `cargo check -p codex-native-tldr-daemon`：通过
+- `cargo nextest run -p codex-cli`：通过（单二进制 internal daemon 改造后复核）
 - `cargo test -p codex-cli --bin codex tests::tldr_structure_parses_language_and_symbol -- --exact`：通过
 - `cargo test -p codex-cli --bin codex tests::tldr_help_renders -- --exact`：通过
-- `just fix -p codex-native-tldr-daemon`：通过
+- `just fix -p codex-cli`：通过（internal daemon 入口收口后复核）
 - `just fix -p codex-cli`：通过
 - `cargo test -p codex-native-tldr`：通过（31 个测试；含 semantic embedding text / ranked matches / disabled gate）
 - `cargo test -p codex-cli --bin codex`：通过（45 个测试，当时基线）

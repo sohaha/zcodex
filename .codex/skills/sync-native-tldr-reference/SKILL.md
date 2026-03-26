@@ -12,7 +12,7 @@ Use this skill only for the native-tldr line of work in this repo.
 - Upstream reference: usually `parcadei/llm-tldr`, or another explicitly named tldr reference.
 - Local targets:
   - `/workspace/codex-rs/native-tldr/`
-  - `/workspace/codex-rs/native-tldr-daemon/`
+  - `/workspace/codex-rs/cli/src/tldr_cmd.rs` (hidden `tldr internal-daemon` entrypoint)
   - `/workspace/codex-rs/cli/src/tldr_cmd.rs`
   - `/workspace/codex-rs/mcp-server/src/tldr_tool.rs`
 - Progress/state docs that must stay in sync:
@@ -91,7 +91,6 @@ After any completed sync/port round, update `STATE.md` with the actual upstream 
 ## What To Inspect
 
 - `codex-rs/native-tldr/src/*.rs`
-- `codex-rs/native-tldr-daemon/src/main.rs`
 - `codex-rs/cli/src/tldr_cmd.rs`
 - `codex-rs/mcp-server/src/tldr_tool.rs`
 - `.agents/codex-cli-native-tldr/*`
