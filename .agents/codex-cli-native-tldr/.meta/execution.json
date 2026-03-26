@@ -215,6 +215,10 @@
       {
          "at" : "2026-03-26T02:15:00Z",
          "note" : "added a true two-process launcher wait race regression, surfaced warm/status reindex completion observability, and revalidated native-tldr/cli/mcp project suites"
+      },
+      {
+         "at" : "2026-03-26T02:35:00Z",
+         "note" : "added a cross-process regression proving external daemon lock owners finish boot without triggering any extra CLI spawn, then revalidated the codex-cli suite"
       }
    ],
    "feature" : "codex-cli-native-tldr",

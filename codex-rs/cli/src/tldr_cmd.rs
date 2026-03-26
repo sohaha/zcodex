@@ -687,6 +687,8 @@ mod lifecycle_tests {
         "CODEX_TLDR_TEST_FAKE_DAEMON_SPAWNED_SIGNAL";
     const CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL_ENV: &str =
         "CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL";
+    const CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL_ENV: &str =
+        "CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL";
 
     #[tokio::test]
     async fn query_daemon_with_hooks_retries_after_autostart() {
@@ -1140,6 +1142,106 @@ mod lifecycle_tests {
     }
 
     #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ensure_running_never_spawns_when_external_daemon_lock_owner_finishes_boot()
+    -> Result<()> {
+        if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
+            return Ok(());
+        }
+
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let start_signal = project.path().join("start_signal_external_lock");
+        let done_signal = project.path().join("child_external_lock.done");
+        let counter_path = project.path().join("launch_counter_external_lock.log");
+        let launcher_wait_counter = project.path().join("launcher_wait_external_lock.log");
+        let external_release = project.path().join("external_daemon.release");
+        let external_boot_release = project.path().join("external_daemon.boot_release");
+        let external_locked_signal = project.path().join("external_daemon.locked");
+        for path in [
+            &start_signal,
+            &done_signal,
+            &counter_path,
+            &launcher_wait_counter,
+            &external_release,
+            &external_boot_release,
+            &external_locked_signal,
+        ] {
+            std::fs::remove_file(path).ok();
+        }
+
+        let mut external_daemon = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("tldr_cmd::lifecycle_tests::external_daemon_lock_owner_process")
+            .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+            .env(CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV, &external_release)
+            .env(
+                CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE_ENV,
+                &external_boot_release,
+            )
+            .env(
+                CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL_ENV,
+                &external_locked_signal,
+            )
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        wait_for_signal(&external_locked_signal);
+
+        let mut contender = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("tldr_cmd::lifecycle_tests::cross_process_launcher_contender")
+            .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+            .env(CODEX_TLDR_TEST_START_SIGNAL_ENV, &start_signal)
+            .env(CODEX_TLDR_TEST_DONE_SIGNAL_ENV, &done_signal)
+            .env(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path)
+            .env(
+                CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV,
+                &launcher_wait_counter,
+            )
+            .env(CODEX_TLDR_TEST_DAEMON_BIN_ENV, canonical_project.as_path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        std::fs::write(&start_signal, "go")?;
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            !counter_path.exists(),
+            "no daemon spawn should happen while external daemon lock owner is booting"
+        );
+        assert!(
+            !launcher_wait_counter.exists(),
+            "daemon-lock wait should not be counted as launcher-lock wait"
+        );
+
+        std::fs::write(&external_boot_release, "boot")?;
+        wait_for_signal(&done_signal);
+
+        let contender_status = contender.wait()?;
+        assert!(contender_status.success());
+        assert!(
+            !counter_path.exists(),
+            "external daemon owner must keep spawn count at zero"
+        );
+        assert!(
+            !launcher_wait_counter.exists(),
+            "external daemon owner path should bypass launcher wait tracking"
+        );
+        std::fs::write(&external_release, "release")?;
+        let external_status = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || external_daemon.wait()),
+        )
+        .await???;
+        assert!(external_status.success());
+
+        cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn ensure_daemon_running_only_spawns_once_even_with_three_processes() -> Result<()> {
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
@@ -1354,6 +1456,94 @@ mod lifecycle_tests {
             if release_signal.exists() {
                 return Ok(());
             }
+        }
+
+        let listener = UnixListener::bind(&socket_path)?;
+        std::fs::write(&pid_path, std::process::id().to_string())?;
+
+        loop {
+            if release_signal.exists() {
+                break;
+            }
+
+            if let Ok(accept_result) =
+                tokio::time::timeout(Duration::from_millis(50), listener.accept()).await
+            {
+                let (stream, _) = accept_result?;
+                let (reader, mut writer) = tokio::io::split(stream);
+                let mut lines = BufReader::new(reader).lines();
+                if let Some(line) = lines.next_line().await? {
+                    let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+                    let message = match command {
+                        TldrDaemonCommand::Ping => "pong",
+                        TldrDaemonCommand::Warm => "warm",
+                        TldrDaemonCommand::Snapshot => "snapshot",
+                        TldrDaemonCommand::Status => "status",
+                        TldrDaemonCommand::Analyze { .. } => "analyze",
+                        TldrDaemonCommand::Semantic { .. } => "semantic",
+                        TldrDaemonCommand::Notify { .. } => "notify",
+                    };
+                    let response = TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: message.to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    };
+                    writer
+                        .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                        .await?;
+                }
+            }
+        }
+
+        std::fs::remove_file(&socket_path).ok();
+        std::fs::remove_file(&pid_path).ok();
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn external_daemon_lock_owner_process() -> Result<()> {
+        let Some(project_root) = std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV) else {
+            return Ok(());
+        };
+        let project_root = PathBuf::from(project_root);
+        let release_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV)
+                .expect("external daemon release env should exist"),
+        );
+        let boot_release = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE_ENV)
+                .expect("external daemon boot release env should exist"),
+        );
+        let locked_signal = PathBuf::from(
+            std::env::var(CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL_ENV)
+                .expect("external daemon locked signal env should exist"),
+        );
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        std::fs::remove_file(&socket_path).ok();
+        std::fs::remove_file(&pid_path).ok();
+
+        let daemon_lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(codex_native_tldr::daemon::lock_path_for_project(
+                &project_root,
+            ))?;
+        daemon_lock.try_lock()?;
+        std::fs::write(&locked_signal, "locked")?;
+
+        while !boot_release.exists() && !release_signal.exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        if release_signal.exists() {
+            return Ok(());
         }
 
         let listener = UnixListener::bind(&socket_path)?;
