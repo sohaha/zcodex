@@ -72,6 +72,7 @@ mod fuzzy_file_search;
 pub mod in_process;
 mod message_processor;
 mod models;
+mod openai_compat;
 mod outgoing_message;
 mod server_request_error;
 mod thread_state;
@@ -80,6 +81,8 @@ mod transport;
 
 pub use crate::error_code::INPUT_TOO_LARGE_ERROR_CODE;
 pub use crate::error_code::INVALID_PARAMS_ERROR_CODE;
+pub use crate::openai_compat::OpenAiCompatServerArgs;
+pub use crate::openai_compat::run_openai_compat_server;
 pub use crate::transport::AppServerTransport;
 
 const LOG_FORMAT_ENV_VAR: &str = "LOG_FORMAT";

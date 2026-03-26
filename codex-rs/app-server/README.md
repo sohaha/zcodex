@@ -6,6 +6,7 @@
 
 - [Protocol](#protocol)
 - [Message Schema](#message-schema)
+- [OpenAI-Compatible HTTP Server](#openai-compatible-http-server)
 - [Core Primitives](#core-primitives)
 - [Lifecycle Overview](#lifecycle-overview)
 - [Initialization](#initialization)
@@ -53,6 +54,28 @@ Currently, you can dump a TypeScript version of the schema using `codex app-serv
 codex app-server generate-ts --out DIR
 codex app-server generate-json-schema --out DIR
 ```
+
+## OpenAI-Compatible HTTP Server
+
+For local integrations that expect an OpenAI-style REST surface, Codex also exposes an experimental compatibility mode:
+
+```bash
+codex app-server openai-compat --listen 127.0.0.1:8080
+```
+
+Supported endpoints:
+
+- `GET /v1/models`
+- `POST /v1/responses`
+- `POST /v1/chat/completions`
+
+Notes:
+
+- The server is intended for local use and defaults to binding only to loopback.
+- Requests are executed by starting an embedded in-process app-server session per HTTP request, so this mode reuses the existing Codex runtime instead of proxying to OpenAI directly.
+- Optional local bearer auth can be enabled with `--auth-token-env ENV_NAME`, which requires `Authorization: Bearer ...` on incoming requests.
+- Client-supplied OpenAI `tools` / `tool_choice` are not supported yet; the server rejects them explicitly instead of silently ignoring them.
+- Chat-history compatibility is best-effort: when a client sends prior messages, Codex currently folds earlier turns into a textual context prefix before submitting the final user request.
 
 ## Core Primitives
 

@@ -373,6 +373,10 @@ struct AppServerCommand {
 #[derive(Debug, clap::Subcommand)]
 #[allow(clippy::enum_variant_names)]
 enum AppServerSubcommand {
+    /// [实验性] 启动本地 OpenAI 兼容 HTTP 服务。
+    #[clap(name = "openai-compat")]
+    OpenAiCompat(codex_app_server::OpenAiCompatServerArgs),
+
     /// [实验性] 为应用服务器协议生成 TypeScript 代码绑定。
     GenerateTs(GenerateTsCommand),
 
@@ -706,6 +710,19 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             }
             Some(AppServerSubcommand::GenerateInternalJsonSchema(gen_cli)) => {
                 codex_app_server_protocol::generate_internal_json_schema(&gen_cli.out_dir)?;
+            }
+            Some(AppServerSubcommand::OpenAiCompat(openai_cli)) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    "app-server openai-compat",
+                )?;
+                codex_app_server::run_openai_compat_server(
+                    arg0_paths.clone(),
+                    root_config_overrides,
+                    codex_core::config_loader::LoaderOverrides::default(),
+                    openai_cli,
+                )
+                .await?;
             }
         },
         #[cfg(target_os = "macos")]
@@ -1770,6 +1787,32 @@ mod tests {
         let parse_result =
             MultitoolCli::try_parse_from(["codex", "app-server", "--listen", "http://foo"]);
         assert!(parse_result.is_err());
+    }
+
+    #[test]
+    fn app_server_openai_compat_subcommand_parses() {
+        let app_server = app_server_from_args(
+            [
+                "codex",
+                "app-server",
+                "openai-compat",
+                "--listen",
+                "127.0.0.1:9000",
+                "--auth-token-env",
+                "CODEX_PROXY_TOKEN",
+            ]
+            .as_ref(),
+        );
+        let Some(AppServerSubcommand::OpenAiCompat(cmd)) = app_server.subcommand else {
+            panic!("expected openai-compat subcommand");
+        };
+        assert_eq!(
+            cmd.listen,
+            "127.0.0.1:9000"
+                .parse::<std::net::SocketAddr>()
+                .expect("socket addr")
+        );
+        assert_eq!(cmd.auth_token_env.as_deref(), Some("CODEX_PROXY_TOKEN"));
     }
 
     #[test]
