@@ -7,10 +7,14 @@
 
 ## 中间验证进度（实时）
 
-- **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、以及跨进程 launcher 竞争测试一起落地
-- **最新代码提交**：`29822e3ed` `feat: cache native tldr semantic indexes`
+- **当前执行方式**：主线程已把 semantic phase-1、warm/reindex 实际执行闭环、跨进程 launcher 竞争测试，以及 MCP semantic daemon cache reuse 黑盒回归一起落地
+- **最新代码提交**：`e49926fee` `test: cover mcp semantic daemon cache reuse`
 
 ### 已完成验证
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_uses_daemon_when_available -- --exact -q`：通过
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm -- --exact -q`：通过
+- `codex rtk cargo test -p codex-mcp-server`：通过（30 个测试；新增 MCP semantic daemon cache reuse 黑盒 e2e）
+- `just fix -p codex-mcp-server`：通过（新 e2e 的 `expect_used` 已清理）
 - `codex rtk cargo test -p codex-native-tldr`：通过（38 个测试）
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（51 个测试）
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_running_waits_when_launcher_lock_and_daemon_alive -- --exact`：通过

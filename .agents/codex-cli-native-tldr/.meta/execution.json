@@ -1,214 +1,218 @@
 {
-   "stages": {
-      "1": {
-         "startTime": "2026-03-25T09:00:16Z",
-         "status": "completed",
-         "endTime": "2026-03-25T09:00:16Z"
+   "qualityGates" : {
+      "gate0" : null,
+      "gate2" : null,
+      "gate1" : null
+   },
+   "parameters" : {
+      "quick" : false,
+      "skipDeploy" : false,
+      "skipUI" : false
+   },
+   "stages" : {
+      "3" : {
+         "endTime" : null,
+         "status" : "in_progress",
+         "startTime" : "2026-03-25T10:40:00Z"
       },
-      "2": {
-         "endTime": "2026-03-25T09:05:08Z",
-         "status": "completed",
-         "startTime": "2026-03-25T09:05:08Z"
+      "4" : {
+         "endTime" : null,
+         "startTime" : null,
+         "status" : "pending"
       },
-      "3": {
-         "startTime": "2026-03-25T10:40:00Z",
-         "status": "in_progress",
-         "endTime": null
+      "1" : {
+         "startTime" : "2026-03-25T09:00:16Z",
+         "status" : "completed",
+         "endTime" : "2026-03-25T09:00:16Z"
       },
-      "4": {
-         "startTime": null,
-         "status": "pending",
-         "endTime": null
+      "2" : {
+         "endTime" : "2026-03-25T09:05:08Z",
+         "startTime" : "2026-03-25T09:05:08Z",
+         "status" : "completed"
       }
    },
-   "createdAt": "2026-03-25T08:53:01Z",
-   "qualityGates": {
-      "gate0": null,
-      "gate2": null,
-      "gate1": null
-   },
-   "parameters": {
-      "skipDeploy": false,
-      "quick": false,
-      "skipUI": false
-   },
-   "humanInterventions": [
+   "humanInterventions" : [
       {
-         "at": "2026-03-25T11:20:00Z",
-         "note": "daemon client and CLI fallback landed; next focus is T-005 MCP tool integration"
+         "at" : "2026-03-25T11:20:00Z",
+         "note" : "daemon client and CLI fallback landed; next focus is T-005 MCP tool integration"
       },
       {
-         "note": "committed daemon-first CLI integration as bf690e5c7",
-         "at": "2026-03-25T11:35:00Z"
+         "at" : "2026-03-25T11:35:00Z",
+         "note" : "committed daemon-first CLI integration as bf690e5c7"
       },
       {
-         "at": "2026-03-25T10:35:00Z",
-         "note": "T-005 landed: MCP tldr tool registered with daemon-first/local-fallback behavior and targeted tests"
+         "note" : "T-005 landed: MCP tldr tool registered with daemon-first/local-fallback behavior and targeted tests",
+         "at" : "2026-03-25T10:35:00Z"
       },
       {
-         "note": "committed MCP tldr tool integration as facc10ad7",
-         "at": "2026-03-25T10:50:00Z"
+         "note" : "committed MCP tldr tool integration as facc10ad7",
+         "at" : "2026-03-25T10:50:00Z"
       },
       {
-         "at": "2026-03-25T11:05:00Z",
-         "note": "spawned parallel sessions for T-006 semantic work and MCP/daemon validation"
+         "note" : "spawned parallel sessions for T-006 semantic work and MCP/daemon validation",
+         "at" : "2026-03-25T11:05:00Z"
       },
       {
-         "at": "2026-03-25T11:20:00Z",
-         "note": "parallel round integrated: semantic placeholder landed and daemon-available MCP test passed"
+         "at" : "2026-03-25T11:20:00Z",
+         "note" : "parallel round integrated: semantic placeholder landed and daemon-available MCP test passed"
       },
       {
-         "note": "committed semantic placeholder expansion as b83144203",
-         "at": "2026-03-25T11:35:00Z"
+         "note" : "committed semantic placeholder expansion as b83144203",
+         "at" : "2026-03-25T11:35:00Z"
       },
       {
-         "at": "2026-03-25T11:50:00Z",
-         "note": "started another parallel round for MCP e2e coverage and daemon auto-start exploration"
+         "note" : "started another parallel round for MCP e2e coverage and daemon auto-start exploration",
+         "at" : "2026-03-25T11:50:00Z"
       },
       {
-         "note": "integrated MCP warm/notify/snapshot coverage and Unix daemon auto-start path; latest code commit is 3e640e4d4",
-         "at": "2026-03-25T12:05:00Z"
+         "note" : "integrated MCP warm/notify/snapshot coverage and Unix daemon auto-start path; latest code commit is 3e640e4d4",
+         "at" : "2026-03-25T12:05:00Z"
       },
       {
-         "note": "started another parallel round for semantic MCP coverage and daemon lifecycle exploration",
-         "at": "2026-03-25T12:20:00Z"
+         "note" : "started another parallel round for semantic MCP coverage and daemon lifecycle exploration",
+         "at" : "2026-03-25T12:20:00Z"
       },
       {
-         "at": "2026-03-25T12:40:00Z",
-         "note": "semantic MCP e2e coverage completed; lifecycle work continues"
+         "note" : "semantic MCP e2e coverage completed; lifecycle work continues",
+         "at" : "2026-03-25T12:40:00Z"
       },
       {
-         "at": "2026-03-25T12:45:00Z",
-         "note": "committed startup guard hardening as 9c231e69d"
+         "note" : "committed startup guard hardening as 9c231e69d",
+         "at" : "2026-03-25T12:45:00Z"
       },
       {
-         "note": "started parallel round focused on mcp-server full-test cleanup and daemon lifecycle improvements",
-         "at": "2026-03-25T13:00:00Z"
+         "note" : "started parallel round focused on mcp-server full-test cleanup and daemon lifecycle improvements",
+         "at" : "2026-03-25T13:00:00Z"
       },
       {
-         "note": "reran cargo test -p codex-mcp-server; only remaining failure is legacy shell approval test",
-         "at": "2026-03-25T13:20:00Z"
+         "note" : "reran cargo test -p codex-mcp-server; only remaining failure is legacy shell approval test",
+         "at" : "2026-03-25T13:20:00Z"
       },
       {
-         "at": "2026-03-25T13:35:00Z",
-         "note": "committed daemon launch dedupe guard as 7773701e7"
+         "note" : "committed daemon launch dedupe guard as 7773701e7",
+         "at" : "2026-03-25T13:35:00Z"
       },
       {
-         "at": "2026-03-25T13:50:00Z",
-         "note": "started parallel round for legacy shell approval test fix and daemon lifecycle deepening"
+         "at" : "2026-03-25T13:50:00Z",
+         "note" : "started parallel round for legacy shell approval test fix and daemon lifecycle deepening"
       },
       {
-         "at": "2026-03-25T11:58:50Z",
-         "note": "legacy shell approval failure fixed; mcp-server suite is green again, now continuing with stale-socket daemon lifecycle follow-up"
+         "note" : "legacy shell approval failure fixed; mcp-server suite is green again, now continuing with stale-socket daemon lifecycle follow-up",
+         "at" : "2026-03-25T11:58:50Z"
       },
       {
-         "at": "2026-03-25T12:00:02Z",
-         "note": "aligned `codex tldr daemon` subcommands with the same auto-start/retry path used by structure/context"
+         "at" : "2026-03-25T12:00:02Z",
+         "note" : "aligned `codex tldr daemon` subcommands with the same auto-start/retry path used by structure/context"
       },
       {
-         "at": "2026-03-25T12:00:02Z",
-         "note": "verified the CLI follow-up with targeted codex-cli tests and `just fix -p codex-cli`"
+         "at" : "2026-03-25T12:00:02Z",
+         "note" : "verified the CLI follow-up with targeted codex-cli tests and `just fix -p codex-cli`"
       },
       {
-         "at": "2026-03-25T12:16:03Z",
-         "note": "started adding explicit CLI tests for daemon autostart retry behavior via injectable query/start hooks"
+         "note" : "started adding explicit CLI tests for daemon autostart retry behavior via injectable query/start hooks",
+         "at" : "2026-03-25T12:16:03Z"
       },
       {
-         "at": "2026-03-25T12:18:05Z",
-         "note": "CLI autostart helper tests landed for both retry-success and no-retry-on-failed-start branches"
+         "at" : "2026-03-25T12:18:05Z",
+         "note" : "CLI autostart helper tests landed for both retry-success and no-retry-on-failed-start branches"
       },
       {
-         "at": "2026-03-25T12:24:49Z",
-         "note": "started daemon pid-file and liveness validation work so CLI can distinguish live daemons from stale socket artifacts"
+         "note" : "started daemon pid-file and liveness validation work so CLI can distinguish live daemons from stale socket artifacts",
+         "at" : "2026-03-25T12:24:49Z"
       },
       {
-         "at": "2026-03-25T12:27:15Z",
-         "note": "daemon pid-file lifecycle and CLI liveness checks landed; stale cleanup now removes both socket and pid artifacts"
+         "note" : "daemon pid-file lifecycle and CLI liveness checks landed; stale cleanup now removes both socket and pid artifacts",
+         "at" : "2026-03-25T12:27:15Z"
       },
       {
-         "at": "2026-03-25T12:41:55Z",
-         "note": "started a multi-session round to extract a shared native-tldr lifecycle manager for CLI and MCP"
+         "note" : "started a multi-session round to extract a shared native-tldr lifecycle manager for CLI and MCP",
+         "at" : "2026-03-25T12:41:55Z"
       },
       {
-         "at": "2026-03-25T12:55:00Z",
-         "note": "started rewriting shared native-tldr lifecycle manager so CLI can drop duplicated launch/backoff state"
+         "note" : "started rewriting shared native-tldr lifecycle manager so CLI can drop duplicated launch/backoff state",
+         "at" : "2026-03-25T12:55:00Z"
       },
       {
-         "at": "2026-03-25T13:05:00Z",
-         "note": "shared lifecycle manager wired into codex-cli and verified with targeted native-tldr + codex-cli lifecycle tests"
+         "at" : "2026-03-25T13:05:00Z",
+         "note" : "shared lifecycle manager wired into codex-cli and verified with targeted native-tldr + codex-cli lifecycle tests"
       },
       {
-         "at": "2026-03-25T13:20:00Z",
-         "note": "added project-level daemon lockfile on native-tldr startup and revalidated native-tldr plus codex-cli targeted tests"
+         "note" : "added project-level daemon lockfile on native-tldr startup and revalidated native-tldr plus codex-cli targeted tests",
+         "at" : "2026-03-25T13:20:00Z"
       },
       {
-         "at": "2026-03-25T13:45:00Z",
-         "note": "made codex-cli launcher lock-aware so it waits for a daemon being started by another process instead of immediately spawning again"
+         "at" : "2026-03-25T13:45:00Z",
+         "note" : "made codex-cli launcher lock-aware so it waits for a daemon being started by another process instead of immediately spawning again"
       },
       {
-         "at": "2026-03-25T14:00:00Z",
-         "note": "wired codex-mcp-server tldr tool into shared lifecycle manager without adding MCP auto-start, then revalidated targeted mcp-server tests"
+         "note" : "wired codex-mcp-server tldr tool into shared lifecycle manager without adding MCP auto-start, then revalidated targeted mcp-server tests",
+         "at" : "2026-03-25T14:00:00Z"
       },
       {
-         "at": "2026-03-25T14:20:00Z",
-         "note": "added native-tldr phase-1 status surface across daemon, CLI, and MCP, including session reindex observability fields"
+         "note" : "added native-tldr phase-1 status surface across daemon, CLI, and MCP, including session reindex observability fields",
+         "at" : "2026-03-25T14:20:00Z"
       },
       {
-         "at": "2026-03-25T14:25:00Z",
-         "note": "replaced the generic upstream sync skill with a native-tldr-specific sync skill that requires updating recorded upstream hash state"
+         "at" : "2026-03-25T14:25:00Z",
+         "note" : "replaced the generic upstream sync skill with a native-tldr-specific sync skill that requires updating recorded upstream hash state"
       },
       {
-         "at": "2026-03-25T14:40:00Z",
-         "note": "wired minimal shared config via project .codex/tldr.toml into CLI, daemon, and MCP and expanded daemon health status with healthy/stale fields"
+         "note" : "wired minimal shared config via project .codex/tldr.toml into CLI, daemon, and MCP and expanded daemon health status with healthy/stale fields",
+         "at" : "2026-03-25T14:40:00Z"
       },
       {
-         "at": "2026-03-25T15:08:00Z",
-         "note": "tightened stale/liveness closure: launcher now skips stale cleanup while lock is held, daemon status exposes health_reason/recovery_hint, and MCP ping success/missing-daemon tests are green"
+         "at" : "2026-03-25T15:08:00Z",
+         "note" : "tightened stale/liveness closure: launcher now skips stale cleanup while lock is held, daemon status exposes health_reason/recovery_hint, and MCP ping success/missing-daemon tests are green"
       },
       {
-         "at": "2026-03-25T22:30:31Z",
-         "note": "completed selective sync from parcadei/llm-tldr for semantic embedding-unit metadata/text assembly; native-tldr, CLI, and MCP now return local semantic matches while keeping local lifecycle behavior"
+         "note" : "completed selective sync from parcadei/llm-tldr for semantic embedding-unit metadata/text assembly; native-tldr, CLI, and MCP now return local semantic matches while keeping local lifecycle behavior",
+         "at" : "2026-03-25T22:30:31Z"
       },
       {
-         "at": "2026-03-25T23:03:18Z",
-         "note": "completed warm/reindex phase-1 execution loop plus cross-process launcher competition coverage; warm now returns observable reindex reports and CLI verifies only one spawn across concurrent processes"
+         "note" : "completed warm/reindex phase-1 execution loop plus cross-process launcher competition coverage; warm now returns observable reindex reports and CLI verifies only one spawn across concurrent processes",
+         "at" : "2026-03-25T23:03:18Z"
       },
       {
-         "at": "2026-03-26T00:20:00Z",
-         "note": "landed SemanticIndex cache reuse in native-tldr, shared TldrEngine reuse in daemon connection handling, and semantic embeddingUsed/embedding_score output coverage across CLI and MCP"
+         "at" : "2026-03-26T00:20:00Z",
+         "note" : "landed SemanticIndex cache reuse in native-tldr, shared TldrEngine reuse in daemon connection handling, and semantic embeddingUsed/embedding_score output coverage across CLI and MCP"
       },
       {
-         "at": "2026-03-25T23:45:46Z",
-         "note": "completed semantic index caching round: native-tldr now has a concrete SemanticIndex abstraction, daemon reuses shared engine/cache across connections, and CLI/MCP semantic outputs expose embeddingUsed/embedding_score with green tests"
+         "at" : "2026-03-25T23:45:46Z",
+         "note" : "completed semantic index caching round: native-tldr now has a concrete SemanticIndex abstraction, daemon reuses shared engine/cache across connections, and CLI/MCP semantic outputs expose embeddingUsed/embedding_score with green tests"
       },
       {
-         "at": "2026-03-26T00:20:00Z",
-         "note": "connected semantic search to daemon-first execution for CLI/MCP, added daemon semantic payload coverage, and revalidated native-tldr/cli/mcp targeted suites; just fix -p codex-cli remained blocked by unrelated app-server worktree changes"
+         "at" : "2026-03-26T00:20:00Z",
+         "note" : "connected semantic search to daemon-first execution for CLI/MCP, added daemon semantic payload coverage, and revalidated native-tldr/cli/mcp targeted suites; just fix -p codex-cli remained blocked by unrelated app-server worktree changes"
       },
       {
-         "at": "2026-03-26T00:40:00Z",
-         "note": "added CLI regression coverage that daemon lock-held startup path waits instead of spawning a second daemon, then revalidated codex-cli suite"
+         "note" : "added CLI regression coverage that daemon lock-held startup path waits instead of spawning a second daemon, then revalidated codex-cli suite",
+         "at" : "2026-03-26T00:40:00Z"
       },
       {
-         "at": "2026-03-26T00:19:43Z",
-         "note": "added three-process cross-process launcher test plus reran the CLI suite/just fix commands to prove the global uniqueness guard still holds"
+         "at" : "2026-03-26T00:19:43Z",
+         "note" : "added three-process cross-process launcher test plus reran the CLI suite/just fix commands to prove the global uniqueness guard still holds"
       },
       {
-         "at": "2026-03-26T01:05:00Z",
-         "note": "validated daemon semantic cache reuse with a build-count regression and re-ran the three-process cross-process launcher test plus codex-cli/native-tldr suites"
+         "at" : "2026-03-26T01:05:00Z",
+         "note" : "validated daemon semantic cache reuse with a build-count regression and re-ran the three-process cross-process launcher test plus codex-cli/native-tldr suites"
       },
       {
-         "at": "2026-03-26T01:20:00Z",
-         "note": "added CLI launcher lock+aivo scenario test that ensures ensure_running waits when daemon lock-held and launcher lock active"
+         "at" : "2026-03-26T01:20:00Z",
+         "note" : "added CLI launcher lock+aivo scenario test that ensures ensure_running waits when daemon lock-held and launcher lock active"
       },
       {
-         "at": "2026-03-26T01:20:00Z",
-         "note": "added CLI regression for launcher-lock-held plus live-daemon state and revalidated codex-cli plus just fix -p codex-cli"
+         "note" : "added CLI regression for launcher-lock-held plus live-daemon state and revalidated codex-cli plus just fix -p codex-cli",
+         "at" : "2026-03-26T01:20:00Z"
       },
       {
-         "at": "2026-03-26T01:40:00Z",
-         "note": "documented semantic source/status lifecycle outputs so downstream clients see cache hits and lock states"
+         "at" : "2026-03-26T01:40:00Z",
+         "note" : "documented semantic source/status lifecycle outputs so downstream clients see cache hits and lock states"
+      },
+      {
+         "note" : "landed MCP semantic daemon cache reuse black-box regression, revalidated codex-mcp-server targeted tests plus full 30-test crate suite, and cleaned the new test\'s clippy expect_used warning",
+         "at" : "2026-03-26T01:20:00Z"
       }
    ],
-   "feature": "codex-cli-native-tldr"
+   "feature" : "codex-cli-native-tldr",
+   "createdAt" : "2026-03-25T08:53:01Z"
 }
