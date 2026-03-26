@@ -16,6 +16,12 @@ path = "src/bin/notify_capture.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "test_notify_capture"
+path = "src/bin/test_notify_capture.rs"
+test = false
+bench = false
+
 [lib]
 name = "codex_app_server"
 path = "src/lib.rs"
