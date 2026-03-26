@@ -235,6 +235,10 @@
       {
          "at" : "2026-03-26T08:10:45Z",
          "note" : "stabilized phase-1 default cargo test coverage: native-tldr semantic cache reuse test no longer depends on global build counters, and CLI lifecycle regressions now serialize env-inheriting child-process tests"
+      },
+      {
+         "at" : "2026-03-26T08:12:00Z",
+         "note" : "committed phase-3 parallel-test stabilization as 2aab41dde"
       }
    ],
    "feature" : "codex-cli-native-tldr",
