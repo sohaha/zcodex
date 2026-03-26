@@ -17,14 +17,18 @@
 
 Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离：
 
-- 优先：`$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/<project-hash>/`
-- 回退：`$TMPDIR/codex-native-tldr/<uid>/<project-hash>/`
+- scope 根目录优先：`$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`
+- 否则回退：`$TMPDIR/codex-native-tldr/<uid>/`
+- `socket/pid` 位于：`.../<project-hash>/`
+- `lock/launch.lock` 位于 scope 根目录，避免项目 artifact 目录被删时一并丢失互斥语义
 
 非 Unix 下回退到：
 
-- `$TMPDIR/codex-native-tldr/<project-hash>/`
+- scope 根目录：`$TMPDIR/codex-native-tldr/`
+- `socket/pid` 位于：`.../<project-hash>/`
+- `lock/launch.lock` 位于 scope 根目录
 
-目录内文件名保持稳定：
+文件名保持稳定：
 
 - `codex-native-tldr-<hash>.sock`
 - `codex-native-tldr-<hash>.pid`

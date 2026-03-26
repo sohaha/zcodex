@@ -1360,6 +1360,117 @@ mod lifecycle_tests {
     }
 
     #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ensure_running_recovers_when_external_lock_owner_loses_artifact_dir_mid_boot()
+    -> Result<()> {
+        if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
+            return Ok(());
+        }
+
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let start_signal = project.path().join("start_signal_external_lock_recovery");
+        let done_signal = project.path().join("child_external_lock_recovery.done");
+        let counter_path = project
+            .path()
+            .join("launch_counter_external_lock_recovery.log");
+        let launcher_wait_counter = project
+            .path()
+            .join("launcher_wait_external_lock_recovery.log");
+        let external_release = project.path().join("external_daemon_recovery.release");
+        let external_boot_release = project.path().join("external_daemon_recovery.boot_release");
+        let external_locked_signal = project.path().join("external_daemon_recovery.locked");
+        for path in [
+            &start_signal,
+            &done_signal,
+            &counter_path,
+            &launcher_wait_counter,
+            &external_release,
+            &external_boot_release,
+            &external_locked_signal,
+        ] {
+            std::fs::remove_file(path).ok();
+        }
+
+        let mut external_daemon = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("tldr_cmd::lifecycle_tests::external_daemon_lock_owner_process")
+            .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+            .env(CODEX_TLDR_TEST_FAKE_DAEMON_RELEASE_ENV, &external_release)
+            .env(
+                CODEX_TLDR_TEST_FAKE_DAEMON_BOOT_RELEASE_ENV,
+                &external_boot_release,
+            )
+            .env(
+                CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL_ENV,
+                &external_locked_signal,
+            )
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        wait_for_signal(&external_locked_signal);
+        let artifact_dir = socket_path_for_project(&canonical_project)
+            .parent()
+            .expect("socket path should have parent")
+            .to_path_buf();
+        assert!(
+            artifact_dir.exists(),
+            "lock owner should create artifact dir"
+        );
+
+        let mut contender = std::process::Command::new(std::env::current_exe()?)
+            .arg("--exact")
+            .arg("tldr_cmd::lifecycle_tests::cross_process_launcher_contender")
+            .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+            .env(CODEX_TLDR_TEST_START_SIGNAL_ENV, &start_signal)
+            .env(CODEX_TLDR_TEST_DONE_SIGNAL_ENV, &done_signal)
+            .env(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path)
+            .env(
+                CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV,
+                &launcher_wait_counter,
+            )
+            .env(CODEX_TLDR_TEST_DAEMON_BIN_ENV, canonical_project.as_path())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        std::fs::write(&start_signal, "go")?;
+        std::fs::remove_dir_all(&artifact_dir)?;
+        assert!(
+            !artifact_dir.exists(),
+            "artifact dir should be removed before boot resumes"
+        );
+
+        std::fs::write(&external_boot_release, "boot")?;
+        wait_for_signal(&done_signal);
+
+        let contender_status = contender.wait()?;
+        assert!(contender_status.success());
+        assert!(
+            !counter_path.exists(),
+            "external daemon owner should still avoid any extra spawn"
+        );
+        assert!(
+            !launcher_wait_counter.exists(),
+            "daemon-lock wait should still bypass launcher wait tracking"
+        );
+        assert!(socket_path_for_project(&canonical_project).exists());
+        assert!(pid_path_for_project(&canonical_project).exists());
+
+        std::fs::write(&external_release, "release")?;
+        let external_status = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::task::spawn_blocking(move || external_daemon.wait()),
+        )
+        .await???;
+        assert!(external_status.success());
+
+        cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn ensure_daemon_running_only_spawns_once_even_with_three_processes() -> Result<()> {
         if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
@@ -1584,6 +1695,7 @@ mod lifecycle_tests {
             }
         }
 
+        create_artifact_parent(&socket_path);
         let listener = UnixListener::bind(&socket_path)?;
         create_artifact_parent(&pid_path);
         std::fs::write(&pid_path, std::process::id().to_string())?;
@@ -1678,6 +1790,7 @@ mod lifecycle_tests {
             return Ok(());
         }
 
+        create_artifact_parent(&socket_path);
         let listener = UnixListener::bind(&socket_path)?;
         create_artifact_parent(&pid_path);
         std::fs::write(&pid_path, std::process::id().to_string())?;

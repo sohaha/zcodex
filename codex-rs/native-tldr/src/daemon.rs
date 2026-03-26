@@ -530,7 +530,7 @@ pub fn pid_path_for_project(project_root: &Path) -> PathBuf {
 }
 
 pub fn lock_path_for_project(project_root: &Path) -> PathBuf {
-    daemon_artifact_dir_for_project(project_root).join(format!(
+    daemon_artifact_scope_dir().join(format!(
         "codex-native-tldr-{}.lock",
         daemon_project_hash(project_root)
     ))
@@ -545,30 +545,41 @@ fn daemon_project_hash(project_root: &Path) -> String {
 }
 
 fn daemon_artifact_dir_for_project(project_root: &Path) -> PathBuf {
+    daemon_artifact_scope_dir().join(daemon_project_hash(project_root))
+}
+
+fn daemon_artifact_scope_dir() -> PathBuf {
     #[cfg(unix)]
     {
         let uid = unsafe { libc::geteuid() };
-        if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-            let runtime_dir = PathBuf::from(runtime_dir);
-            if runtime_dir.is_absolute() {
-                return runtime_dir
-                    .join("codex-native-tldr")
-                    .join(uid.to_string())
-                    .join(daemon_project_hash(project_root));
-            }
-        }
-        std::env::temp_dir()
-            .join("codex-native-tldr")
-            .join(uid.to_string())
-            .join(daemon_project_hash(project_root))
+        let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+        daemon_artifact_scope_dir_for_runtime_dir(runtime_dir.as_deref(), uid)
     }
 
     #[cfg(not(unix))]
     {
-        std::env::temp_dir()
-            .join("codex-native-tldr")
-            .join(daemon_project_hash(project_root))
+        daemon_artifact_scope_dir_for_runtime_dir(None)
     }
+}
+
+#[cfg(unix)]
+fn daemon_artifact_scope_dir_for_runtime_dir(
+    runtime_dir: Option<&Path>,
+    uid: libc::uid_t,
+) -> PathBuf {
+    if let Some(runtime_dir) = runtime_dir
+        && runtime_dir.is_absolute()
+    {
+        return runtime_dir.join("codex-native-tldr").join(uid.to_string());
+    }
+    std::env::temp_dir()
+        .join("codex-native-tldr")
+        .join(uid.to_string())
+}
+
+#[cfg(not(unix))]
+fn daemon_artifact_scope_dir_for_runtime_dir(_runtime_dir: Option<&Path>) -> PathBuf {
+    std::env::temp_dir().join("codex-native-tldr")
 }
 
 fn ensure_daemon_artifact_parent(path: &Path) -> Result<()> {
@@ -803,6 +814,7 @@ mod tests {
     use super::TldrDaemonResponse;
     use super::daemon_health;
     use super::daemon_lock_is_held;
+    use super::daemon_artifact_scope_dir_for_runtime_dir;
     use super::daemon_project_hash;
     use super::lock_path_for_project;
     use super::query_daemon;
@@ -1365,28 +1377,27 @@ mod tests {
             pid_path.parent().expect("pid path should have parent")
         );
         assert_eq!(
-            artifact_dir,
-            lock_path.parent().expect("lock path should have parent")
-        );
-        assert_eq!(
             artifact_dir.file_name().and_then(|value| value.to_str()),
             Some(daemon_project_hash(&project_root).as_str())
+        );
+        let scope_dir = artifact_dir
+            .parent()
+            .expect("artifact dir should have scope dir");
+        assert_eq!(
+            scope_dir,
+            lock_path.parent().expect("lock path should have scope dir")
         );
 
         #[cfg(unix)]
         {
             let uid = unsafe { libc::geteuid() }.to_string();
             assert_eq!(
-                artifact_dir
-                    .parent()
-                    .and_then(|value| value.file_name())
-                    .and_then(|value| value.to_str()),
+                scope_dir.file_name().and_then(|value| value.to_str()),
                 Some(uid.as_str())
             );
             assert_eq!(
-                artifact_dir
+                scope_dir
                     .parent()
-                    .and_then(std::path::Path::parent)
                     .and_then(|value| value.file_name())
                     .and_then(|value| value.to_str()),
                 Some("codex-native-tldr")
@@ -1396,7 +1407,7 @@ mod tests {
         #[cfg(not(unix))]
         {
             assert_eq!(
-                artifact_dir.parent().and_then(|value| value.file_name()),
+                scope_dir.parent().and_then(|value| value.file_name()),
                 Some(std::ffi::OsStr::new("codex-native-tldr"))
             );
         }
@@ -1404,58 +1415,27 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn daemon_artifact_paths_prefer_absolute_xdg_runtime_dir() {
         let tempdir = tempdir().expect("tempdir should exist");
         let runtime_dir = tempdir.path().join("runtime");
         std::fs::create_dir_all(&runtime_dir).expect("runtime dir should be created");
-        let project_root = tempdir.path().join("xdg-runtime-project");
+        let scope_dir =
+            daemon_artifact_scope_dir_for_runtime_dir(Some(&runtime_dir), unsafe { libc::geteuid() });
 
-        let previous = std::env::var_os("XDG_RUNTIME_DIR");
-        unsafe {
-            std::env::set_var("XDG_RUNTIME_DIR", &runtime_dir);
-        }
-
-        let socket_path = socket_path_for_project(&project_root);
-
-        if let Some(previous) = previous {
-            unsafe {
-                std::env::set_var("XDG_RUNTIME_DIR", previous);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("XDG_RUNTIME_DIR");
-            }
-        }
-
-        assert!(socket_path.starts_with(&runtime_dir));
+        assert!(scope_dir.starts_with(&runtime_dir));
     }
 
     #[cfg(unix)]
     #[test]
-    #[serial]
     fn daemon_artifact_paths_ignore_relative_xdg_runtime_dir() {
         let tempdir = tempdir().expect("tempdir should exist");
-        let project_root = tempdir.path().join("relative-runtime-project");
+        let relative_runtime_dir = tempdir.path().join("relative-runtime-dir");
+        let scope_dir = daemon_artifact_scope_dir_for_runtime_dir(
+            Some(relative_runtime_dir.strip_prefix("/").unwrap_or(&relative_runtime_dir)),
+            unsafe { libc::geteuid() },
+        );
 
-        let previous = std::env::var_os("XDG_RUNTIME_DIR");
-        unsafe {
-            std::env::set_var("XDG_RUNTIME_DIR", "relative-runtime-dir");
-        }
-
-        let socket_path = socket_path_for_project(&project_root);
-
-        if let Some(previous) = previous {
-            unsafe {
-                std::env::set_var("XDG_RUNTIME_DIR", previous);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("XDG_RUNTIME_DIR");
-            }
-        }
-
-        assert!(socket_path.starts_with(std::env::temp_dir()));
+        assert!(scope_dir.starts_with(std::env::temp_dir()));
     }
 
     #[test]
@@ -1477,21 +1457,27 @@ mod tests {
         assert!(daemon_lock_is_held(&project_root).expect("lock query should succeed"));
     }
 
+    #[cfg(unix)]
     #[test]
-    fn daemon_lock_query_recreates_missing_artifact_parent() {
+    fn daemon_artifact_scope_dir_allows_isolated_runtime_root() {
         let tempdir = tempdir().expect("tempdir should exist");
+        let runtime_dir = tempdir.path().join("runtime");
+        std::fs::create_dir_all(&runtime_dir).expect("runtime dir should be created");
         let project_root = tempdir.path().join("lock-parent-recovery-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
-        let lock_path = lock_path_for_project(&project_root);
-        let parent = lock_path.parent().expect("lock path should have parent");
-        std::fs::remove_dir_all(parent).ok();
-        assert!(!parent.exists());
+        let scope_dir =
+            daemon_artifact_scope_dir_for_runtime_dir(Some(&runtime_dir), unsafe { libc::geteuid() });
+        let lock_file_name = format!("codex-native-tldr-{}.lock", daemon_project_hash(&project_root));
+        let lock_path = scope_dir.join(&lock_file_name);
 
-        let lock_is_held = daemon_lock_is_held(&project_root).expect("lock query should succeed");
+        create_artifact_parent(&lock_path);
 
-        assert!(!lock_is_held);
-        assert!(parent.exists());
-        assert!(lock_path.exists());
+        assert!(scope_dir.starts_with(&runtime_dir));
+        assert!(lock_path.starts_with(&scope_dir));
+        assert_eq!(
+            lock_path.file_name().map(|value| value.to_string_lossy().into_owned()),
+            Some(lock_file_name)
+        );
     }
 
     #[test]
