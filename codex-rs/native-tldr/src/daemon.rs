@@ -258,6 +258,7 @@ impl TldrDaemon {
         let Some(_daemon_lock) = acquire_daemon_lock(&self.project_root)? else {
             return Ok(());
         };
+        ensure_daemon_artifact_parent(&socket_path)?;
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)
                 .with_context(|| format!("remove stale socket {}", socket_path.display()))?;
@@ -515,18 +516,24 @@ where
 }
 
 pub fn socket_path_for_project(project_root: &Path) -> PathBuf {
-    let hash = daemon_project_hash(project_root);
-    std::env::temp_dir().join(format!("codex-native-tldr-{hash}.sock"))
+    daemon_artifact_dir_for_project(project_root).join(format!(
+        "codex-native-tldr-{}.sock",
+        daemon_project_hash(project_root)
+    ))
 }
 
 pub fn pid_path_for_project(project_root: &Path) -> PathBuf {
-    let hash = daemon_project_hash(project_root);
-    std::env::temp_dir().join(format!("codex-native-tldr-{hash}.pid"))
+    daemon_artifact_dir_for_project(project_root).join(format!(
+        "codex-native-tldr-{}.pid",
+        daemon_project_hash(project_root)
+    ))
 }
 
 pub fn lock_path_for_project(project_root: &Path) -> PathBuf {
-    let hash = daemon_project_hash(project_root);
-    std::env::temp_dir().join(format!("codex-native-tldr-{hash}.lock"))
+    daemon_artifact_dir_for_project(project_root).join(format!(
+        "codex-native-tldr-{}.lock",
+        daemon_project_hash(project_root)
+    ))
 }
 
 fn daemon_project_hash(project_root: &Path) -> String {
@@ -537,7 +544,43 @@ fn daemon_project_hash(project_root: &Path) -> String {
     hash[..8].to_string()
 }
 
+fn daemon_artifact_dir_for_project(project_root: &Path) -> PathBuf {
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::geteuid() };
+        if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+            let runtime_dir = PathBuf::from(runtime_dir);
+            if runtime_dir.is_absolute() {
+                return runtime_dir
+                    .join("codex-native-tldr")
+                    .join(uid.to_string())
+                    .join(daemon_project_hash(project_root));
+            }
+        }
+        std::env::temp_dir()
+            .join("codex-native-tldr")
+            .join(uid.to_string())
+            .join(daemon_project_hash(project_root))
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::env::temp_dir()
+            .join("codex-native-tldr")
+            .join(daemon_project_hash(project_root))
+    }
+}
+
+fn ensure_daemon_artifact_parent(path: &Path) -> Result<()> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    std::fs::create_dir_all(parent)
+        .with_context(|| format!("create daemon artifact dir {}", parent.display()))
+}
+
 fn write_pid_file(pid_path: &Path) -> Result<()> {
+    ensure_daemon_artifact_parent(pid_path)?;
     std::fs::write(pid_path, std::process::id().to_string())
         .with_context(|| format!("write pid file {}", pid_path.display()))
 }
@@ -655,6 +698,7 @@ fn build_daemon_status(
 
 fn try_open_daemon_lock(project_root: &Path) -> Result<Option<File>> {
     let lock_path = lock_path_for_project(project_root);
+    ensure_daemon_artifact_parent(&lock_path)?;
     let lock_file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -759,6 +803,7 @@ mod tests {
     use super::TldrDaemonResponse;
     use super::daemon_health;
     use super::daemon_lock_is_held;
+    use super::daemon_project_hash;
     use super::lock_path_for_project;
     use super::query_daemon;
     use pretty_assertions::assert_eq;
@@ -778,6 +823,12 @@ mod tests {
     use crate::semantic::semantic_index_build_count;
     #[cfg(unix)]
     use tokio::net::UnixListener;
+
+    fn create_artifact_parent(path: &std::path::Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("artifact parent should be created");
+        }
+    }
 
     #[tokio::test]
     async fn query_daemon_returns_none_when_socket_is_missing() {
@@ -799,6 +850,7 @@ mod tests {
         let project_root = tempdir.path().join("daemon-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
         let socket_path = socket_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path).expect("stale socket should be removed");
         }
@@ -863,6 +915,7 @@ mod tests {
         let project_root = tempdir.path().join("stale-daemon-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
         let socket_path = socket_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path).expect("stale socket should be removed");
         }
@@ -1296,11 +1349,65 @@ mod tests {
     }
 
     #[test]
+    fn daemon_artifact_paths_are_scoped_under_runtime_root() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("scoped-artifact-project");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        let lock_path = lock_path_for_project(&project_root);
+
+        let artifact_dir = socket_path
+            .parent()
+            .expect("socket path should have artifact dir");
+        assert_eq!(
+            artifact_dir,
+            pid_path.parent().expect("pid path should have parent")
+        );
+        assert_eq!(
+            artifact_dir,
+            lock_path.parent().expect("lock path should have parent")
+        );
+        assert_eq!(
+            artifact_dir.file_name().and_then(|value| value.to_str()),
+            Some(daemon_project_hash(&project_root).as_str())
+        );
+
+        #[cfg(unix)]
+        {
+            let uid = unsafe { libc::geteuid() }.to_string();
+            assert_eq!(
+                artifact_dir
+                    .parent()
+                    .and_then(|value| value.file_name())
+                    .and_then(|value| value.to_str()),
+                Some(uid.as_str())
+            );
+            assert_eq!(
+                artifact_dir
+                    .parent()
+                    .and_then(std::path::Path::parent)
+                    .and_then(|value| value.file_name())
+                    .and_then(|value| value.to_str()),
+                Some("codex-native-tldr")
+            );
+        }
+
+        #[cfg(not(unix))]
+        {
+            assert_eq!(
+                artifact_dir.parent().and_then(|value| value.file_name()),
+                Some(std::ffi::OsStr::new("codex-native-tldr"))
+            );
+        }
+    }
+
+    #[test]
     fn daemon_lock_reports_when_project_lock_is_held() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("lock-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
         let lock_path = lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
         let lock_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -1320,6 +1427,8 @@ mod tests {
         std::fs::create_dir(&project_root).expect("project root should be created");
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
 
         std::fs::write(&socket_path, "").expect("socket path should be writable");
         std::fs::write(&pid_path, "999999").expect("pid path should be writable");
@@ -1338,6 +1447,8 @@ mod tests {
         std::fs::create_dir(&project_root).expect("project root should be created");
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
 
         std::fs::write(&socket_path, "").expect("socket path should be writable");
         std::fs::write(&pid_path, "999999").expect("pid path should be writable");
@@ -1359,6 +1470,7 @@ mod tests {
         let project_root = tempdir.path().join("lock-reason-project");
         std::fs::create_dir(&project_root).expect("project root should be created");
         let lock_path = lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
         let _lock_file = OpenOptions::new()
             .read(true)
             .write(true)

@@ -639,6 +639,9 @@ fn launcher_lock_path_for_project(project_root: &Path) -> PathBuf {
 
 fn try_open_launcher_lock(project_root: &Path) -> Result<Option<File>> {
     let lock_path = launcher_lock_path_for_project(project_root);
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let lock_file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -699,6 +702,12 @@ mod lifecycle_tests {
     use tokio::io::BufReader;
     #[cfg(unix)]
     use tokio::net::UnixListener;
+
+    fn create_artifact_parent(path: &Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("artifact parent should be created");
+        }
+    }
 
     const CODEX_TLDR_TEST_PROJECT_ROOT_ENV: &str = "CODEX_TLDR_TEST_PROJECT_ROOT";
     const CODEX_TLDR_TEST_START_SIGNAL_ENV: &str = "CODEX_TLDR_TEST_START_SIGNAL";
@@ -867,6 +876,8 @@ mod lifecycle_tests {
         let project_root = tempdir.path();
         let socket_path = socket_path_for_project(project_root);
         let pid_path = pid_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
 
         std::fs::write(&socket_path, "").unwrap();
         std::fs::write(&pid_path, std::process::id().to_string()).unwrap();
@@ -884,6 +895,8 @@ mod lifecycle_tests {
         std::fs::create_dir(&project_root).unwrap();
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
 
         std::fs::write(&socket_path, "").unwrap();
         std::fs::write(&pid_path, "999999").unwrap();
@@ -899,6 +912,8 @@ mod lifecycle_tests {
         let project_root = tempdir.path();
         let socket_path = socket_path_for_project(project_root);
         let pid_path = pid_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
 
         std::fs::write(&socket_path, "").unwrap();
         std::fs::write(&pid_path, "123").unwrap();
@@ -916,6 +931,9 @@ mod lifecycle_tests {
         let socket_path = socket_path_for_project(project_root);
         let pid_path = pid_path_for_project(project_root);
         let lock_path = codex_native_tldr::daemon::lock_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        create_artifact_parent(&lock_path);
         let lock_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -941,6 +959,9 @@ mod lifecycle_tests {
         let socket_path = socket_path_for_project(project_root);
         let pid_path = pid_path_for_project(project_root);
         let lock_path = launcher_lock_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        create_artifact_parent(&lock_path);
         let lock_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -966,6 +987,9 @@ mod lifecycle_tests {
         let socket_path = socket_path_for_project(project_root);
         let pid_path = pid_path_for_project(project_root);
         let lock_path = launcher_lock_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        create_artifact_parent(&lock_path);
         let lock_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -1395,10 +1419,13 @@ mod lifecycle_tests {
         let canonical_project = project.path().canonicalize()?;
         let socket_path = socket_path_for_project(&canonical_project);
         let pid_path = pid_path_for_project(&canonical_project);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
         std::fs::write(&socket_path, "").unwrap();
         std::fs::write(&pid_path, std::process::id().to_string()).unwrap();
 
         let lock_path = launcher_lock_path_for_project(&canonical_project);
+        create_artifact_parent(&lock_path);
         let lock_file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -1481,6 +1508,9 @@ mod lifecycle_tests {
         let project = tempdir()?;
         let canonical_project = project.path().canonicalize()?;
         let counter_path = project.path().join("launch_counter.log");
+        create_artifact_parent(&codex_native_tldr::daemon::lock_path_for_project(
+            &canonical_project,
+        ));
         let daemon_lock = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -1520,6 +1550,8 @@ mod lifecycle_tests {
             std::env::var_os(CODEX_TLDR_TEST_FAKE_DAEMON_SPAWNED_SIGNAL_ENV).map(PathBuf::from);
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
         std::fs::remove_file(&socket_path).ok();
         std::fs::remove_file(&pid_path).ok();
 
@@ -1536,6 +1568,7 @@ mod lifecycle_tests {
         }
 
         let listener = UnixListener::bind(&socket_path)?;
+        create_artifact_parent(&pid_path);
         std::fs::write(&pid_path, std::process::id().to_string())?;
 
         loop {
@@ -1602,9 +1635,14 @@ mod lifecycle_tests {
         );
         let socket_path = socket_path_for_project(&project_root);
         let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
         std::fs::remove_file(&socket_path).ok();
         std::fs::remove_file(&pid_path).ok();
 
+        create_artifact_parent(&codex_native_tldr::daemon::lock_path_for_project(
+            &project_root,
+        ));
         let daemon_lock = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -1624,6 +1662,7 @@ mod lifecycle_tests {
         }
 
         let listener = UnixListener::bind(&socket_path)?;
+        create_artifact_parent(&pid_path);
         std::fs::write(&pid_path, std::process::id().to_string())?;
 
         loop {
