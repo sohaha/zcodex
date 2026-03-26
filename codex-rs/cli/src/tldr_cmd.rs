@@ -632,6 +632,7 @@ mod lifecycle_tests {
     use super::launcher_lock_path_for_project;
     use super::query_daemon_with_autostart;
     use super::query_daemon_with_hooks;
+    use super::try_start_native_tldr_daemon;
     use crate::tldr_cmd::CODEX_TLDR_TEST_DAEMON_BIN_ENV;
     use anyhow::Result;
     use codex_native_tldr::daemon::TldrDaemonCommand;
@@ -948,6 +949,76 @@ mod lifecycle_tests {
     }
 
     #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn ensure_daemon_running_only_spawns_once_even_with_three_processes() -> Result<()> {
+        if std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV).is_some() {
+            return Ok(());
+        }
+
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let start_signal = project.path().join("start_signal_three");
+        let counter_path = project.path().join("launch_counter_three.log");
+        let fake_daemon_release = project.path().join("fake_daemon_three.release");
+        let fake_daemon_bin = project.path().join("fake_daemon_three.sh");
+        let done_paths = [
+            project.path().join("child0.done"),
+            project.path().join("child1.done"),
+            project.path().join("child2.done"),
+        ];
+        std::fs::remove_file(&start_signal).ok();
+        std::fs::remove_file(&counter_path).ok();
+        std::fs::remove_file(&fake_daemon_release).ok();
+        for done in &done_paths {
+            std::fs::remove_file(done).ok();
+        }
+        write_fake_daemon_wrapper(
+            std::env::current_exe()?.as_path(),
+            &fake_daemon_bin,
+            &fake_daemon_release,
+        )?;
+
+        let mut children = Vec::new();
+        for (index, done) in done_paths.iter().enumerate() {
+            let child = std::process::Command::new(std::env::current_exe()?)
+                .arg("--exact")
+                .arg("tldr_cmd::lifecycle_tests::cross_process_launcher_contender")
+                .env(CODEX_TLDR_TEST_PROJECT_ROOT_ENV, &canonical_project)
+                .env(CODEX_TLDR_TEST_START_SIGNAL_ENV, &start_signal)
+                .env(CODEX_TLDR_TEST_DONE_SIGNAL_ENV, done)
+                .env(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path)
+                .env(CODEX_TLDR_TEST_DAEMON_BIN_ENV, &fake_daemon_bin)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()?;
+            children.push((child, done.clone(), index));
+        }
+
+        std::fs::write(&start_signal, "go")?;
+        for (_, done, _) in &children {
+            wait_for_signal(done);
+        }
+
+        for (mut child, _, _) in children {
+            let status = child.wait()?;
+            assert!(status.success());
+        }
+
+        let spawn_count = std::fs::read_to_string(&counter_path)?.lines().count();
+        assert_eq!(
+            spawn_count, 1,
+            "only one daemon spawn is allowed even with three contenders"
+        );
+
+        assert!(socket_path_for_project(&canonical_project).exists());
+        assert!(pid_path_for_project(&canonical_project).exists());
+
+        std::fs::write(&fake_daemon_release, "release")?;
+        cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
     #[tokio::test]
     async fn cross_process_launcher_contender() -> Result<()> {
         let project_root = match std::env::var_os(CODEX_TLDR_TEST_PROJECT_ROOT_ENV) {
@@ -970,6 +1041,33 @@ mod lifecycle_tests {
         assert_eq!(response.message, "pong");
 
         std::fs::write(&done_signal, "done")?;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn try_start_daemon_does_not_spawn_while_daemon_lock_is_held() -> Result<()> {
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let counter_path = project.path().join("launch_counter.log");
+        let daemon_lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(codex_native_tldr::daemon::lock_path_for_project(
+                &canonical_project,
+            ))?;
+        daemon_lock.try_lock()?;
+
+        let started = tokio::time::timeout(
+            Duration::from_secs(4),
+            try_start_native_tldr_daemon(&canonical_project),
+        )
+        .await??;
+
+        assert!(!started);
+        assert!(!counter_path.exists(), "daemon should not be spawned");
         Ok(())
     }
 

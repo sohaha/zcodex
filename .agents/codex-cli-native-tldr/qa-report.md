@@ -3,7 +3,7 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：阶段 3 进行中（semantic 已接入 daemon 复用路径，warm/reindex、跨进程 launcher 竞争、以及 semantic 索引缓存闭环已补齐）
+- **状态**：阶段 3 进行中（semantic 已接入 daemon 复用路径，并继续补强跨进程 launcher/daemon 全局唯一性闭环）
 
 ## 中间验证进度（实时）
 
@@ -11,6 +11,8 @@
 - **最新代码提交**：`29822e3ed` `feat: cache native tldr semantic indexes`
 
 ### 已完成验证
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::try_start_daemon_does_not_spawn_while_daemon_lock_is_held -- --exact`：通过
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（48 个测试）
 - `codex rtk cargo test -p codex-native-tldr`：通过（37 个测试；含 daemon `Semantic` payload 与 lifecycle 并发 launch 串行化回归）
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（47 个测试；semantic daemon 路径接线后复跑通过）
 - `codex rtk cargo test -p codex-mcp-server`：通过（29 个测试；新增 semantic daemon-available e2e）
@@ -122,6 +124,7 @@
 - semantic search 现已接入 daemon 复用路径：CLI/MCP 在 daemon 可用时会直接吃共享索引缓存，并在输出里暴露 `source`
 - daemon 现支持 `TldrDaemonCommand::Semantic` 与 `semantic` payload，MCP 新增 daemon-available semantic e2e 回归
 - lifecycle 新增并发 `ensure_running` 串行化测试，继续收紧“已有 launch 进行中时禁止重复拉起”
+- CLI 新增 daemon lock-held 回归：当 project 级 daemon lock 已被占用但 daemon 尚未就绪时，launcher 不会误 spawn 第二个 daemon
 - daemon 连接处理现复用共享 `TldrEngine`，不再在每个 socket 连接里重建默认 engine 丢失项目配置/缓存
 - CLI 与 MCP semantic 输出现在显式包含 `embeddingUsed`，MCP e2e 还校验了 `matches[*].embedding_score`
 - semantic enabled 路径现在会扫描对应语言源码，返回 ranked matches、embedding-unit metadata 与 preview snippet
