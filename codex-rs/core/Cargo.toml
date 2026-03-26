@@ -12,6 +12,8 @@ path = "src/lib.rs"
 [[bin]]
 name = "codex-write-config-schema"
 path = "src/bin/config_schema.rs"
+test = false
+bench = false
 
 [lints]
 workspace = true
