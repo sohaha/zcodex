@@ -10,6 +10,7 @@ if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 默认仅在缺失时安装:
   - cargo-nextest
   - just
+  - sccache
 
 传入 --upgrade 会强制重装到最新可用版本。
 EOF
@@ -48,7 +49,9 @@ install_or_skip() {
 
 install_or_skip cargo-nextest cargo-nextest
 install_or_skip just just
+install_or_skip sccache sccache
 
 echo "[mise] 完成。版本信息:" >&2
 cargo nextest --version || true
 just --version || true
+sccache --version || true

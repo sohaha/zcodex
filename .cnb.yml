@@ -65,10 +65,32 @@ $:
   vscode:
       clouddev:
           imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
+          env:
+              CARGO_TARGET_DIR: /workspace/.cargo-target
+              CARGO_INCREMENTAL: "1"
+              SCCACHE_DIR: /workspace/.cache/sccache
+              SCCACHE_CACHE_SIZE: 50G
           runner:
               tags: cnb:arch:amd64
               cpus: 10
           stages:
+            - name: bootstrap rust speedup
+              script: |
+                set -eu
+                export DEBIAN_FRONTEND=noninteractive
+                if ! command -v mold >/dev/null 2>&1 || ! command -v sccache >/dev/null 2>&1; then
+                  apt-get update
+                  apt-get install -y mold sccache
+                fi
+                mkdir -p /root/.cargo /workspace/.cargo-target /workspace/.cache/sccache
+                cat > /root/.cargo/config.toml <<'EOF'
+                [build]
+                target-dir = "/workspace/.cargo-target"
+                rustc-wrapper = "sccache"
+
+                [target.x86_64-unknown-linux-gnu]
+                rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+                EOF
             - name: link codex session
               script: |
                 set -eu

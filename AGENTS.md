@@ -5,8 +5,9 @@ In the codex-rs folder where the rust code lives:
 - Crate names are prefixed with `codex-`. For example, the `core` folder's crate is named `codex-core`
 - When using format! and you can inline variables into {}, always do that.
 - Install any commands the repo relies on (for example `just`, `rg`, or `cargo-insta`) if they aren't already available before running instructions here.
-- Prefer `mise run dev-tools` to bootstrap local Rust tooling (`cargo-nextest`, `just`).
+- Prefer `mise run dev-tools` to bootstrap local Rust tooling (`cargo-nextest`, `just`, `sccache`).
 - Installing `cargo-nextest` does not change how `cargo test` works; `cargo test` still uses Cargo's default test runner unless you explicitly run `cargo nextest run` or a repo wrapper that invokes nextest.
+- For faster repeated local Rust builds, prefer a persistent target dir plus `sccache`; in CNB/clouddev, keep `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL`, `SCCACHE_DIR`, and `SCCACHE_CACHE_SIZE` exported and configure `sccache` in `~/.cargo/config.toml`.
 - For faster local `codex-core` loops, prefer `just core-test-fast` (cache-first, uses `nextest` when available).
 - For faster local `codex-app-server` loops, prefer `just app-server-test-fast`.
 - For faster local `codex-native-tldr` loops, prefer `just native-tldr-test-fast`.
