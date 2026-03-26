@@ -253,6 +253,69 @@ fn build_git_log_args_rejects_zero_max_count() {
 }
 
 #[test]
+fn build_git_branch_args_serializes_filters() {
+    let args = build_command_args(
+        RtkCommandKind::GitBranch,
+        r#"{"all":true,"contains":"HEAD","merged":true}"#,
+    )
+    .expect("git branch args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("branch"),
+            OsString::from("--all"),
+            OsString::from("--contains"),
+            OsString::from("HEAD"),
+            OsString::from("--merged"),
+        ]
+    );
+}
+
+#[test]
+fn build_git_branch_args_rejects_conflicting_visibility_flags() {
+    let err = build_command_args(RtkCommandKind::GitBranch, r#"{"all":true,"remotes":true}"#)
+        .expect_err("conflicting branch visibility should be rejected");
+
+    assert_eq!(
+        err.to_string(),
+        "all and remotes cannot both be true".to_string()
+    );
+}
+
+#[test]
+fn build_git_stash_args_defaults_to_max_count() {
+    let args = build_command_args(RtkCommandKind::GitStash, "{}").expect("git stash args");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("stash"),
+            OsString::from("list"),
+            OsString::from("-n"),
+            OsString::from("10"),
+        ]
+    );
+}
+
+#[test]
+fn build_git_worktree_args_lists_worktrees() {
+    let args = build_command_args(RtkCommandKind::GitWorktree, "{}")
+        .expect("git worktree args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("worktree"),
+            OsString::from("list"),
+        ]
+    );
+}
+
+#[test]
 fn build_summary_args_serializes_command() {
     let args = build_command_args(
         RtkCommandKind::Summary,
@@ -400,18 +463,18 @@ fn grep_no_match_is_not_treated_as_failure() {
 
     assert!(rtk_command_succeeded(
         RtkCommandKind::Grep,
-        &failed_status,
+        failed_status,
         "🔍 0 for 'needle'\n"
     ));
     assert!(!rtk_command_succeeded(
         RtkCommandKind::Read,
-        &failed_status,
+        failed_status,
         "🔍 0 for 'needle'\n"
     ));
 
     assert!(rtk_command_succeeded(
         RtkCommandKind::Summary,
-        &failed_status,
+        failed_status,
         "✅ Command: cargo test\n"
     ));
 
@@ -423,7 +486,7 @@ fn grep_no_match_is_not_treated_as_failure() {
 
     assert!(!rtk_command_succeeded(
         RtkCommandKind::Summary,
-        &successful_status,
+        successful_status,
         "❌ Command: cargo test\n"
     ));
 }

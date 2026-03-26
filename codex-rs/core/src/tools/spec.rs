@@ -2318,6 +2318,93 @@ fn create_rtk_git_log_tool() -> ToolSpec {
     })
 }
 
+fn create_rtk_git_branch_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "all".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include local and remote branches.".to_string()),
+            },
+        ),
+        (
+            "remotes".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include only remote branches.".to_string()),
+            },
+        ),
+        (
+            "contains".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional revision that returned branches must contain.".to_string(),
+                ),
+            },
+        ),
+        (
+            "merged".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include only merged branches.".to_string()),
+            },
+        ),
+        (
+            "no_merged".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include only unmerged branches.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_branch".to_string(),
+        description: "Token-optimized git branch listing via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_git_stash_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "max_count".to_string(),
+        JsonSchema::Number {
+            description: Some("Maximum number of stash entries to show.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_stash".to_string(),
+        description: "Token-optimized git stash listing via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_git_worktree_tool() -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_worktree".to_string(),
+        description: "Token-optimized git worktree listing via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties: BTreeMap::new(),
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 fn create_rtk_summary_tool() -> ToolSpec {
     let properties = BTreeMap::from([(
         "command".to_string(),
@@ -3697,6 +3784,36 @@ pub(crate) fn build_specs_with_discoverable_tools(
     builder.register_handler(
         "rtk_git_log",
         Arc::new(RtkHandler::new(RtkCommandKind::GitLog)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_branch_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_branch",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitBranch)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_stash_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_stash",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitStash)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_worktree_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_worktree",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitWorktree)),
     );
     push_tool_spec(
         &mut builder,

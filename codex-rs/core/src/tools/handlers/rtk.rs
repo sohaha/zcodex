@@ -33,6 +33,9 @@ pub enum RtkCommandKind {
     GitDiff,
     GitShow,
     GitLog,
+    GitBranch,
+    GitStash,
+    GitWorktree,
     Summary,
     Err,
 }
@@ -54,6 +57,9 @@ impl RtkCommandKind {
             Self::GitDiff => "rtk_git_diff",
             Self::GitShow => "rtk_git_show",
             Self::GitLog => "rtk_git_log",
+            Self::GitBranch => "rtk_git_branch",
+            Self::GitStash => "rtk_git_stash",
+            Self::GitWorktree => "rtk_git_worktree",
             Self::Summary => "rtk_summary",
             Self::Err => "rtk_err",
         }
@@ -71,7 +77,13 @@ impl RtkCommandKind {
             Self::Ls => "ls",
             Self::Tree => "tree",
             Self::Wc => "wc",
-            Self::GitStatus | Self::GitDiff | Self::GitShow | Self::GitLog => "git",
+            Self::GitStatus
+            | Self::GitDiff
+            | Self::GitShow
+            | Self::GitLog
+            | Self::GitBranch
+            | Self::GitStash
+            | Self::GitWorktree => "git",
             Self::Summary => "summary",
             Self::Err => "err",
         }
@@ -260,6 +272,26 @@ struct RtkGitLogArgs {
 }
 
 #[derive(Deserialize)]
+struct RtkGitBranchArgs {
+    #[serde(default)]
+    all: bool,
+    #[serde(default)]
+    remotes: bool,
+    #[serde(default)]
+    contains: Option<String>,
+    #[serde(default)]
+    merged: bool,
+    #[serde(default)]
+    no_merged: bool,
+}
+
+#[derive(Deserialize)]
+struct RtkGitStashArgs {
+    #[serde(default = "default_rtk_git_log_max_count")]
+    max_count: usize,
+}
+
+#[derive(Deserialize)]
 struct RtkCommandStringArgs {
     command: String,
 }
@@ -319,6 +351,9 @@ fn build_command_args(
         RtkCommandKind::GitDiff => build_git_diff_args(arguments),
         RtkCommandKind::GitShow => build_git_show_args(arguments),
         RtkCommandKind::GitLog => build_git_log_args(arguments),
+        RtkCommandKind::GitBranch => build_git_branch_args(arguments),
+        RtkCommandKind::GitStash => build_git_stash_args(arguments),
+        RtkCommandKind::GitWorktree => build_git_worktree_args(arguments),
         RtkCommandKind::Summary => build_summary_args(arguments),
         RtkCommandKind::Err => build_err_args(arguments),
     }
@@ -698,6 +733,78 @@ fn build_git_log_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallErro
     }
 
     Ok(command)
+}
+
+fn build_git_branch_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkGitBranchArgs = parse_arguments(arguments)?;
+    if args.all && args.remotes {
+        return Err(FunctionCallError::RespondToModel(
+            "all and remotes cannot both be true".to_string(),
+        ));
+    }
+    if args.merged && args.no_merged {
+        return Err(FunctionCallError::RespondToModel(
+            "merged and no_merged cannot both be true".to_string(),
+        ));
+    }
+
+    let mut command = vec![
+        OsString::from(RtkCommandKind::GitBranch.subcommand()),
+        OsString::from("branch"),
+    ];
+
+    if args.all {
+        command.push(OsString::from("--all"));
+    } else if args.remotes {
+        command.push(OsString::from("--remotes"));
+    }
+
+    if let Some(contains) = args.contains {
+        let contains = contains.trim().to_string();
+        if contains.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "contains must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--contains"));
+        command.push(OsString::from(contains));
+    }
+
+    if args.merged {
+        command.push(OsString::from("--merged"));
+    }
+    if args.no_merged {
+        command.push(OsString::from("--no-merged"));
+    }
+
+    Ok(command)
+}
+
+fn build_git_stash_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkGitStashArgs = parse_arguments(arguments)?;
+    if args.max_count == 0 {
+        return Err(FunctionCallError::RespondToModel(
+            "max_count must be greater than zero".to_string(),
+        ));
+    }
+
+    Ok(vec![
+        OsString::from(RtkCommandKind::GitStash.subcommand()),
+        OsString::from("stash"),
+        OsString::from("list"),
+        OsString::from("-n"),
+        OsString::from(args.max_count.to_string()),
+    ])
+}
+
+fn build_git_worktree_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let _: serde_json::Value = parse_arguments(arguments)?;
+
+    Ok(vec![
+        OsString::from(RtkCommandKind::GitWorktree.subcommand()),
+        OsString::from("worktree"),
+        OsString::from("list"),
+    ])
 }
 
 fn build_summary_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {

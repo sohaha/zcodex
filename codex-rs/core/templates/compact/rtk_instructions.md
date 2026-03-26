@@ -5,9 +5,10 @@
 Prefer `codex rtk` for noisy shell output. When Codex embeds a dedicated wrapper, use it. Otherwise `codex rtk` may fall back to the underlying command, so avoid claiming special filtering unless the command below is explicitly listed.
 
 When a dedicated built-in RTK function tool exists, prefer it over shelling out to `codex rtk ...`.
-- Use `rtk_read`, `rtk_grep`, `rtk_find`, `rtk_diff`, `rtk_json`, `rtk_deps`, `rtk_log`, `rtk_ls`, `rtk_tree`, `rtk_wc`, `rtk_git_status`, `rtk_git_diff`, `rtk_git_show`, and `rtk_git_log` for token-optimized inspection work.
+- Use built-in read-only `rtk_*` tools for token-optimized inspection work, especially `rtk_read`, `rtk_grep`, `rtk_find`, `rtk_diff`, `rtk_json`, `rtk_deps`, `rtk_log`, `rtk_ls`, `rtk_tree`, `rtk_wc`, `rtk_git_status`, `rtk_git_diff`, `rtk_git_show`, `rtk_git_log`, `rtk_git_branch`, `rtk_git_stash`, and `rtk_git_worktree`.
 - Use `rtk_summary` and `rtk_err` for noisy command summarization or error filtering.
-- Fall back to `shell_command` + `codex rtk ...` only for RTK capabilities that are not exposed as built-ins.
+- Use `shell_command` + `codex rtk ...` for mutating git operations and external/infra/network commands such as `git add`, `git commit`, `git push`, `git pull`, `git fetch`, `docker`, `kubectl`, `aws`, `psql`, and `curl`.
+- Fall back to `shell_command` + `codex rtk ...` for RTK capabilities that are not exposed as built-ins.
 
 ## Build & Compile
 
