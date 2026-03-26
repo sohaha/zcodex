@@ -34,6 +34,7 @@ CLAUDE.md
 AGENTS.override.md
 
 # caches
+.cargo-target/
 .cache/
 .turbo/
 .parcel-cache/
