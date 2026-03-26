@@ -204,6 +204,10 @@
       {
          "at": "2026-03-26T01:20:00Z",
          "note": "added CLI regression for launcher-lock-held plus live-daemon state and revalidated codex-cli plus just fix -p codex-cli"
+      },
+      {
+         "at": "2026-03-26T01:40:00Z",
+         "note": "documented semantic source/status lifecycle outputs so downstream clients see cache hits and lock states"
       }
    ],
    "feature": "codex-cli-native-tldr"

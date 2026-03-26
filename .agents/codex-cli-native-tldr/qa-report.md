@@ -11,6 +11,12 @@
 - **最新代码提交**：`29822e3ed` `feat: cache native tldr semantic indexes`
 
 ### 已完成验证
+- `codex rtk cargo test -p codex-native-tldr`：通过（38 个测试）
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（51 个测试）
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_running_waits_when_launcher_lock_and_daemon_alive -- --exact`：通过
+- `just fmt`：通过
+- `just fix -p codex-native-tldr`：通过
+- `just fix -p codex-cli`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_running_waits_when_launcher_lock_and_daemon_alive -- --exact`：通过
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（51 个测试）
 - `just fix -p codex-cli`：通过
@@ -138,6 +144,7 @@
 
 - CLI 新增 daemon lock-held 回归：当 project 级 daemon lock 已被占用但 daemon 尚未就绪时，launcher 不会误 spawn 第二个 daemon
 - daemon 连续 semantic 请求现在已用计数回归验证：同一 daemon/engine 生命周期内两次 semantic 查询只构建一次索引
+- 文档同步：`codex_mcp_interface.md` 现在明确指出 `semantic` 结果的 `source` 以及 `status.daemonStatus` 中的 `lock_is_held`/`semantic_reindex_pending` 等字段，便于 QA 跟踪 lifecycle 变化
 - 三进程跨进程 launcher 竞争测试已实测通过，三个 contender 仍只会触发一次真实 daemon spawn
 - 新增 launcher lock 已持有且 daemon 已存活的回归，验证该三态下 launcher 直接复用现有 daemon，不会误 spawn
 - daemon 连接处理现复用共享 `TldrEngine`，不再在每个 socket 连接里重建默认 engine 丢失项目配置/缓存

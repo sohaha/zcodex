@@ -36,6 +36,7 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
+  - 新完成：更新 MCP 文档 `codex_mcp_interface.md`，强调 semantic 结果里的 `source` 以及 `status` 里新增的 lifecycle 字段，方便 downstream 观察 daemon cache/lock 状态
   - 新完成：semantic phase-1 增加 `SemanticIndex` 抽象，`TldrEngine` 现会缓存每种语言的索引，`semantic_reindex()` 会重建并替换缓存
   - 新完成：daemon 连接处理改为复用共享 `TldrEngine`，`Warm` 走真实缓存重建路径，不再丢失项目配置或索引状态
   - 新完成：CLI / MCP semantic 输出补齐 `embeddingUsed`，match 结果补显式 `embedding_score` 暴露与断言
