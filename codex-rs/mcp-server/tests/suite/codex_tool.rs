@@ -44,6 +44,13 @@ use wiremock::MockServer;
 // Allow ample time on slower CI or under load to avoid flakes.
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
+fn bind_test_unix_listener(socket_path: &Path) -> anyhow::Result<UnixListener> {
+    if let Some(parent) = socket_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(UnixListener::bind(socket_path)?)
+}
+
 /// Test that a shell command that is not on the "trusted" list triggers an
 /// elicitation request to the MCP and that sending the approval runs the
 /// command, as expected.
@@ -556,7 +563,7 @@ async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         let (stream, _) = listener.accept().await?;
         let (reader, mut writer) = tokio::io::split(stream);
@@ -651,7 +658,7 @@ async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         let (stream, _) = listener.accept().await?;
         let (reader, mut writer) = tokio::io::split(stream);
@@ -787,7 +794,7 @@ async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyho
     config.semantic = codex_native_tldr::semantic::SemanticConfig::default().with_enabled(true);
     let daemon = TldrDaemon::from_config(config);
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         for _ in 0..6 {
             let (stream, _) = listener.accept().await?;
@@ -937,7 +944,7 @@ async fn tldr_tool_status_surfaces_last_failed_reindex_attempt() -> anyhow::Resu
     }
 
     let daemon = TldrDaemon::from_config(TldrConfig::for_project(canonical_project.clone()));
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         for _ in 0..3 {
             let (stream, _) = listener.accept().await?;
@@ -1055,7 +1062,7 @@ async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         let (stream, _) = listener.accept().await?;
         let (reader, mut writer) = tokio::io::split(stream);
@@ -1149,7 +1156,7 @@ async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let target_path_for_server = target_path.clone();
     let server_handle = task::spawn(async move {
         let (stream, _) = listener.accept().await?;
@@ -1241,7 +1248,7 @@ async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         let (stream, _) = listener.accept().await?;
         let (reader, mut writer) = tokio::io::split(stream);
@@ -1328,7 +1335,7 @@ async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let server_handle = task::spawn(async move {
         let (stream, _) = listener.accept().await?;
         let (reader, mut writer) = tokio::io::split(stream);
@@ -1473,7 +1480,7 @@ async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
         std::fs::remove_file(&socket_path)?;
     }
 
-    let listener = UnixListener::bind(&socket_path)?;
+    let listener = bind_test_unix_listener(&socket_path)?;
     let canonical_project_for_server = canonical_project.clone();
     let socket_path_for_server = socket_path.clone();
     let server_handle = task::spawn(async move {

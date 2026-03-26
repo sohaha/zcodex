@@ -455,18 +455,99 @@ fn create_tool_input_schema(
 }
 
 fn tldr_tool_output_schema() -> Arc<JsonObject> {
-    let schema = json!({
-        "type": "object",
-        "properties": {
+    let schema: serde_json::Value = match serde_json::from_str(
+        r##"{
+          "type": "object",
+          "$defs": {
+            "reindexReport": {
+              "type": ["object", "null"],
+              "properties": {
+                "status": { "type": "string" },
+                "languages": { "type": "array", "items": { "type": "string" } },
+                "indexed_files": { "type": "integer" },
+                "indexed_units": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "started_at": { "type": "string" },
+                "finished_at": { "type": "string" },
+                "message": { "type": "string" },
+                "embedding_enabled": { "type": "boolean" },
+                "embedding_dimensions": { "type": "integer" }
+              }
+            }
+          },
+          "properties": {
             "action": { "type": "string" },
             "project": { "type": "string" },
+            "language": { "type": "string" },
             "source": { "type": "string" },
+            "query": { "type": "string" },
+            "enabled": { "type": "boolean" },
+            "indexedFiles": { "type": "integer" },
+            "truncated": { "type": "boolean" },
+            "embeddingUsed": { "type": "boolean" },
+            "matches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": { "type": "string" },
+                  "line": { "type": "integer" },
+                  "snippet": { "type": "string" },
+                  "embedding_score": { "type": ["number", "null"] }
+                }
+              }
+            },
             "status": { "type": "string" },
             "message": { "type": "string" },
             "summary": { "type": "string" },
-            "daemonStatus": { "type": "object" }
-        },
-    });
+            "snapshot": {
+              "type": "object",
+              "properties": {
+                "cached_entries": { "type": "integer" },
+                "dirty_files": { "type": "integer" },
+                "dirty_file_threshold": { "type": "integer" },
+                "reindex_pending": { "type": "boolean" },
+                "last_query_at": { "type": ["string", "null"] },
+                "last_reindex": { "$ref": "#/$defs/reindexReport" },
+                "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" }
+              }
+            },
+            "daemonStatus": {
+              "type": "object",
+              "properties": {
+                "project_root": { "type": "string" },
+                "socket_path": { "type": "string" },
+                "pid_path": { "type": "string" },
+                "lock_path": { "type": "string" },
+                "socket_exists": { "type": "boolean" },
+                "pid_is_live": { "type": "boolean" },
+                "lock_is_held": { "type": "boolean" },
+                "healthy": { "type": "boolean" },
+                "stale_socket": { "type": "boolean" },
+                "stale_pid": { "type": "boolean" },
+                "health_reason": { "type": ["string", "null"] },
+                "recovery_hint": { "type": ["string", "null"] },
+                "semantic_reindex_pending": { "type": "boolean" },
+                "last_query_at": { "type": ["string", "null"] },
+                "config": {
+                  "type": "object",
+                  "properties": {
+                    "auto_start": { "type": "boolean" },
+                    "socket_mode": { "type": "string" },
+                    "semantic_enabled": { "type": "boolean" },
+                    "semantic_auto_reindex_threshold": { "type": "integer" },
+                    "session_dirty_file_threshold": { "type": "integer" }
+                  }
+                }
+              }
+            },
+            "reindexReport": { "$ref": "#/$defs/reindexReport" }
+          }
+        }"##,
+    ) {
+        Ok(schema) => schema,
+        Err(err) => panic!("output schema literal should parse: {err}"),
+    };
     match schema {
         serde_json::Value::Object(map) => Arc::new(map),
         _ => unreachable!("json literal must be an object"),
@@ -492,41 +573,123 @@ mod tests {
     fn verify_tldr_tool_json_schema() {
         let tool = create_tool_for_tldr_tool_call_param();
         let tool_json = serde_json::to_value(&tool).expect("tool serializes");
-        let expected_tool_json = serde_json::json!({
-          "description": "Structured code context analysis via native-tldr with daemon-first execution.",
-          "inputSchema": {
-            "properties": {
-              "action": {
-                "enum": ["tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "status", "notify"],
-                "type": "string"
+        let expected_tool_json: serde_json::Value = serde_json::from_str(
+            r##"{
+              "description": "Structured code context analysis via native-tldr with daemon-first execution.",
+              "inputSchema": {
+                "properties": {
+                  "action": {
+                    "enum": ["tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "status", "notify"],
+                    "type": "string"
+                  },
+                  "language": {
+                    "enum": ["rust", "typescript", "javascript", "python", "go", "php", "zig"],
+                    "type": "string"
+                  },
+                  "path": { "type": "string" },
+                  "project": { "type": "string" },
+                  "query": { "type": "string" },
+                  "symbol": { "type": "string" }
+                },
+                "required": ["action"],
+                "type": "object"
               },
-              "language": {
-                "enum": ["rust", "typescript", "javascript", "python", "go", "php", "zig"],
-                "type": "string"
+              "name": "tldr",
+              "outputSchema": {
+                "$defs": {
+                  "reindexReport": {
+                    "properties": {
+                      "embedding_dimensions": { "type": "integer" },
+                      "embedding_enabled": { "type": "boolean" },
+                      "finished_at": { "type": "string" },
+                      "indexed_files": { "type": "integer" },
+                      "indexed_units": { "type": "integer" },
+                      "languages": {
+                        "items": { "type": "string" },
+                        "type": "array"
+                      },
+                      "message": { "type": "string" },
+                      "started_at": { "type": "string" },
+                      "status": { "type": "string" },
+                      "truncated": { "type": "boolean" }
+                    },
+                    "type": ["object", "null"]
+                  }
+                },
+                "properties": {
+                  "action": { "type": "string" },
+                  "daemonStatus": {
+                    "properties": {
+                      "config": {
+                        "properties": {
+                          "auto_start": { "type": "boolean" },
+                          "semantic_auto_reindex_threshold": { "type": "integer" },
+                          "semantic_enabled": { "type": "boolean" },
+                          "session_dirty_file_threshold": { "type": "integer" },
+                          "socket_mode": { "type": "string" }
+                        },
+                        "type": "object"
+                      },
+                      "health_reason": { "type": ["string", "null"] },
+                      "healthy": { "type": "boolean" },
+                      "last_query_at": { "type": ["string", "null"] },
+                      "lock_is_held": { "type": "boolean" },
+                      "lock_path": { "type": "string" },
+                      "pid_is_live": { "type": "boolean" },
+                      "pid_path": { "type": "string" },
+                      "project_root": { "type": "string" },
+                      "recovery_hint": { "type": ["string", "null"] },
+                      "semantic_reindex_pending": { "type": "boolean" },
+                      "socket_exists": { "type": "boolean" },
+                      "socket_path": { "type": "string" },
+                      "stale_pid": { "type": "boolean" },
+                      "stale_socket": { "type": "boolean" }
+                    },
+                    "type": "object"
+                  },
+                  "embeddingUsed": { "type": "boolean" },
+                  "enabled": { "type": "boolean" },
+                  "indexedFiles": { "type": "integer" },
+                  "language": { "type": "string" },
+                  "message": { "type": "string" },
+                  "matches": {
+                    "items": {
+                      "properties": {
+                        "embedding_score": { "type": ["number", "null"] },
+                        "line": { "type": "integer" },
+                        "path": { "type": "string" },
+                        "snippet": { "type": "string" }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "project": { "type": "string" },
+                  "query": { "type": "string" },
+                  "reindexReport": { "$ref": "#/$defs/reindexReport" },
+                  "snapshot": {
+                    "properties": {
+                      "cached_entries": { "type": "integer" },
+                      "dirty_file_threshold": { "type": "integer" },
+                      "dirty_files": { "type": "integer" },
+                      "last_query_at": { "type": ["string", "null"] },
+                      "last_reindex": { "$ref": "#/$defs/reindexReport" },
+                      "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" },
+                      "reindex_pending": { "type": "boolean" }
+                    },
+                    "type": "object"
+                  },
+                  "source": { "type": "string" },
+                  "status": { "type": "string" },
+                  "summary": { "type": "string" },
+                  "truncated": { "type": "boolean" }
+                },
+                "type": "object"
               },
-              "path": { "type": "string" },
-              "project": { "type": "string" },
-              "query": { "type": "string" },
-              "symbol": { "type": "string" }
-            },
-            "required": ["action"],
-            "type": "object"
-          },
-          "name": "tldr",
-          "outputSchema": {
-            "properties": {
-              "action": { "type": "string" },
-              "daemonStatus": { "type": "object" },
-              "message": { "type": "string" },
-              "project": { "type": "string" },
-              "source": { "type": "string" },
-              "status": { "type": "string" },
-              "summary": { "type": "string" }
-            },
-            "type": "object"
-          },
-          "title": "Native TLDR"
-        });
+              "title": "Native TLDR"
+            }"##,
+        )
+        .expect("expected tool schema should parse");
 
         assert_eq!(expected_tool_json, tool_json);
     }
