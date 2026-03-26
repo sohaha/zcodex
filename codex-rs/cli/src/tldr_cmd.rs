@@ -20,6 +20,8 @@ use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::semantic::SemanticSearchRequest;
 use codex_native_tldr::semantic::SemanticSearchResponse;
+use codex_native_tldr::wire::daemon_response_payload;
+use codex_native_tldr::wire::semantic_payload;
 use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
@@ -282,18 +284,7 @@ async fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
             run_local_semantic_search(&project_root, config, request.clone())?;
         ("local", local_response, local_root)
     };
-    let payload = json!({
-        "project": engine_project_root,
-        "language": language.as_str(),
-        "source": source,
-        "query": response.query,
-        "enabled": response.enabled,
-        "indexedFiles": response.indexed_files,
-        "truncated": response.truncated,
-        "embeddingUsed": response.embedding_used,
-        "matches": response.matches,
-        "message": response.message,
-    });
+    let payload = semantic_payload(None, &engine_project_root, language, source, &response);
 
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&payload)?);
@@ -343,64 +334,99 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     };
 
     if cmd.json {
-        println!("{}", serde_json::to_string_pretty(&response)?);
+        if matches!(cmd.subcommand, TldrDaemonSubcommand::Status) {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&daemon_response_payload(
+                    "status",
+                    &project_root,
+                    &response,
+                ))?
+            );
+        } else {
+            println!("{}", serde_json::to_string_pretty(&response)?);
+        }
     } else {
-        let daemon_status = response.daemon_status;
-        let reindex_report = response.reindex_report;
-        let snapshot = response.snapshot;
-        println!("status: {}", response.status);
-        println!("message: {}", response.message);
-        if let Some(daemon_status) = daemon_status {
-            println!("project: {}", daemon_status.project_root.display());
-            println!("socket: {}", daemon_status.socket_path.display());
-            println!("socket exists: {}", daemon_status.socket_exists);
-            println!("pid live: {}", daemon_status.pid_is_live);
-            println!("lock held: {}", daemon_status.lock_is_held);
-            println!("healthy: {}", daemon_status.healthy);
-            println!("stale socket: {}", daemon_status.stale_socket);
-            println!("stale pid: {}", daemon_status.stale_pid);
-            if let Some(reason) = daemon_status.health_reason.as_deref() {
-                println!("health reason: {reason}");
-            }
-            if let Some(hint) = daemon_status.recovery_hint.as_deref() {
-                println!("recovery hint: {hint}");
-            }
-            println!(
-                "session reindex pending: {}",
-                snapshot
-                    .as_ref()
-                    .map(|snapshot| snapshot.reindex_pending)
-                    .unwrap_or(false)
-            );
-            println!(
-                "semantic reindex pending: {}",
-                daemon_status.semantic_reindex_pending
-            );
-            if let Some(last_query_at) = daemon_status.last_query_at {
-                println!("last query at: {last_query_at:?}");
-            }
-            println!("auto start: {}", daemon_status.config.auto_start);
-            println!("socket mode: {}", daemon_status.config.socket_mode);
-            println!(
-                "semantic enabled: {}",
-                daemon_status.config.semantic_enabled
-            );
-        }
-        if let Some(snapshot) = snapshot {
-            println!("cached entries: {}", snapshot.cached_entries);
-            println!("dirty files: {}", snapshot.dirty_files);
-            println!("dirty threshold: {}", snapshot.dirty_file_threshold);
-            println!("reindex pending: {}", snapshot.reindex_pending);
-        }
-        if let Some(reindex_report) = reindex_report {
-            println!("reindex status: {:?}", reindex_report.status);
-            println!("reindex files: {}", reindex_report.indexed_files);
-            println!("reindex units: {}", reindex_report.indexed_units);
-            println!("reindex message: {}", reindex_report.message);
+        for line in render_daemon_response_text(&response) {
+            println!("{line}");
         }
     }
 
     Ok(())
+}
+
+fn render_daemon_response_text(
+    response: &codex_native_tldr::daemon::TldrDaemonResponse,
+) -> Vec<String> {
+    let daemon_status = response.daemon_status.as_ref();
+    let reindex_report = response.reindex_report.as_ref();
+    let snapshot = response.snapshot.as_ref();
+    let mut lines = vec![
+        format!("status: {}", response.status),
+        format!("message: {}", response.message),
+    ];
+
+    if let Some(daemon_status) = daemon_status {
+        lines.push(format!("project: {}", daemon_status.project_root.display()));
+        lines.push(format!("socket: {}", daemon_status.socket_path.display()));
+        lines.push(format!("socket exists: {}", daemon_status.socket_exists));
+        lines.push(format!("pid live: {}", daemon_status.pid_is_live));
+        lines.push(format!("lock held: {}", daemon_status.lock_is_held));
+        lines.push(format!("healthy: {}", daemon_status.healthy));
+        lines.push(format!("stale socket: {}", daemon_status.stale_socket));
+        lines.push(format!("stale pid: {}", daemon_status.stale_pid));
+        if let Some(reason) = daemon_status.health_reason.as_deref() {
+            lines.push(format!("health reason: {reason}"));
+        }
+        if let Some(hint) = daemon_status.recovery_hint.as_deref() {
+            lines.push(format!("recovery hint: {hint}"));
+        }
+        lines.push(format!(
+            "session reindex pending: {}",
+            snapshot
+                .map(|snapshot| snapshot.reindex_pending)
+                .unwrap_or(false)
+        ));
+        lines.push(format!(
+            "semantic reindex pending: {}",
+            daemon_status.semantic_reindex_pending
+        ));
+        if let Some(last_query_at) = daemon_status.last_query_at {
+            lines.push(format!("last query at: {last_query_at:?}"));
+        }
+        lines.push(format!("auto start: {}", daemon_status.config.auto_start));
+        lines.push(format!("socket mode: {}", daemon_status.config.socket_mode));
+        lines.push(format!(
+            "semantic enabled: {}",
+            daemon_status.config.semantic_enabled
+        ));
+    }
+    if let Some(snapshot) = snapshot {
+        lines.push(format!("cached entries: {}", snapshot.cached_entries));
+        lines.push(format!("dirty files: {}", snapshot.dirty_files));
+        lines.push(format!(
+            "dirty threshold: {}",
+            snapshot.dirty_file_threshold
+        ));
+        lines.push(format!("reindex pending: {}", snapshot.reindex_pending));
+        if let Some(last_reindex) = snapshot.last_reindex.as_ref() {
+            lines.push(format!("last completed reindex: {:?}", last_reindex.status));
+        }
+        if let Some(last_reindex_attempt) = snapshot.last_reindex_attempt.as_ref() {
+            lines.push(format!(
+                "last reindex attempt: {:?}",
+                last_reindex_attempt.status
+            ));
+        }
+    }
+    if let Some(reindex_report) = reindex_report {
+        lines.push(format!("reindex status: {:?}", reindex_report.status));
+        lines.push(format!("reindex files: {}", reindex_report.indexed_files));
+        lines.push(format!("reindex units: {}", reindex_report.indexed_units));
+        lines.push(format!("reindex message: {}", reindex_report.message));
+    }
+
+    lines
 }
 
 async fn query_daemon_with_autostart(
@@ -647,6 +673,7 @@ mod lifecycle_tests {
     use super::launcher_lock_path_for_project;
     use super::query_daemon_with_autostart;
     use super::query_daemon_with_hooks;
+    use super::render_daemon_response_text;
     use super::try_start_native_tldr_daemon;
     use crate::tldr_cmd::CODEX_TLDR_TEST_DAEMON_BIN_ENV;
     use anyhow::Result;
@@ -689,6 +716,56 @@ mod lifecycle_tests {
         "CODEX_TLDR_TEST_CONTENDER_ENTERED_SIGNAL";
     const CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL_ENV: &str =
         "CODEX_TLDR_TEST_EXTERNAL_DAEMON_LOCKED_SIGNAL";
+
+    #[test]
+    fn render_daemon_response_text_surfaces_last_reindex_attempts() {
+        let started_at = std::time::SystemTime::UNIX_EPOCH;
+        let finished_at = started_at + Duration::from_secs(1);
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "status".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                cached_entries: 3,
+                dirty_files: 1,
+                dirty_file_threshold: 20,
+                reindex_pending: true,
+                last_query_at: None,
+                last_reindex: Some(codex_native_tldr::semantic::SemanticReindexReport {
+                    status: codex_native_tldr::semantic::SemanticReindexStatus::Completed,
+                    languages: vec![codex_native_tldr::lang_support::SupportedLanguage::Rust],
+                    indexed_files: 2,
+                    indexed_units: 4,
+                    truncated: false,
+                    started_at,
+                    finished_at,
+                    message: "done".to_string(),
+                    embedding_enabled: false,
+                    embedding_dimensions: 0,
+                }),
+                last_reindex_attempt: Some(codex_native_tldr::semantic::SemanticReindexReport {
+                    status: codex_native_tldr::semantic::SemanticReindexStatus::Failed,
+                    languages: vec![codex_native_tldr::lang_support::SupportedLanguage::Rust],
+                    indexed_files: 2,
+                    indexed_units: 4,
+                    truncated: false,
+                    started_at,
+                    finished_at,
+                    message: "boom".to_string(),
+                    embedding_enabled: false,
+                    embedding_dimensions: 0,
+                }),
+            }),
+            daemon_status: None,
+            reindex_report: None,
+        };
+
+        let output = render_daemon_response_text(&response).join("\n");
+
+        assert!(output.contains("last completed reindex: Completed"));
+        assert!(output.contains("last reindex attempt: Failed"));
+    }
 
     #[tokio::test]
     async fn query_daemon_with_hooks_retries_after_autostart() {
