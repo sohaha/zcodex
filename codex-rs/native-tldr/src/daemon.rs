@@ -806,6 +806,7 @@ mod tests {
     use super::daemon_project_hash;
     use super::lock_path_for_project;
     use super::query_daemon;
+    use super::write_pid_file;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
     use std::fs::OpenOptions;
@@ -1474,6 +1475,41 @@ mod tests {
 
         lock_file.try_lock().expect("lock should be acquired");
         assert!(daemon_lock_is_held(&project_root).expect("lock query should succeed"));
+    }
+
+    #[test]
+    fn daemon_lock_query_recreates_missing_artifact_parent() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("lock-parent-recovery-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = lock_path_for_project(&project_root);
+        let parent = lock_path.parent().expect("lock path should have parent");
+        std::fs::remove_dir_all(parent).ok();
+        assert!(!parent.exists());
+
+        let lock_is_held = daemon_lock_is_held(&project_root).expect("lock query should succeed");
+
+        assert!(!lock_is_held);
+        assert!(parent.exists());
+        assert!(lock_path.exists());
+    }
+
+    #[test]
+    fn write_pid_file_recreates_missing_artifact_parent() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("pid-parent-recovery-project");
+        let pid_path = pid_path_for_project(&project_root);
+        let parent = pid_path.parent().expect("pid path should have parent");
+        std::fs::remove_dir_all(parent).ok();
+        assert!(!parent.exists());
+
+        write_pid_file(&pid_path).expect("pid file should be written");
+
+        assert!(parent.exists());
+        assert_eq!(
+            std::fs::read_to_string(&pid_path).expect("pid file should be readable"),
+            std::process::id().to_string()
+        );
     }
 
     #[test]
