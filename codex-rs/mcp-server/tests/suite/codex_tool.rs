@@ -746,6 +746,8 @@ async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
     assert_eq!(structured["source"], "daemon");
     assert_eq!(structured["embeddingUsed"], true);
     assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+    assert!(structured["matches"][0].get("unit").is_none());
+    assert!(structured["matches"][0].get("embedding_text").is_none());
     assert!(matches!(
         structured["matches"][0]["embedding_score"].as_f64(),
         Some(score) if score > 0.0
@@ -1694,6 +1696,8 @@ async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()>
         structured["matches"][0]["snippet"],
         "let auth_token = true;"
     );
+    assert!(structured["matches"][0].get("unit").is_none());
+    assert!(structured["matches"][0].get("embedding_text").is_none());
     assert!(matches!(
         structured["matches"][0]["embedding_score"].as_f64(),
         Some(score) if score > 0.0

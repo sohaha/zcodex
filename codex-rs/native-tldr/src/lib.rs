@@ -8,6 +8,7 @@ pub mod lifecycle;
 pub mod mcp;
 pub mod semantic;
 pub mod session;
+pub mod wire;
 
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;

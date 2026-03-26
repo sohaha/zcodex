@@ -12,6 +12,8 @@ use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::semantic::SemanticSearchRequest;
 use codex_native_tldr::semantic::SemanticSearchResponse;
+use codex_native_tldr::wire::daemon_response_payload;
+use codex_native_tldr::wire::semantic_payload;
 use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
@@ -273,19 +275,8 @@ async fn run_semantic_tool(
             "local",
         )
     };
-    let structured_content = json!({
-        "action": "semantic",
-        "project": project_root,
-        "language": language.as_str(),
-        "query": response.query,
-        "enabled": response.enabled,
-        "source": source,
-        "indexedFiles": response.indexed_files,
-        "truncated": response.truncated,
-        "embeddingUsed": response.embedding_used,
-        "message": response.message,
-        "matches": response.matches,
-    });
+    let structured_content =
+        semantic_payload(Some("semantic"), &project_root, language, source, &response);
     Ok(success_result(
         format!(
             "semantic {} enabled={} via {source}: {}",
@@ -323,15 +314,7 @@ async fn run_daemon_tool(
             project_root.display()
         ));
     };
-    let structured_content = json!({
-        "action": action,
-        "project": project_root,
-        "status": response.status,
-        "message": response.message,
-        "snapshot": response.snapshot,
-        "daemonStatus": response.daemon_status,
-        "reindexReport": response.reindex_report,
-    });
+    let structured_content = daemon_response_payload(action, &project_root, &response);
     let text = structured_content
         .get("message")
         .and_then(serde_json::Value::as_str)
