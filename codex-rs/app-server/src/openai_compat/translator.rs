@@ -605,6 +605,7 @@ async fn send_failed_event(
     state: &ChatCompletionsSseState,
     err: ApiError,
 ) -> Result<(), ApiError> {
+    let error_type = compat_error_type(err.status);
     send_sse_json(
         tx,
         "response.failed",
@@ -617,6 +618,8 @@ async fn send_failed_event(
                 "status": "failed",
                 "model": state.model,
                 "error": {
+                    "type": error_type,
+                    "code": error_type,
                     "message": err.message,
                 }
             }
@@ -650,6 +653,14 @@ fn chat_usage_json(usage: ChatUsage) -> Value {
         })),
         "total_tokens": usage.total_tokens,
     })
+}
+
+fn compat_error_type(status: reqwest::StatusCode) -> &'static str {
+    match status {
+        reqwest::StatusCode::BAD_REQUEST => "invalid_request_error",
+        reqwest::StatusCode::BAD_GATEWAY => "api_connection_error",
+        _ => "server_error",
+    }
 }
 
 fn with_item_id(mut item: Value, id: String) -> Value {

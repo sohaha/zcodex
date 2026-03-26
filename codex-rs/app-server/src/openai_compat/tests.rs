@@ -837,7 +837,72 @@ async fn chat_wire_api_emits_failed_event_for_invalid_stream_tool_arguments() {
 
     assert!(body.contains("event: response.failed"));
     assert!(body.contains("\"status\":\"failed\""));
+    assert!(body.contains("\"type\":\"api_connection_error\""));
+    assert!(body.contains("\"code\":\"api_connection_error\""));
     assert!(body.contains("failed to decode local_shell arguments"));
+}
+
+#[tokio::test]
+async fn chat_wire_api_completed_output_matches_stream_item_order() {
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            (
+                [(CONTENT_TYPE, "text/event-stream")],
+                concat!(
+                    "data: {\"id\":\"chatcmpl-mixed\",\"model\":\"gpt-chat\",\"created\":789,\"choices\":[{\"delta\":{\"content\":\"Hi \"}}]}\n\n",
+                    "data: {\"id\":\"chatcmpl-mixed\",\"model\":\"gpt-chat\",\"choices\":[{\"delta\":{\"content\":\"there\",\"tool_calls\":[{\"index\":0,\"id\":\"call-custom\",\"function\":{\"name\":\"apply_patch\",\"arguments\":\"{\\\"input\\\":\\\"*** Begin Patch\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                    "data: [DONE]\n\n"
+                ),
+            )
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/responses"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [{
+                    "type": "custom",
+                    "name": "apply_patch",
+                    "description": "Apply a patch"
+                }],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": true,
+                "include": []
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = String::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.expect("chunk");
+        body.push_str(core::str::from_utf8(&chunk).expect("utf8"));
+    }
+
+    assert!(body.contains("\"delta\":\"Hi \""));
+    assert!(body.contains("\"delta\":\"there\""));
+    assert!(body.contains("\"output\":[{\"content\":[{\"text\":\"Hi there\",\"type\":\"output_text\"}],\"id\":\"chatcmpl-mixed_message_0\",\"role\":\"assistant\",\"type\":\"message\"},{\"call_id\":\"call-custom\""));
+    assert!(body.contains("\"output_index\":0"));
+    assert!(body.contains("\"output_index\":1"));
 }
 
 #[tokio::test]
