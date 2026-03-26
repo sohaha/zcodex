@@ -753,6 +753,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(researcher_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -773,6 +774,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: Some(worker_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -785,6 +787,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: root.thread_id,
         depth: 1,
+        parent_model: None,
         agent_path: Some(researcher_path),
         agent_nickname: None,
         agent_role: None,

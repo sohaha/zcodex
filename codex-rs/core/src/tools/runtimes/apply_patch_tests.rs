@@ -1,11 +1,12 @@
 use super::*;
-use crate::sandboxing::SandboxManager;
-use crate::sandboxing::SandboxTransformRequest;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_sandboxing::SandboxManager;
+use codex_sandboxing::SandboxTransformRequest;
+use codex_sandboxing::SandboxType;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::path::Path;
@@ -89,25 +90,24 @@ fn build_command_spec_keeps_linux_sandbox_separator_before_apply_patch_flag() {
             bypass_sandbox: false,
             proposed_execpolicy_amendment: None,
         },
-        sandbox_permissions: SandboxPermissions::UseDefault,
         additional_permissions: None,
         permissions_preapproved: true,
         timeout_ms: None,
         codex_exe: Some(PathBuf::from("/tmp/codex")),
     };
 
-    let spec = ApplyPatchRuntime::build_command_spec(&request, Path::new("/tmp"))
+    let spec = ApplyPatchRuntime::build_sandbox_command(&request, Path::new("/tmp"))
         .expect("build command spec");
     let manager = SandboxManager::new();
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let codex_linux_sandbox_exe = PathBuf::from("/tmp/codex-linux-sandbox");
     let exec_request = manager
         .transform(SandboxTransformRequest {
-            spec,
+            command: spec,
             policy: &sandbox_policy,
             file_system_policy: &FileSystemSandboxPolicy::from(&sandbox_policy),
             network_policy: NetworkSandboxPolicy::Restricted,
-            sandbox: crate::exec::SandboxType::LinuxSeccomp,
+            sandbox: SandboxType::LinuxSeccomp,
             enforce_managed_network: false,
             network: None,
             sandbox_policy_cwd: Path::new("/tmp"),

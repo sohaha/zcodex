@@ -50,7 +50,10 @@ impl RequestRecorder {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         assert_eq!(requests.len(), 1);
-        serde_json::from_slice(&requests[0].body).expect("request body json")
+        match serde_json::from_slice(&requests[0].body) {
+            Ok(body) => body,
+            Err(err) => panic!("request body json parse failed: {err}"),
+        }
     }
 
     fn json_bodies(&self) -> Vec<serde_json::Value> {
@@ -58,7 +61,10 @@ impl RequestRecorder {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .map(|request| serde_json::from_slice(&request.body).expect("request body json"))
+            .map(|request| match serde_json::from_slice(&request.body) {
+                Ok(body) => body,
+                Err(err) => panic!("request body json parse failed: {err}"),
+            })
             .collect()
     }
 }
@@ -87,7 +93,7 @@ fn chat_test_builder(
     test_codex().with_model(model).with_config({
         let base_url = format!("{}/v1", server.uri());
         move |config| {
-            config.model_provider.base_url = Some(base_url.clone());
+            config.model_provider.base_url = Some(base_url);
             config.model_provider.wire_api = WireApi::Chat;
             config.model_provider.supports_websockets = false;
             config.model_provider.request_max_retries = Some(0);

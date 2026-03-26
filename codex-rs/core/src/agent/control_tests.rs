@@ -32,6 +32,8 @@ use tokio::time::sleep;
 use tokio::time::timeout;
 use toml::Value as TomlValue;
 
+const MULTI_AGENT_EVENTUAL_TIMEOUT: Duration = Duration::from_secs(5);
+
 async fn test_config_with_cli_overrides(
     cli_overrides: Vec<(String, TomlValue)>,
 ) -> (TempDir, Config) {
@@ -1305,6 +1307,7 @@ async fn multi_agent_v2_completion_queues_message_for_direct_parent() {
         Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id: worker_thread_id,
             depth: 2,
+            parent_model: None,
             agent_path: Some(tester_path.clone()),
             agent_nickname: None,
             agent_role: Some("explorer".to_string()),
