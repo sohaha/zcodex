@@ -40,6 +40,13 @@ Run Codex as an MCP server and connect an MCP client:
 codex mcp-server | your_mcp_client
 ```
 
+If you are validating from source, a typical local flow is:
+
+```bash
+cargo build --release -p codex-cli -p codex-mcp-server -p codex-native-tldr-daemon
+./target/release/codex mcp-server
+```
+
 For a simple inspection UI, you can also try:
 
 ```bash
@@ -47,6 +54,19 @@ npx @modelcontextprotocol/inspector codex mcp-server
 ```
 
 Use the separate `codex mcp` subcommand to manage configured MCP server launchers in `config.toml`.
+
+To smoke-test the native-tldr sidecar used by the `tldr` MCP tool:
+
+```bash
+./target/release/codex tldr languages
+./target/release/codex tldr daemon --project /path/to/project --json status
+```
+
+Notes:
+
+- `codex-mcp-server` runs over stdio and does not expose an HTTP port.
+- On Unix, `codex tldr daemon ...` may auto-start `codex-native-tldr-daemon`.
+- The MCP `tldr` tool reuses daemon query/retry logic but does not auto-start the daemon itself.
 
 ## Threads and turns
 

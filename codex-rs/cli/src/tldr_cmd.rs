@@ -28,6 +28,7 @@ use serde_json::json;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::future::Future;
+#[cfg(test)]
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
@@ -55,7 +56,7 @@ pub enum TldrSubcommand {
     /// 获取上下文概览。
     Context(TldrAnalyzeCommand),
 
-    /// 触发 semantic 占位入口。
+    /// 运行语义检索。
     Semantic(TldrSemanticCommand),
 
     /// 与 native-tldr daemon 直接交互。
@@ -489,8 +490,11 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
         .await
 }
 
+#[cfg(test)]
 const CODEX_TLDR_TEST_DAEMON_BIN_ENV: &str = "CODEX_TLDR_TEST_DAEMON_BIN";
+#[cfg(test)]
 const CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCH_COUNTER";
+#[cfg(test)]
 const CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER";
 
 fn daemon_launcher_bin_for_tests() -> Result<PathBuf> {
@@ -501,7 +505,7 @@ fn daemon_launcher_bin_for_tests() -> Result<PathBuf> {
     Ok(cargo_bin("codex-native-tldr-daemon")?)
 }
 
-fn record_test_daemon_spawn(project_root: &Path) {
+fn record_test_daemon_spawn(_project_root: &Path) {
     #[cfg(test)]
     if let Some(path) = std::env::var_os(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV)
         && let Ok(mut file) = OpenOptions::new()
@@ -509,11 +513,11 @@ fn record_test_daemon_spawn(project_root: &Path) {
             .append(true)
             .open(PathBuf::from(path))
     {
-        let _ = writeln!(file, "{} {}", project_root.display(), std::process::id());
+        let _ = writeln!(file, "{} {}", _project_root.display(), std::process::id());
     }
 }
 
-fn record_test_launcher_wait(project_root: &Path) {
+fn record_test_launcher_wait(_project_root: &Path) {
     #[cfg(test)]
     if let Some(path) = std::env::var_os(CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV)
         && let Ok(mut file) = OpenOptions::new()
@@ -521,7 +525,7 @@ fn record_test_launcher_wait(project_root: &Path) {
             .append(true)
             .open(PathBuf::from(path))
     {
-        let _ = writeln!(file, "{} {}", project_root.display(), std::process::id());
+        let _ = writeln!(file, "{} {}", _project_root.display(), std::process::id());
     }
 }
 
