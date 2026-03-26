@@ -421,6 +421,9 @@ debug = 1         # Reduce debug symbol size
 inherits = "test"
 opt-level = 0
 
+[profile.test]
+debug = 1
+
 [patch.crates-io]
 # Uncomment to debug local changes.
 # ratatui = { path = "../../ratatui" }
