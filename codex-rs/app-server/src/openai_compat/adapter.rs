@@ -3,6 +3,7 @@ use anyhow::bail;
 use codex_core::WireApi;
 
 use super::ApiError;
+use super::translator::UpstreamTranslator;
 
 #[derive(Clone, Copy)]
 pub(super) struct UpstreamAdapter {
@@ -63,12 +64,16 @@ impl UpstreamAdapter {
         endpoint: CompatEndpoint,
     ) -> Result<ResolvedUpstreamRequest, ApiError> {
         let path = endpoint.resolve_path(self.spec)?;
-        Ok(ResolvedUpstreamRequest { path })
+        Ok(ResolvedUpstreamRequest {
+            path,
+            translator: UpstreamTranslator::passthrough(),
+        })
     }
 }
 
 pub(super) struct ResolvedUpstreamRequest {
     pub(super) path: &'static str,
+    pub(super) translator: UpstreamTranslator,
 }
 
 impl CompatEndpoint {
@@ -85,7 +90,9 @@ impl CompatEndpoint {
     fn unsupported_message(self) -> &'static str {
         match self {
             Self::Models => "current upstream adapter does not support /v1/models",
-            Self::Responses => "current upstream adapter does not support /v1/responses",
+            Self::Responses => {
+                "current upstream provider uses wire_api = \"chat\"; /v1/responses is not available yet, use /v1/chat/completions instead"
+            }
             Self::ChatCompletions => {
                 "current upstream adapter does not support /v1/chat/completions"
             }

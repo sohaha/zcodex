@@ -375,6 +375,10 @@ async fn chat_wire_api_running_server_rejects_responses_endpoint() {
         .expect("proxy request should succeed");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.text().await.expect("body"),
+        "{\"error\":{\"message\":\"current upstream provider uses wire_api = \\\"chat\\\"; /v1/responses is not available yet, use /v1/chat/completions instead\",\"type\":\"invalid_request_error\"}}"
+    );
 }
 
 #[tokio::test]
@@ -698,7 +702,15 @@ fn chat_adapter_resolves_chat_completions_but_not_responses() {
             .path,
         "/chat/completions"
     );
-    assert!(adapter.resolve_request(CompatEndpoint::Responses).is_err());
+    let err = match adapter.resolve_request(CompatEndpoint::Responses) {
+        Ok(_) => panic!("responses endpoint should be rejected for chat upstream"),
+        Err(err) => err,
+    };
+    assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        err.message,
+        "current upstream provider uses wire_api = \"chat\"; /v1/responses is not available yet, use /v1/chat/completions instead"
+    );
 }
 
 #[test]
@@ -725,4 +737,17 @@ fn responses_adapter_resolves_all_openai_compat_endpoints() {
             .path,
         "/chat/completions"
     );
+}
+
+#[test]
+fn resolved_request_uses_passthrough_translator_by_default() {
+    let resolved = UpstreamAdapter::responses()
+        .resolve_request(CompatEndpoint::Responses)
+        .expect("responses request");
+    let translated = resolved
+        .translator
+        .translate_request(CompatEndpoint::Responses, Some("{\"ok\":true}".to_string()))
+        .expect("translator should pass request through");
+
+    assert_eq!(translated.body, Some("{\"ok\":true}".to_string()));
 }

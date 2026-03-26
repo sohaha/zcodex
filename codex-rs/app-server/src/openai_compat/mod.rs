@@ -37,6 +37,7 @@ use tracing::info;
 mod adapter;
 #[cfg(test)]
 mod tests;
+mod translator;
 
 use self::adapter::CompatEndpoint;
 use self::adapter::UpstreamAdapter;
@@ -272,6 +273,13 @@ async fn proxy_request(
         Ok(request) => request,
         Err(err) => return err.to_response(),
     };
+    let translated_request = match resolved_request
+        .translator
+        .translate_request(endpoint, body)
+    {
+        Ok(request) => request,
+        Err(err) => return err.to_response(),
+    };
     let upstream_url = match build_upstream_url(
         &state.upstream.provider,
         resolved_request.path,
@@ -290,7 +298,7 @@ async fn proxy_request(
         .client
         .request(method.clone(), upstream_url.clone())
         .headers(upstream_headers);
-    if let Some(body) = body {
+    if let Some(body) = translated_request.body {
         request = request.body(body);
     }
 
