@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（semantic 已接入 daemon 复用路径，并继续补强跨进程 launcher/daemon 全局唯一性闭环）
+- **当前阶段**：Stage 3 / 执行中（继续补 cross-process launcher/daemon 全局唯一性闭环，并观察 semantic cache hit）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`

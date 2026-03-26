@@ -629,6 +629,7 @@ fn cleanup_file_if_exists(path: PathBuf) {
 mod lifecycle_tests {
     use super::cleanup_stale_daemon_artifacts;
     use super::daemon_metadata_looks_alive;
+    use super::ensure_daemon_running;
     use super::launcher_lock_path_for_project;
     use super::query_daemon_with_autostart;
     use super::query_daemon_with_hooks;
@@ -1015,6 +1016,38 @@ mod lifecycle_tests {
 
         std::fs::write(&fake_daemon_release, "release")?;
         cleanup_stale_daemon_artifacts(&canonical_project);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ensure_running_waits_when_launcher_lock_and_daemon_alive() -> Result<()> {
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        let pid_path = pid_path_for_project(&canonical_project);
+        std::fs::write(&socket_path, "").unwrap();
+        std::fs::write(&pid_path, std::process::id().to_string()).unwrap();
+
+        let lock_path = launcher_lock_path_for_project(&canonical_project);
+        let lock_file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)?;
+        lock_file.try_lock().unwrap();
+
+        let counter_path = project.path().join("launcher_lock_counter.log");
+        unsafe { std::env::set_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV, canonical_project.as_path()) };
+        unsafe { std::env::set_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path) };
+
+        let started = ensure_daemon_running(&canonical_project).await?;
+        assert!(started);
+        assert!(!counter_path.exists(), "launcher lock should prevent spawn");
+
+        unsafe { std::env::remove_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV) };
+        unsafe { std::env::remove_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV) };
         Ok(())
     }
 

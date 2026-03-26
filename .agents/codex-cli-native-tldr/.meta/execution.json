@@ -196,6 +196,10 @@
       {
          "at": "2026-03-26T01:05:00Z",
          "note": "validated daemon semantic cache reuse with a build-count regression and re-ran the three-process cross-process launcher test plus codex-cli/native-tldr suites"
+      },
+      {
+         "at": "2026-03-26T01:20:00Z",
+         "note": "added CLI launcher lock+aivo scenario test that ensures ensure_running waits when daemon lock-held and launcher lock active"
       }
    ],
    "feature": "codex-cli-native-tldr"

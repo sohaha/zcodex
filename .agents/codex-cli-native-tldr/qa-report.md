@@ -13,6 +13,7 @@
 ### 已完成验证
 - `cargo test -p codex-native-tldr daemon::tests::semantic_command_reuses_cached_index_across_requests -- --exact`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_daemon_running_only_spawns_once_even_with_three_processes -- --exact --nocapture`：通过
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_running_waits_when_launcher_lock_and_daemon_alive -- --exact`：通过
 - `codex rtk cargo test -p codex-native-tldr`：通过（38 个测试）
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（50 个测试）
 - `just fmt`：通过
