@@ -124,6 +124,8 @@
 - semantic search 现已接入 daemon 复用路径：CLI/MCP 在 daemon 可用时会直接吃共享索引缓存，并在输出里暴露 `source`
 - daemon 现支持 `TldrDaemonCommand::Semantic` 与 `semantic` payload，MCP 新增 daemon-available semantic e2e 回归
 - lifecycle 新增并发 `ensure_running` 串行化测试，继续收紧“已有 launch 进行中时禁止重复拉起”
+- 跨进程 launcher 竞态测试拓展到三进程场景，仍只观测到一次 daemon spawn，进一步收口全局唯一性
+
 - CLI 新增 daemon lock-held 回归：当 project 级 daemon lock 已被占用但 daemon 尚未就绪时，launcher 不会误 spawn 第二个 daemon
 - daemon 连接处理现复用共享 `TldrEngine`，不再在每个 socket 连接里重建默认 engine 丢失项目配置/缓存
 - CLI 与 MCP semantic 输出现在显式包含 `embeddingUsed`，MCP e2e 还校验了 `matches[*].embedding_score`

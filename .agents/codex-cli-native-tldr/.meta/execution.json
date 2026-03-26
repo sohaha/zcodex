@@ -188,6 +188,10 @@
       {
          "at": "2026-03-26T00:40:00Z",
          "note": "added CLI regression coverage that daemon lock-held startup path waits instead of spawning a second daemon, then revalidated codex-cli suite"
+      },
+      {
+         "at": "2026-03-26T00:19:43Z",
+         "note": "added three-process cross-process launcher test plus reran the CLI suite/just fix commands to prove the global uniqueness guard still holds"
       }
    ],
    "feature": "codex-cli-native-tldr"
