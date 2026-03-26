@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（MCP semantic daemon cache reuse 黑盒回归、双进程 launcher wait 竞态回归、以及 reindex 完成确认链路已落地，继续收口 phase-1 稳定化，并把外部 daemon lock owner 场景已纳入更强跨进程唯一性验证；MCP/文档侧开始补 last_reindex_attempt 失败观测）
+- **当前阶段**：Stage 3 / 执行中（T-009/T-010 已继续推进：artifact 路径切到按用户隔离 scope + 项目目录，`lock/launch.lock` 脱离项目 artifact 目录，补齐“父目录丢失 / lock 文件被删 / external lock owner mid-boot 丢目录”恢复回归；当前主阻塞转为 MCP 侧并行改动导致的编译面不稳定）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -36,6 +36,10 @@ dependencies: [prd, tech-review]
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
 - **当前正在做**：
+  - 新完成：T-009 已把 daemon artifact 路径切换到 per-user scope，Unix 优先使用 `XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`，`socket/pid` 放在 `<project-hash>/`，`lock/launch.lock` 留在 scope 根目录
+  - 新完成：补齐 native-tldr `XDG_RUNTIME_DIR` 绝对/相对路径策略回归，以及 `write_pid_file` / daemon lock / launcher lock 的父目录自恢复回归
+  - 新完成：补齐 `launch.lock` / `daemon lock` 文件被外部删除后的恢复回归
+  - 新完成：补齐 external daemon lock owner 在 mid-boot 阶段丢失项目 artifact 目录后仍能完成启动，且 contender 不会重复 spawn 的跨进程回归
   - 新完成：更新 MCP 文档 `codex_mcp_interface.md`，强调 semantic 结果里的 `source` 以及 `status` 里新增的 lifecycle 字段，方便 downstream 观察 daemon cache/lock 状态
   - 新完成：semantic phase-1 增加 `SemanticIndex` 抽象，`TldrEngine` 现会缓存每种语言的索引，`semantic_reindex()` 会重建并替换缓存
   - 新完成：daemon 连接处理改为复用共享 `TldrEngine`，`Warm` 走真实缓存重建路径，不再丢失项目配置或索引状态
@@ -44,7 +48,7 @@ dependencies: [prd, tech-review]
   - 新完成：CLI 补了双进程 launcher 竞争测试，验证同一 project 并发 auto-start 最终只发生一次真实 spawn
   - 新完成：selective sync 上游 llm-tldr `semantic.py` 的 EmbeddingUnit/五层文本组装思路，native-tldr/CLI/MCP 现可返回本地 semantic matches
   - 主线程：已补 MCP status 对最近失败 reindex 尝试的黑盒观测，native-tldr/CLI/MCP 三侧关于 reindex attempt 的状态语义已基本对齐
-  - 下一步：继续补 last_reindex_attempt 在更多客户端面（如 CLI 文本）上的可见性，或继续扩展 daemon 外部持锁路径的更多边界观测
+  - 下一步：若 MCP 并行改动稳定，继续补 semantic/status wire schema 收口；否则优先把 T-010 异常矩阵和剩余风险继续文档化
   - 持续：同步 `.agents` 文档与定向验证结果
 - **刚完成**：
   - `semantic` phase-1 从 placeholder 升级为真实本地检索：native-tldr 现在会按语言扫描源码、构建 embedding-unit 风格 metadata，并返回 ranked matches
@@ -93,6 +97,7 @@ dependencies: [prd, tech-review]
   - daemon 生命周期、跨平台 auto-start 与 MCP 协同策略补齐
   - CLI 侧对 stale socket/失效 daemon 的重拉起路径补更显式覆盖
 - **已知阻塞**：
+  - `codex-cli` / `codex-mcp-server` 全量验证当前受并行中的 `codex-rs/mcp-server/src/tldr_tool.rs` 改动影响；近期至少出现过 `serde_json::json!` recursion limit 编译失败
   - `just argument-comment-lint` 依赖脚本 `./tools/argument-comment-lint/run-prebuilt-linter.sh` 缺失
   - `just bazel-lock-check` 依赖脚本 `./scripts/check-module-bazel-lock.sh` 缺失
 

@@ -223,6 +223,10 @@
       {
          "at" : "2026-03-26T03:05:00Z",
          "note" : "surfaced last failed semantic reindex attempts through MCP status and updated docs after revalidating the mcp-server suite"
+      },
+      {
+         "at" : "2026-03-26T12:10:00Z",
+         "note" : "completed T-009/T-010 hardening round: daemon artifacts moved to per-user scope roots, lock/launch.lock were separated from project artifact dirs, and recovery regressions now cover missing parents, deleted lock files, and external lock-owner boot after project artifact dir removal"
       }
    ],
    "feature" : "codex-cli-native-tldr",
