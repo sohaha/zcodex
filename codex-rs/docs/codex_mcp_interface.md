@@ -55,7 +55,14 @@ npx @modelcontextprotocol/inspector codex mcp-server
 
 Use the separate `codex mcp` subcommand to manage configured MCP server launchers in `config.toml`.
 
-To smoke-test the native-tldr sidecar used by the `tldr` MCP tool:
+`codex-mcp-server` does not include the `tldr` MCP tool by default. To enable it in the standalone server binary, build with the `tldr` feature:
+
+```bash
+cargo build --release -p codex-mcp-server --features tldr
+./target/release/codex-mcp-server
+```
+
+To smoke-test the native-tldr sidecar used by the optional `tldr` MCP tool:
 
 ```bash
 ./target/release/codex tldr languages
@@ -137,6 +144,8 @@ Example:
 ```
 
 ### `tldr` tool
+
+This tool is available only when `codex-mcp-server` is built with `--features tldr`.
 
 The `tldr` tool exposes native code-context analysis with daemon-first execution and local fallback. The current action surface is:
 

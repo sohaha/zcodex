@@ -1,10 +1,14 @@
 use std::collections::HashMap;
 use std::env;
+#[cfg(feature = "tldr")]
 use std::fs::File;
+#[cfg(feature = "tldr")]
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(feature = "tldr")]
 use std::sync::Mutex;
+#[cfg(feature = "tldr")]
 use std::sync::MutexGuard;
 
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
@@ -13,14 +17,23 @@ use codex_mcp_server::ExecApprovalElicitRequestParams;
 use codex_mcp_server::ExecApprovalResponse;
 use codex_mcp_server::PatchApprovalElicitRequestParams;
 use codex_mcp_server::PatchApprovalResponse;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::TldrConfig;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::api::AnalysisKind;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::api::AnalysisResponse;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::daemon::TldrDaemon;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::daemon::TldrDaemonCommand;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::daemon::TldrDaemonResponse;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::daemon::socket_path_for_project;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::lang_support::SupportedLanguage;
+#[cfg(feature = "tldr")]
 use codex_native_tldr::session::SessionSnapshot;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::ReviewDecision;
@@ -38,23 +51,23 @@ use rmcp::model::JsonRpcVersion2_0;
 use rmcp::model::RequestId;
 use serde_json::json;
 use tempfile::TempDir;
-use tokio::io::AsyncBufReadExt;
-use tokio::io::AsyncWriteExt;
-use tokio::io::BufReader;
+#[cfg(feature = "tldr")]
 use tokio::net::UnixListener;
-use tokio::task;
 use tokio::time::timeout;
 use wiremock::MockServer;
 // Allow ample time on slower CI or under load to avoid flakes.
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
+#[cfg(feature = "tldr")]
 static TLDR_ARTIFACT_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[cfg(feature = "tldr")]
 struct TldrArtifactTestGuard {
     _local: MutexGuard<'static, ()>,
     _cross_process: File,
 }
 
+#[cfg(feature = "tldr")]
 fn tldr_artifact_test_guard() -> TldrArtifactTestGuard {
     let local = match TLDR_ARTIFACT_TEST_LOCK.lock() {
         Ok(guard) => guard,
@@ -80,6 +93,7 @@ fn tldr_artifact_test_guard() -> TldrArtifactTestGuard {
     }
 }
 
+#[cfg(feature = "tldr")]
 fn bind_test_unix_listener(socket_path: &Path) -> anyhow::Result<UnixListener> {
     if let Some(parent) = socket_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -488,14 +502,16 @@ async fn codex_tool_passes_base_instructions() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(not(feature = "tldr"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_is_listed() {
-    if let Err(err) = tldr_tool_is_listed().await {
+async fn test_tldr_tool_is_not_listed_when_feature_is_disabled() {
+    if let Err(err) = tldr_tool_is_not_listed_when_feature_is_disabled().await {
         panic!("failure: {err}");
     }
 }
 
-async fn tldr_tool_is_listed() -> anyhow::Result<()> {
+#[cfg(not(feature = "tldr"))]
+async fn tldr_tool_is_not_listed_when_feature_is_disabled() -> anyhow::Result<()> {
     let McpHandle {
         process: mut mcp_process,
         server: _server,
@@ -515,1357 +531,1403 @@ async fn tldr_tool_is_listed() -> anyhow::Result<()> {
     assert!(
         tools
             .iter()
-            .any(|tool| tool.get("name").and_then(serde_json::Value::as_str) == Some("tldr")),
-        "expected `tldr` tool in tools/list, got {tools:?}"
+            .all(|tool| tool.get("name").and_then(serde_json::Value::as_str) != Some("tldr")),
+        "did not expect `tldr` tool in tools/list when feature is disabled, got {tools:?}"
     );
 
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_tree_falls_back_to_local_engine() {
-    if let Err(err) = tldr_tool_tree_falls_back_to_local_engine().await {
-        panic!("failure: {err}");
-    }
-}
+#[cfg(feature = "tldr")]
+mod tldr_tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use tokio::io::AsyncBufReadExt;
+    use tokio::io::AsyncWriteExt;
+    use tokio::io::BufReader;
+    use tokio::task;
 
-async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-    let project = TempDir::new()?;
-    std::fs::create_dir_all(project.path().join("src"))?;
-    std::fs::write(project.path().join("src/main.rs"), "fn main() {}\n")?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(
-                serde_json::json!({
-                    "action": "tree",
-                    "project": project.path(),
-                    "language": "rust",
-                    "symbol": "main"
-                })
-                .as_object()
-                .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
-                .clone(),
-            ),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
-
-    let summary = "structure summary: found 1 match(es) for `main` in 1 indexed files; function main @ src/main.rs:1-1 module [none] visibility [<none>] signature [fn main()] calls [none]";
-    assert_eq!(
-        response.result,
-        json!({
-            "content": [{
-                "text": format!("tree rust via local: {summary}"),
-                "type": "text"
-            }],
-            "isError": false,
-            "structuredContent": {
-                "action": "tree",
-                "analysis": {
-                    "kind": "ast",
-                    "summary": summary
-                },
-                "fallbackStrategy": "structure + search",
-                "language": "rust",
-                "message": "daemon unavailable; used local engine",
-                "project": project.path().canonicalize()?,
-                "source": "local",
-                "summary": summary,
-                "supportLevel": "DataFlow",
-                "symbol": "main"
-            }
-        })
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_uses_daemon_when_available() {
-    if let Err(err) = tldr_tool_uses_daemon_when_available().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Analyze { key: _, request } => {
-                assert_eq!(request.kind, AnalysisKind::Ast);
-            }
-            other => panic!("expected analyze, got {other:?}"),
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_is_listed() {
+        if let Err(err) = tldr_tool_is_listed().await {
+            panic!("failure: {err}");
         }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "daemon".to_string(),
-            analysis: Some(AnalysisResponse {
-                kind: AnalysisKind::Ast,
-                summary: "daemon summary".to_string(),
-            }),
-            semantic: None,
-            snapshot: Some(SessionSnapshot {
-                cached_entries: 0,
-                dirty_files: 0,
-                dirty_file_threshold: 20,
-                reindex_pending: false,
-                last_query_at: None,
-                last_reindex: None,
-                last_reindex_attempt: None,
-            }),
-            daemon_status: None,
-            reindex_report: None,
-        };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    });
+    }
 
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
+    async fn tldr_tool_is_listed() -> anyhow::Result<()> {
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
 
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("tree")),
-                (
-                    "project".to_string(),
-                    json!(canonical_project.to_string_lossy()),
+        let request_id = mcp_process.send_list_tools_request().await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let tools = response.result["tools"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("tools/list should return an array"))?;
+        assert!(
+            tools
+                .iter()
+                .any(|tool| tool.get("name").and_then(serde_json::Value::as_str) == Some("tldr")),
+            "expected `tldr` tool in tools/list, got {tools:?}"
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_tree_falls_back_to_local_engine() {
+        if let Err(err) = tldr_tool_tree_falls_back_to_local_engine().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+        let project = TempDir::new()?;
+        std::fs::create_dir_all(project.path().join("src"))?;
+        std::fs::write(project.path().join("src/main.rs"), "fn main() {}\n")?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(
+                    serde_json::json!({
+                        "action": "tree",
+                        "project": project.path(),
+                        "language": "rust",
+                        "symbol": "main"
+                    })
+                    .as_object()
+                    .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
+                    .clone(),
                 ),
-                ("language".to_string(), json!("rust")),
-                ("symbol".to_string(), json!("main")),
-            ])),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
-
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["source"], "daemon");
-    assert_eq!(structured["summary"], "daemon summary");
-    assert_eq!(structured["message"], "daemon");
-    assert_eq!(structured["action"], "tree");
-    assert_eq!(structured["analysis"]["kind"], "ast");
-    assert_eq!(structured["analysis"]["summary"], "daemon summary");
-
-    server_handle.await??;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_context_exposes_analysis_payload() {
-    if let Err(err) = tldr_tool_context_exposes_analysis_payload().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_context_exposes_analysis_payload() -> anyhow::Result<()> {
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-    let project = TempDir::new()?;
-    std::fs::create_dir_all(project.path().join("src"))?;
-    std::fs::write(
-        project.path().join("src/main.rs"),
-        "fn helper() {}\nfn main() { helper(); }\n",
-    )?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(
-                serde_json::json!({
-                    "action": "context",
-                    "project": project.path(),
-                    "language": "rust",
-                    "symbol": "main"
-                })
-                .as_object()
-                .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
-                .clone(),
-            ),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
-
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "context");
-    assert_eq!(structured["source"], "local");
-    assert_eq!(structured["analysis"]["kind"], "call_graph");
-    assert_eq!(structured["analysis"]["summary"], structured["summary"]);
-    assert!(
-        structured["summary"]
-            .as_str()
-            .is_some_and(|summary| summary.contains("context summary:"))
-    );
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_semantic_uses_daemon_when_available() {
-    if let Err(err) = tldr_tool_semantic_uses_daemon_when_available().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Semantic { request } => {
-                assert_eq!(request.language, SupportedLanguage::Rust);
-                assert_eq!(request.query, "auth token");
-            }
-            other => panic!("expected semantic, got {other:?}"),
-        }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "semantic from daemon".to_string(),
-            analysis: None,
-            semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
-                enabled: true,
-                query: "auth token".to_string(),
-                indexed_files: 1,
-                truncated: false,
-                matches: vec![codex_native_tldr::semantic::SemanticMatch {
-                    score: 7,
-                    path: PathBuf::from("src/auth.rs"),
-                    line: 2,
-                    snippet: "let auth_token = true;".to_string(),
-                    unit: codex_native_tldr::semantic::EmbeddingUnit {
-                        path: PathBuf::from("src/auth.rs"),
-                        language: SupportedLanguage::Rust,
-                        symbol: Some("verify_token".to_string()),
-                        qualified_symbol: Some("auth::verify_token".to_string()),
-                        symbol_aliases: vec![
-                            "verify_token".to_string(),
-                            "auth::verify_token".to_string(),
-                        ],
-                        kind: "function".to_string(),
-                        line: 1,
-                        span_end_line: 3,
-                        module_path: vec!["auth".to_string()],
-                        visibility: Some("pub".to_string()),
-                        signature: Some("pub fn verify_token()".to_string()),
-                        docs: vec!["Validates auth token".to_string()],
-                        imports: vec!["use crate::auth::token;".to_string()],
-                        references: vec!["Token".to_string()],
-                        code_preview: "fn verify_token() {\n    let auth_token = true;\n}"
-                            .to_string(),
-                        calls: Vec::new(),
-                        called_by: Vec::new(),
-                        dependencies: vec!["src".to_string(), "auth.rs".to_string()],
-                        cfg_summary: "2 lines sampled; 0 outgoing calls".to_string(),
-                        dfg_summary: "contains local assignments".to_string(),
-                        embedding_vector: None,
-                    },
-                    embedding_text: "semantic".to_string(),
-                    embedding_score: Some(0.75),
-                }],
-                embedding_used: true,
-                message: "semantic search returned 1 matches".to_string(),
-            }),
-            snapshot: None,
-            daemon_status: None,
-            reindex_report: None,
-        };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+            )
             .await?;
-        Ok::<(), anyhow::Error>(())
-    });
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
 
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
+        let summary = "structure summary: found 1 match(es) for `main` in 1 indexed files; function main @ src/main.rs:1-1 module [none] visibility [<none>] signature [fn main()] calls [none]";
+        assert_eq!(
+            response.result,
+            json!({
+                "content": [{
+                    "text": format!("tree rust via local: {summary}"),
+                    "type": "text"
+                }],
+                "isError": false,
+                "structuredContent": {
+                    "action": "tree",
+                    "analysis": {
+                        "kind": "ast",
+                        "summary": summary
+                    },
+                    "fallbackStrategy": "structure + search",
+                    "language": "rust",
+                    "message": "daemon unavailable; used local engine",
+                    "project": project.path().canonicalize()?,
+                    "source": "local",
+                    "summary": summary,
+                    "supportLevel": "DataFlow",
+                    "symbol": "main"
+                }
+            })
+        );
 
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_uses_daemon_when_available() {
+        if let Err(err) = tldr_tool_uses_daemon_when_available().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Analyze { key: _, request } => {
+                    assert_eq!(request.kind, AnalysisKind::Ast);
+                }
+                other => panic!("expected analyze, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "daemon".to_string(),
+                analysis: Some(AnalysisResponse {
+                    kind: AnalysisKind::Ast,
+                    summary: "daemon summary".to_string(),
+                }),
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 0,
+                    dirty_files: 0,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("tree")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                    ("language".to_string(), json!("rust")),
+                    ("symbol".to_string(), json!("main")),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["source"], "daemon");
+        assert_eq!(structured["summary"], "daemon summary");
+        assert_eq!(structured["message"], "daemon");
+        assert_eq!(structured["action"], "tree");
+        assert_eq!(structured["analysis"]["kind"], "ast");
+        assert_eq!(structured["analysis"]["summary"], "daemon summary");
+
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_context_exposes_analysis_payload() {
+        if let Err(err) = tldr_tool_context_exposes_analysis_payload().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_context_exposes_analysis_payload() -> anyhow::Result<()> {
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+        let project = TempDir::new()?;
+        std::fs::create_dir_all(project.path().join("src"))?;
+        std::fs::write(
+            project.path().join("src/main.rs"),
+            "fn helper() {}\nfn main() { helper(); }\n",
+        )?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(
+                    serde_json::json!({
+                        "action": "context",
+                        "project": project.path(),
+                        "language": "rust",
+                        "symbol": "main"
+                    })
+                    .as_object()
+                    .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
+                    .clone(),
+                ),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "context");
+        assert_eq!(structured["source"], "local");
+        assert_eq!(structured["analysis"]["kind"], "call_graph");
+        assert_eq!(structured["analysis"]["summary"], structured["summary"]);
+        assert!(
+            structured["summary"]
+                .as_str()
+                .is_some_and(|summary| summary.contains("context summary:"))
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_semantic_uses_daemon_when_available() {
+        if let Err(err) = tldr_tool_semantic_uses_daemon_when_available().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Semantic { request } => {
+                    assert_eq!(request.language, SupportedLanguage::Rust);
+                    assert_eq!(request.query, "auth token");
+                }
+                other => panic!("expected semantic, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "semantic from daemon".to_string(),
+                analysis: None,
+                semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
+                    enabled: true,
+                    query: "auth token".to_string(),
+                    indexed_files: 1,
+                    truncated: false,
+                    matches: vec![codex_native_tldr::semantic::SemanticMatch {
+                        score: 7,
+                        path: PathBuf::from("src/auth.rs"),
+                        line: 2,
+                        snippet: "let auth_token = true;".to_string(),
+                        unit: codex_native_tldr::semantic::EmbeddingUnit {
+                            path: PathBuf::from("src/auth.rs"),
+                            language: SupportedLanguage::Rust,
+                            symbol: Some("verify_token".to_string()),
+                            qualified_symbol: Some("auth::verify_token".to_string()),
+                            symbol_aliases: vec![
+                                "verify_token".to_string(),
+                                "auth::verify_token".to_string(),
+                            ],
+                            kind: "function".to_string(),
+                            line: 1,
+                            span_end_line: 3,
+                            module_path: vec!["auth".to_string()],
+                            visibility: Some("pub".to_string()),
+                            signature: Some("pub fn verify_token()".to_string()),
+                            docs: vec!["Validates auth token".to_string()],
+                            imports: vec!["use crate::auth::token;".to_string()],
+                            references: vec!["Token".to_string()],
+                            code_preview: "fn verify_token() {\n    let auth_token = true;\n}"
+                                .to_string(),
+                            calls: Vec::new(),
+                            called_by: Vec::new(),
+                            dependencies: vec!["src".to_string(), "auth.rs".to_string()],
+                            cfg_summary: "2 lines sampled; 0 outgoing calls".to_string(),
+                            dfg_summary: "contains local assignments".to_string(),
+                            embedding_vector: None,
+                        },
+                        embedding_text: "semantic".to_string(),
+                        embedding_score: Some(0.75),
+                    }],
+                    embedding_used: true,
+                    message: "semantic search returned 1 matches".to_string(),
+                }),
+                snapshot: None,
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("semantic")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                    ("language".to_string(), json!("rust")),
+                    ("query".to_string(), json!("auth token")),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "semantic");
+        assert_eq!(structured["source"], "daemon");
+        assert_eq!(structured["embeddingUsed"], true);
+        assert_eq!(structured["semantic"]["query"], "auth token");
+        assert_eq!(structured["semantic"]["embeddingUsed"], true);
+        assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+        assert_eq!(structured["semantic"]["matches"][0]["path"], "src/auth.rs");
+        assert!(structured["matches"][0].get("unit").is_none());
+        assert!(structured["matches"][0].get("embedding_text").is_none());
+        assert!(structured["semantic"]["matches"][0].get("unit").is_none());
+        assert!(
+            structured["semantic"]["matches"][0]
+                .get("embedding_text")
+                .is_none()
+        );
+        assert!(matches!(
+            structured["matches"][0]["embedding_score"].as_f64(),
+            Some(score) if score > 0.0
+        ));
+
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() {
+        if let Err(err) = tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        std::fs::create_dir(project.path().join(".codex"))?;
+        std::fs::create_dir(project.path().join("src"))?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[semantic]\nenabled = true\n",
+        )?;
+        let source_file = project.path().join("src/auth.rs");
+        std::fs::write(
+            &source_file,
+            "fn verify_token() {\n    let auth_token = true;\n}\n",
+        )?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let mut config = TldrConfig::for_project(canonical_project.clone());
+        config.semantic = codex_native_tldr::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            for _ in 0..6 {
+                let (stream, _) = listener.accept().await?;
+                let (reader, mut writer) = tokio::io::split(stream);
+                let mut lines = BufReader::new(reader).lines();
+                let line = lines
+                    .next_line()
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+                let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+                let response = daemon.handle_command(command).await?;
+                writer
+                    .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                    .await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        async fn call_tldr(
+            mcp_process: &mut McpProcess,
+            params: serde_json::Map<String, serde_json::Value>,
+        ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+            let request_id = mcp_process
+                .send_named_tool_call("tldr", Some(params))
+                .await?;
+            let response = timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+            )
+            .await??;
+            response.result["structuredContent"]
+                .as_object()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))
+        }
+
+        let semantic_params = || {
+            serde_json::Map::from_iter([
                 ("action".to_string(), json!("semantic")),
                 (
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
                 ("language".to_string(), json!("rust")),
-                ("query".to_string(), json!("auth token")),
-            ])),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
-
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "semantic");
-    assert_eq!(structured["source"], "daemon");
-    assert_eq!(structured["embeddingUsed"], true);
-    assert_eq!(structured["semantic"]["query"], "auth token");
-    assert_eq!(structured["semantic"]["embeddingUsed"], true);
-    assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
-    assert_eq!(structured["semantic"]["matches"][0]["path"], "src/auth.rs");
-    assert!(structured["matches"][0].get("unit").is_none());
-    assert!(structured["matches"][0].get("embedding_text").is_none());
-    assert!(structured["semantic"]["matches"][0].get("unit").is_none());
-    assert!(
-        structured["semantic"]["matches"][0]
-            .get("embedding_text")
-            .is_none()
-    );
-    assert!(matches!(
-        structured["matches"][0]["embedding_score"].as_f64(),
-        Some(score) if score > 0.0
-    ));
-
-    server_handle.await??;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() {
-    if let Err(err) = tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_semantic_reuses_daemon_cache_until_notify_and_warm() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    std::fs::create_dir(project.path().join(".codex"))?;
-    std::fs::create_dir(project.path().join("src"))?;
-    std::fs::write(
-        project.path().join(".codex/tldr.toml"),
-        "[semantic]\nenabled = true\n",
-    )?;
-    let source_file = project.path().join("src/auth.rs");
-    std::fs::write(
-        &source_file,
-        "fn verify_token() {\n    let auth_token = true;\n}\n",
-    )?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let mut config = TldrConfig::for_project(canonical_project.clone());
-    config.semantic = codex_native_tldr::semantic::SemanticConfig::default().with_enabled(true);
-    let daemon = TldrDaemon::from_config(config);
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        for _ in 0..6 {
-            let (stream, _) = listener.accept().await?;
-            let (reader, mut writer) = tokio::io::split(stream);
-            let mut lines = BufReader::new(reader).lines();
-            let line = lines
-                .next_line()
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-            let response = daemon.handle_command(command).await?;
-            writer
-                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-                .await?;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    async fn call_tldr(
-        mcp_process: &mut McpProcess,
-        params: serde_json::Map<String, serde_json::Value>,
-    ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-        let request_id = mcp_process
-            .send_named_tool_call("tldr", Some(params))
-            .await?;
-        let response = timeout(
-            DEFAULT_READ_TIMEOUT,
-            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-        )
-        .await??;
-        response.result["structuredContent"]
-            .as_object()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))
-    }
-
-    let semantic_params = || {
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("semantic")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-            ("language".to_string(), json!("rust")),
-            ("query".to_string(), json!("auth_token")),
-        ])
-    };
-
-    let first = call_tldr(&mut mcp_process, semantic_params()).await?;
-    assert_eq!(first["source"], "daemon");
-    assert_eq!(first["matches"][0]["path"], "src/auth.rs");
-    assert_eq!(first["matches"][0]["snippet"], "let auth_token = true;");
-
-    std::fs::write(
-        &source_file,
-        "fn verify_token() {\n    let session_cookie = true;\n}\n",
-    )?;
-
-    let second = call_tldr(&mut mcp_process, semantic_params()).await?;
-    assert_eq!(second["source"], "daemon");
-    assert_eq!(second["matches"][0]["snippet"], "let auth_token = true;");
-
-    let notify = call_tldr(
-        &mut mcp_process,
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("notify")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-            ("path".to_string(), json!("src/auth.rs")),
-        ]),
-    )
-    .await?;
-    assert_eq!(notify["action"], "notify");
-    assert_eq!(notify["snapshot"]["reindex_pending"], true);
-    assert_eq!(notify["reindexReport"], serde_json::Value::Null);
-
-    let warm = call_tldr(
-        &mut mcp_process,
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("warm")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-        ]),
-    )
-    .await?;
-    assert_eq!(warm["action"], "warm");
-    assert_eq!(warm["snapshot"]["reindex_pending"], false);
-    assert_eq!(warm["daemonStatus"]["semantic_reindex_pending"], false);
-    assert_eq!(warm["reindexReport"]["status"], "Completed");
-    assert_eq!(warm["snapshot"]["last_reindex"], warm["reindexReport"]);
-
-    let status = call_tldr(
-        &mut mcp_process,
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("status")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-        ]),
-    )
-    .await?;
-    assert_eq!(status["action"], "status");
-    assert_eq!(status["snapshot"]["reindex_pending"], false);
-    assert_eq!(status["daemonStatus"]["semantic_reindex_pending"], false);
-    assert_eq!(status["reindexReport"]["status"], "Completed");
-    assert_eq!(status["snapshot"]["last_reindex"], status["reindexReport"]);
-    assert_eq!(status["snapshot"]["last_reindex"], warm["reindexReport"]);
-
-    let third = call_tldr(&mut mcp_process, semantic_params()).await?;
-    assert_eq!(third["source"], "daemon");
-    assert_eq!(
-        third["matches"]
-            .as_array()
-            .ok_or_else(|| anyhow::anyhow!("matches should be an array"))?
-            .len(),
-        0
-    );
-
-    server_handle.await??;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_status_surfaces_last_failed_reindex_attempt() {
-    if let Err(err) = tldr_tool_status_surfaces_last_failed_reindex_attempt().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_status_surfaces_last_failed_reindex_attempt() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let daemon = TldrDaemon::from_config(TldrConfig::for_project(canonical_project.clone()));
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        for _ in 0..3 {
-            let (stream, _) = listener.accept().await?;
-            let (reader, mut writer) = tokio::io::split(stream);
-            let mut lines = BufReader::new(reader).lines();
-            let line = lines
-                .next_line()
-                .await?
-                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-            let response = daemon.handle_command(command).await?;
-            writer
-                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-                .await?;
-        }
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    async fn call_tldr(
-        mcp_process: &mut McpProcess,
-        params: serde_json::Map<String, serde_json::Value>,
-    ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
-        let request_id = mcp_process
-            .send_named_tool_call("tldr", Some(params))
-            .await?;
-        let response = timeout(
-            DEFAULT_READ_TIMEOUT,
-            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-        )
-        .await??;
-        response.result["structuredContent"]
-            .as_object()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))
-    }
-
-    let notify = call_tldr(
-        &mut mcp_process,
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("notify")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-            ("path".to_string(), json!("src/missing.rs")),
-        ]),
-    )
-    .await?;
-    assert_eq!(notify["snapshot"]["reindex_pending"], true);
-
-    let warm = call_tldr(
-        &mut mcp_process,
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("warm")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-        ]),
-    )
-    .await?;
-    assert_eq!(warm["reindexReport"]["status"], "Failed");
-    assert_eq!(warm["snapshot"]["reindex_pending"], true);
-    assert_eq!(warm["snapshot"]["last_reindex"], serde_json::Value::Null);
-    assert_eq!(
-        warm["snapshot"]["last_reindex_attempt"],
-        warm["reindexReport"]
-    );
-    assert_eq!(warm["daemonStatus"]["semantic_reindex_pending"], true);
-
-    let status = call_tldr(
-        &mut mcp_process,
-        serde_json::Map::from_iter([
-            ("action".to_string(), json!("status")),
-            (
-                "project".to_string(),
-                json!(canonical_project.to_string_lossy()),
-            ),
-        ]),
-    )
-    .await?;
-    assert_eq!(status["reindexReport"]["status"], "Failed");
-    assert_eq!(status["snapshot"]["reindex_pending"], true);
-    assert_eq!(status["snapshot"]["last_reindex"], serde_json::Value::Null);
-    assert_eq!(
-        status["snapshot"]["last_reindex_attempt"],
-        status["reindexReport"]
-    );
-    assert_eq!(status["daemonStatus"]["semantic_reindex_pending"], true);
-
-    server_handle.await??;
-    Ok(())
-}
-
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_warm_returns_snapshot() {
-    if let Err(err) = tldr_tool_warm_returns_snapshot().await {
-        panic!("failure: {err}");
-    }
-}
-
-#[cfg(unix)]
-async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Warm => {}
-            other => panic!("expected warm, got {other:?}"),
-        }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "warmed".to_string(),
-            analysis: None,
-            semantic: None,
-            snapshot: Some(SessionSnapshot {
-                cached_entries: 5,
-                dirty_files: 1,
-                dirty_file_threshold: 20,
-                reindex_pending: false,
-                last_query_at: None,
-                last_reindex: None,
-                last_reindex_attempt: None,
-            }),
-            daemon_status: None,
-            reindex_report: None,
+                ("query".to_string(), json!("auth_token")),
+            ])
         };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    });
 
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
+        let first = call_tldr(&mut mcp_process, semantic_params()).await?;
+        assert_eq!(first["source"], "daemon");
+        assert_eq!(first["matches"][0]["path"], "src/auth.rs");
+        assert_eq!(first["matches"][0]["snippet"], "let auth_token = true;");
 
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("warm")),
-                (
-                    "project".to_string(),
-                    json!(canonical_project.to_string_lossy()),
-                ),
-            ])),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
+        std::fs::write(
+            &source_file,
+            "fn verify_token() {\n    let session_cookie = true;\n}\n",
+        )?;
 
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "warm");
-    assert_eq!(structured["status"], "ok");
-    assert_eq!(structured["message"], "warmed");
-    assert_eq!(
-        structured["project"],
-        canonical_project.to_string_lossy().to_string()
-    );
-    assert_eq!(structured["snapshot"]["cached_entries"], 5);
-    server_handle.await??;
-    Ok(())
-}
+        let second = call_tldr(&mut mcp_process, semantic_params()).await?;
+        assert_eq!(second["source"], "daemon");
+        assert_eq!(second["matches"][0]["snippet"], "let auth_token = true;");
 
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_notify_includes_path() {
-    if let Err(err) = tldr_tool_notify_includes_path().await {
-        panic!("failure: {err}");
-    }
-}
-
-#[cfg(unix)]
-async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let target_path = canonical_project.join("src/lib.rs");
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let target_path_for_server = target_path.clone();
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Notify { path } => {
-                assert_eq!(path, target_path_for_server);
-            }
-            other => panic!("expected notify, got {other:?}"),
-        }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "notify ok".to_string(),
-            analysis: None,
-            semantic: None,
-            snapshot: Some(SessionSnapshot {
-                cached_entries: 0,
-                dirty_files: 2,
-                dirty_file_threshold: 20,
-                reindex_pending: false,
-                last_query_at: None,
-                last_reindex: None,
-                last_reindex_attempt: None,
-            }),
-            daemon_status: None,
-            reindex_report: None,
-        };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
+        let notify = call_tldr(
+            &mut mcp_process,
+            serde_json::Map::from_iter([
                 ("action".to_string(), json!("notify")),
                 (
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
-                ("path".to_string(), json!(target_path.to_string_lossy())),
-            ])),
+                ("path".to_string(), json!("src/auth.rs")),
+            ]),
         )
         .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
+        assert_eq!(notify["action"], "notify");
+        assert_eq!(notify["snapshot"]["reindex_pending"], true);
+        assert_eq!(notify["reindexReport"], serde_json::Value::Null);
 
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "notify");
-    assert_eq!(structured["message"], "notify ok");
-    assert_eq!(structured["status"], "ok");
-    server_handle.await??;
-    Ok(())
-}
-
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_snapshot_returns_snapshot() {
-    if let Err(err) = tldr_tool_snapshot_returns_snapshot().await {
-        panic!("failure: {err}");
-    }
-}
-
-#[cfg(unix)]
-async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Snapshot => {}
-            other => panic!("expected snapshot, got {other:?}"),
-        }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "snapshot ok".to_string(),
-            analysis: None,
-            semantic: None,
-            snapshot: Some(SessionSnapshot {
-                cached_entries: 7,
-                dirty_files: 0,
-                dirty_file_threshold: 20,
-                reindex_pending: false,
-                last_query_at: None,
-                last_reindex: None,
-                last_reindex_attempt: None,
-            }),
-            daemon_status: None,
-            reindex_report: None,
-        };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("snapshot")),
+        let warm = call_tldr(
+            &mut mcp_process,
+            serde_json::Map::from_iter([
+                ("action".to_string(), json!("warm")),
                 (
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
-            ])),
+            ]),
         )
         .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
+        assert_eq!(warm["action"], "warm");
+        assert_eq!(warm["snapshot"]["reindex_pending"], false);
+        assert_eq!(warm["daemonStatus"]["semantic_reindex_pending"], false);
+        assert_eq!(warm["reindexReport"]["status"], "Completed");
+        assert_eq!(warm["snapshot"]["last_reindex"], warm["reindexReport"]);
 
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "snapshot");
-    assert_eq!(structured["snapshot"]["cached_entries"], 7);
-    server_handle.await??;
-    Ok(())
-}
-
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_ping_reports_status() {
-    if let Err(err) = tldr_tool_ping_reports_status().await {
-        panic!("failure: {err}");
-    }
-}
-
-#[cfg(unix)]
-async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Ping => {}
-            other => panic!("expected ping, got {other:?}"),
-        }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "pong".to_string(),
-            analysis: None,
-            semantic: None,
-            snapshot: Some(SessionSnapshot {
-                cached_entries: 0,
-                dirty_files: 0,
-                dirty_file_threshold: 20,
-                reindex_pending: false,
-                last_query_at: None,
-                last_reindex: None,
-                last_reindex_attempt: None,
-            }),
-            daemon_status: None,
-            reindex_report: None,
-        };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("ping")),
-                (
-                    "project".to_string(),
-                    json!(canonical_project.to_string_lossy()),
-                ),
-            ])),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
-
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "ping");
-    assert_eq!(structured["status"], "ok");
-    assert_eq!(structured["message"], "pong");
-    server_handle.await??;
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_ping_errors_when_daemon_missing() {
-    if let Err(err) = tldr_tool_ping_errors_when_daemon_missing().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_ping_errors_when_daemon_missing() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("ping")),
-                (
-                    "project".to_string(),
-                    json!(canonical_project.to_string_lossy()),
-                ),
-            ])),
-        )
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
-
-    let result = &response.result;
-    assert_eq!(
-        result["isError"],
-        serde_json::Value::Bool(true),
-        "expected error flag"
-    );
-    assert!(
-        result.get("structuredContent").is_none(),
-        "structuredContent should be absent when ping fails"
-    );
-    let expected_message = format!(
-        "tldr tool failed: native-tldr daemon is unavailable for {}",
-        canonical_project.display()
-    );
-    let actual_text = result["content"][0]["text"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("response content text missing"))?;
-    assert_eq!(actual_text, expected_message);
-
-    Ok(())
-}
-
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_status_returns_daemon_status() {
-    if let Err(err) = tldr_tool_status_returns_daemon_status().await {
-        panic!("failure: {err}");
-    }
-}
-
-#[cfg(unix)]
-async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
-    let _guard = tldr_artifact_test_guard();
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
-    let socket_path = socket_path_for_project(&canonical_project);
-    if socket_path.exists() {
-        std::fs::remove_file(&socket_path)?;
-    }
-
-    let listener = bind_test_unix_listener(&socket_path)?;
-    let canonical_project_for_server = canonical_project.clone();
-    let socket_path_for_server = socket_path.clone();
-    let server_handle = task::spawn(async move {
-        let (stream, _) = listener.accept().await?;
-        let (reader, mut writer) = tokio::io::split(stream);
-        let mut lines = BufReader::new(reader).lines();
-        let line = lines
-            .next_line()
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
-        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-        match command {
-            TldrDaemonCommand::Status => {}
-            other => panic!("expected status, got {other:?}"),
-        }
-        let response = TldrDaemonResponse {
-            status: "ok".to_string(),
-            message: "status".to_string(),
-            analysis: None,
-            semantic: None,
-            snapshot: Some(SessionSnapshot {
-                cached_entries: 2,
-                dirty_files: 1,
-                dirty_file_threshold: 20,
-                reindex_pending: false,
-                last_query_at: None,
-                last_reindex: None,
-                last_reindex_attempt: None,
-            }),
-            daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
-                project_root: canonical_project_for_server.clone(),
-                socket_path: socket_path_for_server.clone(),
-                pid_path: codex_native_tldr::daemon::pid_path_for_project(
-                    &canonical_project_for_server,
-                ),
-                lock_path: codex_native_tldr::daemon::lock_path_for_project(
-                    &canonical_project_for_server,
-                ),
-                socket_exists: true,
-                pid_is_live: false,
-                lock_is_held: true,
-                healthy: false,
-                stale_socket: true,
-                stale_pid: false,
-                health_reason: Some("daemon lock held; another process may be starting it".into()),
-                recovery_hint: Some(
-                    "wait for the existing daemon or release the lock manually".into(),
-                ),
-                semantic_reindex_pending: false,
-                last_query_at: None,
-                config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
-                    auto_start: true,
-                    socket_mode: "auto".to_string(),
-                    semantic_enabled: false,
-                    semantic_auto_reindex_threshold: 20,
-                    session_dirty_file_threshold: 20,
-                },
-            }),
-            reindex_report: None,
-        };
-        writer
-            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    });
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
+        let status = call_tldr(
+            &mut mcp_process,
+            serde_json::Map::from_iter([
                 ("action".to_string(), json!("status")),
                 (
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
-            ])),
+            ]),
         )
         .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
+        assert_eq!(status["action"], "status");
+        assert_eq!(status["snapshot"]["reindex_pending"], false);
+        assert_eq!(status["daemonStatus"]["semantic_reindex_pending"], false);
+        assert_eq!(status["reindexReport"]["status"], "Completed");
+        assert_eq!(status["snapshot"]["last_reindex"], status["reindexReport"]);
+        assert_eq!(status["snapshot"]["last_reindex"], warm["reindexReport"]);
 
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "status");
-    assert_eq!(structured["daemonStatus"]["lock_is_held"], true);
-    assert_eq!(
-        structured["daemonStatus"]["health_reason"],
-        "daemon lock held; another process may be starting it"
-    );
-    assert_eq!(
-        structured["daemonStatus"]["recovery_hint"],
-        "wait for the existing daemon or release the lock manually"
-    );
-    assert_eq!(structured["snapshot"]["cached_entries"], 2);
-    server_handle.await??;
-    Ok(())
-}
+        let third = call_tldr(&mut mcp_process, semantic_params()).await?;
+        assert_eq!(third["source"], "daemon");
+        assert_eq!(
+            third["matches"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("matches should be an array"))?
+                .len(),
+            0
+        );
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_semantic_structured_content() {
-    if let Err(err) = tldr_tool_semantic_structured_content().await {
-        panic!("failure: {err}");
+        server_handle.await??;
+        Ok(())
     }
-}
 
-async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
-    let project = TempDir::new()?;
-    let canonical_project = project.path().canonicalize()?;
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_status_surfaces_last_failed_reindex_attempt() {
+        if let Err(err) = tldr_tool_status_surfaces_last_failed_reindex_attempt().await {
+            panic!("failure: {err}");
+        }
+    }
 
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
+    async fn tldr_tool_status_surfaces_last_failed_reindex_attempt() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
 
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("semantic")),
+        let daemon = TldrDaemon::from_config(TldrConfig::for_project(canonical_project.clone()));
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            for _ in 0..3 {
+                let (stream, _) = listener.accept().await?;
+                let (reader, mut writer) = tokio::io::split(stream);
+                let mut lines = BufReader::new(reader).lines();
+                let line = lines
+                    .next_line()
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+                let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+                let response = daemon.handle_command(command).await?;
+                writer
+                    .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                    .await?;
+            }
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        async fn call_tldr(
+            mcp_process: &mut McpProcess,
+            params: serde_json::Map<String, serde_json::Value>,
+        ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
+            let request_id = mcp_process
+                .send_named_tool_call("tldr", Some(params))
+                .await?;
+            let response = timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+            )
+            .await??;
+            response.result["structuredContent"]
+                .as_object()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))
+        }
+
+        let notify = call_tldr(
+            &mut mcp_process,
+            serde_json::Map::from_iter([
+                ("action".to_string(), json!("notify")),
                 (
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
-                ("language".to_string(), json!("rust")),
-                ("query".to_string(), json!("find auth")),
-            ])),
+                ("path".to_string(), json!("src/missing.rs")),
+            ]),
         )
         .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
+        assert_eq!(notify["snapshot"]["reindex_pending"], true);
 
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "semantic");
-    assert_eq!(structured["language"], "rust");
-    assert_eq!(structured["query"], "find auth");
-    assert_eq!(structured["semantic"]["query"], "find auth");
-    assert_eq!(structured["source"], "local");
-    assert_eq!(
-        structured["message"],
-        "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
-    );
-    assert_eq!(
-        structured["semantic"]["message"],
-        "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
-    );
-    assert_eq!(structured["enabled"], false);
-    assert_eq!(structured["embeddingUsed"], false);
-    assert_eq!(structured["semantic"]["enabled"], false);
-    assert_eq!(structured["semantic"]["embeddingUsed"], false);
-
-    Ok(())
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_tldr_tool_semantic_returns_matches_when_enabled() {
-    if let Err(err) = tldr_tool_semantic_returns_matches_when_enabled().await {
-        panic!("failure: {err}");
-    }
-}
-
-async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()> {
-    let project = TempDir::new()?;
-    std::fs::create_dir(project.path().join(".codex"))?;
-    std::fs::create_dir(project.path().join("src"))?;
-    std::fs::write(
-        project.path().join(".codex/tldr.toml"),
-        "[semantic]\nenabled = true\n[semantic.embedding]\nenabled = true\ndimensions = 16\n",
-    )?;
-    std::fs::write(
-        project.path().join("src/auth.rs"),
-        "fn verify_token() {\n    let auth_token = true;\n}\n",
-    )?;
-    let canonical_project = project.path().canonicalize()?;
-
-    let McpHandle {
-        process: mut mcp_process,
-        server: _server,
-        dir: _dir,
-    } = create_mcp_process(Vec::new()).await?;
-
-    let request_id = mcp_process
-        .send_named_tool_call(
-            "tldr",
-            Some(serde_json::Map::from_iter([
-                ("action".to_string(), json!("semantic")),
+        let warm = call_tldr(
+            &mut mcp_process,
+            serde_json::Map::from_iter([
+                ("action".to_string(), json!("warm")),
                 (
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
-                ("language".to_string(), json!("rust")),
-                ("query".to_string(), json!("auth token")),
-            ])),
+            ]),
         )
         .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
-    )
-    .await??;
+        assert_eq!(warm["reindexReport"]["status"], "Failed");
+        assert_eq!(warm["snapshot"]["reindex_pending"], true);
+        assert_eq!(warm["snapshot"]["last_reindex"], serde_json::Value::Null);
+        assert_eq!(
+            warm["snapshot"]["last_reindex_attempt"],
+            warm["reindexReport"]
+        );
+        assert_eq!(warm["daemonStatus"]["semantic_reindex_pending"], true);
 
-    let structured = response.result["structuredContent"]
-        .as_object()
-        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
-    assert_eq!(structured["action"], "semantic");
-    assert_eq!(structured["enabled"], true);
-    assert_eq!(structured["semantic"]["enabled"], true);
-    assert_eq!(structured["embeddingUsed"], true);
-    assert_eq!(structured["semantic"]["embeddingUsed"], true);
-    assert_eq!(structured["indexedFiles"], 1);
-    assert_eq!(structured["semantic"]["indexedFiles"], 1);
-    assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
-    assert_eq!(structured["semantic"]["matches"][0]["path"], "src/auth.rs");
-    assert_eq!(structured["matches"][0]["line"], 2);
-    assert_eq!(
-        structured["matches"][0]["snippet"],
-        "let auth_token = true;"
-    );
-    assert_eq!(
-        structured["semantic"]["matches"][0]["snippet"],
-        "let auth_token = true;"
-    );
-    assert!(structured["matches"][0].get("unit").is_none());
-    assert!(structured["matches"][0].get("embedding_text").is_none());
-    assert!(structured["semantic"]["matches"][0].get("unit").is_none());
-    assert!(
-        structured["semantic"]["matches"][0]
-            .get("embedding_text")
-            .is_none()
-    );
-    assert!(matches!(
-        structured["matches"][0]["embedding_score"].as_f64(),
-        Some(score) if score > 0.0
-    ));
+        let status = call_tldr(
+            &mut mcp_process,
+            serde_json::Map::from_iter([
+                ("action".to_string(), json!("status")),
+                (
+                    "project".to_string(),
+                    json!(canonical_project.to_string_lossy()),
+                ),
+            ]),
+        )
+        .await?;
+        assert_eq!(status["reindexReport"]["status"], "Failed");
+        assert_eq!(status["snapshot"]["reindex_pending"], true);
+        assert_eq!(status["snapshot"]["last_reindex"], serde_json::Value::Null);
+        assert_eq!(
+            status["snapshot"]["last_reindex_attempt"],
+            status["reindexReport"]
+        );
+        assert_eq!(status["daemonStatus"]["semantic_reindex_pending"], true);
 
-    Ok(())
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_warm_returns_snapshot() {
+        if let Err(err) = tldr_tool_warm_returns_snapshot().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    #[cfg(unix)]
+    async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Warm => {}
+                other => panic!("expected warm, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "warmed".to_string(),
+                analysis: None,
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 5,
+                    dirty_files: 1,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("warm")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "warm");
+        assert_eq!(structured["status"], "ok");
+        assert_eq!(structured["message"], "warmed");
+        assert_eq!(
+            structured["project"],
+            canonical_project.to_string_lossy().to_string()
+        );
+        assert_eq!(structured["snapshot"]["cached_entries"], 5);
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_notify_includes_path() {
+        if let Err(err) = tldr_tool_notify_includes_path().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    #[cfg(unix)]
+    async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let target_path = canonical_project.join("src/lib.rs");
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let target_path_for_server = target_path.clone();
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Notify { path } => {
+                    assert_eq!(path, target_path_for_server);
+                }
+                other => panic!("expected notify, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "notify ok".to_string(),
+                analysis: None,
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 0,
+                    dirty_files: 2,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("notify")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                    ("path".to_string(), json!(target_path.to_string_lossy())),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "notify");
+        assert_eq!(structured["message"], "notify ok");
+        assert_eq!(structured["status"], "ok");
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_snapshot_returns_snapshot() {
+        if let Err(err) = tldr_tool_snapshot_returns_snapshot().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    #[cfg(unix)]
+    async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Snapshot => {}
+                other => panic!("expected snapshot, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "snapshot ok".to_string(),
+                analysis: None,
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 7,
+                    dirty_files: 0,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("snapshot")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "snapshot");
+        assert_eq!(structured["snapshot"]["cached_entries"], 7);
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_ping_reports_status() {
+        if let Err(err) = tldr_tool_ping_reports_status().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    #[cfg(unix)]
+    async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Ping => {}
+                other => panic!("expected ping, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "pong".to_string(),
+                analysis: None,
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 0,
+                    dirty_files: 0,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("ping")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "ping");
+        assert_eq!(structured["status"], "ok");
+        assert_eq!(structured["message"], "pong");
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_ping_errors_when_daemon_missing() {
+        if let Err(err) = tldr_tool_ping_errors_when_daemon_missing().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_ping_errors_when_daemon_missing() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("ping")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let result = &response.result;
+        assert_eq!(
+            result["isError"],
+            serde_json::Value::Bool(true),
+            "expected error flag"
+        );
+        assert!(
+            result.get("structuredContent").is_none(),
+            "structuredContent should be absent when ping fails"
+        );
+        let expected_message = format!(
+            "tldr tool failed: native-tldr daemon is unavailable for {}",
+            canonical_project.display()
+        );
+        let actual_text = result["content"][0]["text"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("response content text missing"))?;
+        assert_eq!(actual_text, expected_message);
+
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_status_returns_daemon_status() {
+        if let Err(err) = tldr_tool_status_returns_daemon_status().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    #[cfg(unix)]
+    async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let canonical_project_for_server = canonical_project.clone();
+        let socket_path_for_server = socket_path.clone();
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Status => {}
+                other => panic!("expected status, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "status".to_string(),
+                analysis: None,
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 2,
+                    dirty_files: 1,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
+                    project_root: canonical_project_for_server.clone(),
+                    socket_path: socket_path_for_server.clone(),
+                    pid_path: codex_native_tldr::daemon::pid_path_for_project(
+                        &canonical_project_for_server,
+                    ),
+                    lock_path: codex_native_tldr::daemon::lock_path_for_project(
+                        &canonical_project_for_server,
+                    ),
+                    socket_exists: true,
+                    pid_is_live: false,
+                    lock_is_held: true,
+                    healthy: false,
+                    stale_socket: true,
+                    stale_pid: false,
+                    health_reason: Some(
+                        "daemon lock held; another process may be starting it".into(),
+                    ),
+                    recovery_hint: Some(
+                        "wait for the existing daemon or release the lock manually".into(),
+                    ),
+                    semantic_reindex_pending: false,
+                    last_query_at: None,
+                    config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
+                        auto_start: true,
+                        socket_mode: "auto".to_string(),
+                        semantic_enabled: false,
+                        semantic_auto_reindex_threshold: 20,
+                        session_dirty_file_threshold: 20,
+                    },
+                }),
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("status")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "status");
+        assert_eq!(structured["daemonStatus"]["lock_is_held"], true);
+        assert_eq!(
+            structured["daemonStatus"]["health_reason"],
+            "daemon lock held; another process may be starting it"
+        );
+        assert_eq!(
+            structured["daemonStatus"]["recovery_hint"],
+            "wait for the existing daemon or release the lock manually"
+        );
+        assert_eq!(structured["snapshot"]["cached_entries"], 2);
+        server_handle.await??;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_semantic_structured_content() {
+        if let Err(err) = tldr_tool_semantic_structured_content().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("semantic")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                    ("language".to_string(), json!("rust")),
+                    ("query".to_string(), json!("find auth")),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "semantic");
+        assert_eq!(structured["language"], "rust");
+        assert_eq!(structured["query"], "find auth");
+        assert_eq!(structured["semantic"]["query"], "find auth");
+        assert_eq!(structured["source"], "local");
+        assert_eq!(
+            structured["message"],
+            "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
+        );
+        assert_eq!(
+            structured["semantic"]["message"],
+            "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
+        );
+        assert_eq!(structured["enabled"], false);
+        assert_eq!(structured["embeddingUsed"], false);
+        assert_eq!(structured["semantic"]["enabled"], false);
+        assert_eq!(structured["semantic"]["embeddingUsed"], false);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_semantic_returns_matches_when_enabled() {
+        if let Err(err) = tldr_tool_semantic_returns_matches_when_enabled().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()> {
+        let project = TempDir::new()?;
+        std::fs::create_dir(project.path().join(".codex"))?;
+        std::fs::create_dir(project.path().join("src"))?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[semantic]\nenabled = true\n[semantic.embedding]\nenabled = true\ndimensions = 16\n",
+        )?;
+        std::fs::write(
+            project.path().join("src/auth.rs"),
+            "fn verify_token() {\n    let auth_token = true;\n}\n",
+        )?;
+        let canonical_project = project.path().canonicalize()?;
+
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(serde_json::Map::from_iter([
+                    ("action".to_string(), json!("semantic")),
+                    (
+                        "project".to_string(),
+                        json!(canonical_project.to_string_lossy()),
+                    ),
+                    ("language".to_string(), json!("rust")),
+                    ("query".to_string(), json!("auth token")),
+                ])),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(structured["action"], "semantic");
+        assert_eq!(structured["enabled"], true);
+        assert_eq!(structured["semantic"]["enabled"], true);
+        assert_eq!(structured["embeddingUsed"], true);
+        assert_eq!(structured["semantic"]["embeddingUsed"], true);
+        assert_eq!(structured["indexedFiles"], 1);
+        assert_eq!(structured["semantic"]["indexedFiles"], 1);
+        assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+        assert_eq!(structured["semantic"]["matches"][0]["path"], "src/auth.rs");
+        assert_eq!(structured["matches"][0]["line"], 2);
+        assert_eq!(
+            structured["matches"][0]["snippet"],
+            "let auth_token = true;"
+        );
+        assert_eq!(
+            structured["semantic"]["matches"][0]["snippet"],
+            "let auth_token = true;"
+        );
+        assert!(structured["matches"][0].get("unit").is_none());
+        assert!(structured["matches"][0].get("embedding_text").is_none());
+        assert!(structured["semantic"]["matches"][0].get("unit").is_none());
+        assert!(
+            structured["semantic"]["matches"][0]
+                .get("embedding_text")
+                .is_none()
+        );
+        assert!(matches!(
+            structured["matches"][0]["embedding_score"].as_f64(),
+            Some(score) if score > 0.0
+        ));
+
+        Ok(())
+    }
 }
 
 fn create_expected_patch_approval_elicitation_request_params(

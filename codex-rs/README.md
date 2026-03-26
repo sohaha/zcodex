@@ -51,6 +51,13 @@ npx @modelcontextprotocol/inspector codex mcp-server
 
 使用 `codex mcp` 管理 `config.toml` 中定义的 MCP server launcher（添加/列出/查看/删除），使用 `codex mcp-server` 直接运行 MCP 服务端。
 
+`codex-mcp-server` 默认不编译 `tldr` MCP tool；如需对外暴露该能力，请显式开启 `tldr` feature，例如：
+
+```shell
+cargo build --release -p codex-mcp-server --features tldr
+./target/release/codex-mcp-server
+```
+
 如果要一起验证 native-tldr 相关能力，可额外执行：
 
 ```shell

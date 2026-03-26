@@ -36,7 +36,9 @@ use crate::codex_tool_config::CodexToolCallReplyParam;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_param;
 use crate::codex_tool_config::create_tool_for_codex_tool_call_reply_param;
 use crate::outgoing_message::OutgoingMessageSender;
+#[cfg(feature = "tldr")]
 use crate::tldr_tool::create_tool_for_tldr_tool_call_param;
+#[cfg(feature = "tldr")]
 use crate::tldr_tool::run_tldr_tool;
 
 pub(crate) struct MessageProcessor {
@@ -316,13 +318,20 @@ impl MessageProcessor {
         params: Option<rmcp::model::PaginatedRequestParams>,
     ) {
         tracing::trace!("tools/list -> {params:?}");
+        #[cfg(feature = "tldr")]
+        let tools = vec![
+            create_tool_for_codex_tool_call_param(),
+            create_tool_for_codex_tool_call_reply_param(),
+            create_tool_for_tldr_tool_call_param(),
+        ];
+        #[cfg(not(feature = "tldr"))]
+        let tools = vec![
+            create_tool_for_codex_tool_call_param(),
+            create_tool_for_codex_tool_call_reply_param(),
+        ];
         let result = rmcp::model::ListToolsResult {
             meta: None,
-            tools: vec![
-                create_tool_for_codex_tool_call_param(),
-                create_tool_for_codex_tool_call_reply_param(),
-                create_tool_for_tldr_tool_call_param(),
-            ],
+            tools,
             next_cursor: None,
         };
 
@@ -341,6 +350,7 @@ impl MessageProcessor {
                 self.handle_tool_call_codex_session_reply(id, arguments)
                     .await
             }
+            #[cfg(feature = "tldr")]
             "tldr" => {
                 let result = run_tldr_tool(arguments).await;
                 self.outgoing.send_response(id, result).await;
