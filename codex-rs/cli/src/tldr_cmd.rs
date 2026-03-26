@@ -7,6 +7,7 @@ use codex_native_tldr::TldrConfig;
 use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
+use codex_native_tldr::daemon::TldrDaemon;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -22,9 +23,9 @@ use codex_native_tldr::semantic::SemanticSearchRequest;
 use codex_native_tldr::semantic::SemanticSearchResponse;
 use codex_native_tldr::wire::daemon_response_payload;
 use codex_native_tldr::wire::semantic_payload;
-use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
+use std::ffi::OsString;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::future::Future;
@@ -61,6 +62,10 @@ pub enum TldrSubcommand {
 
     /// 与 native-tldr daemon 直接交互。
     Daemon(TldrDaemonCli),
+
+    /// 内部：运行 native-tldr daemon 服务。
+    #[command(hide = true, name = "internal-daemon")]
+    InternalDaemon(TldrInternalDaemonCli),
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -140,6 +145,13 @@ pub struct TldrDaemonCli {
     pub subcommand: TldrDaemonSubcommand,
 }
 
+#[derive(Debug, Parser)]
+pub struct TldrInternalDaemonCli {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum TldrDaemonSubcommand {
     /// 检查 daemon 是否在线。
@@ -182,9 +194,18 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         TldrSubcommand::Daemon(cmd) => {
             run_daemon_command(cmd).await?;
         }
+        TldrSubcommand::InternalDaemon(cmd) => {
+            run_internal_daemon_command(cmd).await?;
+        }
     }
 
     Ok(())
+}
+
+async fn run_internal_daemon_command(cmd: TldrInternalDaemonCli) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let daemon = TldrDaemon::from_config(load_tldr_config(&project_root)?);
+    daemon.run_until_shutdown().await
 }
 
 async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Result<()> {
@@ -497,12 +518,27 @@ const CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCH_COUNTER
 #[cfg(test)]
 const CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER_ENV: &str = "CODEX_TLDR_TEST_LAUNCHER_WAIT_COUNTER";
 
-fn daemon_launcher_bin_for_tests() -> Result<PathBuf> {
+fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
     #[cfg(test)]
     if let Some(path) = std::env::var_os(CODEX_TLDR_TEST_DAEMON_BIN_ENV) {
-        return Ok(PathBuf::from(path));
+        let mut command = Command::new(PathBuf::from(path));
+        command.arg("--project").arg(project_root);
+        return Ok(command);
     }
-    Ok(cargo_bin("codex-native-tldr-daemon")?)
+
+    let current_exe = std::env::current_exe()?;
+    let mut command = Command::new(current_exe);
+    command.args(daemon_launcher_args(project_root));
+    Ok(command)
+}
+
+fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
+    [
+        OsString::from("tldr"),
+        OsString::from("internal-daemon"),
+        OsString::from("--project"),
+        project_root.as_os_str().to_os_string(),
+    ]
 }
 
 fn record_test_daemon_spawn(_project_root: &Path) {
@@ -549,10 +585,7 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
 
     cleanup_stale_daemon_artifacts(project_root);
 
-    let daemon_bin = daemon_launcher_bin_for_tests()?;
-    let mut child = Command::new(daemon_bin)
-        .arg("--project")
-        .arg(project_root)
+    let mut child = daemon_launcher_command(project_root)?
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -675,6 +708,7 @@ fn cleanup_file_if_exists(path: PathBuf) {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::cleanup_stale_daemon_artifacts;
+    use super::daemon_launcher_args;
     use super::daemon_metadata_looks_alive;
     use super::ensure_daemon_running;
     use super::launcher_lock_path_for_project;
@@ -713,6 +747,24 @@ mod lifecycle_tests {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("artifact parent should be created");
         }
+    }
+
+    #[test]
+    fn daemon_launcher_args_target_internal_daemon_mode() -> Result<()> {
+        let temp = tempdir()?;
+        let project_root = temp.path().join("project");
+        let args = daemon_launcher_args(&project_root);
+
+        assert_eq!(
+            args,
+            [
+                "tldr".into(),
+                "internal-daemon".into(),
+                "--project".into(),
+                project_root.as_os_str().to_os_string(),
+            ]
+        );
+        Ok(())
     }
 
     const CODEX_TLDR_TEST_PROJECT_ROOT_ENV: &str = "CODEX_TLDR_TEST_PROJECT_ROOT";

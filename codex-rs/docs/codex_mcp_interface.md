@@ -43,7 +43,7 @@ codex mcp-server | your_mcp_client
 If you are validating from source, a typical local flow is:
 
 ```bash
-cargo build --release -p codex-cli -p codex-mcp-server -p codex-native-tldr-daemon
+cargo build --release -p codex-cli -p codex-mcp-server
 ./target/release/codex mcp-server
 ```
 
@@ -65,7 +65,7 @@ To smoke-test the native-tldr sidecar used by the `tldr` MCP tool:
 Notes:
 
 - `codex-mcp-server` runs over stdio and does not expose an HTTP port.
-- On Unix, `codex tldr daemon ...` may auto-start `codex-native-tldr-daemon`.
+- On Unix, `codex tldr daemon ...` may auto-start an internal daemon mode inside the current `codex` binary.
 - The MCP `tldr` tool reuses daemon query/retry logic but does not auto-start the daemon itself.
 
 ## Threads and turns

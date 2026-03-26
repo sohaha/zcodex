@@ -18,20 +18,19 @@
 当前推荐把 native-tldr 视为一组本地二进制交付：
 
 - `target/release/codex`
-- `target/release/codex-native-tldr-daemon`
 - `target/release/codex-mcp-server`
 
 常用本地验证命令：
 
 ```bash
-cargo build --release -p codex-cli -p codex-native-tldr-daemon -p codex-mcp-server
+cargo build --release -p codex-cli -p codex-mcp-server
 ./target/release/codex tldr languages
 ./target/release/codex tldr daemon --project /path/to/project --json status
 ```
 
 说明：
 
-- `codex tldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时自动拉起 daemon
+- `codex tldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起内部 daemon 模式
 - `codex-mcp-server` 是 stdio MCP server；它复用 native-tldr 的 query/retry 生命周期逻辑，但不负责 auto-start daemon
 - 这是本地 CLI/MCP 交付，不提供 HTTP 端口或 Web UI
 

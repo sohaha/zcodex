@@ -651,7 +651,7 @@ fn health_diagnostics(
     }
     (
         Some("daemon unavailable (missing socket and pid)".to_string()),
-        Some("start codex-native-tldr-daemon or inspect logs".to_string()),
+        Some("run `codex tldr ...` to auto-start the internal daemon or inspect logs".to_string()),
     )
 }
 
