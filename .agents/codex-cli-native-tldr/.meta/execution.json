@@ -200,6 +200,10 @@
       {
          "at": "2026-03-26T01:20:00Z",
          "note": "added CLI launcher lock+aivo scenario test that ensures ensure_running waits when daemon lock-held and launcher lock active"
+      },
+      {
+         "at": "2026-03-26T01:20:00Z",
+         "note": "added CLI regression for launcher-lock-held plus live-daemon state and revalidated codex-cli plus just fix -p codex-cli"
       }
    ],
    "feature": "codex-cli-native-tldr"
