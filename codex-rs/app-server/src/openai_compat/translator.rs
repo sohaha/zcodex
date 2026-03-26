@@ -331,6 +331,7 @@ struct ChatCompletionsSseState {
     tool_calls: BTreeMap<u32, PendingToolCall>,
     token_usage: Option<Value>,
     completed: bool,
+    next_output_index: i64,
 }
 
 impl ChatCompletionsSseState {
@@ -347,6 +348,7 @@ impl ChatCompletionsSseState {
             tool_calls: BTreeMap::new(),
             token_usage: None,
             completed: false,
+            next_output_index: 0,
         }
     }
 
@@ -383,6 +385,9 @@ impl ChatCompletionsSseState {
                         "response.output_text.delta",
                         json!({
                             "type": "response.output_text.delta",
+                            "item_id": self.message_item_id(),
+                            "output_index": 0,
+                            "content_index": 0,
                             "delta": text,
                         }),
                     )
@@ -457,7 +462,9 @@ impl ChatCompletionsSseState {
             "response.output_item.added",
             json!({
                 "type": "response.output_item.added",
+                "output_index": 0,
                 "item": {
+                    "id": self.message_item_id(),
                     "type": "message",
                     "role": "assistant",
                     "content": [],
@@ -479,7 +486,9 @@ impl ChatCompletionsSseState {
                 "response.output_item.done",
                 json!({
                     "type": "response.output_item.done",
+                    "output_index": 0,
                     "item": {
+                        "id": self.message_item_id(),
                         "type": "message",
                         "role": "assistant",
                         "content": [{
@@ -491,6 +500,7 @@ impl ChatCompletionsSseState {
             )
             .await?;
             self.output_text_done = true;
+            self.next_output_index = 1;
         }
 
         for tool_call in self.tool_calls.values() {
@@ -501,7 +511,7 @@ impl ChatCompletionsSseState {
                 continue;
             };
             let item = self.translator.tool_call_response_item_from_parts(
-                call_id,
+                call_id.clone(),
                 name,
                 tool_call.arguments.clone(),
             )?;
@@ -510,15 +520,18 @@ impl ChatCompletionsSseState {
                     "failed to encode translated tool call stream item: {err}"
                 ))
             })?;
+            let item = with_item_id(item, format!("{}_{}", self.response_id(), call_id));
             send_sse_json(
                 tx,
                 "response.output_item.done",
                 json!({
                     "type": "response.output_item.done",
+                    "output_index": self.next_output_index,
                     "item": item,
                 }),
             )
             .await?;
+            self.next_output_index += 1;
         }
         self.tool_calls.clear();
         Ok(())
@@ -558,6 +571,10 @@ impl ChatCompletionsSseState {
         self.response_id
             .clone()
             .unwrap_or_else(|| "chatcmpl-compat".to_string())
+    }
+
+    fn message_item_id(&self) -> String {
+        format!("{}_message_0", self.response_id())
     }
 }
 
@@ -620,6 +637,13 @@ fn chat_usage_json(usage: ChatUsage) -> Value {
     })
 }
 
+fn with_item_id(mut item: Value, id: String) -> Value {
+    if let Some(object) = item.as_object_mut() {
+        object.insert("id".to_string(), Value::String(id));
+    }
+    item
+}
+
 fn chat_message_text(content: Option<&Value>) -> Option<String> {
     match content? {
         Value::String(text) => Some(text.clone()),
@@ -658,9 +682,9 @@ fn parse_tool_search_arguments_value(arguments: &str) -> Result<Value, ApiError>
         ))
     })?;
     match value {
-        Value::Object(mut object) => Ok(object
-            .remove("arguments")
-            .unwrap_or(Value::Object(object))),
+        Value::Object(mut object) => {
+            Ok(object.remove("arguments").unwrap_or(Value::Object(object)))
+        }
         value => Ok(value),
     }
 }

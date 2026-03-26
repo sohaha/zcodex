@@ -556,7 +556,11 @@ async fn chat_wire_api_translates_streaming_responses_endpoint_to_chat_upstream(
     }
     let translated_stream = format!("{first_chunk}{remaining}");
     assert!(translated_stream.contains("event: response.output_item.added"));
+    assert!(translated_stream.contains("\"output_index\":0"));
+    assert!(translated_stream.contains("\"id\":\"chatcmpl-stream_message_0\""));
     assert!(translated_stream.contains("event: response.output_text.delta"));
+    assert!(translated_stream.contains("\"item_id\":\"chatcmpl-stream_message_0\""));
+    assert!(translated_stream.contains("\"content_index\":0"));
     assert!(translated_stream.contains("\"delta\":\"Hel\""));
     assert!(translated_stream.contains("\"delta\":\"lo\""));
     assert!(translated_stream.contains("event: response.output_item.done"));
@@ -690,6 +694,147 @@ async fn chat_wire_api_maps_tool_calls_in_translated_responses_payload() {
     assert_eq!(output[2]["action"]["command"], json!(["pwd"]));
     assert_eq!(output[2]["action"]["working_directory"], "/tmp");
     assert_eq!(output[2]["action"]["timeout_ms"], 5000);
+}
+
+#[tokio::test]
+async fn chat_wire_api_translates_special_tool_calls_in_stream() {
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            (
+                [(CONTENT_TYPE, "text/event-stream")],
+                concat!(
+                    "data: {\"id\":\"chatcmpl-tools\",\"model\":\"gpt-chat\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-custom\",\"function\":{\"name\":\"apply_patch\",\"arguments\":\"{\\\"input\\\":\\\"*** Begin\"}}]}}]}\n\n",
+                    "data: {\"id\":\"chatcmpl-tools\",\"model\":\"gpt-chat\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\" Patch\\\"}\"}},{\"index\":1,\"id\":\"call-search\",\"function\":{\"name\":\"tool_search\",\"arguments\":\"{\\\"execution\\\":\\\"client\\\",\\\"arguments\\\":{\\\"query\\\":\\\"calendar create\\\",\\\"limit\\\":1}}\"}},{\"index\":2,\"id\":\"call-shell\",\"function\":{\"name\":\"local_shell\",\"arguments\":\"{\\\"command\\\":[\\\"pwd\\\"],\\\"workdir\\\":\\\"/tmp\\\",\\\"timeout_ms\\\":5000}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                    "data: [DONE]\n\n"
+                ),
+            )
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/responses"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "apply_patch",
+                        "description": "Apply a patch"
+                    },
+                    {
+                        "type": "tool_search",
+                        "description": "Search tools",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string" },
+                                "limit": { "type": "integer" }
+                            },
+                            "required": ["query"]
+                        }
+                    },
+                    { "type": "local_shell" }
+                ],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": true,
+                "include": []
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = String::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.expect("chunk");
+        body.push_str(core::str::from_utf8(&chunk).expect("utf8"));
+    }
+
+    assert!(body.contains("\"type\":\"custom_tool_call\""));
+    assert!(body.contains("\"call_id\":\"call-custom\""));
+    assert!(body.contains("\"input\":\"*** Begin Patch\""));
+    assert!(body.contains("\"type\":\"tool_search_call\""));
+    assert!(body.contains("\"call_id\":\"call-search\""));
+    assert!(body.contains("\"query\":\"calendar create\""));
+    assert!(body.contains("\"type\":\"local_shell_call\""));
+    assert!(body.contains("\"call_id\":\"call-shell\""));
+    assert!(body.contains("\"working_directory\":\"/tmp\""));
+    assert!(body.contains("\"output_index\":0"));
+    assert!(body.contains("\"output_index\":1"));
+    assert!(body.contains("\"output_index\":2"));
+}
+
+#[tokio::test]
+async fn chat_wire_api_emits_failed_event_for_invalid_stream_tool_arguments() {
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            (
+                [(CONTENT_TYPE, "text/event-stream")],
+                concat!(
+                    "data: {\"id\":\"chatcmpl-bad\",\"model\":\"gpt-chat\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-shell\",\"function\":{\"name\":\"local_shell\",\"arguments\":\"{\\\"command\\\":\\\"pwd\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                    "data: [DONE]\n\n"
+                ),
+            )
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/responses"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [{ "type": "local_shell" }],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": true,
+                "include": []
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = String::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.expect("chunk");
+        body.push_str(core::str::from_utf8(&chunk).expect("utf8"));
+    }
+
+    assert!(body.contains("event: response.failed"));
+    assert!(body.contains("\"status\":\"failed\""));
+    assert!(body.contains("failed to decode local_shell arguments"));
 }
 
 #[tokio::test]
