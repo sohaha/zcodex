@@ -76,6 +76,19 @@ const RESPONSE_HEADER_ALLOWLIST: &[&str] = &[
     "x-request-id",
 ];
 
+const REQUEST_HEADER_BLOCKLIST: &[&str] = &[
+    "authorization",
+    "cookie",
+    "forwarded",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-port",
+    "x-forwarded-proto",
+    "x-real-ip",
+];
+
+const RESPONSE_HEADER_BLOCKLIST: &[&str] = &["set-cookie"];
+
 #[derive(Debug, Clone, Args)]
 pub struct OpenAiCompatServerArgs {
     /// HTTP 监听地址。默认仅监听本机回环地址。
@@ -509,17 +522,7 @@ fn validate_query_string(query: &str) -> Result<(), ApiError> {
 fn should_forward_request_header(name: &HeaderName) -> bool {
     let lower = name.as_str().to_ascii_lowercase();
     !is_hop_by_hop_header(name)
-        && !matches!(
-            lower.as_str(),
-            "authorization"
-                | "cookie"
-                | "forwarded"
-                | "x-forwarded-for"
-                | "x-forwarded-host"
-                | "x-forwarded-port"
-                | "x-forwarded-proto"
-                | "x-real-ip"
-        )
+        && !header_matches_any(&lower, REQUEST_HEADER_BLOCKLIST)
         && (REQUEST_HEADER_ALLOWLIST
             .iter()
             .any(|candidate| lower.eq_ignore_ascii_case(candidate))
@@ -530,12 +533,18 @@ fn should_forward_request_header(name: &HeaderName) -> bool {
 fn should_forward_response_header(name: &HeaderName) -> bool {
     let lower = name.as_str().to_ascii_lowercase();
     !is_hop_by_hop_header(name)
-        && !lower.eq_ignore_ascii_case("set-cookie")
+        && !header_matches_any(&lower, RESPONSE_HEADER_BLOCKLIST)
         && (RESPONSE_HEADER_ALLOWLIST
             .iter()
             .any(|candidate| lower.eq_ignore_ascii_case(candidate))
             || lower.starts_with("openai-")
             || lower.starts_with("x-request-"))
+}
+
+fn header_matches_any(header_name: &str, candidates: &[&str]) -> bool {
+    candidates
+        .iter()
+        .any(|candidate| header_name.eq_ignore_ascii_case(candidate))
 }
 
 fn is_hop_by_hop_header(name: &HeaderName) -> bool {

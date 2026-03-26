@@ -283,6 +283,35 @@ async fn chat_wire_api_running_server_rejects_responses_endpoint() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_proxy_forwards_models_via_running_server() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(query_param("api-version", "2025-04-01-preview"))
+        .and(header("authorization", "Bearer provider-token"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string("{\"data\":[{\"id\":\"gpt-chat\"}]}"),
+        )
+        .mount(&server)
+        .await;
+
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("{}/v1", server.uri())))).await;
+
+    let response = reqwest::Client::new()
+        .get(format!("http://{proxy_addr}/v1/models"))
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.text().await.expect("body"),
+        "{\"data\":[{\"id\":\"gpt-chat\"}]}".to_string()
+    );
+}
+
+#[tokio::test]
 async fn running_server_requires_local_bearer_auth_when_configured() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
