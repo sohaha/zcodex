@@ -7,6 +7,7 @@ pub mod daemon;
 pub mod lang_support;
 pub mod lifecycle;
 pub mod mcp;
+mod rust_analysis;
 pub mod semantic;
 pub mod session;
 pub mod wire;

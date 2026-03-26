@@ -1,5 +1,6 @@
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
+use crate::rust_analysis;
 use anyhow::Context;
 use anyhow::Result;
 use ignore::gitignore::Gitignore;
@@ -179,8 +180,17 @@ pub struct EmbeddingUnit {
     pub path: PathBuf,
     pub language: SupportedLanguage,
     pub symbol: Option<String>,
+    pub qualified_symbol: Option<String>,
+    pub symbol_aliases: Vec<String>,
     pub kind: String,
     pub line: usize,
+    pub span_end_line: usize,
+    pub module_path: Vec<String>,
+    pub visibility: Option<String>,
+    pub signature: Option<String>,
+    pub docs: Vec<String>,
+    pub imports: Vec<String>,
+    pub references: Vec<String>,
     pub code_preview: String,
     pub calls: Vec<String>,
     pub called_by: Vec<String>,
@@ -194,12 +204,24 @@ impl EmbeddingUnit {
     pub fn build_embedding_text(&self) -> String {
         [
             format!(
-                "symbol={} kind={} file={} line={}",
+                "symbol={} qualified={} aliases={} kind={} file={} line={} end_line={}",
                 self.symbol.as_deref().unwrap_or("<file>"),
+                self.qualified_symbol.as_deref().unwrap_or("<none>"),
+                join_or_none(&self.symbol_aliases),
                 self.kind,
                 self.path.display(),
                 self.line,
+                self.span_end_line,
             ),
+            format!(
+                "module_path={} visibility={} signature={}",
+                join_or_none(&self.module_path),
+                self.visibility.as_deref().unwrap_or("<none>"),
+                self.signature.as_deref().unwrap_or("<none>"),
+            ),
+            format!("docs: {}", join_or_none(&self.docs)),
+            format!("imports: {}", join_or_none(&self.imports)),
+            format!("references: {}", join_or_none(&self.references)),
             format!("code: {}", self.code_preview),
             format!("calls: {}", join_or_none(&self.calls)),
             format!("called_by: {}", join_or_none(&self.called_by)),
@@ -506,7 +528,8 @@ fn collect_embedding_units(
             .strip_prefix(project_root)
             .map(Path::to_path_buf)
             .unwrap_or(path.clone());
-        let file_units = extract_units(&relative_path, language, &contents);
+        let file_units = extract_units(&relative_path, language, &contents)
+            .with_context(|| format!("extract units from {}", relative_path.display()))?;
         if file_units.is_empty() {
             units.push(file_level_unit(relative_path, language, &contents));
         } else {
@@ -519,10 +542,17 @@ fn collect_embedding_units(
         units
             .into_iter()
             .map(|mut unit| {
-                unit.called_by = symbol_index
-                    .get(unit.symbol.as_deref().unwrap_or_default())
-                    .cloned()
-                    .unwrap_or_default();
+                let mut called_by = Vec::new();
+                for key in symbol_lookup_keys(&unit) {
+                    if let Some(callers) = symbol_index.get(key.as_str()) {
+                        for caller in callers {
+                            if !called_by.iter().any(|existing| existing == caller) {
+                                called_by.push(caller.clone());
+                            }
+                        }
+                    }
+                }
+                unit.called_by = called_by;
                 unit.embedding_vector = embedding_vector_for_text(
                     &unit.build_embedding_text(),
                     embedding_enabled,
@@ -570,7 +600,22 @@ fn collect_source_files(
     Ok(())
 }
 
-fn extract_units(path: &Path, language: SupportedLanguage, contents: &str) -> Vec<EmbeddingUnit> {
+fn extract_units(
+    path: &Path,
+    language: SupportedLanguage,
+    contents: &str,
+) -> Result<Vec<EmbeddingUnit>> {
+    if language == SupportedLanguage::Rust {
+        return rust_analysis::extract_units(path, contents);
+    }
+    Ok(extract_units_fallback(path, language, contents))
+}
+
+fn extract_units_fallback(
+    path: &Path,
+    language: SupportedLanguage,
+    contents: &str,
+) -> Vec<EmbeddingUnit> {
     let mut units = Vec::new();
     let mut block = Vec::new();
     let mut current_symbol: Option<String> = None;
@@ -647,8 +692,11 @@ fn build_unit(
     code_preview: String,
 ) -> EmbeddingUnit {
     let calls = extract_calls(&code_preview, symbol.as_deref());
+    let dependencies = dependency_segments(&path);
+    let module_path = file_module_path(&path);
+    let symbol_aliases = symbol.iter().cloned().collect();
     EmbeddingUnit {
-        dependencies: dependency_segments(&path),
+        dependencies,
         cfg_summary: format!(
             "{} lines sampled; {} outgoing calls",
             code_preview.lines().count(),
@@ -662,8 +710,17 @@ fn build_unit(
         path,
         language,
         symbol,
+        qualified_symbol: None,
+        symbol_aliases,
         kind,
         line,
+        span_end_line: line + code_preview.lines().count().saturating_sub(1),
+        module_path,
+        visibility: None,
+        signature: None,
+        docs: Vec::new(),
+        imports: Vec::new(),
+        references: Vec::new(),
         code_preview,
         called_by: Vec::new(),
         calls,
@@ -674,17 +731,42 @@ fn build_unit(
 fn build_called_by_index(units: &[EmbeddingUnit]) -> BTreeMap<String, Vec<String>> {
     let mut index: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for unit in units {
-        let Some(caller) = unit.symbol.as_deref() else {
+        let Some(caller) = canonical_symbol(unit) else {
             continue;
         };
         for callee in &unit.calls {
             let called_by = index.entry(callee.clone()).or_default();
             if !called_by.iter().any(|existing| existing == caller) {
-                called_by.push(caller.to_string());
+                called_by.push(caller.to_owned());
             }
         }
     }
     index
+}
+
+fn canonical_symbol(unit: &EmbeddingUnit) -> Option<&str> {
+    unit.qualified_symbol
+        .as_deref()
+        .or(unit.symbol.as_deref())
+        .or_else(|| unit.symbol_aliases.first().map(String::as_str))
+}
+
+fn symbol_lookup_keys(unit: &EmbeddingUnit) -> Vec<String> {
+    let mut keys = Vec::new();
+    if let Some(symbol) = &unit.symbol {
+        keys.push(symbol.clone());
+    }
+    if let Some(qualified) = &unit.qualified_symbol
+        && !keys.iter().any(|existing| existing == qualified)
+    {
+        keys.push(qualified.clone());
+    }
+    for alias in &unit.symbol_aliases {
+        if !keys.iter().any(|existing| existing == alias) {
+            keys.push(alias.clone());
+        }
+    }
+    keys
 }
 
 fn definition_for_line(language: SupportedLanguage, line: &str) -> Option<(String, &'static str)> {
@@ -774,6 +856,27 @@ fn dependency_segments(path: &Path) -> Vec<String> {
         .collect()
 }
 
+fn file_module_path(path: &Path) -> Vec<String> {
+    let mut segments = path
+        .components()
+        .filter_map(|component| component.as_os_str().to_str().map(str::to_string))
+        .collect::<Vec<_>>();
+    if matches!(segments.first().map(String::as_str), Some("src")) {
+        segments.remove(0);
+    }
+    let Some(last) = segments.pop() else {
+        return Vec::new();
+    };
+    let stem = Path::new(&last)
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if !matches!(stem, "" | "lib" | "main" | "mod") {
+        segments.push(stem.to_string());
+    }
+    segments
+}
+
 fn preview(contents: &str, max_lines: usize) -> String {
     contents
         .lines()
@@ -819,6 +922,24 @@ fn score_match(query: &str, unit: &EmbeddingUnit, embedding_text: &str) -> usize
         .as_deref()
         .unwrap_or_default()
         .to_ascii_lowercase();
+    let qualified = unit
+        .qualified_symbol
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let aliases = unit
+        .symbol_aliases
+        .iter()
+        .map(|alias| alias.to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    let signature = unit
+        .signature
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let docs = unit.docs.join(" ").to_ascii_lowercase();
+    let imports = unit.imports.join(" ").to_ascii_lowercase();
+    let references = unit.references.join(" ").to_ascii_lowercase();
     let path = unit.path.display().to_string().to_ascii_lowercase();
     let preview = unit.code_preview.to_ascii_lowercase();
     let embedding = embedding_text.to_ascii_lowercase();
@@ -830,10 +951,28 @@ fn score_match(query: &str, unit: &EmbeddingUnit, embedding_text: &str) -> usize
             if symbol.contains(token) {
                 score += 5;
             }
+            if qualified.contains(token) {
+                score += 8;
+            }
+            if aliases.iter().any(|alias| alias.contains(token)) {
+                score += 6;
+            }
+            if signature.contains(token) {
+                score += 4;
+            }
+            if references.contains(token) {
+                score += 3;
+            }
+            if imports.contains(token) {
+                score += 2;
+            }
             if path.contains(token) {
                 score += 3;
             }
             if preview.contains(token) {
+                score += 2;
+            }
+            if docs.contains(token) {
                 score += 2;
             }
             if embedding.contains(token) {
@@ -939,8 +1078,17 @@ mod tests {
             path: "src/lib.rs".into(),
             language: SupportedLanguage::Rust,
             symbol: Some("login".to_string()),
+            qualified_symbol: Some("auth::login".to_string()),
+            symbol_aliases: vec!["login".to_string(), "auth::login".to_string()],
             kind: "function".to_string(),
             line: 7,
+            span_end_line: 11,
+            module_path: vec!["auth".to_string()],
+            visibility: Some("pub".to_string()),
+            signature: Some("pub fn login(token: &str) -> bool".to_string()),
+            docs: vec!["Login entry point".to_string()],
+            imports: vec!["use crate::auth::token;".to_string()],
+            references: vec!["Token".to_string()],
             code_preview: "fn login() { validate(user); }".to_string(),
             calls: vec!["validate".to_string()],
             called_by: vec!["router".to_string()],
@@ -952,7 +1100,11 @@ mod tests {
         .build_embedding_text();
 
         let expected = [
-            "symbol=login kind=function file=src/lib.rs line=7",
+            "symbol=login qualified=auth::login aliases=login, auth::login kind=function file=src/lib.rs line=7 end_line=11",
+            "module_path=auth visibility=pub signature=pub fn login(token: &str) -> bool",
+            "docs: Login entry point",
+            "imports: use crate::auth::token;",
+            "references: Token",
             "code: fn login() { validate(user); }",
             "calls: validate",
             "called_by: router",
@@ -1088,5 +1240,48 @@ fn log() {
             .embedding_score
             .expect("embedding score should be available");
         assert!(score > 0.0);
+    }
+
+    #[test]
+    fn semantic_search_ranks_qualified_symbol_query_first() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"
+mod auth {
+    pub struct AuthService;
+
+    impl AuthService {
+        pub fn login(&self, token: &str) -> bool {
+            self.validate(token)
+        }
+
+        fn validate(&self, token: &str) -> bool {
+            !token.is_empty()
+        }
+    }
+}
+"#,
+        )
+        .expect("fixture should write");
+        let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
+        let response = indexer
+            .search(
+                tempdir.path(),
+                SemanticSearchRequest {
+                    language: SupportedLanguage::Rust,
+                    query: "auth::AuthService::login token".to_string(),
+                },
+            )
+            .expect("search should succeed");
+
+        assert!(response.matches.len() >= 2);
+        assert_eq!(
+            response.matches[0].unit.qualified_symbol.as_deref(),
+            Some("auth::AuthService::login")
+        );
+        assert!(response.matches[0].score >= response.matches[1].score);
     }
 }

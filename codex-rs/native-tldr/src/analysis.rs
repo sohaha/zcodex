@@ -41,7 +41,7 @@ fn filter_symbol_units<'a>(
     match symbol {
         Some(symbol) => units
             .iter()
-            .filter(|unit| unit.symbol.as_deref() == Some(symbol))
+            .filter(|unit| symbol_matches(unit, symbol))
             .collect(),
         None => units.iter().filter(|unit| unit.symbol.is_some()).collect(),
     }
@@ -55,11 +55,15 @@ fn summarize_structure(
     if let Some(symbol) = symbol {
         return summarize_symbol_lookup("structure", indexed_files, units, symbol, |unit| {
             format!(
-                "{} {} @ {}:{} calls [{}]",
+                "{} {} @ {}:{}-{} module [{}] visibility [{}] signature [{}] calls [{}]",
                 unit.kind,
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                symbol_label(unit),
                 unit.path.display(),
                 unit.line,
+                unit.span_end_line,
+                join_or_none(&unit.module_path),
+                unit.visibility.as_deref().unwrap_or("<none>"),
+                unit.signature.as_deref().unwrap_or("<none>"),
                 join_or_none(&unit.calls),
             )
         });
@@ -83,10 +87,11 @@ fn summarize_structure(
         .take(5)
         .map(|unit| {
             format!(
-                "{}@{}:{}",
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                "{}@{}:{}-{}",
+                symbol_label(unit),
                 unit.path.display(),
-                unit.line
+                unit.line,
+                unit.span_end_line,
             )
         })
         .collect::<Vec<_>>()
@@ -106,12 +111,13 @@ fn summarize_context(
     if let Some(symbol) = symbol {
         return summarize_symbol_lookup("context", indexed_files, units, symbol, |unit| {
             format!(
-                "{} @ {}:{} outgoing [{}]; incoming [{}]",
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                "{} @ {}:{} outgoing [{}]; incoming [{}]; refs [{}]",
+                symbol_label(unit),
                 unit.path.display(),
                 unit.line,
                 join_or_none(&unit.calls),
                 join_or_none(&unit.called_by),
+                join_or_none(&unit.references),
             )
         });
     }
@@ -129,7 +135,7 @@ fn summarize_context(
         .map(|unit| {
             format!(
                 "{}(out={},in={})",
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                symbol_label(unit),
                 unit.calls.len(),
                 unit.called_by.len()
             )
@@ -152,7 +158,7 @@ fn summarize_cfg(indexed_files: usize, units: &[&EmbeddingUnit], symbol: Option<
         return summarize_symbol_lookup("cfg", indexed_files, units, symbol, |unit| {
             format!(
                 "{} @ {}:{} => {}",
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                symbol_label(unit),
                 unit.path.display(),
                 unit.line,
                 unit.cfg_summary
@@ -188,11 +194,12 @@ fn summarize_dfg(indexed_files: usize, units: &[&EmbeddingUnit], symbol: Option<
     if let Some(symbol) = symbol {
         return summarize_symbol_lookup("dfg", indexed_files, units, symbol, |unit| {
             format!(
-                "{} @ {}:{} => {}",
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                "{} @ {}:{} => {}; refs [{}]",
+                symbol_label(unit),
                 unit.path.display(),
                 unit.line,
-                unit.dfg_summary
+                unit.dfg_summary,
+                join_or_none(&unit.references),
             )
         });
     }
@@ -217,13 +224,15 @@ fn summarize_pdg(indexed_files: usize, units: &[&EmbeddingUnit], symbol: Option<
     if let Some(symbol) = symbol {
         return summarize_symbol_lookup("impact", indexed_files, units, symbol, |unit| {
             format!(
-                "{} @ {}:{} deps [{}]; outgoing [{}]; incoming [{}]; {}",
-                unit.symbol.as_deref().unwrap_or("<file>"),
+                "{} @ {}:{} deps [{}]; imports [{}]; outgoing [{}]; incoming [{}]; refs [{}]; {}",
+                symbol_label(unit),
                 unit.path.display(),
                 unit.line,
                 join_or_none(&unit.dependencies),
+                join_or_none(&unit.imports),
                 join_or_none(&unit.calls),
                 join_or_none(&unit.called_by),
+                join_or_none(&unit.references),
                 unit.dfg_summary,
             )
         });
@@ -283,6 +292,19 @@ fn join_or_none(values: &[String]) -> String {
     } else {
         values.join(", ")
     }
+}
+
+fn symbol_matches(unit: &EmbeddingUnit, symbol: &str) -> bool {
+    unit.symbol.as_deref() == Some(symbol)
+        || unit.qualified_symbol.as_deref() == Some(symbol)
+        || unit.symbol_aliases.iter().any(|alias| alias == symbol)
+}
+
+fn symbol_label(unit: &EmbeddingUnit) -> &str {
+    unit.qualified_symbol
+        .as_deref()
+        .or(unit.symbol.as_deref())
+        .unwrap_or("<file>")
 }
 
 #[cfg(test)]
@@ -373,5 +395,44 @@ mod tests {
             response.summary,
             "impact summary: symbol `logout` not found in 1 indexed files"
         );
+    }
+
+    #[test]
+    fn structure_analysis_supports_qualified_symbol_lookup() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            r#"
+mod auth {
+    struct AuthService;
+
+    impl AuthService {
+        fn login(&self) {
+            self.validate();
+        }
+
+        fn validate(&self) {}
+    }
+}
+"#,
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        let response = analyze_project(
+            tempdir.path(),
+            &config,
+            AnalysisRequest {
+                kind: AnalysisKind::Ast,
+                language: SupportedLanguage::Rust,
+                symbol: Some("auth::AuthService::login".to_string()),
+            },
+        )
+        .expect("analysis should succeed");
+
+        assert_eq!(response.kind, AnalysisKind::Ast);
+        assert!(response.summary.contains("auth::AuthService::login"));
+        assert!(response.summary.contains("signature [fn login(&self)]"));
     }
 }
