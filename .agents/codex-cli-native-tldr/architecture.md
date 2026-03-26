@@ -315,13 +315,14 @@ classDiagram
 - **模型**：不适用传统 RBAC/ABAC。
 - **实际约束点**：
   - CLI/MCP 仅在给定 `--project`（或 MCP `project`）根目录下进行源码扫描/读取（semantic 构建索引时读取源文件）。
-  - daemon artifacts 位于 `std::env::temp_dir()`，文件权限与命名可预测性带来潜在抢占/碰撞风险（已通过 lock/health/stale 策略降低，但不是强安全隔离）。
+  - daemon artifacts 现已位于按用户隔离的 runtime/temp scope 下；其中 `socket/pid` 按项目分目录，`lock/launch.lock` 放在 scope 根目录。虽然已显著降低碰撞/误删风险，但仍不是强安全隔离。
 
 ### 6.3 安全措施
 - [x] **可观测的 stale 清理策略**：仅在 `lock_is_held=false` 且确认为 stale 时才清理 `socket/pid`，避免并发启动误删。
 - [x] **双锁策略降低竞态**：daemon lock（避免重复启动）+ launcher lock（避免多 CLI 进程重复 spawn）。
 - [ ] **（待 phase-2 前置收口）Semantic payload 控制**：当前 `matches` 透传 `EmbeddingUnit/embedding_text`，存在体积与敏感信息外泄风险；建议在 phase-2 冻结“对外 wire 投影”并默认裁剪。
-- [ ] **（待 phase-2）更稳健的 temp_dir 路径策略**：当前使用 `/tmp/codex-native-tldr-<hash>.*`，可考虑引入更强隔离目录/权限策略（不在本最小文档中展开实现）。
+- [x] **artifact 路径分层与 scope 隔离**：已切到 `runtime-or-temp/codex-native-tldr/<scope>/`，并把 `lock/launch.lock` 与项目级 `socket/pid` 解耦，降低项目 artifact 目录被删时的互斥丢失风险。
+- [ ] **（待 phase-2）更强权限/恢复策略**：仍需覆盖 scope 根目录整体丢失、权限异常、以及更明确的恢复观测日志（不在本最小文档中展开实现）。
 
 ---
 
