@@ -72,10 +72,10 @@ Supported endpoints:
 Notes:
 
 - The server is intended for local use and defaults to binding only to loopback.
-- Requests are executed by starting an embedded in-process app-server session per HTTP request, so this mode reuses the existing Codex runtime instead of proxying to OpenAI directly.
+- This mode is a thin local HTTP proxy. It reuses the currently configured provider's `base_url`, auth, query params, and custom headers instead of starting an embedded Codex conversation runtime.
+- Current limitation: the selected provider must be configured with `wire_api = "responses"` and an explicit `base_url`.
 - Optional local bearer auth can be enabled with `--auth-token-env ENV_NAME`, which requires `Authorization: Bearer ...` on incoming requests.
-- Client-supplied OpenAI `tools` / `tool_choice` are not supported yet; the server rejects them explicitly instead of silently ignoring them.
-- Chat-history compatibility is best-effort: when a client sends prior messages, Codex currently folds earlier turns into a textual context prefix before submitting the final user request.
+- The first implementation forwards both `/v1/responses` and `/v1/chat/completions` directly to the configured upstream. Future work can add dedicated `wire_api = "chat"` handling.
 
 ## Core Primitives
 
