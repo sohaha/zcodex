@@ -80,6 +80,22 @@ struct SseSequenceResponder {
     bodies: Vec<String>,
 }
 
+fn chat_test_builder(
+    server: &MockServer,
+    model: &'static str,
+) -> core_test_support::test_codex::TestCodexBuilder {
+    test_codex().with_model(model).with_config({
+        let base_url = format!("{}/v1", server.uri());
+        move |config| {
+            config.model_provider.base_url = Some(base_url.clone());
+            config.model_provider.wire_api = WireApi::Chat;
+            config.model_provider.supports_websockets = false;
+            config.model_provider.request_max_retries = Some(0);
+            config.model_provider.stream_max_retries = Some(0);
+        }
+    })
+}
+
 impl Respond for SseSequenceResponder {
     fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
         let index = self.index.fetch_add(1, Ordering::SeqCst);
@@ -235,20 +251,7 @@ async fn chat_wire_api_replays_function_call_outputs_on_followup_request() -> an
         .mount(&server)
         .await;
 
-    let test = test_codex()
-        .with_model("gpt-5")
-        .with_config({
-            let base_url = format!("{}/v1", server.uri());
-            move |config| {
-                config.model_provider.base_url = Some(base_url.clone());
-                config.model_provider.wire_api = WireApi::Chat;
-                config.model_provider.supports_websockets = false;
-                config.model_provider.request_max_retries = Some(0);
-                config.model_provider.stream_max_retries = Some(0);
-            }
-        })
-        .build(&server)
-        .await?;
+    let test = chat_test_builder(&server, "gpt-5").build(&server).await?;
 
     test.submit_turn_with_policy("say hi via shell", SandboxPolicy::DangerFullAccess)
         .await?;
@@ -289,4 +292,219 @@ async fn chat_wire_api_replays_function_call_outputs_on_followup_request() -> an
     );
 
     Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chat_wire_api_replays_custom_tool_outputs_on_followup_request() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+    let recorder = RequestRecorder::default();
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(recorder.clone())
+        .respond_with(SseSequenceResponder {
+            index: AtomicUsize::new(0),
+            bodies: vec![
+                concat!(
+                    "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-5.1-codex\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-custom\",\"function\":{\"name\":\"apply_patch\",\"arguments\":\"{\\\"input\\\":\\\"*** Begin Patch\\\\n*** Add File: hello.txt\\\\n+hello from patch\\\\n*** End Patch\\\"}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":4}}\n\n",
+                    "data: [DONE]\n\n"
+                )
+                .to_string(),
+                concat!(
+                    "data: {\"id\":\"chatcmpl-2\",\"model\":\"gpt-5.1-codex\",\"choices\":[{\"delta\":{\"content\":\"patched\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":1,\"total_tokens\":9}}\n\n",
+                    "data: [DONE]\n\n"
+                )
+                .to_string(),
+            ],
+        })
+        .up_to_n_times(2)
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let test = chat_test_builder(&server, "gpt-5.1-codex")
+        .build(&server)
+        .await?;
+    test.submit_turn_with_policy("apply a patch", SandboxPolicy::DangerFullAccess)
+        .await?;
+
+    let bodies = recorder.json_bodies();
+    let second_messages = bodies[1]["messages"].as_array().expect("second messages");
+    let assistant_tool_call = second_messages
+        .iter()
+        .find(|message| {
+            message["role"] == "assistant"
+                && message["tool_calls"][0]["function"]["name"] == "apply_patch"
+        })
+        .expect("assistant custom tool call message");
+    assert_eq!(
+        assistant_tool_call["tool_calls"][0]["function"]["name"],
+        "apply_patch"
+    );
+
+    let tool_message = second_messages
+        .iter()
+        .find(|message| message["role"] == "tool")
+        .expect("tool message");
+    let tool_content = tool_message["content"].as_str().unwrap_or_default();
+    assert!(
+        tool_content.contains("hello.txt") || tool_content.contains("Done"),
+        "expected apply_patch output to be replayed, got {tool_content}"
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(test.workspace_path("hello.txt"))?,
+        "hello from patch\n"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn chat_wire_api_replays_tool_search_history_into_chat_messages() {
+    skip_if_no_network!();
+
+    let server = MockServer::start().await;
+    let recorder = RequestRecorder::default();
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(recorder.clone())
+        .respond_with(SseResponder {
+            body: concat!(
+                "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-5.1-codex\",\"choices\":[{\"delta\":{\"content\":\"searched\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":1,\"total_tokens\":9}}\n\n",
+                "data: [DONE]\n\n"
+            )
+            .to_string(),
+        })
+        .mount(&server)
+        .await;
+
+    let provider = ModelProviderInfo {
+        name: "mock-chat".into(),
+        model: None,
+        base_url: Some(format!("{}/v1", server.uri())),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Chat,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: Some(0),
+        stream_max_retries: Some(0),
+        stream_idle_timeout_ms: Some(5_000),
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let codex_home = TempDir::new().expect("tempdir");
+    let mut config = load_default_config_for_test(&codex_home).await;
+    config.model_provider_id = provider.name.clone();
+    config.model_provider = provider.clone();
+    config.model = Some("gpt-5.1-codex".to_string());
+    let model_info =
+        codex_core::test_support::construct_model_info_offline("gpt-5.1-codex", &Arc::new(config));
+
+    let conversation_id = ThreadId::new();
+    let session_telemetry = SessionTelemetry::new(
+        conversation_id,
+        "gpt-5.1-codex",
+        model_info.slug.as_str(),
+        None,
+        None,
+        None,
+        "test-originator".to_string(),
+        false,
+        "test-terminal".to_string(),
+        SessionSource::Cli,
+    );
+
+    let client = ModelClient::new(
+        None,
+        conversation_id,
+        provider,
+        SessionSource::Cli,
+        None,
+        false,
+        false,
+        None,
+    );
+    let mut client_session = client.new_session();
+
+    let mut prompt = Prompt::default();
+    prompt.input = vec![
+        ResponseItem::ToolSearchCall {
+            id: None,
+            call_id: Some("call-search".to_string()),
+            status: None,
+            execution: "client".to_string(),
+            arguments: serde_json::json!({
+                "query": "read file",
+                "limit": 2,
+            }),
+        },
+        ResponseItem::ToolSearchOutput {
+            call_id: Some("call-search".to_string()),
+            status: "completed".to_string(),
+            execution: "client".to_string(),
+            tools: vec![serde_json::json!({
+                "type": "function",
+                "name": "read_file",
+                "description": "Read a file",
+            })],
+        },
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "search tools for reading files".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        },
+    ];
+
+    let mut stream = client_session
+        .stream(
+            &prompt,
+            &model_info,
+            &session_telemetry,
+            None,
+            ReasoningSummary::None,
+            None,
+            None,
+        )
+        .await
+        .expect("stream failed");
+    while let Some(event) = stream.next().await {
+        if matches!(event, Ok(ResponseEvent::Completed { .. })) {
+            break;
+        }
+    }
+
+    let body = recorder.single_json_body();
+    let messages = body["messages"].as_array().expect("messages");
+    let assistant_tool_call = messages
+        .iter()
+        .find(|message| {
+            message["role"] == "assistant"
+                && message["tool_calls"][0]["function"]["name"] == "tool_search"
+        })
+        .expect("assistant tool search call message");
+    assert_eq!(
+        assistant_tool_call["tool_calls"][0]["function"]["name"],
+        "tool_search"
+    );
+
+    let tool_message = messages
+        .iter()
+        .find(|message| message["role"] == "tool")
+        .expect("tool message");
+    let tool_content = tool_message["content"].as_str().unwrap_or_default();
+    assert!(
+        tool_content.contains("\"status\":\"completed\"") && tool_content.contains("read_file"),
+        "expected tool_search output to be replayed, got {tool_content}"
+    );
 }
