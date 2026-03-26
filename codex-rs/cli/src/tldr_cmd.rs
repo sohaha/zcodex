@@ -732,24 +732,28 @@ mod lifecycle_tests {
 
     struct LifecycleTestGuard {
         _local: MutexGuard<'static, ()>,
-        _cross_process: File,
+        _cross_process: std::fs::File,
     }
 
     fn lifecycle_test_guard() -> LifecycleTestGuard {
-        let local = LIFECYCLE_TEST_LOCK
-            .lock()
-            .expect("lifecycle test lock should not be poisoned");
+        let local = match LIFECYCLE_TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(err) => panic!("lifecycle test lock should not be poisoned: {err}"),
+        };
         let lock_path = std::env::temp_dir().join("codex-native-tldr-artifact-tests.lock");
-        let cross_process = OpenOptions::new()
+        let cross_process = match std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(&lock_path)
-            .expect("cross-process lifecycle test lock should be opened");
-        cross_process
-            .lock()
-            .expect("cross-process lifecycle test lock should be acquired");
+        {
+            Ok(file) => file,
+            Err(err) => panic!("cross-process lifecycle test lock should be opened: {err}"),
+        };
+        if let Err(err) = cross_process.lock() {
+            panic!("cross-process lifecycle test lock should be acquired: {err}");
+        }
         LifecycleTestGuard {
             _local: local,
             _cross_process: cross_process,

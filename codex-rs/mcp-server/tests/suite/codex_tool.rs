@@ -56,20 +56,24 @@ struct TldrArtifactTestGuard {
 }
 
 fn tldr_artifact_test_guard() -> TldrArtifactTestGuard {
-    let local = TLDR_ARTIFACT_TEST_LOCK
-        .lock()
-        .expect("tldr artifact test lock should not be poisoned");
+    let local = match TLDR_ARTIFACT_TEST_LOCK.lock() {
+        Ok(guard) => guard,
+        Err(err) => panic!("tldr artifact test lock should not be poisoned: {err}"),
+    };
     let lock_path = env::temp_dir().join("codex-native-tldr-artifact-tests.lock");
-    let cross_process = OpenOptions::new()
+    let cross_process = match OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .truncate(false)
         .open(&lock_path)
-        .expect("cross-process tldr artifact test lock should be opened");
-    cross_process
-        .lock()
-        .expect("cross-process tldr artifact test lock should be acquired");
+    {
+        Ok(file) => file,
+        Err(err) => panic!("cross-process tldr artifact test lock should be opened: {err}"),
+    };
+    if let Err(err) = cross_process.lock() {
+        panic!("cross-process tldr artifact test lock should be acquired: {err}");
+    }
     TldrArtifactTestGuard {
         _local: local,
         _cross_process: cross_process,
