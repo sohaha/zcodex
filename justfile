@@ -44,6 +44,11 @@ install:
 # Prefer this for routine local runs; use explicit `cargo test --all-features`
 # only when you specifically need full feature coverage.
 test:
+    if command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
+    fi; \
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
     cargo nextest run --no-fail-fast
 
 # Fast local loop for codex-core. Uses more disk for build caches to reduce
@@ -51,9 +56,9 @@ test:
 core-test-fast *args:
     if command -v sccache >/dev/null 2>&1; then \
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
-      export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/.cache/codex-rs/sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/codex-rs/target}"; \
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-core --no-fail-fast --test all "$@"; \
     else \
@@ -65,9 +70,9 @@ core-test-fast *args:
 app-server-test-fast *args:
     if command -v sccache >/dev/null 2>&1; then \
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
-      export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/.cache/codex-rs/sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/codex-rs/target}"; \
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-app-server --no-fail-fast --test all "$@"; \
     else \
@@ -79,9 +84,9 @@ app-server-test-fast *args:
 native-tldr-test-fast *args:
     if command -v sccache >/dev/null 2>&1; then \
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
-      export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/.cache/codex-rs/sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/codex-rs/target}"; \
+    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-native-tldr --no-fail-fast "$@"; \
     else \
