@@ -73,9 +73,10 @@ Notes:
 
 - The server is intended for local use and defaults to binding only to loopback.
 - This mode is a thin local HTTP proxy. It reuses the currently configured provider's `base_url`, auth, query params, and custom headers instead of starting an embedded Codex conversation runtime.
-- Current limitation: the selected provider must be configured with `wire_api = "responses"` and an explicit `base_url`.
+- The selected provider must have an explicit `base_url`. `wire_api = "responses"` and `wire_api = "chat"` are supported; `wire_api = "anthropic"` is not.
 - Optional local bearer auth can be enabled with `--auth-token-env ENV_NAME`, which requires `Authorization: Bearer ...` on incoming requests.
-- The first implementation forwards both `/v1/responses` and `/v1/chat/completions` directly to the configured upstream. Future work can add dedicated `wire_api = "chat"` handling.
+- For `wire_api = "responses"`, the proxy forwards `/v1/responses` and `/v1/chat/completions` to the upstream when available.
+- For `wire_api = "chat"`, the proxy forwards `/v1/chat/completions` and rejects `/v1/responses` with a `400` because the upstream API surface does not provide that endpoint.
 
 ## Core Primitives
 

@@ -526,7 +526,7 @@ impl ModelsManager {
 
     fn load_bundled_models(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
         match provider.wire_api {
-            WireApi::Responses => Self::load_remote_models_from_file()
+            WireApi::Responses | WireApi::Chat => Self::load_remote_models_from_file()
                 .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
             WireApi::Anthropic => model_info::anthropic_model_catalog(),
         }

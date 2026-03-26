@@ -34,7 +34,6 @@ const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
-const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub(crate) const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
 
@@ -45,6 +44,8 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// The Chat Completions API exposed by OpenAI at `/v1/chat/completions`.
+    Chat,
     /// The Anthropic Messages API exposed at `/v1/messages`.
     Anthropic,
 }
@@ -53,6 +54,7 @@ impl fmt::Display for WireApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Responses => "responses",
+            Self::Chat => "chat",
             Self::Anthropic => "anthropic",
         };
         f.write_str(value)
@@ -67,11 +69,11 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
+            "chat" => Ok(Self::Chat),
             "anthropic" => Ok(Self::Anthropic),
-            "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
             _ => Err(serde::de::Error::unknown_variant(
                 &value,
-                &["responses", "anthropic"],
+                &["responses", "chat", "anthropic"],
             )),
         }
     }
@@ -193,7 +195,7 @@ impl ModelProviderInfo {
             WireApi::Responses if matches!(auth_mode, Some(AuthMode::Chatgpt)) => {
                 "https://chatgpt.com/backend-api/codex"
             }
-            WireApi::Responses => "https://api.openai.com/v1",
+            WireApi::Responses | WireApi::Chat => "https://api.openai.com/v1",
             WireApi::Anthropic => "https://api.anthropic.com/v1",
         };
         let base_url = self
@@ -253,6 +255,7 @@ impl ModelProviderInfo {
             base_url,
             wire_api: match self.wire_api {
                 WireApi::Responses => ApiWireApi::Responses,
+                WireApi::Chat => ApiWireApi::Chat,
                 WireApi::Anthropic => ApiWireApi::Anthropic,
             },
             query_params: self.query_params.clone(),

@@ -876,7 +876,8 @@ fn bundled_models_for_provider(
     provider: &ModelProviderInfo,
 ) -> Vec<codex_protocol::openai_models::ModelInfo> {
     match provider.wire_api {
-        crate::model_provider_info::WireApi::Responses => {
+        crate::model_provider_info::WireApi::Responses
+        | crate::model_provider_info::WireApi::Chat => {
             let file_contents = include_str!("../../models.json");
             let response: ModelsResponse = serde_json::from_str(file_contents)
                 .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"));

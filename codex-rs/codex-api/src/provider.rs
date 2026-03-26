@@ -12,6 +12,7 @@ use url::Url;
 pub enum WireApi {
     #[default]
     Responses,
+    Chat,
     Anthropic,
 }
 
