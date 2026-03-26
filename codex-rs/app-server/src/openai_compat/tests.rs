@@ -541,6 +541,9 @@ async fn chat_wire_api_translates_streaming_responses_endpoint_to_chat_upstream(
     let first_chunk = String::from_utf8(first_chunk.to_vec()).expect("utf8 chunk");
     assert!(first_chunk.contains("event: response.created"));
     assert!(first_chunk.contains("\"type\":\"response.created\""));
+    assert!(first_chunk.contains("\"sequence_number\":0"));
+    assert!(first_chunk.contains("\"background\":false"));
+    assert!(first_chunk.contains("\"metadata\":{}"));
 
     release_second_chunk_tx
         .send(())
@@ -563,12 +566,15 @@ async fn chat_wire_api_translates_streaming_responses_endpoint_to_chat_upstream(
     assert!(translated_stream.contains("\"content_index\":0"));
     assert!(translated_stream.contains("\"delta\":\"Hel\""));
     assert!(translated_stream.contains("\"delta\":\"lo\""));
+    assert!(translated_stream.contains("\"sequence_number\":1"));
+    assert!(translated_stream.contains("\"sequence_number\":2"));
     assert!(translated_stream.contains("event: response.output_item.done"));
     assert!(
         translated_stream.contains("\"text\":\"Hello\",\"type\":\"output_text\""),
         "{translated_stream}"
     );
     assert!(translated_stream.contains("event: response.completed"));
+    assert!(translated_stream.contains("\"background\":false"));
     assert!(translated_stream.contains("\"output\":[{\"content\":[{\"text\":\"Hello\""));
     assert!(translated_stream.contains("\"input_tokens\":11"));
     assert!(translated_stream.contains("\"reasoning_tokens\":1"));
@@ -1023,6 +1029,9 @@ async fn chat_wire_api_emits_failed_event_for_invalid_stream_tool_arguments() {
     assert!(body.contains("\"status\":\"failed\""));
     assert!(body.contains("\"type\":\"api_connection_error\""));
     assert!(body.contains("\"code\":\"api_connection_error\""));
+    assert!(body.contains("\"sequence_number\":1"));
+    assert!(body.contains("\"background\":false"));
+    assert!(body.contains("\"metadata\":{}"));
     assert!(body.contains("failed to parse local_shell arguments"));
 }
 

@@ -84,6 +84,7 @@ struct ChatCompletionsSseState {
     token_usage: Option<Value>,
     completed: bool,
     next_output_index: i64,
+    next_sequence_number: i64,
 }
 
 impl ChatCompletionsSseState {
@@ -102,6 +103,7 @@ impl ChatCompletionsSseState {
             token_usage: None,
             completed: false,
             next_output_index: 0,
+            next_sequence_number: 0,
         }
     }
 
@@ -138,6 +140,7 @@ impl ChatCompletionsSseState {
                         "response.output_text.delta",
                         json!({
                             "type": "response.output_text.delta",
+                            "sequence_number": self.next_sequence_number(),
                             "item_id": self.message_item_id(),
                             "output_index": 0,
                             "content_index": 0,
@@ -187,16 +190,20 @@ impl ChatCompletionsSseState {
             "response.created",
             json!({
                 "type": "response.created",
+                "sequence_number": self.next_sequence_number(),
                 "response": {
                     "id": self.response_id(),
                     "object": "response",
                     "created_at": self.created_at,
                     "status": "in_progress",
+                    "background": false,
                     "error": Value::Null,
                     "incomplete_details": Value::Null,
                     "model": self.model.clone(),
                     "output": [],
                     "usage": Value::Null,
+                    "user": Value::Null,
+                    "metadata": {},
                 }
             }),
         )
@@ -218,6 +225,7 @@ impl ChatCompletionsSseState {
             "response.output_item.added",
             json!({
                 "type": "response.output_item.added",
+                "sequence_number": self.next_sequence_number(),
                 "output_index": 0,
                 "item": {
                     "id": self.message_item_id(),
@@ -251,6 +259,7 @@ impl ChatCompletionsSseState {
                 "response.output_item.done",
                 json!({
                     "type": "response.output_item.done",
+                    "sequence_number": self.next_sequence_number(),
                     "output_index": 0,
                     "item": message_item.clone(),
                 }),
@@ -261,17 +270,18 @@ impl ChatCompletionsSseState {
             self.next_output_index = 1;
         }
 
-        for tool_call in self.tool_calls.values() {
-            let Some(call_id) = tool_call.id.clone() else {
+        let pending_tool_calls: Vec<_> = self.tool_calls.values().cloned().collect();
+        for tool_call in pending_tool_calls {
+            let Some(call_id) = tool_call.id else {
                 continue;
             };
-            let Some(name) = tool_call.name.clone() else {
+            let Some(name) = tool_call.name else {
                 continue;
             };
             let item = self.translator.tool_call_response_item_from_parts(
                 call_id.clone(),
                 name,
-                tool_call.arguments.clone(),
+                tool_call.arguments,
             )?;
             let item = serde_json::to_value(item).map_err(|err| {
                 ApiError::internal(format!(
@@ -284,6 +294,7 @@ impl ChatCompletionsSseState {
                 "response.output_item.added",
                 json!({
                     "type": "response.output_item.added",
+                    "sequence_number": self.next_sequence_number(),
                     "output_index": self.next_output_index,
                     "item": item.clone(),
                 }),
@@ -294,6 +305,7 @@ impl ChatCompletionsSseState {
                 "response.output_item.done",
                 json!({
                     "type": "response.output_item.done",
+                    "sequence_number": self.next_sequence_number(),
                     "output_index": self.next_output_index,
                     "item": item.clone(),
                 }),
@@ -320,16 +332,20 @@ impl ChatCompletionsSseState {
             "response.completed",
             json!({
                 "type": "response.completed",
+                "sequence_number": self.next_sequence_number(),
                 "response": {
                     "id": self.response_id(),
                     "object": "response",
                     "created_at": self.created_at,
                     "status": "completed",
+                    "background": false,
                     "error": Value::Null,
                     "incomplete_details": Value::Null,
                     "model": self.model.clone(),
                     "output": self.output_items.clone(),
                     "usage": self.token_usage,
+                    "user": Value::Null,
+                    "metadata": {},
                 }
             }),
         )
@@ -347,9 +363,15 @@ impl ChatCompletionsSseState {
     fn message_item_id(&self) -> String {
         format!("{}_message_0", self.response_id())
     }
+
+    fn next_sequence_number(&mut self) -> i64 {
+        let sequence_number = self.next_sequence_number;
+        self.next_sequence_number += 1;
+        sequence_number
+    }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct PendingToolCall {
     id: Option<String>,
     name: Option<String>,
@@ -367,14 +389,18 @@ async fn send_failed_event(
         "response.failed",
         json!({
             "type": "response.failed",
+            "sequence_number": state.next_sequence_number,
             "response": {
                 "id": state.response_id(),
                 "object": "response",
                 "created_at": state.created_at,
                 "status": "failed",
+                "background": false,
                 "model": state.model,
                 "output": state.output_items.clone(),
                 "usage": state.token_usage.clone(),
+                "user": Value::Null,
+                "metadata": {},
                 "error": {
                     "type": error_type,
                     "code": error_type,
