@@ -1,6 +1,24 @@
 use super::*;
+use crate::common::ResponseEvent;
+use crate::common::ResponsesApiRequest;
+use crate::common::TextControls;
+use crate::common::TextFormat;
+use crate::common::TextFormatType;
+use crate::error::ApiError;
+use codex_client::StreamResponse;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ReasoningItemContent;
+use codex_protocol::models::ReasoningItemReasoningSummary;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::models::SearchToolCallParams;
+use codex_protocol::models::WebSearchAction;
+use codex_protocol::protocol::TokenUsage;
 use futures::stream;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
+use serde_json::json;
+use std::collections::HashSet;
+use std::time::Duration;
 
 fn request_with_tools(tools: Vec<Value>, input: Vec<ResponseItem>) -> ResponsesApiRequest {
     ResponsesApiRequest {
@@ -109,6 +127,78 @@ fn build_request_maps_function_custom_and_special_tools() {
 }
 
 #[test]
+fn build_request_folds_system_and_developer_history() {
+    let request = ResponsesApiRequest {
+        model: "gpt-test".to_string(),
+        instructions: "base system".to_string(),
+        input: vec![
+            ResponseItem::Message {
+                id: None,
+                role: "developer".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "dev note".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "system".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "legacy system".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![ContentItem::OutputText {
+                    text: "prior answer".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            },
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hello".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            },
+        ],
+        tools: Vec::new(),
+        tool_choice: "auto".to_string(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: false,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+    };
+
+    let chat = build_request_with_stream(&request, /*stream*/ false).expect("build request");
+    let messages = chat.body["messages"].as_array().expect("messages array");
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[0]["role"], "system");
+    assert_eq!(
+        messages[0]["content"],
+        Value::String("base system\n\ndev note\n\nlegacy system".to_string())
+    );
+    assert!(
+        messages
+            .iter()
+            .all(|message| message["role"] != "developer")
+    );
+    assert_eq!(messages[1]["role"], "assistant");
+    assert_eq!(messages[2]["role"], "user");
+}
+
+#[test]
 fn build_request_keeps_mixed_history_items_without_error() {
     let request = request_with_tools(
         Vec::new(),
@@ -153,13 +243,13 @@ fn build_request_keeps_mixed_history_items_without_error() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-            contents,
-            vec![
-                "[reasoning summary]\nthinking\n\n[reasoning content]\ndetail".to_string(),
-                "[web_search] status=completed\nweather".to_string(),
-                "[image_generation] status=completed\nrevised_prompt: lobster\nresult: omitted_binary_image_payload".to_string(),
-            ]
-        );
+        contents,
+        vec![
+            "[reasoning summary]\nthinking\n\n[reasoning content]\ndetail".to_string(),
+            "[web_search] status=completed\nweather".to_string(),
+            "[image_generation] status=completed\nrevised_prompt: lobster\nresult: omitted_binary_image_payload".to_string(),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -374,10 +464,10 @@ fn build_request_maps_reasoning_response_format_and_tool_controls() {
         include: Vec::new(),
         service_tier: Some("priority".to_string()),
         prompt_cache_key: None,
-        text: Some(crate::common::TextControls {
+        text: Some(TextControls {
             verbosity: None,
             format: Some(TextFormat {
-                r#type: crate::common::TextFormatType::JsonSchema,
+                r#type: TextFormatType::JsonSchema,
                 strict: true,
                 schema: json!({
                     "type": "object",
