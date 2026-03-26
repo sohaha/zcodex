@@ -23,6 +23,23 @@ curl_github_auth_args() {
     return
   fi
 
+  if [ "${CODEX_GITHUB_TOKEN_VALIDATED:-0}" = "0" ]; then
+    token_status="$(curl -sS -o /dev/null -w '%{http_code}' \
+      --connect-timeout "$download_connect_timeout" \
+      --max-time "${download_metadata_max_time:-120}" \
+      -H "Authorization: Bearer $GITHUB_TOKEN" \
+      https://api.github.com/user || true)"
+    if [ "$token_status" = "200" ]; then
+      CODEX_GITHUB_TOKEN_VALIDATED=1
+    else
+      CODEX_GITHUB_TOKEN_VALIDATED=-1
+    fi
+  fi
+
+  if [ "${CODEX_GITHUB_TOKEN_VALIDATED:-0}" = "-1" ]; then
+    return
+  fi
+
   case "$url" in
     https://github.com/* | https://api.github.com/* | https://raw.githubusercontent.com/*)
       printf '%s\n' "--oauth2-bearer"
