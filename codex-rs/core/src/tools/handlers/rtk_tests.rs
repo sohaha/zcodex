@@ -104,6 +104,73 @@ fn build_log_args_requires_path() {
 }
 
 #[test]
+fn build_ls_args_serializes_all_flag() {
+    let args = build_command_args(RtkCommandKind::Ls, r#"{"path":"src","all":true}"#)
+        .expect("ls args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("ls"),
+            OsString::from("--all"),
+            OsString::from("src"),
+        ]
+    );
+}
+
+#[test]
+fn build_tree_args_serializes_depth() {
+    let args = build_command_args(
+        RtkCommandKind::Tree,
+        r#"{"path":"src","max_depth":2,"all":true}"#,
+    )
+    .expect("tree args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("tree"),
+            OsString::from("--all"),
+            OsString::from("-L"),
+            OsString::from("2"),
+            OsString::from("src"),
+        ]
+    );
+}
+
+#[test]
+fn build_wc_args_serializes_mode() {
+    let args = build_command_args(
+        RtkCommandKind::Wc,
+        r#"{"path":"Cargo.toml","mode":"lines"}"#,
+    )
+    .expect("wc args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("wc"),
+            OsString::from("-l"),
+            OsString::from("Cargo.toml"),
+        ]
+    );
+}
+
+#[test]
+fn build_wc_args_rejects_unknown_mode() {
+    let err = build_command_args(
+        RtkCommandKind::Wc,
+        r#"{"path":"Cargo.toml","mode":"unknown"}"#,
+    )
+    .expect_err("unknown mode");
+
+    assert_eq!(
+        err.to_string(),
+        "mode must be one of: full, lines, words, bytes, chars".to_string()
+    );
+}
+
+#[test]
 fn build_summary_args_serializes_command() {
     let args = build_command_args(
         RtkCommandKind::Summary,

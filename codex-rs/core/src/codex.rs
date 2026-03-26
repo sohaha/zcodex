@@ -3531,18 +3531,26 @@ impl Session {
         reference_context_item: Option<TurnContextItem>,
     ) -> Option<TurnContextItem> {
         reference_context_item.filter(|_| {
-            let marker = crate::compact::RTK_INSTRUCTIONS
-                .lines()
-                .next()
-                .unwrap_or_default();
-            items.iter().any(|item| match item {
-                ResponseItem::Message { role, content, .. } if role == "developer" => {
-                    content.iter().any(|content_item| match content_item {
-                        ContentItem::InputText { text } => text.contains(marker),
-                        _ => false,
-                    })
-                }
-                _ => false,
+            let markers = [
+                crate::compact::RTK_INSTRUCTIONS
+                    .lines()
+                    .next()
+                    .unwrap_or_default(),
+                crate::compact::TOOL_ROUTING_INSTRUCTIONS
+                    .lines()
+                    .next()
+                    .unwrap_or_default(),
+            ];
+            markers.into_iter().all(|marker| {
+                items.iter().any(|item| match item {
+                    ResponseItem::Message { role, content, .. } if role == "developer" => {
+                        content.iter().any(|content_item| match content_item {
+                            ContentItem::InputText { text } => text.contains(marker),
+                            _ => false,
+                        })
+                    }
+                    _ => false,
+                })
             })
         })
     }
@@ -3615,7 +3623,7 @@ impl Session {
         &self,
         turn_context: &TurnContext,
     ) -> Vec<ResponseItem> {
-        let mut developer_sections = Vec::<String>::with_capacity(8);
+        let mut developer_sections = Vec::<String>::with_capacity(9);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let shell = self.user_shell();
         let (
@@ -3662,6 +3670,7 @@ impl Session {
         // steady-state per-turn diffs: provider-side prefix caching depends on ordinary turns
         // reusing the same leading prompt bytes whenever the durable baseline is intact.
         developer_sections.push(crate::compact::RTK_INSTRUCTIONS.to_string());
+        developer_sections.push(crate::compact::TOOL_ROUTING_INSTRUCTIONS.to_string());
         let separate_guardian_developer_message =
             crate::guardian::is_guardian_reviewer_source(&session_source);
         // Keep the guardian policy prompt out of the aggregated developer bundle so it

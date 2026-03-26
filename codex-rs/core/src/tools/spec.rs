@@ -2096,6 +2096,110 @@ fn create_rtk_log_tool() -> ToolSpec {
     })
 }
 
+fn create_rtk_ls_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional directory path relative to the current working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "all".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include hidden files.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_ls".to_string(),
+        description: "Token-optimized directory listing via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_tree_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional directory path relative to the current working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "all".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include hidden files.".to_string()),
+            },
+        ),
+        (
+            "max_depth".to_string(),
+            JsonSchema::Number {
+                description: Some("Optional maximum directory depth.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_tree".to_string(),
+        description: "Token-optimized directory tree rendering via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_wc_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "File path relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+        (
+            "mode".to_string(),
+            JsonSchema::String {
+                description: Some("Count mode: full, lines, words, bytes, or chars.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_wc".to_string(),
+        description: "Token-optimized file counts via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["path".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 fn create_rtk_summary_tool() -> ToolSpec {
     let properties = BTreeMap::from([(
         "command".to_string(),
@@ -3415,6 +3519,27 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("rtk_log", Arc::new(RtkHandler::new(RtkCommandKind::Log)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_ls_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_ls", Arc::new(RtkHandler::new(RtkCommandKind::Ls)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_tree_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_tree", Arc::new(RtkHandler::new(RtkCommandKind::Tree)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_wc_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_wc", Arc::new(RtkHandler::new(RtkCommandKind::Wc)));
     push_tool_spec(
         &mut builder,
         create_rtk_summary_tool(),

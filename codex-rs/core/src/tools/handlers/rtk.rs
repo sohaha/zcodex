@@ -26,6 +26,9 @@ pub enum RtkCommandKind {
     Json,
     Deps,
     Log,
+    Ls,
+    Tree,
+    Wc,
     Summary,
     Err,
 }
@@ -40,6 +43,9 @@ impl RtkCommandKind {
             Self::Json => "rtk_json",
             Self::Deps => "rtk_deps",
             Self::Log => "rtk_log",
+            Self::Ls => "rtk_ls",
+            Self::Tree => "rtk_tree",
+            Self::Wc => "rtk_wc",
             Self::Summary => "rtk_summary",
             Self::Err => "rtk_err",
         }
@@ -54,6 +60,9 @@ impl RtkCommandKind {
             Self::Json => "json",
             Self::Deps => "deps",
             Self::Log => "log",
+            Self::Ls => "ls",
+            Self::Tree => "tree",
+            Self::Wc => "wc",
             Self::Summary => "summary",
             Self::Err => "err",
         }
@@ -187,6 +196,31 @@ struct RtkLogArgs {
 }
 
 #[derive(Deserialize)]
+struct RtkLsArgs {
+    #[serde(default = "default_dot_path")]
+    path: String,
+    #[serde(default)]
+    all: bool,
+}
+
+#[derive(Deserialize)]
+struct RtkTreeArgs {
+    #[serde(default = "default_dot_path")]
+    path: String,
+    #[serde(default)]
+    all: bool,
+    #[serde(default)]
+    max_depth: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct RtkWcArgs {
+    path: String,
+    #[serde(default = "default_rtk_wc_mode")]
+    mode: String,
+}
+
+#[derive(Deserialize)]
 struct RtkCommandStringArgs {
     command: String,
 }
@@ -215,6 +249,10 @@ fn default_rtk_json_depth() -> usize {
     5
 }
 
+fn default_rtk_wc_mode() -> String {
+    "full".to_string()
+}
+
 fn build_command_args(
     kind: RtkCommandKind,
     arguments: &str,
@@ -227,6 +265,9 @@ fn build_command_args(
         RtkCommandKind::Json => build_json_args(arguments),
         RtkCommandKind::Deps => build_deps_args(arguments),
         RtkCommandKind::Log => build_log_args(arguments),
+        RtkCommandKind::Ls => build_ls_args(arguments),
+        RtkCommandKind::Tree => build_tree_args(arguments),
+        RtkCommandKind::Wc => build_wc_args(arguments),
         RtkCommandKind::Summary => build_summary_args(arguments),
         RtkCommandKind::Err => build_err_args(arguments),
     }
@@ -435,6 +476,79 @@ fn build_log_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
     ])
 }
 
+fn build_ls_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkLsArgs = parse_arguments(arguments)?;
+    if args.path.trim().is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "path must not be empty".to_string(),
+        ));
+    }
+
+    let mut command = vec![OsString::from(RtkCommandKind::Ls.subcommand())];
+    if args.all {
+        command.push(OsString::from("--all"));
+    }
+    command.push(OsString::from(args.path));
+    Ok(command)
+}
+
+fn build_tree_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkTreeArgs = parse_arguments(arguments)?;
+    if args.path.trim().is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "path must not be empty".to_string(),
+        ));
+    }
+    if args.max_depth == Some(0) {
+        return Err(FunctionCallError::RespondToModel(
+            "max_depth must be greater than zero".to_string(),
+        ));
+    }
+
+    let mut command = vec![OsString::from(RtkCommandKind::Tree.subcommand())];
+    if args.all {
+        command.push(OsString::from("--all"));
+    }
+    if let Some(max_depth) = args.max_depth {
+        command.push(OsString::from("-L"));
+        command.push(OsString::from(max_depth.to_string()));
+    }
+    command.push(OsString::from(args.path));
+    Ok(command)
+}
+
+fn build_wc_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkWcArgs = parse_arguments(arguments)?;
+    if args.path.trim().is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "path must not be empty".to_string(),
+        ));
+    }
+
+    let mode = args.mode.trim().to_string();
+    if mode.is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "mode must not be empty".to_string(),
+        ));
+    }
+
+    let mut command = vec![OsString::from(RtkCommandKind::Wc.subcommand())];
+    match mode.as_str() {
+        "full" => {}
+        "lines" => command.push(OsString::from("-l")),
+        "words" => command.push(OsString::from("-w")),
+        "bytes" => command.push(OsString::from("-c")),
+        "chars" => command.push(OsString::from("-m")),
+        _ => {
+            return Err(FunctionCallError::RespondToModel(
+                "mode must be one of: full, lines, words, bytes, chars".to_string(),
+            ));
+        }
+    }
+    command.push(OsString::from(args.path));
+    Ok(command)
+}
+
 fn build_summary_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
     let args: RtkCommandStringArgs = parse_arguments(arguments)?;
     let command = args.command.trim();
@@ -582,13 +696,13 @@ async fn run_rtk_command(
 
     Ok(FunctionToolOutput::from_text(
         content,
-        Some(rtk_command_succeeded(kind, &output.status, stdout.as_ref())),
+        Some(rtk_command_succeeded(kind, output.status, stdout.as_ref())),
     ))
 }
 
 fn rtk_command_succeeded(
     kind: RtkCommandKind,
-    status: &std::process::ExitStatus,
+    status: std::process::ExitStatus,
     stdout: &str,
 ) -> bool {
     if matches!(kind, RtkCommandKind::Summary) {
