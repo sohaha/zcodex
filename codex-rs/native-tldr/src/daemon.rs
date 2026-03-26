@@ -215,7 +215,7 @@ impl TldrDaemon {
                 let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
                     snapshot: Some(snapshot.clone()),
-                    reindex_report: session.last_reindex_report(),
+                    reindex_report: session.last_reindex_attempt_report(),
                     daemon_status: Some(build_daemon_status(
                         &self.project_root,
                         self.engine.config(),
@@ -377,7 +377,7 @@ async fn handle_with_session(
             let snapshot = guard.snapshot();
             Ok(TldrDaemonResponse {
                 snapshot: Some(snapshot.clone()),
-                reindex_report: guard.last_reindex_report(),
+                reindex_report: guard.last_reindex_attempt_report(),
                 daemon_status: Some(build_daemon_status(
                     project_root,
                     engine.config(),
@@ -463,6 +463,7 @@ fn warm_with_reindex(
     if session.reindex_pending() {
         match engine.semantic_reindex() {
             Ok(report) => {
+                session.record_reindex_attempt(report.clone());
                 if report.is_completed() {
                     session.complete_reindex(report.clone());
                 }
@@ -474,10 +475,11 @@ fn warm_with_reindex(
                     engine.config().semantic.embedding_enabled,
                     engine.config().semantic.embedding.dimensions,
                 );
+                session.record_reindex_attempt(failure.clone());
                 (failure.message.clone(), Some(failure))
             }
         }
-    } else if let Some(report) = session.last_reindex_report() {
+    } else if let Some(report) = session.last_reindex_attempt_report() {
         (report.message.clone(), Some(report))
     } else {
         ("already warm".to_string(), None)
@@ -760,6 +762,7 @@ mod tests {
     use super::lock_path_for_project;
     use super::query_daemon;
     use pretty_assertions::assert_eq;
+    use serial_test::serial;
     use std::fs::OpenOptions;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -924,11 +927,13 @@ mod tests {
                     .expect("analyze snapshot should exist")
                     .last_query_at,
                 last_reindex: None,
+                last_reindex_attempt: None,
             })
         );
     }
 
     #[tokio::test]
+    #[serial]
     async fn warm_clears_reindex_pending_state() {
         let project = tempfile::tempdir().expect("tempdir should exist");
         let src_dir = project.path().join("src");
@@ -962,9 +967,11 @@ mod tests {
         assert_eq!(snapshot.reindex_pending, false);
         assert!(snapshot.last_query_at.is_some());
         assert_eq!(snapshot.last_reindex, warm.reindex_report);
+        assert_eq!(snapshot.last_reindex_attempt, warm.reindex_report);
     }
 
     #[tokio::test]
+    #[serial]
     async fn status_surfaces_last_completed_reindex_after_warm() {
         let project = tempfile::tempdir().expect("tempdir should exist");
         let src_dir = project.path().join("src");
@@ -1006,12 +1013,84 @@ mod tests {
             status
                 .snapshot
                 .as_ref()
+                .and_then(|snapshot| snapshot.last_reindex_attempt.clone()),
+            warm.reindex_report
+        );
+        assert_eq!(
+            status
+                .snapshot
+                .as_ref()
                 .map(|snapshot| snapshot.reindex_pending),
             Some(false)
         );
     }
 
     #[tokio::test]
+    #[serial]
+    async fn status_surfaces_last_failed_reindex_attempt_after_warm_failure() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("notify should succeed");
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should return a failed report");
+        let status = daemon
+            .handle_command(TldrDaemonCommand::Status)
+            .await
+            .expect("status should succeed");
+
+        assert_eq!(
+            warm.reindex_report.as_ref().map(|report| &report.status),
+            Some(&crate::semantic::SemanticReindexStatus::Failed)
+        );
+        assert_eq!(
+            status.reindex_report.as_ref().map(|report| &report.status),
+            Some(&crate::semantic::SemanticReindexStatus::Failed)
+        );
+        assert_eq!(
+            status
+                .snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.reindex_pending),
+            Some(true)
+        );
+        assert_eq!(
+            status
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.last_reindex.clone()),
+            None
+        );
+        assert_eq!(
+            status
+                .snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.last_reindex_attempt.clone()),
+            warm.reindex_report
+        );
+        assert_eq!(
+            status
+                .daemon_status
+                .as_ref()
+                .map(|daemon_status| daemon_status.semantic_reindex_pending),
+            Some(true)
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
     async fn warm_keeps_reindex_pending_when_reindex_fails() {
         let project = tempfile::tempdir().expect("tempdir should exist");
         let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
@@ -1041,6 +1120,12 @@ mod tests {
                 .as_ref()
                 .map(|snapshot| snapshot.reindex_pending),
             Some(true)
+        );
+        assert_eq!(
+            warm.snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.last_reindex_attempt.clone()),
+            warm.reindex_report
         );
         assert_eq!(
             warm.reindex_report.as_ref().map(|report| &report.status),
@@ -1109,6 +1194,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn semantic_command_returns_semantic_payload() {
         let project = tempfile::tempdir().expect("tempdir should exist");
         let src_dir = project.path().join("src");
@@ -1142,6 +1228,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn semantic_command_reuses_cached_index_across_requests() {
         let project = tempfile::tempdir().expect("tempdir should exist");
         let src_dir = project.path().join("src");

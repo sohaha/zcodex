@@ -40,6 +40,7 @@ pub struct SessionSnapshot {
     pub reindex_pending: bool,
     pub last_query_at: Option<SystemTime>,
     pub last_reindex: Option<SemanticReindexReport>,
+    pub last_reindex_attempt: Option<SemanticReindexReport>,
 }
 
 #[derive(Debug)]
@@ -49,6 +50,7 @@ pub struct Session {
     dirty_files: BTreeSet<PathBuf>,
     last_query_at: Option<SystemTime>,
     last_reindex: Option<SemanticReindexReport>,
+    last_reindex_attempt: Option<SemanticReindexReport>,
 }
 
 impl Session {
@@ -59,6 +61,7 @@ impl Session {
             dirty_files: BTreeSet::new(),
             last_query_at: None,
             last_reindex: None,
+            last_reindex_attempt: None,
         }
     }
 
@@ -113,18 +116,28 @@ impl Session {
             reindex_pending: self.reindex_pending(),
             last_query_at: self.last_query_at,
             last_reindex: self.last_reindex.clone(),
+            last_reindex_attempt: self.last_reindex_attempt.clone(),
         }
     }
 
     pub fn complete_reindex(&mut self, report: SemanticReindexReport) {
         self.cache.clear();
         self.dirty_files.clear();
-        self.last_reindex = Some(report);
+        self.last_reindex = Some(report.clone());
+        self.last_reindex_attempt = Some(report);
         self.last_query_at = Some(SystemTime::now());
     }
 
     pub fn last_reindex_report(&self) -> Option<SemanticReindexReport> {
         self.last_reindex.clone()
+    }
+
+    pub fn record_reindex_attempt(&mut self, report: SemanticReindexReport) {
+        self.last_reindex_attempt = Some(report);
+    }
+
+    pub fn last_reindex_attempt_report(&self) -> Option<SemanticReindexReport> {
+        self.last_reindex_attempt.clone()
     }
 }
 
@@ -132,11 +145,14 @@ impl Session {
 mod tests {
     use super::Session;
     use super::SessionConfig;
+    use crate::SupportedLanguage;
     use crate::api::AnalysisKind;
     use crate::api::AnalysisResponse;
+    use crate::semantic::SemanticReindexReport;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
     use std::time::Duration;
+    use std::time::SystemTime;
 
     #[test]
     fn mark_dirty_invalidates_cache_when_threshold_is_reached() {
@@ -186,5 +202,30 @@ mod tests {
 
         assert_eq!(session.reindex_pending(), true);
         assert_eq!(session.cached_analysis("rust:main"), None);
+    }
+
+    #[test]
+    fn record_reindex_attempt_tracks_failures_without_overwriting_last_completed() {
+        let mut session = Session::new(SessionConfig {
+            idle_timeout: Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        });
+        let completed = SemanticReindexReport::completed(
+            vec![SupportedLanguage::Rust],
+            1,
+            1,
+            SystemTime::UNIX_EPOCH,
+            SystemTime::UNIX_EPOCH,
+            false,
+            64,
+        );
+        let failed = SemanticReindexReport::failed("failed".to_string(), false, 64);
+
+        session.complete_reindex(completed.clone());
+        session.record_reindex_attempt(failed.clone());
+
+        let snapshot = session.snapshot();
+        assert_eq!(snapshot.last_reindex, Some(completed));
+        assert_eq!(snapshot.last_reindex_attempt, Some(failed));
     }
 }

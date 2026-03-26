@@ -202,6 +202,7 @@ mod tests {
     use crate::semantic::SemanticEmbeddingConfig;
     use crate::semantic::SemanticSearchRequest;
     use pretty_assertions::assert_eq;
+    use serial_test::serial;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -269,6 +270,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn semantic_search_reuses_cached_index_until_reindex() {
         let tempdir = tempdir().expect("tempdir should exist");
         std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
