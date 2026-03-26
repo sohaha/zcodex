@@ -2320,16 +2320,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-native-tldr-daemon"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "codex-native-tldr",
- "tokio",
-]
-
-[[package]]
 name = "codex-network-proxy"
 version = "1.0.0"
 dependencies = [

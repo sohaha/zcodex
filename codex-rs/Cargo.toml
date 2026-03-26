@@ -38,7 +38,6 @@ members = [
     "mcp-server",
     "network-proxy",
     "native-tldr",
-    "native-tldr-daemon",
     "ollama",
     "process-hardening",
     "protocol",
