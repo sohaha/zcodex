@@ -11,9 +11,12 @@ use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::LocalShellAction;
 use codex_protocol::models::LocalShellExecAction;
 use codex_protocol::models::LocalShellStatus;
+use codex_protocol::models::ReasoningItemContent;
+use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::SearchToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
+use codex_protocol::models::WebSearchAction;
 use codex_protocol::protocol::TokenUsage;
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
@@ -164,14 +167,30 @@ pub(crate) fn build_request_with_stream(
                 })
                 .to_string(),
             )),
-            unsupported => {
-                return Err(ApiError::InvalidRequest {
-                    message: format!(
-                        "chat completions does not support input item type {}",
-                        response_item_type(unsupported)
-                    ),
-                });
+            ResponseItem::Reasoning {
+                summary, content, ..
+            } => {
+                let text = reasoning_history_text(summary, content.as_deref());
+                if !text.is_empty() {
+                    messages.push(chat_text_message("assistant", text));
+                }
             }
+            ResponseItem::WebSearchCall { status, action, .. } => messages.push(chat_text_message(
+                "assistant",
+                web_search_history_text(status.as_deref(), action.as_ref()),
+            )),
+            ResponseItem::ImageGenerationCall {
+                status,
+                revised_prompt,
+                result,
+                ..
+            } => messages.push(chat_text_message(
+                "assistant",
+                image_generation_history_text(status, revised_prompt.as_deref(), result),
+            )),
+            ResponseItem::GhostSnapshot { .. }
+            | ResponseItem::Compaction { .. }
+            | ResponseItem::Other => {}
         }
     }
 
@@ -677,25 +696,6 @@ fn delta_content_text(content: Option<&Value>) -> Option<String> {
     }
 }
 
-fn response_item_type(item: &ResponseItem) -> &'static str {
-    match item {
-        ResponseItem::Message { .. } => "message",
-        ResponseItem::Reasoning { .. } => "reasoning",
-        ResponseItem::LocalShellCall { .. } => "local_shell_call",
-        ResponseItem::FunctionCall { .. } => "function_call",
-        ResponseItem::ToolSearchCall { .. } => "tool_search_call",
-        ResponseItem::FunctionCallOutput { .. } => "function_call_output",
-        ResponseItem::CustomToolCall { .. } => "custom_tool_call",
-        ResponseItem::CustomToolCallOutput { .. } => "custom_tool_call_output",
-        ResponseItem::ToolSearchOutput { .. } => "tool_search_output",
-        ResponseItem::WebSearchCall { .. } => "web_search_call",
-        ResponseItem::ImageGenerationCall { .. } => "image_generation_call",
-        ResponseItem::GhostSnapshot { .. } => "ghost_snapshot",
-        ResponseItem::Compaction { .. } => "compaction",
-        ResponseItem::Other => "other",
-    }
-}
-
 fn ensure_no_images(role: &str, content: &[ContentItem]) -> Result<(), ApiError> {
     if content
         .iter()
@@ -788,6 +788,13 @@ fn chat_tool_result_message(call_id: String, content: String) -> Value {
     json!({
         "role": "tool",
         "tool_call_id": call_id,
+        "content": content,
+    })
+}
+
+fn chat_text_message(role: &str, content: String) -> Value {
+    json!({
+        "role": role,
         "content": content,
     })
 }
@@ -987,6 +994,92 @@ fn parse_local_shell_arguments(arguments: &str) -> Result<ShellToolCallParams, A
     })
 }
 
+fn reasoning_history_text(
+    summary: &[ReasoningItemReasoningSummary],
+    content: Option<&[ReasoningItemContent]>,
+) -> String {
+    let summary_text = summary
+        .iter()
+        .map(|item| match item {
+            ReasoningItemReasoningSummary::SummaryText { text } => text.as_str(),
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let content_text = content
+        .unwrap_or_default()
+        .iter()
+        .map(|item| match item {
+            ReasoningItemContent::ReasoningText { text } | ReasoningItemContent::Text { text } => {
+                text.as_str()
+            }
+        })
+        .filter(|text| !text.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    match (summary_text.is_empty(), content_text.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!("[reasoning]\n{summary_text}"),
+        (true, false) => format!("[reasoning]\n{content_text}"),
+        (false, false) => {
+            format!("[reasoning summary]\n{summary_text}\n\n[reasoning content]\n{content_text}")
+        }
+    }
+}
+
+fn web_search_history_text(status: Option<&str>, action: Option<&WebSearchAction>) -> String {
+    let detail = action
+        .map(|action| match action {
+            WebSearchAction::Search { query, queries } => {
+                let queries = queries
+                    .as_ref()
+                    .map(|queries| queries.join(", "))
+                    .unwrap_or_default();
+                let query = query.clone().unwrap_or_default();
+                if query.is_empty() {
+                    queries
+                } else if queries.is_empty() {
+                    query
+                } else {
+                    format!("{query}; {queries}")
+                }
+            }
+            WebSearchAction::OpenPage { url } => url.clone().unwrap_or_default(),
+            WebSearchAction::FindInPage { url, pattern } => match (url, pattern) {
+                (Some(url), Some(pattern)) => format!("{pattern} @ {url}"),
+                (Some(url), None) => url.clone(),
+                (None, Some(pattern)) => pattern.clone(),
+                (None, None) => String::new(),
+            },
+            WebSearchAction::Other => String::new(),
+        })
+        .unwrap_or_default();
+    let status = status.unwrap_or("unknown");
+    if detail.is_empty() {
+        format!("[web_search] status={status}")
+    } else {
+        format!("[web_search] status={status}\n{detail}")
+    }
+}
+
+fn image_generation_history_text(
+    status: &str,
+    revised_prompt: Option<&str>,
+    result: &str,
+) -> String {
+    let mut lines = vec![format!("[image_generation] status={status}")];
+    if let Some(revised_prompt) = revised_prompt
+        && !revised_prompt.trim().is_empty()
+    {
+        lines.push(format!("revised_prompt: {revised_prompt}"));
+    }
+    if !result.is_empty() {
+        lines.push("result: omitted_binary_image_payload".to_string());
+    }
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1096,6 +1189,60 @@ mod tests {
         assert_eq!(
             body["tools"][1]["function"]["parameters"]["required"],
             json!(["input"])
+        );
+    }
+
+    #[test]
+    fn build_request_keeps_mixed_history_items_without_error() {
+        let request = request_with_tools(
+            Vec::new(),
+            vec![
+                ResponseItem::Reasoning {
+                    id: "rs_1".to_string(),
+                    summary: vec![ReasoningItemReasoningSummary::SummaryText {
+                        text: "thinking".to_string(),
+                    }],
+                    content: Some(vec![ReasoningItemContent::ReasoningText {
+                        text: "detail".to_string(),
+                    }]),
+                    encrypted_content: None,
+                },
+                ResponseItem::WebSearchCall {
+                    id: None,
+                    status: Some("completed".to_string()),
+                    action: Some(WebSearchAction::Search {
+                        query: Some("weather".to_string()),
+                        queries: None,
+                    }),
+                },
+                ResponseItem::ImageGenerationCall {
+                    id: "ig_1".to_string(),
+                    status: "completed".to_string(),
+                    revised_prompt: Some("lobster".to_string()),
+                    result: "Zm9v".to_string(),
+                },
+                ResponseItem::Compaction {
+                    encrypted_content: "secret".to_string(),
+                },
+                ResponseItem::Other,
+            ],
+        );
+
+        let chat = build_request_with_stream(&request, /*stream*/ false).expect("build request");
+        let messages = chat.body["messages"].as_array().expect("messages array");
+        let contents = messages
+            .iter()
+            .skip(1)
+            .map(|message| message["content"].as_str().unwrap_or_default().to_string())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            contents,
+            vec![
+                "[reasoning summary]\nthinking\n\n[reasoning content]\ndetail".to_string(),
+                "[web_search] status=completed\nweather".to_string(),
+                "[image_generation] status=completed\nrevised_prompt: lobster\nresult: omitted_binary_image_payload".to_string(),
+            ]
         );
     }
 
