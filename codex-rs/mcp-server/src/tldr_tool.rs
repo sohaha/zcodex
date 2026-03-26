@@ -1,94 +1,14 @@
-use anyhow::Result;
-use codex_native_tldr::TldrEngine;
-use codex_native_tldr::api::AnalysisKind;
-use codex_native_tldr::api::AnalysisRequest;
-use codex_native_tldr::api::AnalysisResponse;
-use codex_native_tldr::daemon::TldrDaemonCommand;
-use codex_native_tldr::daemon::daemon_health;
-use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::query_daemon;
-use codex_native_tldr::lang_support::LanguageRegistry;
-use codex_native_tldr::lang_support::SupportedLanguage;
-use codex_native_tldr::lifecycle::DaemonLifecycleManager;
-use codex_native_tldr::load_tldr_config;
-use codex_native_tldr::semantic::SemanticSearchRequest;
-use codex_native_tldr::semantic::SemanticSearchResponse;
-use codex_native_tldr::wire::daemon_response_payload;
-use codex_native_tldr::wire::semantic_payload;
-use once_cell::sync::Lazy;
+use codex_native_tldr::tool_api::TldrToolCallParam;
+use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
+use codex_native_tldr::tool_api::tldr_tool_output_schema;
+use codex_native_tldr::tool_api::wait_for_external_daemon;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
 use rmcp::model::JsonObject;
 use rmcp::model::Tool;
-use schemars::JsonSchema;
 use schemars::r#gen::SchemaSettings;
-use serde::Deserialize;
-use serde::Serialize;
-use serde_json::json;
-use std::future::Future;
-use std::path::Path;
-use std::path::PathBuf;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
-use tokio::time::sleep;
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum TldrToolAction {
-    Tree,
-    Context,
-    Impact,
-    Semantic,
-    Ping,
-    Warm,
-    Snapshot,
-    Status,
-    Notify,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum TldrToolLanguage {
-    Rust,
-    Typescript,
-    Javascript,
-    Python,
-    Go,
-    Php,
-    Zig,
-}
-
-impl From<TldrToolLanguage> for SupportedLanguage {
-    fn from(value: TldrToolLanguage) -> Self {
-        match value {
-            TldrToolLanguage::Rust => SupportedLanguage::Rust,
-            TldrToolLanguage::Typescript => SupportedLanguage::TypeScript,
-            TldrToolLanguage::Javascript => SupportedLanguage::JavaScript,
-            TldrToolLanguage::Python => SupportedLanguage::Python,
-            TldrToolLanguage::Go => SupportedLanguage::Go,
-            TldrToolLanguage::Php => SupportedLanguage::Php,
-            TldrToolLanguage::Zig => SupportedLanguage::Zig,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct TldrToolCallParam {
-    pub action: TldrToolAction,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub project: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub language: Option<TldrToolLanguage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub symbol: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub query: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-}
 
 pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
     let schema = SchemaSettings::draft2019_09()
@@ -107,25 +27,16 @@ pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
             "Structured code context analysis via native-tldr with daemon-first execution.".into(),
         ),
         input_schema,
-        output_schema: Some(tldr_tool_output_schema()),
+        output_schema: Some(match tldr_tool_output_schema() {
+            serde_json::Value::Object(map) => Arc::new(map),
+            _ => unreachable!("json literal must be an object"),
+        }),
         annotations: None,
         execution: None,
         icons: None,
         meta: None,
     }
 }
-
-type QueryDaemonFuture<'a> = Pin<
-    Box<
-        dyn Future<Output = Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>>
-            + Send
-            + 'a,
-    >,
->;
-type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
-
-static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
-    Lazy::new(DaemonLifecycleManager::default);
 
 pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResult {
     let args = match arguments.map(serde_json::Value::Object) {
@@ -136,310 +47,16 @@ pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResu
         None => return error_result("Missing arguments for tldr tool-call.".to_string()),
     };
 
-    match run_tldr_tool_inner(args).await {
-        Ok(result) => result,
-        Err(err) => error_result(format!("tldr tool failed: {err}")),
-    }
-}
-
-async fn run_tldr_tool_inner(args: TldrToolCallParam) -> Result<CallToolResult> {
-    let project_root = resolve_project_root(args.project.as_deref())?;
-    match args.action {
-        TldrToolAction::Tree => {
-            let language = required_language(&args)?;
-            run_analysis_tool(project_root, TldrToolAction::Tree, language, args.symbol).await
-        }
-        TldrToolAction::Context => {
-            let language = required_language(&args)?;
-            run_analysis_tool(project_root, TldrToolAction::Context, language, args.symbol).await
-        }
-        TldrToolAction::Impact => {
-            let language = required_language(&args)?;
-            run_analysis_tool(project_root, TldrToolAction::Impact, language, args.symbol).await
-        }
-        TldrToolAction::Semantic => run_semantic_tool(project_root, args).await,
-        TldrToolAction::Ping => {
-            run_daemon_tool(project_root, TldrDaemonCommand::Ping, "ping").await
-        }
-        TldrToolAction::Warm => {
-            run_daemon_tool(project_root, TldrDaemonCommand::Warm, "warm").await
-        }
-        TldrToolAction::Snapshot => {
-            run_daemon_tool(project_root, TldrDaemonCommand::Snapshot, "snapshot").await
-        }
-        TldrToolAction::Status => {
-            run_daemon_tool(project_root, TldrDaemonCommand::Status, "status").await
-        }
-        TldrToolAction::Notify => {
-            let path = args
-                .path
-                .map(PathBuf::from)
-                .ok_or_else(|| anyhow::anyhow!("`path` is required for action=notify"))?;
-            run_daemon_tool(project_root, TldrDaemonCommand::Notify { path }, "notify").await
-        }
-    }
-}
-
-async fn run_analysis_tool(
-    project_root: PathBuf,
-    action: TldrToolAction,
-    language: SupportedLanguage,
-    symbol: Option<String>,
-) -> Result<CallToolResult> {
-    let kind = match action {
-        TldrToolAction::Tree => AnalysisKind::Ast,
-        TldrToolAction::Context => AnalysisKind::CallGraph,
-        TldrToolAction::Impact => AnalysisKind::Pdg,
-        _ => unreachable!("analysis action must map to AnalysisKind"),
-    };
-    let request = AnalysisRequest {
-        kind,
-        language,
-        symbol: symbol.clone(),
-    };
-    let daemon_response = query_daemon_with_lifecycle(
-        &project_root,
-        &TldrDaemonCommand::Analyze {
-            key: analysis_cache_key(kind, language, symbol.as_deref()),
-            request: request.clone(),
-        },
-    )
-    .await?;
-    let support = LanguageRegistry::support_for(language);
-    let (source, message, analysis) = if let Some(response) = daemon_response {
-        let analysis = response
-            .analysis
-            .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
-        ("daemon", response.message, analysis)
-    } else {
-        let config = load_tldr_config(&project_root)?;
-        let engine = TldrEngine::builder(project_root.clone())
-            .with_config(config)
-            .build();
-        let response = engine.analyze(request)?;
-        (
-            "local",
-            "daemon unavailable; used local engine".to_string(),
-            response,
-        )
-    };
-
-    let structured_content = analysis_structured_content(
-        action_name(&action),
-        &project_root,
-        language,
-        source,
-        &message,
-        support,
-        symbol.as_deref(),
-        &analysis,
-    );
-    let summary = analysis.summary.clone();
-    let text = format!(
-        "{} {} via {source}: {summary}",
-        action_name(&action),
-        language.as_str()
-    );
-    Ok(success_result(text, structured_content))
-}
-
-async fn run_semantic_tool(
-    project_root: PathBuf,
-    args: TldrToolCallParam,
-) -> Result<CallToolResult> {
-    let language = required_language(&args)?;
-    let query = args
-        .query
-        .ok_or_else(|| anyhow::anyhow!("`query` is required for action=semantic"))?;
-    let request = SemanticSearchRequest {
-        language,
-        query: query.clone(),
-    };
-    let daemon_response = query_daemon_with_lifecycle(
-        &project_root,
-        &TldrDaemonCommand::Semantic {
-            request: request.clone(),
-        },
-    )
-    .await?;
-    let (response, source) = if let Some(response) = daemon_response {
-        if let Some(semantic) = response.semantic {
-            (semantic, "daemon")
-        } else {
-            (
-                run_local_semantic(&project_root, language, &query)?,
-                "local",
-            )
-        }
-    } else {
-        (
-            run_local_semantic(&project_root, language, &query)?,
-            "local",
-        )
-    };
-    let structured_content =
-        semantic_structured_content(&project_root, language, source, &response);
-    Ok(success_result(
-        format!(
-            "semantic {} enabled={} via {source}: {}",
-            language.as_str(),
-            response.enabled,
-            response.message
-        ),
-        structured_content,
-    ))
-}
-
-fn run_local_semantic(
-    project_root: &Path,
-    language: SupportedLanguage,
-    query: &str,
-) -> Result<SemanticSearchResponse> {
-    let config = load_tldr_config(project_root)?;
-    let engine = TldrEngine::builder(project_root.to_path_buf())
-        .with_config(config)
-        .build();
-    engine.semantic_search(SemanticSearchRequest {
-        language,
-        query: query.to_string(),
-    })
-}
-
-fn analysis_structured_content(
-    action: &str,
-    project_root: &Path,
-    language: SupportedLanguage,
-    source: &str,
-    message: &str,
-    support: &codex_native_tldr::lang_support::LanguageSupport,
-    symbol: Option<&str>,
-    response: &AnalysisResponse,
-) -> serde_json::Value {
-    json!({
-        "action": action,
-        "project": project_root,
-        "language": language.as_str(),
-        "source": source,
-        "message": message,
-        "supportLevel": format!("{:?}", support.support_level),
-        "fallbackStrategy": support.fallback_strategy,
-        "summary": response.summary.clone(),
-        "symbol": symbol,
-        "analysis": response,
-    })
-}
-
-fn semantic_structured_content(
-    project_root: &Path,
-    language: SupportedLanguage,
-    source: &str,
-    response: &SemanticSearchResponse,
-) -> serde_json::Value {
-    let mut payload = semantic_payload(Some("semantic"), project_root, language, source, response);
-    let semantic = semantic_result_payload(&payload);
-    if let Some(object) = payload.as_object_mut() {
-        object.insert("semantic".to_string(), semantic);
-    }
-    payload
-}
-
-fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
-    let mut semantic = payload.clone();
-    if let Some(object) = semantic.as_object_mut() {
-        for key in ["action", "project", "language", "source"] {
-            object.remove(key);
-        }
-    }
-    semantic
-}
-
-async fn run_daemon_tool(
-    project_root: PathBuf,
-    command: TldrDaemonCommand,
-    action: &str,
-) -> Result<CallToolResult> {
-    let Some(response) = query_daemon_with_lifecycle(&project_root, &command).await? else {
-        return Err(anyhow::anyhow!(
-            "native-tldr daemon is unavailable for {}",
-            project_root.display()
-        ));
-    };
-    let structured_content = daemon_response_payload(action, &project_root, &response);
-    let text = structured_content
-        .get("message")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("ok")
-        .to_string();
-    Ok(success_result(text, structured_content))
-}
-
-async fn query_daemon_with_lifecycle(
-    project_root: &std::path::Path,
-    command: &TldrDaemonCommand,
-) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
-    query_daemon_with_hooks(
-        project_root,
-        command,
+    match run_tldr_tool_with_hooks(
+        args,
         |project_root, command| Box::pin(query_daemon(project_root, command)),
         |project_root| Box::pin(wait_for_external_daemon(project_root)),
     )
     .await
-}
-
-async fn query_daemon_with_hooks<Q, E>(
-    project_root: &std::path::Path,
-    command: &TldrDaemonCommand,
-    query: Q,
-    ensure_running: E,
-) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>
-where
-    Q: for<'a> Fn(&'a std::path::Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
-    E: for<'a> Fn(&'a std::path::Path) -> EnsureDaemonFuture<'a>,
-{
-    DAEMON_LIFECYCLE_MANAGER
-        .query_or_spawn_with_hooks(project_root, command, query, ensure_running)
-        .await
-}
-
-async fn wait_for_external_daemon(project_root: &std::path::Path) -> Result<bool> {
-    if !daemon_lock_is_held(project_root)? {
-        return Ok(false);
+    {
+        Ok(result) => success_result(result.text, result.structured_content),
+        Err(err) => error_result(format!("tldr tool failed: {err}")),
     }
-
-    let start = Instant::now();
-    let timeout = Duration::from_secs(3);
-    while start.elapsed() < timeout {
-        if daemon_metadata_looks_alive(project_root) {
-            return Ok(true);
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-
-    Ok(false)
-}
-
-fn daemon_metadata_looks_alive(project_root: &std::path::Path) -> bool {
-    daemon_health(project_root)
-        .map(|health| health.healthy)
-        .unwrap_or(false)
-}
-
-fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
-    let language = args.language.ok_or_else(|| {
-        anyhow::anyhow!(
-            "`language` is required for action={}",
-            action_name(&args.action)
-        )
-    })?;
-    Ok(language.into())
-}
-
-fn resolve_project_root(project: Option<&str>) -> Result<PathBuf> {
-    let project_root = match project {
-        Some(project) => PathBuf::from(project),
-        None => std::env::current_dir()?,
-    };
-    Ok(project_root.canonicalize()?)
 }
 
 fn success_result(text: String, structured_content: serde_json::Value) -> CallToolResult {
@@ -458,29 +75,6 @@ fn error_result(text: String) -> CallToolResult {
         is_error: Some(true),
         meta: None,
     }
-}
-
-fn action_name(action: &TldrToolAction) -> &'static str {
-    match action {
-        TldrToolAction::Tree => "tree",
-        TldrToolAction::Context => "context",
-        TldrToolAction::Impact => "impact",
-        TldrToolAction::Semantic => "semantic",
-        TldrToolAction::Ping => "ping",
-        TldrToolAction::Warm => "warm",
-        TldrToolAction::Snapshot => "snapshot",
-        TldrToolAction::Status => "status",
-        TldrToolAction::Notify => "notify",
-    }
-}
-
-fn analysis_cache_key(
-    kind: AnalysisKind,
-    language: SupportedLanguage,
-    symbol: Option<&str>,
-) -> String {
-    let symbol = symbol.unwrap_or("*");
-    format!("{}:{kind:?}:{symbol}", language.as_str())
 }
 
 fn create_tool_input_schema(
@@ -504,147 +98,15 @@ fn create_tool_input_schema(
     Arc::new(input_schema)
 }
 
-fn tldr_tool_output_schema() -> Arc<JsonObject> {
-    let schema: serde_json::Value = match serde_json::from_str(
-        r##"{
-          "type": "object",
-          "$defs": {
-            "analysis": {
-              "type": "object",
-              "properties": {
-                "kind": { "type": "string" },
-                "summary": { "type": "string" }
-              }
-            },
-            "reindexReport": {
-              "type": ["object", "null"],
-              "properties": {
-                "status": { "type": "string" },
-                "languages": { "type": "array", "items": { "type": "string" } },
-                "indexed_files": { "type": "integer" },
-                "indexed_units": { "type": "integer" },
-                "truncated": { "type": "boolean" },
-                "started_at": { "type": "string" },
-                "finished_at": { "type": "string" },
-                "message": { "type": "string" },
-                "embedding_enabled": { "type": "boolean" },
-                "embedding_dimensions": { "type": "integer" }
-              }
-            },
-            "semantic": {
-              "type": "object",
-              "properties": {
-                "query": { "type": "string" },
-                "enabled": { "type": "boolean" },
-                "indexedFiles": { "type": "integer" },
-                "truncated": { "type": "boolean" },
-                "embeddingUsed": { "type": "boolean" },
-                "message": { "type": "string" },
-                "matches": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "path": { "type": "string" },
-                      "line": { "type": "integer" },
-                      "snippet": { "type": "string" },
-                      "embedding_score": { "type": ["number", "null"] }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "properties": {
-            "action": { "type": "string" },
-            "analysis": { "$ref": "#/$defs/analysis" },
-            "project": { "type": "string" },
-            "language": { "type": "string" },
-            "source": { "type": "string" },
-            "query": { "type": "string" },
-            "enabled": { "type": "boolean" },
-            "indexedFiles": { "type": "integer" },
-            "truncated": { "type": "boolean" },
-            "embeddingUsed": { "type": "boolean" },
-            "matches": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "path": { "type": "string" },
-                  "line": { "type": "integer" },
-                  "snippet": { "type": "string" },
-                  "embedding_score": { "type": ["number", "null"] }
-                }
-              }
-            },
-            "status": { "type": "string" },
-            "message": { "type": "string" },
-            "semantic": { "$ref": "#/$defs/semantic" },
-            "summary": { "type": "string" },
-            "snapshot": {
-              "type": "object",
-              "properties": {
-                "cached_entries": { "type": "integer" },
-                "dirty_files": { "type": "integer" },
-                "dirty_file_threshold": { "type": "integer" },
-                "reindex_pending": { "type": "boolean" },
-                "last_query_at": { "type": ["string", "null"] },
-                "last_reindex": { "$ref": "#/$defs/reindexReport" },
-                "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" }
-              }
-            },
-            "daemonStatus": {
-              "type": "object",
-              "properties": {
-                "project_root": { "type": "string" },
-                "socket_path": { "type": "string" },
-                "pid_path": { "type": "string" },
-                "lock_path": { "type": "string" },
-                "socket_exists": { "type": "boolean" },
-                "pid_is_live": { "type": "boolean" },
-                "lock_is_held": { "type": "boolean" },
-                "healthy": { "type": "boolean" },
-                "stale_socket": { "type": "boolean" },
-                "stale_pid": { "type": "boolean" },
-                "health_reason": { "type": ["string", "null"] },
-                "recovery_hint": { "type": ["string", "null"] },
-                "semantic_reindex_pending": { "type": "boolean" },
-                "last_query_at": { "type": ["string", "null"] },
-                "config": {
-                  "type": "object",
-                  "properties": {
-                    "auto_start": { "type": "boolean" },
-                    "socket_mode": { "type": "string" },
-                    "semantic_enabled": { "type": "boolean" },
-                    "semantic_auto_reindex_threshold": { "type": "integer" },
-                    "session_dirty_file_threshold": { "type": "integer" }
-                  }
-                }
-              }
-            },
-            "reindexReport": { "$ref": "#/$defs/reindexReport" }
-          }
-        }"##,
-    ) {
-        Ok(schema) => schema,
-        Err(err) => panic!("output schema literal should parse: {err}"),
-    };
-    match schema {
-        serde_json::Value::Object(map) => Arc::new(map),
-        _ => unreachable!("json literal must be an object"),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::TldrToolAction;
-    use super::TldrToolCallParam;
-    use super::TldrToolLanguage;
     use super::create_tool_for_tldr_tool_call_param;
-    use super::query_daemon_with_hooks;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
+    use codex_native_tldr::tool_api::TldrToolAction;
+    use codex_native_tldr::tool_api::TldrToolCallParam;
+    use codex_native_tldr::tool_api::TldrToolLanguage;
+    use codex_native_tldr::tool_api::query_daemon_with_hooks;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
@@ -850,7 +312,7 @@ mod tests {
         let response = query_daemon_with_hooks(
             tempdir.path(),
             &command,
-            {
+            &{
                 let query_calls = Arc::clone(&query_calls);
                 let query_response = query_response.clone();
                 move |_project_root, _command| {
@@ -866,7 +328,7 @@ mod tests {
                     })
                 }
             },
-            {
+            &{
                 let ensure_calls = Arc::clone(&ensure_calls);
                 move |_project_root| {
                     let ensure_calls = Arc::clone(&ensure_calls);
@@ -895,7 +357,7 @@ mod tests {
         let response = query_daemon_with_hooks(
             tempdir.path(),
             &command,
-            {
+            &{
                 let query_calls = Arc::clone(&query_calls);
                 move |_project_root, _command| {
                     let query_calls = Arc::clone(&query_calls);
@@ -905,7 +367,7 @@ mod tests {
                     })
                 }
             },
-            {
+            &{
                 let ensure_calls = Arc::clone(&ensure_calls);
                 move |_project_root| {
                     let ensure_calls = Arc::clone(&ensure_calls);

@@ -1745,6 +1745,73 @@ fn create_request_permissions_tool() -> ToolSpec {
     })
 }
 
+fn create_tldr_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "action".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Action to run: tree, context, impact, semantic, ping, warm, snapshot, status, or notify."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "project".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional project root. Defaults to the current session working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "language".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Language for tree/context/impact/semantic: rust, typescript, javascript, python, go, php, or zig."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "symbol".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional symbol name for tree/context/impact queries.".to_string(),
+                ),
+            },
+        ),
+        (
+            "query".to_string(),
+            JsonSchema::String {
+                description: Some("Natural-language query for semantic search.".to_string()),
+            },
+        ),
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some("Path to notify for action=notify.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "tldr".to_string(),
+        description:
+            "Structured code context analysis via native-tldr with daemon-first execution."
+                .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["action".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: Some(codex_native_tldr::tool_api::tldr_tool_output_schema()),
+    })
+}
+
 fn create_close_agent_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
@@ -2788,6 +2855,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::TestSyncHandler;
+    use crate::tools::handlers::TldrHandler;
     use crate::tools::handlers::ToolSearchHandler;
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
@@ -2959,6 +3027,13 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("update_plan", plan_handler);
+    push_tool_spec(
+        &mut builder,
+        create_tldr_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("tldr", Arc::new(TldrHandler));
 
     if config.js_repl_enabled {
         push_tool_spec(

@@ -10,6 +10,7 @@ pub mod mcp;
 mod rust_analysis;
 pub mod semantic;
 pub mod session;
+pub mod tool_api;
 pub mod wire;
 
 use crate::analysis::analyze_project;

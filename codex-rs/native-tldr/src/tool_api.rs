@@ -1,0 +1,600 @@
+use crate::TldrEngine;
+use crate::api::AnalysisKind;
+use crate::api::AnalysisRequest;
+use crate::daemon::TldrDaemonCommand;
+use crate::daemon::TldrDaemonResponse;
+use crate::daemon::daemon_health;
+use crate::lang_support::LanguageRegistry;
+use crate::lang_support::SupportedLanguage;
+use crate::lifecycle::DaemonLifecycleManager;
+use crate::load_tldr_config;
+use crate::semantic::SemanticSearchRequest;
+use crate::wire::daemon_response_payload;
+use crate::wire::semantic_payload;
+use anyhow::Result;
+use once_cell::sync::Lazy;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_json::json;
+use std::future::Future;
+use std::path::Path;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::time::Duration;
+use std::time::Instant;
+use tokio::time::sleep;
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TldrToolAction {
+    Tree,
+    Context,
+    Impact,
+    Semantic,
+    Ping,
+    Warm,
+    Snapshot,
+    Status,
+    Notify,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TldrToolLanguage {
+    Rust,
+    Typescript,
+    Javascript,
+    Python,
+    Go,
+    Php,
+    Zig,
+}
+
+impl From<TldrToolLanguage> for SupportedLanguage {
+    fn from(value: TldrToolLanguage) -> Self {
+        match value {
+            TldrToolLanguage::Rust => SupportedLanguage::Rust,
+            TldrToolLanguage::Typescript => SupportedLanguage::TypeScript,
+            TldrToolLanguage::Javascript => SupportedLanguage::JavaScript,
+            TldrToolLanguage::Python => SupportedLanguage::Python,
+            TldrToolLanguage::Go => SupportedLanguage::Go,
+            TldrToolLanguage::Php => SupportedLanguage::Php,
+            TldrToolLanguage::Zig => SupportedLanguage::Zig,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TldrToolCallParam {
+    pub action: TldrToolAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<TldrToolLanguage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TldrToolResult {
+    pub text: String,
+    pub structured_content: serde_json::Value,
+}
+
+pub type QueryDaemonFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<TldrDaemonResponse>>> + Send + 'a>>;
+pub type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+
+static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
+    Lazy::new(DaemonLifecycleManager::default);
+
+pub async fn run_tldr_tool_with_hooks<Q, E>(
+    args: TldrToolCallParam,
+    query: Q,
+    ensure_running: E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let project_root = resolve_project_root(args.project.as_deref())?;
+    match args.action {
+        TldrToolAction::Tree => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Tree,
+                language,
+                args.symbol,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Context => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Context,
+                language,
+                args.symbol,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Impact => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Impact,
+                language,
+                args.symbol,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Semantic => {
+            run_semantic_tool(&project_root, args, &query, &ensure_running).await
+        }
+        TldrToolAction::Ping => {
+            run_daemon_tool(
+                &project_root,
+                TldrDaemonCommand::Ping,
+                "ping",
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Warm => {
+            run_daemon_tool(
+                &project_root,
+                TldrDaemonCommand::Warm,
+                "warm",
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Snapshot => {
+            run_daemon_tool(
+                &project_root,
+                TldrDaemonCommand::Snapshot,
+                "snapshot",
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Status => {
+            run_daemon_tool(
+                &project_root,
+                TldrDaemonCommand::Status,
+                "status",
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Notify => {
+            let path = args
+                .path
+                .map(PathBuf::from)
+                .ok_or_else(|| anyhow::anyhow!("`path` is required for action=notify"))?;
+            run_daemon_tool(
+                &project_root,
+                TldrDaemonCommand::Notify { path },
+                "notify",
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+    }
+}
+
+async fn run_analysis_tool<Q, E>(
+    project_root: &Path,
+    action: TldrToolAction,
+    language: SupportedLanguage,
+    symbol: Option<String>,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let kind = match action {
+        TldrToolAction::Tree => AnalysisKind::Ast,
+        TldrToolAction::Context => AnalysisKind::CallGraph,
+        TldrToolAction::Impact => AnalysisKind::Pdg,
+        _ => unreachable!("analysis action must map to AnalysisKind"),
+    };
+    let request = AnalysisRequest {
+        kind,
+        language,
+        symbol: symbol.clone(),
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Analyze {
+            key: analysis_cache_key(kind, language, symbol.as_deref()),
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let support = LanguageRegistry::support_for(language);
+    let (source, message, analysis) = if let Some(response) = daemon_response {
+        let analysis = response
+            .analysis
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+        ("daemon", response.message, analysis)
+    } else {
+        let config = load_tldr_config(project_root)?;
+        let engine = TldrEngine::builder(project_root.to_path_buf())
+            .with_config(config)
+            .build();
+        let response = engine.analyze(request)?;
+        (
+            "local",
+            "daemon unavailable; used local engine".to_string(),
+            response,
+        )
+    };
+
+    let structured_content = json!({
+        "action": action_name(&action),
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "supportLevel": format!("{:?}", support.support_level),
+        "fallbackStrategy": support.fallback_strategy,
+        "summary": analysis.summary,
+        "symbol": symbol,
+        "analysis": analysis,
+    });
+    let text = format!(
+        "{} {} via {source}: {}",
+        action_name(&action),
+        language.as_str(),
+        structured_content["summary"].as_str().unwrap_or_default()
+    );
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
+async fn run_semantic_tool<Q, E>(
+    project_root: &Path,
+    args: TldrToolCallParam,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let language = required_language(&args)?;
+    let search_query = args
+        .query
+        .ok_or_else(|| anyhow::anyhow!("`query` is required for action=semantic"))?;
+    let request = SemanticSearchRequest {
+        language,
+        query: search_query.clone(),
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Semantic {
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let (response, source) = if let Some(response) = daemon_response {
+        if let Some(semantic) = response.semantic {
+            (semantic, "daemon")
+        } else {
+            (
+                run_local_semantic(project_root, language, &search_query)?,
+                "local",
+            )
+        }
+    } else {
+        (
+            run_local_semantic(project_root, language, &search_query)?,
+            "local",
+        )
+    };
+
+    let mut structured_content =
+        semantic_payload(Some("semantic"), project_root, language, source, &response);
+    let semantic = semantic_result_payload(&structured_content);
+    if let Some(object) = structured_content.as_object_mut() {
+        object.insert("semantic".to_string(), semantic);
+    }
+
+    Ok(TldrToolResult {
+        text: format!(
+            "semantic {} enabled={} via {source}: {}",
+            language.as_str(),
+            response.enabled,
+            response.message
+        ),
+        structured_content,
+    })
+}
+
+fn run_local_semantic(
+    project_root: &Path,
+    language: SupportedLanguage,
+    query: &str,
+) -> Result<crate::semantic::SemanticSearchResponse> {
+    let config = load_tldr_config(project_root)?;
+    let engine = TldrEngine::builder(project_root.to_path_buf())
+        .with_config(config)
+        .build();
+    engine.semantic_search(SemanticSearchRequest {
+        language,
+        query: query.to_string(),
+    })
+}
+
+async fn run_daemon_tool<Q, E>(
+    project_root: &Path,
+    command: TldrDaemonCommand,
+    action: &str,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let Some(response) =
+        query_daemon_with_hooks(project_root, &command, query, ensure_running).await?
+    else {
+        return Err(anyhow::anyhow!(
+            "native-tldr daemon is unavailable for {}",
+            project_root.display()
+        ));
+    };
+    let structured_content = daemon_response_payload(action, project_root, &response);
+    let text = structured_content
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("ok")
+        .to_string();
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
+pub async fn query_daemon_with_hooks<Q, E>(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<Option<TldrDaemonResponse>>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    DAEMON_LIFECYCLE_MANAGER
+        .query_or_spawn_with_hooks(project_root, command, query, ensure_running)
+        .await
+}
+
+pub async fn wait_for_external_daemon(project_root: &Path) -> Result<bool> {
+    if !crate::daemon::daemon_lock_is_held(project_root)? {
+        return Ok(false);
+    }
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(3);
+    while start.elapsed() < timeout {
+        if daemon_metadata_looks_alive(project_root) {
+            return Ok(true);
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    Ok(false)
+}
+
+pub fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
+    daemon_health(project_root)
+        .map(|health| health.healthy)
+        .unwrap_or(false)
+}
+
+pub fn action_name(action: &TldrToolAction) -> &'static str {
+    match action {
+        TldrToolAction::Tree => "tree",
+        TldrToolAction::Context => "context",
+        TldrToolAction::Impact => "impact",
+        TldrToolAction::Semantic => "semantic",
+        TldrToolAction::Ping => "ping",
+        TldrToolAction::Warm => "warm",
+        TldrToolAction::Snapshot => "snapshot",
+        TldrToolAction::Status => "status",
+        TldrToolAction::Notify => "notify",
+    }
+}
+
+pub fn analysis_cache_key(
+    kind: AnalysisKind,
+    language: SupportedLanguage,
+    symbol: Option<&str>,
+) -> String {
+    let symbol = symbol.unwrap_or("*");
+    format!("{}:{kind:?}:{symbol}", language.as_str())
+}
+
+fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
+    let language = args.language.ok_or_else(|| {
+        anyhow::anyhow!(
+            "`language` is required for action={}",
+            action_name(&args.action)
+        )
+    })?;
+    Ok(language.into())
+}
+
+fn resolve_project_root(project: Option<&str>) -> Result<PathBuf> {
+    let project_root = match project {
+        Some(project) => PathBuf::from(project),
+        None => std::env::current_dir()?,
+    };
+    Ok(project_root.canonicalize()?)
+}
+
+fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
+    let mut semantic = payload.clone();
+    if let Some(object) = semantic.as_object_mut() {
+        for key in ["action", "project", "language", "source"] {
+            object.remove(key);
+        }
+    }
+    semantic
+}
+
+pub fn tldr_tool_output_schema() -> serde_json::Value {
+    serde_json::from_str(
+        r##"{
+          "type": "object",
+          "$defs": {
+            "analysis": {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string" },
+                "summary": { "type": "string" }
+              }
+            },
+            "reindexReport": {
+              "type": ["object", "null"],
+              "properties": {
+                "status": { "type": "string" },
+                "languages": { "type": "array", "items": { "type": "string" } },
+                "indexed_files": { "type": "integer" },
+                "indexed_units": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "started_at": { "type": "string" },
+                "finished_at": { "type": "string" },
+                "message": { "type": "string" },
+                "embedding_enabled": { "type": "boolean" },
+                "embedding_dimensions": { "type": "integer" }
+              }
+            },
+            "semantic": {
+              "type": "object",
+              "properties": {
+                "query": { "type": "string" },
+                "enabled": { "type": "boolean" },
+                "indexedFiles": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "embeddingUsed": { "type": "boolean" },
+                "message": { "type": "string" },
+                "matches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": { "type": "string" },
+                      "line": { "type": "integer" },
+                      "snippet": { "type": "string" },
+                      "embedding_score": { "type": ["number", "null"] }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "properties": {
+            "action": { "type": "string" },
+            "analysis": { "$ref": "#/$defs/analysis" },
+            "project": { "type": "string" },
+            "language": { "type": "string" },
+            "source": { "type": "string" },
+            "query": { "type": "string" },
+            "enabled": { "type": "boolean" },
+            "indexedFiles": { "type": "integer" },
+            "truncated": { "type": "boolean" },
+            "embeddingUsed": { "type": "boolean" },
+            "matches": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": { "type": "string" },
+                  "line": { "type": "integer" },
+                  "snippet": { "type": "string" },
+                  "embedding_score": { "type": ["number", "null"] }
+                }
+              }
+            },
+            "status": { "type": "string" },
+            "message": { "type": "string" },
+            "semantic": { "$ref": "#/$defs/semantic" },
+            "summary": { "type": "string" },
+            "snapshot": {
+              "type": "object",
+              "properties": {
+                "cached_entries": { "type": "integer" },
+                "dirty_files": { "type": "integer" },
+                "dirty_file_threshold": { "type": "integer" },
+                "reindex_pending": { "type": "boolean" },
+                "last_query_at": { "type": ["string", "null"] },
+                "last_reindex": { "$ref": "#/$defs/reindexReport" },
+                "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" }
+              }
+            },
+            "daemonStatus": {
+              "type": "object",
+              "properties": {
+                "project_root": { "type": "string" },
+                "socket_path": { "type": "string" },
+                "pid_path": { "type": "string" },
+                "lock_path": { "type": "string" },
+                "socket_exists": { "type": "boolean" },
+                "pid_is_live": { "type": "boolean" },
+                "lock_is_held": { "type": "boolean" },
+                "healthy": { "type": "boolean" },
+                "stale_socket": { "type": "boolean" },
+                "stale_pid": { "type": "boolean" },
+                "health_reason": { "type": ["string", "null"] },
+                "recovery_hint": { "type": ["string", "null"] },
+                "semantic_reindex_pending": { "type": "boolean" },
+                "last_query_at": { "type": ["string", "null"] },
+                "config": {
+                  "type": "object",
+                  "properties": {
+                    "auto_start": { "type": "boolean" },
+                    "socket_mode": { "type": "string" },
+                    "semantic_enabled": { "type": "boolean" },
+                    "semantic_auto_reindex_threshold": { "type": "integer" },
+                    "session_dirty_file_threshold": { "type": "integer" }
+                  }
+                }
+              }
+            },
+            "reindexReport": { "$ref": "#/$defs/reindexReport" }
+          }
+        }"##,
+    )
+    .expect("output schema literal should parse")
+}
