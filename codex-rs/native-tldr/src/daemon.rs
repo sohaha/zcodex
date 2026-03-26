@@ -1462,6 +1462,44 @@ mod tests {
         assert!(daemon_lock_is_held(&project_root).expect("lock query should succeed"));
     }
 
+    #[test]
+    fn daemon_lock_query_recovers_after_lock_file_is_deleted() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("deleted-daemon-lock-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&lock_path, "").expect("lock file should exist before deletion");
+        std::fs::remove_file(&lock_path).expect("lock file should be removed");
+        assert!(!lock_path.exists());
+
+        let lock_is_held = daemon_lock_is_held(&project_root).expect("lock query should succeed");
+
+        assert!(!lock_is_held);
+        assert!(lock_path.exists());
+    }
+
+    #[test]
+    fn daemon_health_recovers_after_lock_file_is_deleted() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("deleted-daemon-lock-health-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&lock_path, "").expect("lock file should exist before deletion");
+        std::fs::remove_file(&lock_path).expect("lock file should be removed");
+        assert!(!lock_path.exists());
+
+        let health = daemon_health(&project_root).expect("health query should succeed");
+
+        assert!(!health.lock_is_held);
+        assert!(lock_path.exists());
+        assert_eq!(
+            health.health_reason.as_deref(),
+            Some("daemon unavailable (missing socket and pid)")
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn daemon_artifact_scope_dir_allows_isolated_runtime_root() {
