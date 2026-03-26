@@ -329,6 +329,7 @@ struct ChatCompletionsSseState {
     output_text_done: bool,
     message_item_started: bool,
     tool_calls: BTreeMap<u32, PendingToolCall>,
+    output_items: Vec<Value>,
     token_usage: Option<Value>,
     completed: bool,
     next_output_index: i64,
@@ -346,6 +347,7 @@ impl ChatCompletionsSseState {
             output_text_done: false,
             message_item_started: false,
             tool_calls: BTreeMap::new(),
+            output_items: Vec::new(),
             token_usage: None,
             completed: false,
             next_output_index: 0,
@@ -481,24 +483,26 @@ impl ChatCompletionsSseState {
         tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
     ) -> Result<(), ApiError> {
         if !self.output_text_done && !self.output_text.is_empty() {
+            let message_item = json!({
+                "id": self.message_item_id(),
+                "type": "message",
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": self.output_text,
+                }],
+            });
             send_sse_json(
                 tx,
                 "response.output_item.done",
                 json!({
                     "type": "response.output_item.done",
                     "output_index": 0,
-                    "item": {
-                        "id": self.message_item_id(),
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [{
-                            "type": "output_text",
-                            "text": self.output_text,
-                        }],
-                    }
+                    "item": message_item.clone(),
                 }),
             )
             .await?;
+            self.output_items.push(message_item);
             self.output_text_done = true;
             self.next_output_index = 1;
         }
@@ -523,14 +527,25 @@ impl ChatCompletionsSseState {
             let item = with_item_id(item, format!("{}_{}", self.response_id(), call_id));
             send_sse_json(
                 tx,
+                "response.output_item.added",
+                json!({
+                    "type": "response.output_item.added",
+                    "output_index": self.next_output_index,
+                    "item": item.clone(),
+                }),
+            )
+            .await?;
+            send_sse_json(
+                tx,
                 "response.output_item.done",
                 json!({
                     "type": "response.output_item.done",
                     "output_index": self.next_output_index,
-                    "item": item,
+                    "item": item.clone(),
                 }),
             )
             .await?;
+            self.output_items.push(item);
             self.next_output_index += 1;
         }
         self.tool_calls.clear();
@@ -557,7 +572,7 @@ impl ChatCompletionsSseState {
                     "created_at": self.created_at,
                     "status": "completed",
                     "model": self.model.clone(),
-                    "output": [],
+                    "output": self.output_items.clone(),
                     "usage": self.token_usage,
                 }
             }),

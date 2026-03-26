@@ -569,6 +569,7 @@ async fn chat_wire_api_translates_streaming_responses_endpoint_to_chat_upstream(
         "{translated_stream}"
     );
     assert!(translated_stream.contains("event: response.completed"));
+    assert!(translated_stream.contains("\"output\":[{\"content\":[{\"text\":\"Hello\""));
     assert!(translated_stream.contains("\"input_tokens\":11"));
     assert!(translated_stream.contains("\"reasoning_tokens\":1"));
 
@@ -770,12 +771,14 @@ async fn chat_wire_api_translates_special_tool_calls_in_stream() {
     assert!(body.contains("\"type\":\"custom_tool_call\""));
     assert!(body.contains("\"call_id\":\"call-custom\""));
     assert!(body.contains("\"input\":\"*** Begin Patch\""));
+    assert!(body.contains("event: response.output_item.added"));
     assert!(body.contains("\"type\":\"tool_search_call\""));
     assert!(body.contains("\"call_id\":\"call-search\""));
     assert!(body.contains("\"query\":\"calendar create\""));
     assert!(body.contains("\"type\":\"local_shell_call\""));
     assert!(body.contains("\"call_id\":\"call-shell\""));
     assert!(body.contains("\"working_directory\":\"/tmp\""));
+    assert!(body.contains("\"output\":[{\"call_id\":\"call-custom\""));
     assert!(body.contains("\"output_index\":0"));
     assert!(body.contains("\"output_index\":1"));
     assert!(body.contains("\"output_index\":2"));
