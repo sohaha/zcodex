@@ -1401,6 +1401,62 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn daemon_artifact_paths_prefer_absolute_xdg_runtime_dir() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let runtime_dir = tempdir.path().join("runtime");
+        std::fs::create_dir_all(&runtime_dir).expect("runtime dir should be created");
+        let project_root = tempdir.path().join("xdg-runtime-project");
+
+        let previous = std::env::var_os("XDG_RUNTIME_DIR");
+        unsafe {
+            std::env::set_var("XDG_RUNTIME_DIR", &runtime_dir);
+        }
+
+        let socket_path = socket_path_for_project(&project_root);
+
+        if let Some(previous) = previous {
+            unsafe {
+                std::env::set_var("XDG_RUNTIME_DIR", previous);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("XDG_RUNTIME_DIR");
+            }
+        }
+
+        assert!(socket_path.starts_with(&runtime_dir));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[serial]
+    fn daemon_artifact_paths_ignore_relative_xdg_runtime_dir() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("relative-runtime-project");
+
+        let previous = std::env::var_os("XDG_RUNTIME_DIR");
+        unsafe {
+            std::env::set_var("XDG_RUNTIME_DIR", "relative-runtime-dir");
+        }
+
+        let socket_path = socket_path_for_project(&project_root);
+
+        if let Some(previous) = previous {
+            unsafe {
+                std::env::set_var("XDG_RUNTIME_DIR", previous);
+            }
+        } else {
+            unsafe {
+                std::env::remove_var("XDG_RUNTIME_DIR");
+            }
+        }
+
+        assert!(socket_path.starts_with(std::env::temp_dir()));
+    }
+
     #[test]
     fn daemon_lock_reports_when_project_lock_is_held() {
         let tempdir = tempdir().expect("tempdir should exist");

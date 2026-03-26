@@ -981,6 +981,23 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn try_open_launcher_lock_creates_missing_nested_parent_dir() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path().join("nested-launcher-lock-project");
+        std::fs::create_dir(&project_root).unwrap();
+        let lock_path = launcher_lock_path_for_project(&project_root);
+        let parent = lock_path.parent().unwrap().to_path_buf();
+        std::fs::remove_dir_all(&parent).ok();
+        assert!(!parent.exists());
+
+        let lock = super::try_open_launcher_lock(&project_root).unwrap();
+
+        assert!(lock.is_some());
+        assert!(parent.exists());
+        assert!(lock_path.exists());
+    }
+
+    #[test]
     fn daemon_metadata_keeps_stale_files_while_launcher_lock_is_held() {
         let tempdir = tempdir().unwrap();
         let project_root = tempdir.path();
