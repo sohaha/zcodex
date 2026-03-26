@@ -9,7 +9,7 @@ use anyhow::Result;
 use anyhow::bail;
 use axum::Router;
 use axum::body::Body;
-use axum::extract::Query;
+use axum::extract::RawQuery;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::http::HeaderName;
@@ -46,6 +46,28 @@ const HOP_BY_HOP_HEADERS: &[&str] = &[
     "content-length",
 ];
 
+const REQUEST_HEADER_ALLOWLIST: &[&str] = &[
+    "accept",
+    "accept-encoding",
+    "content-encoding",
+    "content-type",
+    "idempotency-key",
+    "openai-beta",
+    "openai-organization",
+    "openai-project",
+    "user-agent",
+];
+
+const RESPONSE_HEADER_ALLOWLIST: &[&str] = &[
+    "cache-control",
+    "content-type",
+    "openai-model",
+    "openai-processing-ms",
+    "request-id",
+    "retry-after",
+    "x-request-id",
+];
+
 #[derive(Debug, Clone, Args)]
 pub struct OpenAiCompatServerArgs {
     /// HTTP 监听地址。默认仅监听本机回环地址。
@@ -68,7 +90,28 @@ struct OpenAiCompatState {
 struct UpstreamConfig {
     provider_id: String,
     provider: ModelProviderInfo,
+    adapter: UpstreamAdapter,
     auth_manager: Arc<AuthManager>,
+}
+
+#[derive(Clone)]
+enum UpstreamAdapter {
+    Responses(ResponsesUpstreamAdapter),
+    #[allow(dead_code)]
+    Chat(ChatUpstreamAdapter),
+}
+
+#[derive(Clone)]
+struct ResponsesUpstreamAdapter;
+
+#[derive(Clone)]
+struct ChatUpstreamAdapter;
+
+#[derive(Clone, Copy, Debug)]
+enum CompatEndpoint {
+    Models,
+    Responses,
+    ChatCompletions,
 }
 
 #[derive(Debug)]
@@ -120,6 +163,66 @@ impl ApiError {
     }
 }
 
+impl UpstreamAdapter {
+    fn responses() -> Self {
+        Self::Responses(ResponsesUpstreamAdapter)
+    }
+
+    #[allow(dead_code)]
+    fn chat() -> Self {
+        Self::Chat(ChatUpstreamAdapter)
+    }
+
+    fn from_wire_api(wire_api: WireApi) -> Result<Self> {
+        match wire_api {
+            WireApi::Responses => Ok(Self::responses()),
+            WireApi::Anthropic => bail!(
+                "`codex app-server openai-compat` does not support providers with wire_api = \"anthropic\""
+            ),
+        }
+    }
+
+    fn is_enabled_for_current_release(&self) -> bool {
+        matches!(self, Self::Responses(_))
+    }
+
+    fn wire_api_name(&self) -> &'static str {
+        match self {
+            Self::Responses(_) => "responses",
+            Self::Chat(_) => "chat",
+        }
+    }
+
+    fn upstream_path(&self, endpoint: CompatEndpoint) -> Result<&'static str, ApiError> {
+        match self {
+            Self::Responses(adapter) => adapter.upstream_path(endpoint),
+            Self::Chat(adapter) => adapter.upstream_path(endpoint),
+        }
+    }
+}
+
+impl ResponsesUpstreamAdapter {
+    fn upstream_path(&self, endpoint: CompatEndpoint) -> Result<&'static str, ApiError> {
+        match endpoint {
+            CompatEndpoint::Models => Ok("/models"),
+            CompatEndpoint::Responses => Ok("/responses"),
+            CompatEndpoint::ChatCompletions => Ok("/chat/completions"),
+        }
+    }
+}
+
+impl ChatUpstreamAdapter {
+    fn upstream_path(&self, endpoint: CompatEndpoint) -> Result<&'static str, ApiError> {
+        match endpoint {
+            CompatEndpoint::Models => Ok("/models"),
+            CompatEndpoint::Responses => Err(ApiError::bad_request(
+                "current upstream adapter does not support /v1/responses",
+            )),
+            CompatEndpoint::ChatCompletions => Ok("/chat/completions"),
+        }
+    }
+}
+
 fn status_error_type(status: StatusCode) -> &'static str {
     match status {
         StatusCode::BAD_REQUEST => "invalid_request_error",
@@ -149,36 +252,46 @@ pub async fn run_openai_compat_server(
             .map_err(|err| IoError::other(format!("failed to build reqwest client: {err}")))?,
     };
 
-    let router = Router::new()
+    let listener = tokio::net::TcpListener::bind(args.listen).await?;
+    info!(listen = %args.listen, "openai-compatible HTTP proxy listening");
+    axum::serve(listener, app_router(state).into_make_service()).await
+}
+
+fn app_router(state: OpenAiCompatState) -> Router {
+    Router::new()
         .route("/v1/models", get(get_models))
         .route("/v1/responses", post(post_responses))
         .route("/v1/chat/completions", post(post_chat_completions))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind(args.listen).await?;
-    info!(listen = %args.listen, "openai-compatible HTTP proxy listening");
-    axum::serve(listener, router.into_make_service()).await
+        .with_state(state)
 }
 
 async fn get_models(
     State(state): State<OpenAiCompatState>,
-    Query(query): Query<HashMap<String, String>>,
+    RawQuery(raw_query): RawQuery,
     headers: HeaderMap,
 ) -> Response<Body> {
-    proxy_request(state, Method::GET, "/models", query, headers, None).await
+    proxy_request(
+        state,
+        Method::GET,
+        CompatEndpoint::Models,
+        raw_query,
+        headers,
+        None,
+    )
+    .await
 }
 
 async fn post_responses(
     State(state): State<OpenAiCompatState>,
-    Query(query): Query<HashMap<String, String>>,
+    RawQuery(raw_query): RawQuery,
     headers: HeaderMap,
     body: String,
 ) -> Response<Body> {
     proxy_request(
         state,
         Method::POST,
-        "/responses",
-        query,
+        CompatEndpoint::Responses,
+        raw_query,
         headers,
         Some(body),
     )
@@ -187,15 +300,15 @@ async fn post_responses(
 
 async fn post_chat_completions(
     State(state): State<OpenAiCompatState>,
-    Query(query): Query<HashMap<String, String>>,
+    RawQuery(raw_query): RawQuery,
     headers: HeaderMap,
     body: String,
 ) -> Response<Body> {
     proxy_request(
         state,
         Method::POST,
-        "/chat/completions",
-        query,
+        CompatEndpoint::ChatCompletions,
+        raw_query,
         headers,
         Some(body),
     )
@@ -205,8 +318,8 @@ async fn post_chat_completions(
 async fn proxy_request(
     state: OpenAiCompatState,
     method: Method,
-    path: &str,
-    query: HashMap<String, String>,
+    endpoint: CompatEndpoint,
+    raw_query: Option<String>,
     incoming_headers: HeaderMap,
     body: Option<String>,
 ) -> Response<Body> {
@@ -214,7 +327,15 @@ async fn proxy_request(
         return err.to_response();
     }
 
-    let upstream_url = match build_upstream_url(&state.upstream.provider, path, &query) {
+    let upstream_path = match state.upstream.adapter.upstream_path(endpoint) {
+        Ok(path) => path,
+        Err(err) => return err.to_response(),
+    };
+    let upstream_url = match build_upstream_url(
+        &state.upstream.provider,
+        upstream_path,
+        raw_query.as_deref(),
+    ) {
         Ok(url) => url,
         Err(err) => return err.to_response(),
     };
@@ -269,10 +390,9 @@ async fn build_upstream_headers(
     let mut headers = HeaderMap::new();
 
     for (name, value) in incoming_headers {
-        if is_hop_by_hop_header(name) || *name == axum::http::header::AUTHORIZATION {
-            continue;
+        if should_forward_request_header(name) {
+            headers.append(name.clone(), value.clone());
         }
-        headers.append(name.clone(), value.clone());
     }
 
     if let Some(static_headers) = &upstream.provider.http_headers {
@@ -325,7 +445,7 @@ fn apply_env_headers(headers: &mut HeaderMap, configured: &HashMap<String, Strin
 async fn resolve_provider_bearer_token(
     upstream: &UpstreamConfig,
 ) -> Result<Option<String>, ApiError> {
-    if let Some(api_key) = upstream.provider.api_key().map_err(provider_auth_error)? {
+    if let Some(api_key) = provider_env_api_key(&upstream.provider)? {
         return Ok(Some(api_key));
     }
 
@@ -339,19 +459,39 @@ async fn resolve_provider_bearer_token(
     }
 
     let auth = upstream.auth_manager.auth().await;
-    auth.map(|auth| auth.get_token())
+    if let Some(token) = auth
+        .map(|resolved| resolved.get_token())
         .transpose()
-        .map_err(|err| ApiError::bad_gateway(format!("failed to load upstream auth token: {err}")))
+        .map_err(|err| {
+            ApiError::bad_gateway(format!("failed to load upstream auth token: {err}"))
+        })?
+    {
+        return Ok(Some(token));
+    }
+
+    if let Some(env_key) = &upstream.provider.env_key {
+        return Err(ApiError::bad_gateway(format!(
+            "missing upstream API key in environment variable {env_key} and no fallback bearer token is configured"
+        )));
+    }
+
+    Ok(None)
 }
 
-fn provider_auth_error(err: codex_core::error::CodexErr) -> ApiError {
-    ApiError::bad_gateway(format!("failed to resolve provider auth: {err}"))
+fn provider_env_api_key(provider: &ModelProviderInfo) -> Result<Option<String>, ApiError> {
+    let Some(env_key) = &provider.env_key else {
+        return Ok(None);
+    };
+
+    Ok(std::env::var(env_key)
+        .ok()
+        .filter(|value| !value.trim().is_empty()))
 }
 
 fn build_upstream_url(
     provider: &ModelProviderInfo,
     path: &str,
-    incoming_query: &HashMap<String, String>,
+    raw_query: Option<&str>,
 ) -> Result<Url, ApiError> {
     let base_url = provider
         .base_url
@@ -362,19 +502,82 @@ fn build_upstream_url(
     let mut url = Url::parse(&format!("{trimmed_base}/{trimmed_path}"))
         .map_err(|err| ApiError::internal(format!("invalid upstream URL: {err}")))?;
 
-    {
+    let query_pairs = merge_query_pairs(raw_query, provider.query_params.as_ref());
+    if !query_pairs.is_empty() {
         let mut pairs = url.query_pairs_mut();
-        for (key, value) in incoming_query {
-            pairs.append_pair(key, value);
-        }
-        if let Some(provider_query) = &provider.query_params {
-            for (key, value) in provider_query {
-                pairs.append_pair(key, value);
-            }
+        for (key, value) in query_pairs {
+            pairs.append_pair(&key, &value);
         }
     }
 
     Ok(url)
+}
+
+fn merge_query_pairs(
+    raw_query: Option<&str>,
+    provider_query: Option<&HashMap<String, String>>,
+) -> Vec<(String, String)> {
+    let mut merged = parse_query_pairs(raw_query);
+    let mut caller_keys = merged
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<std::collections::HashSet<_>>();
+
+    if let Some(provider_query) = provider_query {
+        for (key, value) in provider_query {
+            if !caller_keys.contains(key) {
+                merged.push((key.clone(), value.clone()));
+                caller_keys.insert(key.clone());
+            }
+        }
+    }
+
+    merged
+}
+
+fn parse_query_pairs(raw_query: Option<&str>) -> Vec<(String, String)> {
+    let Some(query) = raw_query.filter(|query| !query.is_empty()) else {
+        return Vec::new();
+    };
+
+    Url::parse(&format!("http://localhost/?{query}"))
+        .ok()
+        .map(|url| {
+            url.query_pairs()
+                .map(|(key, value)| (key.into_owned(), value.into_owned()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn should_forward_request_header(name: &HeaderName) -> bool {
+    !is_hop_by_hop_header(name)
+        && !matches!(
+            name.as_str().to_ascii_lowercase().as_str(),
+            "authorization"
+                | "cookie"
+                | "forwarded"
+                | "x-forwarded-for"
+                | "x-forwarded-host"
+                | "x-forwarded-port"
+                | "x-forwarded-proto"
+                | "x-real-ip"
+        )
+        && (REQUEST_HEADER_ALLOWLIST
+            .iter()
+            .any(|candidate| name.as_str().eq_ignore_ascii_case(candidate))
+            || name.as_str().starts_with("openai-")
+            || name.as_str().starts_with("x-stainless-"))
+}
+
+fn should_forward_response_header(name: &HeaderName) -> bool {
+    !is_hop_by_hop_header(name)
+        && !name.as_str().eq_ignore_ascii_case("set-cookie")
+        && (RESPONSE_HEADER_ALLOWLIST
+            .iter()
+            .any(|candidate| name.as_str().eq_ignore_ascii_case(candidate))
+            || name.as_str().starts_with("openai-")
+            || name.as_str().starts_with("x-request-"))
 }
 
 fn is_hop_by_hop_header(name: &HeaderName) -> bool {
@@ -388,10 +591,9 @@ async fn response_from_upstream(upstream: reqwest::Response) -> Response<Body> {
     let headers = upstream.headers().clone();
     let mut response = Response::builder().status(status.as_u16());
     for (name, value) in &headers {
-        if is_hop_by_hop_header(name) {
-            continue;
+        if should_forward_response_header(name) {
+            response = response.header(name, value);
         }
-        response = response.header(name, value);
     }
 
     match response.body(Body::from_stream(upstream.bytes_stream())) {
@@ -417,6 +619,7 @@ async fn build_upstream_config(
         .context("failed to load config for openai-compatible proxy")?;
 
     ensure_supported_provider(&config)?;
+    let adapter = UpstreamAdapter::from_wire_api(config.model_provider.wire_api)?;
 
     let auth_manager = AuthManager::shared(
         config.codex_home.clone(),
@@ -427,22 +630,26 @@ async fn build_upstream_config(
     Ok(UpstreamConfig {
         provider_id: config.model_provider_id.clone(),
         provider: config.model_provider,
+        adapter,
         auth_manager,
     })
 }
 
 fn ensure_supported_provider(config: &Config) -> Result<()> {
-    if config.model_provider.wire_api != WireApi::Responses {
+    ensure_supported_provider_info(&config.model_provider_id, &config.model_provider)
+}
+
+fn ensure_supported_provider_info(provider_id: &str, provider: &ModelProviderInfo) -> Result<()> {
+    let adapter = UpstreamAdapter::from_wire_api(provider.wire_api)?;
+    if !adapter.is_enabled_for_current_release() {
         bail!(
-            "`codex app-server openai-compat` currently only supports providers with wire_api = \"responses\"; current provider `{}` uses `{}`",
-            config.model_provider_id,
-            config.model_provider.wire_api,
+            "`codex app-server openai-compat` does not yet enable providers with wire_api = \"{}\"",
+            adapter.wire_api_name(),
         );
     }
-    if config.model_provider.base_url.is_none() {
+    if provider.base_url.is_none() {
         bail!(
-            "current provider `{}` has no base_url; openai-compatible proxy requires an explicit upstream base_url",
-            config.model_provider_id,
+            "current provider `{provider_id}` has no base_url; openai-compatible proxy requires an explicit upstream base_url",
         );
     }
     Ok(())
@@ -469,7 +676,17 @@ fn to_io_error(err: anyhow::Error) -> IoError {
 mod tests {
     use super::*;
     use codex_core::CodexAuth;
+    use futures::StreamExt;
+    use futures::stream;
     use pretty_assertions::assert_eq;
+    use reqwest::header::CACHE_CONTROL;
+    use reqwest::header::CONTENT_TYPE;
+    use tokio::sync::Mutex;
+    use tokio::sync::oneshot;
+    use tokio::task::JoinHandle;
+    use tokio::time::Duration;
+    use tokio::time::timeout;
+    use tokio_util::bytes::Bytes;
     use wiremock::Mock;
     use wiremock::MockServer;
     use wiremock::ResponseTemplate;
@@ -505,18 +722,46 @@ mod tests {
         }
     }
 
+    fn state(base_url: String) -> OpenAiCompatState {
+        OpenAiCompatState {
+            upstream: Arc::new(UpstreamConfig {
+                provider_id: "test-provider".to_string(),
+                provider: provider(base_url),
+                adapter: UpstreamAdapter::responses(),
+                auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                    "ignored-auth",
+                )),
+            }),
+            auth_token: None,
+            client: Client::builder().build().expect("client"),
+        }
+    }
+
+    async fn spawn_router(router: Router) -> (SocketAddr, JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("local addr");
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service())
+                .await
+                .expect("server should run");
+        });
+        (address, handle)
+    }
+
     #[test]
-    fn build_upstream_url_appends_provider_query_params() {
+    fn build_upstream_url_preserves_duplicate_query_keys_and_caller_precedence() {
         let url = build_upstream_url(
             &provider("https://example.com/v1".to_string()),
             "/chat/completions",
-            &HashMap::from([("stream".to_string(), "true".to_string())]),
+            Some("stream=true&tag=one&tag=two&api-version=caller"),
         )
         .expect("url");
 
         assert_eq!(
             url.as_str(),
-            "https://example.com/v1/chat/completions?stream=true&api-version=2025-04-01-preview"
+            "https://example.com/v1/chat/completions?stream=true&tag=one&tag=two&api-version=caller"
         );
     }
 
@@ -525,6 +770,7 @@ mod tests {
         let upstream = UpstreamConfig {
             provider_id: "test-provider".to_string(),
             provider: provider("https://example.com/v1".to_string()),
+            adapter: UpstreamAdapter::responses(),
             auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
                 "ignored-auth",
             )),
@@ -534,6 +780,56 @@ mod tests {
             .expect("headers");
         assert_eq!(headers["authorization"], "Bearer provider-token");
         assert_eq!(headers["x-provider-header"], "present");
+    }
+
+    #[tokio::test]
+    async fn build_upstream_headers_does_not_forward_sensitive_local_headers() {
+        let upstream = UpstreamConfig {
+            provider_id: "test-provider".to_string(),
+            provider: provider("https://example.com/v1".to_string()),
+            adapter: UpstreamAdapter::responses(),
+            auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "ignored-auth",
+            )),
+        };
+        let mut incoming = HeaderMap::new();
+        incoming.insert("content-type", HeaderValue::from_static("application/json"));
+        incoming.insert("accept", HeaderValue::from_static("text/event-stream"));
+        incoming.insert("cookie", HeaderValue::from_static("session=local"));
+        incoming.insert("x-forwarded-for", HeaderValue::from_static("127.0.0.1"));
+        incoming.insert(
+            "authorization",
+            HeaderValue::from_static("Bearer local-proxy"),
+        );
+
+        let headers = build_upstream_headers(&upstream, &incoming)
+            .await
+            .expect("headers");
+
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(headers["accept"], "text/event-stream");
+        assert!(headers.get("cookie").is_none());
+        assert!(headers.get("x-forwarded-for").is_none());
+        assert_eq!(headers["authorization"], "Bearer provider-token");
+    }
+
+    #[tokio::test]
+    async fn resolve_provider_bearer_token_falls_back_when_env_key_is_missing() {
+        let mut provider = provider("https://example.com/v1".to_string());
+        provider.env_key = Some(format!("CODEX_TEST_MISSING_{}", uuid::Uuid::now_v7()));
+
+        let token = resolve_provider_bearer_token(&UpstreamConfig {
+            provider_id: "test-provider".to_string(),
+            provider,
+            adapter: UpstreamAdapter::responses(),
+            auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "ignored-auth",
+            )),
+        })
+        .await
+        .expect("token");
+
+        assert_eq!(token, Some("provider-token".to_string()));
     }
 
     #[tokio::test]
@@ -547,28 +843,171 @@ mod tests {
             .mount(&server)
             .await;
 
-        let state = OpenAiCompatState {
-            upstream: Arc::new(UpstreamConfig {
-                provider_id: "test-provider".to_string(),
-                provider: provider(format!("{}/v1", server.uri())),
-                auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                    "ignored-auth",
-                )),
-            }),
-            auth_token: None,
-            client: Client::builder().build().expect("client"),
-        };
-
         let response = proxy_request(
-            state,
+            state(format!("{}/v1", server.uri())),
             Method::POST,
-            "/chat/completions",
-            HashMap::new(),
+            CompatEndpoint::ChatCompletions,
+            None,
             HeaderMap::new(),
             Some("{}".to_string()),
         )
         .await;
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn proxy_streams_upstream_response_without_buffering_entire_body() {
+        let (release_second_chunk_tx, release_second_chunk_rx) = oneshot::channel::<()>();
+        let release_second_chunk_rx = Arc::new(Mutex::new(Some(release_second_chunk_rx)));
+        let upstream_router = Router::new().route(
+            "/v1/responses",
+            post({
+                let release_second_chunk_rx = release_second_chunk_rx.clone();
+                move || {
+                    let release_second_chunk_rx = release_second_chunk_rx.clone();
+                    async move {
+                        let body = Body::from_stream(stream::unfold(0usize, move |state| {
+                            let release_second_chunk_rx = release_second_chunk_rx.clone();
+                            async move {
+                                match state {
+                                    0 => Some((
+                                        Ok::<Bytes, std::convert::Infallible>(Bytes::from_static(
+                                            b"data: first\n\n",
+                                        )),
+                                        1,
+                                    )),
+                                    1 => {
+                                        if let Some(rx) =
+                                            release_second_chunk_rx.lock().await.take()
+                                        {
+                                            let _ = rx.await;
+                                        }
+                                        Some((
+                                            Ok::<Bytes, std::convert::Infallible>(
+                                                Bytes::from_static(b"data: second\n\n"),
+                                            ),
+                                            2,
+                                        ))
+                                    }
+                                    _ => None,
+                                }
+                            }
+                        }));
+                        (
+                            [
+                                (CONTENT_TYPE, "text/event-stream"),
+                                (CACHE_CONTROL, "no-cache"),
+                            ],
+                            body,
+                        )
+                    }
+                }
+            }),
+        );
+        let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+
+        let proxy_state = state(format!("http://{upstream_addr}/v1"));
+        let (proxy_addr, _proxy_handle) = spawn_router(app_router(proxy_state)).await;
+
+        let response = reqwest::Client::new()
+            .post(format!("http://{proxy_addr}/v1/responses?stream=true"))
+            .header(CONTENT_TYPE, "application/json")
+            .body("{}")
+            .send()
+            .await
+            .expect("proxy request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/event-stream")
+        );
+        assert_eq!(
+            response
+                .headers()
+                .get(CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-cache")
+        );
+        assert!(response.headers().get("set-cookie").is_none());
+
+        let mut bytes_stream = response.bytes_stream();
+        let first_chunk = bytes_stream
+            .next()
+            .await
+            .expect("first chunk")
+            .expect("first chunk should be readable");
+        assert_eq!(first_chunk, Bytes::from_static(b"data: first\n\n"));
+        assert!(
+            timeout(Duration::from_millis(100), bytes_stream.next())
+                .await
+                .is_err()
+        );
+
+        release_second_chunk_tx
+            .send(())
+            .expect("second chunk should be released");
+        let second_chunk = timeout(Duration::from_secs(1), bytes_stream.next())
+            .await
+            .expect("second chunk should arrive")
+            .expect("second chunk stream item should exist")
+            .expect("second chunk should be readable");
+        assert_eq!(second_chunk, Bytes::from_static(b"data: second\n\n"));
+    }
+
+    #[test]
+    fn authorize_rejects_missing_or_invalid_bearer_token() {
+        let state = OpenAiCompatState {
+            upstream: Arc::new(UpstreamConfig {
+                provider_id: "test-provider".to_string(),
+                provider: provider("https://example.com/v1".to_string()),
+                adapter: UpstreamAdapter::responses(),
+                auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                    "ignored-auth",
+                )),
+            }),
+            auth_token: Some(Arc::<str>::from("expected-token")),
+            client: Client::builder().build().expect("client"),
+        };
+
+        let missing = authorize(&state, &HeaderMap::new()).expect_err("missing auth should fail");
+        assert_eq!(missing.status, StatusCode::UNAUTHORIZED);
+
+        let mut invalid_headers = HeaderMap::new();
+        invalid_headers.insert(
+            axum::http::header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer wrong-token"),
+        );
+        let invalid = authorize(&state, &invalid_headers).expect_err("wrong auth should fail");
+        assert_eq!(invalid.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn ensure_supported_provider_rejects_missing_base_url() {
+        let err = ensure_supported_provider_info(
+            "test-provider",
+            &ModelProviderInfo {
+                base_url: None,
+                ..provider("https://example.com/v1".to_string())
+            },
+        )
+        .expect_err("base_url should be required");
+        assert!(err.to_string().contains("has no base_url"));
+    }
+
+    #[test]
+    fn chat_adapter_is_structurally_ready_for_future_wire_api_support() {
+        let adapter = UpstreamAdapter::chat();
+        assert_eq!(
+            adapter
+                .upstream_path(CompatEndpoint::ChatCompletions)
+                .expect("chat completions path"),
+            "/chat/completions"
+        );
+        assert!(adapter.upstream_path(CompatEndpoint::Responses).is_err());
     }
 }
