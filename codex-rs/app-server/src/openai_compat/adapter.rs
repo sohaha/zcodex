@@ -4,17 +4,25 @@ use codex_core::WireApi;
 
 use super::ApiError;
 
-#[derive(Clone)]
-pub(super) enum UpstreamAdapter {
-    Responses(ResponsesUpstreamAdapter),
-    Chat(ChatUpstreamAdapter),
+#[derive(Clone, Copy)]
+pub(super) struct UpstreamAdapter {
+    spec: &'static UpstreamAdapterSpec,
 }
 
-#[derive(Clone)]
-pub(super) struct ResponsesUpstreamAdapter;
+struct UpstreamAdapterSpec {
+    wire_api_name: &'static str,
+    responses_path: Option<&'static str>,
+}
 
-#[derive(Clone)]
-pub(super) struct ChatUpstreamAdapter;
+const RESPONSES_ADAPTER: UpstreamAdapterSpec = UpstreamAdapterSpec {
+    wire_api_name: "responses",
+    responses_path: Some("/responses"),
+};
+
+const CHAT_ADAPTER: UpstreamAdapterSpec = UpstreamAdapterSpec {
+    wire_api_name: "chat",
+    responses_path: None,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum CompatEndpoint {
@@ -25,11 +33,15 @@ pub(super) enum CompatEndpoint {
 
 impl UpstreamAdapter {
     pub(super) fn responses() -> Self {
-        Self::Responses(ResponsesUpstreamAdapter)
+        Self {
+            spec: &RESPONSES_ADAPTER,
+        }
     }
 
     pub(super) fn chat() -> Self {
-        Self::Chat(ChatUpstreamAdapter)
+        Self {
+            spec: &CHAT_ADAPTER,
+        }
     }
 
     pub(super) fn from_wire_api(wire_api: WireApi) -> Result<Self> {
@@ -43,20 +55,15 @@ impl UpstreamAdapter {
     }
 
     pub(super) fn wire_api_name(&self) -> &'static str {
-        match self {
-            Self::Responses(_) => "responses",
-            Self::Chat(_) => "chat",
-        }
+        self.spec.wire_api_name
     }
 
     pub(super) fn resolve_request(
         &self,
         endpoint: CompatEndpoint,
     ) -> Result<ResolvedUpstreamRequest, ApiError> {
-        match self {
-            Self::Responses(adapter) => adapter.resolve_request(endpoint),
-            Self::Chat(adapter) => adapter.resolve_request(endpoint),
-        }
+        let path = endpoint.resolve_path(self.spec)?;
+        Ok(ResolvedUpstreamRequest { path })
     }
 }
 
@@ -64,34 +71,24 @@ pub(super) struct ResolvedUpstreamRequest {
     pub(super) path: &'static str,
 }
 
-impl ResponsesUpstreamAdapter {
-    fn resolve_request(
-        &self,
-        endpoint: CompatEndpoint,
-    ) -> Result<ResolvedUpstreamRequest, ApiError> {
-        match endpoint {
-            CompatEndpoint::Models => Ok(ResolvedUpstreamRequest { path: "/models" }),
-            CompatEndpoint::Responses => Ok(ResolvedUpstreamRequest { path: "/responses" }),
-            CompatEndpoint::ChatCompletions => Ok(ResolvedUpstreamRequest {
-                path: "/chat/completions",
-            }),
+impl CompatEndpoint {
+    fn resolve_path(self, spec: &UpstreamAdapterSpec) -> Result<&'static str, ApiError> {
+        match self {
+            Self::Models => Ok("/models"),
+            Self::Responses => spec
+                .responses_path
+                .ok_or_else(|| ApiError::bad_request(self.unsupported_message())),
+            Self::ChatCompletions => Ok("/chat/completions"),
         }
     }
-}
 
-impl ChatUpstreamAdapter {
-    fn resolve_request(
-        &self,
-        endpoint: CompatEndpoint,
-    ) -> Result<ResolvedUpstreamRequest, ApiError> {
-        match endpoint {
-            CompatEndpoint::Models => Ok(ResolvedUpstreamRequest { path: "/models" }),
-            CompatEndpoint::Responses => Err(ApiError::bad_request(
-                "current upstream adapter does not support /v1/responses",
-            )),
-            CompatEndpoint::ChatCompletions => Ok(ResolvedUpstreamRequest {
-                path: "/chat/completions",
-            }),
+    fn unsupported_message(self) -> &'static str {
+        match self {
+            Self::Models => "current upstream adapter does not support /v1/models",
+            Self::Responses => "current upstream adapter does not support /v1/responses",
+            Self::ChatCompletions => {
+                "current upstream adapter does not support /v1/chat/completions"
+            }
         }
     }
 }

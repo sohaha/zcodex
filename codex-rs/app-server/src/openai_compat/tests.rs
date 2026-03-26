@@ -267,6 +267,101 @@ async fn chat_wire_api_proxy_forwards_chat_completions_via_running_server() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_streams_chat_completions_without_buffering() {
+    let (release_second_chunk_tx, release_second_chunk_rx) = oneshot::channel::<()>();
+    let release_second_chunk_rx = Arc::new(Mutex::new(Some(release_second_chunk_rx)));
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post({
+            let release_second_chunk_rx = release_second_chunk_rx.clone();
+            move || {
+                let release_second_chunk_rx = release_second_chunk_rx.clone();
+                async move {
+                    let body = Body::from_stream(stream::unfold(0usize, move |state| {
+                        let release_second_chunk_rx = release_second_chunk_rx.clone();
+                        async move {
+                            match state {
+                                0 => Some((
+                                    Ok::<Bytes, std::convert::Infallible>(Bytes::from_static(
+                                        b"data: first\n\n",
+                                    )),
+                                    1,
+                                )),
+                                1 => {
+                                    if let Some(rx) = release_second_chunk_rx.lock().await.take() {
+                                        let _ = rx.await;
+                                    }
+                                    Some((
+                                        Ok::<Bytes, std::convert::Infallible>(Bytes::from_static(
+                                            b"data: second\n\n",
+                                        )),
+                                        2,
+                                    ))
+                                }
+                                _ => None,
+                            }
+                        }
+                    }));
+                    (
+                        [
+                            (CONTENT_TYPE, "text/event-stream"),
+                            (CACHE_CONTROL, "no-cache"),
+                        ],
+                        body,
+                    )
+                }
+            }
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!(
+            "http://{proxy_addr}/v1/chat/completions?stream=true"
+        ))
+        .header(CONTENT_TYPE, "application/json")
+        .body("{}")
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+
+    let mut bytes_stream = response.bytes_stream();
+    let first_chunk = bytes_stream
+        .next()
+        .await
+        .expect("first chunk")
+        .expect("first chunk should be readable");
+    assert_eq!(first_chunk, Bytes::from_static(b"data: first\n\n"));
+    assert!(
+        timeout(Duration::from_millis(100), bytes_stream.next())
+            .await
+            .is_err()
+    );
+
+    release_second_chunk_tx
+        .send(())
+        .expect("second chunk should be released");
+    let second_chunk = timeout(Duration::from_secs(1), bytes_stream.next())
+        .await
+        .expect("second chunk should arrive")
+        .expect("second chunk stream item should exist")
+        .expect("second chunk should be readable");
+    assert_eq!(second_chunk, Bytes::from_static(b"data: second\n\n"));
+}
+
+#[tokio::test]
 async fn chat_wire_api_running_server_rejects_responses_endpoint() {
     let (proxy_addr, _proxy_handle) =
         spawn_router(app_router(chat_state("https://example.com/v1".to_string()))).await;
@@ -518,6 +613,58 @@ fn authorize_rejects_missing_or_invalid_bearer_token() {
 }
 
 #[test]
+fn read_auth_token_requires_non_empty_env_value() {
+    let env_name = format!("CODEX_TEST_AUTH_TOKEN_{}", uuid::Uuid::now_v7());
+    unsafe {
+        std::env::set_var(&env_name, "");
+    }
+
+    let err = read_auth_token(Some(&env_name)).expect_err("empty auth token should fail");
+    assert!(err.to_string().contains("is empty"));
+
+    unsafe {
+        std::env::remove_var(&env_name);
+    }
+}
+
+#[test]
+fn read_auth_token_reads_value_from_env() {
+    let env_name = format!("CODEX_TEST_AUTH_TOKEN_{}", uuid::Uuid::now_v7());
+    unsafe {
+        std::env::set_var(&env_name, "secret-token");
+    }
+
+    let token = read_auth_token(Some(&env_name)).expect("env auth token should load");
+    assert_eq!(token, Some("secret-token".to_string()));
+
+    unsafe {
+        std::env::remove_var(&env_name);
+    }
+}
+
+#[tokio::test]
+async fn build_upstream_headers_falls_back_to_auth_manager_token() {
+    let mut provider = provider("https://example.com/v1".to_string());
+    provider.experimental_bearer_token = None;
+
+    let headers = build_upstream_headers(
+        &UpstreamConfig {
+            provider_id: "test-provider".to_string(),
+            provider,
+            adapter: UpstreamAdapter::responses(),
+            auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "auth-manager-token",
+            )),
+        },
+        &HeaderMap::new(),
+    )
+    .await
+    .expect("headers");
+
+    assert_eq!(headers["authorization"], "Bearer auth-manager-token");
+}
+
+#[test]
 fn ensure_supported_provider_rejects_missing_base_url() {
     let err = ensure_supported_provider_info(
         "test-provider",
@@ -552,4 +699,30 @@ fn chat_adapter_resolves_chat_completions_but_not_responses() {
         "/chat/completions"
     );
     assert!(adapter.resolve_request(CompatEndpoint::Responses).is_err());
+}
+
+#[test]
+fn responses_adapter_resolves_all_openai_compat_endpoints() {
+    let adapter = UpstreamAdapter::responses();
+    assert_eq!(
+        adapter
+            .resolve_request(CompatEndpoint::Models)
+            .expect("models request")
+            .path,
+        "/models"
+    );
+    assert_eq!(
+        adapter
+            .resolve_request(CompatEndpoint::Responses)
+            .expect("responses request")
+            .path,
+        "/responses"
+    );
+    assert_eq!(
+        adapter
+            .resolve_request(CompatEndpoint::ChatCompletions)
+            .expect("chat request")
+            .path,
+        "/chat/completions"
+    );
 }
