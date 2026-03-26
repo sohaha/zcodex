@@ -14,6 +14,7 @@ use codex_native_tldr::api::AnalysisResponse;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::TldrDaemonResponse;
 use codex_native_tldr::daemon::socket_path_for_project;
+use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::session::SessionSnapshot;
 use codex_protocol::protocol::FileChange;
 use codex_protocol::protocol::ReviewDecision;
@@ -576,6 +577,7 @@ async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
                 kind: AnalysisKind::Ast,
                 summary: "daemon summary".to_string(),
             }),
+            semantic: None,
             snapshot: Some(SessionSnapshot {
                 cached_entries: 0,
                 dirty_files: 0,
@@ -631,6 +633,125 @@ async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_semantic_uses_daemon_when_available() {
+    if let Err(err) = tldr_tool_semantic_uses_daemon_when_available().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
+    let project = TempDir::new()?;
+    let canonical_project = project.path().canonicalize()?;
+    let socket_path = socket_path_for_project(&canonical_project);
+    if socket_path.exists() {
+        std::fs::remove_file(&socket_path)?;
+    }
+
+    let listener = UnixListener::bind(&socket_path)?;
+    let server_handle = task::spawn(async move {
+        let (stream, _) = listener.accept().await?;
+        let (reader, mut writer) = tokio::io::split(stream);
+        let mut lines = BufReader::new(reader).lines();
+        let line = lines
+            .next_line()
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+        let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+        match command {
+            TldrDaemonCommand::Semantic { request } => {
+                assert_eq!(request.language, SupportedLanguage::Rust);
+                assert_eq!(request.query, "auth token");
+            }
+            other => panic!("expected semantic, got {other:?}"),
+        }
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "semantic from daemon".to_string(),
+            analysis: None,
+            semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
+                enabled: true,
+                query: "auth token".to_string(),
+                indexed_files: 1,
+                truncated: false,
+                matches: vec![codex_native_tldr::semantic::SemanticMatch {
+                    score: 7,
+                    path: PathBuf::from("src/auth.rs"),
+                    line: 2,
+                    snippet: "let auth_token = true;".to_string(),
+                    unit: codex_native_tldr::semantic::EmbeddingUnit {
+                        path: PathBuf::from("src/auth.rs"),
+                        language: SupportedLanguage::Rust,
+                        symbol: Some("verify_token".to_string()),
+                        kind: "function".to_string(),
+                        line: 1,
+                        code_preview: "fn verify_token() {\n    let auth_token = true;\n}"
+                            .to_string(),
+                        calls: Vec::new(),
+                        called_by: Vec::new(),
+                        dependencies: vec!["src".to_string(), "auth.rs".to_string()],
+                        cfg_summary: "2 lines sampled; 0 outgoing calls".to_string(),
+                        dfg_summary: "contains local assignments".to_string(),
+                        embedding_vector: None,
+                    },
+                    embedding_text: "semantic".to_string(),
+                    embedding_score: Some(0.75),
+                }],
+                embedding_used: true,
+                message: "semantic search returned 1 matches".to_string(),
+            }),
+            snapshot: None,
+            daemon_status: None,
+            reindex_report: None,
+        };
+        writer
+            .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    });
+
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+
+    let request_id = mcp_process
+        .send_named_tool_call(
+            "tldr",
+            Some(serde_json::Map::from_iter([
+                ("action".to_string(), json!("semantic")),
+                (
+                    "project".to_string(),
+                    json!(canonical_project.to_string_lossy()),
+                ),
+                ("language".to_string(), json!("rust")),
+                ("query".to_string(), json!("auth token")),
+            ])),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    let structured = response.result["structuredContent"]
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+    assert_eq!(structured["action"], "semantic");
+    assert_eq!(structured["source"], "daemon");
+    assert_eq!(structured["embeddingUsed"], true);
+    assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+    assert!(matches!(
+        structured["matches"][0]["embedding_score"].as_f64(),
+        Some(score) if score > 0.0
+    ));
+
+    server_handle.await??;
+    Ok(())
+}
+
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_tldr_tool_warm_returns_snapshot() {
@@ -666,6 +787,7 @@ async fn tldr_tool_warm_returns_snapshot() -> anyhow::Result<()> {
             status: "ok".to_string(),
             message: "warmed".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: Some(SessionSnapshot {
                 cached_entries: 5,
                 dirty_files: 1,
@@ -761,6 +883,7 @@ async fn tldr_tool_notify_includes_path() -> anyhow::Result<()> {
             status: "ok".to_string(),
             message: "notify ok".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: Some(SessionSnapshot {
                 cached_entries: 0,
                 dirty_files: 2,
@@ -848,6 +971,7 @@ async fn tldr_tool_snapshot_returns_snapshot() -> anyhow::Result<()> {
             status: "ok".to_string(),
             message: "snapshot ok".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: Some(SessionSnapshot {
                 cached_entries: 7,
                 dirty_files: 0,
@@ -933,6 +1057,7 @@ async fn tldr_tool_ping_reports_status() -> anyhow::Result<()> {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: Some(SessionSnapshot {
                 cached_entries: 0,
                 dirty_files: 0,
@@ -1078,6 +1203,7 @@ async fn tldr_tool_status_returns_daemon_status() -> anyhow::Result<()> {
             status: "ok".to_string(),
             message: "status".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: Some(SessionSnapshot {
                 cached_entries: 2,
                 dirty_files: 1,

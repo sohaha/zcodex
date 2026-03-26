@@ -3,7 +3,7 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：阶段 3 进行中（warm/reindex、跨进程 launcher 竞争、以及 semantic 索引缓存闭环已补齐）
+- **状态**：阶段 3 进行中（semantic 已接入 daemon 复用路径，warm/reindex、跨进程 launcher 竞争、以及 semantic 索引缓存闭环已补齐）
 
 ## 中间验证进度（实时）
 
@@ -11,6 +11,15 @@
 - **最新代码提交**：`29822e3ed` `feat: cache native tldr semantic indexes`
 
 ### 已完成验证
+- `codex rtk cargo test -p codex-native-tldr`：通过（37 个测试；含 daemon `Semantic` payload 与 lifecycle 并发 launch 串行化回归）
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（47 个测试；semantic daemon 路径接线后复跑通过）
+- `codex rtk cargo test -p codex-mcp-server`：通过（29 个测试；新增 semantic daemon-available e2e）
+- `cargo test -p codex-mcp-server suite::codex_tool::test_tldr_tool_semantic_uses_daemon_when_available -- --exact`：通过
+- `just fmt`：通过
+- `just fix -p codex-native-tldr`：通过
+- `just fix -p codex-mcp-server`：通过
+- `just fix -p codex-cli`：受无关工作树改动阻塞（`codex-rs/app-server/src/openai_compat.rs` 编译错误），本轮未处理
+
 - `codex rtk cargo test -p codex-native-tldr`：通过（35 个测试；新增 engine 级 semantic cache/reindex 回归）
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（47 个测试；CLI semantic 输出接线保持通过）
 - `codex rtk cargo test -p codex-mcp-server`：通过（28 个测试；MCP semantic `embeddingUsed` / `embedding_score` 断言通过）
@@ -110,6 +119,9 @@
 - CLI JSON / 文本输出与 MCP structuredContent 均已显式暴露 `embeddingUsed`，MCP e2e 还断言了 `embedding_score`
 - semantic disabled 路径现在返回显式启用提示，不再冒充“已启用但未实现”
 - `SemanticIndex` 现已成为明确的 build/query 边界；同一 `TldrEngine` 内首次查询后会缓存对应语言索引，`semantic_reindex()` 会重建并替换缓存
+- semantic search 现已接入 daemon 复用路径：CLI/MCP 在 daemon 可用时会直接吃共享索引缓存，并在输出里暴露 `source`
+- daemon 现支持 `TldrDaemonCommand::Semantic` 与 `semantic` payload，MCP 新增 daemon-available semantic e2e 回归
+- lifecycle 新增并发 `ensure_running` 串行化测试，继续收紧“已有 launch 进行中时禁止重复拉起”
 - daemon 连接处理现复用共享 `TldrEngine`，不再在每个 socket 连接里重建默认 engine 丢失项目配置/缓存
 - CLI 与 MCP semantic 输出现在显式包含 `embeddingUsed`，MCP e2e 还校验了 `matches[*].embedding_score`
 - semantic enabled 路径现在会扫描对应语言源码，返回 ranked matches、embedding-unit metadata 与 preview snippet

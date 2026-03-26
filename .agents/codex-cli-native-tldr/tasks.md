@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（实时）
 
-- **当前阶段**：Stage 3 / 执行中（semantic phase-1 已落地，warm/reindex、跨进程 launcher 竞争、以及 `SemanticIndex` 缓存闭环已补齐）
+- **当前阶段**：Stage 3 / 执行中（semantic 已接入 daemon 复用路径，warm/reindex、跨进程 launcher 竞争、以及 `SemanticIndex` 缓存闭环已补齐）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`

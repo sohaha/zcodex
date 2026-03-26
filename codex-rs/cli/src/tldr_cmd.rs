@@ -3,6 +3,7 @@ use anyhow::bail;
 use clap::Parser;
 use clap::Subcommand;
 use clap::ValueEnum;
+use codex_native_tldr::TldrConfig;
 use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
@@ -18,6 +19,7 @@ use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::semantic::SemanticSearchRequest;
+use codex_native_tldr::semantic::SemanticSearchResponse;
 use codex_utils_cargo_bin::cargo_bin;
 use once_cell::sync::Lazy;
 use serde_json::json;
@@ -172,7 +174,7 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
             run_analysis_command(cmd, AnalysisKind::CallGraph).await?;
         }
         TldrSubcommand::Semantic(cmd) => {
-            run_semantic_command(cmd)?;
+            run_semantic_command(cmd).await?;
         }
         TldrSubcommand::Daemon(cmd) => {
             run_daemon_command(cmd).await?;
@@ -252,20 +254,38 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
     Ok(())
 }
 
-fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
+async fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
     let language: SupportedLanguage = cmd.lang.into();
     let project_root = cmd.project.canonicalize()?;
     let config = load_tldr_config(&project_root)?;
-    let engine = TldrEngine::builder(project_root)
-        .with_config(config)
-        .build();
-    let response = engine.semantic_search(SemanticSearchRequest {
+    let request = SemanticSearchRequest {
         language,
-        query: cmd.query,
-    })?;
+        query: cmd.query.clone(),
+    };
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Semantic {
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (source, response, engine_project_root) = if let Some(response) = daemon_response {
+        if let Some(semantic) = response.semantic {
+            ("daemon", semantic, project_root.clone())
+        } else {
+            let (local_response, local_root) =
+                run_local_semantic_search(&project_root, config.clone(), request.clone())?;
+            ("local", local_response, local_root)
+        }
+    } else {
+        let (local_response, local_root) =
+            run_local_semantic_search(&project_root, config, request.clone())?;
+        ("local", local_response, local_root)
+    };
     let payload = json!({
-        "project": engine.config().project_root,
+        "project": engine_project_root,
         "language": language.as_str(),
+        "source": source,
         "query": response.query,
         "enabled": response.enabled,
         "indexedFiles": response.indexed_files,
@@ -279,6 +299,7 @@ fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("language: {}", language.as_str());
+        println!("source: {source}");
         println!("semantic enabled: {}", response.enabled);
         println!("message: {}", response.message);
         println!("embedding used: {}", response.embedding_used);
@@ -291,6 +312,18 @@ fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn run_local_semantic_search(
+    project_root: &Path,
+    config: TldrConfig,
+    request: SemanticSearchRequest,
+) -> Result<(SemanticSearchResponse, PathBuf)> {
+    let engine = TldrEngine::builder(project_root.to_path_buf())
+        .with_config(config)
+        .build();
+    let response = engine.semantic_search(request)?;
+    Ok((response, engine.config().project_root.clone()))
 }
 
 async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
@@ -643,6 +676,7 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: None,
             daemon_status: None,
             reindex_report: None,
@@ -978,12 +1012,14 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Snapshot => "snapshot",
                         TldrDaemonCommand::Status => "status",
                         TldrDaemonCommand::Analyze { .. } => "analyze",
+                        TldrDaemonCommand::Semantic { .. } => "semantic",
                         TldrDaemonCommand::Notify { .. } => "notify",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),
                         message: message.to_string(),
                         analysis: None,
+                        semantic: None,
                         snapshot: None,
                         daemon_status: None,
                         reindex_report: None,

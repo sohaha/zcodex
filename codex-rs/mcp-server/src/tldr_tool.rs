@@ -11,6 +11,7 @@ use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::semantic::SemanticSearchRequest;
+use codex_native_tldr::semantic::SemanticSearchResponse;
 use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
@@ -22,6 +23,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::json;
 use std::future::Future;
+use std::path::Path;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -245,18 +247,39 @@ async fn run_semantic_tool(
     let query = args
         .query
         .ok_or_else(|| anyhow::anyhow!("`query` is required for action=semantic"))?;
-    let config = load_tldr_config(&project_root)?;
-    let engine = TldrEngine::builder(project_root.clone())
-        .with_config(config)
-        .build();
-    let response = engine.semantic_search(SemanticSearchRequest { language, query })?;
+    let request = SemanticSearchRequest {
+        language,
+        query: query.clone(),
+    };
+    let daemon_response = query_daemon_with_lifecycle(
+        &project_root,
+        &TldrDaemonCommand::Semantic {
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (response, source) = if let Some(response) = daemon_response {
+        if let Some(semantic) = response.semantic {
+            (semantic, "daemon")
+        } else {
+            (
+                run_local_semantic(&project_root, language, &query)?,
+                "local",
+            )
+        }
+    } else {
+        (
+            run_local_semantic(&project_root, language, &query)?,
+            "local",
+        )
+    };
     let structured_content = json!({
         "action": "semantic",
         "project": project_root,
         "language": language.as_str(),
         "query": response.query,
         "enabled": response.enabled,
-        "source": "local",
+        "source": source,
         "indexedFiles": response.indexed_files,
         "truncated": response.truncated,
         "embeddingUsed": response.embedding_used,
@@ -265,13 +288,28 @@ async fn run_semantic_tool(
     });
     Ok(success_result(
         format!(
-            "semantic {} enabled={}: {}",
+            "semantic {} enabled={} via {source}: {}",
             language.as_str(),
             response.enabled,
             response.message
         ),
         structured_content,
     ))
+}
+
+fn run_local_semantic(
+    project_root: &Path,
+    language: SupportedLanguage,
+    query: &str,
+) -> Result<SemanticSearchResponse> {
+    let config = load_tldr_config(project_root)?;
+    let engine = TldrEngine::builder(project_root.to_path_buf())
+        .with_config(config)
+        .build();
+    engine.semantic_search(SemanticSearchRequest {
+        language,
+        query: query.to_string(),
+    })
 }
 
 async fn run_daemon_tool(
@@ -543,6 +581,7 @@ mod tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            semantic: None,
             snapshot: None,
             daemon_status: None,
             reindex_report: None,

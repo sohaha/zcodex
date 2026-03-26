@@ -3,6 +3,8 @@ use crate::TldrEngine;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
 use crate::semantic::SemanticReindexReport;
+use crate::semantic::SemanticSearchRequest;
+use crate::semantic::SemanticSearchResponse;
 use crate::session::Session;
 use crate::session::SessionConfig;
 use anyhow::Context;
@@ -53,6 +55,9 @@ pub enum TldrDaemonCommand {
         key: String,
         request: AnalysisRequest,
     },
+    Semantic {
+        request: SemanticSearchRequest,
+    },
     Notify {
         path: PathBuf,
     },
@@ -60,11 +65,12 @@ pub enum TldrDaemonCommand {
     Status,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TldrDaemonResponse {
     pub status: String,
     pub message: String,
     pub analysis: Option<AnalysisResponse>,
+    pub semantic: Option<SemanticSearchResponse>,
     pub snapshot: Option<crate::session::SessionSnapshot>,
     pub daemon_status: Option<TldrDaemonStatus>,
     pub reindex_report: Option<SemanticReindexReport>,
@@ -76,6 +82,7 @@ impl TldrDaemonResponse {
             status: "ok".to_string(),
             message: message.into(),
             analysis: None,
+            semantic: None,
             snapshot: None,
             daemon_status: None,
             reindex_report: None,
@@ -168,6 +175,7 @@ impl TldrDaemon {
                     status: "ok".to_string(),
                     message,
                     analysis: None,
+                    semantic: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
                     reindex_report,
@@ -184,6 +192,7 @@ impl TldrDaemon {
                     status: "ok".to_string(),
                     message,
                     analysis: None,
+                    semantic: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
                     reindex_report: session.last_reindex_report(),
@@ -207,6 +216,18 @@ impl TldrDaemon {
                         &snapshot,
                     )?),
                     ..TldrDaemonResponse::ok("status")
+                })
+            }
+            TldrDaemonCommand::Semantic { request } => {
+                let response = self.engine.semantic_search(request)?;
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: response.message.clone(),
+                    analysis: None,
+                    semantic: Some(response),
+                    snapshot: None,
+                    daemon_status: None,
+                    reindex_report: None,
                 })
             }
         }
@@ -310,6 +331,7 @@ async fn handle_with_session(
                 status: "ok".to_string(),
                 message,
                 analysis: None,
+                semantic: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
                 reindex_report,
@@ -326,6 +348,7 @@ async fn handle_with_session(
                 status: "ok".to_string(),
                 message,
                 analysis: None,
+                semantic: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
                 reindex_report: guard.last_reindex_report(),
@@ -351,6 +374,18 @@ async fn handle_with_session(
                 ..TldrDaemonResponse::ok("status")
             })
         }
+        TldrDaemonCommand::Semantic { request } => {
+            let response = engine.semantic_search(request)?;
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: response.message.clone(),
+                analysis: None,
+                semantic: Some(response),
+                snapshot: None,
+                daemon_status: None,
+                reindex_report: None,
+            })
+        }
     }
 }
 
@@ -367,6 +402,7 @@ fn analyze_with_session(
             status: "ok".to_string(),
             message: "cache hit".to_string(),
             analysis: Some(cached),
+            semantic: None,
             snapshot: Some(session.snapshot()),
             daemon_status: None,
             reindex_report: session.last_reindex_report(),
@@ -384,6 +420,7 @@ fn analyze_with_session(
         status: "ok".to_string(),
         message: message.to_string(),
         analysis: Some(analysis),
+        semantic: None,
         snapshot: Some(session.snapshot()),
         daemon_status: None,
         reindex_report: session.last_reindex_report(),
@@ -721,6 +758,7 @@ mod tests {
     use super::pid_path_for_project;
     #[cfg(unix)]
     use super::socket_path_for_project;
+    use crate::semantic::SemanticSearchRequest;
     #[cfg(unix)]
     use tokio::net::UnixListener;
 
@@ -766,6 +804,7 @@ mod tests {
                 status: "ok".to_string(),
                 message: "pong".to_string(),
                 analysis: None,
+                semantic: None,
                 snapshot: None,
                 daemon_status: None,
                 reindex_report: None,
@@ -790,6 +829,7 @@ mod tests {
                 status: "ok".to_string(),
                 message: "pong".to_string(),
                 analysis: None,
+                semantic: None,
                 snapshot: None,
                 daemon_status: None,
                 reindex_report: None,
@@ -1005,6 +1045,39 @@ mod tests {
         assert_eq!(snapshot.dirty_file_threshold, 1);
         assert_eq!(snapshot.reindex_pending, true);
         assert_eq!(snapshot.last_query_at.is_some(), true);
+    }
+
+    #[tokio::test]
+    async fn semantic_command_returns_semantic_payload() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let src_dir = project.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(
+            src_dir.join("auth.rs"),
+            "fn verify_token() {\n    let auth_token = true;\n}\n",
+        )
+        .expect("fixture should exist");
+
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        let response = daemon
+            .handle_command(TldrDaemonCommand::Semantic {
+                request: SemanticSearchRequest {
+                    language: crate::lang_support::SupportedLanguage::Rust,
+                    query: "auth token".to_string(),
+                },
+            })
+            .await
+            .expect("semantic should succeed");
+
+        assert_eq!(response.analysis, None);
+        assert!(response.snapshot.is_none());
+        let semantic = response.semantic.expect("semantic payload should exist");
+        assert!(semantic.enabled);
+        assert_eq!(semantic.indexed_files, 1);
+        assert_eq!(semantic.matches[0].path, PathBuf::from("src/auth.rs"));
     }
 
     #[test]
