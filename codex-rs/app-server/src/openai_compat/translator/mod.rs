@@ -6,6 +6,7 @@ use codex_protocol::models::LocalShellAction;
 use codex_protocol::models::LocalShellExecAction;
 use codex_protocol::models::LocalShellStatus;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::models::ShellToolCallParams;
 use reqwest::header::HeaderMap;
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -18,8 +19,6 @@ use super::adapter::CompatEndpoint;
 mod chat_types;
 mod response_body;
 mod response_stream;
-
-use chat_types::LocalShellArgs;
 
 #[derive(Clone)]
 pub(super) enum UpstreamTranslator {
@@ -174,12 +173,13 @@ impl ChatCompletionsResponseTranslator {
         }
 
         if self.tool_search_tool_names.contains(&name) {
+            let params = parse_tool_search_arguments(&arguments)?;
             return Ok(ResponseItem::ToolSearchCall {
                 id: None,
                 call_id: Some(call_id),
                 status: None,
-                execution: "client".to_string(),
-                arguments: parse_tool_search_arguments_value(&arguments)?,
+                execution: params.execution,
+                arguments: params.arguments,
             });
         }
 
@@ -210,18 +210,19 @@ impl ChatCompletionsResponseTranslator {
 }
 
 fn parse_custom_tool_input(arguments: &str) -> String {
-    serde_json::from_str::<Value>(arguments)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("input")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| arguments.to_string())
+    match serde_json::from_str::<Value>(arguments) {
+        Ok(Value::Object(mut object)) => match object.remove("input") {
+            Some(Value::String(text)) => text,
+            Some(value) => value.to_string(),
+            None => Value::Object(object).to_string(),
+        },
+        Ok(Value::String(text)) => text,
+        Ok(value) => value.to_string(),
+        Err(_) => arguments.to_string(),
+    }
 }
 
-fn parse_tool_search_arguments_value(arguments: &str) -> Result<Value, ApiError> {
+fn parse_tool_search_arguments(arguments: &str) -> Result<ToolSearchArgs, ApiError> {
     let value = serde_json::from_str::<Value>(arguments).map_err(|err| {
         ApiError::bad_gateway(format!(
             "failed to decode tool_search arguments from upstream /v1/chat/completions response: {err}"
@@ -229,16 +230,116 @@ fn parse_tool_search_arguments_value(arguments: &str) -> Result<Value, ApiError>
     })?;
     match value {
         Value::Object(mut object) => {
-            Ok(object.remove("arguments").unwrap_or(Value::Object(object)))
+            let execution = object
+                .remove("execution")
+                .and_then(|value| value.as_str().map(str::to_string))
+                .unwrap_or_else(|| "client".to_string());
+            let arguments = object
+                .remove("arguments")
+                .or_else(|| object.remove("input"))
+                .unwrap_or(Value::Object(object));
+            Ok(ToolSearchArgs {
+                execution,
+                arguments,
+            })
         }
-        value => Ok(value),
+        value => Ok(ToolSearchArgs {
+            execution: "client".to_string(),
+            arguments: value,
+        }),
     }
 }
 
-fn parse_local_shell_arguments(arguments: &str) -> Result<LocalShellArgs, ApiError> {
-    serde_json::from_str(arguments).map_err(|err| {
+fn parse_local_shell_arguments(arguments: &str) -> Result<LocalShellExecArgs, ApiError> {
+    let value = serde_json::from_str::<Value>(arguments).map_err(|err| {
         ApiError::bad_gateway(format!(
             "failed to decode local_shell arguments from upstream /v1/chat/completions response: {err}"
         ))
-    })
+    })?;
+
+    let value = match value {
+        Value::Object(mut object) => object
+            .remove("action")
+            .or_else(|| object.remove("input"))
+            .unwrap_or(Value::Object(object)),
+        value => value,
+    };
+
+    match value {
+        Value::Object(mut object) => {
+            let Some(kind) = object.get("type").and_then(Value::as_str) else {
+                let params: ShellToolCallParams =
+                    serde_json::from_value(Value::Object(object)).map_err(|err| {
+                        ApiError::bad_gateway(format!(
+                            "failed to parse local_shell arguments from upstream /v1/chat/completions response: {err}"
+                        ))
+                    })?;
+                return Ok(LocalShellExecArgs::from_shell_params(params));
+            };
+            if kind != "exec" {
+                return Err(ApiError::bad_gateway(format!(
+                    "failed to parse local_shell arguments from upstream /v1/chat/completions response: unsupported local_shell action type `{kind}`"
+                )));
+            }
+
+            let command =
+                serde_json::from_value(object.remove("command").unwrap_or(Value::Null)).map_err(
+                    |err| {
+                        ApiError::bad_gateway(format!(
+                            "failed to parse local_shell arguments from upstream /v1/chat/completions response: {err}"
+                        ))
+                    },
+                )?;
+            let working_directory = object
+                .remove("working_directory")
+                .or_else(|| object.remove("workdir"))
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|err| {
+                    ApiError::bad_gateway(format!(
+                        "failed to parse local_shell arguments from upstream /v1/chat/completions response: {err}"
+                    ))
+                })?;
+            let timeout_ms = object
+                .remove("timeout_ms")
+                .or_else(|| object.remove("timeout"))
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|err| {
+                    ApiError::bad_gateway(format!(
+                        "failed to parse local_shell arguments from upstream /v1/chat/completions response: {err}"
+                    ))
+                })?;
+
+            Ok(LocalShellExecArgs {
+                command,
+                workdir: working_directory,
+                timeout_ms,
+            })
+        }
+        _ => Err(ApiError::bad_gateway(
+            "failed to parse local_shell arguments from upstream /v1/chat/completions response: expected object",
+        )),
+    }
+}
+
+struct ToolSearchArgs {
+    execution: String,
+    arguments: Value,
+}
+
+struct LocalShellExecArgs {
+    command: Vec<String>,
+    workdir: Option<String>,
+    timeout_ms: Option<u64>,
+}
+
+impl LocalShellExecArgs {
+    fn from_shell_params(params: ShellToolCallParams) -> Self {
+        Self {
+            command: params.command,
+            workdir: params.workdir,
+            timeout_ms: params.timeout_ms,
+        }
+    }
 }

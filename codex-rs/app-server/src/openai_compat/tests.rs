@@ -698,6 +698,113 @@ async fn chat_wire_api_maps_tool_calls_in_translated_responses_payload() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_maps_tool_calls_in_alternate_translated_shapes() {
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            axum::Json(json!({
+                "id": "chatcmpl-tools-alt",
+                "object": "chat.completion",
+                "created": 123,
+                "model": "gpt-chat",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call-custom",
+                                "function": {
+                                    "name": "apply_patch",
+                                    "arguments": "{\"input\":{\"patch\":\"*** Begin Patch\"}}"
+                                }
+                            },
+                            {
+                                "id": "call-search",
+                                "function": {
+                                    "name": "tool_search",
+                                    "arguments": "{\"execution\":\"server\",\"input\":{\"query\":\"calendar create\",\"limit\":1}}"
+                                }
+                            },
+                            {
+                                "id": "call-shell",
+                                "function": {
+                                    "name": "local_shell",
+                                    "arguments": "{\"action\":{\"type\":\"exec\",\"command\":[\"pwd\"],\"working_directory\":\"/tmp\",\"timeout\":5000}}"
+                                }
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls"
+                }]
+            }))
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+
+    let response = proxy_request(
+        chat_state(format!("http://{upstream_addr}/v1")),
+        Method::POST,
+        CompatEndpoint::Responses,
+        None,
+        HeaderMap::new(),
+        Some(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "apply_patch",
+                        "description": "Apply a patch"
+                    },
+                    {
+                        "type": "tool_search",
+                        "description": "Search tools",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string" },
+                                "limit": { "type": "integer" }
+                            },
+                            "required": ["query"]
+                        }
+                    },
+                    { "type": "local_shell" }
+                ],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": false,
+                "include": []
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let body: Value = serde_json::from_slice(&body).expect("json body");
+    let output = body["output"].as_array().expect("output array");
+    assert_eq!(output[0]["input"], "{\"patch\":\"*** Begin Patch\"}");
+    assert_eq!(output[1]["execution"], "server");
+    assert_eq!(
+        output[1]["arguments"],
+        json!({"query": "calendar create", "limit": 1})
+    );
+    assert_eq!(output[2]["action"]["working_directory"], "/tmp");
+    assert_eq!(output[2]["action"]["timeout_ms"], 5000);
+}
+
+#[tokio::test]
 async fn chat_wire_api_translates_special_tool_calls_in_stream() {
     let upstream_router = Router::new().route(
         "/v1/chat/completions",
@@ -785,6 +892,83 @@ async fn chat_wire_api_translates_special_tool_calls_in_stream() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_translates_special_tool_calls_in_stream_alternate_shapes() {
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            (
+                [(CONTENT_TYPE, "text/event-stream")],
+                concat!(
+                    "data: {\"id\":\"chatcmpl-tools-alt\",\"model\":\"gpt-chat\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-custom\",\"function\":{\"name\":\"apply_patch\",\"arguments\":\"{\\\"input\\\":{\\\"patch\\\":\\\"*** Begin Patch\\\"}}\"}},{\"index\":1,\"id\":\"call-search\",\"function\":{\"name\":\"tool_search\",\"arguments\":\"{\\\"execution\\\":\\\"server\\\",\\\"input\\\":{\\\"query\\\":\\\"calendar create\\\",\\\"limit\\\":1}}\"}},{\"index\":2,\"id\":\"call-shell\",\"function\":{\"name\":\"local_shell\",\"arguments\":\"{\\\"action\\\":{\\\"type\\\":\\\"exec\\\",\\\"command\\\":[\\\"pwd\\\"],\\\"working_directory\\\":\\\"/tmp\\\",\\\"timeout\\\":5000}}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n",
+                    "data: [DONE]\n\n"
+                ),
+            )
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/responses"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [
+                    {
+                        "type": "custom",
+                        "name": "apply_patch",
+                        "description": "Apply a patch"
+                    },
+                    {
+                        "type": "tool_search",
+                        "description": "Search tools",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": { "type": "string" },
+                                "limit": { "type": "integer" }
+                            },
+                            "required": ["query"]
+                        }
+                    },
+                    { "type": "local_shell" }
+                ],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": true,
+                "include": []
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut body = String::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.expect("chunk");
+        body.push_str(core::str::from_utf8(&chunk).expect("utf8"));
+    }
+
+    assert!(body.contains("\"input\":\"{\\\"patch\\\":\\\"*** Begin Patch\\\"}\""));
+    assert!(body.contains("\"execution\":\"server\""));
+    assert!(body.contains("\"query\":\"calendar create\""));
+    assert!(body.contains("\"working_directory\":\"/tmp\""));
+    assert!(body.contains("\"timeout_ms\":5000"));
+}
+
+#[tokio::test]
 async fn chat_wire_api_emits_failed_event_for_invalid_stream_tool_arguments() {
     let upstream_router = Router::new().route(
         "/v1/chat/completions",
@@ -839,7 +1023,7 @@ async fn chat_wire_api_emits_failed_event_for_invalid_stream_tool_arguments() {
     assert!(body.contains("\"status\":\"failed\""));
     assert!(body.contains("\"type\":\"api_connection_error\""));
     assert!(body.contains("\"code\":\"api_connection_error\""));
-    assert!(body.contains("failed to decode local_shell arguments"));
+    assert!(body.contains("failed to parse local_shell arguments"));
 }
 
 #[tokio::test]

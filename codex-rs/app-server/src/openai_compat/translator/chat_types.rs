@@ -2,15 +2,6 @@ use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
-pub(super) struct LocalShellArgs {
-    pub(super) command: Vec<String>,
-    #[serde(default)]
-    pub(super) workdir: Option<String>,
-    #[serde(default)]
-    pub(super) timeout_ms: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct ChatCompletionResponse {
     pub(super) id: String,
     pub(super) model: String,
