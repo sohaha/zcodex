@@ -6,6 +6,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use bytes::Bytes;
 use codex_api::AuthProvider;
+use codex_api::ChatCompletionsClient;
 use codex_api::Provider;
 use codex_api::ResponsesApiRequest;
 use codex_api::ResponsesClient;
@@ -145,6 +146,13 @@ fn anthropic_provider() -> Provider {
     }
 }
 
+fn chat_provider() -> Provider {
+    Provider {
+        wire_api: codex_api::provider::WireApi::Chat,
+        ..provider("openai")
+    }
+}
+
 #[derive(Clone)]
 struct FlakyTransport {
     state: Arc<Mutex<i64>>,
@@ -216,6 +224,44 @@ async fn responses_client_uses_responses_path() -> Result<()> {
 
     let requests = state.take_stream_requests();
     assert_path_ends_with(&requests, "/responses");
+    Ok(())
+}
+
+#[tokio::test]
+async fn chat_completions_client_uses_chat_completions_path() -> Result<()> {
+    let state = RecordingState::default();
+    let transport = RecordingTransport::new(state.clone());
+    let client = ChatCompletionsClient::new(transport, chat_provider(), NoAuth);
+
+    let request = ResponsesApiRequest {
+        model: "gpt-test".to_string(),
+        instructions: "system".to_string(),
+        input: vec![ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "hello".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        }],
+        tools: Vec::new(),
+        tool_choice: "auto".to_string(),
+        parallel_tool_calls: false,
+        reasoning: None,
+        store: false,
+        stream: true,
+        include: Vec::new(),
+        service_tier: None,
+        prompt_cache_key: None,
+        text: None,
+    };
+    let _stream = client
+        .stream_request(request, ResponsesOptions::default())
+        .await?;
+
+    let requests = state.take_stream_requests();
+    assert_path_ends_with(&requests, "/chat/completions");
     Ok(())
 }
 

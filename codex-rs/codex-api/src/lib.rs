@@ -1,5 +1,6 @@
 pub mod anthropic;
 pub mod auth;
+pub mod chat_completions;
 pub mod common;
 pub mod endpoint;
 pub mod error;
@@ -28,6 +29,7 @@ pub use crate::common::WS_REQUEST_HEADER_TRACEPARENT_CLIENT_METADATA_KEY;
 pub use crate::common::WS_REQUEST_HEADER_TRACESTATE_CLIENT_METADATA_KEY;
 pub use crate::common::create_text_param_for_request;
 pub use crate::common::response_create_client_metadata;
+pub use crate::endpoint::chat_completions::ChatCompletionsClient;
 pub use crate::endpoint::compact::CompactClient;
 pub use crate::endpoint::memories::MemoriesClient;
 pub use crate::endpoint::models::ModelsClient;
