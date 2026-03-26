@@ -12,6 +12,9 @@ if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   - just
   - sccache
 
+额外处理:
+  - 若当前环境可直接使用 apt-get，则会补装 mold
+
 传入 --upgrade 会强制重装到最新可用版本。
 EOF
   exit 0
@@ -51,7 +54,19 @@ install_or_skip cargo-nextest cargo-nextest
 install_or_skip just just
 install_or_skip sccache sccache
 
+if command -v mold >/dev/null 2>&1; then
+  echo "[mise] 已安装: mold" >&2
+elif command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" -eq 0 ]; then
+  echo "[mise] 安装: mold (apt-get)" >&2
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update
+  apt-get install -y mold
+else
+  echo "[mise] 提示: 未安装 mold；如需更快链接，可在支持 apt-get 的环境中安装它" >&2
+fi
+
 echo "[mise] 完成。版本信息:" >&2
 cargo nextest --version || true
 just --version || true
 sccache --version || true
+mold --version | head -1 || true

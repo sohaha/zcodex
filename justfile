@@ -35,6 +35,7 @@ clippy *args:
 
 install:
     rustup show active-toolchain
+    mise run dev-tools
     cargo fetch
 
 # Run `cargo nextest` since it's faster than `cargo test`, though including
