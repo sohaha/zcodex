@@ -368,6 +368,7 @@ struct ChatStreamState {
     server_model_sent: bool,
     output_text: String,
     output_text_done: bool,
+    message_item_started: bool,
     tool_calls: BTreeMap<u32, PendingToolCall>,
     completed: bool,
     token_usage: Option<TokenUsage>,
@@ -388,6 +389,7 @@ impl ChatStreamState {
             server_model_sent: false,
             output_text: String::new(),
             output_text_done: false,
+            message_item_started: false,
             tool_calls: BTreeMap::new(),
             completed: false,
             token_usage: None,
@@ -420,6 +422,7 @@ impl ChatStreamState {
         for choice in chunk.choices {
             if let Some(delta) = choice.delta {
                 if let Some(text) = delta_content_text(delta.content.as_ref()) {
+                    self.ensure_message_started(tx_event).await?;
                     self.output_text.push_str(&text);
                     send_event(tx_event, ResponseEvent::OutputTextDelta(text)).await?;
                 }
@@ -488,6 +491,29 @@ impl ChatStreamState {
             send_event(tx_event, ResponseEvent::OutputItemDone(item)).await?;
         }
         self.tool_calls.clear();
+        Ok(())
+    }
+
+    async fn ensure_message_started(
+        &mut self,
+        tx_event: &mpsc::Sender<Result<ResponseEvent, ApiError>>,
+    ) -> Result<(), ApiError> {
+        if self.message_item_started {
+            return Ok(());
+        }
+
+        send_event(
+            tx_event,
+            ResponseEvent::OutputItemAdded(ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: Vec::new(),
+                end_turn: None,
+                phase: None,
+            }),
+        )
+        .await?;
+        self.message_item_started = true;
         Ok(())
     }
 
@@ -1289,14 +1315,19 @@ mod tests {
         ));
         assert!(matches!(
             &events[2],
-            ResponseEvent::OutputTextDelta(text) if text == "Hel"
+            ResponseEvent::OutputItemAdded(ResponseItem::Message { role, content, .. })
+                if role == "assistant" && content.is_empty()
         ));
         assert!(matches!(
             &events[3],
-            ResponseEvent::OutputTextDelta(text) if text == "lo"
+            ResponseEvent::OutputTextDelta(text) if text == "Hel"
         ));
         assert!(matches!(
             &events[4],
+            ResponseEvent::OutputTextDelta(text) if text == "lo"
+        ));
+        assert!(matches!(
+            &events[5],
             ResponseEvent::OutputItemDone(ResponseItem::Message {
                 role,
                 content,
@@ -1307,7 +1338,7 @@ mod tests {
                 }]
         ));
         assert!(matches!(
-            &events[5],
+            &events[6],
             ResponseEvent::Completed {
                 response_id,
                 token_usage: Some(TokenUsage {
@@ -1413,5 +1444,86 @@ mod tests {
                 limit: Some(2),
             }
         );
+    }
+
+    #[test]
+    fn build_request_maps_reasoning_response_format_and_tool_controls() {
+        let request = ResponsesApiRequest {
+            model: "gpt-test".to_string(),
+            instructions: "system".to_string(),
+            input: vec![ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hello".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+            tools: vec![json!({
+                "type": "function",
+                "name": "read_file",
+                "description": "Read a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "file_path": { "type": "string" }
+                    },
+                    "required": ["file_path"]
+                },
+                "strict": true,
+            })],
+            tool_choice: "required".to_string(),
+            parallel_tool_calls: false,
+            reasoning: Some(crate::common::Reasoning {
+                effort: Some(codex_protocol::openai_models::ReasoningEffort::High),
+                summary: None,
+            }),
+            store: false,
+            stream: true,
+            include: Vec::new(),
+            service_tier: Some("priority".to_string()),
+            prompt_cache_key: None,
+            text: Some(crate::common::TextControls {
+                verbosity: None,
+                format: Some(TextFormat {
+                    r#type: crate::common::TextFormatType::JsonSchema,
+                    strict: true,
+                    schema: json!({
+                        "type": "object",
+                        "properties": {
+                            "answer": { "type": "string" }
+                        },
+                        "required": ["answer"]
+                    }),
+                    name: "answer_format".to_string(),
+                }),
+            }),
+        };
+
+        let chat = build_request(&request).expect("build request");
+        let body = chat.body.as_object().expect("body object");
+        assert_eq!(
+            body.get("reasoning_effort"),
+            Some(&Value::String("high".to_string()))
+        );
+        assert_eq!(
+            body.get("service_tier"),
+            Some(&Value::String("priority".to_string()))
+        );
+        assert_eq!(
+            body.get("tool_choice"),
+            Some(&Value::String("required".to_string()))
+        );
+        assert_eq!(body.get("parallel_tool_calls"), Some(&Value::Bool(false)));
+        assert_eq!(
+            body["response_format"]["json_schema"]["name"],
+            Value::String("answer_format".to_string())
+        );
+        assert_eq!(
+            body["response_format"]["json_schema"]["strict"],
+            Value::Bool(true)
+        );
+        assert_eq!(body["stream_options"]["include_usage"], Value::Bool(true));
     }
 }

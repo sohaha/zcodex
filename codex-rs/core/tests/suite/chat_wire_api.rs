@@ -1,5 +1,7 @@
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use codex_core::ModelClient;
 use codex_core::ModelProviderInfo;
@@ -11,9 +13,11 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use core_test_support::load_default_config_for_test;
 use core_test_support::skip_if_no_network;
+use core_test_support::test_codex::test_codex;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -48,6 +52,15 @@ impl RequestRecorder {
         assert_eq!(requests.len(), 1);
         serde_json::from_slice(&requests[0].body).expect("request body json")
     }
+
+    fn json_bodies(&self) -> Vec<serde_json::Value> {
+        self.requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .map(|request| serde_json::from_slice(&request.body).expect("request body json"))
+            .collect()
+    }
 }
 
 struct SseResponder {
@@ -59,6 +72,25 @@ impl Respond for SseResponder {
         ResponseTemplate::new(200)
             .insert_header("content-type", "text/event-stream")
             .set_body_string(self.body.clone())
+    }
+}
+
+struct SseSequenceResponder {
+    index: AtomicUsize,
+    bodies: Vec<String>,
+}
+
+impl Respond for SseSequenceResponder {
+    fn respond(&self, _: &wiremock::Request) -> ResponseTemplate {
+        let index = self.index.fetch_add(1, Ordering::SeqCst);
+        ResponseTemplate::new(200)
+            .insert_header("content-type", "text/event-stream")
+            .set_body_string(
+                self.bodies
+                    .get(index)
+                    .unwrap_or_else(|| panic!("missing response body at index {index}"))
+                    .clone(),
+            )
     }
 }
 
@@ -172,4 +204,89 @@ async fn chat_wire_api_streams_via_chat_completions_endpoint() {
     assert_eq!(body["messages"][0]["role"], "system");
     assert_eq!(body["messages"][1]["role"], "user");
     assert_eq!(body["messages"][1]["content"], "hello");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn chat_wire_api_replays_function_call_outputs_on_followup_request() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+    let recorder = RequestRecorder::default();
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(recorder.clone())
+        .respond_with(SseSequenceResponder {
+            index: AtomicUsize::new(0),
+            bodies: vec![
+                concat!(
+                    "data: {\"id\":\"chatcmpl-1\",\"model\":\"gpt-5\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"function\":{\"name\":\"shell\",\"arguments\":\"{\\\"command\\\":[\\\"/bin/echo\\\",\\\"hi\\\"]}\"}}]},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1,\"total_tokens\":4}}\n\n",
+                    "data: [DONE]\n\n"
+                )
+                .to_string(),
+                concat!(
+                    "data: {\"id\":\"chatcmpl-2\",\"model\":\"gpt-5\",\"choices\":[{\"delta\":{\"content\":\"done\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":1,\"total_tokens\":9}}\n\n",
+                    "data: [DONE]\n\n"
+                )
+                .to_string(),
+            ],
+        })
+        .up_to_n_times(2)
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let test = test_codex()
+        .with_model("gpt-5")
+        .with_config({
+            let base_url = format!("{}/v1", server.uri());
+            move |config| {
+                config.model_provider.base_url = Some(base_url.clone());
+                config.model_provider.wire_api = WireApi::Chat;
+                config.model_provider.supports_websockets = false;
+                config.model_provider.request_max_retries = Some(0);
+                config.model_provider.stream_max_retries = Some(0);
+            }
+        })
+        .build(&server)
+        .await?;
+
+    test.submit_turn_with_policy("say hi via shell", SandboxPolicy::DangerFullAccess)
+        .await?;
+
+    let bodies = recorder.json_bodies();
+    assert_eq!(bodies.len(), 2);
+    let first_messages = bodies[0]["messages"].as_array().expect("first messages");
+    assert!(
+        first_messages
+            .iter()
+            .any(|message| message["role"] == "user" && message["content"] == "say hi via shell")
+    );
+
+    let second_messages = bodies[1]["messages"].as_array().expect("second messages");
+    let assistant_tool_call = second_messages
+        .iter()
+        .find(|message| {
+            message["role"] == "assistant"
+                && message
+                    .get("tool_calls")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some()
+        })
+        .expect("assistant tool call message");
+    assert_eq!(
+        assistant_tool_call["tool_calls"][0]["function"]["name"],
+        "shell"
+    );
+
+    let tool_message = second_messages
+        .iter()
+        .find(|message| message["role"] == "tool")
+        .expect("tool message");
+    let tool_content = tool_message["content"].as_str().unwrap_or_default();
+    assert!(
+        tool_content.contains("hi"),
+        "expected shell output to be replayed, got {tool_content}"
+    );
+
+    Ok(())
 }
