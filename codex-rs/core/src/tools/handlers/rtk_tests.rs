@@ -74,6 +74,36 @@ fn build_diff_args_requires_both_paths() {
 }
 
 #[test]
+fn build_json_args_serializes_depth() {
+    let args = build_command_args(RtkCommandKind::Json, r#"{"path":"package.json","depth":3}"#)
+        .expect("json args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("json"),
+            OsString::from("package.json"),
+            OsString::from("--depth"),
+            OsString::from("3"),
+        ]
+    );
+}
+
+#[test]
+fn build_deps_args_defaults_to_current_directory() {
+    let args = build_command_args(RtkCommandKind::Deps, "{}").expect("deps args should parse");
+
+    assert_eq!(args, vec![OsString::from("deps"), OsString::from(".")]);
+}
+
+#[test]
+fn build_log_args_requires_path() {
+    let err = build_command_args(RtkCommandKind::Log, r#"{"path":" "}"#).expect_err("blank path");
+
+    assert_eq!(err.to_string(), "path must not be empty".to_string());
+}
+
+#[test]
 fn build_summary_args_serializes_command() {
     let args = build_command_args(
         RtkCommandKind::Summary,

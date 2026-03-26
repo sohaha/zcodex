@@ -2015,6 +2015,87 @@ fn create_rtk_diff_tool() -> ToolSpec {
     })
 }
 
+fn create_rtk_json_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "JSON file path relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+        (
+            "depth".to_string(),
+            JsonSchema::Number {
+                description: Some("Maximum schema depth to render.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_json".to_string(),
+        description: "Token-optimized JSON structure inspection via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["path".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_deps_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "path".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional project root or dependency file path relative to the current working directory."
+                    .to_string(),
+            ),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_deps".to_string(),
+        description: "Token-optimized dependency summary via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_log_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "path".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Log file path relative to the current working directory.".to_string(),
+            ),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_log".to_string(),
+        description: "Token-optimized log deduplication and summarization via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["path".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 fn create_rtk_summary_tool() -> ToolSpec {
     let properties = BTreeMap::from([(
         "command".to_string(),
@@ -3313,6 +3394,27 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("rtk_diff", Arc::new(RtkHandler::new(RtkCommandKind::Diff)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_json_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_json", Arc::new(RtkHandler::new(RtkCommandKind::Json)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_deps_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_deps", Arc::new(RtkHandler::new(RtkCommandKind::Deps)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_log_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_log", Arc::new(RtkHandler::new(RtkCommandKind::Log)));
     push_tool_spec(
         &mut builder,
         create_rtk_summary_tool(),

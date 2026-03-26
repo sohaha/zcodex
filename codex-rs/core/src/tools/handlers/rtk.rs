@@ -23,6 +23,9 @@ pub enum RtkCommandKind {
     Grep,
     Find,
     Diff,
+    Json,
+    Deps,
+    Log,
     Summary,
     Err,
 }
@@ -34,6 +37,9 @@ impl RtkCommandKind {
             Self::Grep => "rtk_grep",
             Self::Find => "rtk_find",
             Self::Diff => "rtk_diff",
+            Self::Json => "rtk_json",
+            Self::Deps => "rtk_deps",
+            Self::Log => "rtk_log",
             Self::Summary => "rtk_summary",
             Self::Err => "rtk_err",
         }
@@ -45,6 +51,9 @@ impl RtkCommandKind {
             Self::Grep => "grep",
             Self::Find => "find",
             Self::Diff => "diff",
+            Self::Json => "json",
+            Self::Deps => "deps",
+            Self::Log => "log",
             Self::Summary => "summary",
             Self::Err => "err",
         }
@@ -160,6 +169,24 @@ struct RtkDiffArgs {
 }
 
 #[derive(Deserialize)]
+struct RtkJsonArgs {
+    path: String,
+    #[serde(default = "default_rtk_json_depth")]
+    depth: usize,
+}
+
+#[derive(Deserialize)]
+struct RtkDepsArgs {
+    #[serde(default = "default_dot_path")]
+    path: String,
+}
+
+#[derive(Deserialize)]
+struct RtkLogArgs {
+    path: String,
+}
+
+#[derive(Deserialize)]
 struct RtkCommandStringArgs {
     command: String,
 }
@@ -184,6 +211,10 @@ fn default_rtk_find_max() -> usize {
     50
 }
 
+fn default_rtk_json_depth() -> usize {
+    5
+}
+
 fn build_command_args(
     kind: RtkCommandKind,
     arguments: &str,
@@ -193,6 +224,9 @@ fn build_command_args(
         RtkCommandKind::Grep => build_grep_args(arguments),
         RtkCommandKind::Find => build_find_args(arguments),
         RtkCommandKind::Diff => build_diff_args(arguments),
+        RtkCommandKind::Json => build_json_args(arguments),
+        RtkCommandKind::Deps => build_deps_args(arguments),
+        RtkCommandKind::Log => build_log_args(arguments),
         RtkCommandKind::Summary => build_summary_args(arguments),
         RtkCommandKind::Err => build_err_args(arguments),
     }
@@ -349,6 +383,55 @@ fn build_diff_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> 
         OsString::from(RtkCommandKind::Diff.subcommand()),
         OsString::from(args.left),
         OsString::from(args.right),
+    ])
+}
+
+fn build_json_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkJsonArgs = parse_arguments(arguments)?;
+    if args.path.trim().is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "path must not be empty".to_string(),
+        ));
+    }
+    if args.depth == 0 {
+        return Err(FunctionCallError::RespondToModel(
+            "depth must be greater than zero".to_string(),
+        ));
+    }
+
+    Ok(vec![
+        OsString::from(RtkCommandKind::Json.subcommand()),
+        OsString::from(args.path),
+        OsString::from("--depth"),
+        OsString::from(args.depth.to_string()),
+    ])
+}
+
+fn build_deps_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkDepsArgs = parse_arguments(arguments)?;
+    if args.path.trim().is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "path must not be empty".to_string(),
+        ));
+    }
+
+    Ok(vec![
+        OsString::from(RtkCommandKind::Deps.subcommand()),
+        OsString::from(args.path),
+    ])
+}
+
+fn build_log_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkLogArgs = parse_arguments(arguments)?;
+    if args.path.trim().is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "path must not be empty".to_string(),
+        ));
+    }
+
+    Ok(vec![
+        OsString::from(RtkCommandKind::Log.subcommand()),
+        OsString::from(args.path),
     ])
 }
 
