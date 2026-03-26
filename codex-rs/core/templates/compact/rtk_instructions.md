@@ -5,7 +5,7 @@
 Prefer `codex rtk` for noisy shell output. When Codex embeds a dedicated wrapper, use it. Otherwise `codex rtk` may fall back to the underlying command, so avoid claiming special filtering unless the command below is explicitly listed.
 
 When a dedicated built-in RTK function tool exists, prefer it over shelling out to `codex rtk ...`.
-- Use `rtk_read`, `rtk_grep`, `rtk_find`, `rtk_diff`, `rtk_json`, `rtk_deps`, `rtk_log`, `rtk_ls`, `rtk_tree`, and `rtk_wc` for token-optimized inspection work.
+- Use `rtk_read`, `rtk_grep`, `rtk_find`, `rtk_diff`, `rtk_json`, `rtk_deps`, `rtk_log`, `rtk_ls`, `rtk_tree`, `rtk_wc`, `rtk_git_status`, `rtk_git_diff`, `rtk_git_show`, and `rtk_git_log` for token-optimized inspection work.
 - Use `rtk_summary` and `rtk_err` for noisy command summarization or error filtering.
 - Fall back to `shell_command` + `codex rtk ...` only for RTK capabilities that are not exposed as built-ins.
 

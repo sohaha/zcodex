@@ -2200,6 +2200,124 @@ fn create_rtk_wc_tool() -> ToolSpec {
     })
 }
 
+fn create_rtk_git_status_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "path".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Optional file or directory pathspec relative to the current working directory."
+                    .to_string(),
+            ),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_status".to_string(),
+        description: "Token-optimized git status via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_git_diff_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "target".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional revision, revision range, or other git diff target.".to_string(),
+                ),
+            },
+        ),
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional file or directory pathspec relative to the current working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "cached".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to diff the index against HEAD.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_diff".to_string(),
+        description: "Token-optimized git diff via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_git_show_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "revision".to_string(),
+        JsonSchema::String {
+            description: Some("Revision or object to inspect. Defaults to HEAD.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_show".to_string(),
+        description: "Token-optimized git show via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_git_log_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "revision_range".to_string(),
+            JsonSchema::String {
+                description: Some("Optional revision range such as main..HEAD.".to_string()),
+            },
+        ),
+        (
+            "max_count".to_string(),
+            JsonSchema::Number {
+                description: Some("Maximum number of commits to show.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_git_log".to_string(),
+        description: "Token-optimized git log via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
 fn create_rtk_summary_tool() -> ToolSpec {
     let properties = BTreeMap::from([(
         "command".to_string(),
@@ -3540,6 +3658,46 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("rtk_wc", Arc::new(RtkHandler::new(RtkCommandKind::Wc)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_status_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_status",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitStatus)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_diff_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_diff",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitDiff)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_show_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_show",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitShow)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_git_log_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_git_log",
+        Arc::new(RtkHandler::new(RtkCommandKind::GitLog)),
+    );
     push_tool_spec(
         &mut builder,
         create_rtk_summary_tool(),

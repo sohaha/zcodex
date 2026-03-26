@@ -29,6 +29,10 @@ pub enum RtkCommandKind {
     Ls,
     Tree,
     Wc,
+    GitStatus,
+    GitDiff,
+    GitShow,
+    GitLog,
     Summary,
     Err,
 }
@@ -46,6 +50,10 @@ impl RtkCommandKind {
             Self::Ls => "rtk_ls",
             Self::Tree => "rtk_tree",
             Self::Wc => "rtk_wc",
+            Self::GitStatus => "rtk_git_status",
+            Self::GitDiff => "rtk_git_diff",
+            Self::GitShow => "rtk_git_show",
+            Self::GitLog => "rtk_git_log",
             Self::Summary => "rtk_summary",
             Self::Err => "rtk_err",
         }
@@ -63,6 +71,7 @@ impl RtkCommandKind {
             Self::Ls => "ls",
             Self::Tree => "tree",
             Self::Wc => "wc",
+            Self::GitStatus | Self::GitDiff | Self::GitShow | Self::GitLog => "git",
             Self::Summary => "summary",
             Self::Err => "err",
         }
@@ -221,6 +230,36 @@ struct RtkWcArgs {
 }
 
 #[derive(Deserialize)]
+struct RtkGitStatusArgs {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RtkGitDiffArgs {
+    #[serde(default)]
+    target: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    cached: bool,
+}
+
+#[derive(Deserialize)]
+struct RtkGitShowArgs {
+    #[serde(default = "default_rtk_git_show_revision")]
+    revision: String,
+}
+
+#[derive(Deserialize)]
+struct RtkGitLogArgs {
+    #[serde(default)]
+    revision_range: Option<String>,
+    #[serde(default = "default_rtk_git_log_max_count")]
+    max_count: usize,
+}
+
+#[derive(Deserialize)]
 struct RtkCommandStringArgs {
     command: String,
 }
@@ -253,6 +292,14 @@ fn default_rtk_wc_mode() -> String {
     "full".to_string()
 }
 
+fn default_rtk_git_show_revision() -> String {
+    "HEAD".to_string()
+}
+
+fn default_rtk_git_log_max_count() -> usize {
+    10
+}
+
 fn build_command_args(
     kind: RtkCommandKind,
     arguments: &str,
@@ -268,6 +315,10 @@ fn build_command_args(
         RtkCommandKind::Ls => build_ls_args(arguments),
         RtkCommandKind::Tree => build_tree_args(arguments),
         RtkCommandKind::Wc => build_wc_args(arguments),
+        RtkCommandKind::GitStatus => build_git_status_args(arguments),
+        RtkCommandKind::GitDiff => build_git_diff_args(arguments),
+        RtkCommandKind::GitShow => build_git_show_args(arguments),
+        RtkCommandKind::GitLog => build_git_log_args(arguments),
         RtkCommandKind::Summary => build_summary_args(arguments),
         RtkCommandKind::Err => build_err_args(arguments),
     }
@@ -546,6 +597,106 @@ fn build_wc_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
         }
     }
     command.push(OsString::from(args.path));
+    Ok(command)
+}
+
+fn build_git_status_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkGitStatusArgs = parse_arguments(arguments)?;
+    let mut command = vec![
+        OsString::from(RtkCommandKind::GitStatus.subcommand()),
+        OsString::from("status"),
+    ];
+
+    if let Some(path) = args.path {
+        let path = path.trim().to_string();
+        if path.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "path must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--"));
+        command.push(OsString::from(path));
+    }
+
+    Ok(command)
+}
+
+fn build_git_diff_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkGitDiffArgs = parse_arguments(arguments)?;
+    let mut command = vec![
+        OsString::from(RtkCommandKind::GitDiff.subcommand()),
+        OsString::from("diff"),
+    ];
+
+    if args.cached {
+        command.push(OsString::from("--cached"));
+    }
+
+    if let Some(target) = args.target {
+        let target = target.trim().to_string();
+        if target.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "target must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from(target));
+    }
+
+    if let Some(path) = args.path {
+        let path = path.trim().to_string();
+        if path.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "path must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--"));
+        command.push(OsString::from(path));
+    }
+
+    Ok(command)
+}
+
+fn build_git_show_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkGitShowArgs = parse_arguments(arguments)?;
+    let revision = args.revision.trim().to_string();
+    if revision.is_empty() {
+        return Err(FunctionCallError::RespondToModel(
+            "revision must not be empty".to_string(),
+        ));
+    }
+
+    Ok(vec![
+        OsString::from(RtkCommandKind::GitShow.subcommand()),
+        OsString::from("show"),
+        OsString::from(revision),
+    ])
+}
+
+fn build_git_log_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallError> {
+    let args: RtkGitLogArgs = parse_arguments(arguments)?;
+    if args.max_count == 0 {
+        return Err(FunctionCallError::RespondToModel(
+            "max_count must be greater than zero".to_string(),
+        ));
+    }
+
+    let mut command = vec![
+        OsString::from(RtkCommandKind::GitLog.subcommand()),
+        OsString::from("log"),
+        OsString::from("-n"),
+        OsString::from(args.max_count.to_string()),
+    ];
+
+    if let Some(revision_range) = args.revision_range {
+        let revision_range = revision_range.trim().to_string();
+        if revision_range.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "revision_range must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from(revision_range));
+    }
+
     Ok(command)
 }
 

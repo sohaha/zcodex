@@ -171,6 +171,88 @@ fn build_wc_args_rejects_unknown_mode() {
 }
 
 #[test]
+fn build_git_status_args_serializes_pathspec() {
+    let args = build_command_args(RtkCommandKind::GitStatus, r#"{"path":"core/src"}"#)
+        .expect("git status args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("status"),
+            OsString::from("--"),
+            OsString::from("core/src"),
+        ]
+    );
+}
+
+#[test]
+fn build_git_diff_args_serializes_cached_target_and_path() {
+    let args = build_command_args(
+        RtkCommandKind::GitDiff,
+        r#"{"target":"HEAD~1","path":"core/src","cached":true}"#,
+    )
+    .expect("git diff args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("diff"),
+            OsString::from("--cached"),
+            OsString::from("HEAD~1"),
+            OsString::from("--"),
+            OsString::from("core/src"),
+        ]
+    );
+}
+
+#[test]
+fn build_git_show_args_defaults_to_head() {
+    let args = build_command_args(RtkCommandKind::GitShow, "{}").expect("git show args");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("show"),
+            OsString::from("HEAD"),
+        ]
+    );
+}
+
+#[test]
+fn build_git_log_args_serializes_range_and_max_count() {
+    let args = build_command_args(
+        RtkCommandKind::GitLog,
+        r#"{"revision_range":"main..HEAD","max_count":5}"#,
+    )
+    .expect("git log args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("log"),
+            OsString::from("-n"),
+            OsString::from("5"),
+            OsString::from("main..HEAD"),
+        ]
+    );
+}
+
+#[test]
+fn build_git_log_args_rejects_zero_max_count() {
+    let err = build_command_args(RtkCommandKind::GitLog, r#"{"max_count":0}"#)
+        .expect_err("zero max_count should be rejected");
+
+    assert_eq!(
+        err.to_string(),
+        "max_count must be greater than zero".to_string()
+    );
+}
+
+#[test]
 fn build_summary_args_serializes_command() {
     let args = build_command_args(
         RtkCommandKind::Summary,
