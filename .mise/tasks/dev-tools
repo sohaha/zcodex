@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run dev-tools
+  mise run dev-tools --upgrade
+
+默认仅在缺失时安装:
+  - cargo-nextest
+  - just
+
+传入 --upgrade 会强制重装到最新可用版本。
+EOF
+  exit 0
+fi
+
+upgrade=0
+if [ "${1:-}" = "--upgrade" ]; then
+  upgrade=1
+  shift
+fi
+
+if [ "$#" -gt 0 ]; then
+  echo "[mise] 未知参数: $*" >&2
+  echo "[mise] 运行 'mise run dev-tools --help' 查看用法" >&2
+  exit 1
+fi
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "[mise] 未检测到 cargo，无法安装 Rust 工具" >&2
+  exit 1
+fi
+
+install_or_skip() {
+  local bin_name="$1"
+  local crate_name="$2"
+
+  if [ "$upgrade" -eq 0 ] && command -v "$bin_name" >/dev/null 2>&1; then
+    echo "[mise] 已安装: $bin_name" >&2
+    return 0
+  fi
+
+  echo "[mise] 安装: $crate_name" >&2
+  cargo install --locked "$crate_name"
+}
+
+install_or_skip cargo-nextest cargo-nextest
+install_or_skip just just
+
+echo "[mise] 完成。版本信息:" >&2
+cargo nextest --version || true
+just --version || true
