@@ -834,6 +834,28 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
 }
 
 #[test]
+fn tldr_tool_is_available_in_subagents() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::SubAgent(SubAgentSource::Other("test".to_string())),
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
+    assert_contains_tool_names(&tools, &["tldr"]);
+    assert!(registry.has_handler("tldr", None));
+    assert_lacks_tool_name(&tools, "request_user_input");
+}
+
+#[test]
 fn request_user_input_description_reflects_default_mode_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
@@ -1353,6 +1375,7 @@ fn test_build_specs_gpt5_codex_default() {
         "shell_command",
         &[
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1376,6 +1399,7 @@ fn test_build_specs_gpt51_codex_default() {
         "shell_command",
         &[
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1401,6 +1425,7 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "exec_command",
             "write_stdin",
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1426,6 +1451,7 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "exec_command",
             "write_stdin",
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1449,6 +1475,7 @@ fn test_gpt_5_1_codex_max_defaults() {
         "shell_command",
         &[
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1472,6 +1499,7 @@ fn test_codex_5_1_mini_defaults() {
         "shell_command",
         &[
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1495,6 +1523,7 @@ fn test_gpt_5_defaults() {
         "shell",
         &[
             "update_plan",
+            "tldr",
             "request_user_input",
             "web_search",
             "view_image",
@@ -1517,6 +1546,7 @@ fn test_gpt_5_1_defaults() {
         "shell_command",
         &[
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1542,6 +1572,7 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "exec_command",
             "write_stdin",
             "update_plan",
+            "tldr",
             "request_user_input",
             "apply_patch",
             "web_search",
