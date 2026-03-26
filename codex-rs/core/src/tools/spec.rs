@@ -1798,9 +1798,8 @@ fn create_tldr_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "tldr".to_string(),
-        description:
-            "Structured code context analysis via native-tldr with daemon-first execution."
-                .to_string(),
+        description: "Structured code context analysis via native-tldr with daemon-first execution. Prefer this tool for symbol discovery, code context, impact analysis, and behavior-oriented code search before broad manual file reading."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -1809,6 +1808,256 @@ fn create_tldr_tool() -> ToolSpec {
             additional_properties: Some(false.into()),
         },
         output_schema: Some(codex_native_tldr::tool_api::tldr_tool_output_schema()),
+    })
+}
+
+fn create_rtk_read_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "File path to read relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+        (
+            "level".to_string(),
+            JsonSchema::String {
+                description: Some("Filter level: none, minimal, or aggressive.".to_string()),
+            },
+        ),
+        (
+            "max_lines".to_string(),
+            JsonSchema::Number {
+                description: Some("Optional maximum number of lines to keep.".to_string()),
+            },
+        ),
+        (
+            "tail_lines".to_string(),
+            JsonSchema::Number {
+                description: Some("Optional number of trailing lines to keep.".to_string()),
+            },
+        ),
+        (
+            "line_numbers".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include line numbers in the output.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_read".to_string(),
+        description: "Token-optimized file reading via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["path".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_grep_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "pattern".to_string(),
+            JsonSchema::String {
+                description: Some("Pattern to search for.".to_string()),
+            },
+        ),
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Search root relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+        (
+            "max_len".to_string(),
+            JsonSchema::Number {
+                description: Some("Maximum rendered line length.".to_string()),
+            },
+        ),
+        (
+            "max".to_string(),
+            JsonSchema::Number {
+                description: Some("Maximum number of rendered matches.".to_string()),
+            },
+        ),
+        (
+            "context_only".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to prefer short match-only excerpts.".to_string()),
+            },
+        ),
+        (
+            "file_type".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional ripgrep file type name such as rust, ts, or py.".to_string(),
+                ),
+            },
+        ),
+        (
+            "line_numbers".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "Accepted for grep compatibility; RTK keeps line numbers on.".to_string(),
+                ),
+            },
+        ),
+        (
+            "extra_args".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some("Optional additional ripgrep-style arguments.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_grep".to_string(),
+        description: "Token-optimized grep output via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["pattern".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_find_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "pattern".to_string(),
+            JsonSchema::String {
+                description: Some("Filename glob pattern to match.".to_string()),
+            },
+        ),
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Search root relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+        (
+            "max_results".to_string(),
+            JsonSchema::Number {
+                description: Some("Maximum number of results to return.".to_string()),
+            },
+        ),
+        (
+            "file_type".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional file type selector: `f` for files or `d` for directories."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_find".to_string(),
+        description: "Token-optimized file discovery via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["pattern".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_diff_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "left".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "First file path relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+        (
+            "right".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Second file path relative to the current working directory.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_diff".to_string(),
+        description: "Token-optimized file diff via RTK.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["left".to_string(), "right".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_summary_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "command".to_string(),
+        JsonSchema::String {
+            description: Some("Shell command string to run through RTK summary.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_summary".to_string(),
+        description: "Run a noisy command and return an RTK heuristic summary.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["command".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn create_rtk_err_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "command".to_string(),
+        JsonSchema::String {
+            description: Some(
+                "Shell command string to run through RTK error filtering.".to_string(),
+            ),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "rtk_err".to_string(),
+        description: "Run a command and return RTK-filtered errors and warnings.".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["command".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
     })
 }
 
@@ -2852,6 +3101,8 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ReadFileHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestUserInputHandler;
+    use crate::tools::handlers::RtkCommandKind;
+    use crate::tools::handlers::RtkHandler;
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::TestSyncHandler;
@@ -3034,6 +3285,51 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("tldr", Arc::new(TldrHandler));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_read_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_read", Arc::new(RtkHandler::new(RtkCommandKind::Read)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_grep_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_grep", Arc::new(RtkHandler::new(RtkCommandKind::Grep)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_find_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_find", Arc::new(RtkHandler::new(RtkCommandKind::Find)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_diff_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_diff", Arc::new(RtkHandler::new(RtkCommandKind::Diff)));
+    push_tool_spec(
+        &mut builder,
+        create_rtk_summary_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler(
+        "rtk_summary",
+        Arc::new(RtkHandler::new(RtkCommandKind::Summary)),
+    );
+    push_tool_spec(
+        &mut builder,
+        create_rtk_err_tool(),
+        /*supports_parallel_tool_calls*/ false,
+        config.code_mode_enabled,
+    );
+    builder.register_handler("rtk_err", Arc::new(RtkHandler::new(RtkCommandKind::Err)));
 
     if config.js_repl_enabled {
         push_tool_spec(

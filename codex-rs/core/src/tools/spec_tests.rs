@@ -457,6 +457,13 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         create_exec_command_tool(true, false),
         create_write_stdin_tool(),
         PLAN_TOOL.clone(),
+        create_tldr_tool(),
+        create_rtk_read_tool(),
+        create_rtk_grep_tool(),
+        create_rtk_find_tool(),
+        create_rtk_diff_tool(),
+        create_rtk_summary_tool(),
+        create_rtk_err_tool(),
         create_request_user_input_tool(CollaborationModesConfig::default()),
         create_apply_patch_freeform_tool(),
         ToolSpec::WebSearch {
@@ -834,7 +841,7 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
 }
 
 #[test]
-fn tldr_tool_is_available_in_subagents() {
+fn rtk_and_tldr_tools_are_available_in_subagents() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let features = Features::with_defaults();
@@ -850,9 +857,73 @@ fn tldr_tool_is_available_in_subagents() {
     });
 
     let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
+        ],
+    );
+    assert!(registry.has_handler("tldr", None));
+    assert!(registry.has_handler("rtk_read", None));
+    assert!(registry.has_handler("rtk_grep", None));
+    assert!(registry.has_handler("rtk_find", None));
+    assert!(registry.has_handler("rtk_diff", None));
+    assert!(registry.has_handler("rtk_summary", None));
+    assert!(registry.has_handler("rtk_err", None));
+    assert_lacks_tool_name(&tools, "request_user_input");
+}
+
+#[test]
+fn tldr_tool_is_available_in_cli_sessions() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
     assert_contains_tool_names(&tools, &["tldr"]);
     assert!(registry.has_handler("tldr", None));
-    assert_lacks_tool_name(&tools, "request_user_input");
+}
+
+#[test]
+fn tldr_tool_uses_shared_output_schema_contract() {
+    let ToolSpec::Function(tool) = create_tldr_tool() else {
+        panic!("tldr must be a function tool");
+    };
+    let JsonSchema::Object {
+        properties,
+        required,
+        additional_properties,
+    } = tool.parameters
+    else {
+        panic!("tldr params must be an object schema");
+    };
+
+    assert_eq!(required, Some(vec!["action".to_string()]));
+    assert_eq!(additional_properties, Some(false.into()));
+    for key in ["action", "project", "language", "symbol", "query", "path"] {
+        assert!(properties.contains_key(key), "missing parameter: {key}");
+    }
+
+    assert_eq!(
+        tool.output_schema,
+        Some(codex_native_tldr::tool_api::tldr_tool_output_schema())
+    );
 }
 
 #[test]
@@ -1376,6 +1447,12 @@ fn test_build_specs_gpt5_codex_default() {
         &[
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1400,6 +1477,12 @@ fn test_build_specs_gpt51_codex_default() {
         &[
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1426,6 +1509,12 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "write_stdin",
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1452,6 +1541,12 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "write_stdin",
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1476,6 +1571,12 @@ fn test_gpt_5_1_codex_max_defaults() {
         &[
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1500,6 +1601,12 @@ fn test_codex_5_1_mini_defaults() {
         &[
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1524,6 +1631,12 @@ fn test_gpt_5_defaults() {
         &[
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "web_search",
             "view_image",
@@ -1547,6 +1660,12 @@ fn test_gpt_5_1_defaults() {
         &[
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
@@ -1573,6 +1692,12 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "write_stdin",
             "update_plan",
             "tldr",
+            "rtk_read",
+            "rtk_grep",
+            "rtk_find",
+            "rtk_diff",
+            "rtk_summary",
+            "rtk_err",
             "request_user_input",
             "apply_patch",
             "web_search",
