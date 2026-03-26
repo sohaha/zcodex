@@ -98,6 +98,7 @@ use crate::auth::RefreshTokenError;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
+use crate::client_common::tools::ToolSpec;
 use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
 use crate::error::Result;
@@ -712,7 +713,10 @@ impl ModelClientSession {
     ) -> Result<ResponsesApiRequest> {
         let instructions = &prompt.base_instructions.text;
         let input = prompt.get_formatted_input();
-        let tools = create_tools_json_for_responses_api(&prompt.tools)?;
+        let tools = create_tools_json_for_responses_api(&filter_tools_for_wire_api(
+            &prompt.tools,
+            provider.wire_api,
+        ))?;
         let default_reasoning_effort = model_info.default_reasoning_level;
         let reasoning = if model_info.supports_reasoning_summaries {
             Some(Reasoning {
@@ -1499,6 +1503,40 @@ fn build_ws_client_metadata(turn_metadata_header: Option<&str>) -> Option<HashMa
     let mut client_metadata = HashMap::new();
     client_metadata.insert(X_CODEX_TURN_METADATA_HEADER.to_string(), turn_metadata);
     Some(client_metadata)
+}
+
+fn filter_tools_for_wire_api(
+    tools: &[ToolSpec],
+    wire_api: codex_api::provider::WireApi,
+) -> Vec<ToolSpec> {
+    if wire_api != codex_api::provider::WireApi::Chat {
+        return tools.to_vec();
+    }
+
+    let mut disabled_tool_names = Vec::new();
+    let filtered = tools
+        .iter()
+        .filter(|tool| {
+            let supported = !matches!(
+                tool,
+                ToolSpec::WebSearch { .. } | ToolSpec::ImageGeneration { .. }
+            );
+            if !supported {
+                disabled_tool_names.push(tool.name().to_string());
+            }
+            supported
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    if !disabled_tool_names.is_empty() {
+        warn!(
+            ?disabled_tool_names,
+            "disabling hosted-only tools for chat completions provider"
+        );
+    }
+
+    filtered
 }
 
 /// Builds the extra headers attached to Responses API requests.

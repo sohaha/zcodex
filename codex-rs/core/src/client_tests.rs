@@ -3,6 +3,9 @@ use super::ModelClient;
 use super::PendingUnauthorizedRetry;
 use super::UnauthorizedRecoveryExecution;
 use crate::auth::CodexAuth;
+use crate::client_common::tools::ResponsesApiTool;
+use crate::client_common::tools::ToolSpec;
+use crate::tools::spec::JsonSchema;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelInfo;
@@ -97,6 +100,27 @@ fn test_session_telemetry() -> SessionTelemetry {
         "test-terminal".to_string(),
         SessionSource::Cli,
     )
+}
+
+fn test_prompt_with_tools(tools: Vec<ToolSpec>) -> crate::client_common::Prompt {
+    crate::client_common::Prompt {
+        input: vec![codex_protocol::models::ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![codex_protocol::models::ContentItem::InputText {
+                text: "hello".to_string(),
+            }],
+            end_turn: None,
+            phase: None,
+        }],
+        tools,
+        parallel_tool_calls: false,
+        base_instructions: codex_protocol::models::BaseInstructions {
+            text: "system".to_string(),
+        },
+        personality: None,
+        output_schema: None,
+    }
 }
 
 #[test]
@@ -202,4 +226,87 @@ async fn provider_auth_disables_unauthorized_recovery_and_request_compression() 
             .responses_request_compression(&client_setup.api_auth),
         codex_api::requests::responses::Compression::None
     );
+}
+
+#[test]
+fn filter_tools_for_chat_provider_drops_hosted_only_tools() {
+    let filtered = super::filter_tools_for_wire_api(
+        &[
+            ToolSpec::Function(ResponsesApiTool {
+                name: "read_file".to_string(),
+                description: "Read".to_string(),
+                strict: false,
+                defer_loading: None,
+                parameters: JsonSchema::Object {
+                    properties: Default::default(),
+                    required: None,
+                    additional_properties: None,
+                },
+                output_schema: None,
+            }),
+            ToolSpec::WebSearch {
+                external_web_access: Some(true),
+                filters: None,
+                user_location: None,
+                search_context_size: None,
+                search_content_types: None,
+            },
+            ToolSpec::ImageGeneration {
+                output_format: "png".to_string(),
+            },
+        ],
+        codex_api::provider::WireApi::Chat,
+    );
+
+    assert_eq!(filtered.len(), 1);
+    assert!(matches!(&filtered[0], ToolSpec::Function(tool) if tool.name == "read_file"));
+}
+
+#[test]
+fn build_responses_request_for_chat_provider_omits_hosted_only_tools() {
+    let client = test_model_client_with_wire_api(
+        SessionSource::Cli,
+        crate::model_provider_info::WireApi::Chat,
+    );
+    let session = client.new_session();
+    let prompt = test_prompt_with_tools(vec![
+        ToolSpec::WebSearch {
+            external_web_access: Some(true),
+            filters: None,
+            user_location: None,
+            search_context_size: None,
+            search_content_types: None,
+        },
+        ToolSpec::ImageGeneration {
+            output_format: "png".to_string(),
+        },
+    ]);
+    let provider = codex_api::Provider {
+        name: "mock".to_string(),
+        base_url: "https://example.com/v1".to_string(),
+        wire_api: codex_api::provider::WireApi::Chat,
+        query_params: None,
+        headers: http::HeaderMap::new(),
+        retry: codex_api::provider::RetryConfig {
+            max_attempts: 1,
+            base_delay: std::time::Duration::from_millis(1),
+            retry_429: false,
+            retry_5xx: false,
+            retry_transport: false,
+        },
+        stream_idle_timeout: std::time::Duration::from_secs(5),
+    };
+
+    let request = session
+        .build_responses_request(
+            &provider,
+            &prompt,
+            &test_model_info(),
+            None,
+            codex_protocol::config_types::ReasoningSummary::None,
+            None,
+        )
+        .expect("build request");
+
+    assert_eq!(request.tools, Vec::<serde_json::Value>::new());
 }
