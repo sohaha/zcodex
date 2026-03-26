@@ -64,6 +64,7 @@ codex-utils-absolute-path = { workspace = true }
 codex-utils-json-to-toml = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
+eventsource-stream = { workspace = true }
 futures = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
 serde = { workspace = true, features = ["derive"] }
@@ -79,6 +80,7 @@ tokio = { workspace = true, features = [
     "rt-multi-thread",
     "signal",
 ] }
+tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing = { workspace = true, features = ["log"] }

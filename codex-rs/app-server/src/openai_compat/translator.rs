@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 
 use codex_api::ResponsesApiRequest;
@@ -7,9 +8,15 @@ use codex_protocol::models::LocalShellAction;
 use codex_protocol::models::LocalShellExecAction;
 use codex_protocol::models::LocalShellStatus;
 use codex_protocol::models::ResponseItem;
+use eventsource_stream::Eventsource;
+use futures::StreamExt;
+use reqwest::header::HeaderMap;
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::bytes::Bytes;
 
 use super::ApiError;
 use super::adapter::CompatEndpoint;
@@ -70,6 +77,30 @@ impl ResponseTranslation {
             }
         }
     }
+
+    pub(super) fn should_translate_stream(&self, headers: &HeaderMap) -> bool {
+        matches!(self, Self::ChatCompletionsToResponses(_))
+            && headers
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.starts_with("text/event-stream"))
+    }
+
+    pub(super) fn translate_success_response_stream(
+        self,
+        upstream: reqwest::Response,
+    ) -> ReceiverStream<Result<Bytes, std::convert::Infallible>> {
+        let (tx, rx) = mpsc::channel(32);
+        tokio::spawn(async move {
+            let Self::ChatCompletionsToResponses(translator) = self else {
+                return;
+            };
+            translator
+                .translate_success_response_stream(upstream, tx)
+                .await;
+        });
+        ReceiverStream::new(rx)
+    }
 }
 
 fn translate_responses_to_chat(
@@ -89,13 +120,8 @@ fn translate_responses_to_chat(
             "failed to decode /v1/responses request for chat upstream translation: {err}"
         ))
     })?;
-    if request.stream {
-        return Err(ApiError::bad_request(
-            "current upstream provider uses wire_api = \"chat\"; streamed /v1/responses translation is not available yet, use /v1/chat/completions for streaming",
-        ));
-    }
 
-    let chat_request = chat_completions::build_request_with_stream(&request, /*stream*/ false)
+    let chat_request = chat_completions::build_request_with_stream(&request, request.stream)
         .map_err(|err| {
             ApiError::bad_request(format!(
                 "failed to translate /v1/responses request into /v1/chat/completions: {err}"
@@ -131,19 +157,7 @@ impl ChatCompletionsResponseTranslator {
         for choice in &completion.choices {
             output.extend(self.choice_output_items(choice)?);
         }
-        let usage = completion.usage.map(|usage| {
-            json!({
-                "input_tokens": usage.prompt_tokens,
-                "input_tokens_details": usage.prompt_tokens_details.map(|details| json!({
-                    "cached_tokens": details.cached_tokens,
-                })),
-                "output_tokens": usage.completion_tokens,
-                "output_tokens_details": usage.completion_tokens_details.map(|details| json!({
-                    "reasoning_tokens": details.reasoning_tokens,
-                })),
-                "total_tokens": usage.total_tokens,
-            })
-        });
+        let usage = completion.usage.map(chat_usage_json);
 
         serde_json::to_string(&json!({
             "id": completion.id,
@@ -155,6 +169,61 @@ impl ChatCompletionsResponseTranslator {
             "usage": usage,
         }))
         .map_err(|err| ApiError::internal(format!("failed to encode translated response: {err}")))
+    }
+
+    async fn translate_success_response_stream(
+        self,
+        upstream: reqwest::Response,
+        tx: mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    ) {
+        let mut state = ChatCompletionsSseState::new(self);
+        let mut stream = upstream.bytes_stream().eventsource();
+
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(event) if event.data == "[DONE]" => {
+                    if let Err(err) = state.complete(&tx).await {
+                        let _ = send_failed_event(&tx, &state, err).await;
+                    }
+                    return;
+                }
+                Ok(event) => {
+                    let chunk = match serde_json::from_str::<ChatCompletionChunk>(&event.data) {
+                        Ok(chunk) => chunk,
+                        Err(err) => {
+                            let _ = send_failed_event(
+                                &tx,
+                                &state,
+                                ApiError::bad_gateway(format!(
+                                    "failed to decode upstream /v1/chat/completions stream chunk for /v1/responses compatibility: {err}"
+                                )),
+                            )
+                            .await;
+                            return;
+                        }
+                    };
+                    if let Err(err) = state.process_chunk(chunk, &tx).await {
+                        let _ = send_failed_event(&tx, &state, err).await;
+                        return;
+                    }
+                }
+                Err(err) => {
+                    let _ = send_failed_event(
+                        &tx,
+                        &state,
+                        ApiError::bad_gateway(format!(
+                            "chat completions stream error during /v1/responses translation: {err}"
+                        )),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        }
+
+        if let Err(err) = state.complete(&tx).await {
+            let _ = send_failed_event(&tx, &state, err).await;
+        }
     }
 
     fn choice_output_items(&self, choice: &ChatChoice) -> Result<Vec<Value>, ApiError> {
@@ -191,10 +260,19 @@ impl ChatCompletionsResponseTranslator {
     }
 
     fn tool_call_response_item(&self, tool_call: &ChatToolCall) -> Result<ResponseItem, ApiError> {
-        let name = tool_call.function.name.clone();
-        let call_id = tool_call.id.clone();
-        let arguments = tool_call.function.arguments.clone();
+        self.tool_call_response_item_from_parts(
+            tool_call.id.clone(),
+            tool_call.function.name.clone(),
+            tool_call.function.arguments.clone(),
+        )
+    }
 
+    fn tool_call_response_item_from_parts(
+        &self,
+        call_id: String,
+        name: String,
+        arguments: String,
+    ) -> Result<ResponseItem, ApiError> {
         if self.custom_tool_names.contains(&name) {
             return Ok(ResponseItem::CustomToolCall {
                 id: None,
@@ -241,6 +319,307 @@ impl ChatCompletionsResponseTranslator {
     }
 }
 
+struct ChatCompletionsSseState {
+    translator: ChatCompletionsResponseTranslator,
+    response_id: Option<String>,
+    model: Option<String>,
+    created_at: Option<i64>,
+    created_sent: bool,
+    output_text: String,
+    output_text_done: bool,
+    message_item_started: bool,
+    tool_calls: BTreeMap<u32, PendingToolCall>,
+    token_usage: Option<Value>,
+    completed: bool,
+}
+
+impl ChatCompletionsSseState {
+    fn new(translator: ChatCompletionsResponseTranslator) -> Self {
+        Self {
+            translator,
+            response_id: None,
+            model: None,
+            created_at: None,
+            created_sent: false,
+            output_text: String::new(),
+            output_text_done: false,
+            message_item_started: false,
+            tool_calls: BTreeMap::new(),
+            token_usage: None,
+            completed: false,
+        }
+    }
+
+    async fn process_chunk(
+        &mut self,
+        chunk: ChatCompletionChunk,
+        tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    ) -> Result<(), ApiError> {
+        if self.response_id.is_none() {
+            self.response_id = Some(chunk.id.clone());
+        }
+        if self.model.is_none() {
+            self.model = Some(chunk.model.clone());
+        }
+        if self.created_at.is_none() {
+            self.created_at = chunk.created;
+        }
+        if !self.created_sent {
+            self.send_created(tx).await?;
+        }
+        if let Some(usage) = chunk.usage {
+            self.token_usage = Some(chat_usage_json(usage));
+        }
+
+        for choice in chunk.choices {
+            if let Some(delta) = choice.delta {
+                if let Some(text) = chat_message_text(delta.content.as_ref())
+                    && !text.is_empty()
+                {
+                    self.ensure_message_started(tx).await?;
+                    self.output_text.push_str(&text);
+                    send_sse_json(
+                        tx,
+                        "response.output_text.delta",
+                        json!({
+                            "type": "response.output_text.delta",
+                            "delta": text,
+                        }),
+                    )
+                    .await?;
+                }
+                for tool_call in delta.tool_calls {
+                    self.merge_tool_call(tool_call);
+                }
+            }
+
+            if choice.finish_reason.is_some() {
+                self.flush_output_items(tx).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn merge_tool_call(&mut self, tool_call: ChatToolCallDelta) {
+        let Some(index) = tool_call.index else {
+            return;
+        };
+
+        let entry = self.tool_calls.entry(index).or_default();
+        if let Some(id) = tool_call.id {
+            entry.id = Some(id);
+        }
+        if let Some(function) = tool_call.function {
+            if let Some(name) = function.name {
+                entry.name = Some(name);
+            }
+            if let Some(arguments) = function.arguments {
+                entry.arguments.push_str(&arguments);
+            }
+        }
+    }
+
+    async fn send_created(
+        &mut self,
+        tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    ) -> Result<(), ApiError> {
+        send_sse_json(
+            tx,
+            "response.created",
+            json!({
+                "type": "response.created",
+                "response": {
+                    "id": self.response_id(),
+                    "object": "response",
+                    "created_at": self.created_at,
+                    "status": "in_progress",
+                    "model": self.model.clone(),
+                    "output": [],
+                }
+            }),
+        )
+        .await?;
+        self.created_sent = true;
+        Ok(())
+    }
+
+    async fn ensure_message_started(
+        &mut self,
+        tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    ) -> Result<(), ApiError> {
+        if self.message_item_started {
+            return Ok(());
+        }
+
+        send_sse_json(
+            tx,
+            "response.output_item.added",
+            json!({
+                "type": "response.output_item.added",
+                "item": {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [],
+                }
+            }),
+        )
+        .await?;
+        self.message_item_started = true;
+        Ok(())
+    }
+
+    async fn flush_output_items(
+        &mut self,
+        tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    ) -> Result<(), ApiError> {
+        if !self.output_text_done && !self.output_text.is_empty() {
+            send_sse_json(
+                tx,
+                "response.output_item.done",
+                json!({
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{
+                            "type": "output_text",
+                            "text": self.output_text,
+                        }],
+                    }
+                }),
+            )
+            .await?;
+            self.output_text_done = true;
+        }
+
+        for tool_call in self.tool_calls.values() {
+            let Some(call_id) = tool_call.id.clone() else {
+                continue;
+            };
+            let Some(name) = tool_call.name.clone() else {
+                continue;
+            };
+            let item = self.translator.tool_call_response_item_from_parts(
+                call_id,
+                name,
+                tool_call.arguments.clone(),
+            )?;
+            let item = serde_json::to_value(item).map_err(|err| {
+                ApiError::internal(format!(
+                    "failed to encode translated tool call stream item: {err}"
+                ))
+            })?;
+            send_sse_json(
+                tx,
+                "response.output_item.done",
+                json!({
+                    "type": "response.output_item.done",
+                    "item": item,
+                }),
+            )
+            .await?;
+        }
+        self.tool_calls.clear();
+        Ok(())
+    }
+
+    async fn complete(
+        &mut self,
+        tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    ) -> Result<(), ApiError> {
+        if self.completed {
+            return Ok(());
+        }
+
+        self.flush_output_items(tx).await?;
+        send_sse_json(
+            tx,
+            "response.completed",
+            json!({
+                "type": "response.completed",
+                "response": {
+                    "id": self.response_id(),
+                    "object": "response",
+                    "created_at": self.created_at,
+                    "status": "completed",
+                    "model": self.model.clone(),
+                    "output": [],
+                    "usage": self.token_usage,
+                }
+            }),
+        )
+        .await?;
+        self.completed = true;
+        Ok(())
+    }
+
+    fn response_id(&self) -> String {
+        self.response_id
+            .clone()
+            .unwrap_or_else(|| "chatcmpl-compat".to_string())
+    }
+}
+
+#[derive(Default)]
+struct PendingToolCall {
+    id: Option<String>,
+    name: Option<String>,
+    arguments: String,
+}
+
+async fn send_failed_event(
+    tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    state: &ChatCompletionsSseState,
+    err: ApiError,
+) -> Result<(), ApiError> {
+    send_sse_json(
+        tx,
+        "response.failed",
+        json!({
+            "type": "response.failed",
+            "response": {
+                "id": state.response_id(),
+                "object": "response",
+                "created_at": state.created_at,
+                "status": "failed",
+                "model": state.model,
+                "error": {
+                    "message": err.message,
+                }
+            }
+        }),
+    )
+    .await
+}
+
+async fn send_sse_json(
+    tx: &mpsc::Sender<Result<Bytes, std::convert::Infallible>>,
+    event: &str,
+    payload: Value,
+) -> Result<(), ApiError> {
+    let data = serde_json::to_string(&payload)
+        .map_err(|err| ApiError::internal(format!("failed to encode SSE payload: {err}")))?;
+    let chunk = format!("event: {event}\ndata: {data}\n\n");
+    tx.send(Ok(Bytes::from(chunk)))
+        .await
+        .map_err(|err| ApiError::internal(format!("failed to send translated SSE chunk: {err}")))
+}
+
+fn chat_usage_json(usage: ChatUsage) -> Value {
+    json!({
+        "input_tokens": usage.prompt_tokens,
+        "input_tokens_details": usage.prompt_tokens_details.map(|details| json!({
+            "cached_tokens": details.cached_tokens,
+        })),
+        "output_tokens": usage.completion_tokens,
+        "output_tokens_details": usage.completion_tokens_details.map(|details| json!({
+            "reasoning_tokens": details.reasoning_tokens,
+        })),
+        "total_tokens": usage.total_tokens,
+    })
+}
+
 fn chat_message_text(content: Option<&Value>) -> Option<String> {
     match content? {
         Value::String(text) => Some(text.clone()),
@@ -281,7 +660,7 @@ fn parse_tool_search_arguments_value(arguments: &str) -> Result<Value, ApiError>
     match value {
         Value::Object(mut object) => Ok(object
             .remove("arguments")
-            .unwrap_or_else(|| Value::Object(object))),
+            .unwrap_or(Value::Object(object))),
         value => Ok(value),
     }
 }
@@ -316,9 +695,25 @@ struct ChatCompletionResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct ChatCompletionChunk {
+    id: String,
+    model: String,
+    #[serde(default)]
+    created: Option<i64>,
+    #[serde(default)]
+    choices: Vec<ChatChoice>,
+    #[serde(default)]
+    usage: Option<ChatUsage>,
+}
+
+#[derive(Debug, Deserialize)]
 struct ChatChoice {
     #[serde(default)]
     message: Option<ChatMessage>,
+    #[serde(default)]
+    delta: Option<ChatDelta>,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -327,6 +722,14 @@ struct ChatMessage {
     content: Option<Value>,
     #[serde(default)]
     tool_calls: Vec<ChatToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatDelta {
+    #[serde(default)]
+    content: Option<Value>,
+    #[serde(default)]
+    tool_calls: Vec<ChatToolCallDelta>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -339,6 +742,24 @@ struct ChatToolCall {
 struct ChatToolFunction {
     name: String,
     arguments: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatToolCallDelta {
+    #[serde(default)]
+    index: Option<u32>,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    function: Option<ChatToolFunctionDelta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatToolFunctionDelta {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    arguments: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

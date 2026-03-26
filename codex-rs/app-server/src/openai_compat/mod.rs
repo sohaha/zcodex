@@ -594,6 +594,19 @@ async fn response_from_upstream(
                 };
             }
 
+            if response_translation.should_translate_stream(&headers) {
+                response = response.header(axum::http::header::CONTENT_TYPE, "text/event-stream");
+                return match response.body(Body::from_stream(
+                    response_translation.translate_success_response_stream(upstream),
+                )) {
+                    Ok(response) => response,
+                    Err(err) => ApiError::internal(format!(
+                        "failed to build translated streaming proxy response: {err}"
+                    ))
+                    .to_response(),
+                };
+            }
+
             let upstream_body = match upstream.text().await {
                 Ok(body) => body,
                 Err(err) => {
