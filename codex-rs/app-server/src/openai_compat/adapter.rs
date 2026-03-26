@@ -49,32 +49,49 @@ impl UpstreamAdapter {
         }
     }
 
-    pub(super) fn upstream_path(&self, endpoint: CompatEndpoint) -> Result<&'static str, ApiError> {
+    pub(super) fn resolve_request(
+        &self,
+        endpoint: CompatEndpoint,
+    ) -> Result<ResolvedUpstreamRequest, ApiError> {
         match self {
-            Self::Responses(adapter) => adapter.upstream_path(endpoint),
-            Self::Chat(adapter) => adapter.upstream_path(endpoint),
+            Self::Responses(adapter) => adapter.resolve_request(endpoint),
+            Self::Chat(adapter) => adapter.resolve_request(endpoint),
         }
     }
 }
 
+pub(super) struct ResolvedUpstreamRequest {
+    pub(super) path: &'static str,
+}
+
 impl ResponsesUpstreamAdapter {
-    fn upstream_path(&self, endpoint: CompatEndpoint) -> Result<&'static str, ApiError> {
+    fn resolve_request(
+        &self,
+        endpoint: CompatEndpoint,
+    ) -> Result<ResolvedUpstreamRequest, ApiError> {
         match endpoint {
-            CompatEndpoint::Models => Ok("/models"),
-            CompatEndpoint::Responses => Ok("/responses"),
-            CompatEndpoint::ChatCompletions => Ok("/chat/completions"),
+            CompatEndpoint::Models => Ok(ResolvedUpstreamRequest { path: "/models" }),
+            CompatEndpoint::Responses => Ok(ResolvedUpstreamRequest { path: "/responses" }),
+            CompatEndpoint::ChatCompletions => Ok(ResolvedUpstreamRequest {
+                path: "/chat/completions",
+            }),
         }
     }
 }
 
 impl ChatUpstreamAdapter {
-    fn upstream_path(&self, endpoint: CompatEndpoint) -> Result<&'static str, ApiError> {
+    fn resolve_request(
+        &self,
+        endpoint: CompatEndpoint,
+    ) -> Result<ResolvedUpstreamRequest, ApiError> {
         match endpoint {
-            CompatEndpoint::Models => Ok("/models"),
+            CompatEndpoint::Models => Ok(ResolvedUpstreamRequest { path: "/models" }),
             CompatEndpoint::Responses => Err(ApiError::bad_request(
                 "current upstream adapter does not support /v1/responses",
             )),
-            CompatEndpoint::ChatCompletions => Ok("/chat/completions"),
+            CompatEndpoint::ChatCompletions => Ok(ResolvedUpstreamRequest {
+                path: "/chat/completions",
+            }),
         }
     }
 }

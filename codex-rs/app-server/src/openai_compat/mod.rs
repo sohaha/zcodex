@@ -255,13 +255,13 @@ async fn proxy_request(
         return err.to_response();
     }
 
-    let upstream_path = match state.upstream.adapter.upstream_path(endpoint) {
-        Ok(path) => path,
+    let resolved_request = match state.upstream.adapter.resolve_request(endpoint) {
+        Ok(request) => request,
         Err(err) => return err.to_response(),
     };
     let upstream_url = match build_upstream_url(
         &state.upstream.provider,
-        upstream_path,
+        resolved_request.path,
         raw_query.as_deref(),
     ) {
         Ok(url) => url,

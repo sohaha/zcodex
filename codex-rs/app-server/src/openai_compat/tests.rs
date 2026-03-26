@@ -63,6 +63,24 @@ fn state(base_url: String) -> OpenAiCompatState {
     }
 }
 
+fn chat_state(base_url: String) -> OpenAiCompatState {
+    OpenAiCompatState {
+        upstream: Arc::new(UpstreamConfig {
+            provider_id: "test-provider".to_string(),
+            provider: ModelProviderInfo {
+                wire_api: WireApi::Chat,
+                ..provider(base_url)
+            },
+            adapter: UpstreamAdapter::chat(),
+            auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "ignored-auth",
+            )),
+        }),
+        auth_token: None,
+        client: Client::builder().build().expect("client"),
+    }
+}
+
 async fn spawn_router(router: Router) -> (SocketAddr, JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -179,21 +197,7 @@ async fn proxy_forwards_chat_completions_to_provider() {
 #[tokio::test]
 async fn chat_wire_api_rejects_responses_endpoint() {
     let response = proxy_request(
-        OpenAiCompatState {
-            upstream: Arc::new(UpstreamConfig {
-                provider_id: "test-provider".to_string(),
-                provider: ModelProviderInfo {
-                    wire_api: WireApi::Chat,
-                    ..provider("https://example.com/v1".to_string())
-                },
-                adapter: UpstreamAdapter::chat(),
-                auth_manager: AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                    "ignored-auth",
-                )),
-            }),
-            auth_token: None,
-            client: Client::builder().build().expect("client"),
-        },
+        chat_state("https://example.com/v1".to_string()),
         Method::POST,
         CompatEndpoint::Responses,
         None,
@@ -201,6 +205,51 @@ async fn chat_wire_api_rejects_responses_endpoint() {
         Some("{}".to_string()),
     )
     .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn chat_wire_api_proxy_forwards_chat_completions_via_running_server() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .and(query_param("api-version", "2025-04-01-preview"))
+        .and(header("authorization", "Bearer provider-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("{\"chat\":true}"))
+        .mount(&server)
+        .await;
+
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("{}/v1", server.uri())))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/chat/completions"))
+        .header(CONTENT_TYPE, "application/json")
+        .body("{}")
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.text().await.expect("body"),
+        "{\"chat\":true}".to_string()
+    );
+}
+
+#[tokio::test]
+async fn chat_wire_api_running_server_rejects_responses_endpoint() {
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state("https://example.com/v1".to_string()))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/responses"))
+        .header(CONTENT_TYPE, "application/json")
+        .body("{}")
+        .send()
+        .await
+        .expect("proxy request should succeed");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
@@ -355,4 +404,17 @@ fn ensure_supported_provider_accepts_chat_wire_api() {
 
     ensure_supported_provider_info("test-provider", &provider)
         .expect("chat wire api should be accepted for openai compat proxy");
+}
+
+#[test]
+fn chat_adapter_resolves_chat_completions_but_not_responses() {
+    let adapter = UpstreamAdapter::chat();
+    assert_eq!(
+        adapter
+            .resolve_request(CompatEndpoint::ChatCompletions)
+            .expect("chat request")
+            .path,
+        "/chat/completions"
+    );
+    assert!(adapter.resolve_request(CompatEndpoint::Responses).is_err());
 }
