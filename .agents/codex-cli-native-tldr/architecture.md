@@ -19,7 +19,7 @@ dependencies: [prd]
 - **架构模式**：本地单机「daemon-first」多进程架构（CLI/MCP 入口 → 可选 daemon 复用内存缓存 → 不可用则本地引擎 fallback），无数据库/无 HTTP 服务/无 UI。
 - **模块边界**：`codex-native-tldr`（核心引擎/协议/生命周期）｜`codex-native-tldr-daemon`（Unix socket 守护进程）｜`codex-cli`（命令行入口与 auto-start）｜`codex-mcp-server`（MCP tool 入口，不负责 auto-start）。
 - **生命周期与 artifacts**：Unix 优先使用 `$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`，否则回退到 `temp_dir()/codex-native-tldr/<uid>/`；非 Unix 使用 `temp_dir()/codex-native-tldr/`。其中 `socket/pid` 放在 `<project-hash>/` 子目录，`lock/launch.lock` 放在用户级 scope 根目录，避免项目 artifact 目录被外部删除时互斥语义一并丢失；status/health 字段对外可观测（healthy/stale_socket/stale_pid/lock_is_held + reason/hint）。
-- **Semantic I/O 与缓存/reindex**：semantic 以 `language+query` 为输入，输出 `matches`（当前直接透传内部 `SemanticMatch`，含 unit/snippet/embedding_text 等，存在 payload 风险）；索引在 `TldrEngine` 内按语言缓存，daemon 复用同一 engine 缓存；reindex 由 `session.reindex_pending` 驱动，`Warm` 会触发 `engine.semantic_reindex()` 并记录 `SemanticReindexReport`。
+- **Semantic I/O 与缓存/reindex**：semantic 以 `language+query` 为输入，对外通过 `TldrSemanticResponseView` / `TldrDaemonResponseView` 做显式投影，只暴露稳定字段（如 `path`、`line`、`snippet`、`embedding_score`），默认不透出 `unit`、`embedding_text` 等内部重字段；索引在 `TldrEngine` 内按语言缓存，daemon 复用同一 engine 缓存；reindex 由 `session.reindex_pending` 驱动，`Warm` 会触发 `engine.semantic_reindex()` 并记录 `SemanticReindexReport`。
 - **Unix 主路径与非 Unix fallback**：daemon 查询与 auto-start 当前为 Unix 主路径（Unix socket）；非 Unix 下 `query_daemon` 固定返回 `None`，CLI/MCP 走本地引擎；daemon 的 TCP 监听实现存在但当前未接入客户端查询链路。
 
 ---
@@ -74,7 +74,7 @@ graph TB
 | IPC 机制 | Unix socket / TCP / gRPC | Unix socket（主路径） | 低开销、易部署；跨进程通过按用户/项目隔离的本地 artifacts 做 liveness/stale 协调。 |
 | 生命周期互斥 | 仅靠 socket 存在 / pid / lock | socket+pid + file lock + launcher lock | 增强“全局唯一启动”与 stale 清理闭环，避免并发启动互相误伤。 |
 | 配置来源 | 环境变量 / 全局配置 / 项目配置 | 项目配置 `.codex/tldr.toml` | 面向项目语义：同一机器上不同项目可不同配置；便于仓库内落档与版本控制。 |
-| Semantic 输出 | 直接透传内部结构 / 显式 wire 投影 | 当前：直接透传 | phase-1 先打通可观测性与端到端测试；但 payload/稳定性风险需在 phase-2 前冻结投影。 |
+| Semantic 输出 | 直接透传内部结构 / 显式 wire 投影 | 显式 wire 投影 | 已通过 `wire.rs` 固定 `semantic/status` 的公开字段，并用 contract tests 约束不再默认透出内部重字段。 |
 | 跨平台策略 | 全平台 daemon / Unix-only daemon | Unix-only daemon（当前） | query/auto-start 链路仅在 Unix 实现；非 Unix 走本地引擎，保持功能可用但不复用 daemon 缓存。 |
 
 ---
@@ -105,7 +105,8 @@ codex-rs/
       daemon.rs               # daemon 协议、Unix socket server、health/status、artifact 路径规则
       lifecycle.rs            # DaemonLifecycleManager（in-proc launch dedupe/backoff）
       session.rs              # session dirty/reindex_pending + analysis cache + snapshot
-      semantic.rs             # semantic index/search/reindex + wire structs（当前透传）
+      semantic.rs             # semantic index/search/reindex
+      wire.rs                 # semantic/status 对外稳定 view 与 JSON payload 投影
       lang_support/           # 语言注册与支持等级
   native-tldr-daemon/
     src/main.rs               # daemon 二进制入口（--project）
@@ -218,7 +219,7 @@ classDiagram
 **仍未覆盖/待后续增强**：
 - 权限异常（目录可见但不可写）
 - scope 根目录被外部整体删除时，跨进程 contender 的恢复/重试语义
-- 与 MCP 并行改动同时存在时的全量编译/回归稳定性
+- scope 根目录被外部整体删除时的恢复/重试语义
 - 非 Unix 路径下的等价恢复测试
 
 #### Session 状态：`SessionSnapshot`（对外可见）
@@ -229,14 +230,14 @@ classDiagram
 | reindex_pending | bool | 是 | false | phase-1 语义：需要 reindex；`Warm` 会尝试 reindex 并在成功完成时清零。 |
 | last_query_at | Option<SystemTime> | 否 | null | 最近一次 daemon 查询时间（用于 status 可观测）。 |
 
-#### Semantic 输出：`SemanticSearchResponse`（当前对外透传）
+#### Semantic 输出：`SemanticSearchResponse` + `TldrSemanticResponseView`（当前对外投影）
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
 | enabled | bool | 是 | false | 由 `.codex/tldr.toml` 的 `[semantic].enabled` 控制。 |
 | indexed_files | usize | 是 | 0 | 本次索引覆盖的文件数量（按语言扩展名扫描）。 |
 | truncated | bool | 是 | false | 若匹配结果超过 5，会截断并置 true。 |
 | embedding_used | bool | 是 | false | 由 `[semantic.embedding].enabled` 决定；用于可观测字段联通（非真实 embedding）。 |
-| matches | Vec<SemanticMatch> | 是 | [] | 当前包含 `unit/embedding_text/snippet/embedding_score` 等，payload 可能较大（phase-2 需收口）。 |
+| matches | Vec<TldrSemanticMatchView> | 是 | [] | 默认仅暴露 `path/line/snippet/embedding_score`；`unit/embedding_text` 等内部字段不再对外透出。 |
 
 ---
 

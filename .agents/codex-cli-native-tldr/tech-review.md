@@ -17,20 +17,19 @@ dependencies: [prd, architecture]
   - 任务拆解与进度记录：`.agents/codex-cli-native-tldr/tasks.md`
   - QA 验证与回归记录：`.agents/codex-cli-native-tldr/qa-report.md`
   - 代码与对外文档快照（节选）：`codex-rs/native-tldr/*`、`codex-rs/cli/src/tldr_cmd.rs`、`codex-rs/mcp-server/src/tldr_tool.rs`、`codex-rs/docs/codex_mcp_interface.md`
-  - 说明：骨架中引用的 `.agents/codex-cli-native-tldr/prd.md`、`.agents/codex-cli-native-tldr/architecture.md`、`.agents/codex-cli-native-tldr/ui-spec.md` 当前不存在，本次评审仅能基于“需求确认 + tasks/QA + 代码快照”进行；涉及 PRD/架构的部分以“阻塞项/假设”形式上升
+  - 说明：当前 `.agents/codex-cli-native-tldr/prd.md`、`.agents/codex-cli-native-tldr/architecture.md`、`.agents/codex-cli-native-tldr/ui-spec.md` 已补齐；本评审已按 Stage 3 实际交付状态更新。
 
 ## 摘要
 
 > 下游 Agent 请优先阅读本节，需要细节时再查阅完整文档。
 
-- **评审结论**：⚠️ 有条件通过（phase-1 已基本落地、且已有定向回归；进入 phase-2 前需先补齐关键文档与接口契约）
+- **评审结论**：✅ 通过（Stage 1/2 的最小文档与接口契约已补齐，Stage 3 默认测试门禁已通过；剩余项转为后续增强而非当前阻塞）
 - **主要风险**：
-  1) `.agents` 侧 PRD/架构缺失，导致 phase-2 目标、边界与验收口径难以稳定继承
-  2) semantic `matches` 当前直接透传 `SemanticMatch`，对 MCP/CLI 的稳定性、性能与文档一致性存在风险
-  3) daemon 生命周期“跨进程全局唯一启动”已增强但仍偏工程化闭环，在崩溃/抢占/多用户环境下仍需进一步硬化
+  1) daemon 生命周期“跨进程全局唯一启动”已增强但仍偏工程化闭环，在崩溃/抢占/多用户环境下仍需进一步硬化
+  2) semantic 公开字段已冻结，但 payload 上限/截断策略仍偏 phase-1 水位，后续仍可继续收紧
+  3) 仓库工具链/Justfile 相关脚本缺失会影响部分质量门禁的可复现性
 - **必须解决**：
-  - 补齐并冻结 phase-2 所需的 PRD/架构最小集（至少：目标、非目标、接口契约、失败与恢复语义、兼容策略）
-  - 明确并收口 `semantic` 的对外 wire schema（至少：哪些字段稳定、哪些字段可选/可裁剪、payload 上限与脱敏策略）
+  - 无 Stage 3 阻塞项；当前剩余问题属于后续 hardening / engineering follow-up
 - **建议优化**：
   - 继续加固 daemon artifact（socket/pid/lock）路径与权限策略；当前已完成 uid/scope 隔离，并把 `lock/launch.lock` 脱离项目 artifact 目录，但权限异常与 scope 根目录整体丢失仍待覆盖
   - 拆分 `codex-rs/native-tldr/src/daemon.rs` 与 `codex-rs/native-tldr/src/semantic.rs`，并补充“崩溃/并发启动/脏文件阈值触发 reindex”等压力型回归
@@ -40,28 +39,28 @@ dependencies: [prd, architecture]
 
 ---
 
-  - PRD：`.agents/codex-cli-native-tldr/prd.md`（缺失）
-  - 架构：`.agents/codex-cli-native-tldr/architecture.md`（缺失）
-  - UI 规范：`.agents/codex-cli-native-tldr/ui-spec.md`（缺失；本功能以 CLI/MCP 为主可接受，但需明确“无 UI”结论并在文档里落档）
+  - PRD：`.agents/codex-cli-native-tldr/prd.md`（已补齐）
+  - 架构：`.agents/codex-cli-native-tldr/architecture.md`（已补齐）
+  - UI 规范：`.agents/codex-cli-native-tldr/ui-spec.md`（已补齐，并明确“无图形 UI”）
 
 ## 2. 评审结论
 
 | 维度 | 评分 | 说明 |
 |------|------|------|
-| 架构合理性 | ⭐⭐⭐⭐☆ | `codex-native-tldr` 作为核心，CLI/MCP 作为入口，daemon 优先且本地 fallback，分层基本清晰；主要问题是对外 schema 未冻结，且关键架构文档缺失。 |
+| 架构合理性 | ⭐⭐⭐⭐☆ | `codex-native-tldr` 作为核心，CLI/MCP 作为入口，daemon 优先且本地 fallback，分层清晰；当前主要剩余问题在进一步 hardening，而非契约缺失。 |
 | 技术选型 | ⭐⭐⭐⭐⭐ | Rust + tokio + serde + Unix socket/file lock 适合本地 daemon、结构化输出、高可测回归的目标。 |
 | 可扩展性 | ⭐⭐⭐⭐☆ | `TldrEngine` 已有按语言缓存的 `SemanticIndex`，daemon 可复用共享 engine，适合作为 phase-2 背景 reindex/持久化缓存/更强 embedding 的起点。 |
 | 可维护性 | ⭐⭐⭐☆☆ | 核心逻辑集中在 `daemon.rs`、`semantic.rs`、`tldr_cmd.rs` 等高触达文件，且 README 与实现漂移。 |
 | 安全性 | ⭐⭐⭐☆☆ | daemon 元数据现已切到按用户 scope 隔离，并把 `lock/launch.lock` 与项目 artifact 目录解耦；但权限异常、scope 根目录整体丢失、以及 semantic 输出 payload 限制仍未完全收口。 |
 
-**总体评价**：⚠️ 有条件通过（允许进入 phase-2 规划与实现，但需先完成阻塞项以避免接口与协作风险放大）
+**总体评价**：✅ 通过（允许继续进入后续 hardening / phase-2 扩展；当前无阻塞当前交付的阶段性问题）
 
 ## 3. 技术风险评估
 
 | 风险 | 等级 | 影响范围 | 缓解措施 |
 |------|------|----------|----------|
-| `.agents` 关键文档缺失（PRD/架构/UI spec）导致 phase-2 目标与接口契约不可追溯 | 高 | 需求管理、跨 Agent 协作、验收口径 | 进入 phase-2 前补齐最小 PRD/架构：明确目标/非目标、接口契约、失败与恢复语义、兼容策略，并在 tech-review/tasks/QA 之间建立追踪关系。 |
-| semantic 输出 schema 与 payload 风险（`matches` 透传包含较大字段；字段命名存在 camelCase + snake_case 混用） | 中 | MCP 客户端兼容性、网络/存储开销、未来演进成本 | 定义稳定 response struct，只暴露必要字段；为调试字段加开关；明确命名规范并补充 contract test 与文档示例。 |
+| daemon 生命周期在崩溃/抢占/多用户环境下仍需进一步硬化 | 中 | CLI auto-start 可靠性、运维诊断 | 在现有 lock/pid/socket 闭环上继续补权限异常、scope 根目录整体丢失与压力型回归。 |
+| semantic payload 上限与演进策略仍可继续收紧 | 中 | MCP/CLI 客户端兼容性、返回体积 | 保持现有稳定 view，不新增内部字段外露；后续补 snippet/match 数量等更严格 contract。 |
 
 ## 4. 技术可行性分析
 
@@ -81,10 +80,10 @@ dependencies: [prd, architecture]
 
 ## 5. 架构改进建议
 
-### 5.1 必须修改（阻塞项）
+### 5.1 已完成的阻塞项
 
-- [ ] **补齐 `.agents/codex-cli-native-tldr/` 的 PRD/架构最小集并与实现对齐**：至少落档接口与 schema、失败/恢复语义（stale/lock/backoff）、跨平台策略（Unix/非 Unix fallback）、可观测性与测试策略。
-- [ ] **冻结并收口 semantic 的对外 schema**：当前直接透传 `SemanticMatch` 可能包含大字段，进入 phase-2 前应明确哪些字段稳定可依赖，并默认输出精简结构。
+- [x] **补齐 `.agents/codex-cli-native-tldr/` 的 PRD/架构最小集并与实现对齐**：已落档接口与 schema、失败/恢复语义、跨平台策略、可观测性与测试策略。
+- [x] **冻结并收口 semantic 的对外 schema**：已通过 `wire.rs` 固定 view，并用测试约束默认不透出内部重字段。
 
 ### 5.2 建议优化（非阻塞）
 
@@ -115,7 +114,7 @@ graph LR
 | 潜在债务 | 产生原因 | 建议处理时机 |
 |----------|----------|--------------|
 | 文档与实现漂移（`codex-rs/native-tldr/README.md`、MCP 接口文档对 match 字段描述不完整） | phase-1 快速迭代后未系统回写 docs | M1 |
-| 关键逻辑集中在大文件 + 输出投影缺失（daemon/semantic/CLI/MCP） | 为快速落地把协议/状态/输出混在一起 | M2 |
+| 关键逻辑集中在大文件（daemon/semantic/CLI/MCP） | 为快速落地把协议/状态/输出混在一起 | M2 |
 
 ## 7. 代码规范建议
 
@@ -153,7 +152,7 @@ codex-rs/mcp-server/src/
 
 ## 8. 评审结论
 
-- **是否通过**：⚠️ 有条件通过
-- **阻塞问题数**：2 个
+- **是否通过**：✅ 通过
+- **阻塞问题数**：0 个
 - **建议优化数**：2 个
-- **下一步行动**：先完成 M1（补齐 PRD/架构最小集 + README 对齐）与 M2（冻结 semantic/status wire schema + contract tests + payload 收口），再进入 phase-2 的后台 reindex/持久化/更强唯一性硬化等开发。
+- **下一步行动**：保持当前稳定契约，继续做生命周期 hardening、payload 上限细化、以及 phase-2 的后台 reindex / 持久化 / 更强 semantic 扩展。

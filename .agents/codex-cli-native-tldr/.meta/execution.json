@@ -1,6 +1,10 @@
 {
    "qualityGates" : {
-      "gate0" : null,
+      "gate0" : {
+         "status" : "passed",
+         "at" : "2026-03-26T08:10:45Z",
+         "note" : "format and scoped lint checks passed for the touched native-tldr crates during stage 3 stabilization"
+      },
       "gate2" : null,
       "gate1" : {
          "status" : "passed",
@@ -213,7 +217,7 @@
          "note" : "documented semantic source/status lifecycle outputs so downstream clients see cache hits and lock states"
       },
       {
-         "note" : "landed MCP semantic daemon cache reuse black-box regression, revalidated codex-mcp-server targeted tests plus full 30-test crate suite, and cleaned the new test\'s clippy expect_used warning",
+         "note" : "landed MCP semantic daemon cache reuse black-box regression, revalidated codex-mcp-server targeted tests plus full 30-test crate suite, and cleaned the new test's clippy expect_used warning",
          "at" : "2026-03-26T01:20:00Z"
       },
       {
@@ -239,6 +243,10 @@
       {
          "at" : "2026-03-26T08:12:00Z",
          "note" : "committed phase-3 parallel-test stabilization as 2aab41dde"
+      },
+      {
+         "at" : "2026-03-26T08:13:30Z",
+         "note" : "committed cross-crate native-tldr artifact test isolation as a4175dee8 and reconciled stage 1/2/3 documentation state"
       }
    ],
    "feature" : "codex-cli-native-tldr",

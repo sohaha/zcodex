@@ -17,17 +17,17 @@ dependencies: [prd, tech-review]
 
 > 下游 Agent 请优先阅读本节，需要细节时再查阅完整文档。
 
-- **任务总数**：6 个
+- **任务总数**：10 个（T-001 ~ T-010）
 - **前端任务**：0 个（CLI 主要为后端处理）
-- **后端任务**：6 个
-- **关键路径**：T-001 → T-002 → T-003 → T-004 → T-005 → T-006
+- **后端任务**：10 个
+- **关键路径**：T-001 → T-002 → T-003 → T-004 → T-005 → T-006 → T-007 → T-008 → T-009 → T-010
 - **预估复杂度**：高
 
 ---
 
-## 0. 当前执行进度（实时）
+## 0. 当前执行进度（已对齐真实状态）
 
-- **当前阶段**：Stage 3 / 执行中（T-009/T-010 已继续推进：artifact 路径切到按用户隔离 scope + 项目目录，`lock/launch.lock` 脱离项目 artifact 目录，补齐“父目录丢失 / lock 文件被删 / external lock owner mid-boot 丢目录”恢复回归；当前主阻塞转为 MCP 侧并行改动导致的编译面不稳定）
+- **当前阶段**：Stage 3 / 已完成（默认并行 `cargo test` 套件已稳定通过；Stage 4 尚未启动）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -35,22 +35,11 @@ dependencies: [prd, tech-review]
   - `T-004` session/daemon server 骨架完成，提交 `0c27160c6`
   - `T-005` MCP `tldr` tool 注册、schema、handler 与文档接入完成，提交 `facc10ad7`
   - `T-006` 第一阶段 semantic placeholder 完成，提交 `b83144203`
-- **当前正在做**：
-  - 新完成：T-009 已把 daemon artifact 路径切换到 per-user scope，Unix 优先使用 `XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`，`socket/pid` 放在 `<project-hash>/`，`lock/launch.lock` 留在 scope 根目录
-  - 新完成：补齐 native-tldr `XDG_RUNTIME_DIR` 绝对/相对路径策略回归，以及 `write_pid_file` / daemon lock / launcher lock 的父目录自恢复回归
-  - 新完成：补齐 `launch.lock` / `daemon lock` 文件被外部删除后的恢复回归
-  - 新完成：补齐 external daemon lock owner 在 mid-boot 阶段丢失项目 artifact 目录后仍能完成启动，且 contender 不会重复 spawn 的跨进程回归
-  - 新完成：更新 MCP 文档 `codex_mcp_interface.md`，强调 semantic 结果里的 `source` 以及 `status` 里新增的 lifecycle 字段，方便 downstream 观察 daemon cache/lock 状态
-  - 新完成：semantic phase-1 增加 `SemanticIndex` 抽象，`TldrEngine` 现会缓存每种语言的索引，`semantic_reindex()` 会重建并替换缓存
-  - 新完成：daemon 连接处理改为复用共享 `TldrEngine`，`Warm` 走真实缓存重建路径，不再丢失项目配置或索引状态
-  - 新完成：CLI / MCP semantic 输出补齐 `embeddingUsed`，match 结果补显式 `embedding_score` 暴露与断言
-  - 新完成：daemon `Warm` 不再只是清状态，现会执行一次 phase-1 semantic reindex 并把报告暴露给 snapshot/status/warm
-  - 新完成：CLI 补了双进程 launcher 竞争测试，验证同一 project 并发 auto-start 最终只发生一次真实 spawn
-  - 新完成：selective sync 上游 llm-tldr `semantic.py` 的 EmbeddingUnit/五层文本组装思路，native-tldr/CLI/MCP 现可返回本地 semantic matches
-  - 主线程：已补 MCP status 对最近失败 reindex 尝试的黑盒观测，native-tldr/CLI/MCP 三侧关于 reindex attempt 的状态语义已基本对齐
-  - 下一步：若 MCP 并行改动稳定，继续补 semantic/status wire schema 收口；否则优先把 T-010 异常矩阵和剩余风险继续文档化
-  - 持续：同步 `.agents` 文档与定向验证结果
-- **刚完成**：
+  - `T-007` 最小 PRD / architecture / UI spec 已补齐
+  - `T-008` `semantic/status` 对外 schema 已冻结到显式 wire view，并以 contract tests 约束稳定字段
+  - `T-009` daemon artifact 路径已切到 per-user scope + 项目目录，`lock/launch.lock` 已脱离项目 artifact 目录
+  - `T-010` 恢复性 hardening 已完成，覆盖缺失父目录、锁文件被删、external lock-owner mid-boot 丢目录等场景
+- **阶段 3 交付补充**：
   - `semantic` phase-1 从 placeholder 升级为真实本地检索：native-tldr 现在会按语言扫描源码、构建 embedding-unit 风格 metadata，并返回 ranked matches
   - CLI `codex tldr semantic` 与 MCP `tldr` `action=semantic` 已切到统一的 `engine.semantic_search(...)` 路径，默认关闭时给出显式启用提示
   - MCP 新增“semantic enabled=true 返回 matches”端到端测试，原 disabled 路径断言同步更新
@@ -61,6 +50,9 @@ dependencies: [prd, tech-review]
   - `codex-cli` 新增“持锁时不清理 stale 文件”的生命周期测试，补上 launcher 与 daemon 的 lock/stale 闭环
   - 最小 shared config 已落地：CLI / daemon / MCP 现可统一读取 `project/.codex/tldr.toml`
   - daemon health/status 继续补强，现已区分 `healthy`、`stale_socket`、`stale_pid`
+- **后续结论**：
+  - Stage 3 当前无执行中的 native-tldr 子任务；剩余事项属于下一轮 phase-2 hardening 或 Stage 4 部署决策
+  - 当前已知非功能阻塞主要是仓库级脚本缺失，而非 native-tldr 逻辑回归
 - daemon health/status 继续补强，现已额外返回 `health_reason` 与 `recovery_hint`，CLI／MCP 现可打印这些诊断提示并在新单测中覆盖
 - 新增 native-tldr 专用同步技能 `sync-native-tldr-reference`，并要求每次同步后回写 upstream hash 到 `STATE.md`
   - native-tldr phase-1 已开始暴露 `status`：daemon 侧新增 `Status` 命令，CLI/MCP 已接入状态面
@@ -97,7 +89,6 @@ dependencies: [prd, tech-review]
   - daemon 生命周期、跨平台 auto-start 与 MCP 协同策略补齐
   - CLI 侧对 stale socket/失效 daemon 的重拉起路径补更显式覆盖
 - **已知阻塞**：
-  - `codex-cli` / `codex-mcp-server` 全量验证当前受并行中的 `codex-rs/mcp-server/src/tldr_tool.rs` 改动影响；近期至少出现过 `serde_json::json!` recursion limit 编译失败
   - `just argument-comment-lint` 依赖脚本 `./tools/argument-comment-lint/run-prebuilt-linter.sh` 缺失
   - `just bazel-lock-check` 依赖脚本 `./scripts/check-module-bazel-lock.sh` 缺失
 
@@ -106,10 +97,10 @@ dependencies: [prd, tech-review]
 ### 1.1 统计信息
 | 指标 | 数量 |
 |------|------|
-| 总任务数 | 6 |
+| 总任务数 | 10 |
 | 创建文件 | 4 |
 | 修改文件 | 3 |
-| 测试用例 | 6+ |
+| 测试用例 | 10+ |
 
 ### 1.2 任务分布
 | 复杂度 | 数量 |
