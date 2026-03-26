@@ -5,7 +5,11 @@
          "at" : "2026-03-26T08:10:45Z",
          "note" : "format and scoped lint checks passed for the touched native-tldr crates during stage 3 stabilization"
       },
-      "gate2" : null,
+      "gate2" : {
+         "status" : "not_applicable",
+         "at" : "2026-03-26T08:46:26Z",
+         "note" : "native-tldr is delivered as local CLI/MCP binaries; web/perf gate is not applicable"
+      },
       "gate1" : {
          "status" : "passed",
          "at" : "2026-03-26T08:10:45Z",
@@ -24,9 +28,9 @@
          "startTime" : "2026-03-25T10:40:00Z"
       },
       "4" : {
-         "endTime" : null,
-         "startTime" : null,
-         "status" : "pending"
+         "endTime" : "2026-03-26T08:46:26Z",
+         "startTime" : "2026-03-26T08:46:26Z",
+         "status" : "completed"
       },
       "1" : {
          "startTime" : "2026-03-25T09:00:16Z",
@@ -248,7 +252,21 @@
          "at" : "2026-03-26T08:13:30Z",
          "note" : "committed cross-crate native-tldr artifact test isolation as a4175dee8 and reconciled stage 1/2/3 documentation state"
       }
+      {
+         "at" : "2026-03-26T08:46:26Z",
+         "note" : "completed stage 4 local delivery: release binaries built, daemon autostart smoke passed, deploy report written"
+      }
    ],
    "feature" : "codex-cli-native-tldr",
+   "delivery" : {
+      "mode" : "local-binary",
+      "report" : ".agents/codex-cli-native-tldr/deploy-report.md",
+      "entrypoints" : [
+         "codex-rs/target/release/codex",
+         "codex-rs/target/release/codex-native-tldr-daemon",
+         "codex-rs/target/release/codex-mcp-server"
+      ],
+      "accessUrl" : null
+   },
    "createdAt" : "2026-03-25T08:53:01Z"
 }
