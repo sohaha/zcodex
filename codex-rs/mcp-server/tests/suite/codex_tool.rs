@@ -572,6 +572,10 @@ async fn tldr_tool_tree_falls_back_to_local_engine() -> anyhow::Result<()> {
             "isError": false,
             "structuredContent": {
                 "action": "tree",
+                "analysis": {
+                    "kind": "ast",
+                    "summary": summary
+                },
                 "fallbackStrategy": "structure + search",
                 "language": "rust",
                 "message": "daemon unavailable; used local engine",
@@ -678,8 +682,68 @@ async fn tldr_tool_uses_daemon_when_available() -> anyhow::Result<()> {
     assert_eq!(structured["summary"], "daemon summary");
     assert_eq!(structured["message"], "daemon");
     assert_eq!(structured["action"], "tree");
+    assert_eq!(structured["analysis"]["kind"], "ast");
+    assert_eq!(structured["analysis"]["summary"], "daemon summary");
 
     server_handle.await??;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_tldr_tool_context_exposes_analysis_payload() {
+    if let Err(err) = tldr_tool_context_exposes_analysis_payload().await {
+        panic!("failure: {err}");
+    }
+}
+
+async fn tldr_tool_context_exposes_analysis_payload() -> anyhow::Result<()> {
+    let McpHandle {
+        process: mut mcp_process,
+        server: _server,
+        dir: _dir,
+    } = create_mcp_process(Vec::new()).await?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join("src/main.rs"),
+        "fn helper() {}\nfn main() { helper(); }\n",
+    )?;
+
+    let request_id = mcp_process
+        .send_named_tool_call(
+            "tldr",
+            Some(
+                serde_json::json!({
+                    "action": "context",
+                    "project": project.path(),
+                    "language": "rust",
+                    "symbol": "main"
+                })
+                .as_object()
+                .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
+                .clone(),
+            ),
+        )
+        .await?;
+    let response = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+    )
+    .await??;
+
+    let structured = response.result["structuredContent"]
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+    assert_eq!(structured["action"], "context");
+    assert_eq!(structured["source"], "local");
+    assert_eq!(structured["analysis"]["kind"], "call_graph");
+    assert_eq!(structured["analysis"]["summary"], structured["summary"]);
+    assert!(
+        structured["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.contains("context summary:"))
+    );
+
     Ok(())
 }
 
@@ -793,9 +857,18 @@ async fn tldr_tool_semantic_uses_daemon_when_available() -> anyhow::Result<()> {
     assert_eq!(structured["action"], "semantic");
     assert_eq!(structured["source"], "daemon");
     assert_eq!(structured["embeddingUsed"], true);
+    assert_eq!(structured["semantic"]["query"], "auth token");
+    assert_eq!(structured["semantic"]["embeddingUsed"], true);
     assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+    assert_eq!(structured["semantic"]["matches"][0]["path"], "src/auth.rs");
     assert!(structured["matches"][0].get("unit").is_none());
     assert!(structured["matches"][0].get("embedding_text").is_none());
+    assert!(structured["semantic"]["matches"][0].get("unit").is_none());
+    assert!(
+        structured["semantic"]["matches"][0]
+            .get("embedding_text")
+            .is_none()
+    );
     assert!(matches!(
         structured["matches"][0]["embedding_score"].as_f64(),
         Some(score) if score > 0.0
@@ -1681,13 +1754,20 @@ async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
     assert_eq!(structured["action"], "semantic");
     assert_eq!(structured["language"], "rust");
     assert_eq!(structured["query"], "find auth");
+    assert_eq!(structured["semantic"]["query"], "find auth");
     assert_eq!(structured["source"], "local");
     assert_eq!(
         structured["message"],
         "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
     );
+    assert_eq!(
+        structured["semantic"]["message"],
+        "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
+    );
     assert_eq!(structured["enabled"], false);
     assert_eq!(structured["embeddingUsed"], false);
+    assert_eq!(structured["semantic"]["enabled"], false);
+    assert_eq!(structured["semantic"]["embeddingUsed"], false);
 
     Ok(())
 }
@@ -1744,16 +1824,30 @@ async fn tldr_tool_semantic_returns_matches_when_enabled() -> anyhow::Result<()>
         .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
     assert_eq!(structured["action"], "semantic");
     assert_eq!(structured["enabled"], true);
+    assert_eq!(structured["semantic"]["enabled"], true);
     assert_eq!(structured["embeddingUsed"], true);
+    assert_eq!(structured["semantic"]["embeddingUsed"], true);
     assert_eq!(structured["indexedFiles"], 1);
+    assert_eq!(structured["semantic"]["indexedFiles"], 1);
     assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
+    assert_eq!(structured["semantic"]["matches"][0]["path"], "src/auth.rs");
     assert_eq!(structured["matches"][0]["line"], 2);
     assert_eq!(
         structured["matches"][0]["snippet"],
         "let auth_token = true;"
     );
+    assert_eq!(
+        structured["semantic"]["matches"][0]["snippet"],
+        "let auth_token = true;"
+    );
     assert!(structured["matches"][0].get("unit").is_none());
     assert!(structured["matches"][0].get("embedding_text").is_none());
+    assert!(structured["semantic"]["matches"][0].get("unit").is_none());
+    assert!(
+        structured["semantic"]["matches"][0]
+            .get("embedding_text")
+            .is_none()
+    );
     assert!(matches!(
         structured["matches"][0]["embedding_score"].as_f64(),
         Some(score) if score > 0.0

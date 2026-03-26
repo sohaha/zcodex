@@ -2,6 +2,7 @@ use anyhow::Result;
 use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
+use codex_native_tldr::api::AnalysisResponse;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -205,11 +206,11 @@ async fn run_analysis_tool(
     )
     .await?;
     let support = LanguageRegistry::support_for(language);
-    let (source, message, summary) = if let Some(response) = daemon_response {
+    let (source, message, analysis) = if let Some(response) = daemon_response {
         let analysis = response
             .analysis
             .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
-        ("daemon", response.message, analysis.summary)
+        ("daemon", response.message, analysis)
     } else {
         let config = load_tldr_config(&project_root)?;
         let engine = TldrEngine::builder(project_root.clone())
@@ -219,21 +220,21 @@ async fn run_analysis_tool(
         (
             "local",
             "daemon unavailable; used local engine".to_string(),
-            response.summary,
+            response,
         )
     };
 
-    let structured_content = json!({
-        "action": action_name(&action),
-        "project": project_root,
-        "language": language.as_str(),
-        "source": source,
-        "message": message,
-        "supportLevel": format!("{:?}", support.support_level),
-        "fallbackStrategy": support.fallback_strategy,
-        "summary": summary,
-        "symbol": symbol,
-    });
+    let structured_content = analysis_structured_content(
+        action_name(&action),
+        &project_root,
+        language,
+        source,
+        &message,
+        support,
+        symbol.as_deref(),
+        &analysis,
+    );
+    let summary = analysis.summary.clone();
     let text = format!(
         "{} {} via {source}: {summary}",
         action_name(&action),
@@ -277,7 +278,7 @@ async fn run_semantic_tool(
         )
     };
     let structured_content =
-        semantic_payload(Some("semantic"), &project_root, language, source, &response);
+        semantic_structured_content(&project_root, language, source, &response);
     Ok(success_result(
         format!(
             "semantic {} enabled={} via {source}: {}",
@@ -302,6 +303,54 @@ fn run_local_semantic(
         language,
         query: query.to_string(),
     })
+}
+
+fn analysis_structured_content(
+    action: &str,
+    project_root: &Path,
+    language: SupportedLanguage,
+    source: &str,
+    message: &str,
+    support: &codex_native_tldr::lang_support::LanguageSupport,
+    symbol: Option<&str>,
+    response: &AnalysisResponse,
+) -> serde_json::Value {
+    json!({
+        "action": action,
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "supportLevel": format!("{:?}", support.support_level),
+        "fallbackStrategy": support.fallback_strategy,
+        "summary": response.summary.clone(),
+        "symbol": symbol,
+        "analysis": response,
+    })
+}
+
+fn semantic_structured_content(
+    project_root: &Path,
+    language: SupportedLanguage,
+    source: &str,
+    response: &SemanticSearchResponse,
+) -> serde_json::Value {
+    let mut payload = semantic_payload(Some("semantic"), project_root, language, source, response);
+    let semantic = semantic_result_payload(&payload);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("semantic".to_string(), semantic);
+    }
+    payload
+}
+
+fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
+    let mut semantic = payload.clone();
+    if let Some(object) = semantic.as_object_mut() {
+        for key in ["action", "project", "language", "source"] {
+            object.remove(key);
+        }
+    }
+    semantic
 }
 
 async fn run_daemon_tool(
@@ -460,6 +509,13 @@ fn tldr_tool_output_schema() -> Arc<JsonObject> {
         r##"{
           "type": "object",
           "$defs": {
+            "analysis": {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string" },
+                "summary": { "type": "string" }
+              }
+            },
             "reindexReport": {
               "type": ["object", "null"],
               "properties": {
@@ -474,10 +530,34 @@ fn tldr_tool_output_schema() -> Arc<JsonObject> {
                 "embedding_enabled": { "type": "boolean" },
                 "embedding_dimensions": { "type": "integer" }
               }
+            },
+            "semantic": {
+              "type": "object",
+              "properties": {
+                "query": { "type": "string" },
+                "enabled": { "type": "boolean" },
+                "indexedFiles": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "embeddingUsed": { "type": "boolean" },
+                "message": { "type": "string" },
+                "matches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": { "type": "string" },
+                      "line": { "type": "integer" },
+                      "snippet": { "type": "string" },
+                      "embedding_score": { "type": ["number", "null"] }
+                    }
+                  }
+                }
+              }
             }
           },
           "properties": {
             "action": { "type": "string" },
+            "analysis": { "$ref": "#/$defs/analysis" },
             "project": { "type": "string" },
             "language": { "type": "string" },
             "source": { "type": "string" },
@@ -500,6 +580,7 @@ fn tldr_tool_output_schema() -> Arc<JsonObject> {
             },
             "status": { "type": "string" },
             "message": { "type": "string" },
+            "semantic": { "$ref": "#/$defs/semantic" },
             "summary": { "type": "string" },
             "snapshot": {
               "type": "object",
@@ -598,6 +679,13 @@ mod tests {
               "name": "tldr",
               "outputSchema": {
                 "$defs": {
+                  "analysis": {
+                    "properties": {
+                      "kind": { "type": "string" },
+                      "summary": { "type": "string" }
+                    },
+                    "type": "object"
+                  },
                   "reindexReport": {
                     "properties": {
                       "embedding_dimensions": { "type": "integer" },
@@ -615,10 +703,34 @@ mod tests {
                       "truncated": { "type": "boolean" }
                     },
                     "type": ["object", "null"]
+                  },
+                  "semantic": {
+                    "properties": {
+                      "embeddingUsed": { "type": "boolean" },
+                      "enabled": { "type": "boolean" },
+                      "indexedFiles": { "type": "integer" },
+                      "matches": {
+                        "items": {
+                          "properties": {
+                            "embedding_score": { "type": ["number", "null"] },
+                            "line": { "type": "integer" },
+                            "path": { "type": "string" },
+                            "snippet": { "type": "string" }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "message": { "type": "string" },
+                      "query": { "type": "string" },
+                      "truncated": { "type": "boolean" }
+                    },
+                    "type": "object"
                   }
                 },
                 "properties": {
                   "action": { "type": "string" },
+                  "analysis": { "$ref": "#/$defs/analysis" },
                   "daemonStatus": {
                     "properties": {
                       "config": {
@@ -668,6 +780,7 @@ mod tests {
                   "project": { "type": "string" },
                   "query": { "type": "string" },
                   "reindexReport": { "$ref": "#/$defs/reindexReport" },
+                  "semantic": { "$ref": "#/$defs/semantic" },
                   "snapshot": {
                     "properties": {
                       "cached_entries": { "type": "integer" },

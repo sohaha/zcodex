@@ -7,6 +7,7 @@ use codex_native_tldr::TldrConfig;
 use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
+use codex_native_tldr::api::AnalysisResponse;
 use codex_native_tldr::daemon::TldrDaemon;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
@@ -225,7 +226,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         },
     )
     .await?;
-    let (source, daemon_message, summary, engine_project_root) =
+    let (source, daemon_message, analysis, engine_project_root) =
         if let Some(response) = daemon_response {
             let analysis = response
                 .analysis
@@ -233,7 +234,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
             (
                 "daemon",
                 Some(response.message),
-                analysis.summary,
+                analysis,
                 project_root.clone(),
             )
         } else {
@@ -244,27 +245,24 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
             (
                 "local",
                 Some("daemon unavailable; used local engine".to_string()),
-                response.summary,
+                response,
                 engine.config().project_root.clone(),
             )
         };
 
     let support = LanguageRegistry::support_for(language);
+    let payload = analysis_payload(
+        &engine_project_root,
+        language,
+        source,
+        daemon_message.as_deref(),
+        support,
+        cmd.symbol.as_deref(),
+        &analysis,
+    );
 
     if cmd.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({
-                "project": engine_project_root,
-                "language": language.as_str(),
-                "source": source,
-                "message": daemon_message,
-                "supportLevel": format!("{:?}", support.support_level),
-                "fallbackStrategy": support.fallback_strategy,
-                "summary": summary,
-                "symbol": cmd.symbol,
-            }))?
-        );
+        println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
         println!("language: {}", language.as_str());
         println!("source: {source}");
@@ -273,7 +271,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         if let Some(message) = daemon_message {
             println!("message: {message}");
         }
-        println!("summary: {summary}");
+        println!("summary: {}", analysis.summary);
     }
 
     Ok(())
@@ -307,21 +305,13 @@ async fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
             run_local_semantic_search(&project_root, config, request.clone())?;
         ("local", local_response, local_root)
     };
-    let payload = semantic_payload(None, &engine_project_root, language, source, &response);
+    let payload = cli_semantic_payload(&engine_project_root, language, source, &response);
 
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("language: {}", language.as_str());
-        println!("source: {source}");
-        println!("semantic enabled: {}", response.enabled);
-        println!("message: {}", response.message);
-        println!("embedding used: {}", response.embedding_used);
-        println!("matches: {}", response.matches.len());
-        for (index, semantic_match) in response.matches.iter().enumerate() {
-            if let Some(score) = semantic_match.embedding_score {
-                println!("match {index} embedding score: {score:.3}");
-            }
+        for line in render_semantic_response_text(language, source, &response) {
+            println!("{line}");
         }
     }
 
@@ -338,6 +328,86 @@ fn run_local_semantic_search(
         .build();
     let response = engine.semantic_search(request)?;
     Ok((response, engine.config().project_root.clone()))
+}
+
+fn analysis_payload(
+    project_root: &Path,
+    language: SupportedLanguage,
+    source: &str,
+    message: Option<&str>,
+    support: &codex_native_tldr::lang_support::LanguageSupport,
+    symbol: Option<&str>,
+    response: &AnalysisResponse,
+) -> serde_json::Value {
+    json!({
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "supportLevel": format!("{:?}", support.support_level),
+        "fallbackStrategy": support.fallback_strategy,
+        "summary": response.summary.clone(),
+        "symbol": symbol,
+        "analysis": response,
+    })
+}
+
+fn cli_semantic_payload(
+    project_root: &Path,
+    language: SupportedLanguage,
+    source: &str,
+    response: &SemanticSearchResponse,
+) -> serde_json::Value {
+    let mut payload = semantic_payload(None, project_root, language, source, response);
+    let semantic = semantic_result_payload(&payload);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("semantic".to_string(), semantic);
+    }
+    payload
+}
+
+fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
+    let mut semantic = payload.clone();
+    if let Some(object) = semantic.as_object_mut() {
+        for key in ["action", "project", "language", "source"] {
+            object.remove(key);
+        }
+    }
+    semantic
+}
+
+fn render_semantic_response_text(
+    language: SupportedLanguage,
+    source: &str,
+    response: &SemanticSearchResponse,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("language: {}", language.as_str()),
+        format!("source: {source}"),
+        format!("query: {}", response.query),
+        format!("semantic enabled: {}", response.enabled),
+        format!("indexed files: {}", response.indexed_files),
+        format!("truncated: {}", response.truncated),
+        format!("message: {}", response.message),
+        format!("embedding used: {}", response.embedding_used),
+        format!("matches: {}", response.matches.len()),
+    ];
+    for (index, semantic_match) in response.matches.iter().enumerate() {
+        let score = semantic_match
+            .embedding_score
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "n/a".to_string());
+        lines.push(format!(
+            "match {index}: {}:{} (embedding score: {score})",
+            semantic_match.path.display(),
+            semantic_match.line
+        ));
+        lines.push(format!(
+            "  snippet: {}",
+            semantic_match.snippet.replace('\n', "\\n")
+        ));
+    }
+    lines
 }
 
 async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
@@ -703,6 +773,149 @@ fn cleanup_file_if_exists(path: PathBuf) {
         && err.kind() != std::io::ErrorKind::NotFound
     {
         let _ = err;
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::analysis_payload;
+    use super::cli_semantic_payload;
+    use super::render_semantic_response_text;
+    use codex_native_tldr::api::AnalysisKind;
+    use codex_native_tldr::api::AnalysisResponse;
+    use codex_native_tldr::lang_support::LanguageRegistry;
+    use codex_native_tldr::lang_support::SupportedLanguage;
+    use codex_native_tldr::semantic::EmbeddingUnit;
+    use codex_native_tldr::semantic::SemanticMatch;
+    use codex_native_tldr::semantic::SemanticSearchResponse;
+    use pretty_assertions::assert_eq;
+    use std::path::Path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn analysis_payload_includes_nested_native_response() {
+        let payload = analysis_payload(
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "daemon",
+            Some("daemon summary ready"),
+            LanguageRegistry::support_for(SupportedLanguage::Rust),
+            Some("main"),
+            &AnalysisResponse {
+                kind: AnalysisKind::CallGraph,
+                summary: "context summary".to_string(),
+            },
+        );
+
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "project": "/tmp/project",
+                "language": "rust",
+                "source": "daemon",
+                "message": "daemon summary ready",
+                "supportLevel": "DataFlow",
+                "fallbackStrategy": "structure + search",
+                "summary": "context summary",
+                "symbol": "main",
+                "analysis": {
+                    "kind": "call_graph",
+                    "summary": "context summary"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn cli_semantic_payload_wraps_public_semantic_result() {
+        let payload = cli_semantic_payload(
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "local",
+            &SemanticSearchResponse {
+                enabled: true,
+                query: "auth token".to_string(),
+                indexed_files: 1,
+                truncated: false,
+                matches: vec![SemanticMatch {
+                    score: 7,
+                    path: PathBuf::from("src/auth.rs"),
+                    line: 2,
+                    snippet: "let auth_token = true;".to_string(),
+                    unit: EmbeddingUnit {
+                        path: PathBuf::from("src/auth.rs"),
+                        language: SupportedLanguage::Rust,
+                        symbol: Some("verify_token".to_string()),
+                        kind: "function".to_string(),
+                        line: 1,
+                        code_preview: "fn verify_token() {}".to_string(),
+                        calls: Vec::new(),
+                        called_by: Vec::new(),
+                        dependencies: Vec::new(),
+                        cfg_summary: "cfg".to_string(),
+                        dfg_summary: "dfg".to_string(),
+                        embedding_vector: None,
+                    },
+                    embedding_text: "internal".to_string(),
+                    embedding_score: Some(0.75),
+                }],
+                embedding_used: true,
+                message: "semantic search returned 1 matches".to_string(),
+            },
+        );
+
+        assert_eq!(payload["semantic"]["query"], "auth token");
+        assert_eq!(payload["semantic"]["embeddingUsed"], true);
+        assert_eq!(payload["semantic"]["matches"][0]["path"], "src/auth.rs");
+        assert!(payload["semantic"]["matches"][0].get("unit").is_none());
+        assert!(
+            payload["semantic"]["matches"][0]
+                .get("embedding_text")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn render_semantic_response_text_lists_match_details() {
+        let lines = render_semantic_response_text(
+            SupportedLanguage::Rust,
+            "daemon",
+            &SemanticSearchResponse {
+                enabled: true,
+                query: "auth token".to_string(),
+                indexed_files: 1,
+                truncated: false,
+                matches: vec![SemanticMatch {
+                    score: 7,
+                    path: PathBuf::from("src/auth.rs"),
+                    line: 2,
+                    snippet: "let auth_token = true;\nverify();".to_string(),
+                    unit: EmbeddingUnit {
+                        path: PathBuf::from("src/auth.rs"),
+                        language: SupportedLanguage::Rust,
+                        symbol: Some("verify_token".to_string()),
+                        kind: "function".to_string(),
+                        line: 1,
+                        code_preview: "fn verify_token() {}".to_string(),
+                        calls: Vec::new(),
+                        called_by: Vec::new(),
+                        dependencies: Vec::new(),
+                        cfg_summary: "cfg".to_string(),
+                        dfg_summary: "dfg".to_string(),
+                        embedding_vector: None,
+                    },
+                    embedding_text: "internal".to_string(),
+                    embedding_score: Some(0.75),
+                }],
+                embedding_used: true,
+                message: "semantic search returned 1 matches".to_string(),
+            },
+        );
+
+        assert!(lines.contains(&"query: auth token".to_string()));
+        assert!(lines.contains(&"indexed files: 1".to_string()));
+        assert!(lines.contains(&"match 0: src/auth.rs:2 (embedding score: 0.750)".to_string()));
+        assert!(lines.contains(&"  snippet: let auth_token = true;\\nverify();".to_string()));
     }
 }
 
