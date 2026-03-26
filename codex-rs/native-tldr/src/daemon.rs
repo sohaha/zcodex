@@ -759,6 +759,8 @@ mod tests {
     #[cfg(unix)]
     use super::socket_path_for_project;
     use crate::semantic::SemanticSearchRequest;
+    use crate::semantic::reset_semantic_index_build_count;
+    use crate::semantic::semantic_index_build_count;
     #[cfg(unix)]
     use tokio::net::UnixListener;
 
@@ -1078,6 +1080,44 @@ mod tests {
         assert!(semantic.enabled);
         assert_eq!(semantic.indexed_files, 1);
         assert_eq!(semantic.matches[0].path, PathBuf::from("src/auth.rs"));
+    }
+
+    #[tokio::test]
+    async fn semantic_command_reuses_cached_index_across_requests() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let src_dir = project.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(
+            src_dir.join("auth.rs"),
+            "fn verify_token() {\n    let auth_token = true;\n}\n",
+        )
+        .expect("fixture should exist");
+
+        reset_semantic_index_build_count();
+
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        for query in ["auth token", "verify_token"] {
+            let response = daemon
+                .handle_command(TldrDaemonCommand::Semantic {
+                    request: SemanticSearchRequest {
+                        language: crate::lang_support::SupportedLanguage::Rust,
+                        query: query.to_string(),
+                    },
+                })
+                .await
+                .expect("semantic should succeed");
+            assert!(
+                response
+                    .semantic
+                    .expect("semantic payload should exist")
+                    .enabled
+            );
+        }
+
+        assert_eq!(semantic_index_build_count(), 1);
     }
 
     #[test]

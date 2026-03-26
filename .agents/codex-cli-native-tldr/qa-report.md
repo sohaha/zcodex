@@ -11,6 +11,12 @@
 - **最新代码提交**：`29822e3ed` `feat: cache native tldr semantic indexes`
 
 ### 已完成验证
+- `cargo test -p codex-native-tldr daemon::tests::semantic_command_reuses_cached_index_across_requests -- --exact`：通过
+- `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::ensure_daemon_running_only_spawns_once_even_with_three_processes -- --exact --nocapture`：通过
+- `codex rtk cargo test -p codex-native-tldr`：通过（38 个测试）
+- `codex rtk cargo test -p codex-cli --bin codex`：通过（50 个测试）
+- `just fmt`：通过
+- `just fix -p codex-native-tldr`：通过
 - `cargo test -p codex-cli --bin codex tldr_cmd::lifecycle_tests::try_start_daemon_does_not_spawn_while_daemon_lock_is_held -- --exact`：通过
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（48 个测试）
 - `codex rtk cargo test -p codex-native-tldr`：通过（37 个测试；含 daemon `Semantic` payload 与 lifecycle 并发 launch 串行化回归）
@@ -127,6 +133,8 @@
 - 跨进程 launcher 竞态测试拓展到三进程场景，仍只观测到一次 daemon spawn，进一步收口全局唯一性
 
 - CLI 新增 daemon lock-held 回归：当 project 级 daemon lock 已被占用但 daemon 尚未就绪时，launcher 不会误 spawn 第二个 daemon
+- daemon 连续 semantic 请求现在已用计数回归验证：同一 daemon/engine 生命周期内两次 semantic 查询只构建一次索引
+- 三进程跨进程 launcher 竞争测试已实测通过，三个 contender 仍只会触发一次真实 daemon spawn
 - daemon 连接处理现复用共享 `TldrEngine`，不再在每个 socket 连接里重建默认 engine 丢失项目配置/缓存
 - CLI 与 MCP semantic 输出现在显式包含 `embeddingUsed`，MCP e2e 还校验了 `matches[*].embedding_score`
 - semantic enabled 路径现在会扫描对应语言源码，返回 ranked matches、embedding-unit metadata 与 preview snippet

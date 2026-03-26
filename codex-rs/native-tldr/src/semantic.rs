@@ -10,6 +10,10 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
+#[cfg(test)]
+use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -335,6 +339,11 @@ impl SemanticIndexer {
             embedding_dimensions,
         )?;
 
+        #[cfg(test)]
+        {
+            SEMANTIC_INDEX_BUILD_COUNT.fetch_add(1, Ordering::SeqCst);
+        }
+
         Ok(SemanticIndex {
             language,
             indexed_files,
@@ -462,6 +471,19 @@ impl SemanticIndexer {
         let index = self.build_index(project_root, request.language)?;
         Ok(self.search_index(&index, request.query))
     }
+}
+
+#[cfg(test)]
+pub(crate) static SEMANTIC_INDEX_BUILD_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+pub(crate) fn reset_semantic_index_build_count() {
+    SEMANTIC_INDEX_BUILD_COUNT.store(0, Ordering::SeqCst);
+}
+
+#[cfg(test)]
+pub(crate) fn semantic_index_build_count() -> usize {
+    SEMANTIC_INDEX_BUILD_COUNT.load(Ordering::SeqCst)
 }
 
 fn collect_embedding_units(
