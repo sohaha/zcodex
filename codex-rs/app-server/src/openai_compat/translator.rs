@@ -441,8 +441,11 @@ impl ChatCompletionsSseState {
                     "object": "response",
                     "created_at": self.created_at,
                     "status": "in_progress",
+                    "error": Value::Null,
+                    "incomplete_details": Value::Null,
                     "model": self.model.clone(),
                     "output": [],
+                    "usage": Value::Null,
                 }
             }),
         )
@@ -571,6 +574,8 @@ impl ChatCompletionsSseState {
                     "object": "response",
                     "created_at": self.created_at,
                     "status": "completed",
+                    "error": Value::Null,
+                    "incomplete_details": Value::Null,
                     "model": self.model.clone(),
                     "output": self.output_items.clone(),
                     "usage": self.token_usage,
@@ -617,6 +622,8 @@ async fn send_failed_event(
                 "created_at": state.created_at,
                 "status": "failed",
                 "model": state.model,
+                "output": state.output_items.clone(),
+                "usage": state.token_usage.clone(),
                 "error": {
                     "type": error_type,
                     "code": error_type,

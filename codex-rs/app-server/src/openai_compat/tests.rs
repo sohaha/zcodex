@@ -906,6 +906,54 @@ async fn chat_wire_api_completed_output_matches_stream_item_order() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_surfaces_non_success_streaming_http_errors() {
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post(|| async {
+            (
+                StatusCode::BAD_GATEWAY,
+                [(CONTENT_TYPE, "application/json")],
+                "{\"error\":{\"message\":\"upstream overloaded\",\"type\":\"server_error\"}}",
+            )
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+    let (proxy_addr, _proxy_handle) =
+        spawn_router(app_router(chat_state(format!("http://{upstream_addr}/v1")))).await;
+
+    let response = reqwest::Client::new()
+        .post(format!("http://{proxy_addr}/v1/responses"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [],
+                "tool_choice": "auto",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": true,
+                "include": []
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .expect("proxy request should succeed");
+
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        response.text().await.expect("body"),
+        "{\"error\":{\"message\":\"upstream overloaded\",\"type\":\"server_error\"}}"
+    );
+}
+
+#[tokio::test]
 async fn chat_wire_api_running_server_translates_streaming_responses_endpoint() {
     let upstream_router = Router::new().route(
         "/v1/chat/completions",
@@ -953,6 +1001,12 @@ async fn chat_wire_api_running_server_translates_streaming_responses_endpoint() 
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream")
     );
+
+    let body = response.text().await.expect("body");
+    assert!(body.contains("\"object\":\"response\""));
+    assert!(body.contains("\"status\":\"in_progress\""));
+    assert!(body.contains("\"status\":\"completed\""));
+    assert!(body.contains("\"output\":[]"));
 }
 
 #[tokio::test]
