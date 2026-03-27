@@ -320,10 +320,18 @@ fn split_command_prefix(args: &[String]) -> Option<(String, &[String])> {
         return None;
     };
     if first == "command" {
-        let rest = match rest {
-            [flag, tail @ ..] if flag == "--" => tail,
-            _ => rest,
-        };
+        let mut index = 0;
+        while let Some(flag) = rest.get(index) {
+            match flag.as_str() {
+                "-p" => index += 1,
+                "--" => {
+                    index += 1;
+                    break;
+                }
+                _ => break,
+            }
+        }
+        let rest = &rest[index..];
         let [next, tail @ ..] = rest else {
             return None;
         };
@@ -471,7 +479,15 @@ mod tests {
             Some("codex rtk git status".to_string())
         );
         assert_eq!(
+            rewrite_shell_command("command -p git status"),
+            Some("codex rtk git status".to_string())
+        );
+        assert_eq!(
             rewrite_shell_command("command -- git -C repo status"),
+            Some("codex rtk git -C repo status".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("command -p -- git -C repo status"),
             Some("codex rtk git -C repo status".to_string())
         );
         assert_eq!(
