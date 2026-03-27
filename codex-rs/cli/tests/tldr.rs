@@ -618,3 +618,119 @@ async fn tldr_daemon_status_json_preserves_status_contract() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn tldr_daemon_notify_then_snapshot_reflects_dirty_file_count() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut notify_cmd = codex_command(codex_home.path())?;
+    notify_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "notify",
+            "src/lib.rs",
+        ])
+        .assert()
+        .success();
+
+    let mut snapshot_cmd = codex_command(codex_home.path())?;
+    let output = snapshot_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "snapshot",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "snapshot");
+    assert_eq!(payload["snapshot"]["dirty_files"], 1);
+    assert_eq!(payload["snapshot"]["reindex_pending"], true);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tldr_daemon_notify_then_warm_then_status_clears_reindex_pending() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut notify_cmd = codex_command(codex_home.path())?;
+    notify_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "notify",
+            "src/lib.rs",
+        ])
+        .assert()
+        .success();
+
+    let mut warm_cmd = codex_command(codex_home.path())?;
+    warm_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "warm",
+        ])
+        .assert()
+        .success();
+
+    let mut status_cmd = codex_command(codex_home.path())?;
+    let output = status_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "status",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "status");
+    assert_eq!(payload["snapshot"]["reindex_pending"], false);
+    assert_eq!(payload["snapshot"]["dirty_files"], 0);
+    assert!(payload["reindexReport"].is_object());
+
+    Ok(())
+}

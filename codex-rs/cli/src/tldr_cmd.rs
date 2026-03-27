@@ -1397,6 +1397,78 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn render_daemon_response_text_for_ping_is_minimal_and_stable() {
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "pong".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: None,
+            daemon_status: None,
+            reindex_report: None,
+        };
+
+        assert_eq!(
+            render_daemon_response_text(&response),
+            vec!["status: ok".to_string(), "message: pong".to_string()]
+        );
+    }
+
+    #[test]
+    fn render_daemon_response_text_for_notify_lists_snapshot_details() {
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "marked src/lib.rs dirty".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                cached_entries: 2,
+                dirty_files: 1,
+                dirty_file_threshold: 20,
+                reindex_pending: true,
+                last_query_at: None,
+                last_reindex: None,
+                last_reindex_attempt: None,
+            }),
+            daemon_status: None,
+            reindex_report: None,
+        };
+
+        let output = render_daemon_response_text(&response).join("\n");
+        assert!(output.contains("message: marked src/lib.rs dirty"));
+        assert!(output.contains("cached entries: 2"));
+        assert!(output.contains("dirty files: 1"));
+        assert!(output.contains("reindex pending: true"));
+    }
+
+    #[test]
+    fn render_daemon_response_text_for_snapshot_lists_snapshot_details() {
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "snapshot".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                cached_entries: 3,
+                dirty_files: 1,
+                dirty_file_threshold: 20,
+                reindex_pending: false,
+                last_query_at: None,
+                last_reindex: None,
+                last_reindex_attempt: None,
+            }),
+            daemon_status: None,
+            reindex_report: None,
+        };
+
+        let output = render_daemon_response_text(&response).join("\n");
+        assert!(output.contains("message: snapshot"));
+        assert!(output.contains("cached entries: 3"));
+        assert!(output.contains("dirty files: 1"));
+        assert!(output.contains("reindex pending: false"));
+    }
+
+    #[test]
     fn render_daemon_response_text_surfaces_status_detail_fields() {
         let started_at = std::time::SystemTime::UNIX_EPOCH;
         let response = TldrDaemonResponse {

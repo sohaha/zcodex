@@ -155,6 +155,8 @@ The `tldr` tool exposes native code-context analysis with daemon-first execution
 - `tree`
 - `context`
 - `impact`
+- `cfg`
+- `dfg`
 - `semantic`
 - `ping`
 - `warm`
@@ -166,7 +168,7 @@ Typical inputs:
 
 - `project` - absolute or relative project root
 - `language` - one of `rust|typescript|javascript|python|go|php|zig`
-- `symbol` - optional symbol name for `tree|context|impact`
+- `symbol` - optional symbol name for `tree|context|impact|cfg|dfg`
 - `query` - semantic query string for `semantic`
 - `path` - dirty file path for `notify`
 

@@ -6,7 +6,7 @@
 
 - 统一引擎入口 `TldrEngine`
 - 7 种首批语言注册：Rust、TypeScript、JavaScript、Python、Go、PHP、Zig
-- `structure` / `context` 分析入口
+- `tree` / `context` / `impact` / `cfg` / `dfg` 分析入口
 - phase-1 semantic 本地检索、按语言缓存索引、`warm` 触发 reindex
 - daemon / session / health / status 生命周期闭环
 - CLI `codex tldr ...` 接入
@@ -31,6 +31,7 @@ cargo build --release -p codex-cli -p codex-mcp-server
 说明：
 
 - `codex tldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起内部 daemon 模式
+- CLI 分析命令目前对应为：`structure -> tree`、`context -> context`、`impact -> impact`、`cfg -> cfg`、`dfg -> dfg`
 - `codex-mcp-server` 是 stdio MCP server；它复用 native-tldr 的 query/retry 生命周期逻辑，但不负责 auto-start daemon
 - 这是本地 CLI/MCP 交付，不提供 HTTP 端口或 Web UI
 

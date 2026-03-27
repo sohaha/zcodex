@@ -944,6 +944,127 @@ mod tests {
         assert_eq!(result.structured_content["snapshot"]["dirty_files"], 1);
     }
 
+    #[test]
+    fn tree_action_requires_language() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Tree,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: None,
+                    symbol: None,
+                    query: None,
+                    path: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("tree without language should fail");
+
+        assert_eq!(error.to_string(), "`language` is required for action=tree");
+    }
+
+    #[test]
+    fn semantic_action_requires_query() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Semantic,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: None,
+                    path: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("semantic without query should fail");
+
+        assert_eq!(error.to_string(), "`query` is required for action=semantic");
+    }
+
+    #[test]
+    fn status_action_requires_daemon() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Status,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: None,
+                    symbol: None,
+                    query: None,
+                    path: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("status without daemon should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("native-tldr daemon is unavailable for"),
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_errors_when_daemon_analysis_payload_is_missing() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let error = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Tree,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "missing".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect_err("missing analysis payload should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "daemon response missing analysis payload"
+        );
+    }
+
     #[tokio::test]
     async fn run_tldr_tool_with_hooks_preserves_status_details_contract() {
         let tempdir = tempdir().expect("tempdir should exist");

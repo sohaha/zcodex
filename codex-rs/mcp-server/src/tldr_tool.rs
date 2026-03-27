@@ -630,6 +630,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_surfaces_missing_language_error() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Tree,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            "tldr tool failed: `language` is required for action=tree"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_surfaces_daemon_unavailable_error() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let text = serde_json::to_value(&result).expect("call tool result should serialize");
+        assert_eq!(result.is_error, Some(true));
+        assert!(text["content"][0]["text"].as_str().is_some_and(|value| {
+            value.contains("tldr tool failed: native-tldr daemon is unavailable for")
+        }));
+    }
+
+    #[tokio::test]
     async fn query_daemon_with_hooks_retries_when_external_daemon_becomes_ready() {
         let tempdir = tempdir().expect("tempdir should exist");
         let command = TldrDaemonCommand::Ping;

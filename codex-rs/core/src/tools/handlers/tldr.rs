@@ -959,6 +959,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_handler_with_hooks_returns_error_text_for_missing_language() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should return tool output");
+
+        assert_eq!(output.success, Some(false));
+        assert_eq!(output.into_text(), "`language` is required for action=tree");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_returns_error_text_when_daemon_is_unavailable() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should return tool output");
+
+        assert_eq!(output.success, Some(false));
+        assert!(
+            output
+                .into_text()
+                .contains("native-tldr daemon is unavailable for")
+        );
+    }
+
+    #[tokio::test]
     async fn run_tldr_handler_with_hooks_sanitizes_marker_collisions_in_text() {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
