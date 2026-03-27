@@ -246,6 +246,7 @@ mod tests {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
                 symbol: Some("main".to_string()),
+                path: None,
             })
             .expect("analysis should succeed");
 
@@ -341,6 +342,7 @@ mod tests {
                     kind: AnalysisKind::Ast,
                     language: SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
+                    path: None,
                 },
             })
             .await
@@ -352,6 +354,7 @@ mod tests {
                     kind: AnalysisKind::Ast,
                     language: SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
+                    path: None,
                 },
             })
             .await

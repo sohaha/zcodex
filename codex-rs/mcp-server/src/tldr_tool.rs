@@ -148,8 +148,8 @@ mod tests {
         assert_eq!(
             tool_json["inputSchema"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree", "context", "impact", "cfg", "dfg", "semantic", "ping", "warm", "snapshot",
-                "status", "notify"
+                "tree", "extract", "context", "impact", "cfg", "dfg", "semantic", "ping", "warm",
+                "snapshot", "status", "notify"
             ])
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
@@ -159,7 +159,7 @@ mod tests {
         );
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
-            serde_json::json!(["tree", "context", "impact", "cfg", "dfg"])
+            serde_json::json!(["tree", "extract", "context", "impact", "cfg", "dfg"])
         );
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["semanticResult"]["properties"]["action"]["const"],
@@ -325,6 +325,73 @@ mod tests {
         assert_eq!(structured["action"], "cfg");
         assert_eq!(structured["summary"], summary);
         assert_eq!(structured["analysis"]["kind"], "cfg");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_extract_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary = "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-3";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Extract,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(codex_native_tldr::daemon::TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "extract ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Extract,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: None,
+                                truncated: false,
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: vec![codex_native_tldr::api::AnalysisFileDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    symbol_count: 1,
+                                    kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                                        name: "function".to_string(),
+                                        count: 1,
+                                    }],
+                                }],
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("tool result serializes");
+        let structured = result
+            .structured_content
+            .clone()
+            .expect("structured content should be present");
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("extract rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "extract");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "extract");
+        assert_eq!(structured["path"], "src/lib.rs");
     }
 
     #[tokio::test]

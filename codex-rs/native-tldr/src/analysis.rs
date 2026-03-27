@@ -16,6 +16,7 @@ use anyhow::Result;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::Path;
+use std::path::PathBuf;
 
 pub(crate) fn analyze_project(
     project_root: &Path,
@@ -24,7 +25,17 @@ pub(crate) fn analyze_project(
 ) -> Result<AnalysisResponse> {
     let index = SemanticIndexer::new(config.semantic.clone())
         .build_index(project_root, request.language)?;
-    let units = filter_symbol_units(&index.units, request.symbol.as_deref());
+    let path = request
+        .path
+        .as_deref()
+        .map(|value| normalize_request_path(project_root, value))
+        .transpose()?;
+    let units = filter_units(
+        &index.units,
+        request.symbol.as_deref(),
+        path.as_deref(),
+        request.kind == AnalysisKind::Extract,
+    );
     let summary = match request.kind {
         AnalysisKind::Ast => {
             summarize_structure(index.indexed_files, &units, request.symbol.as_deref())
@@ -35,6 +46,7 @@ pub(crate) fn analyze_project(
         AnalysisKind::Cfg => summarize_cfg(index.indexed_files, &units, request.symbol.as_deref()),
         AnalysisKind::Dfg => summarize_dfg(index.indexed_files, &units, request.symbol.as_deref()),
         AnalysisKind::Pdg => summarize_pdg(index.indexed_files, &units, request.symbol.as_deref()),
+        AnalysisKind::Extract => summarize_extract(index.indexed_files, &units, path.as_deref()),
     };
 
     Ok(AnalysisResponse {
@@ -293,17 +305,20 @@ fn ensure_external_node_with_kind(
         });
 }
 
-fn filter_symbol_units<'a>(
+fn filter_units<'a>(
     units: &'a [EmbeddingUnit],
     symbol: Option<&str>,
+    path: Option<&Path>,
+    include_symbol_less: bool,
 ) -> Vec<&'a EmbeddingUnit> {
-    match symbol {
-        Some(symbol) => units
-            .iter()
-            .filter(|unit| symbol_matches(unit, symbol))
-            .collect(),
-        None => units.iter().filter(|unit| unit.symbol.is_some()).collect(),
-    }
+    units
+        .iter()
+        .filter(|unit| path.is_none_or(|expected| unit.path == expected))
+        .filter(|unit| match symbol {
+            Some(symbol) => symbol_matches(unit, symbol),
+            None => include_symbol_less || unit.symbol.is_some(),
+        })
+        .collect()
 }
 
 fn summarize_structure(
@@ -521,6 +536,91 @@ fn summarize_pdg(indexed_files: usize, units: &[&EmbeddingUnit], symbol: Option<
     )
 }
 
+fn summarize_extract(
+    indexed_files: usize,
+    units: &[&EmbeddingUnit],
+    path: Option<&Path>,
+) -> String {
+    let path_label = path
+        .map(|value| value.display().to_string())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    if units.is_empty() {
+        return format!(
+            "extract summary: {path_label} was not found in {indexed_files} indexed files"
+        );
+    }
+
+    let symbol_units = units
+        .iter()
+        .copied()
+        .filter(|unit| unit.symbol.is_some())
+        .collect::<Vec<_>>();
+    if symbol_units.is_empty() {
+        let preview = units
+            .iter()
+            .map(|unit| {
+                format!(
+                    "{}:{}-{}",
+                    unit.path.display(),
+                    unit.line,
+                    unit.span_end_line
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!("extract summary: {path_label} has no indexed symbols; preview: {preview}");
+    }
+
+    let mut by_kind: BTreeMap<&str, usize> = BTreeMap::new();
+    let import_count = symbol_units
+        .iter()
+        .map(|unit| unit.imports.len())
+        .sum::<usize>();
+    let reference_count = symbol_units
+        .iter()
+        .map(|unit| unit.references.len())
+        .sum::<usize>();
+    for unit in &symbol_units {
+        *by_kind.entry(unit.kind.as_str()).or_default() += 1;
+    }
+    let kinds = by_kind
+        .into_iter()
+        .map(|(kind, count)| format!("{count} {kind}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let preview = symbol_units
+        .iter()
+        .take(5)
+        .map(|unit| {
+            format!(
+                "{}:{}-{}",
+                symbol_label(unit),
+                unit.line,
+                unit.span_end_line
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "extract summary: {path_label} => {} symbols ({kinds}); imports={import_count}, references={reference_count}; sample: {preview}",
+        symbol_units.len()
+    )
+}
+
+fn normalize_request_path(project_root: &Path, path: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(path);
+    let absolute = if path.is_absolute() {
+        path
+    } else {
+        project_root.join(path)
+    };
+    let normalized = absolute.canonicalize().unwrap_or(absolute);
+    Ok(normalized
+        .strip_prefix(project_root)
+        .map(Path::to_path_buf)
+        .unwrap_or(normalized))
+}
+
 fn summarize_symbol_lookup(
     label: &str,
     indexed_files: usize,
@@ -594,6 +694,7 @@ mod tests {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
                 symbol: None,
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -637,6 +738,7 @@ mod tests {
                 kind: AnalysisKind::CallGraph,
                 language: SupportedLanguage::Rust,
                 symbol: Some("validate".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -683,6 +785,7 @@ mod tests {
                 kind: AnalysisKind::CallGraph,
                 language: SupportedLanguage::Rust,
                 symbol: None,
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -714,6 +817,7 @@ mod tests {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
                 symbol: None,
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -727,6 +831,42 @@ mod tests {
         assert_eq!(validate.kind, "function");
         assert_eq!(validate.path.as_deref(), Some("src/lib.rs"));
         assert_eq!(validate.line, Some(5));
+    }
+
+    #[test]
+    fn extract_analysis_filters_to_requested_file() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "fn login() {}\n")
+            .expect("lib fixture should write");
+        std::fs::write(tempdir.path().join("src/other.rs"), "fn logout() {}\n")
+            .expect("other fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        let response = analyze_project(
+            tempdir.path(),
+            &config,
+            AnalysisRequest {
+                kind: AnalysisKind::Extract,
+                language: SupportedLanguage::Rust,
+                symbol: None,
+                path: Some("src/lib.rs".to_string()),
+            },
+        )
+        .expect("analysis should succeed");
+
+        assert_eq!(response.kind, AnalysisKind::Extract);
+        assert_eq!(
+            response.summary,
+            "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: login:1-1"
+        );
+        let details = response.details.expect("details should exist");
+        assert_eq!(details.indexed_files, 2);
+        assert_eq!(details.total_symbols, 1);
+        assert_eq!(details.files.len(), 1);
+        assert_eq!(details.files[0].path, "src/lib.rs");
+        assert_eq!(details.units.len(), 1);
+        assert_eq!(details.units[0].symbol.as_deref(), Some("login"));
     }
 
     #[test]
@@ -744,6 +884,7 @@ mod tests {
                 kind: AnalysisKind::Pdg,
                 language: SupportedLanguage::Rust,
                 symbol: Some("logout".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -784,6 +925,7 @@ mod auth {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::AuthService::login".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -818,6 +960,7 @@ mod auth {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
                 symbol: Some("login".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -890,6 +1033,7 @@ fn login_flow(service: &AuthService, session: Session) {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::AuthService::login".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -976,6 +1120,7 @@ mod auth {
                     kind: AnalysisKind::Ast,
                     language: SupportedLanguage::Rust,
                     symbol: Some(symbol.to_string()),
+                    path: None,
                 },
             )
             .expect("analysis should succeed");
@@ -1022,6 +1167,7 @@ fn login() {
                 kind: AnalysisKind::CallGraph,
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::validate".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");
@@ -1034,6 +1180,7 @@ fn login() {
                 kind: AnalysisKind::CallGraph,
                 language: SupportedLanguage::Rust,
                 symbol: Some("audit::validate".to_string()),
+                path: None,
             },
         )
         .expect("analysis should succeed");

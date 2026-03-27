@@ -752,6 +752,81 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_formats_extract_analysis_details() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Extract,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Extract,
+                            summary:
+                                "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-1"
+                                    .to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: None,
+                                truncated: false,
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: vec![codex_native_tldr::api::AnalysisFileDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    symbol_count: 1,
+                                    kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                                        name: "function".to_string(),
+                                        count: 1,
+                                    }],
+                                }],
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: vec![codex_native_tldr::api::AnalysisUnitDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    line: 1,
+                                    span_end_line: 1,
+                                    symbol: Some("main".to_string()),
+                                    qualified_symbol: None,
+                                    kind: "function".to_string(),
+                                    module_path: vec!["crate".to_string()],
+                                    visibility: None,
+                                    signature: Some("fn main()".to_string()),
+                                    calls: Vec::new(),
+                                    called_by: Vec::new(),
+                                    references: Vec::new(),
+                                    imports: Vec::new(),
+                                    dependencies: Vec::new(),
+                                    cfg_summary: "cfg".to_string(),
+                                    dfg_summary: "dfg".to_string(),
+                                }],
+                            }),
+                        }),
+                        ..daemon_ok("extract")
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("extract rust via daemon"));
+        assert!(text.contains("analysis kind: extract"));
+        assert_eq!(payload["action"], "extract");
+        assert_eq!(payload["path"], "src/lib.rs");
+        assert_eq!(payload["analysis"]["kind"], "extract");
+    }
+
     #[test]
     fn render_tldr_summary_falls_back_without_analysis_details() {
         let payload = serde_json::json!({

@@ -55,6 +55,9 @@ pub enum TldrSubcommand {
     /// 获取结构化概览。
     Structure(TldrAnalyzeCommand),
 
+    /// 提取单文件结构摘要。
+    Extract(TldrExtractCommand),
+
     /// 获取上下文概览。
     Context(TldrAnalyzeCommand),
 
@@ -116,6 +119,25 @@ pub struct TldrAnalyzeCommand {
     /// 目标符号名。
     #[arg(value_name = "SYMBOL")]
     pub symbol: Option<String>,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct TldrExtractCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 目标文件路径。
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+
+    /// 目标语言；未指定时按文件扩展名推断。
+    #[arg(long, value_enum)]
+    pub lang: Option<CliLanguage>,
 
     /// 以 JSON 输出。
     #[arg(long, default_value_t = false)]
@@ -201,6 +223,9 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         TldrSubcommand::Structure(cmd) => {
             run_analysis_command(cmd, AnalysisKind::Ast).await?;
         }
+        TldrSubcommand::Extract(cmd) => {
+            run_extract_command(cmd).await?;
+        }
         TldrSubcommand::Context(cmd) => {
             run_analysis_command(cmd, AnalysisKind::CallGraph).await?;
         }
@@ -241,11 +266,12 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         kind,
         language,
         symbol: cmd.symbol.clone(),
+        path: None,
     };
     let daemon_response = query_daemon_with_autostart(
         &project_root,
         &TldrDaemonCommand::Analyze {
-            key: analysis_cache_key(kind, language, cmd.symbol.as_deref()),
+            key: analysis_cache_key(kind, language, cmd.symbol.as_deref(), None),
             request: request.clone(),
         },
     )
@@ -276,13 +302,16 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
 
     let support = LanguageRegistry::support_for(language);
     let payload = analysis_payload(
-        analysis_action_name(kind),
-        &engine_project_root,
-        language,
-        source,
-        daemon_message.as_deref(),
-        support,
-        cmd.symbol.as_deref(),
+        AnalysisRenderContext {
+            action: analysis_action_name(kind),
+            project_root: &engine_project_root,
+            language,
+            source,
+            message: daemon_message.as_deref(),
+            support,
+            symbol: cmd.symbol.as_deref(),
+            path: None,
+        },
         &analysis,
     );
 
@@ -294,6 +323,93 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
             source,
             support,
             daemon_message.as_deref(),
+            None,
+            &analysis.summary,
+        ) {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let requested_path = cmd.path.display().to_string();
+    let language = match cmd.lang {
+        Some(language) => SupportedLanguage::from(language),
+        None => SupportedLanguage::from_path(&cmd.path).ok_or_else(|| {
+            anyhow::anyhow!("`--lang` is required when file extension is unsupported")
+        })?,
+    };
+    let config = load_tldr_config(&project_root)?;
+    let request = AnalysisRequest {
+        kind: AnalysisKind::Extract,
+        language,
+        symbol: None,
+        path: Some(requested_path.clone()),
+    };
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Analyze {
+            key: analysis_cache_key(
+                AnalysisKind::Extract,
+                language,
+                None,
+                Some(requested_path.as_str()),
+            ),
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (source, daemon_message, analysis, engine_project_root) =
+        if let Some(response) = daemon_response {
+            let analysis = response
+                .analysis
+                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+            (
+                "daemon",
+                Some(response.message),
+                analysis,
+                project_root.clone(),
+            )
+        } else {
+            let engine = TldrEngine::builder(project_root.clone())
+                .with_config(config.clone())
+                .build();
+            let response = engine.analyze(request)?;
+            (
+                "local",
+                Some("daemon unavailable; used local engine".to_string()),
+                response,
+                engine.config().project_root.clone(),
+            )
+        };
+
+    let support = LanguageRegistry::support_for(language);
+    let payload = analysis_payload(
+        AnalysisRenderContext {
+            action: "extract",
+            project_root: &engine_project_root,
+            language,
+            source,
+            message: daemon_message.as_deref(),
+            support,
+            symbol: None,
+            path: Some(requested_path.as_str()),
+        },
+        &analysis,
+    );
+
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_analysis_response_text(
+            language,
+            source,
+            support,
+            daemon_message.as_deref(),
+            Some(requested_path.as_str()),
             &analysis.summary,
         ) {
             println!("{line}");
@@ -306,6 +422,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
 fn analysis_action_name(kind: AnalysisKind) -> &'static str {
     match kind {
         AnalysisKind::Ast => "tree",
+        AnalysisKind::Extract => "extract",
         AnalysisKind::CallGraph => "context",
         AnalysisKind::Pdg => "impact",
         AnalysisKind::Cfg => "cfg",
@@ -366,26 +483,32 @@ fn run_local_semantic_search(
     Ok((response, engine.config().project_root.clone()))
 }
 
-fn analysis_payload(
-    action: &str,
-    project_root: &Path,
+struct AnalysisRenderContext<'a> {
+    action: &'a str,
+    project_root: &'a Path,
     language: SupportedLanguage,
-    source: &str,
-    message: Option<&str>,
-    support: &codex_native_tldr::lang_support::LanguageSupport,
-    symbol: Option<&str>,
+    source: &'a str,
+    message: Option<&'a str>,
+    support: &'a codex_native_tldr::lang_support::LanguageSupport,
+    symbol: Option<&'a str>,
+    path: Option<&'a str>,
+}
+
+fn analysis_payload(
+    context: AnalysisRenderContext<'_>,
     response: &AnalysisResponse,
 ) -> serde_json::Value {
     json!({
-        "action": action,
-        "project": project_root,
-        "language": language.as_str(),
-        "source": source,
-        "message": message,
-        "supportLevel": format!("{:?}", support.support_level),
-        "fallbackStrategy": support.fallback_strategy,
+        "action": context.action,
+        "project": context.project_root,
+        "language": context.language.as_str(),
+        "source": context.source,
+        "message": context.message,
+        "supportLevel": format!("{:?}", context.support.support_level),
+        "fallbackStrategy": context.support.fallback_strategy,
         "summary": response.summary.clone(),
-        "symbol": symbol,
+        "symbol": context.symbol,
+        "path": context.path,
         "analysis": response,
     })
 }
@@ -419,6 +542,7 @@ fn render_analysis_response_text(
     source: &str,
     support: &codex_native_tldr::lang_support::LanguageSupport,
     message: Option<&str>,
+    path: Option<&str>,
     summary: &str,
 ) -> Vec<String> {
     let mut lines = vec![
@@ -429,6 +553,9 @@ fn render_analysis_response_text(
     ];
     if let Some(message) = message {
         lines.push(format!("message: {message}"));
+    }
+    if let Some(path) = path {
+        lines.push(format!("path: {path}"));
     }
     lines.push(format!("summary: {summary}"));
     lines
@@ -631,9 +758,11 @@ fn analysis_cache_key(
     kind: AnalysisKind,
     language: SupportedLanguage,
     symbol: Option<&str>,
+    path: Option<&str>,
 ) -> String {
     let symbol = symbol.unwrap_or("*");
-    format!("{}:{kind:?}:{symbol}", language.as_str())
+    let path = path.unwrap_or("*");
+    format!("{}:{kind:?}:{symbol}:{path}", language.as_str())
 }
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
@@ -843,6 +972,7 @@ fn cleanup_file_if_exists(path: PathBuf) {
 
 #[cfg(test)]
 mod output_tests {
+    use super::AnalysisRenderContext;
     use super::TldrDaemonSubcommand;
     use super::analysis_action_name;
     use super::analysis_payload;
@@ -871,13 +1001,16 @@ mod output_tests {
     #[test]
     fn analysis_payload_includes_nested_native_response() {
         let payload = analysis_payload(
-            "context",
-            Path::new("/tmp/project"),
-            SupportedLanguage::Rust,
-            "daemon",
-            Some("daemon summary ready"),
-            LanguageRegistry::support_for(SupportedLanguage::Rust),
-            Some("main"),
+            AnalysisRenderContext {
+                action: "context",
+                project_root: Path::new("/tmp/project"),
+                language: SupportedLanguage::Rust,
+                source: "daemon",
+                message: Some("daemon summary ready"),
+                support: LanguageRegistry::support_for(SupportedLanguage::Rust),
+                symbol: Some("main"),
+                path: None,
+            },
             &AnalysisResponse {
                 kind: AnalysisKind::CallGraph,
                 summary: "context summary".to_string(),
@@ -976,18 +1109,22 @@ mod output_tests {
     #[test]
     fn analysis_action_name_maps_ast_to_tree() {
         assert_eq!(analysis_action_name(AnalysisKind::Ast), "tree");
+        assert_eq!(analysis_action_name(AnalysisKind::Extract), "extract");
     }
 
     #[test]
     fn analysis_payload_preserves_impact_action_and_summary() {
         let payload = analysis_payload(
-            "impact",
-            Path::new("/tmp/project"),
-            SupportedLanguage::Rust,
-            "daemon",
-            Some("impact ready"),
-            LanguageRegistry::support_for(SupportedLanguage::Rust),
-            Some("AuthService"),
+            AnalysisRenderContext {
+                action: "impact",
+                project_root: Path::new("/tmp/project"),
+                language: SupportedLanguage::Rust,
+                source: "daemon",
+                message: Some("impact ready"),
+                support: LanguageRegistry::support_for(SupportedLanguage::Rust),
+                symbol: Some("AuthService"),
+                path: None,
+            },
             &AnalysisResponse {
                 kind: AnalysisKind::Pdg,
                 summary:
@@ -1032,13 +1169,16 @@ mod output_tests {
     #[test]
     fn analysis_payload_preserves_cfg_action_and_summary() {
         let payload = analysis_payload(
-            "cfg",
-            Path::new("/tmp/project"),
-            SupportedLanguage::Rust,
-            "daemon",
-            Some("cfg ready"),
-            LanguageRegistry::support_for(SupportedLanguage::Rust),
-            Some("AuthService"),
+            AnalysisRenderContext {
+                action: "cfg",
+                project_root: Path::new("/tmp/project"),
+                language: SupportedLanguage::Rust,
+                source: "daemon",
+                message: Some("cfg ready"),
+                support: LanguageRegistry::support_for(SupportedLanguage::Rust),
+                symbol: Some("AuthService"),
+                path: None,
+            },
             &AnalysisResponse {
                 kind: AnalysisKind::Cfg,
                 summary: "cfg summary: 1 symbols across 1 files; sample: AuthService [cfg]"
@@ -1082,6 +1222,72 @@ mod output_tests {
             "cfg summary: 1 symbols across 1 files; sample: AuthService [cfg]"
         );
         assert_eq!(payload["analysis"]["kind"], "cfg");
+    }
+
+    #[test]
+    fn analysis_payload_preserves_extract_action_path_and_summary() {
+        let payload = analysis_payload(
+            AnalysisRenderContext {
+                action: "extract",
+                project_root: Path::new("/tmp/project"),
+                language: SupportedLanguage::Rust,
+                source: "daemon",
+                message: Some("extract ready"),
+                support: LanguageRegistry::support_for(SupportedLanguage::Rust),
+                symbol: None,
+                path: Some("src/lib.rs"),
+            },
+            &AnalysisResponse {
+                kind: AnalysisKind::Extract,
+                summary:
+                    "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-1"
+                        .to_string(),
+                details: Some(AnalysisDetail {
+                    indexed_files: 1,
+                    total_symbols: 1,
+                    symbol_query: None,
+                    truncated: false,
+                    overview: AnalysisOverviewDetail::default(),
+                    files: vec![AnalysisFileDetail {
+                        path: "src/lib.rs".to_string(),
+                        symbol_count: 1,
+                        kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                            name: "function".to_string(),
+                            count: 1,
+                        }],
+                    }],
+                    nodes: Vec::new(),
+                    edges: Vec::new(),
+                    symbol_index: Vec::new(),
+                    units: vec![AnalysisUnitDetail {
+                        path: "src/lib.rs".to_string(),
+                        line: 1,
+                        span_end_line: 1,
+                        symbol: Some("main".to_string()),
+                        qualified_symbol: None,
+                        kind: "function".to_string(),
+                        module_path: vec!["crate".to_string()],
+                        visibility: None,
+                        signature: Some("fn main()".to_string()),
+                        calls: Vec::new(),
+                        called_by: Vec::new(),
+                        references: Vec::new(),
+                        imports: Vec::new(),
+                        dependencies: Vec::new(),
+                        cfg_summary: "cfg".to_string(),
+                        dfg_summary: "dfg".to_string(),
+                    }],
+                }),
+            },
+        );
+
+        assert_eq!(payload["action"], "extract");
+        assert_eq!(payload["path"], "src/lib.rs");
+        assert_eq!(
+            payload["summary"],
+            "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-1"
+        );
+        assert_eq!(payload["analysis"]["kind"], "extract");
     }
 
     #[test]
@@ -1152,6 +1358,7 @@ mod output_tests {
             "daemon",
             LanguageRegistry::support_for(SupportedLanguage::Rust),
             Some("impact ready"),
+            None,
             "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1",
         );
 
@@ -1165,6 +1372,25 @@ mod output_tests {
                 "message: impact ready".to_string(),
                 "summary: impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn render_analysis_response_text_includes_extract_path() {
+        let lines = render_analysis_response_text(
+            SupportedLanguage::Rust,
+            "daemon",
+            LanguageRegistry::support_for(SupportedLanguage::Rust),
+            Some("extract ready"),
+            Some("src/lib.rs"),
+            "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-1",
+        );
+
+        assert!(lines.contains(&"path: src/lib.rs".to_string()));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("summary: extract summary:"))
         );
     }
 

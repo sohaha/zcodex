@@ -1041,6 +1041,7 @@ mod tests {
                     kind: crate::api::AnalysisKind::Ast,
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
+                    path: None,
                 },
             })
             .await
@@ -1298,6 +1299,7 @@ mod tests {
                     kind: crate::api::AnalysisKind::Ast,
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
+                    path: None,
                 },
             })
             .await
@@ -1318,6 +1320,7 @@ mod tests {
                     kind: crate::api::AnalysisKind::Ast,
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
+                    path: None,
                 },
             })
             .await
@@ -1329,6 +1332,7 @@ mod tests {
                     kind: crate::api::AnalysisKind::Ast,
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
+                    path: None,
                 },
             })
             .await

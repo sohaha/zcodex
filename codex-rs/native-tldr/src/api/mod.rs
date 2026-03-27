@@ -11,6 +11,7 @@ pub enum AnalysisKind {
     Cfg,
     Dfg,
     Pdg,
+    Extract,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -18,6 +19,7 @@ pub struct AnalysisRequest {
     pub kind: AnalysisKind,
     pub language: SupportedLanguage,
     pub symbol: Option<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

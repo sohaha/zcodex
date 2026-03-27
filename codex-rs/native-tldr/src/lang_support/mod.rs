@@ -10,6 +10,7 @@ use once_cell::sync::Lazy;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::path::Path;
 use thiserror::Error;
 use tree_sitter::Parser;
 
@@ -35,6 +36,19 @@ impl SupportedLanguage {
             Self::Go => "go",
             Self::Php => "php",
             Self::Zig => "zig",
+        }
+    }
+
+    pub fn from_path(path: &Path) -> Option<Self> {
+        match path.extension().and_then(|value| value.to_str()) {
+            Some("rs") => Some(Self::Rust),
+            Some("ts" | "tsx") => Some(Self::TypeScript),
+            Some("js" | "jsx" | "mjs" | "cjs") => Some(Self::JavaScript),
+            Some("py") => Some(Self::Python),
+            Some("go") => Some(Self::Go),
+            Some("php") => Some(Self::Php),
+            Some("zig") => Some(Self::Zig),
+            _ => None,
         }
     }
 }

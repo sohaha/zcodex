@@ -29,6 +29,7 @@ use tokio::time::sleep;
 #[serde(rename_all = "kebab-case")]
 pub enum TldrToolAction {
     Tree,
+    Extract,
     Context,
     Impact,
     Cfg,
@@ -114,6 +115,24 @@ where
                 TldrToolAction::Tree,
                 language,
                 args.symbol,
+                None,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Extract => {
+            let path = args
+                .path
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("`path` is required for action=extract"))?;
+            let language = required_or_inferred_language(&args, Some(path.as_str()))?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Extract,
+                language,
+                args.symbol,
+                Some(path),
                 &query,
                 &ensure_running,
             )
@@ -126,6 +145,7 @@ where
                 TldrToolAction::Context,
                 language,
                 args.symbol,
+                None,
                 &query,
                 &ensure_running,
             )
@@ -138,6 +158,7 @@ where
                 TldrToolAction::Impact,
                 language,
                 args.symbol,
+                None,
                 &query,
                 &ensure_running,
             )
@@ -150,6 +171,7 @@ where
                 TldrToolAction::Cfg,
                 language,
                 args.symbol,
+                None,
                 &query,
                 &ensure_running,
             )
@@ -162,6 +184,7 @@ where
                 TldrToolAction::Dfg,
                 language,
                 args.symbol,
+                None,
                 &query,
                 &ensure_running,
             )
@@ -232,6 +255,7 @@ async fn run_analysis_tool<Q, E>(
     action: TldrToolAction,
     language: SupportedLanguage,
     symbol: Option<String>,
+    path: Option<String>,
     query: &Q,
     ensure_running: &E,
 ) -> Result<TldrToolResult>
@@ -241,6 +265,7 @@ where
 {
     let kind = match action {
         TldrToolAction::Tree => AnalysisKind::Ast,
+        TldrToolAction::Extract => AnalysisKind::Extract,
         TldrToolAction::Context => AnalysisKind::CallGraph,
         TldrToolAction::Impact => AnalysisKind::Pdg,
         TldrToolAction::Cfg => AnalysisKind::Cfg,
@@ -251,11 +276,12 @@ where
         kind,
         language,
         symbol: symbol.clone(),
+        path: path.clone(),
     };
     let daemon_response = query_daemon_with_hooks(
         project_root,
         &TldrDaemonCommand::Analyze {
-            key: analysis_cache_key(kind, language, symbol.as_deref()),
+            key: analysis_cache_key(kind, language, symbol.as_deref(), path.as_deref()),
             request: request.clone(),
         },
         query,
@@ -291,6 +317,7 @@ where
         "fallbackStrategy": support.fallback_strategy,
         "summary": analysis.summary,
         "symbol": symbol,
+        "path": path,
         "analysis": analysis,
     });
     let text = format!(
@@ -453,6 +480,7 @@ pub fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
 pub fn action_name(action: &TldrToolAction) -> &'static str {
     match action {
         TldrToolAction::Tree => "tree",
+        TldrToolAction::Extract => "extract",
         TldrToolAction::Context => "context",
         TldrToolAction::Impact => "impact",
         TldrToolAction::Cfg => "cfg",
@@ -470,9 +498,11 @@ pub fn analysis_cache_key(
     kind: AnalysisKind,
     language: SupportedLanguage,
     symbol: Option<&str>,
+    path: Option<&str>,
 ) -> String {
     let symbol = symbol.unwrap_or("*");
-    format!("{}:{kind:?}:{symbol}", language.as_str())
+    let path = path.unwrap_or("*");
+    format!("{}:{kind:?}:{symbol}:{path}", language.as_str())
 }
 
 fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
@@ -483,6 +513,27 @@ fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
         )
     })?;
     Ok(language.into())
+}
+
+fn required_or_inferred_language(
+    args: &TldrToolCallParam,
+    path: Option<&str>,
+) -> Result<SupportedLanguage> {
+    if let Some(language) = args.language {
+        return Ok(language.into());
+    }
+    let path = path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "`language` is required for action={}",
+            action_name(&args.action)
+        )
+    })?;
+    SupportedLanguage::from_path(Path::new(path)).ok_or_else(|| {
+        anyhow::anyhow!(
+            "`language` is required for action={} when path extension is unsupported",
+            action_name(&args.action)
+        )
+    })
 }
 
 fn resolve_project_root(project: Option<&str>) -> Result<PathBuf> {
@@ -674,7 +725,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
               "type": "object",
               "properties": {
                 "action": {
-                  "enum": ["tree", "context", "impact", "cfg", "dfg"]
+                  "enum": ["tree", "extract", "context", "impact", "cfg", "dfg"]
                 },
                 "project": { "type": "string" },
                 "language": { "type": "string" },
@@ -684,6 +735,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "fallbackStrategy": { "type": "string" },
                 "summary": { "type": "string" },
                 "symbol": { "type": ["string", "null"] },
+                "path": { "type": ["string", "null"] },
                 "analysis": { "$ref": "#/$defs/analysis" }
               },
               "required": [
@@ -830,6 +882,7 @@ mod tests {
     #[test]
     fn action_name_covers_analysis_actions() {
         assert_eq!(action_name(&TldrToolAction::Tree), "tree");
+        assert_eq!(action_name(&TldrToolAction::Extract), "extract");
         assert_eq!(action_name(&TldrToolAction::Context), "context");
         assert_eq!(action_name(&TldrToolAction::Impact), "impact");
         assert_eq!(action_name(&TldrToolAction::Cfg), "cfg");
@@ -1029,6 +1082,33 @@ mod tests {
             .expect_err("tree without language should fail");
 
         assert_eq!(error.to_string(), "`language` is required for action=tree");
+    }
+
+    #[test]
+    fn extract_action_requires_path() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Extract,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: None,
+                    path: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("extract without path should fail");
+
+        assert_eq!(error.to_string(), "`path` is required for action=extract");
     }
 
     #[test]
