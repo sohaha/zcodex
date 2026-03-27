@@ -123,11 +123,17 @@ Current behavior:
   substitution remains raw; quoted literal characters such as `grep 'a|b'`
   stay eligible for routing
 - `sudo ...` is always kept raw
+- when a routed command finally executes, Codex resolves the physical process as
+  `<absolute-path-to-codex> rtk ...` instead of relying on `PATH` lookup for
+  `rtk`
+- login-shell bootstrap keeps explicit env overrides authoritative after shell
+  init, so injected values such as `PATH` are not lost when `bash -lc` /
+  `zsh -lc` loads user startup files
 
 Observability:
 
 - when a command is rewritten, the exec event carries the original input via
-  `interaction_input`, and the tool output includes both the original and
-  executed commands
+  `interaction_input`, and the tool output includes both the original command
+  and the logical rewritten command shown to the model/user as `codex rtk ...`
 - when a command looks RTK-eligible but is intentionally kept raw, the tool
   output includes an explicit skip reason
