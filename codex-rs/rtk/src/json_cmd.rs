@@ -8,7 +8,7 @@ use std::io::Read;
 use std::io::{self};
 use std::path::Path;
 
-/// 在执行 I/O 前明确拒绝非 JSON 文件。
+/// 在执行输入/输出前明确拒绝非 JSON 文件。
 fn validate_json_extension(file: &Path) -> Result<()> {
     if let Some(ext) = file.extension().and_then(|e| e.to_str()) {
         let format_name = match ext {
@@ -59,19 +59,19 @@ pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// 展示来自 stdin 的 JSON 结构
+/// 展示来自标准输入的 JSON 结构
 pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("分析 stdin 的 JSON");
+        eprintln!("分析标准输入中的 JSON");
     }
 
     let mut content = String::new();
     io::stdin()
         .lock()
         .read_to_string(&mut content)
-        .context("从 stdin 读取失败")?;
+        .context("从标准输入读取失败")?;
 
     let schema = filter_json_string(&content, max_depth)?;
     println!("{schema}");

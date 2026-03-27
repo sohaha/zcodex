@@ -67,7 +67,7 @@ enum WcMode {
     Bytes,
     /// 仅字符数（-m）
     Chars,
-    /// 组合 flag —— 保持紧凑格式
+    /// 组合标志位 —— 保持紧凑格式
     Mixed,
 }
 
@@ -82,7 +82,7 @@ fn detect_mode(args: &[String]) -> WcMode {
         return WcMode::Full;
     }
 
-    // 收集所有单字符 flag（支持 `-lw` 这类组合写法）
+    // 收集所有单字符标志位（支持 `-lw` 这类组合写法）
     let mut has_l = false;
     let mut has_w = false;
     let mut has_c = false;
@@ -149,7 +149,7 @@ fn filter_wc_output(raw: &str, mode: &WcMode) -> String {
     format_multi_line(&lines, mode)
 }
 
-/// 格式化单行 `wc` 输出（单文件或 `stdin`）
+/// 格式化单行 `wc` 输出（单文件或标准输入）
 fn format_single_line(line: &str, mode: &WcMode) -> String {
     let parts: Vec<&str> = line.split_whitespace().collect();
 
