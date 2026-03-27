@@ -15,7 +15,7 @@ use std::process::Command;
 pub(crate) fn compile_regex(pattern: &str) -> Regex {
     match Regex::new(pattern) {
         Ok(regex) => regex,
-        Err(err) => panic!("invalid regex pattern {pattern:?}: {err}"),
+        Err(err) => panic!("无效的正则模式 {pattern:?}: {err}"),
     }
 }
 
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn test_resolve_binary_returns_absolute_path() {
-        let path = resolve_binary("cargo").expect("cargo should be resolvable");
+        let path = resolve_binary("cargo").expect("应能解析到 cargo");
         assert!(
             path.is_absolute(),
             "resolve_binary 应返回绝对路径，实际得到：{path:?}"
@@ -588,10 +588,7 @@ mod tests {
     #[test]
     fn test_resolve_binary_path_contains_binary_name() {
         let path = resolve_binary("cargo").expect("cargo should be resolvable");
-        let filename = path
-            .file_name()
-            .expect("should have filename")
-            .to_string_lossy();
+        let filename = path.file_name().expect("应包含文件名").to_string_lossy();
         // Windows 上可能是 "cargo.exe"，Unix 上通常就是 "cargo"
         assert!(
             filename.starts_with("cargo"),
@@ -644,7 +641,7 @@ mod tests {
         fn create_temp_cmd_wrapper(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
             let cmd_path = dir.join(format!("{}.cmd", name));
             fs::write(&cmd_path, "@echo off\r\necho fake-tool-output\r\n")
-                .expect("failed to create .cmd wrapper");
+                .expect("创建 .cmd 包装器失败");
             cmd_path
         }
 
@@ -659,7 +656,7 @@ mod tests {
 
         #[test]
         fn test_resolve_binary_finds_cmd_wrapper() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+            let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
             create_temp_cmd_wrapper(temp_dir.path(), "fake-tool-test");
 
             // 使用 `which::which_in`，避免修改全局 PATH（线程安全）
@@ -672,7 +669,7 @@ mod tests {
 
             assert!(
                 result.is_ok(),
-                "which_in should find .cmd wrapper on Windows, got: {:?}",
+                "在 Windows 上，which_in 应能找到 .cmd 包装器，实际得到：{:?}",
                 result.err()
             );
 
@@ -684,17 +681,16 @@ mod tests {
                 .to_lowercase();
             assert!(
                 ext == "cmd" || ext == "bat",
-                "resolved path should have .cmd/.bat extension, got: {:?}",
+                "解析后的路径应带有 .cmd/.bat 后缀，实际得到：{:?}",
                 path
             );
         }
 
         #[test]
         fn test_resolve_binary_finds_bat_wrapper() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+            let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
             let bat_path = temp_dir.path().join("fake-bat-tool.bat");
-            fs::write(&bat_path, "@echo off\r\necho bat-output\r\n")
-                .expect("failed to create .bat wrapper");
+            fs::write(&bat_path, "@echo off\r\necho bat-output\r\n").expect("创建 .bat 包装器失败");
 
             let search_path = path_with_dir(temp_dir.path());
             let result = which::which_in(
@@ -705,14 +701,14 @@ mod tests {
 
             assert!(
                 result.is_ok(),
-                "which_in should find .bat wrapper on Windows, got: {:?}",
+                "在 Windows 上，which_in 应能找到 .bat 包装器，实际得到：{:?}",
                 result.err()
             );
         }
 
         #[test]
         fn test_resolved_command_executes_cmd_wrapper() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+            let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
             create_temp_cmd_wrapper(temp_dir.path(), "fake-exec-test");
 
             // 先解析完整路径，再直接执行（不修改 PATH）
@@ -722,19 +718,19 @@ mod tests {
                 Some(search_path),
                 std::env::current_dir().unwrap(),
             )
-            .expect("should resolve fake-exec-test");
+            .expect("应能解析 fake-exec-test");
 
             let output = Command::new(&resolved).output();
 
             assert!(
                 output.is_ok(),
-                "Command with resolved path should execute .cmd wrapper on Windows"
+                "在 Windows 上，使用已解析路径的 Command 应能执行 .cmd 包装器"
             );
             let output = output.unwrap();
             let stdout = crate::utils::decode_output(&output.stdout);
             assert!(
                 stdout.contains("fake-tool-output"),
-                "should get output from .cmd wrapper, got: {}",
+                "应从 .cmd 包装器获得输出，实际得到：{}",
                 stdout
             );
         }
@@ -750,13 +746,13 @@ mod tests {
             let result = cmd.output();
             assert!(
                 result.is_err() || !result.unwrap().status.success(),
-                "nonexistent binary should fail to execute, but resolved_command must not panic"
+                "不存在的二进制应执行失败，但 resolved_command 不得 panic"
             );
         }
 
         #[test]
         fn test_tool_exists_finds_cmd_wrapper() {
-            let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+            let temp_dir = tempfile::tempdir().expect("创建临时目录失败");
             create_temp_cmd_wrapper(temp_dir.path(), "fake-exists-test");
 
             let search_path = path_with_dir(temp_dir.path());
@@ -768,7 +764,7 @@ mod tests {
 
             assert!(
                 result.is_ok(),
-                "which_in should find .cmd wrapper on Windows"
+                "在 Windows 上，which_in 应能找到 .cmd 包装器"
             );
         }
     }
