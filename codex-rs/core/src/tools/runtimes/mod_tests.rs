@@ -25,6 +25,15 @@ fn shell_with_snapshot(
     }
 }
 
+fn shell_without_snapshot(shell_type: ShellType, shell_path: &str) -> Shell {
+    let (_tx, shell_snapshot) = watch::channel(None);
+    Shell {
+        shell_type,
+        shell_path: PathBuf::from(shell_path),
+        shell_snapshot,
+    }
+}
+
 #[test]
 fn maybe_wrap_shell_lc_with_snapshot_bootstraps_in_user_shell() {
     let dir = tempdir().expect("create temp dir");
@@ -395,4 +404,67 @@ fn maybe_wrap_shell_lc_with_snapshot_preserves_unset_override_variables() {
         .expect("run rewritten command");
     assert!(output.status.success(), "command failed: {output:?}");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+}
+
+#[test]
+fn maybe_wrap_shell_lc_with_snapshot_restores_path_without_snapshot() {
+    let dir = tempdir().expect("create temp dir");
+    let fake_login_shell = dir.path().join("fake-login-shell.sh");
+    std::fs::write(
+        &fake_login_shell,
+        r#"#!/bin/sh
+if [ "$1" = "-lc" ]; then
+  shift
+  script="$1"
+  shift
+  PATH='/clobbered/bin'
+  export PATH
+  exec /bin/sh -c "$script" "$@"
+fi
+if [ "$1" = "-c" ]; then
+  shift
+  exec /bin/sh -c "$1" "$@"
+fi
+exit 64
+"#,
+    )
+    .expect("write fake login shell");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut perms = std::fs::metadata(&fake_login_shell)
+            .expect("metadata")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&fake_login_shell, perms).expect("chmod fake login shell");
+    }
+
+    let session_shell = shell_without_snapshot(ShellType::Sh, "/bin/sh");
+    let command = vec![
+        fake_login_shell.to_string_lossy().to_string(),
+        "-lc".to_string(),
+        "if env | grep -q '__CODEX_SNAPSHOT_OVERRIDE'; then printf 'leak'; else printf '%s' \"$PATH\"; fi"
+            .to_string(),
+    ];
+    let explicit_env_overrides = HashMap::from([("PATH".to_string(), "/worktree/bin".to_string())]);
+
+    let rewritten = maybe_wrap_shell_lc_with_snapshot(
+        &command,
+        &session_shell,
+        dir.path(),
+        &explicit_env_overrides,
+    );
+
+    assert_eq!(rewritten[0], "/bin/sh");
+    assert_eq!(rewritten[1], "-c");
+    assert!(rewritten[2].contains("exec '"));
+    let output = Command::new(&rewritten[0])
+        .args(&rewritten[1..])
+        .env("PATH", "/worktree/bin")
+        .output()
+        .expect("run rewritten command");
+
+    assert!(output.status.success(), "command failed: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "/worktree/bin");
 }

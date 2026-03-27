@@ -67,25 +67,6 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         return command.to_vec();
     }
 
-    let Some(snapshot) = session_shell.shell_snapshot() else {
-        return command.to_vec();
-    };
-
-    if !snapshot.path.exists() {
-        return command.to_vec();
-    }
-
-    if if let (Ok(snapshot_cwd), Ok(command_cwd)) = (
-        path_utils::normalize_for_path_comparison(snapshot.cwd.as_path()),
-        path_utils::normalize_for_path_comparison(cwd),
-    ) {
-        snapshot_cwd != command_cwd
-    } else {
-        snapshot.cwd != cwd
-    } {
-        return command.to_vec();
-    }
-
     if command.len() < 3 {
         return command.to_vec();
     }
@@ -95,27 +76,56 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         return command.to_vec();
     }
 
-    let snapshot_path = snapshot.path.to_string_lossy();
     let shell_path = session_shell.shell_path.to_string_lossy();
     let original_shell = shell_single_quote(&command[0]);
-    let original_script = shell_single_quote(&command[2]);
-    let snapshot_path = shell_single_quote(snapshot_path.as_ref());
+    let original_script = &command[2];
     let trailing_args = command[3..]
         .iter()
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
     let (override_captures, override_exports) = build_override_exports(explicit_env_overrides);
-    let rewritten_script = if override_exports.is_empty() {
-        format!(
-            "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
-        )
-    } else {
-        format!(
-            "{override_captures}\n\nif . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
-        )
-    };
+    let snapshot = session_shell
+        .shell_snapshot()
+        .filter(|snapshot| snapshot.path.exists())
+        .filter(|snapshot| {
+            if let (Ok(snapshot_cwd), Ok(command_cwd)) = (
+                path_utils::normalize_for_path_comparison(snapshot.cwd.as_path()),
+                path_utils::normalize_for_path_comparison(cwd),
+            ) {
+                snapshot_cwd == command_cwd
+            } else {
+                snapshot.cwd == cwd
+            }
+        });
 
-    vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
+    match snapshot {
+        Some(snapshot) => {
+            let snapshot_path = shell_single_quote(snapshot.path.to_string_lossy().as_ref());
+            let original_script = shell_single_quote(original_script);
+            let rewritten_script = if override_exports.is_empty() {
+                format!(
+                    "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
+                )
+            } else {
+                format!(
+                    "{override_captures}\n\nif . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
+                )
+            };
+
+            vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
+        }
+        None if override_exports.is_empty() => command.to_vec(),
+        None => {
+            let restored_script = format!("{override_exports}\n\n{original_script}");
+            let rewritten_script = format!(
+                "{override_captures}\n\nexec '{original_shell}' -lc '{}'{}",
+                shell_single_quote(&restored_script),
+                trailing_args
+            );
+
+            vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
+        }
+    }
 }
 
 fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (String, String) {
@@ -134,7 +144,7 @@ fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (
         .enumerate()
         .map(|(idx, key)| {
             format!(
-                "__CODEX_SNAPSHOT_OVERRIDE_SET_{idx}=\"${{{key}+x}}\"\n__CODEX_SNAPSHOT_OVERRIDE_{idx}=\"${{{key}-}}\""
+                "export __CODEX_SNAPSHOT_OVERRIDE_SET_{idx}=\"${{{key}+x}}\"\nexport __CODEX_SNAPSHOT_OVERRIDE_{idx}=\"${{{key}-}}\""
             )
         })
         .collect::<Vec<_>>()
@@ -144,7 +154,7 @@ fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (
         .enumerate()
         .map(|(idx, key)| {
             format!(
-                "if [ -n \"${{__CODEX_SNAPSHOT_OVERRIDE_SET_{idx}}}\" ]; then export {key}=\"${{__CODEX_SNAPSHOT_OVERRIDE_{idx}}}\"; else unset {key}; fi"
+                "if [ -n \"${{__CODEX_SNAPSHOT_OVERRIDE_SET_{idx}}}\" ]; then export {key}=\"${{__CODEX_SNAPSHOT_OVERRIDE_{idx}}}\"; else unset {key}; fi\nunset __CODEX_SNAPSHOT_OVERRIDE_SET_{idx} __CODEX_SNAPSHOT_OVERRIDE_{idx}"
             )
         })
         .collect::<Vec<_>>()
