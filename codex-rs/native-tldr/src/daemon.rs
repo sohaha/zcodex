@@ -664,6 +664,13 @@ pub fn read_live_pid(pid_path: &Path) -> Option<bool> {
     Some(pid_is_alive(pid))
 }
 
+#[cfg(not(unix))]
+fn pid_is_alive(pid: i32) -> bool {
+    let _ = pid;
+    false
+}
+
+#[cfg(unix)]
 fn pid_is_alive(pid: i32) -> bool {
     if pid <= 0 {
         return false;
@@ -817,6 +824,7 @@ mod tests {
     use super::daemon_lock_is_held;
     use super::daemon_project_hash;
     use super::lock_path_for_project;
+    use super::pid_is_alive;
     use super::query_daemon;
     use super::write_pid_file;
     use pretty_assertions::assert_eq;
@@ -1560,6 +1568,18 @@ mod tests {
             std::fs::read_to_string(&pid_path).expect("pid file should be readable"),
             std::process::id().to_string()
         );
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn pid_is_alive_returns_false_off_unix() {
+        assert!(!pid_is_alive(123));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pid_is_alive_rejects_non_positive_pid() {
+        assert!(!pid_is_alive(0));
     }
 
     #[test]
