@@ -164,11 +164,11 @@ fn filter_pip_list(output: &str) -> String {
     };
 
     if packages.is_empty() {
-        return "pip list：未安装任何包".to_string();
+        return "pip list: 未安装任何包".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("pip list：{} 个包\n", packages.len()));
+    result.push_str(&format!("pip list: {} 个包\n", packages.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     // 按首字母分组，便于快速浏览
@@ -211,11 +211,11 @@ fn filter_pip_outdated(output: &str) -> String {
     };
 
     if packages.is_empty() {
-        return "✓ pip outdated：所有包已是最新".to_string();
+        return "✓ pip outdated: 所有包已是最新".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("pip outdated：{} 个包\n", packages.len()));
+    result.push_str(&format!("pip outdated: {} 个包\n", packages.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, pkg) in packages.iter().take(20).enumerate() {

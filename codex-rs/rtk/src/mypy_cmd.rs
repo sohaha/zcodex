@@ -150,9 +150,9 @@ pub fn filter_mypy_output(output: &str) -> String {
     // 完全没有错误
     if errors.is_empty() && fileless_lines.is_empty() {
         if output.contains("Success: no issues found") || output.contains("no issues found") {
-            return "mypy：未发现问题".to_string();
+            return "mypy: 未发现问题".to_string();
         }
-        return "mypy：未发现问题".to_string();
+        return "mypy: 未发现问题".to_string();
     }
 
     // 按文件分组
@@ -182,7 +182,7 @@ pub fn filter_mypy_output(output: &str) -> String {
 
     if !errors.is_empty() {
         result.push_str(&format!(
-            "mypy：{} 个错误，{} 个文件\n",
+            "mypy: {} 个错误，{} 个文件\n",
             errors.len(),
             by_file.len()
         ));
@@ -249,7 +249,7 @@ src/models/user.py:20: error: Missing return statement  [return]
 Found 5 errors in 2 files (checked 10 source files)
 ";
         let result = filter_mypy_output(output);
-        assert!(result.contains("mypy：5 个错误，2 个文件"));
+        assert!(result.contains("mypy: 5 个错误，2 个文件"));
         // `user.py` 有 3 个错误，`auth.py` 有 2 个，`user.py` 应排在前面
         let user_pos = result.find("user.py").unwrap();
         let auth_pos = result.find("auth.py").unwrap();
@@ -359,7 +359,7 @@ Found 1 error in 1 file
     fn test_filter_mypy_no_errors() {
         let output = "Success: no issues found in 5 source files\n";
         let result = filter_mypy_output(output);
-        assert_eq!(result, "mypy：未发现问题");
+        assert_eq!(result, "mypy: 未发现问题");
     }
 
     #[test]

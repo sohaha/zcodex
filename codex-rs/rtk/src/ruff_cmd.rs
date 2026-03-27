@@ -133,7 +133,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     };
 
     if diagnostics.is_empty() {
-        return "✓ Ruff：未发现问题".to_string();
+        return "✓ Ruff: 未发现问题".to_string();
     }
 
     let total_issues = diagnostics.len();
@@ -162,7 +162,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     // 构造输出
     let mut result = String::new();
     result.push_str(&format!(
-        "Ruff：{total_files} 个文件，{total_issues} 个问题"
+        "Ruff: {total_files} 个文件，{total_issues} 个问题"
     ));
 
     if fixable_count > 0 {
@@ -262,7 +262,7 @@ pub fn filter_ruff_format(output: &str) -> String {
 
     // 检查是否所有文件都已格式化
     if files_to_format.is_empty() && output_lower.contains("left unchanged") {
-        return "✓ Ruff format：所有文件格式正确".to_string();
+        return "✓ Ruff format: 所有文件格式正确".to_string();
     }
 
     let mut result = String::new();
@@ -270,10 +270,10 @@ pub fn filter_ruff_format(output: &str) -> String {
     if output_lower.contains("would reformat") {
         // check 模式：显示需要格式化的文件
         if files_to_format.is_empty() {
-            result.push_str("✓ Ruff format：所有文件格式正确\n");
+            result.push_str("✓ Ruff format: 所有文件格式正确\n");
         } else {
             result.push_str(&format!(
-                "Ruff format：{} 个文件需要格式化\n",
+                "Ruff format: {} 个文件需要格式化\n",
                 files_to_format.len()
             ));
             result.push_str("═══════════════════════════════════════\n");

@@ -170,15 +170,15 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     let (passed, failed, skipped) = parse_summary_line(summary);
 
     if failed == 0 && passed > 0 {
-        return format!("✓ Pytest：{passed} 通过");
+        return format!("✓ Pytest: {passed} 通过");
     }
 
     if passed == 0 && failed == 0 {
-        return "Pytest：未收集到测试".to_string();
+        return "Pytest: 未收集到测试".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Pytest：{passed} 通过，{failed} 失败"));
+    result.push_str(&format!("Pytest: {passed} 通过，{failed} 失败"));
     if skipped > 0 {
         result.push_str(&format!("，{skipped} 跳过"));
     }

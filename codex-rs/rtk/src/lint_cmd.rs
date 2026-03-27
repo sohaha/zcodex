@@ -196,7 +196,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             if !stdout.trim().is_empty() {
                 ruff_cmd::filter_ruff_check_json(&stdout)
             } else {
-                "✓ Ruff：未发现问题".to_string()
+                "✓ Ruff: 未发现问题".to_string()
             }
         }
         "pylint" => filter_pylint_json(&stdout),
@@ -250,7 +250,7 @@ fn filter_eslint_json(output: &str) -> String {
     let total_files = results.iter().filter(|r| !r.messages.is_empty()).count();
 
     if total_errors == 0 && total_warnings == 0 {
-        return "✓ ESLint：未发现问题".to_string();
+        return "✓ ESLint: 未发现问题".to_string();
     }
 
     // 按规则分组消息
@@ -274,7 +274,7 @@ fn filter_eslint_json(output: &str) -> String {
     // 构建输出
     let mut result = String::new();
     result.push_str(&format!(
-        "ESLint：{total_files} 个文件，{total_errors} 个错误，{total_warnings} 个警告\n"
+        "ESLint: {total_files} 个文件，{total_errors} 个错误，{total_warnings} 个警告\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -336,7 +336,7 @@ fn filter_pylint_json(output: &str) -> String {
     };
 
     if diagnostics.is_empty() {
-        return "✓ Pylint：未发现问题".to_string();
+        return "✓ Pylint: 未发现问题".to_string();
     }
 
     // 按类型统计
@@ -378,7 +378,7 @@ fn filter_pylint_json(output: &str) -> String {
     // 构建输出
     let mut result = String::new();
     result.push_str(&format!(
-        "Pylint：{total_files} 个文件，{} 个问题\n",
+        "Pylint: {total_files} 个文件，{} 个问题\n",
         diagnostics.len()
     ));
 
@@ -451,11 +451,11 @@ fn filter_generic_lint(output: &str) -> String {
     }
 
     if errors == 0 && warnings == 0 {
-        return "✓ Lint：未发现问题".to_string();
+        return "✓ Lint: 未发现问题".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Lint：{errors} 个错误，{warnings} 个警告\n"));
+    result.push_str(&format!("Lint: {errors} 个错误，{warnings} 个警告\n"));
     result.push_str("═══════════════════════════════════════\n");
 
     for issue in issues.iter().take(20) {
@@ -530,7 +530,7 @@ mod tests {
         ]"#;
 
         let result = filter_eslint_json(json);
-        assert!(result.contains("ESLint："));
+        assert!(result.contains("ESLint:"));
         assert!(result.contains("prefer-const"));
         assert!(result.contains("no-unused-vars"));
         assert!(result.contains("src/utils.ts"));

@@ -112,7 +112,7 @@ pub fn filter_prettier_output(output: &str) -> String {
 
     // 检查是否所有文件都已格式化
     if files_to_format.is_empty() && output.contains("All matched files use Prettier") {
-        return "✓ Prettier：所有文件格式正确".to_string();
+        return "✓ Prettier: 所有文件格式正确".to_string();
     }
 
     // 检查是否有文件被写入（write 模式）
@@ -125,10 +125,10 @@ pub fn filter_prettier_output(output: &str) -> String {
     if is_check_mode {
         // check 模式：显示需要格式化的文件
         if files_to_format.is_empty() {
-            result.push_str("✓ Prettier：所有文件格式正确\n");
+            result.push_str("✓ Prettier: 所有文件格式正确\n");
         } else {
             result.push_str(&format!(
-                "Prettier：{} 个文件需要格式化\n",
+                "Prettier: {} 个文件需要格式化\n",
                 files_to_format.len()
             ));
             result.push_str("═══════════════════════════════════════\n");
@@ -151,7 +151,7 @@ pub fn filter_prettier_output(output: &str) -> String {
     } else {
         // write 模式：显示已格式化内容
         result.push_str(&format!(
-            "✓ Prettier：已格式化 {} 个文件\n",
+            "✓ Prettier: 已格式化 {} 个文件\n",
             files_to_format.len()
         ));
     }

@@ -112,7 +112,7 @@ fn filter_tsc_output(output: &str) -> String {
 
     if errors.is_empty() {
         if output.contains("Found 0 errors") {
-            return "✓ TypeScript：未发现错误".to_string();
+            return "✓ TypeScript: 未发现错误".to_string();
         }
         return "TypeScript 编译完成".to_string();
     }
@@ -131,7 +131,7 @@ fn filter_tsc_output(output: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&format!(
-        "TypeScript：{} 个错误，{} 个文件\n",
+        "TypeScript: {} 个错误，{} 个文件\n",
         errors.len(),
         by_file.len()
     ));
@@ -190,7 +190,7 @@ src/components/Button.tsx(10,5): error TS2322: Type 'string' is not assignable t
 Found 4 errors in 2 files.
 "#;
         let result = filter_tsc_output(output);
-        assert!(result.contains("TypeScript：4 个错误，2 个文件"));
+        assert!(result.contains("TypeScript: 4 个错误，2 个文件"));
         assert!(result.contains("auth.ts（2 个错误）"));
         assert!(result.contains("Button.tsx（2 个错误）"));
         assert!(result.contains("TS2322"));
