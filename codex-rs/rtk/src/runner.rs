@@ -111,15 +111,15 @@ fn filter_errors(output: &str) -> String {
             crate::utils::compile_regex(r"(?i)^.*failure.*$"),
             crate::utils::compile_regex(r"(?i)^.*exception.*$"),
             crate::utils::compile_regex(r"(?i)^.*panic.*$"),
-            // Rust 特有格式
+            // Rust 特定格式
             crate::utils::compile_regex(r"^error\[E\d+\]:.*$"),
             crate::utils::compile_regex(r"^\s*--> .*:\d+:\d+$"),
-            // Python
+            // Python 格式
             crate::utils::compile_regex(r"^Traceback.*$"),
             crate::utils::compile_regex(r#"^\s*File ".*", line \d+.*$"#),
-            // JavaScript / TypeScript
+            // JavaScript / TypeScript 格式
             crate::utils::compile_regex(r"^\s*at .*:\d+:\d+.*$"),
-            // Go
+            // Go 格式
             crate::utils::compile_regex(r"^.*\.go:\d+:.*$"),
         ];
     }
@@ -165,7 +165,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     let mut failure_lines = Vec::new();
 
     for line in lines.iter() {
-        // Cargo test
+        // Cargo test 输出
         if is_cargo {
             if line.contains("test result:") {
                 result.push(line.to_string());
@@ -181,7 +181,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
             }
         }
 
-        // Pytest
+        // pytest 输出
         if is_pytest {
             if line.contains(" passed") || line.contains(" failed") || line.contains(" error") {
                 result.push(line.to_string());
@@ -191,7 +191,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
             }
         }
 
-        // Jest
+        // Jest 输出
         if is_jest {
             if line.contains("Tests:") || line.contains("Test Suites:") {
                 result.push(line.to_string());
@@ -201,7 +201,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
             }
         }
 
-        // Go test
+        // Go test 输出
         if is_go {
             if line.starts_with("ok") || line.starts_with("FAIL") || line.starts_with("---") {
                 result.push(line.to_string());
@@ -232,7 +232,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
             output.push_str(&format!("  {r}\n"));
         }
     } else {
-        // Fallback: show last few lines
+        // 回退：显示最后几行
         output.push_str("📊 输出（最后 5 行）：\n");
         let start = lines.len().saturating_sub(5);
         for line in &lines[start..] {

@@ -27,7 +27,7 @@ pub fn run(cmd: PrismaCommand, args: &[String], verbose: u8) -> Result<()> {
     }
 }
 
-/// Create a Command that will run prisma (tries global first, then npx)
+/// 创建用于运行 prisma 的 Command（优先全局安装，其次回退到 npx）
 fn create_prisma_command() -> Command {
     if tool_exists("prisma") {
         resolved_command("prisma")
@@ -180,7 +180,7 @@ fn run_db_push(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter prisma generate output - strip ASCII art, extract counts
+/// 过滤 `prisma generate` 输出：去掉 ASCII art，并提取计数信息
 fn filter_prisma_generate(output: &str) -> String {
     let mut models = 0;
     let mut enums = 0;
@@ -188,7 +188,7 @@ fn filter_prisma_generate(output: &str) -> String {
     let mut output_path = String::new();
 
     for line in output.lines() {
-        // Skip ASCII art and box drawing
+        // 跳过 ASCII art 和框线字符
         if line.contains("█")
             || line.contains("▀")
             || line.contains("▄")
@@ -199,7 +199,7 @@ fn filter_prisma_generate(output: &str) -> String {
             continue;
         }
 
-        // Extract counts
+        // 提取计数
         if line.contains("model")
             && line.contains("generated")
             && let Some(num) = extract_number(line)
@@ -217,7 +217,7 @@ fn filter_prisma_generate(output: &str) -> String {
             types = num;
         }
 
-        // Extract output path
+        // 提取输出路径
         if line.contains("node_modules") && line.contains("@prisma") {
             output_path = line.trim().to_string();
         }
@@ -239,7 +239,7 @@ fn filter_prisma_generate(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter migrate dev output - extract migration changes
+/// 过滤 `migrate dev` 输出，提取迁移变更
 fn filter_migrate_dev(output: &str) -> String {
     let mut migration_name = String::new();
     let mut tables_added = 0;
@@ -249,7 +249,7 @@ fn filter_migrate_dev(output: &str) -> String {
     let mut applied = false;
 
     for line in output.lines() {
-        // Extract migration name
+        // 提取迁移名
         if line.contains("migration")
             && line.contains("_")
             && let Some(pos) = line.find("202")
@@ -260,7 +260,7 @@ fn filter_migrate_dev(output: &str) -> String {
             migration_name = line[pos..pos + end].to_string();
         }
 
-        // Count changes
+        // 统计变更
         if line.contains("CREATE TABLE") {
             tables_added += 1;
         }
@@ -312,7 +312,7 @@ fn filter_migrate_dev(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter migrate status output
+/// 过滤 `migrate status` 输出
 fn filter_migrate_status(output: &str) -> String {
     let mut applied_count = 0;
     let mut pending_count = 0;
@@ -346,7 +346,7 @@ fn filter_migrate_status(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter migrate deploy output
+/// 过滤 `migrate deploy` 输出
 fn filter_migrate_deploy(output: &str) -> String {
     let mut deployed = 0;
     let mut errors = Vec::new();
@@ -374,7 +374,7 @@ fn filter_migrate_deploy(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter db push output
+/// 过滤 `db push` 输出
 fn filter_db_push(output: &str) -> String {
     let mut tables_added = 0;
     let mut columns_modified = 0;
@@ -404,13 +404,13 @@ fn filter_db_push(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Extract first number from a line
+/// 从一行中提取第一个数字
 fn extract_number(line: &str) -> Option<usize> {
     line.split_whitespace()
         .find_map(|word| word.parse::<usize>().ok())
 }
 
-/// Extract table name from SQL
+/// 从 SQL 中提取表名
 fn extract_table_name(line: &str) -> Option<String> {
     if line.contains("TABLE") {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -427,7 +427,7 @@ fn extract_table_name(line: &str) -> Option<String> {
     None
 }
 
-/// Extract index name from SQL
+/// 从 SQL 中提取索引名
 fn extract_index_name(line: &str) -> Option<String> {
     if line.contains("INDEX") {
         let parts: Vec<&str> = line.split_whitespace().collect();
@@ -463,7 +463,7 @@ import { PrismaClient } from '@prisma/client'
 "#;
         let result = filter_prisma_generate(output);
         assert!(result.contains("✓ Prisma Client 已生成"));
-        // Parser may not extract exact counts from this format, just check it doesn't crash
+        // 解析器未必能精确提取此格式下的计数，这里只验证不会崩溃
         assert!(!result.contains("Prisma schema loaded"));
         assert!(!result.contains("Start by importing"));
     }

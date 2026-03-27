@@ -5,14 +5,14 @@ use std::path::Path;
 
 use crate::filter::Language;
 
-/// Heuristic-based code summarizer - no external model needed
+/// 基于启发式的代码摘要器，不依赖外部模型
 pub fn run(file: &Path, _model: &str, _force_download: bool, verbose: u8) -> Result<()> {
     if verbose > 0 {
         eprintln!("分析：{}", file.display());
     }
 
-    let content = fs::read_to_string(file)
-        .with_context(|| format!("Failed to read file: {}", file.display()))?;
+    let content =
+        fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
     let lang = file
         .extension()
@@ -37,16 +37,16 @@ struct CodeSummary {
 fn analyze_code(content: &str, lang: Language) -> CodeSummary {
     let total_lines = content.lines().count();
 
-    // Extract components
+    // 提取组成部分
     let imports = extract_imports(content, lang);
     let functions = extract_functions(content, lang);
     let structs = extract_structs(content, lang);
     let traits = extract_traits(content, lang);
 
-    // Detect patterns
+    // 检测模式
     let patterns = detect_patterns(content, lang);
 
-    // Build line 1: What it is
+    // 生成第 1 行：它是什么
     let lang_name = lang_display_name(lang);
     let main_type = if matches!(lang, Language::Data) {
         "数据文件".to_string()
@@ -82,10 +82,10 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
         )
     };
 
-    // Build line 2: Key details
+    // 生成第 2 行：关键细节
     let mut details = Vec::new();
 
-    // Main imports/dependencies
+    // 主要导入/依赖
     if !imports.is_empty() {
         let key_imports: Vec<&str> = imports
             .iter()
@@ -95,12 +95,12 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
         details.push(format!("依赖：{}", key_imports.join(", ")));
     }
 
-    // Key patterns detected
+    // 检测到的关键模式
     if !patterns.is_empty() {
         details.push(format!("模式：{}", patterns.join(", ")));
     }
 
-    // Main functions/structs
+    // 主要函数/结构
     if !functions.is_empty() {
         let key_fns: Vec<&str> = functions
             .iter()
@@ -241,7 +241,7 @@ fn extract_traits(content: &str, lang: Language) -> Vec<String> {
 fn detect_patterns(content: &str, lang: Language) -> Vec<String> {
     let mut patterns = Vec::new();
 
-    // Common patterns
+    // 通用模式
     if content.contains("async") && content.contains("await") {
         patterns.push("async".to_string());
     }

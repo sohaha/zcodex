@@ -139,8 +139,8 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
         .map(|a| a.to_string_lossy().into())
         .collect();
 
-    // gt passes unknown subcommands to git, so "gt status" = "git status".
-    // Route known git commands to RTK's git filters for token savings.
+    // gt 会把未知子命令转交给 git，因此 "gt status" 等同于 "git status"。
+    // 已知 git 命令则路由到 RTK 的 git 过滤器，以节省 token。
     match subcommand.as_ref() {
         "status" => crate::git::run(
             crate::git::GitCommand::Status,

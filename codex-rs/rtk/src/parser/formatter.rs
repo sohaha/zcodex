@@ -122,7 +122,7 @@ impl TokenFormatter for LintResult {
         )];
 
         if !self.issues.is_empty() {
-            // Group by rule_id
+            // 按 rule_id 分组
             let mut by_rule: std::collections::HashMap<String, Vec<&LintIssue>> =
                 std::collections::HashMap::new();
             for issue in &self.issues {
