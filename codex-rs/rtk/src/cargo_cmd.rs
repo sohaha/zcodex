@@ -1605,12 +1605,12 @@ error: test run failed
      Summary [   0.050s] 10 tests run: 10 passed, 0 skipped
 "#;
         let result = filter_cargo_nextest(output);
-        assert!(!result.contains("Compiling"), "应去除 Compiling：{result}");
+        assert!(!result.contains("Compiling"), "应去除 Compiling: {result}");
         assert!(
             !result.contains("Downloading"),
-            "应去除 Downloading：{result}"
+            "应去除 Downloading: {result}"
         );
-        assert!(!result.contains("Finished"), "应去除 Finished：{result}");
+        assert!(!result.contains("Finished"), "应去除 Finished: {result}");
         assert!(
             result.contains("✓ cargo nextest: 10 通过"),
             "实际得到：{result}"
