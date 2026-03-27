@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::path::Path;
 
 const CODEX_PREFIX: &str = "codex rtk";
+const ENV_PREFIX_FLAGS: &[&str] = &["-i", "--ignore-environment"];
 
 const DIRECT_PREFIXES: &[&str] = &[
     "aws",
@@ -271,17 +272,37 @@ fn split_leading_env_prefix(args: &[String]) -> Option<(Vec<String>, &[String])>
     if args.get(index).is_some_and(|arg| arg == "env") {
         prefix.push("env".to_string());
         index += 1;
-        if args.get(index).is_some_and(|arg| arg == "--") {
-            prefix.push("--".to_string());
-            index += 1;
-        }
         while let Some(arg) = args.get(index) {
+            if ENV_PREFIX_FLAGS.contains(&arg.as_str()) {
+                prefix.push(arg.clone());
+                index += 1;
+                continue;
+            }
+            if matches!(arg.as_str(), "-u" | "-C") {
+                let Some(value) = args.get(index + 1) else {
+                    return None;
+                };
+                prefix.push(arg.clone());
+                prefix.push(value.clone());
+                index += 2;
+                continue;
+            }
+            if arg.starts_with("--unset=") || arg.starts_with("--chdir=") {
+                prefix.push(arg.clone());
+                index += 1;
+                continue;
+            }
+            if arg == "--" {
+                prefix.push("--".to_string());
+                index += 1;
+                continue;
+            }
             if is_env_assignment(arg) {
                 prefix.push(arg.clone());
                 index += 1;
-            } else {
-                break;
+                continue;
             }
+            break;
         }
     }
 
@@ -299,6 +320,10 @@ fn split_command_prefix(args: &[String]) -> Option<(String, &[String])> {
         return None;
     };
     if first == "command" {
+        let rest = match rest {
+            [flag, tail @ ..] if flag == "--" => tail,
+            _ => rest,
+        };
         let [next, tail @ ..] = rest else {
             return None;
         };
@@ -446,8 +471,20 @@ mod tests {
             Some("codex rtk git status".to_string())
         );
         assert_eq!(
+            rewrite_shell_command("command -- git -C repo status"),
+            Some("codex rtk git -C repo status".to_string())
+        );
+        assert_eq!(
             rewrite_shell_command("/usr/bin/git status"),
             Some("codex rtk git status".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("git -C repo status"),
+            Some("codex rtk git -C repo status".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("cargo --manifest-path Cargo.toml test -p codex-core"),
+            Some("codex rtk cargo --manifest-path Cargo.toml test -p codex-core".to_string())
         );
     }
 
@@ -506,6 +543,10 @@ mod tests {
         assert_eq!(
             rewrite_shell_command("env -- FOO=1 git status"),
             Some("env -- FOO=1 codex rtk git status".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("env -i -u HOME git -C repo status"),
+            Some("env -i -u HOME codex rtk git -C repo status".to_string())
         );
     }
 

@@ -193,6 +193,15 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         ShellCommandHandler::route_command("command git status").command,
         "codex rtk git status"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("git -C repo status").command,
+        "codex rtk git -C repo status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("cargo --manifest-path Cargo.toml test -p codex-core")
+            .command,
+        "codex rtk cargo --manifest-path Cargo.toml test -p codex-core"
+    );
 }
 
 #[test]

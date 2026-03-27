@@ -115,6 +115,8 @@ Current behavior:
   `codex rtk read ...`
 - simple prefixes such as leading env assignments, `env`, `env --`, and
   `command` are supported when the routed command shape stays unambiguous
+- common pre-command flag shapes such as `git -C repo status` and
+  `cargo --manifest-path Cargo.toml test -p codex-core` are routed as-is
 - compound shell syntax such as pipes, redirects, command substitution, or
   other unsupported shapes remains raw
 
