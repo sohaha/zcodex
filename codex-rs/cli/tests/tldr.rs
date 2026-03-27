@@ -314,3 +314,97 @@ async fn tldr_impact_text_renders_summary_lines() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn tldr_daemon_notify_json_exposes_snapshot_details() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "notify",
+            "src/lib.rs",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "notify");
+    assert_eq!(payload["status"], "ok");
+    assert_eq!(payload["snapshot"]["dirty_files"], 1);
+    assert!(
+        payload["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty())
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tldr_daemon_status_json_exposes_daemon_status_fields() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut notify_cmd = codex_command(codex_home.path())?;
+    notify_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "notify",
+            "src/lib.rs",
+        ])
+        .assert()
+        .success();
+
+    let mut status_cmd = codex_command(codex_home.path())?;
+    let output = status_cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "status",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "status");
+    assert_eq!(payload["status"], "ok");
+    assert!(payload["daemonStatus"].is_object());
+    assert!(payload["snapshot"].is_object());
+    assert_eq!(payload["daemonStatus"]["healthy"], true);
+    assert!(payload["daemonStatus"]["socket_path"].is_string());
+    assert!(payload["snapshot"]["dirty_files"].as_u64().is_some());
+
+    Ok(())
+}
