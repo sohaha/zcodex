@@ -249,3 +249,27 @@ fn prepend_arg0_helper_dir_to_path_skips_duplicate_entries() {
         Some(&"/tmp/codex-arg0:/usr/local/bin:/usr/bin".to_string())
     );
 }
+
+#[test]
+fn explicit_snapshot_env_overrides_preserve_helper_path_and_dependency_env() {
+    let shell_env_overrides = hashmap! {
+        "FOO".to_string() => "bar".to_string(),
+    };
+    let dependency_env = hashmap! {
+        "OPENAI_API_KEY".to_string() => "secret".to_string(),
+    };
+    let exec_env = hashmap! {
+        "PATH".to_string() => "/tmp/codex-arg0-helper:/usr/local/bin:/usr/bin".to_string(),
+        "OPENAI_API_KEY".to_string() => "secret".to_string(),
+    };
+
+    let overrides =
+        explicit_snapshot_env_overrides(&shell_env_overrides, &dependency_env, &exec_env);
+
+    assert_eq!(
+        overrides.get("PATH"),
+        Some(&"/tmp/codex-arg0-helper:/usr/local/bin:/usr/bin".to_string())
+    );
+    assert_eq!(overrides.get("FOO"), Some(&"bar".to_string()));
+    assert_eq!(overrides.get("OPENAI_API_KEY"), Some(&"secret".to_string()));
+}

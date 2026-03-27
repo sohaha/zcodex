@@ -14,6 +14,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::exec_env::create_env;
+use crate::exec_env::explicit_snapshot_env_overrides;
 use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::protocol::ExecCommandSource;
@@ -593,6 +594,10 @@ impl UnifiedExecProcessManager {
             context.session.services.main_execve_wrapper_exe.as_deref(),
             context.turn.codex_linux_sandbox_exe.as_deref(),
         );
+        let dependency_env = context.session.dependency_env().await;
+        if !dependency_env.is_empty() {
+            env.extend(dependency_env.clone());
+        }
         let env = apply_unified_exec_env(env);
         let mut orchestrator = ToolOrchestrator::new();
         let mut runtime = UnifiedExecRuntime::new(
@@ -616,11 +621,16 @@ impl UnifiedExecProcessManager {
                 prefix_rule: request.prefix_rule.clone(),
             })
             .await;
+        let explicit_env_overrides = explicit_snapshot_env_overrides(
+            &context.turn.shell_environment_policy.r#set,
+            &dependency_env,
+            &env,
+        );
         let req = UnifiedExecToolRequest {
             command: request.command.clone(),
             cwd,
             env,
-            explicit_env_overrides: context.turn.shell_environment_policy.r#set.clone(),
+            explicit_env_overrides,
             network: request.network.clone(),
             tty: request.tty,
             sandbox_permissions: request.sandbox_permissions,

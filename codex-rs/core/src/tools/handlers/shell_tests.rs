@@ -376,8 +376,11 @@ async fn snapshot_explicit_env_overrides_keep_helper_path() {
         ("OPENAI_API_KEY".to_string(), "secret".to_string()),
     ]);
 
-    let overrides =
-        super::explicit_env_overrides_for_snapshot(&turn_context, &dependency_env, &exec_env);
+    let overrides = crate::exec_env::explicit_snapshot_env_overrides(
+        &turn_context.shell_environment_policy.r#set,
+        &dependency_env,
+        &exec_env,
+    );
 
     assert_eq!(
         overrides.get("PATH"),

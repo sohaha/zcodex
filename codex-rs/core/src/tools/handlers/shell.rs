@@ -10,6 +10,7 @@ use crate::codex::TurnContext;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
+use crate::exec_env::explicit_snapshot_env_overrides;
 use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::function_tool::FunctionCallError;
@@ -38,7 +39,6 @@ use crate::tools::sandboxing::ToolCtx;
 use crate::tools::spec::ShellCommandBackendConfig;
 use codex_features::Feature;
 use codex_protocol::models::PermissionProfile;
-use std::collections::HashMap;
 pub struct ShellHandler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,28 +71,6 @@ struct RoutedCommand {
     command: String,
     interaction_input: Option<String>,
     model_output_prefix: Option<String>,
-}
-
-fn explicit_env_overrides_for_snapshot(
-    turn: &TurnContext,
-    dependency_env: &HashMap<String, String>,
-    exec_env: &HashMap<String, String>,
-) -> HashMap<String, String> {
-    let mut explicit_env_overrides = turn.shell_environment_policy.r#set.clone();
-    for key in dependency_env.keys() {
-        if let Some(value) = exec_env.get(key) {
-            explicit_env_overrides.insert(key.clone(), value.clone());
-        }
-    }
-
-    if let Some((path_key, path_value)) = exec_env
-        .iter()
-        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
-    {
-        explicit_env_overrides.insert(path_key.clone(), path_value.clone());
-    }
-
-    explicit_env_overrides
 }
 
 impl ShellHandler {
@@ -454,8 +432,11 @@ impl ShellHandler {
             exec_params.env.extend(dependency_env.clone());
         }
 
-        let explicit_env_overrides =
-            explicit_env_overrides_for_snapshot(&turn, &dependency_env, &exec_params.env);
+        let explicit_env_overrides = explicit_snapshot_env_overrides(
+            &turn.shell_environment_policy.r#set,
+            &dependency_env,
+            &exec_params.env,
+        );
 
         let exec_permission_approvals_enabled =
             session.features().enabled(Feature::ExecPermissionApprovals);

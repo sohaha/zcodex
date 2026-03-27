@@ -67,6 +67,28 @@ pub fn prepend_arg0_helper_dir_to_path(
     }
 }
 
+pub fn explicit_snapshot_env_overrides(
+    shell_env_overrides: &HashMap<String, String>,
+    dependency_env: &HashMap<String, String>,
+    exec_env: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut explicit_env_overrides = shell_env_overrides.clone();
+    for key in dependency_env.keys() {
+        if let Some(value) = exec_env.get(key) {
+            explicit_env_overrides.insert(key.clone(), value.clone());
+        }
+    }
+
+    if let Some((path_key, path_value)) = exec_env
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+    {
+        explicit_env_overrides.insert(path_key.clone(), path_value.clone());
+    }
+
+    explicit_env_overrides
+}
+
 fn populate_env<I>(
     vars: I,
     policy: &ShellEnvironmentPolicy,
