@@ -352,6 +352,20 @@ fn shell_command_handler_reports_unsupported_wrapper_flags_as_raw() {
 }
 
 #[test]
+fn shell_command_handler_reports_parse_failures_as_raw() {
+    let routed = ShellCommandHandler::route_command("git 'unterminated");
+    assert_eq!(routed.command, "git 'unterminated");
+    assert_eq!(routed.interaction_input, None);
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: git 'unterminated\nexecuted: git 'unterminated\nreason: failed to parse shell words"
+                .to_string()
+        )
+    );
+}
+
+#[test]
 fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
     let routed = ShellCommandHandler::route_command("grep 'a|b' src/main.rs");
     assert_eq!(routed.command, "rtk grep 'a|b' src/main.rs");

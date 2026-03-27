@@ -1029,6 +1029,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_failures_stay_raw_without_candidate_hints() {
+        for command in [
+            "git 'unterminated",
+            "env FOO=1 git \"unterminated",
+            "codex rtk grep 'unterminated",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::ParseFailed,
+                    candidate: false,
+                }
+            );
+        }
+    }
+
+    #[test]
     fn preserves_quoted_literals_while_blocking_real_shell_syntax() {
         assert_rewrite_cases(&[
             ("grep 'a|b' src/main.rs", Some("rtk grep 'a|b' src/main.rs")),
