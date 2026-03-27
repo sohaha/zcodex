@@ -3530,8 +3530,34 @@ impl Session {
         items: &[ResponseItem],
         reference_context_item: Option<TurnContextItem>,
     ) -> Option<TurnContextItem> {
-        let _ = items;
-        reference_context_item
+        let Some(reference_context_item) = reference_context_item else {
+            return None;
+        };
+        let mut has_contextual_developer_message = false;
+        let mut has_contextual_user_message = false;
+
+        for item in items {
+            let ResponseItem::Message { role, content, .. } = item else {
+                continue;
+            };
+            if !has_contextual_developer_message
+                && role == "developer"
+                && crate::event_mapping::is_contextual_dev_message_content(content)
+            {
+                has_contextual_developer_message = true;
+            }
+            if !has_contextual_user_message
+                && role == "user"
+                && crate::event_mapping::is_contextual_user_message_content(content)
+            {
+                has_contextual_user_message = true;
+            }
+            if has_contextual_developer_message && has_contextual_user_message {
+                return Some(reference_context_item);
+            }
+        }
+
+        None
     }
 
     pub(crate) async fn replace_history(

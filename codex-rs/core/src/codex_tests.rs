@@ -4457,6 +4457,54 @@ async fn replace_compacted_history_clears_persisted_reference_context_item_witho
 }
 
 #[tokio::test]
+async fn replace_history_preserves_reference_context_item_only_with_full_context_pair() {
+    let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
+    let reference_context_item = turn_context.to_turn_context_item();
+    let contextual_developer_message = ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "<permissions instructions>\nworkspace-write\n</permissions instructions>"
+                .to_string(),
+        }],
+        end_turn: None,
+        phase: None,
+    };
+    let contextual_user_message = crate::contextual_user_message::ENVIRONMENT_CONTEXT_FRAGMENT
+        .into_message(
+            crate::contextual_user_message::ENVIRONMENT_CONTEXT_FRAGMENT
+                .wrap("cwd=/workspace".to_string()),
+        );
+
+    session
+        .replace_history(
+            vec![
+                contextual_developer_message.clone(),
+                contextual_user_message.clone(),
+            ],
+            Some(reference_context_item.clone()),
+        )
+        .await;
+    assert_eq!(
+        serde_json::to_value(session.reference_context_item().await).expect("serialize current"),
+        serde_json::to_value(Some(reference_context_item.clone())).expect("serialize expected")
+    );
+
+    session
+        .replace_history(
+            vec![contextual_developer_message],
+            Some(reference_context_item.clone()),
+        )
+        .await;
+    assert!(session.reference_context_item().await.is_none());
+
+    session
+        .replace_history(vec![contextual_user_message], Some(reference_context_item))
+        .await;
+    assert!(session.reference_context_item().await.is_none());
+}
+
+#[tokio::test]
 async fn record_context_updates_and_set_reference_context_item_does_not_reemit_removed_guidance() {
     let (session, turn_context) = make_session_and_context().await;
     session
