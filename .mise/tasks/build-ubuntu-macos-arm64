@@ -478,6 +478,11 @@ fi
 export SDKROOT="$sdk_path"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
+shared_target_dir="$repo_root/.cargo-target"
+if [ -z "${CARGO_TARGET_DIR:-}" ] || [ "$CARGO_TARGET_DIR" = "$shared_target_dir" ]; then
+  export CARGO_TARGET_DIR="$repo_root/.cargo-target-cross-macos-arm64"
+fi
+mkdir -p "$CARGO_TARGET_DIR"
 # On Linux host, libz-sys may pick host pkg-config paths like x86_64-linux-gnu.
 # Force vendored/probed build path for Apple target to avoid invalid linker search dirs.
 export ZLIB_NO_PKG_CONFIG="${ZLIB_NO_PKG_CONFIG:-1}"
