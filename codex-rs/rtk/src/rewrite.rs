@@ -81,6 +81,13 @@ impl ShellCommandPassthroughReason {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct ParsedCommandTarget<'a> {
+    prefix: Vec<String>,
+    target: String,
+    rest: &'a [String],
+}
+
 pub fn rewrite_shell_command(command: &str) -> Option<String> {
     let analysis = analyze_shell_command(command);
     match analysis.kind {
@@ -117,31 +124,25 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
             looks_like_rtk_candidate(trimmed),
         );
     };
-    let Some((prefix, routed_args)) = split_leading_env_prefix(&args) else {
+    let Some(parsed) = parse_command_target(&args) else {
         return passthrough(
             trimmed,
             ShellCommandPassthroughReason::MissingCommand,
             looks_like_rtk_candidate(trimmed),
         );
     };
-    let Some((target, rest)) = split_command_prefix(routed_args) else {
-        return passthrough(
-            trimmed,
-            ShellCommandPassthroughReason::MissingCommand,
-            looks_like_rtk_candidate(trimmed),
-        );
-    };
-    if target == "sudo" {
+    if parsed.target == "sudo" {
         return passthrough(trimmed, ShellCommandPassthroughReason::Sudo, true);
     }
 
-    let rewritten = match target.as_str() {
-        "cat" => rewrite_cat(rest),
-        "head" => rewrite_head(rest),
-        "tail" => rewrite_tail(rest),
-        command if DIRECT_PREFIXES.contains(&command) => {
-            Some(format!("{CODEX_PREFIX} {command}{}", join_rest_args(rest)))
-        }
+    let rewritten = match parsed.target.as_str() {
+        "cat" => rewrite_cat(parsed.rest),
+        "head" => rewrite_head(parsed.rest),
+        "tail" => rewrite_tail(parsed.rest),
+        command if DIRECT_PREFIXES.contains(&command) => Some(format!(
+            "{CODEX_PREFIX} {command}{}",
+            join_rest_args(parsed.rest)
+        )),
         _ => {
             return passthrough(
                 trimmed,
@@ -153,7 +154,7 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
 
     match rewritten {
         Some(rewritten) => ShellCommandRewriteAnalysis {
-            command: prepend_prefix(&prefix, &rewritten),
+            command: prepend_prefix(&parsed.prefix, &rewritten),
             kind: ShellCommandRewriteKind::Rewritten,
         },
         None => passthrough(
@@ -162,6 +163,16 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
             true,
         ),
     }
+}
+
+fn parse_command_target(args: &[String]) -> Option<ParsedCommandTarget<'_>> {
+    let (prefix, routed_args) = split_leading_env_prefix(args)?;
+    let (target, rest) = split_command_prefix(routed_args)?;
+    Some(ParsedCommandTarget {
+        prefix,
+        target,
+        rest,
+    })
 }
 
 fn rewrite_cat(rest: &[String]) -> Option<String> {
@@ -464,72 +475,68 @@ mod tests {
     use super::analyze_shell_command;
     use super::rewrite_shell_command;
 
+    fn assert_rewrite_cases(cases: &[(&str, Option<&str>)]) {
+        for (input, expected) in cases {
+            assert_eq!(
+                rewrite_shell_command(input),
+                expected.map(str::to_string),
+                "unexpected rewrite result for `{input}`"
+            );
+        }
+    }
+
     #[test]
     fn rewrites_direct_prefix_commands() {
-        assert_eq!(
-            rewrite_shell_command("git status"),
-            Some("codex rtk git status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("cargo test -p codex-core"),
-            Some("codex rtk cargo test -p codex-core".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("command git status"),
-            Some("codex rtk git status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("command -p git status"),
-            Some("codex rtk git status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("command -- git -C repo status"),
-            Some("codex rtk git -C repo status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("command -p -- git -C repo status"),
-            Some("codex rtk git -C repo status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("/usr/bin/git status"),
-            Some("codex rtk git status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("git -C repo status"),
-            Some("codex rtk git -C repo status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("cargo --manifest-path Cargo.toml test -p codex-core"),
-            Some("codex rtk cargo --manifest-path Cargo.toml test -p codex-core".to_string())
-        );
+        assert_rewrite_cases(&[
+            ("git status", Some("codex rtk git status")),
+            (
+                "cargo test -p codex-core",
+                Some("codex rtk cargo test -p codex-core"),
+            ),
+            ("command git status", Some("codex rtk git status")),
+            ("command -p git status", Some("codex rtk git status")),
+            (
+                "command -- git -C repo status",
+                Some("codex rtk git -C repo status"),
+            ),
+            (
+                "command -p -- git -C repo status",
+                Some("codex rtk git -C repo status"),
+            ),
+            ("/usr/bin/git status", Some("codex rtk git status")),
+            ("git -C repo status", Some("codex rtk git -C repo status")),
+            (
+                "cargo --manifest-path Cargo.toml test -p codex-core",
+                Some("codex rtk cargo --manifest-path Cargo.toml test -p codex-core"),
+            ),
+        ]);
     }
 
     #[test]
     fn rewrites_cat_head_and_tail() {
-        assert_eq!(
-            rewrite_shell_command("cat src/main.rs"),
-            Some("codex rtk read src/main.rs".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("head -20 src/main.rs"),
-            Some("codex rtk read src/main.rs --max-lines 20".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("head src/main.rs"),
-            Some("codex rtk read src/main.rs --max-lines 10".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("tail --lines=7 src/main.rs"),
-            Some("codex rtk read src/main.rs --tail-lines 7".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("head -n5 -- src/main.rs"),
-            Some("codex rtk read src/main.rs --max-lines 5".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("tail src/main.rs"),
-            Some("codex rtk read src/main.rs --tail-lines 10".to_string())
-        );
+        assert_rewrite_cases(&[
+            ("cat src/main.rs", Some("codex rtk read src/main.rs")),
+            (
+                "head -20 src/main.rs",
+                Some("codex rtk read src/main.rs --max-lines 20"),
+            ),
+            (
+                "head src/main.rs",
+                Some("codex rtk read src/main.rs --max-lines 10"),
+            ),
+            (
+                "tail --lines=7 src/main.rs",
+                Some("codex rtk read src/main.rs --tail-lines 7"),
+            ),
+            (
+                "head -n5 -- src/main.rs",
+                Some("codex rtk read src/main.rs --max-lines 5"),
+            ),
+            (
+                "tail src/main.rs",
+                Some("codex rtk read src/main.rs --tail-lines 10"),
+            ),
+        ]);
     }
 
     #[test]
@@ -548,22 +555,21 @@ mod tests {
 
     #[test]
     fn rewrites_supported_commands_with_env_prefixes() {
-        assert_eq!(
-            rewrite_shell_command("FOO=1 git status"),
-            Some("FOO=1 codex rtk git status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("env FOO=1 BAR=2 grep TODO src"),
-            Some("env FOO=1 BAR=2 codex rtk grep TODO src".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("env -- FOO=1 git status"),
-            Some("env -- FOO=1 codex rtk git status".to_string())
-        );
-        assert_eq!(
-            rewrite_shell_command("env -i -u HOME git -C repo status"),
-            Some("env -i -u HOME codex rtk git -C repo status".to_string())
-        );
+        assert_rewrite_cases(&[
+            ("FOO=1 git status", Some("FOO=1 codex rtk git status")),
+            (
+                "env FOO=1 BAR=2 grep TODO src",
+                Some("env FOO=1 BAR=2 codex rtk grep TODO src"),
+            ),
+            (
+                "env -- FOO=1 git status",
+                Some("env -- FOO=1 codex rtk git status"),
+            ),
+            (
+                "env -i -u HOME git -C repo status",
+                Some("env -i -u HOME codex rtk git -C repo status"),
+            ),
+        ]);
     }
 
     #[test]
