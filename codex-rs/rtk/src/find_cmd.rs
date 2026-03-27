@@ -129,7 +129,7 @@ fn parse_native_find_args(args: &[String]) -> Result<FindArgs> {
                 }
             }
             flag if flag.starts_with('-') => {
-                eprintln!("rtk find：未知参数 '{flag}'，已忽略");
+                eprintln!("rtk find: 未知参数 '{flag}'，已忽略");
             }
             _ => {}
         }
@@ -202,7 +202,7 @@ pub fn run(
     let effective_pattern = if pattern == "." { "*" } else { pattern };
 
     if verbose > 0 {
-        eprintln!("find：在 {path} 中搜索 {effective_pattern}");
+        eprintln!("find: 在 {path} 中搜索 {effective_pattern}");
     }
 
     let want_dirs = file_type == "d";

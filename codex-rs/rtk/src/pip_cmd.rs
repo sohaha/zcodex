@@ -36,7 +36,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
         _ => {
             anyhow::bail!(
-                "rtk pip：不支持的子命令 '{subcommand}'\n支持：list、outdated、install、uninstall、show"
+                "rtk pip: 不支持的子命令 '{subcommand}'\n支持：list、outdated、install、uninstall、show"
             );
         }
     };

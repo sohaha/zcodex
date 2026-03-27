@@ -28,7 +28,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("grep：在 {path} 中搜索 '{pattern}'");
+        eprintln!("grep: 在 {path} 中搜索 '{pattern}'");
     }
 
     // 兼容处理：把 BRE 的 `\|` 转成 rg 可用的 `|`

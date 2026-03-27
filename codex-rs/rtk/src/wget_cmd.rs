@@ -8,7 +8,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("wget：{url}");
+        eprintln!("wget: {url}");
     }
 
     // 正常运行 `wget`，但先捕获输出后再解析
@@ -56,7 +56,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("wget：{url} -> stdout");
+        eprintln!("wget: {url} -> stdout");
     }
 
     let mut cmd_args = vec!["-q", "-O", "-"];

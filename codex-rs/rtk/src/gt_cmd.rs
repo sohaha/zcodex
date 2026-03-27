@@ -130,7 +130,7 @@ pub fn run_branch(args: &[String], verbose: u8) -> Result<()> {
 
 pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
     if args.is_empty() {
-        anyhow::bail!("gt：未指定子命令");
+        anyhow::bail!("gt: 未指定子命令");
     }
 
     let subcommand = args[0].to_string_lossy();

@@ -177,7 +177,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         eprintln!("⚠️  Linter 进程异常退出（可能是内存不足）");
         if !stderr.is_empty() {
             eprintln!(
-                "stderr：{}",
+                "stderr: {}",
                 stderr.lines().take(5).collect::<Vec<_>>().join("\n")
             );
         }

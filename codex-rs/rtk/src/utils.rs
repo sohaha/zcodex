@@ -326,14 +326,14 @@ pub fn resolved_command(name: &str) -> Command {
     #[cfg(target_os = "windows")]
     if let Err(error) = &resolved {
         eprintln!(
-            "rtk：通过 PATH 解析 '{}' 失败，回退到直接执行：{}",
+            "rtk: 通过 PATH 解析 '{}' 失败，回退到直接执行：{}",
             name, error
         );
     }
 
     #[cfg(all(not(target_os = "windows"), debug_assertions))]
     if let Err(error) = &resolved {
-        eprintln!("rtk：通过 PATH 解析 '{name}' 失败，回退到直接执行：{error}");
+        eprintln!("rtk: 通过 PATH 解析 '{name}' 失败，回退到直接执行：{error}");
     }
 
     match resolved {
