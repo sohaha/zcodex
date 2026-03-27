@@ -404,6 +404,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_status_detail_fields() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let report = codex_native_tldr::semantic::SemanticReindexReport {
+            status: codex_native_tldr::semantic::SemanticReindexStatus::Completed,
+            languages: vec![codex_native_tldr::lang_support::SupportedLanguage::Rust],
+            indexed_files: 2,
+            indexed_units: 3,
+            truncated: false,
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+            finished_at: std::time::SystemTime::UNIX_EPOCH,
+            message: "done".to_string(),
+            embedding_enabled: true,
+            embedding_dimensions: 256,
+        };
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                let report = report.clone();
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "status".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                            cached_entries: 1,
+                            dirty_files: 0,
+                            dirty_file_threshold: 20,
+                            reindex_pending: false,
+                            last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
+                            last_reindex: Some(report.clone()),
+                            last_reindex_attempt: Some(report.clone()),
+                        }),
+                        daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
+                            project_root: std::path::PathBuf::from("/tmp/project"),
+                            socket_path: std::path::PathBuf::from("/tmp/project.sock"),
+                            pid_path: std::path::PathBuf::from("/tmp/project.pid"),
+                            lock_path: std::path::PathBuf::from("/tmp/project.lock"),
+                            socket_exists: true,
+                            pid_is_live: true,
+                            lock_is_held: true,
+                            healthy: true,
+                            stale_socket: false,
+                            stale_pid: false,
+                            health_reason: None,
+                            recovery_hint: None,
+                            semantic_reindex_pending: false,
+                            last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
+                            config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
+                                auto_start: true,
+                                socket_mode: "unix".to_string(),
+                                semantic_enabled: true,
+                                semantic_auto_reindex_threshold: 20,
+                                session_dirty_file_threshold: 20,
+                            },
+                        }),
+                        reindex_report: Some(report),
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(structured["daemonStatus"]["healthy"], true);
+        assert_eq!(structured["reindexReport"]["status"], "Completed");
+        assert_eq!(
+            structured["snapshot"]["last_reindex_attempt"]["status"],
+            "Completed"
+        );
+    }
+
+    #[tokio::test]
     async fn query_daemon_with_hooks_retries_when_external_daemon_becomes_ready() {
         let tempdir = tempdir().expect("tempdir should exist");
         let command = TldrDaemonCommand::Ping;

@@ -756,8 +756,15 @@ mod tests {
     use super::TldrToolLanguage;
     use super::action_name;
     use super::run_tldr_tool_with_hooks;
+    use crate::daemon::TldrDaemonConfigSummary;
     use crate::daemon::TldrDaemonResponse;
+    use crate::daemon::TldrDaemonStatus;
+    use crate::lang_support::SupportedLanguage;
+    use crate::semantic::SemanticReindexReport;
+    use crate::semantic::SemanticReindexStatus;
     use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
+    use std::time::SystemTime;
     use tempfile::tempdir;
 
     #[test]
@@ -846,6 +853,90 @@ mod tests {
         assert_eq!(result.text, "already warm");
         assert_eq!(result.structured_content["action"], "warm");
         assert_eq!(result.structured_content["snapshot"]["dirty_files"], 0);
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_preserves_status_details_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let report = SemanticReindexReport {
+            status: SemanticReindexStatus::Completed,
+            languages: vec![SupportedLanguage::Rust],
+            indexed_files: 2,
+            indexed_units: 3,
+            truncated: false,
+            started_at: SystemTime::UNIX_EPOCH,
+            finished_at: SystemTime::UNIX_EPOCH,
+            message: "done".to_string(),
+            embedding_enabled: true,
+            embedding_dimensions: 256,
+        };
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                let report = report.clone();
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "status".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(crate::session::SessionSnapshot {
+                            cached_entries: 1,
+                            dirty_files: 0,
+                            dirty_file_threshold: 20,
+                            reindex_pending: false,
+                            last_query_at: Some(SystemTime::UNIX_EPOCH),
+                            last_reindex: Some(report.clone()),
+                            last_reindex_attempt: Some(report.clone()),
+                        }),
+                        daemon_status: Some(TldrDaemonStatus {
+                            project_root: PathBuf::from("/tmp/project"),
+                            socket_path: PathBuf::from("/tmp/project.sock"),
+                            pid_path: PathBuf::from("/tmp/project.pid"),
+                            lock_path: PathBuf::from("/tmp/project.lock"),
+                            socket_exists: true,
+                            pid_is_live: true,
+                            lock_is_held: true,
+                            healthy: true,
+                            stale_socket: false,
+                            stale_pid: false,
+                            health_reason: None,
+                            recovery_hint: None,
+                            semantic_reindex_pending: false,
+                            last_query_at: Some(SystemTime::UNIX_EPOCH),
+                            config: TldrDaemonConfigSummary {
+                                auto_start: true,
+                                socket_mode: "unix".to_string(),
+                                semantic_enabled: true,
+                                semantic_auto_reindex_threshold: 20,
+                                session_dirty_file_threshold: 20,
+                            },
+                        }),
+                        reindex_report: Some(report),
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("status tool should succeed");
+
+        assert_eq!(result.structured_content["daemonStatus"]["healthy"], true);
+        assert_eq!(
+            result.structured_content["reindexReport"]["status"],
+            "Completed"
+        );
+        assert_eq!(
+            result.structured_content["snapshot"]["last_reindex"]["status"],
+            "Completed"
+        );
     }
 
     #[test]
