@@ -103,16 +103,16 @@ Expects the binary containing `codex-core` to simulate the virtual `apply_patch`
 
 `shell_command` no longer exposes model-visible `rtk_*` tools or a separate RTK
 prompt block. Instead, `codex-core` can transparently hard-route a narrow set of
-safe shell invocations through embedded `codex rtk ...` filtering before
+safe shell invocations through embedded `rtk ...` filtering before
 execution.
 
 Current behavior:
 
 - supported direct commands such as `git`, `cargo`, `grep`, `npm`, `pnpm`,
   `pytest`, `docker`, `kubectl`, `aws`, `psql`, `curl`, and `wget` may be
-  rewritten to `codex rtk ...`
+  rewritten to `rtk ...`
 - file readers such as `cat`, `head`, and `tail` may be rewritten to
-  `codex rtk read ...`
+  `rtk read ...`
 - simple prefixes such as leading env assignments, `env`, `env --`, and
   `command` are supported when the routed command shape stays unambiguous
 - safe wrapper variants such as `command -p git status` are normalized before

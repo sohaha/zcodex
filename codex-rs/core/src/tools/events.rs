@@ -600,14 +600,14 @@ mod tests {
             vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "FOO=1 codex rtk git status".to_string(),
+                "FOO=1 rtk git status".to_string(),
             ],
             turn.cwd.clone(),
             ExecCommandSource::Agent,
             true,
             Some("FOO=1 git status".to_string()),
             Some(
-                "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 codex rtk git status"
+                "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 rtk git status"
                     .to_string(),
             ),
         );
@@ -628,7 +628,7 @@ mod tests {
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
         assert!(result.contains("[shell_command routed via embedded RTK]"));
-        assert!(result.contains("executed: FOO=1 codex rtk git status"));
+        assert!(result.contains("executed: FOO=1 rtk git status"));
         assert!(result.contains("ok"));
 
         let end = recv_exec_end(&mut rx).await;
@@ -646,7 +646,9 @@ mod tests {
             ExecCommandSource::Agent,
             false,
             None,
-            Some("[shell_command kept raw]\nreason: contains compound shell syntax\ncommand: git status | head".to_string()),
+            Some(
+                "[shell_command kept raw]\noriginal: git status | head\nexecuted: git status | head\nreason: contains compound shell syntax".to_string(),
+            ),
         );
         let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-2", None);
 

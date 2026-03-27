@@ -183,92 +183,92 @@ fn shell_command_handler_rejects_login_when_disallowed() {
 fn shell_command_handler_routes_supported_commands_through_rtk() {
     assert_eq!(
         ShellCommandHandler::route_command("git status").command,
-        "codex rtk git status"
+        "rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("head -20 src/main.rs").command,
-        "codex rtk read src/main.rs --max-lines 20"
+        "rtk read src/main.rs --max-lines 20"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command git status").command,
-        "codex rtk git status"
+        "rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command -p git status").command,
-        "codex rtk git status"
+        "rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("git -C repo status").command,
-        "codex rtk git -C repo status"
+        "rtk git -C repo status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("cargo --manifest-path Cargo.toml test -p codex-core")
             .command,
-        "codex rtk cargo --manifest-path Cargo.toml test -p codex-core"
+        "rtk cargo --manifest-path Cargo.toml test -p codex-core"
     );
     assert_eq!(
         ShellCommandHandler::route_command("cargo +nightly test -p codex-core").command,
-        "codex rtk cargo '+nightly' test -p codex-core"
+        "rtk cargo '+nightly' test -p codex-core"
     );
     assert_eq!(
         ShellCommandHandler::route_command("git -c color.ui=always -C repo status").command,
-        "codex rtk git -c color.ui=always -C repo status"
+        "rtk git -c color.ui=always -C repo status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("git --git-dir .git --work-tree . status").command,
-        "codex rtk git --git-dir .git --work-tree . status"
+        "rtk git --git-dir .git --work-tree . status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("nice -n 5 git status").command,
-        "nice -n 5 codex rtk git status"
+        "nice -n 5 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("stdbuf -oL git status").command,
-        "stdbuf -oL codex rtk git status"
+        "stdbuf -oL rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("env --chdir=repo nice -n 5 git status").command,
-        "env --chdir=repo nice -n 5 codex rtk git status"
+        "env --chdir=repo nice -n 5 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command nice -n 5 git status").command,
-        "nice -n 5 codex rtk git status"
+        "nice -n 5 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command -p stdbuf -oL git status").command,
-        "stdbuf -oL codex rtk git status"
+        "stdbuf -oL rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command cargo +nightly test -p codex-core").command,
-        "codex rtk cargo '+nightly' test -p codex-core"
+        "rtk cargo '+nightly' test -p codex-core"
     );
     assert_eq!(
         ShellCommandHandler::route_command("/usr/bin/nice -n 5 git status").command,
-        "nice -n 5 codex rtk git status"
+        "nice -n 5 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("ionice -c 3 git status").command,
-        "ionice -c 3 codex rtk git status"
+        "ionice -c 3 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command ionice -c2 git status").command,
-        "ionice -c2 codex rtk git status"
+        "ionice -c2 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("nice -n 5 ionice -c2 git status").command,
-        "nice -n 5 ionice -c2 codex rtk git status"
+        "nice -n 5 ionice -c2 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("chrt -r 10 git status").command,
-        "chrt -r 10 codex rtk git status"
+        "chrt -r 10 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("command chrt -b 0 git status").command,
-        "chrt -b 0 codex rtk git status"
+        "chrt -b 0 rtk git status"
     );
     assert_eq!(
         ShellCommandHandler::route_command("nice -n 5 chrt -r 10 git status").command,
-        "nice -n 5 chrt -r 10 codex rtk git status"
+        "nice -n 5 chrt -r 10 rtk git status"
     );
 }
 
@@ -279,7 +279,7 @@ fn shell_command_handler_leaves_compound_commands_raw() {
     assert_eq!(
         routed.model_output_prefix,
         Some(
-            "[shell_command kept raw]\nreason: contains compound shell syntax\ncommand: git status | head"
+            "[shell_command kept raw]\noriginal: git status | head\nexecuted: git status | head\nreason: contains compound shell syntax"
                 .to_string()
         )
     );
@@ -288,7 +288,7 @@ fn shell_command_handler_leaves_compound_commands_raw() {
 #[test]
 fn shell_command_handler_records_original_command_when_rewritten() {
     let routed = ShellCommandHandler::route_command("FOO=1 git status");
-    assert_eq!(routed.command, "FOO=1 codex rtk git status");
+    assert_eq!(routed.command, "FOO=1 rtk git status");
     assert_eq!(
         routed.interaction_input,
         Some("FOO=1 git status".to_string())
@@ -296,7 +296,7 @@ fn shell_command_handler_records_original_command_when_rewritten() {
     assert_eq!(
         routed.model_output_prefix,
         Some(
-            "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 codex rtk git status"
+            "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 rtk git status"
                 .to_string()
         )
     );
