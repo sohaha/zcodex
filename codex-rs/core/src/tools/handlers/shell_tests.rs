@@ -302,6 +302,18 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         .command,
         "env --chdir=repo nice -n 5 rtk git status"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("codex rtk env FOO=1 command grep \"a|b\" src/main.rs")
+            .command,
+        "env FOO=1 rtk grep 'a|b' src/main.rs"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command(
+            "codex rtk command nice -n 5 git log --format='%h|%s' -1"
+        )
+        .command,
+        "nice -n 5 rtk git log '--format=%h|%s' -1"
+    );
 }
 
 #[test]
@@ -475,6 +487,16 @@ fn shell_command_handler_keeps_codex_rtk_passthrough_matrix_raw() {
                 .to_string()
         )
     );
+}
+
+#[test]
+fn shell_command_handler_keeps_codex_rtk_shell_syntax_raw() {
+    let routed = ShellCommandHandler::route_command("codex rtk grep \"$(pwd)\" src/main.rs");
+    assert_eq!(routed.command, "codex rtk grep \"$(pwd)\" src/main.rs");
+    assert!(matches!(
+        routed.model_output_prefix.as_deref(),
+        Some(prefix) if prefix.contains("contains compound shell syntax")
+    ));
 }
 
 #[test]

@@ -987,6 +987,37 @@ mod tests {
     }
 
     #[test]
+    fn codex_rtk_rewrites_quoted_literals_through_prefixes() {
+        assert_rewrite_cases(&[
+            (
+                "codex rtk env FOO=1 command grep \"a|b\" src/main.rs",
+                Some("env FOO=1 rtk grep 'a|b' src/main.rs"),
+            ),
+            (
+                "codex rtk command nice -n 5 git log --format='%h|%s' -1",
+                Some("nice -n 5 rtk git log '--format=%h|%s' -1"),
+            ),
+        ]);
+    }
+
+    #[test]
+    fn codex_rtk_prefix_keeps_real_shell_syntax_raw() {
+        for command in [
+            "codex rtk grep \"$(pwd)\" src/main.rs",
+            "codex rtk env FOO=1 git status | head",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::ShellMetacharacters,
+                    candidate: true,
+                }
+            );
+        }
+    }
+
     fn reports_passthrough_reason_for_supported_command_shapes() {
         let analysis = analyze_shell_command("git status | head");
         assert_eq!(analysis.command, "git status | head");
