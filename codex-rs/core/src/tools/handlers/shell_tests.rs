@@ -178,3 +178,23 @@ fn shell_command_handler_rejects_login_when_disallowed() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn shell_command_handler_routes_supported_commands_through_rtk() {
+    assert_eq!(
+        ShellCommandHandler::route_command("git status"),
+        "codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("head -20 src/main.rs"),
+        "codex rtk read src/main.rs --max-lines 20"
+    );
+}
+
+#[test]
+fn shell_command_handler_leaves_compound_commands_raw() {
+    assert_eq!(
+        ShellCommandHandler::route_command("git status | head"),
+        "git status | head"
+    );
+}

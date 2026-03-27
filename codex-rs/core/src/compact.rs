@@ -28,14 +28,7 @@ use codex_utils_output_truncation::truncate_text;
 use futures::prelude::*;
 use tracing::error;
 
-pub const SUMMARIZATION_PROMPT: &str = concat!(
-    include_str!("../templates/compact/prompt.md"),
-    "\n\n",
-    include_str!("../templates/compact/rtk_instructions.md")
-);
-pub const RTK_INSTRUCTIONS: &str = include_str!("../templates/compact/rtk_instructions.md");
-pub const TOOL_ROUTING_INSTRUCTIONS: &str =
-    include_str!("../templates/compact/tool_routing_instructions.md");
+pub const SUMMARIZATION_PROMPT: &str = concat!(include_str!("../templates/compact/prompt.md"));
 pub const SUMMARY_PREFIX: &str = include_str!("../templates/compact/summary_prefix.md");
 const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
 

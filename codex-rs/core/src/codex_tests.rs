@@ -281,36 +281,6 @@ fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
         .collect()
 }
 
-fn rtk_instruction_marker() -> &'static str {
-    crate::compact::RTK_INSTRUCTIONS
-        .lines()
-        .next()
-        .unwrap_or_default()
-}
-
-fn tool_routing_instruction_marker() -> &'static str {
-    crate::compact::TOOL_ROUTING_INSTRUCTIONS
-        .lines()
-        .next()
-        .unwrap_or_default()
-}
-
-fn rtk_guidance_occurrences(items: &[ResponseItem]) -> usize {
-    let marker = rtk_instruction_marker();
-    developer_input_texts(items)
-        .into_iter()
-        .filter(|text| text.contains(marker))
-        .count()
-}
-
-fn tool_routing_guidance_occurrences(items: &[ResponseItem]) -> usize {
-    let marker = tool_routing_instruction_marker();
-    developer_input_texts(items)
-        .into_iter()
-        .filter(|text| text.contains(marker))
-        .count()
-}
-
 fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> ToolCallRuntime {
     let router = Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
@@ -1584,8 +1554,6 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
     let mut expected = vec![turn_one_user, turn_one_assistant];
     expected.extend(sess.build_initial_context(tc.as_ref()).await);
     assert_eq!(history.raw_items(), expected);
-    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
-    assert_eq!(tool_routing_guidance_occurrences(history.raw_items()), 1);
 }
 
 #[tokio::test]
@@ -4127,7 +4095,7 @@ async fn build_settings_update_items_uses_previous_turn_settings_for_realtime_en
 }
 
 #[tokio::test]
-async fn build_settings_update_items_does_not_include_rtk_guidance() {
+async fn build_settings_update_items_omit_removed_guidance() {
     let (session, previous_context) = make_session_and_context().await;
     let mut current_context = previous_context
         .with_model(
@@ -4151,7 +4119,6 @@ async fn build_settings_update_items_does_not_include_rtk_guidance() {
             .any(|text| text.contains("<realtime_conversation>")),
         "expected a realtime diff update, got {developer_texts:?}"
     );
-    assert_eq!(rtk_guidance_occurrences(&update_items), 0);
 }
 
 #[tokio::test]
@@ -4358,20 +4325,16 @@ async fn build_initial_context_restates_realtime_start_when_reference_context_is
 }
 
 #[tokio::test]
-async fn build_initial_context_includes_rtk_guidance() {
+async fn build_initial_context_omits_removed_rtk_guidance() {
     let (session, turn_context) = make_session_and_context().await;
     let initial_context = session.build_initial_context(&turn_context).await;
     let developer_texts = developer_input_texts(&initial_context);
-    let expected_markers = [rtk_instruction_marker(), tool_routing_instruction_marker()];
-
-    for expected in expected_markers {
-        assert!(
-            developer_texts.iter().any(|text| text.contains(expected)),
-            "expected initial context to include tool guidance marker `{expected}`, got {developer_texts:?}"
-        );
-    }
-    assert_eq!(rtk_guidance_occurrences(&initial_context), 1);
-    assert_eq!(tool_routing_guidance_occurrences(&initial_context), 1);
+    assert!(
+        !developer_texts
+            .iter()
+            .any(|text| text.contains("# RTK (Codex Curated)")),
+        "expected initial context to omit removed RTK guidance, got {developer_texts:?}"
+    );
 }
 
 #[tokio::test]
@@ -4428,12 +4391,11 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
     let mut expected_history = vec![compacted_summary];
     expected_history.extend(session.build_initial_context(&turn_context).await);
     assert_eq!(history.raw_items().to_vec(), expected_history);
-    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
-    assert_eq!(tool_routing_guidance_occurrences(history.raw_items()), 1);
 }
 
 #[tokio::test]
-async fn replace_compacted_history_clears_persisted_reference_context_item_without_rtk_guidance() {
+async fn replace_compacted_history_clears_persisted_reference_context_item_without_removed_guidance()
+ {
     let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
     let rollout_path = attach_rollout_recorder(&session).await;
     let compacted_summary = ResponseItem::Message {
@@ -4492,12 +4454,10 @@ async fn replace_compacted_history_clears_persisted_reference_context_item_witho
         .build_initial_context(&resumed_turn_context)
         .await;
     assert!(history.raw_items().ends_with(&initial_context));
-    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
-    assert_eq!(tool_routing_guidance_occurrences(history.raw_items()), 1);
 }
 
 #[tokio::test]
-async fn record_context_updates_and_set_reference_context_item_does_not_reemit_rtk_guidance() {
+async fn record_context_updates_and_set_reference_context_item_does_not_reemit_removed_guidance() {
     let (session, turn_context) = make_session_and_context().await;
     session
         .record_context_updates_and_set_reference_context_item(&turn_context)
@@ -4521,8 +4481,6 @@ async fn record_context_updates_and_set_reference_context_item_does_not_reemit_r
         history.raw_items().len() > initial_history_len,
         "expected a steady-state diff item to be recorded"
     );
-    assert_eq!(rtk_guidance_occurrences(history.raw_items()), 1);
-    assert_eq!(tool_routing_guidance_occurrences(history.raw_items()), 1);
 }
 
 #[tokio::test]

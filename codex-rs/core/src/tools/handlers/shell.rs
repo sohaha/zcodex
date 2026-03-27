@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ShellCommandToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
+use codex_rtk::rewrite_shell_command;
 use std::sync::Arc;
 
 use crate::codex::TurnContext;
@@ -109,6 +110,10 @@ impl ShellCommandHandler {
 
     fn base_command(shell: &Shell, command: &str, use_login_shell: bool) -> Vec<String> {
         shell.derive_exec_args(command, use_login_shell)
+    }
+
+    fn route_command(command: &str) -> String {
+        rewrite_shell_command(command).unwrap_or_else(|| command.to_string())
     }
 
     fn to_exec_params(
@@ -295,6 +300,8 @@ impl ToolHandler for ShellCommandHandler {
             params.workdir.as_deref(),
         )
         .await;
+        let mut params = params;
+        params.command = Self::route_command(&params.command);
         let prefix_rule = params.prefix_rule.clone();
         let exec_params = Self::to_exec_params(
             &params,

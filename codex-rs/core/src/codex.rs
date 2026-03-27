@@ -2291,7 +2291,7 @@ impl Session {
                     .apply_rollout_reconstruction(
                         &turn_context,
                         &rollout_items,
-                        /*clear_missing_rtk_baseline*/ false,
+                        /*clear_missing_reference_context*/ false,
                     )
                     .await;
 
@@ -2332,7 +2332,7 @@ impl Session {
                 self.apply_rollout_reconstruction(
                     &turn_context,
                     &rollout_items,
-                    /*clear_missing_rtk_baseline*/ false,
+                    /*clear_missing_reference_context*/ false,
                 )
                 .await;
 
@@ -2363,13 +2363,13 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
-        clear_missing_rtk_baseline: bool,
+        clear_missing_reference_context: bool,
     ) -> Option<PreviousTurnSettings> {
         let reconstructed_rollout = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
         let previous_turn_settings = reconstructed_rollout.previous_turn_settings.clone();
-        if clear_missing_rtk_baseline {
+        if clear_missing_reference_context {
             self.replace_history(
                 reconstructed_rollout.history,
                 reconstructed_rollout.reference_context_item,
@@ -3530,29 +3530,8 @@ impl Session {
         items: &[ResponseItem],
         reference_context_item: Option<TurnContextItem>,
     ) -> Option<TurnContextItem> {
-        reference_context_item.filter(|_| {
-            let markers = [
-                crate::compact::RTK_INSTRUCTIONS
-                    .lines()
-                    .next()
-                    .unwrap_or_default(),
-                crate::compact::TOOL_ROUTING_INSTRUCTIONS
-                    .lines()
-                    .next()
-                    .unwrap_or_default(),
-            ];
-            markers.into_iter().all(|marker| {
-                items.iter().any(|item| match item {
-                    ResponseItem::Message { role, content, .. } if role == "developer" => {
-                        content.iter().any(|content_item| match content_item {
-                            ContentItem::InputText { text } => text.contains(marker),
-                            _ => false,
-                        })
-                    }
-                    _ => false,
-                })
-            })
-        })
+        let _ = items;
+        reference_context_item
     }
 
     pub(crate) async fn replace_history(
@@ -3666,11 +3645,6 @@ impl Session {
             )
             .into_text(),
         );
-        // Keep RTK guidance in the canonical initial developer prefix. Do not move this into
-        // steady-state per-turn diffs: provider-side prefix caching depends on ordinary turns
-        // reusing the same leading prompt bytes whenever the durable baseline is intact.
-        developer_sections.push(crate::compact::RTK_INSTRUCTIONS.to_string());
-        developer_sections.push(crate::compact::TOOL_ROUTING_INSTRUCTIONS.to_string());
         let separate_guardian_developer_message =
             crate::guardian::is_guardian_reviewer_source(&session_source);
         // Keep the guardian policy prompt out of the aggregated developer bundle so it
@@ -3845,7 +3819,6 @@ impl Session {
         let should_inject_full_context = reference_context_item.is_none();
         let context_items = if should_inject_full_context {
             // Rebuild the canonical initial prefix only when the durable baseline is missing.
-            // This is the cache-safe place to restate RTK guidance after compaction/resume.
             self.build_initial_context(turn_context).await
         } else {
             // Steady-state path: append only context diffs to minimize token overhead.
@@ -5319,7 +5292,7 @@ mod handlers {
         sess.apply_rollout_reconstruction(
             turn_context.as_ref(),
             replay_items.as_slice(),
-            /*clear_missing_rtk_baseline*/ true,
+            /*clear_missing_reference_context*/ true,
         )
         .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;

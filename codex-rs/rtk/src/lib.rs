@@ -33,6 +33,7 @@ mod prisma_cmd;
 mod psql_cmd;
 mod pytest_cmd;
 mod read;
+mod rewrite;
 mod ruff_cmd;
 mod runner;
 mod summary;
@@ -59,6 +60,8 @@ const RTK_ALIAS_NAME: &str = "rtk";
 pub fn alias_name() -> &'static str {
     RTK_ALIAS_NAME
 }
+
+pub use rewrite::rewrite_shell_command;
 
 pub fn is_alias_invocation(argv0: &OsString) -> bool {
     Path::new(argv0)

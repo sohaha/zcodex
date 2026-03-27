@@ -51,6 +51,7 @@ codex-artifacts = { workspace = true }
 codex-protocol = { workspace = true }
 codex-rollout = { workspace = true }
 codex-rmcp-client = { workspace = true }
+codex-rtk = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-state = { workspace = true }
 codex-terminal-detection = { workspace = true }
