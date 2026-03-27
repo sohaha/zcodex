@@ -945,6 +945,48 @@ mod tests {
     }
 
     #[test]
+    fn codex_rtk_prefix_preserves_nested_rewrite_matrix() {
+        assert_rewrite_cases(&[
+            (
+                "codex rtk command -p stdbuf -oL git status",
+                Some("stdbuf -oL rtk git status"),
+            ),
+            (
+                "codex rtk env --chdir=repo command nice -n 5 git status",
+                Some("env --chdir=repo nice -n 5 rtk git status"),
+            ),
+        ]);
+
+        for (command, reason) in [
+            (
+                "codex rtk tail -f src/main.rs",
+                ShellCommandPassthroughReason::UnsupportedArguments,
+            ),
+            (
+                "codex rtk env -i",
+                ShellCommandPassthroughReason::MissingCommand,
+            ),
+            (
+                "codex rtk command chrt -m git status",
+                ShellCommandPassthroughReason::UnsupportedCommand,
+            ),
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason,
+                    candidate: matches!(
+                        reason,
+                        ShellCommandPassthroughReason::UnsupportedArguments
+                    ),
+                }
+            );
+        }
+    }
+
+    #[test]
     fn reports_passthrough_reason_for_supported_command_shapes() {
         let analysis = analyze_shell_command("git status | head");
         assert_eq!(analysis.command, "git status | head");

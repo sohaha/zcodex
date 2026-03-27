@@ -291,6 +291,17 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         ShellCommandHandler::route_command("nice -n 5 chrt -r 10 git status").command,
         "nice -n 5 chrt -r 10 rtk git status"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("codex rtk command -p stdbuf -oL git status").command,
+        "stdbuf -oL rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command(
+            "codex rtk env --chdir=repo command nice -n 5 git status"
+        )
+        .command,
+        "env --chdir=repo nice -n 5 rtk git status"
+    );
 }
 
 #[test]
@@ -428,6 +439,39 @@ fn shell_command_handler_keeps_sudo_commands_raw_even_with_prefixes() {
         routed.model_output_prefix,
         Some(
             "[shell_command kept raw]\noriginal: env FOO=1 sudo git status\nexecuted: env FOO=1 sudo git status\nreason: sudo commands are never auto-routed"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn shell_command_handler_keeps_codex_rtk_passthrough_matrix_raw() {
+    let unsupported_args = ShellCommandHandler::route_command("codex rtk tail -f src/main.rs");
+    assert_eq!(unsupported_args.command, "codex rtk tail -f src/main.rs");
+    assert_eq!(
+        unsupported_args.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: codex rtk tail -f src/main.rs\nexecuted: codex rtk tail -f src/main.rs\nreason: command shape is not supported by the embedded RTK rewriter"
+                .to_string()
+        )
+    );
+
+    let missing = ShellCommandHandler::route_command("codex rtk env -i");
+    assert_eq!(missing.command, "codex rtk env -i");
+    assert_eq!(
+        missing.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: codex rtk env -i\nexecuted: codex rtk env -i\nreason: missing command after prefixes"
+                .to_string()
+        )
+    );
+
+    let unsupported = ShellCommandHandler::route_command("codex rtk command chrt -m git status");
+    assert_eq!(unsupported.command, "codex rtk command chrt -m git status");
+    assert_eq!(
+        unsupported.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: codex rtk command chrt -m git status\nexecuted: codex rtk command chrt -m git status\nreason: command is not in the embedded RTK allowlist"
                 .to_string()
         )
     );
