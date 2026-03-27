@@ -323,6 +323,26 @@ fn shell_command_handler_records_original_command_when_rewritten() {
     );
 }
 
+#[test]
+fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
+    let routed = ShellCommandHandler::route_command("grep 'a|b' src/main.rs");
+    assert_eq!(routed.command, "rtk grep 'a|b' src/main.rs");
+    assert_eq!(
+        routed.interaction_input,
+        Some("grep 'a|b' src/main.rs".to_string())
+    );
+
+    let kept_raw = ShellCommandHandler::route_command("grep \"$(pwd)\" src/main.rs");
+    assert_eq!(kept_raw.command, "grep \"$(pwd)\" src/main.rs");
+    assert_eq!(
+        kept_raw.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: grep \"$(pwd)\" src/main.rs\nexecuted: grep \"$(pwd)\" src/main.rs\nreason: contains compound shell syntax"
+                .to_string()
+        )
+    );
+}
+
 #[tokio::test]
 async fn snapshot_explicit_env_overrides_keep_helper_path() {
     let (_session, mut turn_context) = make_session_and_context().await;

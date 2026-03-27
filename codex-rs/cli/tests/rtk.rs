@@ -47,6 +47,15 @@ fn command_exists(program: &str) -> bool {
         .is_ok_and(|status| status.success())
 }
 
+fn prepend_path(dir: &Path) -> std::ffi::OsString {
+    let original_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut combined_path = std::ffi::OsString::new();
+    combined_path.push(dir);
+    combined_path.push(if cfg!(windows) { ";" } else { ":" });
+    combined_path.push(original_path);
+    combined_path
+}
+
 #[cfg(unix)]
 fn shell_args(script: &str) -> [&str; 3] {
     ["sh", "-c", script]
@@ -222,12 +231,7 @@ fn rtk_builtin_parse_errors_do_not_fall_back_to_external_commands() -> Result<()
             "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
         },
     )?;
-
-    let original_path = std::env::var_os("PATH").unwrap_or_default();
-    let mut combined_path = std::ffi::OsString::new();
-    combined_path.push(&bin_dir);
-    combined_path.push(if cfg!(windows) { ";" } else { ":" });
-    combined_path.push(original_path);
+    let combined_path = prepend_path(&bin_dir);
 
     let mut cmd = codex_command(codex_home.path())?;
     cmd.env("PATH", combined_path)
@@ -236,6 +240,68 @@ fn rtk_builtin_parse_errors_do_not_fall_back_to_external_commands() -> Result<()
         .failure()
         .stderr(contains("unexpected argument '--bogus-flag'"))
         .stdout(contains("FALLBACK_TRIGGERED").not());
+
+    Ok(())
+}
+
+#[test]
+fn rtk_removed_meta_commands_still_do_not_fall_through_after_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_rewrite = write_fake_command(
+        &bin_dir,
+        "rewrite",
+        if cfg!(windows) {
+            "@echo FALLBACK_TRIGGERED\r\n"
+        } else {
+            "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
+        },
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "rewrite"])
+        .assert()
+        .failure()
+        .stderr(contains("unrecognized subcommand"))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
+
+    Ok(())
+}
+
+#[test]
+fn rtk_unknown_commands_still_fall_back_after_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_external = write_fake_command(
+        &bin_dir,
+        "custom-fallback",
+        if cfg!(windows) {
+            "@echo FALLBACK_OK %*\r\n"
+        } else {
+            "#!/bin/sh\necho FALLBACK_OK \"$@\"\n"
+        },
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args([
+            "rtk",
+            "--skip-env",
+            "-u",
+            "custom-fallback",
+            "alpha",
+            "beta",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            contains("FALLBACK_OK")
+                .and(contains("alpha"))
+                .and(contains("beta")),
+        );
 
     Ok(())
 }

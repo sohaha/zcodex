@@ -81,8 +81,10 @@ cargo build --release -p codex-cli --features tldr
 
 Rust CLI 当前不再向模型暴露 `rtk_*` tools。对于 `shell_command` 的一部分
 安全命令形态，`codex-core` 会在内部直接改写到嵌入式 `rtk ...`
-过滤层，以减少噪声输出；复杂 shell 语法仍会保留原始命令执行。更详细的
-实现说明见 [`core/README.md`](./core/README.md)。
+过滤层，以减少噪声输出；只有简单单文件的 `cat/head/tail` 会改写为
+`rtk read ...`，而未加引号的 pipe / redirect / command substitution /
+backgrounding 等复杂 shell 语法仍会保留原始命令执行。更详细的实现说明见
+[`core/README.md`](./core/README.md)。
 
 ### 体验 Codex 沙箱
 

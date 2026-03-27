@@ -833,9 +833,13 @@ fn should_show_parse_error(args: &[OsString]) -> bool {
 }
 
 fn first_subcommand_arg(args: &[OsString]) -> Option<std::borrow::Cow<'_, str>> {
+    first_subcommand_index(args).map(|index| args[index].to_string_lossy())
+}
+
+fn first_subcommand_index(args: &[OsString]) -> Option<usize> {
     let mut parsing_global_flags = true;
 
-    for arg in args {
+    for (index, arg) in args.iter().enumerate() {
         let arg = arg.to_string_lossy();
         if parsing_global_flags {
             if arg == "--" {
@@ -851,7 +855,7 @@ fn first_subcommand_arg(args: &[OsString]) -> Option<std::borrow::Cow<'_, str>> 
             }
         }
 
-        return Some(arg);
+        return Some(index);
     }
 
     None
@@ -868,7 +872,12 @@ fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
         parse_error.exit();
     }
 
-    let rendered_args = args
+    let Some(command_index) = first_subcommand_index(args) else {
+        parse_error.exit();
+    };
+    let fallback_args = &args[command_index..];
+
+    let rendered_args = fallback_args
         .iter()
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
@@ -877,7 +886,7 @@ fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     let status = utils::resolved_command(&rendered_args[0])
-        .args(&args[1..])
+        .args(&fallback_args[1..])
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
