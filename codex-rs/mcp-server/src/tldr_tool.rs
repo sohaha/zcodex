@@ -312,6 +312,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_status_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "status".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result_json["content"][0]["text"], "status");
+        assert_eq!(structured["action"], "status");
+        assert_eq!(structured["status"], "ok");
+        assert_eq!(structured["message"], "status");
+    }
+
+    #[tokio::test]
     async fn query_daemon_with_hooks_retries_when_external_daemon_becomes_ready() {
         let tempdir = tempdir().expect("tempdir should exist");
         let command = TldrDaemonCommand::Ping;

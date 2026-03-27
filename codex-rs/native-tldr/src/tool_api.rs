@@ -752,8 +752,13 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::TldrToolAction;
+    use super::TldrToolCallParam;
+    use super::TldrToolLanguage;
     use super::action_name;
+    use super::run_tldr_tool_with_hooks;
+    use crate::daemon::TldrDaemonResponse;
     use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
 
     #[test]
     fn action_name_covers_analysis_actions() {
@@ -762,5 +767,68 @@ mod tests {
         assert_eq!(action_name(&TldrToolAction::Impact), "impact");
         assert_eq!(action_name(&TldrToolAction::Cfg), "cfg");
         assert_eq!(action_name(&TldrToolAction::Dfg), "dfg");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_preserves_status_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "status".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("status tool should succeed");
+
+        assert_eq!(result.text, "status");
+        assert_eq!(result.structured_content["action"], "status");
+        assert_eq!(result.structured_content["status"], "ok");
+        assert_eq!(result.structured_content["message"], "status");
+    }
+
+    #[test]
+    fn notify_action_requires_path() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Notify,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: None,
+                    path: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("notify without path should fail");
+
+        assert_eq!(error.to_string(), "`path` is required for action=notify");
     }
 }

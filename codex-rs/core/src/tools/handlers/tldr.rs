@@ -134,6 +134,23 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
         }
     }
 
+    if parts.is_empty()
+        && (payload.get("status").is_some()
+            || payload.get("snapshot").is_some()
+            || payload.get("daemonStatus").is_some()
+            || payload.get("reindexReport").is_some())
+    {
+        if let Some(action) = payload.get("action").and_then(serde_json::Value::as_str) {
+            parts.push(format!("action: {action}"));
+        }
+        if let Some(status) = payload.get("status").and_then(serde_json::Value::as_str) {
+            parts.push(format!("status: {status}"));
+        }
+        if let Some(message) = payload.get("message").and_then(serde_json::Value::as_str) {
+            parts.push(format!("message: {message}"));
+        }
+    }
+
     if parts.is_empty() {
         "structured payload attached".to_string()
     } else {
@@ -728,6 +745,20 @@ mod tests {
         });
 
         assert_eq!(render_tldr_summary(&payload), "structured payload attached");
+    }
+
+    #[test]
+    fn render_tldr_summary_surfaces_daemon_payload_fields() {
+        let payload = serde_json::json!({
+            "action": "status",
+            "status": "ok",
+            "message": "status"
+        });
+
+        assert_eq!(
+            render_tldr_summary(&payload),
+            "action: status | status: ok | message: status"
+        );
     }
 
     #[tokio::test]
