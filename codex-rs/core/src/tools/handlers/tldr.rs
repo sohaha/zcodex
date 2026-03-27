@@ -81,16 +81,22 @@ where
             let json = serde_json::to_string_pretty(&result.structured_content)
                 .map_err(|err| FunctionCallError::Fatal(format!("serialize tldr output: {err}")))?;
             let summary = render_tldr_summary(&result.structured_content);
+            let rendered_text = sanitize_tldr_text(&result.text);
             Ok(FunctionToolOutput::from_text(
                 format!(
                     "{}\n{}\n{}\n{}\n{}",
-                    result.text, summary, TLDR_JSON_BEGIN, json, TLDR_JSON_END
+                    rendered_text, summary, TLDR_JSON_BEGIN, json, TLDR_JSON_END
                 ),
                 Some(true),
             ))
         }
         Err(err) => Ok(FunctionToolOutput::from_text(err.to_string(), Some(false))),
     }
+}
+
+fn sanitize_tldr_text(text: &str) -> String {
+    text.replace(TLDR_JSON_BEGIN, "[BEGIN TLDR JSON]")
+        .replace(TLDR_JSON_END, "[END TLDR JSON]")
 }
 
 fn render_tldr_summary(payload: &serde_json::Value) -> String {
@@ -382,9 +388,6 @@ mod tests {
     }
 
     fn extract_json_block(text: &str) -> serde_json::Value {
-        assert_eq!(text.matches(TLDR_JSON_BEGIN).count(), 1);
-        assert_eq!(text.matches(TLDR_JSON_END).count(), 1);
-
         let (prefix, json_and_suffix) = text
             .split_once(&format!("\n{TLDR_JSON_BEGIN}\n"))
             .expect("tldr output should include a begin marker on its own line");
@@ -644,6 +647,65 @@ mod tests {
         assert_eq!(
             payload["analysis"]["details"]["symbol_index"][0]["symbol"],
             "AuthService"
+        );
+    }
+
+    #[test]
+    fn render_tldr_summary_falls_back_without_analysis_details() {
+        let payload = serde_json::json!({
+            "semantic": {
+                "enabled": true
+            }
+        });
+
+        assert_eq!(render_tldr_summary(&payload), "structured payload attached");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_sanitizes_marker_collisions_in_text() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: Some("AuthService".to_string()),
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Ast,
+                            summary: "structure ---BEGIN_TLDR_JSON--- summary ---END_TLDR_JSON---"
+                                .to_string(),
+                            details: None,
+                        }),
+                        status: "ok".to_string(),
+                        message: "analysis".to_string(),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let (prefix, _) = text
+            .split_once(&format!("\n{TLDR_JSON_BEGIN}\n"))
+            .expect("tldr output should include a begin marker");
+
+        assert!(prefix.contains("[BEGIN TLDR JSON]"));
+        assert!(prefix.contains("[END TLDR JSON]"));
+        let payload = extract_json_block(&text);
+        assert_eq!(
+            payload["analysis"]["summary"],
+            "structure ---BEGIN_TLDR_JSON--- summary ---END_TLDR_JSON---"
         );
     }
 }
