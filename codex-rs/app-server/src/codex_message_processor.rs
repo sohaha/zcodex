@@ -211,6 +211,7 @@ use codex_core::exec::ExecCapturePolicy;
 use codex_core::exec::ExecExpiration;
 use codex_core::exec::ExecParams;
 use codex_core::exec_env::create_env;
+use codex_core::exec_env::prepend_arg0_helper_dir_to_path;
 use codex_core::find_archived_thread_path_by_id_str;
 use codex_core::find_thread_name_by_id;
 use codex_core::find_thread_names_by_ids;
@@ -1650,6 +1651,11 @@ impl CodexMessageProcessor {
         let mut env = create_env(
             &self.config.permissions.shell_environment_policy,
             /*thread_id*/ None,
+        );
+        prepend_arg0_helper_dir_to_path(
+            &mut env,
+            self.config.main_execve_wrapper_exe.as_deref(),
+            self.config.codex_linux_sandbox_exe.as_deref(),
         );
         if let Some(env_overrides) = env_overrides {
             for (key, value) in env_overrides {

@@ -10,6 +10,7 @@ use crate::codex::TurnContext;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecParams;
 use crate::exec_env::create_env;
+use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::exec_policy::ExecApprovalRequest;
 use crate::function_tool::FunctionCallError;
 use crate::is_safe_command::is_known_safe_command;
@@ -38,8 +39,6 @@ use crate::tools::spec::ShellCommandBackendConfig;
 use codex_features::Feature;
 use codex_protocol::models::PermissionProfile;
 use std::collections::HashMap;
-use std::path::Path;
-
 pub struct ShellHandler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,55 +96,13 @@ fn explicit_env_overrides_for_snapshot(
 }
 
 impl ShellHandler {
-    fn prepend_rtk_helper_dir(
-        env: &mut HashMap<String, String>,
-        main_execve_wrapper_exe: Option<&Path>,
-        codex_linux_sandbox_exe: Option<&Path>,
-    ) {
-        let helper_dir = main_execve_wrapper_exe
-            .or(codex_linux_sandbox_exe)
-            .and_then(Path::parent);
-        let Some(helper_dir) = helper_dir else {
-            return;
-        };
-
-        let helper_dir = helper_dir.to_string_lossy();
-        let path_key = if cfg!(target_os = "windows") {
-            env.keys()
-                .find(|key| key.eq_ignore_ascii_case("PATH"))
-                .cloned()
-                .unwrap_or_else(|| "PATH".to_string())
-        } else {
-            "PATH".to_string()
-        };
-        let path_separator = if cfg!(target_os = "windows") {
-            ';'
-        } else {
-            ':'
-        };
-
-        match env.get_mut(&path_key) {
-            Some(path) => {
-                let already_present = path
-                    .split(path_separator)
-                    .any(|entry| entry == helper_dir.as_ref());
-                if !already_present {
-                    *path = format!("{helper_dir}{path_separator}{path}");
-                }
-            }
-            None => {
-                env.insert(path_key, helper_dir.into_owned());
-            }
-        }
-    }
-
     fn to_exec_params(
         params: &ShellToolCallParams,
         turn_context: &TurnContext,
         thread_id: ThreadId,
     ) -> ExecParams {
         let mut env = create_env(&turn_context.shell_environment_policy, Some(thread_id));
-        Self::prepend_rtk_helper_dir(
+        prepend_arg0_helper_dir_to_path(
             &mut env,
             None,
             turn_context.codex_linux_sandbox_exe.as_deref(),
@@ -262,7 +219,7 @@ impl ShellCommandHandler {
         let use_login_shell = Self::resolve_use_login_shell(params.login, allow_login_shell)?;
         let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
         let mut env = create_env(&turn_context.shell_environment_policy, Some(thread_id));
-        ShellHandler::prepend_rtk_helper_dir(
+        prepend_arg0_helper_dir_to_path(
             &mut env,
             session.services.main_execve_wrapper_exe.as_deref(),
             turn_context.codex_linux_sandbox_exe.as_deref(),

@@ -16,6 +16,7 @@ use crate::exec::StdoutStream;
 use crate::exec::StreamOutput;
 use crate::exec::execute_exec_request;
 use crate::exec_env::create_env;
+use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::parse_command::parse_command;
 use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandBeginEvent;
@@ -154,13 +155,20 @@ pub(crate) async fn execute_user_shell_command(
         .await;
 
     let sandbox_policy = SandboxPolicy::DangerFullAccess;
+    let mut env = create_env(
+        &turn_context.shell_environment_policy,
+        Some(session.conversation_id),
+    );
+    prepend_arg0_helper_dir_to_path(
+        &mut env,
+        session.services.main_execve_wrapper_exe.as_deref(),
+        turn_context.codex_linux_sandbox_exe.as_deref(),
+    );
+
     let exec_env = ExecRequest {
         command: exec_command.clone(),
         cwd: cwd.clone(),
-        env: create_env(
-            &turn_context.shell_environment_policy,
-            Some(session.conversation_id),
-        ),
+        env,
         network: turn_context.network.clone(),
         // TODO(zhao-oai): Now that we have ExecExpiration::Cancellation, we
         // should use that instead of an "arbitrarily large" timeout here.

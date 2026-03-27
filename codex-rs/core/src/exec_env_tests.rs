@@ -213,3 +213,39 @@ fn test_inherit_none() {
     expected.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
     assert_eq!(result, expected);
 }
+
+#[test]
+fn prepend_arg0_helper_dir_to_path_prepends_helper_dir() {
+    let mut env = hashmap! {
+        "PATH".to_string() => "/usr/local/bin:/usr/bin".to_string(),
+    };
+
+    prepend_arg0_helper_dir_to_path(
+        &mut env,
+        Some(std::path::Path::new("/tmp/codex-arg0/codex-execve-wrapper")),
+        None,
+    );
+
+    assert_eq!(
+        env.get("PATH"),
+        Some(&"/tmp/codex-arg0:/usr/local/bin:/usr/bin".to_string())
+    );
+}
+
+#[test]
+fn prepend_arg0_helper_dir_to_path_skips_duplicate_entries() {
+    let mut env = hashmap! {
+        "PATH".to_string() => "/tmp/codex-arg0:/usr/local/bin:/usr/bin".to_string(),
+    };
+
+    prepend_arg0_helper_dir_to_path(
+        &mut env,
+        Some(std::path::Path::new("/tmp/codex-arg0/codex-execve-wrapper")),
+        None,
+    );
+
+    assert_eq!(
+        env.get("PATH"),
+        Some(&"/tmp/codex-arg0:/usr/local/bin:/usr/bin".to_string())
+    );
+}

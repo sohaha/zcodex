@@ -37,6 +37,7 @@ use crate::codex::TurnContext;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecExpiration;
 use crate::exec_env::create_env;
+use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::normalize_output_image_detail;
 use crate::sandboxing::ExecOptions;
@@ -1013,6 +1014,11 @@ impl JsReplManager {
             .map_err(|err| err.to_string())?;
 
         let mut env = create_env(&turn.shell_environment_policy, thread_id);
+        prepend_arg0_helper_dir_to_path(
+            &mut env,
+            turn.config.main_execve_wrapper_exe.as_deref(),
+            turn.codex_linux_sandbox_exe.as_deref(),
+        );
         if !dependency_env.is_empty() {
             env.extend(dependency_env.clone());
         }

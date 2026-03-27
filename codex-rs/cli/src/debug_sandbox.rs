@@ -11,6 +11,7 @@ use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::NetworkProxyAuditMetadata;
 use codex_core::exec_env::create_env;
+use codex_core::exec_env::prepend_arg0_helper_dir_to_path;
 #[cfg(target_os = "macos")]
 use codex_core::spawn::CODEX_SANDBOX_ENV_VAR;
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
@@ -134,9 +135,14 @@ async fn run_command_under_sandbox(
     // separately.
     let sandbox_policy_cwd = cwd.clone();
 
-    let env = create_env(
+    let mut env = create_env(
         &config.permissions.shell_environment_policy,
         /*thread_id*/ None,
+    );
+    prepend_arg0_helper_dir_to_path(
+        &mut env,
+        config.main_execve_wrapper_exe.as_deref(),
+        config.codex_linux_sandbox_exe.as_deref(),
     );
 
     // Special-case Windows sandbox: execute and exit the process to emulate inherited stdio.

@@ -4,6 +4,7 @@ use crate::config::types::ShellEnvironmentPolicyInherit;
 use codex_protocol::ThreadId;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::path::Path;
 
 pub const CODEX_THREAD_ID_ENV_VAR: &str = "CODEX_THREAD_ID";
 
@@ -22,6 +23,48 @@ pub fn create_env(
     thread_id: Option<ThreadId>,
 ) -> HashMap<String, String> {
     populate_env(std::env::vars(), policy, thread_id)
+}
+
+pub fn prepend_arg0_helper_dir_to_path(
+    env: &mut HashMap<String, String>,
+    main_execve_wrapper_exe: Option<&Path>,
+    codex_linux_sandbox_exe: Option<&Path>,
+) {
+    let helper_dir = main_execve_wrapper_exe
+        .or(codex_linux_sandbox_exe)
+        .and_then(Path::parent);
+    let Some(helper_dir) = helper_dir else {
+        return;
+    };
+
+    let helper_dir = helper_dir.to_string_lossy();
+    let path_key = if cfg!(target_os = "windows") {
+        env.keys()
+            .find(|key| key.eq_ignore_ascii_case("PATH"))
+            .cloned()
+            .unwrap_or_else(|| "PATH".to_string())
+    } else {
+        "PATH".to_string()
+    };
+    let path_separator = if cfg!(target_os = "windows") {
+        ';'
+    } else {
+        ':'
+    };
+
+    match env.get_mut(&path_key) {
+        Some(path) => {
+            let already_present = path
+                .split(path_separator)
+                .any(|entry| entry == helper_dir.as_ref());
+            if !already_present {
+                *path = format!("{helper_dir}{path_separator}{path}");
+            }
+        }
+        None => {
+            env.insert(path_key, helper_dir.into_owned());
+        }
+    }
 }
 
 fn populate_env<I>(
