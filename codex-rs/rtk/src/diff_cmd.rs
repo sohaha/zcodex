@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-/// Ultra-condensed diff - only changed lines, no context
+/// 超浓缩 diff：只保留变更行，不带上下文
 pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -69,7 +69,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Run diff from stdin (piped command output)
+/// 从 stdin 运行 diff（处理管道输入）
 pub fn run_stdin(_verbose: u8) -> Result<()> {
     use std::io::Read;
     use std::io::{self};
@@ -78,7 +78,7 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
     let mut input = String::new();
     io::stdin().read_to_string(&mut input)?;
 
-    // Parse unified diff format
+    // 解析 unified diff 格式
     let condensed = condense_unified_diff(&input);
     println!("{condensed}");
 
@@ -107,7 +107,7 @@ fn compute_diff(lines1: &[&str], lines2: &[&str]) -> DiffResult {
     let mut removed = 0;
     let mut modified = 0;
 
-    // Simple line-by-line comparison (not optimal but fast)
+    // 简单逐行比较（不一定最优，但足够快）
     let max_len = lines1.len().max(lines2.len());
 
     for i in 0..max_len {
@@ -116,7 +116,7 @@ fn compute_diff(lines1: &[&str], lines2: &[&str]) -> DiffResult {
 
         match (l1, l2) {
             (Some(a), Some(b)) if a != b => {
-                // Check if it's similar (modification) or completely different
+                // 判断是相似修改，还是完全不同
                 if similarity(a, b) > 0.5 {
                     changes.push(DiffChange::Modified(i + 1, a.to_string(), b.to_string()));
                     modified += 1;
@@ -170,7 +170,7 @@ fn condense_unified_diff(diff: &str) -> String {
 
     for line in diff.lines() {
         if line.starts_with("diff --git") || line.starts_with("--- ") || line.starts_with("+++ ") {
-            // File header
+            // 文件头
             if line.starts_with("+++ ") {
                 if !current_file.is_empty() && (added > 0 || removed > 0) {
                     result.push(format!("📄 {current_file} (+{added} -{removed})"));
@@ -178,7 +178,7 @@ fn condense_unified_diff(diff: &str) -> String {
                         result.push(format!("  {c}"));
                     }
                     if changes.len() > 10 {
-                        result.push(format!("  ... +{} more", changes.len() - 10));
+                        result.push(format!("  ... +{} 处更多变更", changes.len() - 10));
                     }
                 }
                 current_file = line
@@ -202,14 +202,14 @@ fn condense_unified_diff(diff: &str) -> String {
         }
     }
 
-    // Last file
+    // 最后一个文件
     if !current_file.is_empty() && (added > 0 || removed > 0) {
         result.push(format!("📄 {current_file} (+{added} -{removed})"));
         for c in changes.iter().take(10) {
             result.push(format!("  {c}"));
         }
         if changes.len() > 10 {
-            result.push(format!("  ... +{} more", changes.len() - 10));
+            result.push(format!("  ... +{} 处更多变更", changes.len() - 10));
         }
     }
 
@@ -234,20 +234,20 @@ mod tests {
 
     #[test]
     fn test_similarity_empty_strings() {
-        // Both empty: union is 0, returns 1.0 by convention
+        // 两边都为空：并集为 0，按约定返回 1.0
         assert_eq!(similarity("", ""), 1.0);
     }
 
     #[test]
     fn test_similarity_partial_overlap() {
         let s = similarity("abcd", "abef");
-        // Shared: a, b. Union: a, b, c, d, e, f = 6. Jaccard = 2/6
+        // 交集为 a、b；并集为 a、b、c、d、e、f，共 6 个，因此 Jaccard = 2/6
         assert!((s - 2.0 / 6.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_similarity_threshold_for_modified() {
-        // "let x = 1;" vs "let x = 2;" should be > 0.5 (treated as modification)
+        // "let x = 1;" 与 "let x = 2;" 的相似度应 > 0.5（视为修改）
         assert!(similarity("let x = 1;", "let x = 2;") > 0.5);
     }
 
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn test_compute_diff_modified_line() {
-        // Similar lines (>0.5 similarity) are classified as modified
+        // 相似行（相似度 > 0.5）应归类为修改
         let a = vec!["let x = 1;"];
         let b = vec!["let x = 2;"];
         let result = compute_diff(&a, &b);
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_compute_diff_completely_different_line() {
-        // Dissimilar lines (<= 0.5 similarity) are added+removed, not modified
+        // 不相似的行（相似度 <= 0.5）应视为新增+删除，而非修改
         let a = vec!["aaaa"];
         let b = vec!["zzzz"];
         let result = compute_diff(&a, &b);

@@ -14,6 +14,8 @@ use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell_snapshot::ShellSnapshot;
 use crate::tools::handlers::ShellCommandHandler;
+use crate::tools::handlers::ShellHandler;
+use std::collections::HashMap;
 use tokio::sync::watch;
 
 /// The logic for is_known_safe_command() has heuristics for known shells,
@@ -110,6 +112,25 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     assert_eq!(exec_params.sandbox_permissions, sandbox_permissions);
     assert_eq!(exec_params.justification, justification);
     assert_eq!(exec_params.arg0, None);
+}
+
+#[test]
+fn shell_handler_prepends_rtk_helper_dir_to_path() {
+    let mut env = std::collections::HashMap::from([(
+        "PATH".to_string(),
+        "/usr/local/bin:/usr/bin".to_string(),
+    )]);
+
+    ShellHandler::prepend_rtk_helper_dir(
+        &mut env,
+        Some(std::path::Path::new("/tmp/codex-arg0/codex-execve-wrapper")),
+        None,
+    );
+
+    assert_eq!(
+        env.get("PATH"),
+        Some(&"/tmp/codex-arg0:/usr/local/bin:/usr/bin".to_string())
+    );
 }
 
 #[test]
@@ -300,4 +321,32 @@ fn shell_command_handler_records_original_command_when_rewritten() {
                 .to_string()
         )
     );
+}
+
+#[tokio::test]
+async fn snapshot_explicit_env_overrides_keep_helper_path() {
+    let (_session, mut turn_context) = make_session_and_context().await;
+    turn_context
+        .shell_environment_policy
+        .r#set
+        .insert("FOO".to_string(), "bar".to_string());
+
+    let dependency_env = HashMap::from([("OPENAI_API_KEY".to_string(), "secret".to_string())]);
+    let exec_env = HashMap::from([
+        (
+            "PATH".to_string(),
+            "/tmp/codex-arg0-helper:/usr/local/bin:/usr/bin".to_string(),
+        ),
+        ("OPENAI_API_KEY".to_string(), "secret".to_string()),
+    ]);
+
+    let overrides =
+        super::explicit_env_overrides_for_snapshot(&turn_context, &dependency_env, &exec_env);
+
+    assert_eq!(
+        overrides.get("PATH"),
+        Some(&"/tmp/codex-arg0-helper:/usr/local/bin:/usr/bin".to_string())
+    );
+    assert_eq!(overrides.get("FOO"), Some(&"bar".to_string()));
+    assert_eq!(overrides.get("OPENAI_API_KEY"), Some(&"secret".to_string()));
 }

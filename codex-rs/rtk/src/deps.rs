@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::fs;
 use std::path::Path;
 
-/// Summarize project dependencies
+/// 汇总项目依赖
 pub fn run(path: &Path, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 

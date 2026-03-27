@@ -526,8 +526,8 @@ fn render_daemon_response_text(
         lines.push(format!("project: {}", daemon_status.project_root.display()));
         lines.push(format!("socket: {}", daemon_status.socket_path.display()));
         lines.push(format!("socket exists: {}", daemon_status.socket_exists));
-        lines.push(format!("pid live: {}", daemon_status.pid_is_live));
-        lines.push(format!("lock held: {}", daemon_status.lock_is_held));
+        lines.push(format!("pid is live: {}", daemon_status.pid_is_live));
+        lines.push(format!("lock is held: {}", daemon_status.lock_is_held));
         lines.push(format!("healthy: {}", daemon_status.healthy));
         lines.push(format!("stale socket: {}", daemon_status.stale_socket));
         lines.push(format!("stale pid: {}", daemon_status.stale_pid));
@@ -561,7 +561,7 @@ fn render_daemon_response_text(
         lines.push(format!("cached entries: {}", snapshot.cached_entries));
         lines.push(format!("dirty files: {}", snapshot.dirty_files));
         lines.push(format!(
-            "dirty threshold: {}",
+            "dirty file threshold: {}",
             snapshot.dirty_file_threshold
         ));
         lines.push(format!("reindex pending: {}", snapshot.reindex_pending));
@@ -1388,6 +1388,69 @@ mod lifecycle_tests {
 
         assert!(output.contains("last completed reindex: Completed"));
         assert!(output.contains("last reindex attempt: Failed"));
+    }
+
+    #[test]
+    fn render_daemon_response_text_surfaces_status_detail_fields() {
+        let started_at = std::time::SystemTime::UNIX_EPOCH;
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "status".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                cached_entries: 1,
+                dirty_files: 0,
+                dirty_file_threshold: 20,
+                reindex_pending: false,
+                last_query_at: Some(started_at),
+                last_reindex: None,
+                last_reindex_attempt: None,
+            }),
+            daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
+                project_root: PathBuf::from("/tmp/project"),
+                socket_path: PathBuf::from("/tmp/project.sock"),
+                pid_path: PathBuf::from("/tmp/project.pid"),
+                lock_path: PathBuf::from("/tmp/project.lock"),
+                socket_exists: true,
+                pid_is_live: true,
+                lock_is_held: true,
+                healthy: true,
+                stale_socket: false,
+                stale_pid: false,
+                health_reason: None,
+                recovery_hint: None,
+                semantic_reindex_pending: false,
+                last_query_at: Some(started_at),
+                config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
+                    auto_start: true,
+                    socket_mode: "unix".to_string(),
+                    semantic_enabled: true,
+                    semantic_auto_reindex_threshold: 20,
+                    session_dirty_file_threshold: 20,
+                },
+            }),
+            reindex_report: Some(codex_native_tldr::semantic::SemanticReindexReport {
+                status: codex_native_tldr::semantic::SemanticReindexStatus::Completed,
+                languages: vec![codex_native_tldr::lang_support::SupportedLanguage::Rust],
+                indexed_files: 2,
+                indexed_units: 3,
+                truncated: false,
+                started_at,
+                finished_at: started_at,
+                message: "done".to_string(),
+                embedding_enabled: true,
+                embedding_dimensions: 256,
+            }),
+        };
+
+        let output = render_daemon_response_text(&response).join("\n");
+
+        assert!(output.contains("pid is live: true"));
+        assert!(output.contains("lock is held: true"));
+        assert!(output.contains("dirty file threshold: 20"));
+        assert!(output.contains("reindex status: Completed"));
+        assert!(output.contains("reindex files: 2"));
     }
 
     #[tokio::test]

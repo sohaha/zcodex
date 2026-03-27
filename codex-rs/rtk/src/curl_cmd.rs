@@ -34,7 +34,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let raw = stdout.to_string();
 
-    // Auto-detect JSON and pipe through filter
+    // 自动识别 JSON 并交给过滤器处理
     let filtered = filter_curl_output(&stdout);
     println!("{filtered}");
 
@@ -51,18 +51,18 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 fn filter_curl_output(output: &str) -> String {
     let trimmed = output.trim();
 
-    // Try JSON detection: starts with { or [
+    // 尝试识别 JSON：以 { 或 [ 开头
     if (trimmed.starts_with('{') || trimmed.starts_with('['))
         && (trimmed.ends_with('}') || trimmed.ends_with(']'))
         && let Ok(schema) = json_cmd::filter_json_string(trimmed, /*max_depth*/ 5)
     {
-        // Only use schema if it's actually shorter than the original (#297)
+        // 仅当 schema 确实比原文更短时才使用（#297）
         if schema.len() <= trimmed.len() {
             return schema;
         }
     }
 
-    // Not JSON: truncate long output
+    // 非 JSON：截断过长输出
     let lines: Vec<&str> = trimmed.lines().collect();
     if lines.len() > 30 {
         let mut result: Vec<&str> = lines[..30].to_vec();
@@ -75,7 +75,7 @@ fn filter_curl_output(output: &str) -> String {
         return format!("{}\n{}", result.join("\n"), msg);
     }
 
-    // Short output: return as-is but truncate long lines
+    // 输出较短：保留原样，但截断过长行
     lines
         .iter()
         .map(|l| truncate(l, /*max_len*/ 200))
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_filter_curl_json() {
-        // Large JSON where schema is shorter than original — schema should be returned
+        // 大型 JSON：若 schema 比原文更短，应返回 schema
         let output = r#"{"name": "a very long user name here", "count": 42, "items": [1, 2, 3], "description": "a very long description that takes up many characters in the original JSON payload", "status": "active", "url": "https://example.com/api/v1/users/123"}"#;
         let result = filter_curl_output(output);
         assert!(result.contains("name"));
@@ -114,11 +114,11 @@ mod tests {
 
     #[test]
     fn test_filter_curl_json_small_returns_original() {
-        // Small JSON where schema would be larger than original (issue #297)
+        // 小型 JSON：若 schema 反而更长（issue #297）
         let output = r#"{"r2Ready":true,"status":"ok"}"#;
         let result = filter_curl_output(output);
-        // Schema would be "{\n  r2Ready: bool,\n  status: string\n}" which is longer
-        // Should return the original JSON unchanged
+        // schema 会是 "{\n  r2Ready: bool,\n  status: string\n}"，长度更长
+        // 应保持返回原始 JSON
         assert_eq!(result.trim(), output.trim());
     }
 

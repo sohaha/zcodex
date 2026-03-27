@@ -405,9 +405,9 @@ fn kubectl_logs(args: &[String], _verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Format `docker compose ps --format` output into compact form.
-/// Expects tab-separated lines: Name\tImage\tStatus\tPorts
-/// (no header row — `--format` output is headerless)
+/// 将 `docker compose ps --format` 的输出压缩成紧凑格式。
+/// 期望输入为制表符分隔的行：`Name\tImage\tStatus\tPorts`
+/// （无表头，因为 `--format` 输出本身不带表头）
 pub fn format_compose_ps(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
 
@@ -448,19 +448,19 @@ pub fn format_compose_ps(raw: &str) -> String {
     result.trim_end().to_string()
 }
 
-/// Format `docker compose logs` output into compact form
+/// 将 `docker compose logs` 的输出压缩成紧凑格式
 pub fn format_compose_logs(raw: &str) -> String {
     if raw.trim().is_empty() {
         return "🐳 无日志".to_string();
     }
 
-    // docker compose logs prefixes each line with "service-N  | "
-    // Use the existing log deduplication engine
+    // docker compose logs 会为每一行添加 "service-N  | " 前缀
+    // 复用现有的日志去重引擎
     let analyzed = crate::log_cmd::run_stdin_str(raw);
     format!("🐳 Compose 日志：\n{analyzed}")
 }
 
-/// Format `docker compose build` output into compact summary
+/// 将 `docker compose build` 的输出压缩为摘要
 pub fn format_compose_build(raw: &str) -> String {
     if raw.trim().is_empty() {
         return "🐳 构建：无输出".to_string();
@@ -468,7 +468,7 @@ pub fn format_compose_build(raw: &str) -> String {
 
     let mut result = String::new();
 
-    // Extract the summary line: "[+] Building 12.3s (8/8) FINISHED"
+    // 提取摘要行，例如 "[+] Building 12.3s (8/8) FINISHED"
     for line in raw.lines() {
         if line.contains("Building") && line.contains("FINISHED") {
             result.push_str(&format!("🐳 {}\n", line.trim()));
@@ -477,7 +477,7 @@ pub fn format_compose_build(raw: &str) -> String {
     }
 
     if result.is_empty() {
-        // No FINISHED line found — might still be building or errored
+        // 没找到 FINISHED 行，可能仍在构建中或已报错
         if let Some(line) = raw.lines().find(|l| l.contains("Building")) {
             result.push_str(&format!("🐳 {}\n", line.trim()));
         } else {
@@ -485,10 +485,10 @@ pub fn format_compose_build(raw: &str) -> String {
         }
     }
 
-    // Collect unique service names from build steps like "[web 1/4]"
+    // 从类似 "[web 1/4]" 的构建步骤里提取唯一服务名
     let mut services: Vec<String> = Vec::new();
-    // find('[') returns byte offset — use byte slicing throughout
-    // '[' and ']' are single-byte ASCII, so byte arithmetic is safe
+    // find('[') 返回字节偏移，因此这里全程使用字节切片
+    // '[' 和 ']' 都是单字节 ASCII，字节运算是安全的
     for line in raw.lines() {
         if let Some(start) = line.find('[')
             && let Some(end) = line[start + 1..].find(']')
@@ -505,7 +505,7 @@ pub fn format_compose_build(raw: &str) -> String {
         result.push_str(&format!("  服务：{}\n", services.join(", ")));
     }
 
-    // Count build steps (lines starting with " => ")
+    // 统计构建步骤数（以 " => " 开头的行）
     let step_count = raw
         .lines()
         .filter(|l| l.trim_start().starts_with("=> "))
@@ -522,7 +522,7 @@ fn compact_ports(ports: &str) -> String {
         return "-".to_string();
     }
 
-    // Extract just the port numbers
+    // 仅提取端口号
     let port_nums: Vec<&str> = ports
         .split(',')
         .filter_map(|p| p.split("->").next().and_then(|s| s.split(':').next_back()))
@@ -539,7 +539,7 @@ fn compact_ports(ports: &str) -> String {
     }
 }
 
-/// Runs an unsupported docker subcommand by passing it through directly
+/// 对不支持的 docker 子命令直接透传执行
 pub fn run_docker_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -563,11 +563,11 @@ pub fn run_docker_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Run `docker compose ps` with compact output
+/// 以紧凑输出运行 `docker compose ps`
 pub fn run_compose_ps(verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Raw output for token tracking
+    // 原始输出用于 token 统计
     let raw_output = resolved_command("docker")
         .args(["compose", "ps"])
         .output()
@@ -580,7 +580,7 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
     }
     let raw = crate::utils::decode_output(&raw_output.stdout).to_string();
 
-    // Structured output for parsing (same pattern as docker_ps)
+    // 结构化输出用于解析（与 docker_ps 使用相同模式）
     let output = resolved_command("docker")
         .args([
             "compose",
@@ -608,7 +608,7 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Run `docker compose logs` with deduplication
+/// 运行 `docker compose logs` 并去重
 pub fn run_compose_logs(service: Option<&str>, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -646,7 +646,7 @@ pub fn run_compose_logs(service: Option<&str>, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Run `docker compose build` with summary output
+/// 以摘要形式运行 `docker compose build`
 pub fn run_compose_build(service: Option<&str>, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -684,7 +684,7 @@ pub fn run_compose_build(service: Option<&str>, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Runs an unsupported docker compose subcommand by passing it through directly
+/// 对不支持的 docker compose 子命令直接透传执行
 pub fn run_compose_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -709,7 +709,7 @@ pub fn run_compose_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Runs an unsupported kubectl subcommand by passing it through directly
+/// 对不支持的 kubectl 子命令直接透传执行
 pub fn run_kubectl_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -741,63 +741,54 @@ mod tests {
 
     #[test]
     fn test_format_compose_ps_basic() {
-        // Tab-separated --format output: Name\tImage\tStatus\tPorts
+        // 制表符分隔的 --format 输出：Name\tImage\tStatus\tPorts
         let raw = "web-1\tnginx:latest\tUp 2 hours\t0.0.0.0:80->80/tcp\n\
                    api-1\tnode:20\tUp 2 hours\t0.0.0.0:3000->3000/tcp\n\
                    db-1\tpostgres:16\tUp 2 hours\t0.0.0.0:5432->5432/tcp";
         let out = format_compose_ps(raw);
-        assert!(out.contains("3"), "should show container count");
-        assert!(out.contains("web"), "should show service name");
-        assert!(out.contains("api"), "should show service name");
-        assert!(out.contains("db"), "should show service name");
-        assert!(out.contains("Up 2 hours"), "should show status");
-        assert!(out.len() < raw.len(), "output should be shorter than raw");
+        assert!(out.contains("3"), "应显示容器数量");
+        assert!(out.contains("web"), "应显示服务名");
+        assert!(out.contains("api"), "应显示服务名");
+        assert!(out.contains("db"), "应显示服务名");
+        assert!(out.contains("Up 2 hours"), "应显示状态");
+        assert!(out.len() < raw.len(), "输出应短于原始内容");
     }
 
     #[test]
     fn test_format_compose_ps_empty() {
         let out = format_compose_ps("");
-        assert!(out.contains("0"), "should show zero containers");
+        assert!(out.contains("0"), "应显示零个容器");
     }
 
     #[test]
     fn test_format_compose_ps_whitespace_only() {
         let out = format_compose_ps("   \n  \n");
-        assert!(out.contains("0"), "should show zero containers");
+        assert!(out.contains("0"), "应显示零个容器");
     }
 
     #[test]
     fn test_format_compose_ps_exited_service() {
-        // Tab-separated --format output
+        // 制表符分隔的 --format 输出
         let raw = "worker-1\tpython:3.12\tExited (1) 2 minutes ago\t";
         let out = format_compose_ps(raw);
-        assert!(out.contains("worker"), "should show service name");
-        assert!(out.contains("Exited"), "should show exited status");
+        assert!(out.contains("worker"), "应显示服务名");
+        assert!(out.contains("Exited"), "应显示退出状态");
     }
 
     #[test]
     fn test_format_compose_ps_no_ports() {
         let raw = "redis-1\tredis:7\tUp 5 hours\t";
         let out = format_compose_ps(raw);
-        assert!(out.contains("redis"), "should show service name");
-        assert!(
-            !out.contains("["),
-            "should not show port brackets when empty"
-        );
+        assert!(out.contains("redis"), "应显示服务名");
+        assert!(!out.contains("["), "端口为空时不应显示端口括号");
     }
 
     #[test]
     fn test_format_compose_ps_long_image_path() {
         let raw = "app-1\tghcr.io/myorg/myapp:latest\tUp 1 hour\t0.0.0.0:8080->8080/tcp";
         let out = format_compose_ps(raw);
-        assert!(
-            out.contains("myapp:latest"),
-            "should shorten image to last segment"
-        );
-        assert!(
-            !out.contains("ghcr.io"),
-            "should not show full registry path"
-        );
+        assert!(out.contains("myapp:latest"), "应将镜像缩短为最后一段");
+        assert!(!out.contains("ghcr.io"), "不应显示完整镜像仓库路径");
     }
 
     // ── format_compose_logs ────────────────────────────────
@@ -810,16 +801,13 @@ web-1  | 192.168.1.1 - GET /favicon.ico 404
 api-1  | Server listening on port 3000
 api-1  | Connected to database";
         let out = format_compose_logs(raw);
-        assert!(
-            out.contains("Compose 日志"),
-            "should have compose logs header"
-        );
+        assert!(out.contains("Compose 日志"), "应带有 Compose 日志标题");
     }
 
     #[test]
     fn test_format_compose_logs_empty() {
         let out = format_compose_logs("");
-        assert!(out.contains("无日志"), "should indicate no logs");
+        assert!(out.contains("无日志"), "应提示无日志");
     }
 
     // ── format_compose_build ───────────────────────────────
@@ -837,21 +825,18 @@ api-1  | Connected to database";
  => [web] exporting to image                                       2.3s
  => => naming to docker.io/library/myapp-web                       0.0s";
         let out = format_compose_build(raw);
-        assert!(out.contains("12.3s"), "should show total build time");
-        assert!(out.contains("web"), "should show service name");
-        assert!(out.len() < raw.len(), "should be shorter than raw");
+        assert!(out.contains("12.3s"), "应显示总构建时间");
+        assert!(out.contains("web"), "应显示服务名");
+        assert!(out.len() < raw.len(), "输出应短于原始内容");
     }
 
     #[test]
     fn test_format_compose_build_empty() {
         let out = format_compose_build("");
-        assert!(
-            !out.is_empty(),
-            "should produce output even for empty input"
-        );
+        assert!(!out.is_empty(), "即使输入为空也应产生输出");
     }
 
-    // ── compact_ports (existing, previously untested) ──────
+    // ── compact_ports（现有函数，之前未覆盖测试） ──────
 
     #[test]
     fn test_compact_ports_empty() {
@@ -869,6 +854,6 @@ api-1  | Connected to database";
         let result = compact_ports(
             "0.0.0.0:80->80/tcp, 0.0.0.0:443->443/tcp, 0.0.0.0:8080->8080/tcp, 0.0.0.0:9090->9090/tcp",
         );
-        assert!(result.contains("..."), "should truncate for >3 ports");
+        assert!(result.contains("..."), "端口超过 3 个时应截断");
     }
 }

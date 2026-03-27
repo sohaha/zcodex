@@ -16,7 +16,7 @@ struct Package {
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Auto-detect uv vs pip
+    // 自动识别使用 uv 还是 pip
     let use_uv = tool_exists("uv");
     let base_cmd = if use_uv { "uv" } else { "pip" };
 
@@ -24,14 +24,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         eprintln!("使用 uv（兼容 pip）");
     }
 
-    // Detect subcommand
+    // 识别子命令
     let subcommand = args.first().map(std::string::String::as_str).unwrap_or("");
 
     let (cmd_str, filtered) = match subcommand {
         "list" => run_list(base_cmd, &args[1..], verbose)?,
         "outdated" => run_outdated(base_cmd, &args[1..], verbose)?,
         "install" | "uninstall" | "show" => {
-            // Passthrough for write operations
+            // 写操作直接透传
             run_passthrough(base_cmd, args, verbose)?
         }
         _ => {
@@ -154,7 +154,7 @@ fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(Stri
     Ok((raw.clone(), raw))
 }
 
-/// Filter pip list JSON output
+/// 过滤 `pip list` 的 JSON 输出
 fn filter_pip_list(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
@@ -171,7 +171,7 @@ fn filter_pip_list(output: &str) -> String {
     result.push_str(&format!("pip list：{} 个包\n", packages.len()));
     result.push_str("═══════════════════════════════════════\n");
 
-    // Group by first letter for easier scanning
+    // 按首字母分组，便于快速浏览
     let mut by_letter: std::collections::HashMap<char, Vec<&Package>> =
         std::collections::HashMap::new();
 
@@ -201,7 +201,7 @@ fn filter_pip_list(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter pip outdated JSON output
+/// 过滤 `pip outdated` 的 JSON 输出
 fn filter_pip_outdated(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,

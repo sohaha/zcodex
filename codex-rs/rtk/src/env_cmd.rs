@@ -3,7 +3,7 @@ use anyhow::Result;
 use std::collections::HashSet;
 use std::env;
 
-/// Show filtered environment variables (hide sensitive data)
+/// 显示过滤后的环境变量（隐藏敏感数据）
 pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -15,7 +15,7 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
     let mut vars: Vec<(String, String)> = env::vars().collect();
     vars.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // Interesting categories
+    // 值得关注的分类
     let mut path_vars = Vec::new();
     let mut lang_vars = Vec::new();
     let mut cloud_vars = Vec::new();
@@ -23,14 +23,14 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
     let mut other_vars = Vec::new();
 
     for (key, value) in &vars {
-        // Apply filter if provided
+        // 如果传入过滤条件，则先应用过滤
         if let Some(f) = filter
             && !key.to_lowercase().contains(&f.to_lowercase())
         {
             continue;
         }
 
-        // Check if sensitive
+        // 检查是否属于敏感变量
         let is_sensitive = sensitive_patterns
             .iter()
             .any(|p| key.to_lowercase().contains(p));
@@ -46,7 +46,7 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
 
         let entry = (key.clone(), display_value);
 
-        // Categorize
+        // 分类
         if key.contains("PATH") {
             path_vars.push(entry);
         } else if is_lang_var(key) {
@@ -60,12 +60,12 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
         }
     }
 
-    // Print categorized
+    // 按分类输出
     if !path_vars.is_empty() {
         println!("📂 PATH 变量：");
         for (k, v) in &path_vars {
             if k == "PATH" {
-                // Split PATH for readability
+                // 拆分 PATH，便于阅读
                 let paths: Vec<&str> = v.split(':').collect();
                 println!("  PATH（{} 项）：", paths.len());
                 for p in paths.iter().take(5) {

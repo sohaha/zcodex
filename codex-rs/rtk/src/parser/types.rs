@@ -1,11 +1,11 @@
-/// Canonical types for tool outputs
-/// These provide a unified interface across different tool versions
+/// 工具输出的规范类型
+/// 为不同工具版本提供统一接口
 use serde::Deserialize;
-/// Canonical types for tool outputs
-/// These provide a unified interface across different tool versions
+/// 工具输出的规范类型
+/// 为不同工具版本提供统一接口
 use serde::Serialize;
 
-/// Test execution result (vitest, playwright, jest, etc.)
+/// 测试执行结果（vitest、playwright、jest 等）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestResult {
     pub total: usize,
@@ -24,7 +24,7 @@ pub struct TestFailure {
     pub stack_trace: Option<String>,
 }
 
-/// Linting result (eslint, biome, tsc, etc.)
+/// Lint 结果（eslint、biome、tsc 等）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LintResult {
     pub total_files: usize,
@@ -52,7 +52,7 @@ pub enum LintSeverity {
     Info,
 }
 
-/// Dependency state (pnpm, npm, cargo, etc.)
+/// 依赖状态（pnpm、npm、cargo 等）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyState {
     pub total_packages: usize,
@@ -69,7 +69,7 @@ pub struct Dependency {
     pub dev_dependency: bool,
 }
 
-/// Build output (next, webpack, vite, cargo, etc.)
+/// 构建输出（next、webpack、vite、cargo 等）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BuildOutput {
     pub success: bool,
@@ -94,7 +94,7 @@ pub struct RouteInfo {
     pub first_load_js_kb: Option<f64>,
 }
 
-/// Git operation result
+/// Git 操作结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitResult {
     pub operation: String,
@@ -112,7 +112,7 @@ pub struct GitCommit {
     pub timestamp: Option<String>,
 }
 
-/// Generic command output (for tools without specific types)
+/// 通用命令输出（用于没有专用类型的工具）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenericOutput {
     pub exit_code: i32,
