@@ -1790,6 +1790,21 @@ mod tests {
     }
 
     #[test]
+    fn test_first_subcommand_arg_respects_double_dash_boundary() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("--"),
+            OsString::from("custom-fallback"),
+            OsString::from("alpha"),
+        ];
+        assert_eq!(
+            first_subcommand_arg(&args).as_deref(),
+            Some("custom-fallback")
+        );
+        assert_eq!(first_subcommand_index(&args), Some(2));
+    }
+
+    #[test]
     fn test_should_show_parse_error_for_removed_command_after_global_flags() {
         let args = vec![
             OsString::from("--verbose"),
@@ -1810,6 +1825,26 @@ mod tests {
         let args = vec![
             OsString::from("--skip-env"),
             OsString::from("-u"),
+            OsString::from("custom-fallback"),
+        ];
+        assert!(!should_show_parse_error(&args));
+    }
+
+    #[test]
+    fn test_should_show_parse_error_for_builtin_command_after_double_dash() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("--"),
+            OsString::from("read"),
+        ];
+        assert!(should_show_parse_error(&args));
+    }
+
+    #[test]
+    fn test_should_not_show_parse_error_for_unknown_command_after_double_dash() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("--"),
             OsString::from("custom-fallback"),
         ];
         assert!(!should_show_parse_error(&args));

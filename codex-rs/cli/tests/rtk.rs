@@ -239,6 +239,16 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
             vec!["Git 命令，紧凑输出", "status"],
             vec!["rewrite"],
         ),
+        (
+            vec!["rtk", "read", "--help"],
+            vec!["读取文件并智能过滤", "--max-lines", "--tail-lines"],
+            vec!["rewrite"],
+        ),
+        (
+            vec!["rtk", "--verbose", "read", "--help"],
+            vec!["读取文件并智能过滤", "--max-lines", "--tail-lines"],
+            vec!["rewrite"],
+        ),
     ];
 
     for (args, required, forbidden) in cases {
@@ -391,6 +401,27 @@ fn rtk_unknown_commands_still_fall_back_after_global_flags() -> Result<()> {
                 .and(contains("alpha"))
                 .and(contains("beta")),
         );
+
+    Ok(())
+}
+
+#[test]
+fn rtk_unknown_commands_still_fall_back_after_double_dash() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_external = write_fake_command(
+        &bin_dir,
+        "custom-fallback",
+        fallback_marker_script("FALLBACK_OK \"$@\""),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "--", "custom-fallback", "alpha"])
+        .assert()
+        .success()
+        .stdout(contains("FALLBACK_OK").and(contains("alpha")));
 
     Ok(())
 }
