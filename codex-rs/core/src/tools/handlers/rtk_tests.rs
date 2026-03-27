@@ -172,14 +172,18 @@ fn build_wc_args_rejects_unknown_mode() {
 
 #[test]
 fn build_git_status_args_serializes_pathspec() {
-    let args = build_command_args(RtkCommandKind::GitStatus, r#"{"path":"core/src"}"#)
-        .expect("git status args should parse");
+    let args = build_command_args(
+        RtkCommandKind::GitStatus,
+        r#"{"path":"core/src","short":true}"#,
+    )
+    .expect("git status args should parse");
 
     assert_eq!(
         args,
         vec![
             OsString::from("git"),
             OsString::from("status"),
+            OsString::from("--short"),
             OsString::from("--"),
             OsString::from("core/src"),
         ]
@@ -225,7 +229,7 @@ fn build_git_show_args_defaults_to_head() {
 fn build_git_log_args_serializes_range_and_max_count() {
     let args = build_command_args(
         RtkCommandKind::GitLog,
-        r#"{"revision_range":"main..HEAD","max_count":5}"#,
+        r#"{"revision_range":"main..HEAD","max_count":5,"since":"2026-03-27 00:00:00 +0000","author":"seekwe","grep":"rtk","path":"codex-rs/core","oneline":true,"all":true,"graph":true,"merges":true}"#,
     )
     .expect("git log args should parse");
 
@@ -236,7 +240,19 @@ fn build_git_log_args_serializes_range_and_max_count() {
             OsString::from("log"),
             OsString::from("-n"),
             OsString::from("5"),
+            OsString::from("--oneline"),
+            OsString::from("--all"),
+            OsString::from("--graph"),
+            OsString::from("--merges"),
+            OsString::from("--since"),
+            OsString::from("2026-03-27 00:00:00 +0000"),
+            OsString::from("--author"),
+            OsString::from("seekwe"),
+            OsString::from("--grep"),
+            OsString::from("rtk"),
             OsString::from("main..HEAD"),
+            OsString::from("--"),
+            OsString::from("codex-rs/core"),
         ]
     );
 }
@@ -249,6 +265,17 @@ fn build_git_log_args_rejects_zero_max_count() {
     assert_eq!(
         err.to_string(),
         "max_count must be greater than zero".to_string()
+    );
+}
+
+#[test]
+fn build_git_log_args_rejects_blank_since() {
+    let err = build_command_args(RtkCommandKind::GitLog, r#"{"since":" "}"#)
+        .expect_err("blank since should be rejected");
+
+    assert_eq!(
+        err.to_string(),
+        "since must not be empty when provided".to_string()
     );
 }
 
@@ -274,6 +301,21 @@ fn build_git_branch_args_serializes_filters() {
 }
 
 #[test]
+fn build_git_branch_args_serializes_show_current() {
+    let args = build_command_args(RtkCommandKind::GitBranch, r#"{"show_current":true}"#)
+        .expect("git branch show_current args should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            OsString::from("git"),
+            OsString::from("branch"),
+            OsString::from("--show-current"),
+        ]
+    );
+}
+
+#[test]
 fn build_git_branch_args_rejects_conflicting_visibility_flags() {
     let err = build_command_args(RtkCommandKind::GitBranch, r#"{"all":true,"remotes":true}"#)
         .expect_err("conflicting branch visibility should be rejected");
@@ -281,6 +323,20 @@ fn build_git_branch_args_rejects_conflicting_visibility_flags() {
     assert_eq!(
         err.to_string(),
         "all and remotes cannot both be true".to_string()
+    );
+}
+
+#[test]
+fn build_git_branch_args_rejects_show_current_with_filters() {
+    let err = build_command_args(
+        RtkCommandKind::GitBranch,
+        r#"{"show_current":true,"merged":true}"#,
+    )
+    .expect_err("show_current should reject listing filters");
+
+    assert_eq!(
+        err.to_string(),
+        "show_current cannot be combined with branch listing filters".to_string()
     );
 }
 

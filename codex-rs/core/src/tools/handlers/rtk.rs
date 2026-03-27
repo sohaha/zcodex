@@ -245,6 +245,8 @@ struct RtkWcArgs {
 struct RtkGitStatusArgs {
     #[serde(default)]
     path: Option<String>,
+    #[serde(default)]
+    short: bool,
 }
 
 #[derive(Deserialize)]
@@ -269,6 +271,22 @@ struct RtkGitLogArgs {
     revision_range: Option<String>,
     #[serde(default = "default_rtk_git_log_max_count")]
     max_count: usize,
+    #[serde(default)]
+    since: Option<String>,
+    #[serde(default)]
+    author: Option<String>,
+    #[serde(default)]
+    grep: Option<String>,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    oneline: bool,
+    #[serde(default)]
+    all: bool,
+    #[serde(default)]
+    graph: bool,
+    #[serde(default)]
+    merges: bool,
 }
 
 #[derive(Deserialize)]
@@ -283,6 +301,8 @@ struct RtkGitBranchArgs {
     merged: bool,
     #[serde(default)]
     no_merged: bool,
+    #[serde(default)]
+    show_current: bool,
 }
 
 #[derive(Deserialize)]
@@ -642,6 +662,10 @@ fn build_git_status_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallE
         OsString::from("status"),
     ];
 
+    if args.short {
+        command.push(OsString::from("--short"));
+    }
+
     if let Some(path) = args.path {
         let path = path.trim().to_string();
         if path.is_empty() {
@@ -722,6 +746,52 @@ fn build_git_log_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallErro
         OsString::from(args.max_count.to_string()),
     ];
 
+    if args.oneline {
+        command.push(OsString::from("--oneline"));
+    }
+    if args.all {
+        command.push(OsString::from("--all"));
+    }
+    if args.graph {
+        command.push(OsString::from("--graph"));
+    }
+    if args.merges {
+        command.push(OsString::from("--merges"));
+    }
+
+    if let Some(since) = args.since {
+        let since = since.trim().to_string();
+        if since.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "since must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--since"));
+        command.push(OsString::from(since));
+    }
+
+    if let Some(author) = args.author {
+        let author = author.trim().to_string();
+        if author.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "author must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--author"));
+        command.push(OsString::from(author));
+    }
+
+    if let Some(grep) = args.grep {
+        let grep = grep.trim().to_string();
+        if grep.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "grep must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--grep"));
+        command.push(OsString::from(grep));
+    }
+
     if let Some(revision_range) = args.revision_range {
         let revision_range = revision_range.trim().to_string();
         if revision_range.is_empty() {
@@ -730,6 +800,17 @@ fn build_git_log_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallErro
             ));
         }
         command.push(OsString::from(revision_range));
+    }
+
+    if let Some(path) = args.path {
+        let path = path.trim().to_string();
+        if path.is_empty() {
+            return Err(FunctionCallError::RespondToModel(
+                "path must not be empty when provided".to_string(),
+            ));
+        }
+        command.push(OsString::from("--"));
+        command.push(OsString::from(path));
     }
 
     Ok(command)
@@ -747,11 +828,23 @@ fn build_git_branch_args(arguments: &str) -> Result<Vec<OsString>, FunctionCallE
             "merged and no_merged cannot both be true".to_string(),
         ));
     }
+    if args.show_current
+        && (args.all || args.remotes || args.contains.is_some() || args.merged || args.no_merged)
+    {
+        return Err(FunctionCallError::RespondToModel(
+            "show_current cannot be combined with branch listing filters".to_string(),
+        ));
+    }
 
     let mut command = vec![
         OsString::from(RtkCommandKind::GitBranch.subcommand()),
         OsString::from("branch"),
     ];
+
+    if args.show_current {
+        command.push(OsString::from("--show-current"));
+        return Ok(command);
+    }
 
     if args.all {
         command.push(OsString::from("--all"));

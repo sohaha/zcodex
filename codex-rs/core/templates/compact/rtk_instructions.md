@@ -2,11 +2,12 @@
 
 ## Golden Rule
 
-Prefer `codex rtk` for noisy shell output. When Codex embeds a dedicated wrapper, use it. Otherwise `codex rtk` may fall back to the underlying command, so avoid claiming special filtering unless the command below is explicitly listed.
+Prefer built-in `rtk_*` tools whenever Codex exposes a dedicated RTK wrapper for the task. Use `shell_command` + `codex rtk ...` only when no built-in wrapper exists, or when the task needs mutating git / external / infra commands that must stay in the shell. When using `codex rtk ...`, avoid claiming special filtering unless the command below is explicitly listed.
 
-When a dedicated built-in RTK function tool exists, prefer it over shelling out to `codex rtk ...`.
+When a dedicated built-in RTK function tool exists, treat it as the preferred structured wrapper for the supported RTK workflow before falling back to `shell_command` + `codex rtk ...`.
 - Use built-in read-only `rtk_*` tools for token-optimized inspection work, especially `rtk_read`, `rtk_grep`, `rtk_find`, `rtk_diff`, `rtk_json`, `rtk_deps`, `rtk_log`, `rtk_ls`, `rtk_tree`, `rtk_wc`, `rtk_git_status`, `rtk_git_diff`, `rtk_git_show`, `rtk_git_log`, `rtk_git_branch`, `rtk_git_stash`, and `rtk_git_worktree`.
 - Use `rtk_summary` and `rtk_err` for noisy command summarization or error filtering.
+- Do not use `shell_command` + `codex rtk git ...` for read-only git inspection when `rtk_git_status`, `rtk_git_diff`, `rtk_git_show`, `rtk_git_log`, `rtk_git_branch`, `rtk_git_stash`, or `rtk_git_worktree` can handle the request directly.
 - Use `shell_command` + `codex rtk ...` for mutating git operations and external/infra/network commands such as `git add`, `git commit`, `git push`, `git pull`, `git fetch`, `docker`, `kubectl`, `aws`, `psql`, and `curl`.
 - Fall back to `shell_command` + `codex rtk ...` for RTK capabilities that are not exposed as built-ins.
 
@@ -34,18 +35,13 @@ When a dedicated built-in RTK function tool exists, prefer it over shelling out 
 
 ## Git & Review
 
-- `codex rtk git status`
-- `codex rtk git log`
-- `codex rtk git diff`
-- `codex rtk git show`
+- Built-in wrappers for common read-only git inspection: `rtk_git_status`, `rtk_git_log`, `rtk_git_diff`, `rtk_git_show`, `rtk_git_branch`, `rtk_git_stash`, `rtk_git_worktree`
+- Fallback CLI forms when a built-in wrapper cannot express the request: `codex rtk git status`, `codex rtk git log`, `codex rtk git diff`, `codex rtk git show`, `codex rtk git branch`, `codex rtk git stash`, `codex rtk git worktree`
 - `codex rtk git add`
 - `codex rtk git commit`
 - `codex rtk git push`
 - `codex rtk git pull`
-- `codex rtk git branch`
 - `codex rtk git fetch`
-- `codex rtk git stash`
-- `codex rtk git worktree`
 - `codex rtk gh ...`
 - `codex rtk gt ...`
 

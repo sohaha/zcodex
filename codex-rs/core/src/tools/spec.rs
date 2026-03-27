@@ -1020,7 +1020,8 @@ Examples of valid command strings:
         )
     } else {
         r#"Runs a shell command and returns its output.
-- Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary."#
+- Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary.
+- Supported commands may be transparently routed through embedded RTK filtering before execution to reduce noisy output."#
             .to_string()
     };
 
@@ -2201,19 +2202,27 @@ fn create_rtk_wc_tool() -> ToolSpec {
 }
 
 fn create_rtk_git_status_tool() -> ToolSpec {
-    let properties = BTreeMap::from([(
-        "path".to_string(),
-        JsonSchema::String {
-            description: Some(
-                "Optional file or directory pathspec relative to the current working directory."
-                    .to_string(),
-            ),
-        },
-    )]);
+    let properties = BTreeMap::from([
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional file or directory pathspec relative to the current working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "short".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to prefer the compact `git status --short` view.".to_string()),
+            },
+        ),
+    ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_status".to_string(),
-        description: "Token-optimized git status via RTK.".to_string(),
+        description: "Token-optimized git status via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git status`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -2254,7 +2263,7 @@ fn create_rtk_git_diff_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_diff".to_string(),
-        description: "Token-optimized git diff via RTK.".to_string(),
+        description: "Token-optimized git diff via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git diff`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -2276,7 +2285,7 @@ fn create_rtk_git_show_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_show".to_string(),
-        description: "Token-optimized git show via RTK.".to_string(),
+        description: "Token-optimized git show via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git show`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -2302,11 +2311,65 @@ fn create_rtk_git_log_tool() -> ToolSpec {
                 description: Some("Maximum number of commits to show.".to_string()),
             },
         ),
+        (
+            "since".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional `git log --since` value such as `2026-03-27 00:00:00 +0000`."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "author".to_string(),
+            JsonSchema::String {
+                description: Some("Optional author filter passed to `git log --author`.".to_string()),
+            },
+        ),
+        (
+            "grep".to_string(),
+            JsonSchema::String {
+                description: Some("Optional commit message filter passed to `git log --grep`.".to_string()),
+            },
+        ),
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional file or directory pathspec relative to the current working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "oneline".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to prefer the compact `git log --oneline` view.".to_string()),
+            },
+        ),
+        (
+            "all".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include all refs via `git log --all`.".to_string()),
+            },
+        ),
+        (
+            "graph".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include the commit graph via `git log --graph`.".to_string()),
+            },
+        ),
+        (
+            "merges".to_string(),
+            JsonSchema::Boolean {
+                description: Some("Whether to include only merge commits via `git log --merges`.".to_string()),
+            },
+        ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_log".to_string(),
-        description: "Token-optimized git log via RTK.".to_string(),
+        description: "Token-optimized git log via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git log`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -2352,11 +2415,20 @@ fn create_rtk_git_branch_tool() -> ToolSpec {
                 description: Some("Whether to include only unmerged branches.".to_string()),
             },
         ),
+        (
+            "show_current".to_string(),
+            JsonSchema::Boolean {
+                description: Some(
+                    "Whether to print only the current branch name via `git branch --show-current`. Mutually exclusive with `all`, `remotes`, `contains`, `merged`, and `no_merged`."
+                        .to_string(),
+                ),
+            },
+        ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_branch".to_string(),
-        description: "Token-optimized git branch listing via RTK.".to_string(),
+        description: "Token-optimized git branch inspection via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git branch`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -2378,7 +2450,7 @@ fn create_rtk_git_stash_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_stash".to_string(),
-        description: "Token-optimized git stash listing via RTK.".to_string(),
+        description: "Token-optimized git stash listing via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git stash`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -2393,7 +2465,7 @@ fn create_rtk_git_stash_tool() -> ToolSpec {
 fn create_rtk_git_worktree_tool() -> ToolSpec {
     ToolSpec::Function(ResponsesApiTool {
         name: "rtk_git_worktree".to_string(),
-        description: "Token-optimized git worktree listing via RTK.".to_string(),
+        description: "Token-optimized git worktree listing via RTK. Prefer it for supported read-only inspection before falling back to `shell_command` + `codex rtk git worktree`.".to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {
@@ -3491,8 +3563,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ReadFileHandler;
     use crate::tools::handlers::RequestPermissionsHandler;
     use crate::tools::handlers::RequestUserInputHandler;
-    use crate::tools::handlers::RtkCommandKind;
-    use crate::tools::handlers::RtkHandler;
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::TestSyncHandler;
@@ -3675,163 +3745,6 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("tldr", Arc::new(TldrHandler));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_read_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_read", Arc::new(RtkHandler::new(RtkCommandKind::Read)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_grep_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_grep", Arc::new(RtkHandler::new(RtkCommandKind::Grep)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_find_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_find", Arc::new(RtkHandler::new(RtkCommandKind::Find)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_diff_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_diff", Arc::new(RtkHandler::new(RtkCommandKind::Diff)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_json_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_json", Arc::new(RtkHandler::new(RtkCommandKind::Json)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_deps_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_deps", Arc::new(RtkHandler::new(RtkCommandKind::Deps)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_log_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_log", Arc::new(RtkHandler::new(RtkCommandKind::Log)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_ls_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_ls", Arc::new(RtkHandler::new(RtkCommandKind::Ls)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_tree_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_tree", Arc::new(RtkHandler::new(RtkCommandKind::Tree)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_wc_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_wc", Arc::new(RtkHandler::new(RtkCommandKind::Wc)));
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_status_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_status",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitStatus)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_diff_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_diff",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitDiff)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_show_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_show",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitShow)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_log_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_log",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitLog)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_branch_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_branch",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitBranch)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_stash_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_stash",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitStash)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_git_worktree_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_git_worktree",
-        Arc::new(RtkHandler::new(RtkCommandKind::GitWorktree)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_summary_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler(
-        "rtk_summary",
-        Arc::new(RtkHandler::new(RtkCommandKind::Summary)),
-    );
-    push_tool_spec(
-        &mut builder,
-        create_rtk_err_tool(),
-        /*supports_parallel_tool_calls*/ false,
-        config.code_mode_enabled,
-    );
-    builder.register_handler("rtk_err", Arc::new(RtkHandler::new(RtkCommandKind::Err)));
 
     if config.js_repl_enabled {
         push_tool_spec(
