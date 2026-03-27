@@ -1041,6 +1041,27 @@ mod tests {
     }
 
     #[test]
+    fn keeps_sudo_prefixed_candidates_raw_even_through_prefixes() {
+        for command in [
+            "env FOO=1 sudo git status",
+            "command sudo git status",
+            "nice -n 5 sudo git status",
+            "command -p nice -n 5 sudo git status",
+            "codex rtk env FOO=1 sudo git status",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::Sudo,
+                    candidate: true,
+                }
+            );
+        }
+    }
+
+    #[test]
     fn leaves_unsupported_cat_head_tail_shapes_raw() {
         for command in [
             "cat src/main.rs src/lib.rs",

@@ -378,6 +378,20 @@ fn shell_command_handler_keeps_codex_rtk_compounds_raw() {
 }
 
 #[test]
+fn shell_command_handler_keeps_sudo_commands_raw_even_with_prefixes() {
+    let routed = ShellCommandHandler::route_command("env FOO=1 sudo git status");
+    assert_eq!(routed.command, "env FOO=1 sudo git status");
+    assert_eq!(routed.interaction_input, None);
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: env FOO=1 sudo git status\nexecuted: env FOO=1 sudo git status\nreason: sudo commands are never auto-routed"
+                .to_string()
+        )
+    );
+}
+
+#[test]
 fn shell_command_handler_leaves_unsupported_read_shapes_raw() {
     let routed = ShellCommandHandler::route_command("tail -f src/main.rs");
     assert_eq!(routed.command, "tail -f src/main.rs");
