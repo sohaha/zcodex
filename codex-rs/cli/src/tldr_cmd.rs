@@ -1670,6 +1670,20 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn daemon_metadata_cleans_stale_pid_without_socket() {
+        let tempdir = tempdir().unwrap();
+        let project_root = tempdir.path().join("stale-pid-clean-project");
+        std::fs::create_dir(&project_root).unwrap();
+        let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&pid_path);
+
+        std::fs::write(&pid_path, std::process::id().to_string()).unwrap();
+
+        assert!(!daemon_metadata_looks_alive(&project_root));
+        assert!(!pid_path.exists());
+    }
+
+    #[test]
     fn cleanup_stale_daemon_artifacts_removes_socket_and_pid() {
         let tempdir = tempdir().unwrap();
         let project_root = tempdir.path();

@@ -1693,6 +1693,32 @@ mod tests {
     }
 
     #[test]
+    fn daemon_health_reports_reason_for_stale_pid() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("stale-pid-reason-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&pid_path);
+
+        std::fs::write(&pid_path, std::process::id().to_string())
+            .expect("pid path should be writable");
+
+        let health = daemon_health(&project_root).expect("health should load");
+        assert!(!health.healthy);
+        assert!(!health.stale_socket);
+        assert!(health.stale_pid);
+        assert!(health.should_cleanup_artifacts());
+        assert_eq!(
+            health.health_reason.as_deref(),
+            Some("pid file exists but socket is missing")
+        );
+        assert_eq!(
+            health.recovery_hint.as_deref(),
+            Some("cleanup pid/socket files before restarting the daemon")
+        );
+    }
+
+    #[test]
     fn daemon_health_reports_lock_hint_when_lock_is_held() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("lock-reason-project");
