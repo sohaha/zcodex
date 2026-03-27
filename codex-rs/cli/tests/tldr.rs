@@ -144,3 +144,63 @@ async fn tldr_context_json_exposes_deduplicated_call_graph() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn tldr_impact_json_exposes_pdg_details() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join("src/lib.rs"),
+        "fn helper() {}\nfn main() { helper(); }\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "impact",
+            "--lang",
+            "rust",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "helper",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    let details = &payload["analysis"]["details"];
+    let edges = details["edges"]
+        .as_array()
+        .expect("edges should be an array");
+    let helper_node = details["nodes"]
+        .as_array()
+        .expect("nodes should be an array")
+        .iter()
+        .find(|node| node["id"] == "helper")
+        .expect("helper node should exist");
+    let calls_main_helper = edges
+        .iter()
+        .filter(|edge| edge["kind"] == "calls" && edge["from"] == "main" && edge["to"] == "helper")
+        .count();
+
+    assert_eq!(payload["analysis"]["kind"], "pdg");
+    assert_eq!(details["symbol_query"], "helper");
+    assert_eq!(details["overview"]["incoming_edges"], 1);
+    assert_eq!(helper_node["kind"], "function");
+    assert_eq!(
+        details["units"][0]["dfg_summary"],
+        "params=0, locals=0, mutable bindings=0, assignments=0, references=1"
+    );
+    assert_eq!(calls_main_helper, 1);
+
+    Ok(())
+}

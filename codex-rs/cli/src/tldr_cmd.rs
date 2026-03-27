@@ -58,6 +58,9 @@ pub enum TldrSubcommand {
     /// 获取上下文概览。
     Context(TldrAnalyzeCommand),
 
+    /// 获取影响分析概览。
+    Impact(TldrAnalyzeCommand),
+
     /// 运行语义检索。
     Semantic(TldrSemanticCommand),
 
@@ -188,6 +191,9 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         }
         TldrSubcommand::Context(cmd) => {
             run_analysis_command(cmd, AnalysisKind::CallGraph).await?;
+        }
+        TldrSubcommand::Impact(cmd) => {
+            run_analysis_command(cmd, AnalysisKind::Pdg).await?;
         }
         TldrSubcommand::Semantic(cmd) => {
             run_semantic_command(cmd).await?;

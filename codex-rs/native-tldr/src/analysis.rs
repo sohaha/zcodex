@@ -603,6 +603,7 @@ mod tests {
         assert!(response.summary.contains("2 symbols across 1 files"));
         assert!(response.summary.contains("login@src/lib.rs:1"));
         let details = response.details.expect("details should exist");
+
         assert_eq!(details.indexed_files, 1);
         assert_eq!(details.total_symbols, 2);
         assert_eq!(details.overview.kinds[0].name, "function");
@@ -846,6 +847,95 @@ mod auth {
                 .iter()
                 .any(|node| node.kind == "reference" && node.id == "Session")
         );
+    }
+
+    #[test]
+    fn structure_analysis_handles_qualified_symbol_import_reference_and_calls_together() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            r#"
+mod auth {
+    #[derive(Debug)]
+    pub struct Session;
+
+    pub struct AuthService;
+
+    impl AuthService {
+        pub fn login(&self, session: Session) {
+            self.validate(&session);
+        }
+
+        fn validate(&self, session: &Session) {
+            let _ = session;
+        }
+    }
+}
+
+use crate::auth::{AuthService, Session};
+
+fn login_flow(service: &AuthService, session: Session) {
+    service.login(session);
+}
+"#,
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        let response = analyze_project(
+            tempdir.path(),
+            &config,
+            AnalysisRequest {
+                kind: AnalysisKind::Ast,
+                language: SupportedLanguage::Rust,
+                symbol: Some("auth::AuthService::login".to_string()),
+            },
+        )
+        .expect("analysis should succeed");
+
+        let details = response.details.expect("details should exist");
+        assert_eq!(
+            details.symbol_query.as_deref(),
+            Some("auth::AuthService::login")
+        );
+        assert_eq!(
+            details.units[0].qualified_symbol.as_deref(),
+            Some("auth::AuthService::login")
+        );
+        assert!(details.edges.iter().any(|edge| {
+            edge.kind == "imports" && edge.to.contains("use crate::auth::{AuthService, Session};")
+        }));
+        assert!(
+            details
+                .edges
+                .iter()
+                .any(|edge| edge.kind == "references" && edge.to == "Session")
+        );
+        assert!(details.edges.iter().any(|edge| {
+            edge.kind == "calls"
+                && edge.from == "auth::AuthService::login"
+                && edge.to.contains("validate")
+        }));
+        assert!(
+            details
+                .nodes
+                .iter()
+                .any(|node| { node.id == "auth::AuthService::login" && node.kind == "method" })
+        );
+        assert!(details.nodes.iter().any(|node| {
+            node.kind == "import" && node.id.contains("use crate::auth::{AuthService, Session};")
+        }));
+        assert!(
+            details
+                .nodes
+                .iter()
+                .any(|node| node.kind == "reference" && node.id == "Session")
+        );
+        assert!(details.symbol_index.iter().any(|entry| {
+            entry.symbol == "login"
+                && entry.node_ids == vec!["auth::AuthService::login".to_string()]
+        }));
     }
 
     #[test]
