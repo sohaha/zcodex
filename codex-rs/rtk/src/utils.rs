@@ -1,9 +1,9 @@
-//! Utility functions for text processing and command execution.
+//! 文本处理与命令执行相关的工具函数。
 //!
-//! Provides common helpers used across rtk commands:
-//! - ANSI color code stripping
-//! - Text truncation
-//! - Command execution with error context
+//! 为 RTK 各命令提供通用辅助能力：
+//! - 去除 ANSI 颜色码
+//! - 文本截断
+//! - 带错误上下文的命令执行
 
 use anyhow::Context;
 use anyhow::Result;
@@ -19,13 +19,13 @@ pub(crate) fn compile_regex(pattern: &str) -> Regex {
     }
 }
 
-/// Truncates a string to `max_len` characters, appending `...` if needed.
+/// 将字符串截断到 `max_len` 个字符，必要时追加 `...`。
 ///
-/// # Arguments
-/// * `s` - The string to truncate
-/// * `max_len` - Maximum length before truncation (minimum 3 to include "...")
+/// # 参数
+/// * `s` - 要截断的字符串
+/// * `max_len` - 触发截断的最大长度（最小为 3，才能容纳 `...`）
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::truncate;
 /// assert_eq!(truncate("hello world", 8), "hello...");
@@ -36,19 +36,19 @@ pub fn truncate(s: &str, max_len: usize) -> String {
     if char_count <= max_len {
         s.to_string()
     } else if max_len < 3 {
-        // If max_len is too small, just return "..."
+        // 若 max_len 太小，直接返回 "..."
         "...".to_string()
     } else {
         format!("{}...", s.chars().take(max_len - 3).collect::<String>())
     }
 }
 
-/// Strip ANSI escape codes (colors, styles) from a string.
+/// 从字符串中移除 ANSI 转义码（颜色、样式等）。
 ///
-/// # Arguments
-/// * `text` - Text potentially containing ANSI escape codes
+/// # 参数
+/// * `text` - 可能包含 ANSI 转义码的文本
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::strip_ansi;
 /// let colored = "\x1b[31mError\x1b[0m";
@@ -61,16 +61,16 @@ pub fn strip_ansi(text: &str) -> String {
     ANSI_RE.replace_all(text, "").to_string()
 }
 
-/// Executes a command and returns cleaned stdout/stderr.
+/// 执行命令并返回清洗后的 stdout/stderr。
 ///
-/// # Arguments
-/// * `cmd` - Command to execute (e.g., "eslint")
-/// * `args` - Command arguments
+/// # 参数
+/// * `cmd` - 要执行的命令（例如 `"eslint"`）
+/// * `args` - 命令参数
 ///
-/// # Returns
+/// # 返回值
 /// `(stdout: String, stderr: String, exit_code: i32)`
 ///
-/// # Examples
+/// # 示例
 /// ```no_run
 /// use rtk::utils::execute_command;
 /// let (stdout, stderr, code) = execute_command("echo", &["test"]).unwrap();
@@ -90,11 +90,11 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
     Ok((stdout, stderr, exit_code))
 }
 
-/// Decode process output bytes to text.
+/// 将进程输出字节解码为文本。
 ///
-/// Prefers UTF-8. For non-UTF8 bytes, uses chardetng to guess a legacy
-/// encoding (e.g. GBK/Shift-JIS/Windows-1252) before falling back to lossy
-/// UTF-8 replacement.
+/// 优先使用 UTF-8。若字节流不是 UTF-8，在 Windows 上会先借助
+/// `chardetng` 猜测传统编码（如 GBK/Shift-JIS/Windows-1252），
+/// 最后再回退到有损 UTF-8 解码。
 pub fn decode_output(bytes: &[u8]) -> Cow<'_, str> {
     if let Ok(text) = std::str::from_utf8(bytes) {
         return Cow::Borrowed(text);

@@ -3,8 +3,8 @@ use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
 
-/// Known npm subcommands that should NOT get "run" injected.
-/// Shared between production code and tests to avoid drift.
+/// 已知 npm 子命令：这些命令前不应自动注入 `run`。
+/// 生产代码与测试共享这份列表，避免两边行为漂移。
 const NPM_SUBCOMMANDS: &[&str] = &[
     "install",
     "i",
@@ -77,8 +77,8 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
 
     let mut cmd = resolved_command("npm");
 
-    // Determine if this is "npm run <script>" or another npm subcommand (install, list, etc.)
-    // Only inject "run" when args look like a script name, not a known npm subcommand.
+    // 判断这是 `npm run <script>` 还是其他 npm 子命令（如 install、list 等）。
+    // 只有当参数看起来像脚本名时才注入 `run`，已知子命令不注入。
     let first_arg = args.first().map(std::string::String::as_str);
     let is_run_explicit = first_arg == Some("run");
     let is_npm_subcommand = first_arg
@@ -86,14 +86,14 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
         .unwrap_or(false);
 
     let effective_args = if is_run_explicit {
-        // "rtk npm run build" → "npm run build"
+        // `rtk npm run build` → `npm run build`
         cmd.arg("run");
         &args[1..]
     } else if is_npm_subcommand {
-        // "rtk npm install express" → "npm install express"
+        // `rtk npm install express` → `npm install express`
         args
     } else {
-        // "rtk npm build" → "npm run build" (assume script name)
+        // `rtk npm build` → `npm run build`（视为脚本名）
         cmd.arg("run");
         args
     };
@@ -132,27 +132,27 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
     Ok(())
 }
 
-/// Filter npm run output - strip boilerplate, progress bars, npm WARN
+/// 过滤 npm 输出：去掉样板信息、进度条和 npm WARN
 fn filter_npm_output(output: &str) -> String {
     let mut result = Vec::new();
 
     for line in output.lines() {
-        // Skip npm boilerplate
+        // 跳过 npm 样板输出
         if line.starts_with('>') && line.contains('@') {
             continue;
         }
-        // Skip npm lifecycle scripts
+        // 跳过 npm 生命周期脚本提示
         if line.trim_start().starts_with("npm WARN") {
             continue;
         }
         if line.trim_start().starts_with("npm notice") {
             continue;
         }
-        // Skip progress indicators
+        // 跳过进度指示
         if line.contains("⸩") || line.contains("⸨") || line.contains("...") && line.len() < 10 {
             continue;
         }
-        // Skip empty lines
+        // 跳过空行
         if line.trim().is_empty() {
             continue;
         }
@@ -192,7 +192,7 @@ npm notice
 
     #[test]
     fn test_npm_subcommand_routing() {
-        // Uses the shared NPM_SUBCOMMANDS constant — no drift between prod and test
+        // 使用共享的 NPM_SUBCOMMANDS 常量，确保生产代码与测试不漂移。
         fn needs_run_injection(args: &[&str]) -> bool {
             let first = args.first().copied();
             let is_run_explicit = first == Some("run");
@@ -202,27 +202,27 @@ npm notice
             !is_run_explicit && !is_subcommand
         }
 
-        // Known subcommands should NOT get "run" injected
+        // 已知子命令不应注入 `run`
         for subcmd in NPM_SUBCOMMANDS {
             assert!(
                 !needs_run_injection(&[subcmd]),
-                "'npm {subcmd}' should NOT inject 'run'"
+                "`npm {subcmd}` 不应注入 `run`"
             );
         }
 
-        // Script names SHOULD get "run" injected
+        // 脚本名应注入 `run`
         for script in &["build", "dev", "lint", "typecheck", "deploy"] {
             assert!(
                 needs_run_injection(&[script]),
-                "'npm {script}' SHOULD inject 'run'"
+                "`npm {script}` 应注入 `run`"
             );
         }
 
-        // Flags should NOT get "run" injected
+        // 纯 flag 不应注入 `run`
         assert!(!needs_run_injection(&["--version"]));
         assert!(!needs_run_injection(&["-h"]));
 
-        // Explicit "run" should NOT inject another "run"
+        // 已显式写出 `run` 时，不应再额外注入
         assert!(!needs_run_injection(&["run", "build"]));
     }
 

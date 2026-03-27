@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Try tsc directly first, fallback to npx if not found
+    // 优先直接调用 tsc；若不存在则回退到 npx tsc
     let tsc_exists = tool_exists("tsc");
 
     let mut cmd = if tsc_exists {
@@ -53,14 +53,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve tsc exit code for CI/CD compatibility
+    // 保留 tsc 原始退出码，兼容 CI/CD
     std::process::exit(exit_code);
 }
 
-/// Filter TypeScript compiler output - group errors by file, show every error
+/// 过滤 TypeScript 编译器输出：按文件分组，并显示每一条错误
 fn filter_tsc_output(output: &str) -> String {
     lazy_static::lazy_static! {
-        // Pattern: src/file.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
+        // 模式：src/file.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
         static ref TSC_ERROR: Regex = crate::utils::compile_regex(
             r"^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.+)$"
         );
@@ -89,7 +89,7 @@ fn filter_tsc_output(output: &str) -> String {
                 context_lines: Vec::new(),
             };
 
-            // Capture continuation lines (indented context from tsc)
+            // 捕获后续上下文行（tsc 输出的缩进行）
             i += 1;
             while i < lines.len() {
                 let next = lines[i];
@@ -117,13 +117,13 @@ fn filter_tsc_output(output: &str) -> String {
         return "TypeScript 编译完成".to_string();
     }
 
-    // Group by file
+    // 按文件分组
     let mut by_file: HashMap<String, Vec<&TsError>> = HashMap::new();
     for err in &errors {
         by_file.entry(err.file.clone()).or_default().push(err);
     }
 
-    // Count by error code for summary
+    // 按错误码统计摘要
     let mut by_code: HashMap<String, usize> = HashMap::new();
     for err in &errors {
         *by_code.entry(err.code.clone()).or_insert(0) += 1;
@@ -137,7 +137,7 @@ fn filter_tsc_output(output: &str) -> String {
     ));
     result.push_str("═══════════════════════════════════════\n");
 
-    // Top error codes summary (compact, one line)
+    // 高频错误码摘要（紧凑单行）
     let mut code_counts: Vec<_> = by_code.iter().collect();
     code_counts.sort_by(|a, b| b.1.cmp(a.1));
 
@@ -150,11 +150,11 @@ fn filter_tsc_output(output: &str) -> String {
         result.push_str(&format!("错误码：{}\n\n", codes_str.join(", ")));
     }
 
-    // Files sorted by error count (most errors first)
+    // 按错误数排序文件（错误多的在前）
     let mut files_sorted: Vec<_> = by_file.iter().collect();
     files_sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
-    // Show every error per file — no limits
+    // 每个文件展示所有错误，不做数量限制
     for (file, file_errors) in &files_sorted {
         result.push_str(&format!("{}（{} 个错误）\n", file, file_errors.len()));
 
@@ -194,7 +194,7 @@ Found 4 errors in 2 files.
         assert!(result.contains("auth.ts（2 个错误）"));
         assert!(result.contains("Button.tsx（2 个错误）"));
         assert!(result.contains("TS2322"));
-        assert!(!result.contains("Found 4 errors")); // Summary line should be replaced
+        assert!(!result.contains("Found 4 errors")); // 原摘要行应被替换
     }
 
     #[test]
@@ -205,7 +205,7 @@ src/api.ts(20,5): error TS2322: Type 'boolean' is not assignable to type 'string
 src/api.ts(30,5): error TS2322: Type 'null' is not assignable to type 'object'.
 ";
         let result = filter_tsc_output(output);
-        // Each error message must be individually visible, not collapsed
+        // 每条错误信息都应单独可见，不能折叠
         assert!(result.contains("Type 'string' is not assignable to type 'number'"));
         assert!(result.contains("Type 'boolean' is not assignable to type 'string'"));
         assert!(result.contains("Type 'null' is not assignable to type 'object'"));
@@ -229,7 +229,7 @@ src/app.tsx(20,5): error TS2345: Argument of type 'number' is not assignable to 
 
     #[test]
     fn test_no_file_limit() {
-        // 15 files with errors — all must appear
+        // 15 个含错误的文件都必须出现在输出中
         let mut output = String::new();
         for i in 1..=15 {
             output.push_str(&format!(
@@ -241,7 +241,7 @@ src/app.tsx(20,5): error TS2345: Argument of type 'number' is not assignable to 
         for i in 1..=15 {
             assert!(
                 result.contains(&format!("file{i}.ts")),
-                "file{i}.ts missing from output"
+                "输出中缺少 file{i}.ts"
             );
         }
     }

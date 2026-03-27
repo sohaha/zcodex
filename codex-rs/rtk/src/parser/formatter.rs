@@ -1,14 +1,14 @@
-/// Token-efficient formatting trait for canonical types
+/// 标准类型的 token 高效格式化 trait
 use super::types::*;
 
-/// Output formatting modes
+/// 输出格式模式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FormatMode {
-    /// Ultra-compact: Summary only (default)
+    /// 紧凑：仅显示摘要（默认）
     Compact,
-    /// Verbose: Include details
+    /// 详细：包含更多细节
     Verbose,
-    /// Ultra-compressed: Symbols and abbreviations
+    /// 极简：使用符号和缩写
     Ultra,
 }
 
@@ -22,18 +22,18 @@ impl FormatMode {
     }
 }
 
-/// Trait for formatting canonical types into token-efficient strings
+/// 将标准类型格式化为 token 高效字符串的 trait
 pub trait TokenFormatter {
-    /// Format as compact summary (default)
+    /// 格式化为紧凑摘要（默认）
     fn format_compact(&self) -> String;
 
-    /// Format with details (verbose mode)
+    /// 格式化为详细模式
     fn format_verbose(&self) -> String;
 
-    /// Format with symbols (ultra-compressed mode)
+    /// 格式化为符号压缩模式
     fn format_ultra(&self) -> String;
 
-    /// Format according to mode
+    /// 按指定模式格式化
     fn format(&self, mode: FormatMode) -> String {
         match mode {
             FormatMode::Compact => self.format_compact(),

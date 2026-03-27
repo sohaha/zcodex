@@ -3,7 +3,7 @@ use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
 
-/// Compact wget - strips progress bars, shows only result
+/// 紧凑版 wget：去掉进度条，只保留结果
 pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -11,10 +11,10 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
         eprintln!("wget：{url}");
     }
 
-    // Run wget normally but capture output to parse it
+    // 正常运行 wget，但捕获输出后再解析
     let mut cmd_args: Vec<&str> = vec![];
 
-    // Add user args
+    // 追加用户参数
     for arg in args {
         cmd_args.push(arg);
     }
@@ -51,7 +51,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Run wget and output to stdout (for piping)
+/// 运行 wget 并输出到 stdout（便于管道传递）
 pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -114,7 +114,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
 }
 
 fn extract_filename_from_output(stderr: &str, url: &str, args: &[String]) -> String {
-    // Check for -O argument first
+    // 优先检查 -O 参数
     for (i, arg) in args.iter().enumerate() {
         if (arg == "-O" || arg == "--output-document")
             && let Some(name) = args.get(i + 1)
@@ -208,7 +208,7 @@ fn compact_url(url: &str) -> String {
 }
 
 fn parse_error(stderr: &str, stdout: &str) -> String {
-    // Common wget error patterns
+    // 常见 wget 错误模式
     let combined = format!("{stderr}\n{stdout}");
 
     if combined.contains("404") {

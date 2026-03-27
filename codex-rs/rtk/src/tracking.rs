@@ -1,10 +1,10 @@
 use std::ffi::OsString;
 use std::time::Instant;
 
-/// Minimal timing shim retained for operational command wrappers.
+/// 为运行期命令包装器保留的最小时序统计垫片。
 ///
-/// Codex embeds RTK as a lightweight command-filter layer and intentionally
-/// does not ship upstream analytics, persistence, or telemetry features.
+/// Codex 将 RTK 作为轻量命令过滤层嵌入，因此不会携带上游的分析、
+/// 持久化或遥测功能。
 pub struct TimedExecution {
     started_at: Instant,
 }
@@ -48,6 +48,6 @@ mod tests {
     fn tracking_shim_is_noop() {
         let timer = TimedExecution::start();
         timer.track("git status", "rtk git status", "raw", "filtered");
-        timer.track_passthrough("git tag", "rtk fallback: git tag");
+        timer.track_passthrough("git tag", "rtk 回退：git tag");
     }
 }

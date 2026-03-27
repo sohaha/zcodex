@@ -6,7 +6,7 @@ use regex::Regex;
 use std::process::Command;
 use std::process::Stdio;
 
-/// Run a command and provide a heuristic summary
+/// 运行命令并给出启发式摘要
 pub fn run(command: &str, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -43,7 +43,7 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     let line_count = output.lines().count();
     let mut result = Vec::new();
 
-    // Status
+    // 状态
     let status_icon = if success { "✅" } else { "❌" };
     result.push(format!(
         "{} 命令：{}",
@@ -53,7 +53,7 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     result.push(format!("   {line_count} 行输出"));
     result.push(String::new());
 
-    // Detect type of output and summarize accordingly
+    // 判断输出类型并生成对应摘要
     let output_type = detect_output_type(output, command);
 
     match output_type {
@@ -122,7 +122,7 @@ fn summarize_tests(output: &str, result: &mut Vec<String>) {
     for line in output.lines() {
         let lower = line.to_lowercase();
         if lower.contains("passed") || lower.contains("✓") || lower.contains("ok") {
-            // Try to extract number
+            // 尝试提取数量
             if let Some(n) = extract_number(&lower, "passed") {
                 passed = n;
             } else {

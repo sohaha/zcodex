@@ -1,6 +1,6 @@
-/// Compact filter for `wc` — strips redundant paths and alignment padding.
+/// `wc` 的紧凑过滤器：移除冗余路径和对齐填充。
 ///
-/// Compression examples:
+/// 压缩示例：
 /// - `wc file.py`     → `30L 96W 978B`
 /// - `wc -l file.py`  → `30`
 /// - `wc -w file.py`  → `96`
@@ -39,7 +39,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let raw = stdout.to_string();
 
-    // Detect which columns the user requested
+    // 检测用户请求了哪些列
     let mode = detect_mode(args);
     let filtered = filter_wc_output(&raw, &mode);
     println!("{filtered}");
@@ -54,20 +54,20 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Which columns the user requested
+/// 用户请求的列类型
 #[derive(Debug, PartialEq)]
 enum WcMode {
-    /// Default: lines, words, bytes (3 columns)
+    /// 默认：行数、词数、字节数（3 列）
     Full,
-    /// Lines only (-l)
+    /// 仅行数（-l）
     Lines,
-    /// Words only (-w)
+    /// 仅词数（-w）
     Words,
-    /// Bytes only (-c)
+    /// 仅字节数（-c）
     Bytes,
-    /// Chars only (-m)
+    /// 仅字符数（-m）
     Chars,
-    /// Multiple flags combined — keep compact format
+    /// 组合 flag —— 保持紧凑格式
     Mixed,
 }
 
@@ -82,7 +82,7 @@ fn detect_mode(args: &[String]) -> WcMode {
         return WcMode::Full;
     }
 
-    // Collect all single-char flags (handles combined flags like -lw)
+    // 收集所有单字符 flag（支持 `-lw` 这类组合写法）
     let mut has_l = false;
     let mut has_w = false;
     let mut has_c = false;

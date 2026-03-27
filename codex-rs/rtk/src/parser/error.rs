@@ -1,4 +1,4 @@
-/// Parser error types for structured output parsing
+/// 结构化输出解析时使用的错误类型
 use thiserror::Error;
 
 #[derive(Error, Debug)]

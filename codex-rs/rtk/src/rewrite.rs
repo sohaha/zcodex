@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-const CODEX_PREFIX: &str = "codex rtk";
+const CODEX_RTK_PREFIX: &str = "codex rtk";
+const RTK_PREFIX: &str = "rtk";
 const ENV_PREFIX_FLAGS: &[&str] = &["-i", "--ignore-environment"];
 
 const DIRECT_PREFIXES: &[&str] = &[
@@ -103,7 +104,8 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
     if trimmed.is_empty() {
         return passthrough(trimmed, ShellCommandPassthroughReason::Empty, false);
     }
-    if trimmed.starts_with(CODEX_PREFIX) || trimmed == "rtk" || trimmed.starts_with("rtk ") {
+    if trimmed.starts_with(CODEX_RTK_PREFIX) || trimmed == RTK_PREFIX || trimmed.starts_with("rtk ")
+    {
         return ShellCommandRewriteAnalysis {
             command: trimmed.to_string(),
             kind: ShellCommandRewriteKind::AlreadyRtk,
@@ -140,7 +142,7 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
         "head" => rewrite_head(parsed.rest),
         "tail" => rewrite_tail(parsed.rest),
         command if DIRECT_PREFIXES.contains(&command) => Some(format!(
-            "{CODEX_PREFIX} {command}{}",
+            "{RTK_PREFIX} {command}{}",
             join_rest_args(parsed.rest)
         )),
         _ => {
@@ -193,44 +195,44 @@ fn rewrite_cat(rest: &[String]) -> Option<String> {
     let [path] = rest.as_slice() else {
         return None;
     };
-    Some(format!("{CODEX_PREFIX} read {}", shell_escape(path)))
+    Some(format!("{RTK_PREFIX} read {}", shell_escape(path)))
 }
 
 fn rewrite_head(rest: &[String]) -> Option<String> {
     let rest = strip_flag_terminators(rest);
     match rest.as_slice() {
         [path] => Some(format!(
-            "{CODEX_PREFIX} read {} --max-lines 10",
+            "{RTK_PREFIX} read {} --max-lines 10",
             shell_escape(path)
         )),
         [count, path] => {
             if let Some(lines) = parse_numeric_short_flag(count, "-") {
                 return Some(format!(
-                    "{CODEX_PREFIX} read {} --max-lines {lines}",
+                    "{RTK_PREFIX} read {} --max-lines {lines}",
                     shell_escape(path)
                 ));
             }
             if let Some(lines) = parse_equals_flag(count, "--lines=") {
                 return Some(format!(
-                    "{CODEX_PREFIX} read {} --max-lines {lines}",
+                    "{RTK_PREFIX} read {} --max-lines {lines}",
                     shell_escape(path)
                 ));
             }
             if let Some(lines) = parse_numeric_short_flag(count, "-n") {
                 return Some(format!(
-                    "{CODEX_PREFIX} read {} --max-lines {lines}",
+                    "{RTK_PREFIX} read {} --max-lines {lines}",
                     shell_escape(path)
                 ));
             }
             None
         }
         [flag, lines, path] if *flag == "-n" => Some(format!(
-            "{CODEX_PREFIX} read {} --max-lines {}",
+            "{RTK_PREFIX} read {} --max-lines {}",
             shell_escape(path),
             shell_escape(lines)
         )),
         [flag, lines, path] if *flag == "--lines" => Some(format!(
-            "{CODEX_PREFIX} read {} --max-lines {}",
+            "{RTK_PREFIX} read {} --max-lines {}",
             shell_escape(path),
             shell_escape(lines)
         )),
@@ -242,37 +244,37 @@ fn rewrite_tail(rest: &[String]) -> Option<String> {
     let rest = strip_flag_terminators(rest);
     match rest.as_slice() {
         [path] => Some(format!(
-            "{CODEX_PREFIX} read {} --tail-lines 10",
+            "{RTK_PREFIX} read {} --tail-lines 10",
             shell_escape(path)
         )),
         [count, path] => {
             if let Some(lines) = parse_numeric_short_flag(count, "-") {
                 return Some(format!(
-                    "{CODEX_PREFIX} read {} --tail-lines {lines}",
+                    "{RTK_PREFIX} read {} --tail-lines {lines}",
                     shell_escape(path)
                 ));
             }
             if let Some(lines) = parse_equals_flag(count, "--lines=") {
                 return Some(format!(
-                    "{CODEX_PREFIX} read {} --tail-lines {lines}",
+                    "{RTK_PREFIX} read {} --tail-lines {lines}",
                     shell_escape(path)
                 ));
             }
             if let Some(lines) = parse_numeric_short_flag(count, "-n") {
                 return Some(format!(
-                    "{CODEX_PREFIX} read {} --tail-lines {lines}",
+                    "{RTK_PREFIX} read {} --tail-lines {lines}",
                     shell_escape(path)
                 ));
             }
             None
         }
         [flag, lines, path] if *flag == "-n" => Some(format!(
-            "{CODEX_PREFIX} read {} --tail-lines {}",
+            "{RTK_PREFIX} read {} --tail-lines {}",
             shell_escape(path),
             shell_escape(lines)
         )),
         [flag, lines, path] if *flag == "--lines" => Some(format!(
-            "{CODEX_PREFIX} read {} --tail-lines {}",
+            "{RTK_PREFIX} read {} --tail-lines {}",
             shell_escape(path),
             shell_escape(lines)
         )),
@@ -741,7 +743,7 @@ mod tests {
             assert_eq!(
                 rewrite_shell_command(input),
                 expected.map(str::to_string),
-                "unexpected rewrite result for `{input}`"
+                "`{input}` 的重写结果不符合预期"
             );
         }
     }
@@ -749,102 +751,87 @@ mod tests {
     #[test]
     fn rewrites_direct_prefix_commands() {
         assert_rewrite_cases(&[
-            ("git status", Some("codex rtk git status")),
+            ("git status", Some("rtk git status")),
             (
                 "cargo test -p codex-core",
-                Some("codex rtk cargo test -p codex-core"),
+                Some("rtk cargo test -p codex-core"),
             ),
-            ("command git status", Some("codex rtk git status")),
-            ("command -p git status", Some("codex rtk git status")),
+            ("command git status", Some("rtk git status")),
+            ("command -p git status", Some("rtk git status")),
             (
                 "command -- git -C repo status",
-                Some("codex rtk git -C repo status"),
+                Some("rtk git -C repo status"),
             ),
             (
                 "command -p -- git -C repo status",
-                Some("codex rtk git -C repo status"),
+                Some("rtk git -C repo status"),
             ),
-            ("/usr/bin/git status", Some("codex rtk git status")),
-            ("git -C repo status", Some("codex rtk git -C repo status")),
+            ("/usr/bin/git status", Some("rtk git status")),
+            ("git -C repo status", Some("rtk git -C repo status")),
             (
                 "cargo --manifest-path Cargo.toml test -p codex-core",
-                Some("codex rtk cargo --manifest-path Cargo.toml test -p codex-core"),
+                Some("rtk cargo --manifest-path Cargo.toml test -p codex-core"),
             ),
             (
                 "cargo +nightly test -p codex-core",
-                Some("codex rtk cargo '+nightly' test -p codex-core"),
+                Some("rtk cargo '+nightly' test -p codex-core"),
             ),
             (
                 "git -c color.ui=always -C repo status",
-                Some("codex rtk git -c color.ui=always -C repo status"),
+                Some("rtk git -c color.ui=always -C repo status"),
             ),
             (
                 "git --git-dir .git --work-tree . status",
-                Some("codex rtk git --git-dir .git --work-tree . status"),
+                Some("rtk git --git-dir .git --work-tree . status"),
             ),
-            (
-                "nice -n 5 git status",
-                Some("nice -n 5 codex rtk git status"),
-            ),
-            (
-                "nice -5 -- git status",
-                Some("nice -5 codex rtk git status"),
-            ),
-            (
-                "stdbuf -oL git status",
-                Some("stdbuf -oL codex rtk git status"),
-            ),
+            ("nice -n 5 git status", Some("nice -n 5 rtk git status")),
+            ("nice -5 -- git status", Some("nice -5 rtk git status")),
+            ("stdbuf -oL git status", Some("stdbuf -oL rtk git status")),
             (
                 "nice -n 5 stdbuf -oL git status",
-                Some("nice -n 5 stdbuf -oL codex rtk git status"),
+                Some("nice -n 5 stdbuf -oL rtk git status"),
             ),
             (
                 "command nice -n 5 git status",
-                Some("nice -n 5 codex rtk git status"),
+                Some("nice -n 5 rtk git status"),
             ),
             (
                 "command -p stdbuf -oL git status",
-                Some("stdbuf -oL codex rtk git status"),
+                Some("stdbuf -oL rtk git status"),
             ),
             (
                 "command cargo +nightly test -p codex-core",
-                Some("codex rtk cargo '+nightly' test -p codex-core"),
+                Some("rtk cargo '+nightly' test -p codex-core"),
             ),
             (
                 "/usr/bin/nice -n 5 git status",
-                Some("nice -n 5 codex rtk git status"),
+                Some("nice -n 5 rtk git status"),
             ),
-            (
-                "ionice -c 3 git status",
-                Some("ionice -c 3 codex rtk git status"),
-            ),
+            ("ionice -c 3 git status", Some("ionice -c 3 rtk git status")),
             (
                 "ionice -c2 -n7 -- git status",
-                Some("ionice -c2 -n7 codex rtk git status"),
+                Some("ionice -c2 -n7 rtk git status"),
             ),
             (
                 "command ionice -c2 git status",
-                Some("ionice -c2 codex rtk git status"),
+                Some("ionice -c2 rtk git status"),
             ),
             (
                 "nice -n 5 ionice -c2 git status",
-                Some("nice -n 5 ionice -c2 codex rtk git status"),
+                Some("nice -n 5 ionice -c2 rtk git status"),
             ),
-            (
-                "chrt -r 10 git status",
-                Some("chrt -r 10 codex rtk git status"),
-            ),
+            ("chrt -r 10 git status", Some("chrt -r 10 rtk git status")),
             (
                 "chrt --fifo 20 -- git status",
-                Some("chrt --fifo 20 codex rtk git status"),
+                Some("chrt --fifo 20 rtk git status"),
             ),
             (
                 "command chrt -b 0 git status",
-                Some("chrt -b 0 codex rtk git status"),
+                Some("chrt -b 0 rtk git status"),
             ),
             (
                 "nice -n 5 chrt -r 10 git status",
-                Some("nice -n 5 chrt -r 10 codex rtk git status"),
+                Some("nice -n 5 chrt -r 10 rtk git status"),
             ),
         ]);
     }
@@ -852,32 +839,36 @@ mod tests {
     #[test]
     fn rewrites_cat_head_and_tail() {
         assert_rewrite_cases(&[
-            ("cat src/main.rs", Some("codex rtk read src/main.rs")),
+            ("cat src/main.rs", Some("rtk read src/main.rs")),
             (
                 "head -20 src/main.rs",
-                Some("codex rtk read src/main.rs --max-lines 20"),
+                Some("rtk read src/main.rs --max-lines 20"),
             ),
             (
                 "head src/main.rs",
-                Some("codex rtk read src/main.rs --max-lines 10"),
+                Some("rtk read src/main.rs --max-lines 10"),
             ),
             (
                 "tail --lines=7 src/main.rs",
-                Some("codex rtk read src/main.rs --tail-lines 7"),
+                Some("rtk read src/main.rs --tail-lines 7"),
             ),
             (
                 "head -n5 -- src/main.rs",
-                Some("codex rtk read src/main.rs --max-lines 5"),
+                Some("rtk read src/main.rs --max-lines 5"),
             ),
             (
                 "tail src/main.rs",
-                Some("codex rtk read src/main.rs --tail-lines 10"),
+                Some("rtk read src/main.rs --tail-lines 10"),
             ),
         ]);
     }
 
     #[test]
     fn preserves_existing_rtk_invocations() {
+        assert_eq!(
+            rewrite_shell_command("rtk git status"),
+            Some("rtk git status".to_string())
+        );
         assert_eq!(
             rewrite_shell_command("codex rtk git status"),
             Some("codex rtk git status".to_string())
@@ -893,38 +884,38 @@ mod tests {
     #[test]
     fn rewrites_supported_commands_with_env_prefixes() {
         assert_rewrite_cases(&[
-            ("FOO=1 git status", Some("FOO=1 codex rtk git status")),
+            ("FOO=1 git status", Some("FOO=1 rtk git status")),
             (
                 "env FOO=1 BAR=2 grep TODO src",
-                Some("env FOO=1 BAR=2 codex rtk grep TODO src"),
+                Some("env FOO=1 BAR=2 rtk grep TODO src"),
             ),
             (
                 "env -- FOO=1 git status",
-                Some("env -- FOO=1 codex rtk git status"),
+                Some("env -- FOO=1 rtk git status"),
             ),
             (
                 "env -i -u HOME git -C repo status",
-                Some("env -i -u HOME codex rtk git -C repo status"),
+                Some("env -i -u HOME rtk git -C repo status"),
             ),
             (
                 "env --chdir=repo nice -n 5 git status",
-                Some("env --chdir=repo nice -n 5 codex rtk git status"),
+                Some("env --chdir=repo nice -n 5 rtk git status"),
             ),
             (
                 "FOO=1 command nice -n 5 git status",
-                Some("FOO=1 nice -n 5 codex rtk git status"),
+                Some("FOO=1 nice -n 5 rtk git status"),
             ),
             (
                 "env -i BAR=2 command -p stdbuf -oL git status",
-                Some("env -i BAR=2 stdbuf -oL codex rtk git status"),
+                Some("env -i BAR=2 stdbuf -oL rtk git status"),
             ),
             (
                 "env --chdir=repo command ionice -c2 nice -n 5 git status",
-                Some("env --chdir=repo ionice -c2 nice -n 5 codex rtk git status"),
+                Some("env --chdir=repo ionice -c2 nice -n 5 rtk git status"),
             ),
             (
                 "env FOO=1 command chrt -r 10 /usr/bin/git status",
-                Some("env FOO=1 chrt -r 10 codex rtk git status"),
+                Some("env FOO=1 chrt -r 10 rtk git status"),
             ),
         ]);
     }

@@ -6,7 +6,7 @@ use std::process::Command;
 use std::process::Output;
 use std::process::Stdio;
 
-/// Run a command and filter output to show only errors/warnings
+/// 运行命令并过滤输出，只显示错误和警告
 pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
     let command_display = command.join(" ");
@@ -56,7 +56,7 @@ pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Run tests and show only failures
+/// 运行测试并只显示失败项
 pub fn run_test(command: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
     let command_display = command.join(" ");
@@ -102,7 +102,7 @@ fn execute_command(command: &[String]) -> Result<Output> {
 fn filter_errors(output: &str) -> String {
     lazy_static::lazy_static! {
         static ref ERROR_PATTERNS: Vec<Regex> = vec![
-            // Generic errors
+            // 通用错误
             crate::utils::compile_regex(r"(?i)^.*error[\s:\[].*$"),
             crate::utils::compile_regex(r"(?i)^.*\berr\b.*$"),
             crate::utils::compile_regex(r"(?i)^.*warning[\s:\[].*$"),
@@ -111,13 +111,13 @@ fn filter_errors(output: &str) -> String {
             crate::utils::compile_regex(r"(?i)^.*failure.*$"),
             crate::utils::compile_regex(r"(?i)^.*exception.*$"),
             crate::utils::compile_regex(r"(?i)^.*panic.*$"),
-            // Rust specific
+            // Rust 特有格式
             crate::utils::compile_regex(r"^error\[E\d+\]:.*$"),
             crate::utils::compile_regex(r"^\s*--> .*:\d+:\d+$"),
             // Python
             crate::utils::compile_regex(r"^Traceback.*$"),
             crate::utils::compile_regex(r#"^\s*File ".*", line \d+.*$"#),
-            // JavaScript/TypeScript
+            // JavaScript / TypeScript
             crate::utils::compile_regex(r"^\s*at .*:\d+:\d+.*$"),
             // Go
             crate::utils::compile_regex(r"^.*\.go:\d+:.*$"),
@@ -152,14 +152,14 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     let mut result = Vec::new();
     let lines: Vec<&str> = output.lines().collect();
 
-    // Detect test framework
+    // 检测测试框架
     let is_cargo = command.contains("cargo test");
     let is_pytest = command.contains("pytest");
     let is_jest =
         command.contains("jest") || command.contains("npm test") || command.contains("yarn test");
     let is_go = command.contains("go test");
 
-    // Collect failures
+    // 收集失败项
     let mut failures = Vec::new();
     let mut in_failure = false;
     let mut failure_lines = Vec::new();
@@ -212,7 +212,7 @@ fn extract_test_summary(output: &str, command: &str) -> String {
         }
     }
 
-    // Build output
+    // 组装输出
     let mut output = String::new();
 
     if !failures.is_empty() {

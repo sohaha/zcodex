@@ -1,11 +1,11 @@
-//! Parser infrastructure for tool output transformation
+//! 用于工具输出转换的解析器基础设施。
 //!
-//! This module provides a unified interface for parsing tool outputs with graceful degradation:
-//! - Tier 1 (Full): Complete JSON parsing with all fields
-//! - Tier 2 (Degraded): Partial parsing with warnings
-//! - Tier 3 (Passthrough): Raw output truncation with error marker
+//! 本模块为工具输出解析提供统一接口，并支持可感知的降级处理：
+//! - 第 1 层（Full）：完整 JSON 解析，保留全部字段
+//! - 第 2 层（Degraded）：部分解析并附带警告
+//! - 第 3 层（Passthrough）：截断原始输出并附带错误标记
 //!
-//! The three-tier system ensures RTK never returns false data silently.
+//! 三层体系可确保 RTK 不会在无提示的情况下返回错误数据。
 
 pub mod error;
 pub mod formatter;
@@ -15,30 +15,30 @@ pub use formatter::FormatMode;
 pub use formatter::TokenFormatter;
 pub use types::*;
 
-/// Parse result with degradation tier
+/// 带降级层级的解析结果
 #[derive(Debug)]
 pub enum ParseResult<T> {
-    /// Tier 1: Full parse with complete structured data
+    /// 第 1 层：完整解析，包含全部结构化数据
     Full(T),
 
-    /// Tier 2: Degraded parse with partial data and warnings
+    /// 第 2 层：降级解析，包含部分数据和警告
     Degraded(T, Vec<String>),
 
-    /// Tier 3: Passthrough - parsing failed, returning truncated raw output
+    /// 第 3 层：直通原始输出，解析失败时返回截断后的原文
     Passthrough(String),
 }
 
 impl<T> ParseResult<T> {
-    /// Unwrap the parsed data, panicking on Passthrough
+    /// 取出解析后的数据；若为 Passthrough 则 panic
     pub fn unwrap(self) -> T {
         match self {
             ParseResult::Full(data) => data,
             ParseResult::Degraded(data, _) => data,
-            ParseResult::Passthrough(_) => panic!("Called unwrap on Passthrough result"),
+            ParseResult::Passthrough(_) => panic!("对 Passthrough 结果调用了 unwrap"),
         }
     }
 
-    /// Get the tier level (1 = Full, 2 = Degraded, 3 = Passthrough)
+    /// 获取层级编号（1 = Full，2 = Degraded，3 = Passthrough）
     pub fn tier(&self) -> u8 {
         match self {
             ParseResult::Full(_) => 1,
@@ -47,12 +47,12 @@ impl<T> ParseResult<T> {
         }
     }
 
-    /// Check if parsing succeeded (Full or Degraded)
+    /// 检查解析是否成功（Full 或 Degraded）
     pub fn is_ok(&self) -> bool {
         !matches!(self, ParseResult::Passthrough(_))
     }
 
-    /// Map the parsed data while preserving tier
+    /// 在保留层级信息的前提下映射解析结果
     pub fn map<U, F>(self, f: F) -> ParseResult<U>
     where
         F: FnOnce(T) -> U,
@@ -64,7 +64,7 @@ impl<T> ParseResult<T> {
         }
     }
 
-    /// Get warnings if Degraded tier
+    /// 若为 Degraded 层级，返回其中的警告
     pub fn warnings(&self) -> Vec<String> {
         match self {
             ParseResult::Degraded(_, warnings) => warnings.clone(),
@@ -73,30 +73,30 @@ impl<T> ParseResult<T> {
     }
 }
 
-/// Unified parser trait for tool outputs
+/// 工具输出的统一解析器 trait
 pub trait OutputParser: Sized {
     type Output;
 
-    /// Parse raw output into structured format
+    /// 将原始输出解析为结构化格式
     ///
-    /// Implementation should follow three-tier fallback:
-    /// 1. Try JSON parsing (if tool supports --json/--format json)
-    /// 2. Try regex/text extraction with partial data
-    /// 3. Return truncated passthrough with `[RTK:PASSTHROUGH]` marker
+    /// 实现应遵循三层回退策略：
+    /// 1. 先尝试 JSON 解析（若工具支持 `--json` / `--format json`）
+    /// 2. 再尝试通过正则或文本提取部分数据
+    /// 3. 最后返回带 `[RTK:PASSTHROUGH]` 标记的截断原始输出
     fn parse(input: &str) -> ParseResult<Self::Output>;
 
-    /// Parse with explicit tier preference (for testing/debugging)
+    /// 按指定最大层级解析（用于测试或调试）
     fn parse_with_tier(input: &str, max_tier: u8) -> ParseResult<Self::Output> {
         let result = Self::parse(input);
         if result.tier() > max_tier {
-            // Force degradation to passthrough if exceeds max tier
+            // 若超过允许层级，则强制退化为 passthrough。
             return ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500));
         }
         result
     }
 }
 
-/// Truncate output to max length with ellipsis
+/// 将输出截断到最大长度，并在末尾附加提示
 pub fn truncate_output(output: &str, max_chars: usize) -> String {
     let chars: Vec<char> = output.chars().collect();
     if chars.len() <= max_chars {
@@ -112,38 +112,39 @@ pub fn truncate_output(output: &str, max_chars: usize) -> String {
     )
 }
 
-/// Helper to emit degradation warning
+/// 输出降级警告的辅助函数
 pub fn emit_degradation_warning(tool: &str, reason: &str) {
     eprintln!("[RTK:DEGRADED] {tool} 解析器：{reason}");
 }
 
-/// Helper to emit passthrough warning
+/// 输出 passthrough 警告的辅助函数
 pub fn emit_passthrough_warning(tool: &str, reason: &str) {
     eprintln!("[RTK:PASSTHROUGH] {tool} 解析器：{reason}");
 }
 
-/// Extract a complete JSON object from input that may have non-JSON prefix (pnpm banner, dotenv messages, etc.)
+/// 从可能带有非 JSON 前缀的输入中提取完整 JSON 对象
+/// （例如 pnpm 横幅、dotenv 提示等）。
 ///
-/// Strategy:
-/// 1. Find `"numTotalTests"` (vitest-specific marker) or first standalone `{`
-/// 2. Brace-balance forward to find matching `}`
-/// 3. Return slice containing complete JSON object
+/// 策略：
+/// 1. 查找 `"numTotalTests"`（vitest 专用标记）或第一个独立出现的 `{`
+/// 2. 向前进行花括号配平，找到匹配的 `}`
+/// 3. 返回完整 JSON 对象所在的切片
 ///
-/// Handles: nested braces, string escapes, pnpm prefixes, dotenv banners
+/// 支持场景：嵌套花括号、字符串转义、pnpm 前缀、dotenv 横幅
 ///
-/// Returns `None` if no valid JSON object found.
+/// 若未找到有效 JSON 对象，则返回 `None`。
 pub fn extract_json_object(input: &str) -> Option<&str> {
-    // Try vitest-specific marker first (most reliable)
+    // 先尝试 vitest 专用标记（最可靠）。
     let start_pos = if let Some(pos) = input.find("\"numTotalTests\"") {
-        // Walk backward to find opening brace of this object
+        // 向后回溯，找到对象的起始花括号。
         input[..pos].rfind('{').unwrap_or(0)
     } else {
-        // Fallback: find first `{` on its own line or after whitespace
+        // 回退方案：寻找独占一行或位于空白后的第一个 `{`。
         let mut found_start = None;
         for (idx, line) in input.lines().enumerate() {
             let trimmed = line.trim();
             if trimmed.starts_with('{') {
-                // Calculate byte offset
+                // 计算字节偏移量。
                 found_start = Some(
                     input[..]
                         .lines()
@@ -157,7 +158,7 @@ pub fn extract_json_object(input: &str) -> Option<&str> {
         found_start?
     };
 
-    // Brace-balance forward from start_pos
+    // 从起始位置向前做花括号配平。
     let mut depth = 0;
     let mut in_string = false;
     let mut escape_next = false;
@@ -176,8 +177,8 @@ pub fn extract_json_object(input: &str) -> Option<&str> {
             '}' if !in_string => {
                 depth -= 1;
                 if depth == 0 {
-                    // Found matching closing brace
-                    let end_pos = start_pos + i + 1; // +1 to include the `}`
+                    // 找到匹配的结束花括号。
+                    let end_pos = start_pos + i + 1; // +1 以包含 `}`
                     return Some(&input[start_pos..end_pos]);
                 }
             }
@@ -235,12 +236,12 @@ mod tests {
 
     #[test]
     fn test_truncate_output_multibyte() {
-        // Thai text: each char is 3 bytes
+        // 泰文：每个字符约 3 字节
         let thai = "สวัสดีครับ".repeat(100);
-        // Try truncating at a byte offset that might land mid-character
+        // 尝试在可能落在字符中间的偏移处截断
         let result = truncate_output(&thai, 50);
         assert!(result.contains("[RTK:PASSTHROUGH]"));
-        // Should be valid UTF-8 (no panic)
+        // 应保持有效 UTF-8（不能 panic）
         let _ = result.len();
     }
 
@@ -266,7 +267,7 @@ Scope: all 6 workspace projects
 
 {"numTotalTests": 13, "numPassedTests": 13, "numFailedTests": 0}
 "#;
-        let extracted = extract_json_object(input).expect("Should extract JSON");
+        let extracted = extract_json_object(input).expect("应成功提取 JSON");
         assert!(extracted.contains("numTotalTests"));
         assert!(extracted.starts_with('{'));
         assert!(extracted.ends_with('}'));
@@ -279,7 +280,7 @@ Scope: all 6 workspace projects
 
 {"numTotalTests": 5, "testResults": [{"name": "test.js"}]}
 "#;
-        let extracted = extract_json_object(input).expect("Should extract JSON");
+        let extracted = extract_json_object(input).expect("应成功提取 JSON");
         assert!(extracted.contains("numTotalTests"));
         assert!(extracted.contains("testResults"));
     }
@@ -289,7 +290,7 @@ Scope: all 6 workspace projects
         let input = r#"prefix text
 {"numTotalTests": 2, "testResults": [{"name": "test", "data": {"nested": true}}]}
 "#;
-        let extracted = extract_json_object(input).expect("Should extract JSON");
+        let extracted = extract_json_object(input).expect("应成功提取 JSON");
         assert!(extracted.contains("\"nested\": true"));
         assert!(extracted.starts_with('{'));
         assert!(extracted.ends_with('}'));
