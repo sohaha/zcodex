@@ -868,6 +868,6 @@ mod tests {
         }
         let json = format!(r#"{{"DBInstances": [{}]}}"#, dbs.join(","));
         let result = filter_rds_instances(&json).unwrap();
-        assert!(result.contains("... +5 more 实例"));
+        assert!(result.contains("... +5 个实例"));
     }
 }

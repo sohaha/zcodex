@@ -202,13 +202,13 @@ pub fn format_cpt(cpt: f64) -> String {
 /// ```
 /// use rtk::utils::join_with_overflow;
 /// let items = vec!["a".to_string(), "b".to_string()];
-/// assert_eq!(join_with_overflow(&items, 5, 3, "items"), "a\nb\n... +2 more items");
-/// assert_eq!(join_with_overflow(&items, 2, 3, "items"), "a\nb");
+/// assert_eq!(join_with_overflow(&items, 5, 3, "条目"), "a\nb\n... +2 个条目");
+/// assert_eq!(join_with_overflow(&items, 2, 3, "条目"), "a\nb");
 /// ```
 pub fn join_with_overflow(items: &[String], total: usize, max: usize, label: &str) -> String {
     let mut out = items.join("\n");
     if total > max {
-        out.push_str(&format!("\n... +{} more {}", total - max, label));
+        out.push_str(&format!("\n... +{} 个{}", total - max, label));
     }
     out
 }
@@ -467,6 +467,21 @@ mod tests {
     fn test_format_usd_medium() {
         assert_eq!(format_usd(12.345), "$12.35");
         assert_eq!(format_usd(0.99), "$0.99");
+    }
+
+    #[test]
+    fn test_join_with_overflow_appends_localized_suffix() {
+        let items = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(
+            join_with_overflow(&items, 5, 2, "实例"),
+            "a\nb\n... +3 个实例"
+        );
+    }
+
+    #[test]
+    fn test_join_with_overflow_without_overflow() {
+        let items = vec!["a".to_string(), "b".to_string()];
+        assert_eq!(join_with_overflow(&items, 2, 2, "实例"), "a\nb");
     }
 
     #[test]
