@@ -84,14 +84,14 @@ pub fn run_stdin(
         eprintln!("读取 stdin（过滤：{level}）");
     }
 
-    // 从 stdin 读取
+    // 从标准输入读取
     let mut content = String::new();
     io::stdin()
         .lock()
         .read_to_string(&mut content)
         .context("读取 stdin 失败")?;
 
-    // stdin 没有扩展名，因此使用 `Unknown` 语言
+    // 标准输入没有扩展名，因此使用 `Unknown` 语言
     let lang = Language::Unknown;
 
     if verbose > 1 {
@@ -179,7 +179,7 @@ fn main() {{
 }}"#
         )?;
 
-        // 只验证不会 panic
+        // 只验证不会发生 `panic`
         run(file.path(), FilterLevel::Minimal, None, None, false, 0)?;
         Ok(())
     }
@@ -187,7 +187,7 @@ fn main() {{
     #[test]
     fn test_stdin_support_signature() {
         // 验证 `run_stdin` 的签名正确且能通过编译
-        // 这里不实际运行，因为那会阻塞等待 stdin
+        // 这里不实际运行，因为那会阻塞等待标准输入
         // 这属于编译期验证：确认函数存在且签名正确
     }
 

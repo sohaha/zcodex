@@ -10,7 +10,7 @@ use regex::Regex;
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // 先直接尝试 `next`，找不到时再回退到 `npx`
+    // 优先直接尝试 `next`，找不到时再回退到 `npx`
     let next_exists = tool_exists("next");
 
     let mut cmd = if next_exists {
@@ -53,7 +53,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// 过滤 Next.js 构建输出，提取路由、bundle 和警告信息
+/// 过滤 Next.js 构建输出，提取路由、Bundle 和告警信息
 fn filter_next_build(output: &str) -> String {
     lazy_static::lazy_static! {
         // 路由行模式：○ /dashboard    1.2 kB  132 kB
@@ -61,7 +61,7 @@ fn filter_next_build(output: &str) -> String {
             r"^[○●◐λ✓]\s+(/[^\s]*)\s+(\d+(?:\.\d+)?)\s*(kB|B)"
         );
 
-        // 用于匹配 Bundle 大小的模式
+        // 用于匹配 Bundle 体积的模式
         static ref BUNDLE_PATTERN: Regex = crate::utils::compile_regex(
             r"^[○●◐λ✓]\s+([\w/\-\.]+)\s+(\d+(?:\.\d+)?)\s*(kB|B)\s+(\d+(?:\.\d+)?)\s*(kB|B)"
         );
@@ -90,7 +90,7 @@ fn filter_next_build(output: &str) -> String {
             routes_total += 1;
         }
 
-        // 提取 bundle 信息（路由 + 大小 + 总大小）
+        // 提取 Bundle 信息（路由 + 大小 + 总大小）
         if let Some(caps) = BUNDLE_PATTERN.captures(line) {
             let route = caps[1].to_string();
             let size: f64 = caps[2].parse().unwrap_or(0.0);
@@ -172,7 +172,7 @@ fn filter_next_build(output: &str) -> String {
         result.push('\n');
     }
 
-    // 展示构建耗时和状态
+    // 输出构建耗时和状态
     if !build_time.is_empty() {
         result.push_str(&format!("耗时：{build_time} | "));
     }
