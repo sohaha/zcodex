@@ -252,7 +252,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("vitest run（Tier 1：完整 JSON 解析）");
+                eprintln!("vitest run（第 1 层：完整 JSON 解析）");
             }
             data.format(mode)
         }
