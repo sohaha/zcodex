@@ -788,6 +788,7 @@ mod tests {
     use crate::TldrConfig;
     use crate::api::AnalysisKind;
     use crate::api::AnalysisRequest;
+    use crate::api::AnalysisSliceTarget;
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
@@ -1022,7 +1023,7 @@ mod tests {
         assert_eq!(response.kind, AnalysisKind::Slice);
         assert_eq!(
             response.summary,
-            "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]"
+            "slice summary: backward slice for src/lib.rs:login:4 -> 3 lines [1, 3, 4]"
         );
         let details = response.details.expect("details should exist");
         assert_eq!(
@@ -1034,7 +1035,7 @@ mod tests {
                 direction: "backward".to_string(),
             })
         );
-        assert_eq!(details.slice_lines, vec![3, 4]);
+        assert_eq!(details.slice_lines, vec![1, 3, 4]);
     }
 
     #[test]

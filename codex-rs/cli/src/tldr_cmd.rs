@@ -1557,7 +1557,7 @@ mod output_tests {
             Some("slice ready"),
             Some("src/lib.rs"),
             Some(4),
-            "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]",
+            "slice summary: backward slice for src/lib.rs:login:4 -> 3 lines [1, 3, 4]",
         );
 
         assert!(lines.contains(&"path: src/lib.rs".to_string()));

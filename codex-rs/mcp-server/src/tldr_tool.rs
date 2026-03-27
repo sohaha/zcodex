@@ -409,7 +409,7 @@ mod tests {
     #[tokio::test]
     async fn run_tldr_tool_with_mcp_hooks_preserves_slice_summary_text_contract() {
         let tempdir = tempdir().expect("tempdir should exist");
-        let summary = "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]";
+        let summary = "slice summary: backward slice for src/lib.rs:login:4 -> 3 lines [1, 3, 4]";
         let result = run_tldr_tool_with_mcp_hooks(
             TldrToolCallParam {
                 action: TldrToolAction::Slice,
@@ -439,7 +439,7 @@ mod tests {
                                     line: 4,
                                     direction: "backward".to_string(),
                                 }),
-                                slice_lines: vec![3, 4],
+                                slice_lines: vec![1, 3, 4],
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: Vec::new(),
                                 nodes: Vec::new(),
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(structured["analysis"]["kind"], "slice");
         assert_eq!(
             structured["analysis"]["details"]["slice_lines"],
-            serde_json::json!([3, 4])
+            serde_json::json!([1, 3, 4])
         );
     }
 

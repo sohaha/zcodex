@@ -857,7 +857,7 @@ mod tests {
                         analysis: Some(codex_native_tldr::api::AnalysisResponse {
                             kind: codex_native_tldr::api::AnalysisKind::Slice,
                             summary:
-                                "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]"
+                                "slice summary: backward slice for src/lib.rs:login:4 -> 3 lines [1, 3, 4]"
                                     .to_string(),
                             details: Some(codex_native_tldr::api::AnalysisDetail {
                                 indexed_files: 1,
@@ -870,7 +870,7 @@ mod tests {
                                     line: 4,
                                     direction: "backward".to_string(),
                                 }),
-                                slice_lines: vec![3, 4],
+                                slice_lines: vec![1, 3, 4],
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: Vec::new(),
                                 nodes: Vec::new(),
@@ -896,7 +896,7 @@ mod tests {
         assert_eq!(payload["analysis"]["kind"], "slice");
         assert_eq!(
             payload["analysis"]["details"]["slice_lines"],
-            serde_json::json!([3, 4])
+            serde_json::json!([1, 3, 4])
         );
     }
 
