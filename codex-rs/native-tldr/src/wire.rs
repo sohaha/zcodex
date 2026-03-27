@@ -382,6 +382,52 @@ mod tests {
     }
 
     #[test]
+    fn daemon_response_payload_keeps_ping_action_contract() {
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "pong".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: None,
+            daemon_status: None,
+            reindex_report: None,
+        };
+
+        let payload = daemon_response_payload("ping", Path::new("/tmp/project"), &response);
+        assert_eq!(payload["action"], "ping");
+        assert_eq!(payload["project"], "/tmp/project");
+        assert_eq!(payload["status"], "ok");
+        assert_eq!(payload["message"], "pong");
+    }
+
+    #[test]
+    fn daemon_response_payload_keeps_snapshot_fields() {
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "snapshot".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: Some(crate::session::SessionSnapshot {
+                cached_entries: 2,
+                dirty_files: 1,
+                dirty_file_threshold: 20,
+                reindex_pending: true,
+                last_query_at: None,
+                last_reindex: None,
+                last_reindex_attempt: None,
+            }),
+            daemon_status: None,
+            reindex_report: None,
+        };
+
+        let payload = daemon_response_payload("snapshot", Path::new("/tmp/project"), &response);
+        assert_eq!(payload["action"], "snapshot");
+        assert_eq!(payload["snapshot"]["cached_entries"], 2);
+        assert_eq!(payload["snapshot"]["dirty_files"], 1);
+        assert_eq!(payload["snapshot"]["reindex_pending"], true);
+    }
+
+    #[test]
     fn daemon_response_payload_keeps_status_detail_fields() {
         let report = crate::semantic::SemanticReindexReport {
             status: crate::semantic::SemanticReindexStatus::Completed,

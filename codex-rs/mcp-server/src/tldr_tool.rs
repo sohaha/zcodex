@@ -354,6 +354,147 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_ping_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Ping,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "pong".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result_json["content"][0]["text"], "pong");
+        assert_eq!(structured["action"], "ping");
+        assert_eq!(structured["status"], "ok");
+        assert_eq!(structured["message"], "pong");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_warm_snapshot_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Warm,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "already warm".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                            cached_entries: 0,
+                            dirty_files: 0,
+                            dirty_file_threshold: 20,
+                            reindex_pending: false,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result_json["content"][0]["text"], "already warm");
+        assert_eq!(structured["action"], "warm");
+        assert_eq!(structured["snapshot"]["dirty_files"], 0);
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_snapshot_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Snapshot,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "snapshot".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                            cached_entries: 2,
+                            dirty_files: 1,
+                            dirty_file_threshold: 20,
+                            reindex_pending: true,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result_json["content"][0]["text"], "snapshot");
+        assert_eq!(structured["action"], "snapshot");
+        assert_eq!(structured["snapshot"]["cached_entries"], 2);
+        assert_eq!(structured["snapshot"]["dirty_files"], 1);
+    }
+
+    #[tokio::test]
     async fn run_tldr_tool_with_mcp_hooks_preserves_notify_snapshot_contract() {
         let tempdir = tempdir().expect("tempdir should exist");
         let result = run_tldr_tool_with_mcp_hooks(

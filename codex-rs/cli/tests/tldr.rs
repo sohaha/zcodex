@@ -458,6 +458,114 @@ async fn tldr_daemon_notify_json_preserves_snapshot_contract() -> Result<()> {
 }
 
 #[tokio::test]
+async fn tldr_daemon_ping_json_preserves_status_contract() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "ping",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "ping");
+    assert_eq!(payload["status"], "ok");
+    assert_eq!(payload["message"], "pong");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tldr_daemon_warm_json_preserves_snapshot_contract() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "warm",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "warm");
+    assert_eq!(payload["status"], "ok");
+    assert!(payload["snapshot"].is_object());
+    assert!(
+        payload["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty())
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tldr_daemon_snapshot_json_preserves_snapshot_contract() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "daemon",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "snapshot",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(payload["action"], "snapshot");
+    assert_eq!(payload["status"], "ok");
+    assert!(payload["snapshot"].is_object());
+    assert!(payload["snapshot"]["dirty_files"].as_u64().is_some());
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn tldr_daemon_status_json_preserves_status_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;

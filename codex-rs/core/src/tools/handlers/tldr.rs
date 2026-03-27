@@ -762,6 +762,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_handler_with_hooks_summarizes_ping_payload() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Ping,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("pong"))) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("action: ping | status: ok | message: pong"));
+        assert_eq!(payload["action"], "ping");
+        assert_eq!(payload["message"], "pong");
+    }
+
+    #[tokio::test]
     async fn run_tldr_handler_with_hooks_summarizes_notify_payload() {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
@@ -803,6 +828,52 @@ mod tests {
 
         assert!(text.contains("action: notify | status: ok | message: marked src/lib.rs dirty"));
         assert_eq!(payload["action"], "notify");
+        assert_eq!(payload["snapshot"]["dirty_files"], 1);
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_summarizes_snapshot_payload() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Snapshot,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "snapshot".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                            cached_entries: 2,
+                            dirty_files: 1,
+                            dirty_file_threshold: 20,
+                            reindex_pending: true,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("action: snapshot | status: ok | message: snapshot"));
+        assert_eq!(payload["action"], "snapshot");
+        assert_eq!(payload["snapshot"]["cached_entries"], 2);
         assert_eq!(payload["snapshot"]["dirty_files"], 1);
     }
 

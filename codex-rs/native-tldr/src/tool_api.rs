@@ -776,6 +776,51 @@ mod tests {
         assert_eq!(action_name(&TldrToolAction::Dfg), "dfg");
     }
 
+    #[test]
+    fn action_name_covers_daemon_actions() {
+        assert_eq!(action_name(&TldrToolAction::Ping), "ping");
+        assert_eq!(action_name(&TldrToolAction::Warm), "warm");
+        assert_eq!(action_name(&TldrToolAction::Snapshot), "snapshot");
+        assert_eq!(action_name(&TldrToolAction::Status), "status");
+        assert_eq!(action_name(&TldrToolAction::Notify), "notify");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_preserves_ping_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Ping,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "pong".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("ping tool should succeed");
+
+        assert_eq!(result.text, "pong");
+        assert_eq!(result.structured_content["action"], "ping");
+        assert_eq!(result.structured_content["status"], "ok");
+        assert_eq!(result.structured_content["message"], "pong");
+    }
+
     #[tokio::test]
     async fn run_tldr_tool_with_hooks_preserves_status_payload_contract() {
         let tempdir = tempdir().expect("tempdir should exist");
@@ -853,6 +898,50 @@ mod tests {
         assert_eq!(result.text, "already warm");
         assert_eq!(result.structured_content["action"], "warm");
         assert_eq!(result.structured_content["snapshot"]["dirty_files"], 0);
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_preserves_snapshot_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Snapshot,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "snapshot".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(crate::session::SessionSnapshot {
+                            cached_entries: 2,
+                            dirty_files: 1,
+                            dirty_file_threshold: 20,
+                            reindex_pending: true,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("snapshot tool should succeed");
+
+        assert_eq!(result.text, "snapshot");
+        assert_eq!(result.structured_content["action"], "snapshot");
+        assert_eq!(result.structured_content["snapshot"]["cached_entries"], 2);
+        assert_eq!(result.structured_content["snapshot"]["dirty_files"], 1);
     }
 
     #[tokio::test]
