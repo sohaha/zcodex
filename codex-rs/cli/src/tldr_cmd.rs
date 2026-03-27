@@ -305,7 +305,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
 
 fn analysis_action_name(kind: AnalysisKind) -> &'static str {
     match kind {
-        AnalysisKind::Ast => "structure",
+        AnalysisKind::Ast => "tree",
         AnalysisKind::CallGraph => "context",
         AnalysisKind::Pdg => "impact",
         AnalysisKind::Cfg => "cfg",
@@ -842,6 +842,7 @@ fn cleanup_file_if_exists(path: PathBuf) {
 #[cfg(test)]
 mod output_tests {
     use super::TldrDaemonSubcommand;
+    use super::analysis_action_name;
     use super::analysis_payload;
     use super::cli_semantic_payload;
     use super::daemon_action_and_command;
@@ -968,6 +969,11 @@ mod output_tests {
             payload["analysis"]["details"]["units"][0]["qualified_symbol"],
             "crate::main"
         );
+    }
+
+    #[test]
+    fn analysis_action_name_maps_ast_to_tree() {
+        assert_eq!(analysis_action_name(AnalysisKind::Ast), "tree");
     }
 
     #[test]

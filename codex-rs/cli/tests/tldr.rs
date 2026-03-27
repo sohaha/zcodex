@@ -65,7 +65,7 @@ async fn tldr_structure_json_preserves_graph_contract() -> Result<()> {
         .expect("edges should be an array");
 
     assert_eq!(payload["analysis"]["kind"], "ast");
-    assert_eq!(payload["action"], "structure");
+    assert_eq!(payload["action"], "tree");
     assert!(
         nodes
             .iter()
@@ -204,7 +204,7 @@ async fn tldr_structure_json_supports_language_matrix() -> Result<()> {
             .expect("helper node should exist");
 
         assert_eq!(payload["analysis"]["kind"], "ast");
-        assert_eq!(payload["action"], "structure");
+        assert_eq!(payload["action"], "tree");
         assert_eq!(helper_node["kind"], "function");
         assert_eq!(details["symbol_index"][0]["symbol"], "helper");
     }
