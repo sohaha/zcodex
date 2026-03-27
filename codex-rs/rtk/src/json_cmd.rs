@@ -109,7 +109,7 @@ fn extract_schema(value: &Value, depth: usize, max_depth: usize) -> String {
             } else if s.is_empty() {
                 format!("{indent}string")
             } else {
-                // Check if it looks like a URL, date, etc.
+                // 检查它是否看起来像 URL、日期等特殊字符串
                 if s.starts_with("http") {
                     format!("{indent}url")
                 } else if s.contains('-') && s.len() == 10 {

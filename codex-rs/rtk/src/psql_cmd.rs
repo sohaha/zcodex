@@ -273,7 +273,7 @@ mod tests {
 
         let result = filter_table(&input);
         assert!(result.contains("... +10 行"));
-        // Header + 30 data rows + overflow line
+        // 表头 + 30 行数据 + 1 行溢出提示
         assert_eq!(result.lines().count(), 32); // 1 header + 30 data + 1 overflow
     }
 
