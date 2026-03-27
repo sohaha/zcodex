@@ -638,19 +638,19 @@ fn format_status_output(porcelain: &str) -> String {
     output.trim_end().to_string()
 }
 
-/// Minimal filtering for git status with user-provided args
+/// 对带用户参数的 git status 做最小化过滤
 fn filter_status_with_args(output: &str) -> String {
     let mut result = Vec::new();
 
     for line in output.lines() {
         let trimmed = line.trim();
 
-        // Skip empty lines
+        // 跳过空行
         if trimmed.is_empty() {
             continue;
         }
 
-        // Skip git hints - can appear at start or within line
+        // 跳过 git 提示信息，这些提示可能出现在开头或行内
         if trimmed.starts_with("(use \"git")
             || trimmed.starts_with("(create/copy files")
             || trimmed.contains("(use \"git add")
@@ -659,7 +659,7 @@ fn filter_status_with_args(output: &str) -> String {
             continue;
         }
 
-        // Special case: clean working tree
+        // 特殊情况：工作区干净
         if trimmed.contains("nothing to commit") && trimmed.contains("working tree clean") {
             result.push(trimmed.to_string());
             break;
@@ -678,7 +678,7 @@ fn filter_status_with_args(output: &str) -> String {
 fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // If user provided flags, apply minimal filtering
+    // 如果用户传入了 flag，则只做最小化过滤
     if !args.is_empty() {
         let output = git_cmd(global_args)
             .arg("status")
@@ -707,7 +707,7 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             eprint!("{stderr}");
         }
 
-        // Apply minimal filtering: strip ANSI, remove hints, empty lines
+        // 应用最小化过滤：去掉 ANSI、提示信息和空行
         let filtered = filter_status_with_args(&stdout);
         print!("{filtered}");
 
@@ -721,8 +721,8 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         return Ok(());
     }
 
-    // Default RTK compact mode (no args provided)
-    // Get raw git status for tracking
+    // RTK 默认紧凑模式（未提供参数）
+    // 获取原始 git status 用于统计
     let raw_output = git_cmd(global_args)
         .args(["status"])
         .output()
@@ -748,7 +748,7 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
 
     println!("{formatted}");
 
-    // Track for statistics
+    // 记录统计信息
     timer.track("git status", "rtk git status", &raw_output, &formatted);
 
     Ok(())
@@ -760,7 +760,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
     let mut cmd = git_cmd(global_args);
     cmd.arg("add");
 
-    // Pass all arguments directly to git (flags like -A, -p, --all, etc.)
+    // 所有参数直接透传给 git（例如 -A、-p、--all 等）
     if args.is_empty() {
         cmd.arg(".");
     } else {
@@ -782,7 +782,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
     );
 
     if output.status.success() {
-        // Count what was added
+        // 统计已添加内容
         let status_output = git_cmd(global_args)
             .args(["diff", "--cached", "--stat", "--shortstat"])
             .output()
@@ -792,7 +792,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
         let compact = if stat.trim().is_empty() {
             "已完成（没有可添加内容）".to_string()
         } else {
-            // Parse "1 file changed, 5 insertions(+)" format
+            // 解析 "1 file changed, 5 insertions(+)" 这类格式
             let short = stat.lines().last().unwrap_or("").trim();
             if short.is_empty() {
                 "已完成".to_string()
@@ -819,7 +819,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
         if !stdout.trim().is_empty() {
             eprintln!("{stdout}");
         }
-        // Propagate git's exit code
+        // 透传 git 的退出码
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
@@ -853,7 +853,7 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     let raw_output = format!("{stdout}\n{stderr}");
 
     if output.status.success() {
-        // Extract commit hash from output like "[main abc1234] message"
+        // 从类似 "[main abc1234] message" 的输出里提取 commit hash
         let compact = if let Some(line) = stdout.lines().next() {
             if let Some(hash_start) = line.find(' ') {
                 let hash = line[1..hash_start].split(' ').next_back().unwrap_or("");
@@ -977,14 +977,14 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
             if stdout.contains("Already up to date") || stdout.contains("Already up-to-date") {
                 "已是最新".to_string()
             } else {
-                // Count files changed
+                // 统计变更文件数
                 let mut files = 0;
                 let mut insertions = 0;
                 let mut deletions = 0;
 
                 for line in stdout.lines() {
                     if line.contains("file") && line.contains("changed") {
-                        // Parse "3 files changed, 10 insertions(+), 2 deletions(-)"
+                        // 解析 "3 files changed, 10 insertions(+), 2 deletions(-)" 这类格式
                         for part in line.split(',') {
                             let part = part.trim();
                             if part.contains("file") {
@@ -1046,7 +1046,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         eprintln!("运行：git branch");
     }
 
-    // Detect write operations: delete, rename, copy, upstream tracking
+    // 检测写操作：删除、重命名、复制、upstream 跟踪等
     let has_action_flag = args.iter().any(|a| {
         a == "-d"
             || a == "-D"
@@ -1063,7 +1063,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
 
     let has_show_flag = args.iter().any(|a| a == "--show-current");
 
-    // Detect list-mode flags
+    // 检测列表模式 flag
     let has_list_flag = args.iter().any(|a| {
         a == "-a"
             || a == "--all"
@@ -1082,7 +1082,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             || a.starts_with("--points-at=")
     });
 
-    // Detect positional arguments (not flags) — indicates branch creation
+    // 检测位置参数（非 flag）—— 这通常表示要创建分支
     let has_positional_arg = args.iter().any(|a| !a.starts_with('-'));
 
     if has_show_flag {
@@ -1116,7 +1116,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         return Ok(());
     }
 
-    // Write operation: action flags, or positional args without list flags (= branch creation)
+    // 写操作：带动作 flag，或带位置参数且没有 list flag（即创建分支）
     if has_action_flag || (has_positional_arg && !has_list_flag) {
         let mut cmd = git_cmd(global_args);
         cmd.arg("branch");
@@ -1156,7 +1156,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         return Ok(());
     }
 
-    // List mode: show compact branch list
+    // 列表模式：显示紧凑分支列表
     let mut cmd = git_cmd(global_args);
     cmd.arg("branch");
     if !has_list_flag {
@@ -1213,7 +1213,7 @@ fn filter_branch_output(output: &str) -> String {
             current = branch.to_string();
         } else if line.starts_with("remotes/origin/") {
             let branch = line.strip_prefix("remotes/origin/").unwrap_or(line);
-            // Skip HEAD pointer
+            // 跳过 HEAD 指针
             if branch.starts_with("HEAD ") {
                 continue;
             }
@@ -1233,7 +1233,7 @@ fn filter_branch_output(output: &str) -> String {
     }
 
     if !remote.is_empty() {
-        // Filter out remotes that already exist locally
+        // 过滤掉本地已存在的远端分支
         let remote_only: Vec<&String> = remote
             .iter()
             .filter(|r| *r != &current && !local.contains(r))
@@ -1278,7 +1278,7 @@ fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()>
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // Count new refs from stderr (git fetch outputs to stderr)
+    // 从 stderr 统计新引用数量（git fetch 会把输出写到 stderr）
     let new_refs: usize = stderr
         .lines()
         .filter(|l| l.contains("->") || l.contains("[new"))
@@ -1419,7 +1419,7 @@ fn run_stash(
             }
         }
         None => {
-            // Default: git stash (push)
+            // 默认行为：git stash（即 push）
             let mut cmd = git_cmd(global_args);
             cmd.arg("stash");
             for arg in args {
@@ -1460,13 +1460,13 @@ fn run_stash(
 }
 
 fn filter_stash_list(output: &str) -> String {
-    // Format: "stash@{0}: WIP on main: abc1234 commit message"
+    // 格式示例："stash@{0}: WIP on main: abc1234 commit message"
     let mut result = Vec::new();
     for line in output.lines() {
         if let Some(colon_pos) = line.find(": ") {
             let index = &line[..colon_pos];
             let rest = &line[colon_pos + 2..];
-            // Compact: strip "WIP on branch:" prefix if present
+            // 紧凑化：如果存在 "WIP on branch:" 前缀则去掉
             let message = if let Some(second_colon) = rest.find(": ") {
                 rest[second_colon + 2..].trim()
             } else {
@@ -1487,7 +1487,7 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
         eprintln!("运行：git worktree list");
     }
 
-    // If args contain "add", "remove", "prune" etc., pass through
+    // 如果参数里包含 "add"、"remove"、"prune" 等动作，则直接透传
     let has_action = args.iter().any(|a| {
         a == "add" || a == "remove" || a == "prune" || a == "lock" || a == "unlock" || a == "move"
     });
@@ -1528,7 +1528,7 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
         return Ok(());
     }
 
-    // Default: list mode
+    // 默认：列表模式
     let output = git_cmd(global_args)
         .args(["worktree", "list"])
         .output()
@@ -1554,7 +1554,7 @@ fn filter_worktree_list(output: &str) -> String {
         if line.trim().is_empty() {
             continue;
         }
-        // Format: "/path/to/worktree  abc1234 [branch]"
+        // 格式示例："/path/to/worktree  abc1234 [branch]"
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 3 {
             let mut path = parts[0].to_string();
@@ -1571,7 +1571,7 @@ fn filter_worktree_list(output: &str) -> String {
     result.join("\n")
 }
 
-/// Runs an unsupported git subcommand by passing it through directly
+/// 对不支持的 git 子命令直接透传执行
 pub fn run_passthrough(args: &[OsString], global_args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -1603,7 +1603,7 @@ mod tests {
     fn test_git_cmd_no_global_args() {
         let cmd = git_cmd(&[]);
         let program = cmd.get_program().to_string_lossy().to_string();
-        // On Windows, resolved_command returns full path (e.g. "C:\Program Files\Git\bin\git.exe")
+        // 在 Windows 上，resolved_command 会返回完整路径（例如 "C:\Program Files\Git\bin\git.exe"）
         let basename = std::path::Path::new(&program)
             .file_stem()
             .unwrap()
@@ -1671,7 +1671,7 @@ mod tests {
 
     #[test]
     fn test_compact_diff_increased_hunk_limit() {
-        // Build a hunk with 25 changed lines — should NOT be truncated with limit 30
+        // 构造一个包含 25 条变更行的 hunk —— 在 limit=30 时不应被截断
         let mut diff =
             "diff --git a/big.rs b/big.rs\n--- a/big.rs\n+++ b/big.rs\n@@ -1,25 +1,25 @@\n"
                 .to_string();
@@ -1688,7 +1688,7 @@ mod tests {
 
     #[test]
     fn test_compact_diff_increased_total_limit() {
-        // Build a diff with 150 output result lines across multiple files — should NOT be cut at 100
+        // 构造一个跨多个文件、共 150 行输出的 diff —— 不应在 100 行处被截断
         let mut diff = String::new();
         for f in 1..=5 {
             diff.push_str(&format!("diff --git a/file{f}.rs b/file{f}.rs\n--- a/file{f}.rs\n+++ b/file{f}.rs\n@@ -1,20 +1,20 @@\n"));
@@ -1719,7 +1719,7 @@ mod tests {
         assert!(result.contains("* main"));
         assert!(result.contains("feature/auth"));
         assert!(result.contains("fix/bug-123"));
-        // remote-only should show release/v2 but not main or feature/auth (already local)
+        // “仅远端”应显示 release/v2，而不显示 main 或 feature/auth（这些本地已存在）
         assert!(result.contains("仅远端"));
         assert!(result.contains("release/v2"));
     }
@@ -1804,7 +1804,7 @@ A  added.rs
 
     #[test]
     fn test_format_status_output_truncation() {
-        // Test that >5 staged files show "... +N more"
+        // 验证：当已暂存文件超过 5 个时，应显示 "... +N 个"
         let porcelain = r#"## main
 M  file1.rs
 M  file2.rs
@@ -1825,9 +1825,9 @@ M  file7.rs
 
     #[test]
     fn test_run_passthrough_accepts_args() {
-        // Test that run_passthrough compiles and has correct signature
+        // 验证 run_passthrough 能通过编译且签名正确
         let _args: Vec<OsString> = vec![OsString::from("tag"), OsString::from("--list")];
-        // Compile-time verification that the function exists with correct signature
+        // 编译期验证该函数存在且签名正确
     }
 
     #[test]
@@ -1841,13 +1841,13 @@ M  file7.rs
 
     #[test]
     fn test_filter_log_output_with_body() {
-        // Commit with body: first non-trailer body line should appear indented
+        // 带正文的 commit：第一条非 trailer 正文应以缩进形式保留
         let output = "abc1234 feat: add feature (2 days ago) <author>\nBREAKING CHANGE: removed old API\nSigned-off-by: Author <a@b.com>\n---END---\ndef5678 fix: typo (1 day ago) <other>\n\n---END---\n";
         let result = filter_log_output(output, 10, false, false);
         assert!(result.contains("abc1234"));
         assert!(result.contains("BREAKING CHANGE: removed old API"));
         assert!(!result.contains("Signed-off-by:"));
-        // def5678 has no body — just header
+        // def5678 没有正文，只应保留头部
         assert!(result.contains("def5678"));
         // 3 lines: header1, body1 indented, header2
         assert_eq!(result.lines().count(), 3);
@@ -1855,7 +1855,7 @@ M  file7.rs
 
     #[test]
     fn test_filter_log_output_skips_trailers() {
-        // Body with only trailers should not produce a body line
+        // 如果正文只有 trailer，则不应生成正文行
         let output = "abc1234 chore: bump (1 day ago) <bot>\nSigned-off-by: Bot <bot@ci>\nCo-authored-by: Human <h@b>\n---END---\n";
         let result = filter_log_output(output, 10, false, false);
         assert!(result.contains("abc1234"));
@@ -1885,7 +1885,7 @@ M  file7.rs
 
     #[test]
     fn test_filter_log_output_user_limit_no_cap() {
-        // When user explicitly passes -N, all N lines should be returned (no re-truncation)
+        // 当用户显式传入 -N 时，应返回全部 N 行（不再二次截断）
         let output = (0..20)
             .map(|i| format!("hash{i} message {i} (1 day ago) <author>\n\n---END---"))
             .collect::<Vec<_>>()
@@ -1900,7 +1900,7 @@ M  file7.rs
 
     #[test]
     fn test_filter_log_output_user_limit_wider_truncation() {
-        // When user explicitly passes -N, lines up to 120 chars should NOT be truncated
+        // 当用户显式传入 -N 时，120 字符以内的行不应被截断
         let line_90_chars = format!("abc1234 {} (2 days ago) <author>", "x".repeat(60));
         assert!(line_90_chars.chars().count() > 80);
         assert!(line_90_chars.chars().count() < 120);
@@ -1908,12 +1908,12 @@ M  file7.rs
         let result_default = filter_log_output(&line_90_chars, 10, false, false);
         let result_user = filter_log_output(&line_90_chars, 10, true, false);
 
-        // Default truncates at 80 chars
+        // 默认会在 80 字符处截断
         assert!(
             result_default.contains("..."),
             "Default should truncate at 80 chars"
         );
-        // User-set limit uses wider threshold (120 chars)
+        // 用户自定义 limit 时会使用更宽的阈值（120 字符）
         assert!(
             !result_user.contains("..."),
             "User limit should not truncate 90-char line"
@@ -1955,7 +1955,7 @@ M  file7.rs
         fn count_tokens(text: &str) -> usize {
             text.split_whitespace().count()
         }
-        // Simulate verbose git log output (default format with full metadata)
+        // 模拟冗长的 git log 输出（默认格式，包含完整元数据）
         let input = (0..20)
             .map(|i| {
                 format!(
@@ -2003,14 +2003,14 @@ no changes added to commit (use "git add" and/or "git commit -a")
 
     #[test]
     fn test_filter_log_output_multibyte() {
-        // Thai characters: each is 3 bytes. A line with >80 bytes but few chars
+        // 泰文字符通常每个占 3 字节；这里构造“字节数很多但字符数不多”的一行
         let thai_msg = format!("abc1234 {} (2 days ago) <author>", "ก".repeat(30));
         let result = filter_log_output(&thai_msg, 10, false, false);
-        // Should not panic
+        // 不应 panic
         assert!(result.contains("abc1234"));
-        // The line has 30 Thai chars + other text, so > 80 chars total
-        // truncate_line now counts chars, not bytes
-        // 30 Thai + ~33 other = 63 chars < 80 threshold, so no truncation
+        // 这一行包含 30 个泰文字符和其他文本，总字符数仍未超过阈值
+        // truncate_line 现在按字符数而非字节数计算
+        // 因此这里不应发生截断
         assert!(result.contains("abc1234"));
     }
 
@@ -2018,7 +2018,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
     fn test_filter_log_output_emoji() {
         let emoji_msg = "abc1234 🎉🎊🎈🎁🎂🎄🎃🎆🎇✨🎉🎊🎈🎁🎂🎄🎃🎆🎇✨ (1 day ago) <user>";
         let result = filter_log_output(emoji_msg, 10, false, false);
-        // Should not panic
+        // 不应 panic
         // 20 emoji + ~30 other chars = ~50 chars < 80, no truncation needed
         assert!(result.contains("abc1234"));
     }
@@ -2027,7 +2027,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
     fn test_format_status_output_thai_filename() {
         let porcelain = "## main\n M สวัสดี.txt\n?? ทดสอบ.rs\n";
         let result = format_status_output(porcelain);
-        // Should not panic
+        // 不应 panic
         assert!(result.contains("* main"));
         assert!(result.contains("สวัสดี.txt"));
         assert!(result.contains("ทดสอบ.rs"));
@@ -2040,9 +2040,9 @@ no changes added to commit (use "git add" and/or "git commit -a")
         assert!(result.contains("* main"));
     }
 
-    /// Regression test: --oneline and other user format flags must preserve all commits.
-    /// Before fix, filter_log_output split on ---END--- which doesn't exist when
-    /// the user specifies their own format, resulting in only 2 commits surviving.
+    /// 回归测试：`--oneline` 等用户自定义格式 flag 必须保留所有 commit。
+    /// 修复前，`filter_log_output` 会按 `---END---` 分割，但用户自定义格式下并不存在该标记，
+    /// 导致最终只剩下 2 条 commit。
     #[test]
     fn test_filter_log_output_user_format_oneline() {
         let oneline_output = "abc1234 feat: add feature\n\
@@ -2052,7 +2052,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
                               mno7890 test: add tests\n";
 
         let result = filter_log_output(oneline_output, 10, false, true);
-        // All 5 lines must survive — no ---END--- splitting
+        // 5 行都必须保留下来，不能因为没有 ---END--- 而错误分割
         assert_eq!(result.lines().count(), 5);
         assert!(result.contains("abc1234"));
         assert!(result.contains("mno7890"));
@@ -2066,25 +2066,25 @@ no changes added to commit (use "git add" and/or "git commit -a")
                               jkl3456 docs: update readme\n\
                               mno7890 test: add tests\n";
 
-        // user_set_limit=true means respect all lines (no cap)
+        // user_set_limit=true 表示尊重全部输出行数（不设上限）
         let result = filter_log_output(oneline_output, 3, true, true);
         assert_eq!(result.lines().count(), 5);
 
-        // user_set_limit=false means cap at limit
+        // user_set_limit=false 表示按 limit 截断
         let result = filter_log_output(oneline_output, 3, false, true);
         assert_eq!(result.lines().count(), 3);
     }
 
-    /// Regression test: `git branch <name>` must create, not list.
-    /// Before fix, positional args fell into list mode which added `-a`,
-    /// turning creation into a pattern-filtered listing (silent no-op).
+    /// 回归测试：`git branch <name>` 必须执行“创建”，而不是“列出”。
+    /// 修复前，位置参数会误落入列表模式并自动追加 `-a`，
+    /// 从而把创建操作变成按模式过滤的列表输出（静默 no-op）。
     #[test]
     #[ignore] // Integration test: requires git repo
     fn test_branch_creation_not_swallowed() {
         let branch = "test-rtk-create-branch-regression";
-        // Create branch via run_branch
+        // 通过 run_branch 创建分支
         run_branch(&[branch.to_string()], 0, &[]).expect("run_branch should succeed");
-        // Verify it exists
+        // 验证分支确实存在
         let output = Command::new("git")
             .args(["branch", "--list", branch])
             .output()
@@ -2094,11 +2094,11 @@ no changes added to commit (use "git add" and/or "git commit -a")
             stdout.contains(branch),
             "Branch '{branch}' was not created. run_branch silently swallowed the creation."
         );
-        // Cleanup
+        // 清理
         let _ = Command::new("git").args(["branch", "-d", branch]).output();
     }
 
-    /// Regression test: `git branch <name> <commit>` must create from commit.
+    /// 回归测试：`git branch <name> <commit>` 必须能基于指定 commit 创建分支。
     #[test]
     #[ignore] // Integration test: requires git repo
     fn test_branch_creation_from_commit() {
@@ -2181,13 +2181,13 @@ no changes added to commit (use "git add" and/or "git commit -a")
     }
 
     #[test]
-    #[ignore] // Requires `cargo build` first — run with `cargo test --ignored`
+    #[ignore] // 需要先执行 `cargo build`，可用 `cargo test --ignored` 运行
     fn test_git_status_not_a_repo_exits_nonzero() {
-        // Run rtk git status in a directory that is not a git repo
+        // 在非 git 仓库目录中执行 rtk git status
         let tmp = std::env::temp_dir().join("rtk_test_not_a_repo");
         let _ = std::fs::create_dir_all(&tmp);
 
-        // Build the path to the test binary
+        // 构造测试二进制路径
         let bin_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
             .join("debug")
@@ -2202,19 +2202,19 @@ no changes added to commit (use "git add" and/or "git commit -a")
             .output()
             .expect("运行 rtk 失败");
 
-        // Should exit with non-zero (128 from git)
+        // 应返回非零退出码（git 通常返回 128）
         assert!(
             !output.status.success(),
             "预期在仓库外执行 git status 时返回非零退出码，实际得到 {:?}",
             output.status.code()
         );
 
-        // Message should be on stderr, not stdout
+        // 错误信息应出现在 stderr，而不是 stdout
         let stderr = crate::utils::decode_output(&output.stderr);
         let stdout = crate::utils::decode_output(&output.stdout);
         assert!(
             stderr.to_lowercase().contains("not a git repository"),
-            "Expected 'not a git repository' on stderr, got stderr={stderr:?}, stdout={stdout:?}"
+            "期望 stderr 中包含 'not a git repository'，实际 stderr={stderr:?}, stdout={stdout:?}"
         );
 
         let _ = std::fs::remove_dir_all(&tmp);

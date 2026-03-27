@@ -40,7 +40,7 @@ fn preferred_bwrap_launcher_for_path(system_bwrap_path: &Path) -> BubblewrapLaun
     let system_bwrap_path = match AbsolutePathBuf::from_absolute_path(system_bwrap_path) {
         Ok(path) => path,
         Err(err) => panic!(
-            "failed to normalize system bubblewrap path {}: {err}",
+            "无法规范化系统 bubblewrap 路径 {}：{err}",
             system_bwrap_path.display()
         ),
     };
@@ -71,7 +71,7 @@ fn exec_system_bwrap(
 
     let program_path = program.as_path().display().to_string();
     let program = CString::new(program.as_path().as_os_str().as_bytes())
-        .unwrap_or_else(|err| panic!("invalid system bubblewrap path: {err}"));
+        .unwrap_or_else(|err| panic!("系统 bubblewrap 路径无效：{err}"));
     let cstrings = argv_to_cstrings(&argv);
     let mut argv_ptrs: Vec<*const c_char> = cstrings.iter().map(|arg| arg.as_ptr()).collect();
     argv_ptrs.push(std::ptr::null());
@@ -82,7 +82,7 @@ fn exec_system_bwrap(
         libc::execv(program.as_ptr(), argv_ptrs.as_ptr());
     }
     let err = std::io::Error::last_os_error();
-    panic!("failed to exec system bubblewrap {program_path}: {err}");
+    panic!("执行系统 bubblewrap 失败 {program_path}：{err}");
 }
 
 fn argv_to_cstrings(argv: &[String]) -> Vec<CString> {
@@ -107,7 +107,7 @@ fn clear_cloexec(fd: libc::c_int) {
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
     if flags < 0 {
         let err = std::io::Error::last_os_error();
-        panic!("failed to read fd flags for preserved bubblewrap file descriptor {fd}: {err}");
+        panic!("读取保留的 bubblewrap 文件描述符 {fd} 的标志失败：{err}");
     }
     let cleared_flags = flags & !libc::FD_CLOEXEC;
     if cleared_flags == flags {
@@ -118,7 +118,7 @@ fn clear_cloexec(fd: libc::c_int) {
     let result = unsafe { libc::fcntl(fd, libc::F_SETFD, cleared_flags) };
     if result < 0 {
         let err = std::io::Error::last_os_error();
-        panic!("failed to clear CLOEXEC for preserved bubblewrap file descriptor {fd}: {err}");
+        panic!("清除保留的 bubblewrap 文件描述符 {fd} 的 CLOEXEC 失败：{err}");
     }
 }
 

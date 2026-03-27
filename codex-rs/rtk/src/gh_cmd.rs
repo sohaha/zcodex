@@ -862,9 +862,9 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     Ok(())
 }
 
-/// Check if run view args should bypass filtering and pass through directly.
-/// Flags like --log-failed, --log, and --json produce output that the filter
-/// would incorrectly strip.
+/// 检查 `run view` 的参数是否应绕过过滤并直接透传。
+/// `--log-failed`、`--log`、`--json` 这类 flag 产生的输出若经过过滤，
+/// 会被错误裁剪。
 fn should_passthrough_run_view(extra_args: &[String]) -> bool {
     extra_args
         .iter()
@@ -877,7 +877,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
         None => return Err(anyhow::anyhow!("需要 Run ID")),
     };
 
-    // Pass through when user requests logs or JSON — the filter would strip them
+    // 当用户请求日志或 JSON 时直接透传，否则过滤器会误删内容
     if should_passthrough_run_view(&extra_args) {
         return run_passthrough_with_extra("gh", &["run", "view", &run_id], &extra_args);
     }
@@ -905,7 +905,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // Parse output and show only failures
+    // 解析输出，仅显示失败项
     let stdout = crate::utils::decode_output(&output.stdout);
     let mut in_jobs = false;
 
@@ -922,7 +922,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
 
         if in_jobs {
             if line.contains('✓') || line.contains("success") {
-                // Skip successful jobs in compact mode
+                // 紧凑模式下跳过成功的 job
                 continue;
             }
             if line.contains('✗') || line.contains("fail") {
@@ -950,7 +950,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
 }
 
 fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
-    // Parse subcommand (default to "view")
+    // 解析子命令（默认为 "view"）
     let (subcommand, rest_args) = if args.is_empty() {
         ("view", args)
     } else {
@@ -1049,10 +1049,10 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // gh pr create outputs the URL on success
+    // gh pr create 成功时会输出 URL
     let url = stdout.trim();
 
-    // Try to extract PR number from URL (e.g., https://github.com/owner/repo/pull/42)
+    // 尝试从 URL 中提取 PR 编号（例如 https://github.com/owner/repo/pull/42）
     let pr_num = url.rsplit('/').next().unwrap_or("");
 
     let detail = if !pr_num.is_empty() && pr_num.chars().all(|c| c.is_ascii_digit()) {
@@ -1087,7 +1087,7 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // Extract PR number from args (first non-flag arg)
+    // 从参数中提取 PR 编号（第一个非 flag 参数）
     let pr_num = args
         .iter()
         .find(|a| !a.starts_with('-'))
@@ -1103,7 +1103,7 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
     let filtered = ok_confirmation("合并", &detail);
     println!("{filtered}");
 
-    // Use stdout or detail as raw input (gh pr merge doesn't output much)
+    // 使用 stdout 或 detail 作为原始输入（gh pr merge 的输出通常很少）
     let raw = if !stdout.trim().is_empty() {
         stdout
     } else {
@@ -1159,7 +1159,7 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Generic PR action handler for comment/edit
+/// comment/edit 共用的通用 PR 动作处理器
 fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
     let subcmd = &args[0];
@@ -1185,7 +1185,7 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // Extract PR number from args (skip args[0] which is the subcommand)
+    // 从参数中提取 PR 编号（跳过 args[0]，因为它是子命令）
     let pr_num = args[1..]
         .iter()
         .find(|a| !a.starts_with('-'))
@@ -1195,7 +1195,7 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
     let filtered = ok_confirmation(action, &pr_num);
     println!("{filtered}");
 
-    // Use stdout or pr_num as raw input
+    // 使用 stdout 或 pr_num 作为原始输入
     let raw = if !stdout.trim().is_empty() {
         stdout
     } else {
@@ -1212,13 +1212,13 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
 }
 
 fn run_api(args: &[String], _verbose: u8) -> Result<()> {
-    // gh api is an explicit/advanced command — the user knows what they asked for.
-    // Converting JSON to a schema destroys all values and forces Claude to re-fetch.
-    // Passthrough preserves the full response and tracks metrics at 0% savings.
+    // gh api 是显式的高级命令——用户明确知道自己要什么。
+    // 把 JSON 转成 schema 会丢掉所有值，并迫使 Claude 重新抓取数据。
+    // 直接透传可以保留完整响应，同时按 0% 节省率记录统计。
     run_passthrough("gh", "api", args)
 }
 
-/// Pass through a command with base args + extra args, tracking as passthrough.
+/// 使用基础参数 + 附加参数透传命令，并按 passthrough 记录统计。
 fn run_passthrough_with_extra(cmd: &str, base_args: &[&str], extra_args: &[String]) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -1300,10 +1300,10 @@ mod tests {
 
     #[test]
     fn test_truncate_multibyte_utf8() {
-        // Emoji: 🚀 = 4 bytes, 1 char
+        // Emoji：🚀 占 4 字节，但只算 1 个字符
         assert_eq!(truncate("🚀🎉🔥abc", 6), "🚀🎉🔥abc"); // 6 chars, fits
         assert_eq!(truncate("🚀🎉🔥abcdef", 8), "🚀🎉🔥ab..."); // 10 chars > 8
-        // Edge case: all multibyte
+        // 边界情况：全部都是多字节字符
         assert_eq!(truncate("🚀🎉🔥🌟🎯", 5), "🚀🎉🔥🌟🎯"); // exact fit
         assert_eq!(truncate("🚀🎉🔥🌟🎯x", 5), "🚀🎉..."); // 6 chars > 5
     }
@@ -1364,7 +1364,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_with_repo_flag_after() {
-        // gh issue view 185 -R rtk-ai/rtk
+        // 示例：gh issue view 185 -R rtk-ai/rtk
         let args: Vec<String> = vec!["185".into(), "-R".into(), "rtk-ai/rtk".into()];
         let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
         assert_eq!(id, "185");
@@ -1373,7 +1373,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_with_repo_flag_before() {
-        // gh issue view -R rtk-ai/rtk 185
+        // 示例：gh issue view -R rtk-ai/rtk 185
         let args: Vec<String> = vec!["-R".into(), "rtk-ai/rtk".into(), "185".into()];
         let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
         assert_eq!(id, "185");
@@ -1396,7 +1396,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_only_flags() {
-        // No positional identifier, only flags
+        // 没有位置标识符，只有 flags
         let args: Vec<String> = vec!["-R".into(), "rtk-ai/rtk".into()];
         assert!(extract_identifier_and_extra_args(&args).is_none());
     }
@@ -1439,7 +1439,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_with_job_flag_after() {
-        // gh run view 12345 --job 67890
+        // 示例：gh run view 12345 --job 67890
         let args: Vec<String> = vec!["12345".into(), "--job".into(), "67890".into()];
         let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
         assert_eq!(id, "12345");
@@ -1448,7 +1448,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_with_job_flag_before() {
-        // gh run view --job 67890 12345
+        // 示例：gh run view --job 67890 12345
         let args: Vec<String> = vec!["--job".into(), "67890".into(), "12345".into()];
         let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
         assert_eq!(id, "12345");
@@ -1457,7 +1457,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_with_job_and_log_failed() {
-        // gh run view --log-failed --job 67890 12345
+        // 示例：gh run view --log-failed --job 67890 12345
         let args: Vec<String> = vec![
             "--log-failed".into(),
             "--job".into(),
@@ -1471,7 +1471,7 @@ mod tests {
 
     #[test]
     fn test_extract_identifier_with_attempt_flag() {
-        // gh run view 12345 --attempt 3
+        // 示例：gh run view 12345 --attempt 3
         let args: Vec<String> = vec!["12345".into(), "--attempt".into(), "3".into()];
         let (id, extra) = extract_identifier_and_extra_args(&args).unwrap();
         assert_eq!(id, "12345");
@@ -1563,7 +1563,7 @@ mod tests {
     fn test_filter_markdown_body_blank_lines_collapse() {
         let input = "Line 1\n\n\n\n\nLine 2";
         let result = filter_markdown_body(input);
-        // Should collapse to at most one blank line (2 newlines)
+        // 应折叠为最多一个空行（即连续 2 个换行）
         assert!(!result.contains("\n\n\n"));
         assert!(result.contains("Line 1"));
         assert!(result.contains("Line 2"));
@@ -1573,7 +1573,7 @@ mod tests {
     fn test_filter_markdown_body_code_block_preserved() {
         let input = "Text before\n```python\n<!-- not a comment -->\n![not an image](url)\n---\n```\nText after";
         let result = filter_markdown_body(input);
-        // Content inside code block should be preserved
+        // 代码块内部内容应原样保留
         assert!(result.contains("<!-- not a comment -->"));
         assert!(result.contains("![not an image](url)"));
         assert!(result.contains("---"));
@@ -1599,7 +1599,7 @@ mod tests {
 
     #[test]
     fn test_filter_markdown_body_token_savings() {
-        // Realistic PR body with noise
+        // 带噪声的真实 PR 正文示例
         let input = r#"<!-- This PR template is auto-generated -->
 <!-- Please fill in the following sections -->
 
@@ -1649,7 +1649,7 @@ ___
             "Expected ≥30% savings, got {savings:.1}% (input: {input_tokens} tokens, output: {output_tokens} tokens)"
         );
 
-        // Verify meaningful content preserved
+        // 验证有意义的内容仍被保留
         assert!(result.contains("## Summary"));
         assert!(result.contains("## Changes"));
         assert!(result.contains("## Test Plan"));

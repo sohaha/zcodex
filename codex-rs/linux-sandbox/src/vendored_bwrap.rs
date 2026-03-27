@@ -59,12 +59,12 @@ mod imp {
         _preserved_files: &[File],
     ) -> libc::c_int {
         panic!(
-            r#"build-time bubblewrap is not available in this build.
-codex-linux-sandbox should always compile vendored bubblewrap on Linux targets.
-Notes:
-- ensure the target OS is Linux
-- libcap headers must be available via pkg-config
-- bubblewrap sources expected at codex-rs/vendor/bubblewrap (default)"#
+            r#"构建时 bubblewrap 不可用。
+codex-linux-sandbox 在 Linux 目标上应始终编译内置 bubblewrap。
+说明：
+- 确认目标操作系统为 Linux
+- 需要通过 pkg-config 提供 libcap 头文件
+- 预期 bubblewrap 源码位于 codex-rs/vendor/bubblewrap（默认）"#
         );
     }
 

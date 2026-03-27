@@ -463,13 +463,13 @@ fn build_bwrap_argv(
         command_cwd,
         options,
     )
-    .unwrap_or_else(|err| panic!("error building bubblewrap command: {err:?}"));
+    .unwrap_or_else(|err| panic!("构建 bubblewrap 命令失败：{err:?}"));
 
     let command_separator_index = bwrap_args
         .args
         .iter()
         .position(|arg| arg == "--")
-        .unwrap_or_else(|| panic!("bubblewrap argv is missing command separator '--'"));
+        .unwrap_or_else(|| panic!("bubblewrap argv 缺少命令分隔符 `--`"));
     bwrap_args.args.splice(
         command_separator_index..command_separator_index,
         ["--argv0".to_string(), "codex-linux-sandbox".to_string()],
@@ -545,7 +545,7 @@ fn run_bwrap_in_child_capture_stderr(bwrap_args: crate::bwrap::BwrapArgs) -> Str
     let pipe_res = unsafe { libc::pipe2(pipe_fds.as_mut_ptr(), libc::O_CLOEXEC) };
     if pipe_res < 0 {
         let err = std::io::Error::last_os_error();
-        panic!("failed to create stderr pipe for bubblewrap: {err}");
+        panic!("为 bubblewrap 创建 stderr 管道失败：{err}");
     }
     let read_fd = pipe_fds[0];
     let write_fd = pipe_fds[1];
@@ -553,39 +553,39 @@ fn run_bwrap_in_child_capture_stderr(bwrap_args: crate::bwrap::BwrapArgs) -> Str
     let pid = unsafe { libc::fork() };
     if pid < 0 {
         let err = std::io::Error::last_os_error();
-        panic!("failed to fork for bubblewrap: {err}");
+        panic!("为 bubblewrap 执行 fork 失败：{err}");
     }
 
     if pid == 0 {
         // Child: redirect stderr to the pipe, then run bubblewrap.
         unsafe {
-            close_fd_or_panic(read_fd, "close read end in bubblewrap child");
+            close_fd_or_panic(read_fd, "关闭 bubblewrap 子进程的读端");
             if libc::dup2(write_fd, libc::STDERR_FILENO) < 0 {
                 let err = std::io::Error::last_os_error();
-                panic!("failed to redirect stderr for bubblewrap: {err}");
+                panic!("为 bubblewrap 重定向 stderr 失败：{err}");
             }
-            close_fd_or_panic(write_fd, "close write end in bubblewrap child");
+            close_fd_or_panic(write_fd, "关闭 bubblewrap 子进程的写端");
         }
 
         exec_bwrap(bwrap_args.args, bwrap_args.preserved_files);
     }
 
     // Parent: close the write end and read stderr while the child runs.
-    close_fd_or_panic(write_fd, "close write end in bubblewrap parent");
+    close_fd_or_panic(write_fd, "关闭 bubblewrap 父进程的写端");
 
     // SAFETY: `read_fd` is a valid owned fd in the parent.
     let mut read_file = unsafe { File::from_raw_fd(read_fd) };
     let mut stderr_bytes = Vec::new();
     let mut limited_reader = (&mut read_file).take(MAX_PREFLIGHT_STDERR_BYTES);
     if let Err(err) = limited_reader.read_to_end(&mut stderr_bytes) {
-        panic!("failed to read bubblewrap stderr: {err}");
+        panic!("读取 bubblewrap stderr 失败：{err}");
     }
 
     let mut status: libc::c_int = 0;
     let wait_res = unsafe { libc::waitpid(pid, &mut status as *mut libc::c_int, 0) };
     if wait_res < 0 {
         let err = std::io::Error::last_os_error();
-        panic!("waitpid failed for bubblewrap child: {err}");
+        panic!("等待 bubblewrap 子进程失败：{err}");
     }
 
     String::from_utf8_lossy(&stderr_bytes).into_owned()

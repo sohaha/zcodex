@@ -331,7 +331,7 @@ pub fn unprivileged_userns_available() -> bool {
         "No permissions to create a new namespace",
         "setting up uid map",
         "error isolating Linux network namespace",
-        "build-time bubblewrap is not available",
+        "构建时 bubblewrap 不可用",
     ];
     !blocked_snippets
         .iter()
