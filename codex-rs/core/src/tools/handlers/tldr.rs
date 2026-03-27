@@ -651,6 +651,74 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_formats_cfg_analysis_details() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Cfg,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: Some("AuthService".to_string()),
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Cfg,
+                            summary: "cfg summary".to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: Some("AuthService".to_string()),
+                                truncated: false,
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: vec![codex_native_tldr::api::AnalysisUnitDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    line: 1,
+                                    span_end_line: 1,
+                                    symbol: Some("AuthService".to_string()),
+                                    qualified_symbol: Some("auth::AuthService".to_string()),
+                                    kind: "struct".to_string(),
+                                    module_path: Vec::new(),
+                                    visibility: Some("pub".to_string()),
+                                    signature: Some("pub struct AuthService".to_string()),
+                                    calls: Vec::new(),
+                                    called_by: Vec::new(),
+                                    references: Vec::new(),
+                                    imports: Vec::new(),
+                                    dependencies: Vec::new(),
+                                    cfg_summary: "cfg".to_string(),
+                                    dfg_summary: "dfg".to_string(),
+                                }],
+                            }),
+                        }),
+                        ..daemon_ok("cfg")
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("analysis kind: cfg"));
+        assert_eq!(payload["action"], "cfg");
+        assert_eq!(payload["analysis"]["kind"], "cfg");
+        assert_eq!(
+            payload["analysis"]["details"]["symbol_query"],
+            "AuthService"
+        );
+    }
+
     #[test]
     fn render_tldr_summary_falls_back_without_analysis_details() {
         let payload = serde_json::json!({

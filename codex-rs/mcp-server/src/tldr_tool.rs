@@ -148,8 +148,8 @@ mod tests {
         assert_eq!(
             tool_json["inputSchema"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "status",
-                "notify"
+                "tree", "context", "impact", "cfg", "dfg", "semantic", "ping", "warm", "snapshot",
+                "status", "notify"
             ])
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
@@ -248,6 +248,67 @@ mod tests {
             structured["analysis"]["details"]["symbol_query"],
             "AuthService"
         );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_cfg_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary = "cfg summary: 1 symbols across 1 files; sample: AuthService [cfg]";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Cfg,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: Some("AuthService".to_string()),
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "cfg ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Cfg,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: Some("AuthService".to_string()),
+                                truncated: false,
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("cfg rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "cfg");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "cfg");
     }
 
     #[tokio::test]

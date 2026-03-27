@@ -61,6 +61,12 @@ pub enum TldrSubcommand {
     /// 获取影响分析概览。
     Impact(TldrAnalyzeCommand),
 
+    /// 获取控制流概览。
+    Cfg(TldrAnalyzeCommand),
+
+    /// 获取数据流概览。
+    Dfg(TldrAnalyzeCommand),
+
     /// 运行语义检索。
     Semantic(TldrSemanticCommand),
 
@@ -169,6 +175,12 @@ pub enum TldrDaemonSubcommand {
 
     /// 返回 daemon 健康状态与配置摘要。
     Status,
+
+    /// 通知 daemon 某个路径发生变化。
+    Notify {
+        /// 发生变化的路径。
+        path: PathBuf,
+    },
 }
 
 pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
@@ -194,6 +206,12 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         }
         TldrSubcommand::Impact(cmd) => {
             run_analysis_command(cmd, AnalysisKind::Pdg).await?;
+        }
+        TldrSubcommand::Cfg(cmd) => {
+            run_analysis_command(cmd, AnalysisKind::Cfg).await?;
+        }
+        TldrSubcommand::Dfg(cmd) => {
+            run_analysis_command(cmd, AnalysisKind::Dfg).await?;
         }
         TldrSubcommand::Semantic(cmd) => {
             run_semantic_command(cmd).await?;
@@ -290,9 +308,8 @@ fn analysis_action_name(kind: AnalysisKind) -> &'static str {
         AnalysisKind::Ast => "structure",
         AnalysisKind::CallGraph => "context",
         AnalysisKind::Pdg => "impact",
-        AnalysisKind::Cfg | AnalysisKind::Dfg => {
-            unreachable!("CLI analysis commands should not surface cfg/dfg directly")
-        }
+        AnalysisKind::Cfg => "cfg",
+        AnalysisKind::Dfg => "dfg",
     }
 }
 
@@ -453,12 +470,7 @@ fn render_semantic_response_text(
 
 async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     let project_root = cmd.project.canonicalize()?;
-    let command = match cmd.subcommand {
-        TldrDaemonSubcommand::Ping => TldrDaemonCommand::Ping,
-        TldrDaemonSubcommand::Warm => TldrDaemonCommand::Warm,
-        TldrDaemonSubcommand::Snapshot => TldrDaemonCommand::Snapshot,
-        TldrDaemonSubcommand::Status => TldrDaemonCommand::Status,
-    };
+    let (action, command) = daemon_action_and_command(&cmd.subcommand);
 
     let Some(response) = query_daemon_with_autostart(&project_root, &command).await? else {
         bail!(
@@ -468,18 +480,14 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     };
 
     if cmd.json {
-        if matches!(cmd.subcommand, TldrDaemonSubcommand::Status) {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&daemon_response_payload(
-                    "status",
-                    &project_root,
-                    &response,
-                ))?
-            );
-        } else {
-            println!("{}", serde_json::to_string_pretty(&response)?);
-        }
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&daemon_response_payload(
+                action,
+                &project_root,
+                &response
+            ))?
+        );
     } else {
         for line in render_daemon_response_text(&response) {
             println!("{line}");
@@ -487,6 +495,20 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn daemon_action_and_command(
+    subcommand: &TldrDaemonSubcommand,
+) -> (&'static str, TldrDaemonCommand) {
+    match subcommand {
+        TldrDaemonSubcommand::Ping => ("ping", TldrDaemonCommand::Ping),
+        TldrDaemonSubcommand::Warm => ("warm", TldrDaemonCommand::Warm),
+        TldrDaemonSubcommand::Snapshot => ("snapshot", TldrDaemonCommand::Snapshot),
+        TldrDaemonSubcommand::Status => ("status", TldrDaemonCommand::Status),
+        TldrDaemonSubcommand::Notify { path } => {
+            ("notify", TldrDaemonCommand::Notify { path: path.clone() })
+        }
+    }
 }
 
 fn render_daemon_response_text(
@@ -819,8 +841,10 @@ fn cleanup_file_if_exists(path: PathBuf) {
 
 #[cfg(test)]
 mod output_tests {
+    use super::TldrDaemonSubcommand;
     use super::analysis_payload;
     use super::cli_semantic_payload;
+    use super::daemon_action_and_command;
     use super::render_analysis_response_text;
     use super::render_semantic_response_text;
     use codex_native_tldr::api::AnalysisDetail;
@@ -998,6 +1022,61 @@ mod output_tests {
     }
 
     #[test]
+    fn analysis_payload_preserves_cfg_action_and_summary() {
+        let payload = analysis_payload(
+            "cfg",
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "daemon",
+            Some("cfg ready"),
+            LanguageRegistry::support_for(SupportedLanguage::Rust),
+            Some("AuthService"),
+            &AnalysisResponse {
+                kind: AnalysisKind::Cfg,
+                summary: "cfg summary: 1 symbols across 1 files; sample: AuthService [cfg]"
+                    .to_string(),
+                details: Some(AnalysisDetail {
+                    indexed_files: 1,
+                    total_symbols: 1,
+                    symbol_query: Some("AuthService".to_string()),
+                    truncated: false,
+                    overview: AnalysisOverviewDetail::default(),
+                    files: Vec::new(),
+                    nodes: Vec::new(),
+                    edges: Vec::new(),
+                    symbol_index: Vec::new(),
+                    units: vec![AnalysisUnitDetail {
+                        path: "src/lib.rs".to_string(),
+                        line: 1,
+                        span_end_line: 3,
+                        symbol: Some("AuthService".to_string()),
+                        qualified_symbol: Some("auth::AuthService".to_string()),
+                        kind: "struct".to_string(),
+                        module_path: vec!["auth".to_string()],
+                        visibility: Some("pub".to_string()),
+                        signature: Some("pub struct AuthService".to_string()),
+                        calls: Vec::new(),
+                        called_by: Vec::new(),
+                        references: Vec::new(),
+                        imports: Vec::new(),
+                        dependencies: Vec::new(),
+                        cfg_summary: "cfg".to_string(),
+                        dfg_summary: "dfg".to_string(),
+                    }],
+                }),
+            },
+        );
+
+        assert_eq!(payload["action"], "cfg");
+        assert_eq!(payload["message"], "cfg ready");
+        assert_eq!(
+            payload["summary"],
+            "cfg summary: 1 symbols across 1 files; sample: AuthService [cfg]"
+        );
+        assert_eq!(payload["analysis"]["kind"], "cfg");
+    }
+
+    #[test]
     fn cli_semantic_payload_wraps_public_semantic_result() {
         let payload = cli_semantic_payload(
             Path::new("/tmp/project"),
@@ -1078,6 +1157,19 @@ mod output_tests {
                 "message: impact ready".to_string(),
                 "summary: impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1".to_string(),
             ]
+        );
+    }
+
+    #[test]
+    fn daemon_action_and_command_maps_notify() {
+        let path = PathBuf::from("src/lib.rs");
+        let (action, command) =
+            daemon_action_and_command(&TldrDaemonSubcommand::Notify { path: path.clone() });
+
+        assert_eq!(action, "notify");
+        assert_eq!(
+            command,
+            codex_native_tldr::daemon::TldrDaemonCommand::Notify { path }
         );
     }
 

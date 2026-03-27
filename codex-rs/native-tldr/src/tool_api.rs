@@ -31,6 +31,8 @@ pub enum TldrToolAction {
     Tree,
     Context,
     Impact,
+    Cfg,
+    Dfg,
     Semantic,
     Ping,
     Warm,
@@ -141,6 +143,30 @@ where
             )
             .await
         }
+        TldrToolAction::Cfg => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Cfg,
+                language,
+                args.symbol,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Dfg => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Dfg,
+                language,
+                args.symbol,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
         TldrToolAction::Semantic => {
             run_semantic_tool(&project_root, args, &query, &ensure_running).await
         }
@@ -217,6 +243,8 @@ where
         TldrToolAction::Tree => AnalysisKind::Ast,
         TldrToolAction::Context => AnalysisKind::CallGraph,
         TldrToolAction::Impact => AnalysisKind::Pdg,
+        TldrToolAction::Cfg => AnalysisKind::Cfg,
+        TldrToolAction::Dfg => AnalysisKind::Dfg,
         _ => unreachable!("analysis action must map to AnalysisKind"),
     };
     let request = AnalysisRequest {
@@ -427,6 +455,8 @@ pub fn action_name(action: &TldrToolAction) -> &'static str {
         TldrToolAction::Tree => "tree",
         TldrToolAction::Context => "context",
         TldrToolAction::Impact => "impact",
+        TldrToolAction::Cfg => "cfg",
+        TldrToolAction::Dfg => "dfg",
         TldrToolAction::Semantic => "semantic",
         TldrToolAction::Ping => "ping",
         TldrToolAction::Warm => "warm",
@@ -717,4 +747,20 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
         }"##,
     )
     .expect("output schema literal should parse")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TldrToolAction;
+    use super::action_name;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn action_name_covers_analysis_actions() {
+        assert_eq!(action_name(&TldrToolAction::Tree), "tree");
+        assert_eq!(action_name(&TldrToolAction::Context), "context");
+        assert_eq!(action_name(&TldrToolAction::Impact), "impact");
+        assert_eq!(action_name(&TldrToolAction::Cfg), "cfg");
+        assert_eq!(action_name(&TldrToolAction::Dfg), "dfg");
+    }
 }
