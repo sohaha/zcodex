@@ -193,6 +193,54 @@ fn assert_version_contains(codex_home: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+fn create_fake_bin_dir(codex_home: &TempDir) -> Result<PathBuf> {
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir_all(&bin_dir)?;
+    Ok(bin_dir)
+}
+
+fn assert_custom_fallback(codex_home: &TempDir, args: &[&str], required: &[&str]) -> Result<()> {
+    let bin_dir = create_fake_bin_dir(codex_home)?;
+    let _fake_external = write_fake_command(
+        &bin_dir,
+        "custom-fallback",
+        fallback_marker_script("FALLBACK_OK \"$@\""),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let assert = cmd.env("PATH", prepend_path(&bin_dir)).args(args).assert();
+    let mut stdout_assert = assert.success().stdout(contains("FALLBACK_OK"));
+    for pattern in required {
+        stdout_assert = stdout_assert.stdout(contains(*pattern));
+    }
+
+    Ok(())
+}
+
+fn assert_parse_error_without_fallback(
+    codex_home: &TempDir,
+    command_name: &str,
+    args: &[&str],
+    stderr_pattern: &str,
+) -> Result<()> {
+    let bin_dir = create_fake_bin_dir(codex_home)?;
+    let _fake_command = write_fake_command(
+        &bin_dir,
+        command_name,
+        fallback_marker_script("FALLBACK_TRIGGERED"),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(args)
+        .assert()
+        .failure()
+        .stderr(contains(stderr_pattern))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
+
+    Ok(())
+}
+
 #[test]
 fn rtk_alias_routes_to_rtk_parser() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -451,38 +499,19 @@ fn rtk_unknown_commands_still_fall_back_after_global_flags() -> Result<()> {
 #[test]
 fn rtk_unknown_commands_still_fall_back_after_double_dash() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_external = write_fake_command(
-        &bin_dir,
-        "custom-fallback",
-        fallback_marker_script("FALLBACK_OK \"$@\""),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--verbose", "--", "custom-fallback", "alpha"])
-        .assert()
-        .success()
-        .stdout(contains("FALLBACK_OK").and(contains("alpha")));
-
-    Ok(())
+    assert_custom_fallback(
+        &codex_home,
+        &["rtk", "--verbose", "--", "custom-fallback", "alpha"],
+        &["alpha"],
+    )
 }
 
 #[test]
 fn rtk_unknown_commands_still_fall_back_after_global_flags_and_double_dash() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_external = write_fake_command(
-        &bin_dir,
-        "custom-fallback",
-        fallback_marker_script("FALLBACK_OK \"$@\""),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args([
+    assert_custom_fallback(
+        &codex_home,
+        &[
             "rtk",
             "--skip-env",
             "-vv",
@@ -490,159 +519,86 @@ fn rtk_unknown_commands_still_fall_back_after_global_flags_and_double_dash() -> 
             "custom-fallback",
             "alpha",
             "beta",
-        ])
-        .assert()
-        .success()
-        .stdout(
-            contains("FALLBACK_OK")
-                .and(contains("alpha"))
-                .and(contains("beta")),
-        );
-
-    Ok(())
+        ],
+        &["alpha", "beta"],
+    )
 }
 
 #[test]
 fn rtk_external_help_still_falls_back_after_double_dash() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_external = write_fake_command(
-        &bin_dir,
-        "custom-fallback",
-        fallback_marker_script("FALLBACK_OK \"$@\""),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--verbose", "--", "custom-fallback", "--help"])
-        .assert()
-        .success()
-        .stdout(contains("FALLBACK_OK").and(contains("--help")));
-
-    Ok(())
+    assert_custom_fallback(
+        &codex_home,
+        &["rtk", "--verbose", "--", "custom-fallback", "--help"],
+        &["--help"],
+    )
 }
 
 #[test]
 fn rtk_external_help_still_falls_back_after_global_flags_and_double_dash() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_external = write_fake_command(
-        &bin_dir,
-        "custom-fallback",
-        fallback_marker_script("FALLBACK_OK \"$@\""),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args([
+    assert_custom_fallback(
+        &codex_home,
+        &[
             "rtk",
             "--skip-env",
             "-vv",
             "--",
             "custom-fallback",
             "--help",
-        ])
-        .assert()
-        .success()
-        .stdout(contains("FALLBACK_OK").and(contains("--help")));
-
-    Ok(())
+        ],
+        &["--help"],
+    )
 }
 
 #[test]
 fn rtk_external_version_still_falls_back_after_double_dash() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_external = write_fake_command(
-        &bin_dir,
-        "custom-fallback",
-        fallback_marker_script("FALLBACK_OK \"$@\""),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--verbose", "--", "custom-fallback", "--version"])
-        .assert()
-        .success()
-        .stdout(contains("FALLBACK_OK").and(contains("--version")));
-
-    Ok(())
+    assert_custom_fallback(
+        &codex_home,
+        &["rtk", "--verbose", "--", "custom-fallback", "--version"],
+        &["--version"],
+    )
 }
 
 #[test]
 fn rtk_external_version_still_falls_back_after_global_flags_and_double_dash() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_external = write_fake_command(
-        &bin_dir,
-        "custom-fallback",
-        fallback_marker_script("FALLBACK_OK \"$@\""),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args([
+    assert_custom_fallback(
+        &codex_home,
+        &[
             "rtk",
             "--skip-env",
             "-vv",
             "--",
             "custom-fallback",
             "--version",
-        ])
-        .assert()
-        .success()
-        .stdout(contains("FALLBACK_OK").and(contains("--version")));
-
-    Ok(())
+        ],
+        &["--version"],
+    )
 }
 
 #[test]
 fn rtk_builtin_help_after_global_flags_and_double_dash_stays_in_parse_error_path() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_read = write_fake_command(
-        &bin_dir,
+    assert_parse_error_without_fallback(
+        &codex_home,
         "read",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--skip-env", "-vv", "--", "read", "--help"])
-        .assert()
-        .failure()
-        .stderr(contains("subcommand 'read' exists"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
-
-    Ok(())
+        &["rtk", "--skip-env", "-vv", "--", "read", "--help"],
+        "subcommand 'read' exists",
+    )
 }
 
 #[test]
 fn rtk_builtin_version_after_global_flags_and_double_dash_stays_in_parse_error_path() -> Result<()>
 {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_read = write_fake_command(
-        &bin_dir,
+    assert_parse_error_without_fallback(
+        &codex_home,
         "read",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--skip-env", "-vv", "--", "read", "--version"])
-        .assert()
-        .failure()
-        .stderr(contains("subcommand 'read' exists"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
-
-    Ok(())
+        &["rtk", "--skip-env", "-vv", "--", "read", "--version"],
+        "subcommand 'read' exists",
+    )
 }
 
 #[test]
@@ -671,68 +627,35 @@ fn rtk_builtin_help_after_double_dash_stays_in_parse_error_path() -> Result<()> 
 fn rtk_removed_meta_help_after_global_flags_and_double_dash_stays_in_parse_error_path() -> Result<()>
 {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_rewrite = write_fake_command(
-        &bin_dir,
+    assert_parse_error_without_fallback(
+        &codex_home,
         "rewrite",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--skip-env", "-vv", "--", "rewrite", "--help"])
-        .assert()
-        .failure()
-        .stderr(contains("unrecognized subcommand 'rewrite'"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
-
-    Ok(())
+        &["rtk", "--skip-env", "-vv", "--", "rewrite", "--help"],
+        "unrecognized subcommand 'rewrite'",
+    )
 }
 
 #[test]
 fn rtk_removed_meta_after_global_flags_and_double_dash_stays_in_parse_error_path() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_rewrite = write_fake_command(
-        &bin_dir,
+    assert_parse_error_without_fallback(
+        &codex_home,
         "rewrite",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--skip-env", "-vv", "--", "rewrite"])
-        .assert()
-        .failure()
-        .stderr(contains("unrecognized subcommand 'rewrite'"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
-
-    Ok(())
+        &["rtk", "--skip-env", "-vv", "--", "rewrite"],
+        "unrecognized subcommand 'rewrite'",
+    )
 }
 
 #[test]
 fn rtk_removed_meta_version_after_global_flags_and_double_dash_stays_in_parse_error_path()
 -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_rewrite = write_fake_command(
-        &bin_dir,
+    assert_parse_error_without_fallback(
+        &codex_home,
         "rewrite",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--skip-env", "-vv", "--", "rewrite", "--version"])
-        .assert()
-        .failure()
-        .stderr(contains("unrecognized subcommand 'rewrite'"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
-
-    Ok(())
+        &["rtk", "--skip-env", "-vv", "--", "rewrite", "--version"],
+        "unrecognized subcommand 'rewrite'",
+    )
 }
 
 #[test]
