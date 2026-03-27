@@ -2825,7 +2825,8 @@ Examples of valid command strings:
     } else {
         r#"Runs a shell command and returns its output.
 - Always set the `workdir` param when using the shell_command function. Do not use `cd` unless absolutely necessary.
-- Some supported commands may be transparently routed through embedded RTK filtering before execution to reduce noisy output."#
+- Some simple single-command invocations may be transparently routed through embedded RTK filtering before execution to reduce noisy output.
+- Compound shell syntax such as pipes, redirects, command substitution, or `sudo` stays raw."#
             .to_string()
     };
     assert_eq!(description, &expected);

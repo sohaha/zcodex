@@ -347,6 +347,37 @@ fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
 }
 
 #[test]
+fn shell_command_handler_normalizes_codex_rtk_help_commands() {
+    let routed = ShellCommandHandler::route_command("codex rtk --help");
+    assert_eq!(routed.command, "rtk --help");
+    assert_eq!(
+        routed.interaction_input,
+        Some("codex rtk --help".to_string())
+    );
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command routed via embedded RTK]\noriginal: codex rtk --help\nexecuted: rtk --help"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn shell_command_handler_keeps_codex_rtk_compounds_raw() {
+    let routed = ShellCommandHandler::route_command("codex rtk git status | head");
+    assert_eq!(routed.command, "codex rtk git status | head");
+    assert_eq!(routed.interaction_input, None);
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: codex rtk git status | head\nexecuted: codex rtk git status | head\nreason: contains compound shell syntax"
+                .to_string()
+        )
+    );
+}
+
+#[test]
 fn shell_command_handler_leaves_unsupported_read_shapes_raw() {
     let routed = ShellCommandHandler::route_command("tail -f src/main.rs");
     assert_eq!(routed.command, "tail -f src/main.rs");
