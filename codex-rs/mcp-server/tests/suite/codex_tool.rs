@@ -633,7 +633,8 @@ mod tldr_tests {
                     "action": "tree",
                     "analysis": {
                         "kind": "ast",
-                        "summary": summary
+                        "summary": summary,
+                        "details": null
                     },
                     "fallbackStrategy": "structure + search",
                     "language": "rust",
@@ -688,6 +689,7 @@ mod tldr_tests {
                 analysis: Some(AnalysisResponse {
                     kind: AnalysisKind::Ast,
                     summary: "daemon summary".to_string(),
+                    details: None,
                 }),
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
@@ -1729,7 +1731,7 @@ mod tldr_tests {
                     config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
                         auto_start: true,
                         socket_mode: "auto".to_string(),
-                        semantic_enabled: false,
+                        semantic_enabled: true,
                         semantic_auto_reindex_threshold: 20,
                         session_dirty_file_threshold: 20,
                     },
@@ -1829,18 +1831,15 @@ mod tldr_tests {
         assert_eq!(structured["query"], "find auth");
         assert_eq!(structured["semantic"]["query"], "find auth");
         assert_eq!(structured["source"], "local");
-        assert_eq!(
-            structured["message"],
-            "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
-        );
+        assert_eq!(structured["message"], "semantic search returned 0 matches");
         assert_eq!(
             structured["semantic"]["message"],
-            "semantic search is disabled; enable [semantic].enabled in .codex/tldr.toml"
+            "semantic search returned 0 matches"
         );
-        assert_eq!(structured["enabled"], false);
-        assert_eq!(structured["embeddingUsed"], false);
-        assert_eq!(structured["semantic"]["enabled"], false);
-        assert_eq!(structured["semantic"]["embeddingUsed"], false);
+        assert_eq!(structured["enabled"], true);
+        assert_eq!(structured["embeddingUsed"], true);
+        assert_eq!(structured["semantic"]["enabled"], true);
+        assert_eq!(structured["semantic"]["embeddingUsed"], true);
 
         Ok(())
     }

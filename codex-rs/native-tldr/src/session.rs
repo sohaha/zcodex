@@ -165,6 +165,7 @@ mod tests {
             AnalysisResponse {
                 kind: AnalysisKind::Ast,
                 summary: "structure summary".to_string(),
+                details: None,
             },
         );
 
@@ -202,6 +203,7 @@ mod tests {
             AnalysisResponse {
                 kind: AnalysisKind::Ast,
                 summary: "structure summary".to_string(),
+                details: None,
             },
         );
         session.mark_dirty(PathBuf::from("src/main.rs"));

@@ -781,8 +781,15 @@ mod output_tests {
     use super::analysis_payload;
     use super::cli_semantic_payload;
     use super::render_semantic_response_text;
+    use codex_native_tldr::api::AnalysisDetail;
+    use codex_native_tldr::api::AnalysisEdgeDetail;
+    use codex_native_tldr::api::AnalysisFileDetail;
     use codex_native_tldr::api::AnalysisKind;
+    use codex_native_tldr::api::AnalysisNodeDetail;
+    use codex_native_tldr::api::AnalysisOverviewDetail;
     use codex_native_tldr::api::AnalysisResponse;
+    use codex_native_tldr::api::AnalysisSymbolIndexEntry;
+    use codex_native_tldr::api::AnalysisUnitDetail;
     use codex_native_tldr::lang_support::LanguageRegistry;
     use codex_native_tldr::lang_support::SupportedLanguage;
     use codex_native_tldr::semantic::EmbeddingUnit;
@@ -804,6 +811,65 @@ mod output_tests {
             &AnalysisResponse {
                 kind: AnalysisKind::CallGraph,
                 summary: "context summary".to_string(),
+                details: Some(AnalysisDetail {
+                    indexed_files: 1,
+                    total_symbols: 1,
+                    symbol_query: Some("main".to_string()),
+                    truncated: false,
+                    overview: AnalysisOverviewDetail {
+                        kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                            name: "function".to_string(),
+                            count: 1,
+                        }],
+                        outgoing_edges: 1,
+                        incoming_edges: 0,
+                        reference_count: 0,
+                        import_count: 0,
+                    },
+                    files: vec![AnalysisFileDetail {
+                        path: "src/main.rs".to_string(),
+                        symbol_count: 1,
+                        kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                            name: "function".to_string(),
+                            count: 1,
+                        }],
+                    }],
+                    nodes: vec![AnalysisNodeDetail {
+                        id: "main".to_string(),
+                        label: "main".to_string(),
+                        kind: "function".to_string(),
+                        path: Some("src/main.rs".to_string()),
+                        line: Some(1),
+                        signature: Some("fn main()".to_string()),
+                    }],
+                    edges: vec![AnalysisEdgeDetail {
+                        from: "src/main.rs".to_string(),
+                        to: "main".to_string(),
+                        kind: "contains".to_string(),
+                    }],
+                    symbol_index: vec![AnalysisSymbolIndexEntry {
+                        symbol: "main".to_string(),
+                        node_ids: vec!["main".to_string()],
+                    }],
+                    units: vec![AnalysisUnitDetail {
+                        path: "src/main.rs".to_string(),
+                        line: 1,
+                        span_end_line: 3,
+                        symbol: Some("main".to_string()),
+                        qualified_symbol: Some("crate::main".to_string()),
+                        kind: "function".to_string(),
+                        module_path: vec!["crate".to_string()],
+                        visibility: None,
+                        signature: Some("fn main()".to_string()),
+                        calls: vec!["validate".to_string()],
+                        called_by: Vec::new(),
+                        references: Vec::new(),
+                        imports: Vec::new(),
+                        dependencies: Vec::new(),
+                        cfg_summary: "cfg".to_string(),
+                        dfg_summary: "dfg".to_string(),
+                    }],
+                }),
             },
         );
 
@@ -820,7 +886,60 @@ mod output_tests {
                 "symbol": "main",
                 "analysis": {
                     "kind": "call_graph",
-                    "summary": "context summary"
+                    "summary": "context summary",
+                    "details": {
+                        "indexed_files": 1,
+                        "total_symbols": 1,
+                        "symbol_query": "main",
+                        "truncated": false,
+                        "overview": {
+                            "kinds": [{"name": "function", "count": 1}],
+                            "outgoing_edges": 1,
+                            "incoming_edges": 0,
+                            "reference_count": 0,
+                            "import_count": 0
+                        },
+                        "files": [{
+                            "path": "src/main.rs",
+                            "symbol_count": 1,
+                            "kinds": [{"name": "function", "count": 1}]
+                        }],
+                        "nodes": [{
+                            "id": "main",
+                            "label": "main",
+                            "kind": "function",
+                            "path": "src/main.rs",
+                            "line": 1,
+                            "signature": "fn main()"
+                        }],
+                        "edges": [{
+                            "from": "src/main.rs",
+                            "to": "main",
+                            "kind": "contains"
+                        }],
+                        "symbol_index": [{
+                            "symbol": "main",
+                            "node_ids": ["main"]
+                        }],
+                        "units": [{
+                            "path": "src/main.rs",
+                            "line": 1,
+                            "span_end_line": 3,
+                            "symbol": "main",
+                            "qualified_symbol": "crate::main",
+                            "kind": "function",
+                            "module_path": ["crate"],
+                            "visibility": null,
+                            "signature": "fn main()",
+                            "calls": ["validate"],
+                            "called_by": [],
+                            "references": [],
+                            "imports": [],
+                            "dependencies": [],
+                            "cfg_summary": "cfg",
+                            "dfg_summary": "dfg"
+                        }]
+                    }
                 }
             })
         );

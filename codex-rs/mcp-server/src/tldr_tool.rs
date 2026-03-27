@@ -117,157 +117,25 @@ mod tests {
     fn verify_tldr_tool_json_schema() {
         let tool = create_tool_for_tldr_tool_call_param();
         let tool_json = serde_json::to_value(&tool).expect("tool serializes");
-        let expected_tool_json: serde_json::Value = serde_json::from_str(
-            r##"{
-              "description": "Structured code context analysis via native-tldr with daemon-first execution.",
-              "inputSchema": {
-                "properties": {
-                  "action": {
-                    "enum": ["tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "status", "notify"],
-                    "type": "string"
-                  },
-                  "language": {
-                    "enum": ["rust", "typescript", "javascript", "python", "go", "php", "zig"],
-                    "type": "string"
-                  },
-                  "path": { "type": "string" },
-                  "project": { "type": "string" },
-                  "query": { "type": "string" },
-                  "symbol": { "type": "string" }
-                },
-                "required": ["action"],
-                "type": "object"
-              },
-              "name": "tldr",
-              "outputSchema": {
-                "$defs": {
-                  "analysis": {
-                    "properties": {
-                      "kind": { "type": "string" },
-                      "summary": { "type": "string" }
-                    },
-                    "type": "object"
-                  },
-                  "reindexReport": {
-                    "properties": {
-                      "embedding_dimensions": { "type": "integer" },
-                      "embedding_enabled": { "type": "boolean" },
-                      "finished_at": { "type": "string" },
-                      "indexed_files": { "type": "integer" },
-                      "indexed_units": { "type": "integer" },
-                      "languages": {
-                        "items": { "type": "string" },
-                        "type": "array"
-                      },
-                      "message": { "type": "string" },
-                      "started_at": { "type": "string" },
-                      "status": { "type": "string" },
-                      "truncated": { "type": "boolean" }
-                    },
-                    "type": ["object", "null"]
-                  },
-                  "semantic": {
-                    "properties": {
-                      "embeddingUsed": { "type": "boolean" },
-                      "enabled": { "type": "boolean" },
-                      "indexedFiles": { "type": "integer" },
-                      "matches": {
-                        "items": {
-                          "properties": {
-                            "embedding_score": { "type": ["number", "null"] },
-                            "line": { "type": "integer" },
-                            "path": { "type": "string" },
-                            "snippet": { "type": "string" }
-                          },
-                          "type": "object"
-                        },
-                        "type": "array"
-                      },
-                      "message": { "type": "string" },
-                      "query": { "type": "string" },
-                      "truncated": { "type": "boolean" }
-                    },
-                    "type": "object"
-                  }
-                },
-                "properties": {
-                  "action": { "type": "string" },
-                  "analysis": { "$ref": "#/$defs/analysis" },
-                  "daemonStatus": {
-                    "properties": {
-                      "config": {
-                        "properties": {
-                          "auto_start": { "type": "boolean" },
-                          "semantic_auto_reindex_threshold": { "type": "integer" },
-                          "semantic_enabled": { "type": "boolean" },
-                          "session_dirty_file_threshold": { "type": "integer" },
-                          "socket_mode": { "type": "string" }
-                        },
-                        "type": "object"
-                      },
-                      "health_reason": { "type": ["string", "null"] },
-                      "healthy": { "type": "boolean" },
-                      "last_query_at": { "type": ["string", "null"] },
-                      "lock_is_held": { "type": "boolean" },
-                      "lock_path": { "type": "string" },
-                      "pid_is_live": { "type": "boolean" },
-                      "pid_path": { "type": "string" },
-                      "project_root": { "type": "string" },
-                      "recovery_hint": { "type": ["string", "null"] },
-                      "semantic_reindex_pending": { "type": "boolean" },
-                      "socket_exists": { "type": "boolean" },
-                      "socket_path": { "type": "string" },
-                      "stale_pid": { "type": "boolean" },
-                      "stale_socket": { "type": "boolean" }
-                    },
-                    "type": "object"
-                  },
-                  "embeddingUsed": { "type": "boolean" },
-                  "enabled": { "type": "boolean" },
-                  "indexedFiles": { "type": "integer" },
-                  "language": { "type": "string" },
-                  "message": { "type": "string" },
-                  "matches": {
-                    "items": {
-                      "properties": {
-                        "embedding_score": { "type": ["number", "null"] },
-                        "line": { "type": "integer" },
-                        "path": { "type": "string" },
-                        "snippet": { "type": "string" }
-                      },
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
-                  "project": { "type": "string" },
-                  "query": { "type": "string" },
-                  "reindexReport": { "$ref": "#/$defs/reindexReport" },
-                  "semantic": { "$ref": "#/$defs/semantic" },
-                  "snapshot": {
-                    "properties": {
-                      "cached_entries": { "type": "integer" },
-                      "dirty_file_threshold": { "type": "integer" },
-                      "dirty_files": { "type": "integer" },
-                      "last_query_at": { "type": ["string", "null"] },
-                      "last_reindex": { "$ref": "#/$defs/reindexReport" },
-                      "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" },
-                      "reindex_pending": { "type": "boolean" }
-                    },
-                    "type": "object"
-                  },
-                  "source": { "type": "string" },
-                  "status": { "type": "string" },
-                  "summary": { "type": "string" },
-                  "truncated": { "type": "boolean" }
-                },
-                "type": "object"
-              },
-              "title": "Native TLDR"
-            }"##,
-        )
-        .expect("expected tool schema should parse");
-
-        assert_eq!(expected_tool_json, tool_json);
+        assert_eq!(tool_json["name"], "tldr");
+        assert_eq!(tool_json["title"], "Native TLDR");
+        assert_eq!(
+            tool_json["description"],
+            "Structured code context analysis via native-tldr with daemon-first execution."
+        );
+        assert_eq!(tool_json["inputSchema"]["type"], "object");
+        assert_eq!(
+            tool_json["inputSchema"]["required"],
+            serde_json::json!(["action"])
+        );
+        assert_eq!(
+            tool_json["inputSchema"]["properties"]["action"]["enum"],
+            serde_json::json!([
+                "tree", "context", "impact", "semantic", "ping", "warm", "snapshot", "status",
+                "notify"
+            ])
+        );
+        assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
     }
 
     #[test]

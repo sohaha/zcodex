@@ -476,7 +476,8 @@ fn callable_name(node: Node<'_>, source: &str) -> Option<String> {
             .and_then(|child| trimmed_node_text(child, source))
             .or_else(|| last_symbol_segment(&node_text(node, source))),
         "scoped_identifier" | "scoped_type_identifier" => {
-            last_symbol_segment(&node_text(node, source))
+            scoped_symbol_name(&node_text(node, source))
+                .or_else(|| last_symbol_segment(&node_text(node, source)))
         }
         _ => last_symbol_segment(&node_text(node, source)),
     }
@@ -636,6 +637,17 @@ fn last_symbol_segment(text: &str) -> Option<String> {
     (!last.is_empty()).then(|| last.to_string())
 }
 
+fn scoped_symbol_name(text: &str) -> Option<String> {
+    let compact = compact_whitespace(text);
+    let head = compact
+        .split('<')
+        .next()
+        .unwrap_or(compact.as_str())
+        .trim()
+        .trim_start_matches("::");
+    (!head.is_empty()).then(|| head.to_string())
+}
+
 fn push_unique(values: &mut Vec<String>, value: String) {
     if !value.is_empty() && !values.iter().any(|existing| existing == &value) {
         values.push(value);
@@ -780,5 +792,29 @@ pub mod auth {
                 .iter()
                 .any(|doc| doc.contains("Login orchestration"))
         );
+    }
+
+    #[test]
+    fn rust_units_preserve_scoped_call_paths() {
+        let units = extract_units(
+            Path::new("src/lib.rs"),
+            r#"
+mod auth {
+    pub fn validate() {}
+}
+
+fn login() {
+    auth::validate();
+}
+"#,
+        )
+        .expect("rust extraction should succeed");
+
+        let login = units
+            .iter()
+            .find(|unit| unit.symbol.as_deref() == Some("login"))
+            .expect("login symbol should exist");
+        assert!(login.calls.contains(&"auth::validate".to_string()));
+        assert!(!login.calls.contains(&"validate".to_string()));
     }
 }

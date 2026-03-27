@@ -18,6 +18,11 @@ pub struct TldrSemanticMatchView {
     pub path: PathBuf,
     pub line: usize,
     pub snippet: String,
+    pub symbol: Option<String>,
+    #[serde(rename = "qualifiedSymbol")]
+    pub qualified_symbol: Option<String>,
+    pub kind: String,
+    pub signature: Option<String>,
     pub embedding_score: Option<f32>,
 }
 
@@ -27,6 +32,10 @@ impl From<&SemanticMatch> for TldrSemanticMatchView {
             path: value.path.clone(),
             line: value.line,
             snippet: value.snippet.clone(),
+            symbol: value.unit.symbol.clone(),
+            qualified_symbol: value.unit.qualified_symbol.clone(),
+            kind: value.unit.kind.clone(),
+            signature: value.unit.signature.clone(),
             embedding_score: value.embedding_score,
         }
     }
@@ -337,6 +346,16 @@ mod tests {
 
         assert_eq!(payload["embeddingUsed"], true);
         assert_eq!(payload["matches"][0]["path"], "src/auth.rs");
+        assert_eq!(payload["matches"][0]["symbol"], "verify_token");
+        assert_eq!(
+            payload["matches"][0]["qualifiedSymbol"],
+            "auth::verify_token"
+        );
+        assert_eq!(payload["matches"][0]["kind"], "function");
+        assert_eq!(
+            payload["matches"][0]["signature"],
+            "pub fn verify_token() -> bool"
+        );
         assert!(payload["matches"][0].get("unit").is_none());
         assert!(payload["matches"][0].get("embedding_text").is_none());
     }

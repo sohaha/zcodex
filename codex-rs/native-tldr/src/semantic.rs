@@ -26,7 +26,7 @@ pub struct SemanticEmbeddingConfig {
 impl Default for SemanticEmbeddingConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             dimensions: 64,
         }
     }
@@ -55,7 +55,7 @@ pub struct SemanticConfig {
 impl Default for SemanticConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             feature_gate: "semantic-embed".to_string(),
             model: "minilm".to_string(),
             auto_reindex_threshold: 20,
@@ -735,13 +735,49 @@ fn build_called_by_index(units: &[EmbeddingUnit]) -> BTreeMap<String, Vec<String
             continue;
         };
         for callee in &unit.calls {
-            let called_by = index.entry(callee.clone()).or_default();
-            if !called_by.iter().any(|existing| existing == caller) {
-                called_by.push(caller.to_owned());
+            for key in call_lookup_keys(callee) {
+                let called_by = index.entry(key).or_default();
+                if !called_by.iter().any(|existing| existing == caller) {
+                    called_by.push(caller.to_owned());
+                }
             }
         }
     }
     index
+}
+
+fn call_lookup_keys(callee: &str) -> Vec<String> {
+    let trimmed = callee.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    let mut keys = vec![trimmed.to_string()];
+    let stripped = trim_rust_path_prefixes(trimmed);
+    if stripped != trimmed && !keys.iter().any(|existing| existing == stripped) {
+        keys.push(stripped.to_string());
+    }
+    keys
+}
+
+fn trim_rust_path_prefixes(symbol: &str) -> &str {
+    let mut trimmed = symbol.trim_start_matches("::");
+    loop {
+        if let Some(rest) = trimmed.strip_prefix("crate::") {
+            trimmed = rest;
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("self::") {
+            trimmed = rest;
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("super::") {
+            trimmed = rest;
+            continue;
+        }
+        break;
+    }
+    trimmed
 }
 
 fn canonical_symbol(unit: &EmbeddingUnit) -> Option<&str> {
@@ -1055,11 +1091,11 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn semantic_indexer_defaults_disabled() {
+    fn semantic_indexer_defaults_enabled() {
         let config = SemanticConfig::default();
         let indexer = SemanticIndexer::new(config);
 
-        assert!(!indexer.is_enabled());
+        assert!(indexer.is_enabled());
         assert_eq!(indexer.auto_reindex_threshold(), 20);
         assert!(!indexer.should_reindex(19));
         assert!(indexer.should_reindex(20));
@@ -1155,7 +1191,7 @@ mod tests {
     #[test]
     fn semantic_search_reports_disabled_gate() {
         let tempdir = tempdir().expect("tempdir should exist");
-        let response = SemanticIndexer::new(SemanticConfig::default())
+        let response = SemanticIndexer::new(SemanticConfig::default().with_enabled(false))
             .search(
                 tempdir.path(),
                 SemanticSearchRequest {
@@ -1283,5 +1319,62 @@ mod auth {
             Some("auth::AuthService::login")
         );
         assert!(response.matches[0].score >= response.matches[1].score);
+    }
+
+    #[test]
+    fn semantic_search_called_by_uses_scoped_paths_for_disambiguation() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(
+            src.join("lib.rs"),
+            r#"
+mod auth {
+    pub fn validate() {}
+}
+
+mod audit {
+    pub fn validate() {}
+}
+
+fn login() {
+    crate::auth::validate();
+}
+"#,
+        )
+        .expect("fixture should write");
+        let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
+
+        let auth = indexer
+            .search(
+                tempdir.path(),
+                SemanticSearchRequest {
+                    language: SupportedLanguage::Rust,
+                    query: "auth::validate".to_string(),
+                },
+            )
+            .expect("auth search should succeed");
+        let auth_validate = auth
+            .matches
+            .iter()
+            .find(|item| item.unit.qualified_symbol.as_deref() == Some("auth::validate"))
+            .expect("auth::validate should be indexed");
+        assert!(auth_validate.unit.called_by.contains(&"login".to_string()));
+
+        let audit = indexer
+            .search(
+                tempdir.path(),
+                SemanticSearchRequest {
+                    language: SupportedLanguage::Rust,
+                    query: "audit::validate".to_string(),
+                },
+            )
+            .expect("audit search should succeed");
+        let audit_validate = audit
+            .matches
+            .iter()
+            .find(|item| item.unit.qualified_symbol.as_deref() == Some("audit::validate"))
+            .expect("audit::validate should be indexed");
+        assert_eq!(audit_validate.unit.called_by, Vec::<String>::new());
     }
 }

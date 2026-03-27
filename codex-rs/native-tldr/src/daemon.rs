@@ -957,6 +957,7 @@ mod tests {
             idle_timeout: std::time::Duration::from_secs(60),
             dirty_file_threshold: 1,
         };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(false);
         let daemon = TldrDaemon::from_config(config);
 
         let analyze = daemon
@@ -1102,6 +1103,7 @@ mod tests {
             idle_timeout: std::time::Duration::from_secs(60),
             dirty_file_threshold: 1,
         };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(false);
         let daemon = TldrDaemon::from_config(config);
 
         daemon
@@ -1166,6 +1168,7 @@ mod tests {
             idle_timeout: std::time::Duration::from_secs(60),
             dirty_file_threshold: 1,
         };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(false);
         let daemon = TldrDaemon::from_config(config);
 
         daemon

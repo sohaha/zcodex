@@ -218,7 +218,8 @@ mod tests {
 
         assert_eq!(engine.config().project_root, project_root);
         assert_eq!(engine.config().daemon.auto_start, true);
-        assert_eq!(engine.config().semantic.enabled, false);
+        assert_eq!(engine.config().semantic.enabled, true);
+        assert_eq!(engine.config().semantic.embedding_enabled, true);
         assert_eq!(
             engine.registry().supported_languages(),
             vec![

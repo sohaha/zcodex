@@ -118,8 +118,10 @@ mod tests {
 
         assert!(config.daemon.auto_start);
         assert_eq!(config.daemon.socket_mode, "auto");
-        assert!(!config.semantic.enabled);
+        assert!(config.semantic.enabled);
         assert_eq!(config.semantic.auto_reindex_threshold, 20);
+        assert!(config.semantic.embedding.enabled);
+        assert!(config.semantic.embedding_enabled);
         assert_eq!(config.session.dirty_file_threshold, 20);
     }
 

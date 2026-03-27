@@ -7,6 +7,7 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use anyhow::Result;
 use async_trait::async_trait;
+use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
@@ -27,6 +28,9 @@ use tokio::process::Command;
 use tokio::time::sleep;
 
 pub struct TldrHandler;
+
+const TLDR_JSON_BEGIN: &str = "---BEGIN_TLDR_JSON---";
+const TLDR_JSON_END: &str = "---END_TLDR_JSON---";
 
 #[async_trait]
 impl ToolHandler for TldrHandler {
@@ -51,22 +55,86 @@ impl ToolHandler for TldrHandler {
             args.project = Some(turn.cwd.display().to_string());
         }
 
-        match run_tldr_tool_with_hooks(
+        run_tldr_handler_with_hooks(
             args,
-            |project_root, command| Box::pin(query_daemon(project_root, command)),
-            |project_root| Box::pin(ensure_daemon_running(project_root)),
+            &|project_root, command| Box::pin(query_daemon(project_root, command)),
+            &|project_root| Box::pin(ensure_daemon_running(project_root)),
         )
         .await
-        {
-            Ok(result) => {
-                let json =
-                    serde_json::to_string_pretty(&result.structured_content).map_err(|err| {
-                        FunctionCallError::Fatal(format!("serialize tldr output: {err}"))
-                    })?;
-                Ok(FunctionToolOutput::from_text(json, Some(true)))
-            }
-            Err(err) => Ok(FunctionToolOutput::from_text(err.to_string(), Some(false))),
+    }
+}
+
+async fn run_tldr_handler_with_hooks<Q, E>(
+    args: TldrToolCallParam,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<FunctionToolOutput, FunctionCallError>
+where
+    Q: for<'a> Fn(
+        &'a Path,
+        &'a TldrDaemonCommand,
+    ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
+{
+    match run_tldr_tool_with_hooks(args, query, ensure_running).await {
+        Ok(result) => {
+            let json = serde_json::to_string_pretty(&result.structured_content)
+                .map_err(|err| FunctionCallError::Fatal(format!("serialize tldr output: {err}")))?;
+            let summary = render_tldr_summary(&result.structured_content);
+            Ok(FunctionToolOutput::from_text(
+                format!(
+                    "{}\n{}\n{}\n{}\n{}",
+                    result.text, summary, TLDR_JSON_BEGIN, json, TLDR_JSON_END
+                ),
+                Some(true),
+            ))
         }
+        Err(err) => Ok(FunctionToolOutput::from_text(err.to_string(), Some(false))),
+    }
+}
+
+fn render_tldr_summary(payload: &serde_json::Value) -> String {
+    let mut parts = Vec::new();
+
+    if let Some(kind) = payload
+        .get("analysis")
+        .and_then(|analysis| analysis.get("kind"))
+        .and_then(serde_json::Value::as_str)
+    {
+        parts.push(format!("analysis kind: {kind}"));
+    }
+
+    if let Some(details) = payload
+        .get("analysis")
+        .and_then(|analysis| analysis.get("details"))
+    {
+        if let Some(node_count) = details
+            .get("nodes")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len)
+        {
+            parts.push(format!("nodes: {node_count}"));
+        }
+        if let Some(edge_count) = details
+            .get("edges")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len)
+        {
+            parts.push(format!("edges: {edge_count}"));
+        }
+        if let Some(symbol_count) = details
+            .get("symbol_index")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len)
+        {
+            parts.push(format!("symbol index: {symbol_count}"));
+        }
+    }
+
+    if parts.is_empty() {
+        "structured payload attached".to_string()
+    } else {
+        parts.join(" | ")
     }
 }
 
@@ -217,5 +285,365 @@ fn cleanup_file_if_exists(path: PathBuf) {
         && err.kind() != std::io::ErrorKind::NotFound
     {
         let _ = err;
+    }
+}
+
+#[cfg(test)]
+mod helper_tests {
+    use super::cleanup_file_if_exists;
+    use super::daemon_launcher_args;
+    use super::launcher_lock_path_for_project;
+    use pretty_assertions::assert_eq;
+    use std::ffi::OsString;
+    use tempfile::tempdir;
+
+    #[test]
+    fn daemon_launcher_args_use_internal_daemon_entrypoint() {
+        let project_root = std::path::Path::new("/tmp/project-root");
+        let args = daemon_launcher_args(project_root);
+        assert_eq!(
+            args,
+            [
+                OsString::from("tldr"),
+                OsString::from("internal-daemon"),
+                OsString::from("--project"),
+                OsString::from("/tmp/project-root"),
+            ]
+        );
+    }
+
+    #[test]
+    fn launcher_lock_path_uses_launch_lock_extension() {
+        let project_root = std::path::Path::new("/tmp/project-root");
+        let lock_path = launcher_lock_path_for_project(project_root);
+        assert!(lock_path.to_string_lossy().ends_with(".launch.lock"));
+    }
+
+    #[test]
+    fn cleanup_file_if_exists_removes_existing_file() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let file_path = tempdir.path().join("stale.sock");
+        std::fs::write(&file_path, "stale").expect("fixture should write");
+
+        cleanup_file_if_exists(file_path.clone());
+
+        assert_eq!(file_path.exists(), false);
+    }
+
+    #[test]
+    fn cleanup_file_if_exists_ignores_missing_file() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let missing = tempdir.path().join("missing.sock");
+        cleanup_file_if_exists(missing.clone());
+        assert_eq!(missing.exists(), false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::codex::make_session_and_context;
+    use crate::turn_diff_tracker::TurnDiffTracker;
+    use codex_native_tldr::daemon::TldrDaemonResponse;
+    use pretty_assertions::assert_eq;
+    use serde_json::json;
+    use std::sync::Arc;
+    use tempfile::tempdir;
+    use tokio::sync::Mutex;
+
+    fn invocation(
+        session: Arc<crate::codex::Session>,
+        turn: Arc<crate::codex::TurnContext>,
+        arguments: serde_json::Value,
+    ) -> ToolInvocation {
+        ToolInvocation {
+            session,
+            turn,
+            tracker: Arc::new(Mutex::new(TurnDiffTracker::default())),
+            call_id: "call-1".to_string(),
+            tool_name: "tldr".to_string(),
+            tool_namespace: None,
+            payload: ToolPayload::Function {
+                arguments: arguments.to_string(),
+            },
+        }
+    }
+
+    fn daemon_ok(message: &str) -> TldrDaemonResponse {
+        TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: message.to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: None,
+            daemon_status: None,
+            reindex_report: None,
+        }
+    }
+
+    fn extract_json_block(text: &str) -> serde_json::Value {
+        assert_eq!(text.matches(TLDR_JSON_BEGIN).count(), 1);
+        assert_eq!(text.matches(TLDR_JSON_END).count(), 1);
+
+        let (prefix, json_and_suffix) = text
+            .split_once(&format!("\n{TLDR_JSON_BEGIN}\n"))
+            .expect("tldr output should include a begin marker on its own line");
+        assert!(
+            !prefix.is_empty(),
+            "tldr output should preserve the rendered text before the JSON block"
+        );
+
+        let json = json_and_suffix
+            .strip_suffix(&format!("\n{TLDR_JSON_END}"))
+            .expect("tldr output should end with the closing marker");
+        serde_json::from_str(json).expect("json block should parse")
+    }
+
+    #[tokio::test]
+    async fn handler_defaults_project_to_turn_cwd_and_falls_back_to_local_engine() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src_dir = tempdir.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(
+            src_dir.join("lib.rs"),
+            "pub struct AuthService;\nimpl AuthService { pub fn login(&self) {} }\n",
+        )
+        .expect("source should write");
+
+        let (session, mut turn) = make_session_and_context().await;
+        turn.cwd = tempdir.path().to_path_buf();
+        let output = TldrHandler
+            .handle(invocation(
+                Arc::new(session),
+                Arc::new(turn),
+                json!({
+                    "action": "tree",
+                    "language": "rust",
+                    "symbol": "AuthService"
+                }),
+            ))
+            .await
+            .expect("handler should succeed");
+        let text = output.into_text();
+
+        assert!(text.contains("tree rust via local"));
+        assert!(text.contains("\"project\":"));
+        assert!(text.contains(tempdir.path().to_string_lossy().as_ref()));
+        assert!(text.contains("\"symbol\": \"AuthService\""));
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_formats_daemon_semantic_payload() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join(".codex")).expect("config dir should exist");
+
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some("auth login".to_string()),
+                path: None,
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
+                            enabled: true,
+                            query: "auth login".to_string(),
+                            indexed_files: 1,
+                            truncated: false,
+                            matches: vec![codex_native_tldr::semantic::SemanticMatch {
+                                score: 10,
+                                path: PathBuf::from("src/lib.rs"),
+                                line: 1,
+                                snippet: "pub struct AuthService;".to_string(),
+                                unit: codex_native_tldr::semantic::EmbeddingUnit {
+                                    path: PathBuf::from("src/lib.rs"),
+                                    language:
+                                        codex_native_tldr::lang_support::SupportedLanguage::Rust,
+                                    symbol: Some("AuthService".to_string()),
+                                    qualified_symbol: Some("auth::AuthService".to_string()),
+                                    symbol_aliases: vec!["AuthService".to_string()],
+                                    kind: "struct".to_string(),
+                                    line: 1,
+                                    span_end_line: 1,
+                                    module_path: vec!["auth".to_string()],
+                                    visibility: Some("pub".to_string()),
+                                    signature: Some("pub struct AuthService".to_string()),
+                                    docs: Vec::new(),
+                                    imports: Vec::new(),
+                                    references: Vec::new(),
+                                    code_preview: "pub struct AuthService;".to_string(),
+                                    calls: Vec::new(),
+                                    called_by: Vec::new(),
+                                    dependencies: Vec::new(),
+                                    cfg_summary: "cfg".to_string(),
+                                    dfg_summary: "dfg".to_string(),
+                                    embedding_vector: None,
+                                },
+                                embedding_text: "internal".to_string(),
+                                embedding_score: Some(0.75),
+                            }],
+                            embedding_used: true,
+                            message: "semantic search returned 1 matches".to_string(),
+                        }),
+                        ..daemon_ok("semantic")
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+
+        assert!(text.contains("semantic rust enabled=true via daemon"));
+        assert!(text.contains("structured payload attached"));
+        assert!(text.contains(TLDR_JSON_BEGIN));
+        assert!(text.contains("\"qualifiedSymbol\": \"auth::AuthService\""));
+        assert!(text.contains("\"kind\": \"struct\""));
+        assert!(text.contains("\"signature\": \"pub struct AuthService\""));
+        assert!(text.contains("\"embedding_score\": 0.75"));
+        assert!(text.contains(TLDR_JSON_END));
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_returns_error_text_for_invalid_semantic_request() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should return tool output");
+
+        assert_eq!(output.success, Some(false));
+        assert!(
+            output
+                .into_text()
+                .contains("`query` is required for action=semantic")
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_formats_analysis_graph_details() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: Some("AuthService".to_string()),
+                query: None,
+                path: None,
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Ast,
+                            summary: "structure summary".to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: Some("AuthService".to_string()),
+                                truncated: false,
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail {
+                                    kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                                        name: "struct".to_string(),
+                                        count: 1,
+                                    }],
+                                    outgoing_edges: 1,
+                                    incoming_edges: 0,
+                                    reference_count: 0,
+                                    import_count: 0,
+                                },
+                                files: vec![codex_native_tldr::api::AnalysisFileDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    symbol_count: 1,
+                                    kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                                        name: "struct".to_string(),
+                                        count: 1,
+                                    }],
+                                }],
+                                nodes: vec![codex_native_tldr::api::AnalysisNodeDetail {
+                                    id: "AuthService".to_string(),
+                                    label: "AuthService".to_string(),
+                                    kind: "struct".to_string(),
+                                    path: Some("src/lib.rs".to_string()),
+                                    line: Some(1),
+                                    signature: Some("pub struct AuthService".to_string()),
+                                }],
+                                edges: vec![codex_native_tldr::api::AnalysisEdgeDetail {
+                                    from: "AuthService".to_string(),
+                                    to: "validate".to_string(),
+                                    kind: "calls".to_string(),
+                                }],
+                                symbol_index: vec![
+                                    codex_native_tldr::api::AnalysisSymbolIndexEntry {
+                                        symbol: "AuthService".to_string(),
+                                        node_ids: vec!["AuthService".to_string()],
+                                    },
+                                ],
+                                units: vec![codex_native_tldr::api::AnalysisUnitDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    line: 1,
+                                    span_end_line: 1,
+                                    symbol: Some("AuthService".to_string()),
+                                    qualified_symbol: None,
+                                    kind: "struct".to_string(),
+                                    module_path: Vec::new(),
+                                    visibility: Some("pub".to_string()),
+                                    signature: Some("pub struct AuthService".to_string()),
+                                    calls: vec!["validate".to_string()],
+                                    called_by: Vec::new(),
+                                    references: Vec::new(),
+                                    imports: Vec::new(),
+                                    dependencies: Vec::new(),
+                                    cfg_summary: "cfg".to_string(),
+                                    dfg_summary: "dfg".to_string(),
+                                }],
+                            }),
+                        }),
+                        ..daemon_ok("analysis")
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("analysis kind: ast"));
+        assert!(text.contains("nodes: 1"));
+        assert!(text.contains("edges: 1"));
+        assert!(text.contains("symbol index: 1"));
+        assert!(text.contains("\nanalysis kind: ast | nodes: 1 | edges: 1 | symbol index: 1\n"));
+        assert_eq!(payload["analysis"]["summary"], "structure summary");
+        assert_eq!(
+            payload["analysis"]["details"]["symbol_query"],
+            "AuthService"
+        );
+        assert_eq!(
+            payload["analysis"]["details"]["nodes"][0]["id"],
+            "AuthService"
+        );
+        assert_eq!(payload["analysis"]["details"]["edges"][0]["kind"], "calls");
+        assert_eq!(
+            payload["analysis"]["details"]["symbol_index"][0]["symbol"],
+            "AuthService"
+        );
     }
 }

@@ -478,11 +478,123 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
         r##"{
           "type": "object",
           "$defs": {
+            "analysisUnit": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "line": { "type": "integer" },
+                "span_end_line": { "type": "integer" },
+                "symbol": { "type": ["string", "null"] },
+                "qualified_symbol": { "type": ["string", "null"] },
+                "kind": { "type": "string" },
+                "module_path": { "type": "array", "items": { "type": "string" } },
+                "visibility": { "type": ["string", "null"] },
+                "signature": { "type": ["string", "null"] },
+                "calls": { "type": "array", "items": { "type": "string" } },
+                "called_by": { "type": "array", "items": { "type": "string" } },
+                "references": { "type": "array", "items": { "type": "string" } },
+                "imports": { "type": "array", "items": { "type": "string" } },
+                "dependencies": { "type": "array", "items": { "type": "string" } },
+                "cfg_summary": { "type": "string" },
+                "dfg_summary": { "type": "string" }
+              }
+            },
+            "analysisDetails": {
+              "type": "object",
+              "properties": {
+                "indexed_files": { "type": "integer" },
+                "total_symbols": { "type": "integer" },
+                "symbol_query": { "type": ["string", "null"] },
+                "truncated": { "type": "boolean" },
+                "overview": { "$ref": "#/$defs/analysisOverview" },
+                "files": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisFile" }
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisNode" }
+                },
+                "edges": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisEdge" }
+                },
+                "symbol_index": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisSymbolIndexEntry" }
+                },
+                "units": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisUnit" }
+                }
+              }
+            },
+            "analysisOverview": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisCount" }
+                },
+                "outgoing_edges": { "type": "integer" },
+                "incoming_edges": { "type": "integer" },
+                "reference_count": { "type": "integer" },
+                "import_count": { "type": "integer" }
+              }
+            },
+            "analysisCount": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "count": { "type": "integer" }
+              }
+            },
+            "analysisFile": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "symbol_count": { "type": "integer" },
+                "kinds": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisCount" }
+                }
+              }
+            },
+            "analysisEdge": {
+              "type": "object",
+              "properties": {
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "kind": { "type": "string" }
+              }
+            },
+            "analysisNode": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" },
+                "kind": { "type": "string" },
+                "path": { "type": ["string", "null"] },
+                "line": { "type": ["integer", "null"] },
+                "signature": { "type": ["string", "null"] }
+              }
+            },
+            "analysisSymbolIndexEntry": {
+              "type": "object",
+              "properties": {
+                "symbol": { "type": "string" },
+                "node_ids": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            },
             "analysis": {
               "type": "object",
               "properties": {
                 "kind": { "type": "string" },
-                "summary": { "type": "string" }
+                "summary": { "type": "string" },
+                "details": { "$ref": "#/$defs/analysisDetails" }
               }
             },
             "reindexReport": {
@@ -511,9 +623,13 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "message": { "type": "string" },
                 "matches": {
                   "type": "array",
-                  "items": {
+                    "items": {
                     "type": "object",
                     "properties": {
+                      "symbol": { "type": ["string", "null"] },
+                      "qualifiedSymbol": { "type": ["string", "null"] },
+                      "kind": { "type": "string" },
+                      "signature": { "type": ["string", "null"] },
                       "path": { "type": "string" },
                       "line": { "type": "integer" },
                       "snippet": { "type": "string" },
@@ -537,13 +653,17 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
             "embeddingUsed": { "type": "boolean" },
             "matches": {
               "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "path": { "type": "string" },
-                  "line": { "type": "integer" },
-                  "snippet": { "type": "string" },
-                  "embedding_score": { "type": ["number", "null"] }
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "symbol": { "type": ["string", "null"] },
+                    "qualifiedSymbol": { "type": ["string", "null"] },
+                    "kind": { "type": "string" },
+                    "signature": { "type": ["string", "null"] },
+                    "path": { "type": "string" },
+                    "line": { "type": "integer" },
+                    "snippet": { "type": "string" },
+                    "embedding_score": { "type": ["number", "null"] }
                 }
               }
             },

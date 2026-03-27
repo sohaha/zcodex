@@ -60,7 +60,7 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 
 - daemon-first 是 Unix 主路径；daemon 不可用时 CLI/MCP 会回退本地引擎
 - MCP 复用 query/retry 生命周期逻辑，但**不负责 auto-start**
-- semantic 默认关闭，需在 `.codex/tldr.toml` 显式开启
+- semantic 默认开启，并在首次查询时按语言 lazy 建索引；`.codex/tldr.toml` 可用于覆盖默认行为
 - semantic / status 对外 schema 已收口到稳定 view；更激进的 payload 控制仍可继续增强
 
 ## 后续方向
