@@ -41,8 +41,8 @@ stage_asset \
   "$target_dir/aarch64-apple-darwin/release/codex" \
   "codex-aarch64-apple-darwin"
 stage_asset \
-  "$target_dir/x86_64-pc-windows-gnu/release/codex.exe" \
-  "codex-x86_64-pc-windows-gnu.exe"
+  "$target_dir/x86_64-pc-windows-msvc/release/codex.exe" \
+  "codex-x86_64-pc-windows-msvc.exe"
 stage_asset \
   "$target_dir/aarch64-pc-windows-gnullvm/release/codex.exe" \
   "codex-aarch64-pc-windows-gnullvm.exe"

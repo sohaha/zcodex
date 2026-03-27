@@ -2,7 +2,7 @@
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-target="x86_64-pc-windows-gnu"
+target="x86_64-pc-windows-msvc"
 target_label="Windows amd64"
 build_task_name="build-ubuntu-win-amd64"
 deps_task_name="deps-ubuntu-win-amd64"

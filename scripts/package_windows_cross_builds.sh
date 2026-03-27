@@ -45,8 +45,8 @@ package_one() {
 }
 
 package_one \
-  "$repo_root/codex-rs/target/x86_64-pc-windows-gnu/release/codex.exe" \
-  "codex-x86_64-pc-windows-gnu.exe"
+  "$repo_root/codex-rs/target/x86_64-pc-windows-msvc/release/codex.exe" \
+  "codex-x86_64-pc-windows-msvc.exe"
 
 package_one \
   "$repo_root/codex-rs/target/aarch64-pc-windows-gnullvm/release/codex.exe" \
@@ -55,8 +55,8 @@ package_one \
 (
   cd "$output_dir"
   sha256sum \
-    codex-x86_64-pc-windows-gnu.exe \
-    codex-x86_64-pc-windows-gnu.exe.zip \
+    codex-x86_64-pc-windows-msvc.exe \
+    codex-x86_64-pc-windows-msvc.exe.zip \
     codex-aarch64-pc-windows-gnullvm.exe \
     codex-aarch64-pc-windows-gnullvm.exe.zip \
     > SHA256SUMS.txt

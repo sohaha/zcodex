@@ -292,8 +292,8 @@ If you use `mise`, the repository also provides tasks for building the CLI from
 Ubuntu for Windows:
 
 ```bash
-# Install Zig/cargo-zigbuild and the Rust Windows targets.
-# amd64 -> x86_64-pc-windows-gnu
+# Install the Rust Windows targets and the matching cross-build helpers.
+# amd64 -> x86_64-pc-windows-msvc
 # arm64 -> aarch64-pc-windows-gnullvm
 mise run deps ubuntu-win-amd64
 mise run deps ubuntu-win-arm64
@@ -315,8 +315,11 @@ mise run package ubuntu-win
 ./scripts/package_windows_cross_builds.sh
 ```
 
-The arm64 task uses Rust target `aarch64-pc-windows-gnullvm`, because the
-current Linux Rust toolchain does not expose `aarch64-pc-windows-gnu`.
+The Ubuntu amd64 cross-build task uses Rust target `x86_64-pc-windows-msvc`
+via `cargo xwin`, which avoids the GNU LLVM/MSVC runtime mixing that breaks the
+`rusty_v8`-based CLI link step on Linux. The arm64 task continues to use
+`aarch64-pc-windows-gnullvm`, because the current Linux Rust toolchain does not
+expose `aarch64-pc-windows-gnu`.
 
 ## Tracing / verbose logging
 

@@ -115,12 +115,127 @@ print_remote_download_command() {
   fi
 }
 
+resolve_v8_crate_version() {
+  awk '
+    BEGIN { in_v8 = 0 }
+    /^\[\[package\]\]$/ { in_v8 = 0; next }
+    $0 == "name = \"v8\"" { in_v8 = 1; next }
+    in_v8 && /^version = / {
+      gsub(/"/, "", $3)
+      print $3
+      exit
+    }
+  ' "$repo_root/codex-rs/Cargo.lock"
+}
+
+resolve_v8_binding_path() {
+  local crate_version="$1"
+  local binding_name="$2"
+  local cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+  local binding_path
+
+  binding_path="$(
+    find "$cargo_home/registry/src" -type f -path "*/v8-$crate_version/gen/$binding_name" 2>/dev/null \
+      | head -n 1
+  )"
+  if [ -n "$binding_path" ]; then
+    printf '%s\n' "$binding_path"
+    return 0
+  fi
+
+  cargo fetch --locked --manifest-path "$repo_root/codex-rs/Cargo.toml" >/dev/null
+
+  binding_path="$(
+    find "$cargo_home/registry/src" -type f -path "*/v8-$crate_version/gen/$binding_name" 2>/dev/null \
+      | head -n 1
+  )"
+  if [ -z "$binding_path" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$binding_path"
+}
+
+configure_windows_gnullvm_rusty_v8() {
+  local crate_version windows_arch msvc_target binding_name binding_path
+
+  case "$target" in
+    x86_64-pc-windows-gnullvm)
+      windows_arch="x86_64"
+      ;;
+    aarch64-pc-windows-gnullvm)
+      windows_arch="aarch64"
+      ;;
+    *)
+      return
+      ;;
+  esac
+
+  crate_version="$(resolve_v8_crate_version)"
+  if [ -z "$crate_version" ]; then
+    echo "[$build_task_name] 无法解析 v8 crate 版本" >&2
+    exit 1
+  fi
+
+  msvc_target="${windows_arch}-pc-windows-msvc"
+  binding_name="src_binding_release_${msvc_target}.rs"
+  if ! binding_path="$(resolve_v8_binding_path "$crate_version" "$binding_name")"; then
+    echo "[$build_task_name] 无法定位 rusty_v8 binding: $binding_name" >&2
+    exit 1
+  fi
+
+  export RUSTY_V8_ARCHIVE="https://github.com/denoland/rusty_v8/releases/download/v${crate_version}/rusty_v8_release_${msvc_target}.lib.gz"
+  export RUSTY_V8_SRC_BINDING_PATH="$binding_path"
+  export CODEX_RUSTY_V8_MSVC_TARGET="$msvc_target"
+  echo "[$build_task_name] 使用 rusty_v8 预编译覆盖: $msvc_target" >&2
+}
+
+prime_windows_gnullvm_rusty_v8_artifacts() {
+  local profile_dir="$1"
+  local target_dir v8_dir archive_root archive_path lib_path compat_lib_path sum_path
+
+  case "$target" in
+    *-windows-gnullvm)
+      ;;
+    *)
+      return
+      ;;
+  esac
+
+  target_dir="${CARGO_TARGET_DIR:-$repo_root/codex-rs/target}"
+  v8_dir="$target_dir/$target/$profile_dir/gn_out/obj"
+  archive_root="${CODEX_RUSTY_V8_ARCHIVE_ROOT:-$repo_root/.cache/rusty_v8}"
+  archive_path="$archive_root/rusty_v8_release_${CODEX_RUSTY_V8_MSVC_TARGET}.lib.gz"
+  lib_path="$v8_dir/rusty_v8.lib"
+  compat_lib_path="$v8_dir/librusty_v8.a"
+  sum_path="$v8_dir/rusty_v8.sum"
+
+  mkdir -p "$v8_dir" "$archive_root"
+
+  if [ -f "$lib_path" ] \
+    && [ -f "$compat_lib_path" ] \
+    && [ -f "$sum_path" ] \
+    && [ "$(cat "$sum_path")" = "$RUSTY_V8_ARCHIVE" ]; then
+    return
+  fi
+
+  curl_download "$RUSTY_V8_ARCHIVE" "$archive_path" "rusty_v8 ${CODEX_RUSTY_V8_MSVC_TARGET}"
+  gzip -cd "$archive_path" > "$lib_path"
+  cp "$lib_path" "$compat_lib_path"
+  printf '%s' "$RUSTY_V8_ARCHIVE" > "$sum_path"
+  echo "[$build_task_name] 已预热 rusty_v8 归档: $v8_dir" >&2
+}
+
 has_rust_target() {
   rustup target list --installed | grep -Fxq "$target"
 }
 
 has_cargo_zigbuild() {
   cargo zigbuild --help >/dev/null 2>&1
+}
+
+has_cargo_xwin() {
+  cargo xwin --help >/dev/null 2>&1
 }
 
 has_usable_zig() {
@@ -147,7 +262,11 @@ has_usable_zig() {
 bootstrap_cross_deps() {
   local should_bootstrap=0
 
-  if ! has_cargo_zigbuild || ! has_rust_target; then
+  if [ "$target" = "x86_64-pc-windows-msvc" ]; then
+    if ! has_cargo_xwin || ! has_rust_target; then
+      should_bootstrap=1
+    fi
+  elif ! has_cargo_zigbuild || ! has_rust_target; then
     should_bootstrap=1
   fi
 
@@ -178,13 +297,21 @@ ensure_cross_deps() {
 
   bootstrap_cross_deps
 
-  if ! has_cargo_zigbuild; then
-    echo "[$build_task_name] 缺少 cargo-zigbuild，请先运行 `mise run $deps_task_name`" >&2
+  if ! has_rust_target; then
+    echo "[$build_task_name] 缺少 Rust target $target，请先运行 `mise run $deps_task_name`" >&2
     exit 1
   fi
 
-  if ! has_rust_target; then
-    echo "[$build_task_name] 缺少 Rust target $target，请先运行 `mise run $deps_task_name`" >&2
+  if [ "$target" = "x86_64-pc-windows-msvc" ]; then
+    if ! has_cargo_xwin; then
+      echo "[$build_task_name] 缺少 cargo-xwin，请先运行 `mise run $deps_task_name`" >&2
+      exit 1
+    fi
+    return
+  fi
+
+  if ! has_cargo_zigbuild; then
+    echo "[$build_task_name] 缺少 cargo-zigbuild，请先运行 `mise run $deps_task_name`" >&2
     exit 1
   fi
 
@@ -192,6 +319,7 @@ ensure_cross_deps() {
   export CARGO_ZIGBUILD_ZIG_PATH="$zig_bin"
   export PATH="$(dirname "$zig_bin"):$PATH"
   echo "[$build_task_name] 使用 Zig: $zig_bin" >&2
+  configure_windows_gnullvm_rusty_v8
 }
 
 install_cross_deps() {
@@ -207,6 +335,20 @@ install_cross_deps() {
 
   if ! command -v rustup >/dev/null 2>&1; then
     die "[mise] 未找到 rustup，请先安装 Rust 工具链"
+  fi
+
+  if [ "$target" = "x86_64-pc-windows-msvc" ]; then
+    if ! has_cargo_xwin; then
+      cargo install --locked cargo-xwin
+    fi
+
+    if ! has_rust_target; then
+      rustup target add "$target"
+    fi
+
+    echo "[mise] ${target_label} Rust target 已就绪: $target" >&2
+    echo "[mise] 现在可以运行: mise run $build_task_name --release" >&2
+    return
   fi
 
   ensure_host_tools
