@@ -365,7 +365,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  作者：{author}\n");
+    let line = format!("  Author: {author}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -390,7 +390,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
             .count();
 
         if approved > 0 || changes > 0 {
-            let line = format!("  评审：{approved} 通过，{changes} 需修改\n");
+            let line = format!("  Reviews: {approved} approved, {changes} changes requested\n");
             filtered.push_str(&line);
             print!("{line}");
         }
@@ -425,11 +425,11 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
                 print!("{line}");
             }
         } else {
-            let line = format!("  检查：{passed}/{total} 通过\n");
+            let line = format!("  Checks: {passed}/{total} passed\n");
             filtered.push_str(&line);
             print!("{line}");
             if failed > 0 {
-                let line = format!("  ⚠️  {failed} 项检查失败\n");
+                let line = format!("  ⚠️  {failed} checks failed\n");
                 filtered.push_str(&line);
                 print!("{line}");
             }
@@ -515,26 +515,26 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 
     let mut filtered = String::new();
 
-    let line = "🔍 CI 检查摘要：\n";
+    let line = "🔍 CI Checks\n";
     filtered.push_str(line);
     print!("{line}");
 
-    let line = format!("  ✅ 通过：{passed}\n");
+    let line = format!("  ✅ Passed: {passed}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  ❌ 失败：{failed}\n");
+    let line = format!("  ❌ Failed: {failed}\n");
     filtered.push_str(&line);
     print!("{line}");
 
     if pending > 0 {
-        let line = format!("  ⏳ 待定：{pending}\n");
+        let line = format!("  ⏳ Pending: {pending}\n");
         filtered.push_str(&line);
         print!("{line}");
     }
 
     if !failed_checks.is_empty() {
-        let line = "\n  失败的检查：\n";
+        let line = "\n  Failed checks:\n";
         filtered.push_str(line);
         print!("{line}");
         for check in failed_checks {
@@ -580,7 +580,7 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     let mut filtered = String::new();
 
     if let Some(created_by) = json["createdBy"].as_array() {
-        let line = format!("📝 PRs（你创建的，{}）：\n", created_by.len());
+        let line = format!("📝 PRs (created by you, {})\n", created_by.len());
         filtered.push_str(&line);
         print!("{line}");
         for pr in created_by.iter().take(5) {
@@ -726,15 +726,15 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("{icon} Issue #{number}：{title}\n");
+    let line = format!("{icon} Issue #{number}: {title}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  作者：@{author}\n");
+    let line = format!("  Author: @{author}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  状态：{state}\n");
+    let line = format!("  State: {state}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -747,7 +747,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     {
         let body_filtered = filter_markdown_body(body);
         if !body_filtered.is_empty() {
-            let line = "\n  描述：\n";
+            let line = "\n  Body:\n";
             filtered.push_str(line);
             print!("{line}");
             for line in body_filtered.lines() {
@@ -931,10 +931,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
                 print!("{formatted}");
             }
         } else if line.contains("Status:") || line.contains("Conclusion:") {
-            let formatted_line = line
-                .replace("Status:", "状态：")
-                .replace("Conclusion:", "结论：");
-            let formatted = format!("  {}\n", formatted_line.trim());
+            let formatted = format!("  {}\n", line.trim());
             filtered.push_str(&formatted);
             print!("{formatted}");
         }
