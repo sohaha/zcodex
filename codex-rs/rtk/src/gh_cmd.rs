@@ -580,7 +580,7 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     let mut filtered = String::new();
 
     if let Some(created_by) = json["createdBy"].as_array() {
-        let line = format!("📝 Your PRs ({})：\n", created_by.len());
+        let line = format!("📝 PRs（你创建的，{}）：\n", created_by.len());
         filtered.push_str(&line);
         print!("{line}");
         for pr in created_by.iter().take(5) {
@@ -641,8 +641,8 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
 
     if let Some(issues) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("Issue\n");
-            println!("Issue");
+            filtered.push_str("Issues\n");
+            println!("Issues");
         } else {
             filtered.push_str("🐛 Issues\n");
             println!("🐛 Issues");
