@@ -16,7 +16,7 @@ use crate::parser::emit_degradation_warning;
 use crate::parser::emit_passthrough_warning;
 use crate::parser::truncate_output;
 
-/// pnpm list JSON output structure
+/// `pnpm list` 的 JSON 输出结构
 #[derive(Debug, Deserialize)]
 struct PnpmListOutput {
     #[serde(flatten)]
@@ -32,7 +32,7 @@ struct PnpmPackage {
     dev_dependencies: HashMap<String, PnpmPackage>,
 }
 
-/// pnpm outdated JSON output structure
+/// `pnpm outdated` 的 JSON 输出结构
 #[derive(Debug, Deserialize)]
 struct PnpmOutdatedOutput {
     #[serde(flatten)]
@@ -48,14 +48,14 @@ struct PnpmOutdatedPackage {
     dependency_type: String,
 }
 
-/// Parser for pnpm list output
+/// `pnpm list` 输出解析器
 pub struct PnpmListParser;
 
 impl OutputParser for PnpmListParser {
     type Output = DependencyState;
 
     fn parse(input: &str) -> ParseResult<DependencyState> {
-        // Tier 1: Try JSON parsing
+        // 第 1 层：尝试解析 JSON
         match serde_json::from_str::<PnpmListOutput>(input) {
             Ok(json) => {
                 let mut dependencies = Vec::new();
@@ -80,13 +80,13 @@ impl OutputParser for PnpmListParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // Tier 2: Try text extraction
+                // 第 2 层：尝试从文本提取
                 match extract_list_text(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // Tier 3: Passthrough
+                        // 第 3 层：直接透传
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -95,7 +95,7 @@ impl OutputParser for PnpmListParser {
     }
 }
 
-/// Recursively collect dependencies from pnpm package tree
+/// 递归收集 pnpm 包树中的依赖
 fn collect_dependencies(
     name: &str,
     pkg: &PnpmPackage,
@@ -123,13 +123,13 @@ fn collect_dependencies(
     }
 }
 
-/// Tier 2: Extract list info from text output
+/// 第 2 层：从文本输出中提取列表信息
 fn extract_list_text(output: &str) -> Option<DependencyState> {
     let mut dependencies = Vec::new();
     let mut count = 0;
 
     for line in output.lines() {
-        // Skip box-drawing and metadata
+        // 跳过框线字符和元数据
         if line.contains('│')
             || line.contains('├')
             || line.contains('└')
@@ -139,7 +139,7 @@ fn extract_list_text(output: &str) -> Option<DependencyState> {
             continue;
         }
 
-        // Parse lines like: "package@1.2.3"
+        // 解析形如 "package@1.2.3" 的行
         let parts: Vec<&str> = line.split_whitespace().collect();
         if !parts.is_empty() {
             let pkg_str = parts[0];
@@ -171,14 +171,14 @@ fn extract_list_text(output: &str) -> Option<DependencyState> {
     }
 }
 
-/// Parser for pnpm outdated output
+/// `pnpm outdated` 输出解析器
 pub struct PnpmOutdatedParser;
 
 impl OutputParser for PnpmOutdatedParser {
     type Output = DependencyState;
 
     fn parse(input: &str) -> ParseResult<DependencyState> {
-        // Tier 1: Try JSON parsing
+        // 第 1 层：尝试解析 JSON
         match serde_json::from_str::<PnpmOutdatedOutput>(input) {
             Ok(json) => {
                 let mut dependencies = Vec::new();
@@ -207,13 +207,13 @@ impl OutputParser for PnpmOutdatedParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // Tier 2: Try text extraction
+                // 第 2 层：尝试从文本提取
                 match extract_outdated_text(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // Tier 3: Passthrough
+                        // 第 3 层：直接透传
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -222,13 +222,13 @@ impl OutputParser for PnpmOutdatedParser {
     }
 }
 
-/// Tier 2: Extract outdated info from text output
+/// 第 2 层：从文本输出中提取过期信息
 fn extract_outdated_text(output: &str) -> Option<DependencyState> {
     let mut dependencies = Vec::new();
     let mut outdated_count = 0;
 
     for line in output.lines() {
-        // Skip box-drawing, headers, legend
+        // 跳过框线、表头和图例
         if line.contains('│')
             || line.contains('├')
             || line.contains('└')
@@ -240,7 +240,7 @@ fn extract_outdated_text(output: &str) -> Option<DependencyState> {
             continue;
         }
 
-        // Parse lines: "package  current  wanted  latest"
+        // 解析形如 "package  current  wanted  latest" 的行
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 4 {
             let name = parts[0];
@@ -272,18 +272,18 @@ fn extract_outdated_text(output: &str) -> Option<DependencyState> {
     }
 }
 
-/// Validates npm package name according to official rules
+/// 按 npm 官方规则校验包名
 fn is_valid_package_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 214 {
         return false;
     }
 
-    // No path traversal
+    // 禁止路径穿越
     if name.contains("..") {
         return false;
     }
 
-    // Only safe characters
+    // 仅允许安全字符
     name.chars()
         .all(|c| c.is_alphanumeric() || matches!(c, '@' | '/' | '-' | '_' | '.'))
 }
@@ -324,7 +324,7 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
 
     let stdout = crate::utils::decode_output(&output.stdout);
 
-    // Parse output using PnpmListParser
+    // 使用 PnpmListParser 解析输出
     let parse_result = PnpmListParser::parse(&stdout);
     let mode = FormatMode::from_verbosity(verbose);
 
@@ -376,7 +376,7 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let combined = format!("{stdout}{stderr}");
 
-    // Parse output using PnpmOutdatedParser
+    // 使用 PnpmOutdatedParser 解析输出
     let parse_result = PnpmOutdatedParser::parse(&stdout);
     let mode = FormatMode::from_verbosity(verbose);
 
@@ -413,7 +413,7 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
 fn run_install(packages: &[String], args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Validate package names to prevent command injection
+    // 校验包名，防止命令注入
     for pkg in packages {
         if !is_valid_package_name(pkg) {
             anyhow::bail!("无效的包名：'{pkg}'（包含不安全字符）");
@@ -458,13 +458,13 @@ fn run_install(packages: &[String], args: &[String], verbose: u8) -> Result<()> 
     Ok(())
 }
 
-/// Filter pnpm install output - remove progress bars, keep summary
+/// 过滤 `pnpm install` 输出：移除进度条，保留摘要
 fn filter_pnpm_install(output: &str) -> String {
     let mut result = Vec::new();
     let mut saw_progress = false;
 
     for line in output.lines() {
-        // Skip progress bars
+        // 跳过进度条
         if line.contains("Progress") || line.contains('│') || line.contains('%') {
             saw_progress = true;
             continue;
@@ -474,13 +474,13 @@ fn filter_pnpm_install(output: &str) -> String {
             continue;
         }
 
-        // Keep error lines
+        // 保留错误行
         if line.contains("ERR") || line.contains("error") || line.contains("ERROR") {
             result.push(line.to_string());
             continue;
         }
 
-        // Keep summary lines
+        // 保留摘要行
         if line.contains("packages in")
             || line.contains("dependencies")
             || line.starts_with('+')
@@ -497,7 +497,7 @@ fn filter_pnpm_install(output: &str) -> String {
     }
 }
 
-/// Runs an unsupported pnpm subcommand by passing it through directly
+/// 直接透传不受支持的 pnpm 子命令
 pub fn run_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -575,8 +575,8 @@ mod tests {
 
     #[test]
     fn test_run_passthrough_accepts_args() {
-        // Test that run_passthrough compiles and has correct signature
+        // 验证 run_passthrough 能编译且签名正确
         let _args: Vec<OsString> = vec![OsString::from("help")];
-        // Compile-time verification that the function exists with correct signature
+        // 编译期校验：函数存在且签名正确
     }
 }

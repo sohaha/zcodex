@@ -8,7 +8,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let mut cmd = package_manager_exec("prettier");
 
-    // Add user arguments
+    // 追加用户参数
     for arg in args {
         cmd.arg(arg);
     }
@@ -25,8 +25,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
-    // #221: If prettier is not installed or produced no meaningful output,
-    // show stderr as-is instead of a misleading "All files formatted" message.
+    // #221：如果 prettier 未安装或没有产生有效输出，
+    // 直接显示 stderr，避免误导性地提示“所有文件都已格式化”。
     let has_output = stdout.lines().any(|l| !l.trim().is_empty());
     if !has_output && !output.status.success() {
         let msg = stderr.trim();
@@ -55,7 +55,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }
@@ -63,9 +63,9 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter Prettier output - show only files that need formatting
+/// 过滤 Prettier 输出，仅显示需要格式化的文件
 pub fn filter_prettier_output(output: &str) -> String {
-    // #221: empty or whitespace-only output means prettier didn't run
+    // #221：空输出或纯空白输出意味着 prettier 实际没有运行成功
     if output.trim().is_empty() {
         return "错误：prettier 未产生输出".to_string();
     }
@@ -77,12 +77,12 @@ pub fn filter_prettier_output(output: &str) -> String {
     for line in output.lines() {
         let trimmed = line.trim();
 
-        // Detect check mode vs write mode
+        // 检测是 check 模式还是 write 模式
         if trimmed.contains("Checking formatting") {
             is_check_mode = true;
         }
 
-        // Count files that need formatting (check mode)
+        // 统计需要格式化的文件（check 模式）
         if !trimmed.is_empty()
             && !trimmed.starts_with("Checking")
             && !trimmed.starts_with("All matched")
@@ -101,7 +101,7 @@ pub fn filter_prettier_output(output: &str) -> String {
             files_to_format.push(trimmed.to_string());
         }
 
-        // Count total files checked
+        // 统计总检查文件数
         if trimmed.contains("All matched files use Prettier")
             && let Some(count_str) = trimmed.split_whitespace().next()
             && let Ok(count) = count_str.parse::<usize>()
@@ -110,12 +110,12 @@ pub fn filter_prettier_output(output: &str) -> String {
         }
     }
 
-    // Check if all files are formatted
+    // 检查是否所有文件都已格式化
     if files_to_format.is_empty() && output.contains("All matched files use Prettier") {
         return "✓ Prettier：所有文件格式正确".to_string();
     }
 
-    // Check if files were written (write mode)
+    // 检查是否有文件被写入（write 模式）
     if output.contains("modified") || output.contains("formatted") {
         is_check_mode = false;
     }
@@ -123,7 +123,7 @@ pub fn filter_prettier_output(output: &str) -> String {
     let mut result = String::new();
 
     if is_check_mode {
-        // Check mode: show files that need formatting
+        // check 模式：显示需要格式化的文件
         if files_to_format.is_empty() {
             result.push_str("✓ Prettier：所有文件格式正确\n");
         } else {
@@ -149,7 +149,7 @@ pub fn filter_prettier_output(output: &str) -> String {
             }
         }
     } else {
-        // Write mode: show what was formatted
+        // write 模式：显示已格式化内容
         result.push_str(&format!(
             "✓ Prettier：已格式化 {} 个文件\n",
             files_to_format.len()
@@ -200,7 +200,7 @@ Code style issues found in the above file(s). Forgot to run Prettier?
         assert!(result.contains("... +5 个文件"));
     }
 
-    // --- #221: empty output should not say "All files formatted" ---
+    // --- #221：空输出时不应提示“所有文件都已格式化” ---
 
     #[test]
     fn test_filter_empty_output() {

@@ -28,28 +28,28 @@ pub fn run(cmd: CargoCommand, args: &[String], verbose: u8) -> Result<()> {
     }
 }
 
-/// Reconstruct args with `--` separator preserved from the original command line.
-/// Clap strips `--` from parsed args, but cargo subcommands need it to separate
-/// their own flags from test runner flags (e.g. `cargo test -- --nocapture`).
+/// 从原始命令行重建参数，并保留 `--` 分隔符。
+/// Clap 会在解析后移除 `--`，但 cargo 子命令需要它来区分
+/// 自身参数和测试运行器参数（例如 `cargo test -- --nocapture`）。
 fn restore_double_dash(args: &[String]) -> Vec<String> {
     let raw_args: Vec<String> = std::env::args().collect();
     restore_double_dash_with_raw(args, &raw_args)
 }
 
-/// Testable version that takes raw_args explicitly.
+/// 可测试版本，显式接收 `raw_args`。
 fn restore_double_dash_with_raw(args: &[String], raw_args: &[String]) -> Vec<String> {
     if args.is_empty() {
         return args.to_vec();
     }
 
-    // Find `--` in the original command line
+    // 在原始命令行中查找 `--`
     let sep_pos = match raw_args.iter().position(|a| a == "--") {
         Some(pos) => pos,
         None => return args.to_vec(),
     };
 
-    // Count how many of our parsed args appeared before `--` in the original.
-    // Args before `--` are positional (e.g. test name), args after are flags.
+    // 统计解析后的参数中，有多少原本位于 `--` 之前。
+    // `--` 前通常是位置参数（如测试名），之后通常是标志位。
     let args_before_sep = raw_args[..sep_pos]
         .iter()
         .filter(|a| args.contains(a))
@@ -62,7 +62,7 @@ fn restore_double_dash_with_raw(args: &[String], raw_args: &[String]) -> Vec<Str
     result
 }
 
-/// Generic cargo command runner with filtering
+/// 带过滤逻辑的通用 cargo 命令执行器
 fn run_cargo_filtered<F>(subcommand: &str, args: &[String], verbose: u8, filter_fn: F) -> Result<()>
 where
     F: Fn(&str) -> String,
@@ -138,7 +138,7 @@ fn run_nextest(args: &[String], verbose: u8) -> Result<()> {
     run_cargo_filtered("nextest", args, verbose, filter_cargo_nextest)
 }
 
-/// Format crate name + version into a display string
+/// 将 crate 名称和版本格式化为展示字符串
 fn format_crate_info(name: &str, version: &str, fallback: &str) -> String {
     if name.is_empty() {
         fallback.to_string()
@@ -149,7 +149,7 @@ fn format_crate_info(name: &str, version: &str, fallback: &str) -> String {
     }
 }
 
-/// Filter cargo install output - strip dep compilation, keep installed/replaced/errors
+/// 过滤 `cargo install` 输出：移除依赖编译噪音，保留安装/替换/错误信息
 fn filter_cargo_install(output: &str) -> String {
     let mut errors: Vec<String> = Vec::new();
     let mut error_count = 0;
@@ -165,7 +165,7 @@ fn filter_cargo_install(output: &str) -> String {
     for line in output.lines() {
         let trimmed = line.trim_start();
 
-        // Strip noise: dep compilation, downloading, locking, etc.
+        // 去除噪音：依赖编译、下载、锁定等
         if trimmed.starts_with("Compiling") {
             compiled += 1;
             continue;
@@ -181,7 +181,7 @@ fn filter_cargo_install(output: &str) -> String {
             continue;
         }
 
-        // Keep: Installing line (extract crate name + version)
+        // 保留：Installing 行（提取 crate 名称和版本）
         if trimmed.starts_with("Installing") {
             let rest = trimmed.strip_prefix("Installing").unwrap_or("").trim();
             if !rest.is_empty() && !rest.starts_with('/') {
@@ -195,7 +195,7 @@ fn filter_cargo_install(output: &str) -> String {
             continue;
         }
 
-        // Keep: Installed line (extract crate + version if not already set)
+        // 保留：Installed 行（如果尚未记录则提取 crate 和版本）
         if trimmed.starts_with("Installed") {
             let rest = trimmed.strip_prefix("Installed").unwrap_or("").trim();
             if !rest.is_empty() && installed_crate.is_empty() {
@@ -208,21 +208,21 @@ fn filter_cargo_install(output: &str) -> String {
             continue;
         }
 
-        // Keep: Replacing/Replaced lines
+        // 保留：Replacing/Replaced 行
         if trimmed.starts_with("Replacing") || trimmed.starts_with("Replaced") {
             replaced_lines.push(trimmed.to_string());
             continue;
         }
 
-        // Keep: "Ignored package" (already up to date)
+        // 保留："Ignored package"（已是最新）
         if trimmed.starts_with("Ignored package") {
             already_installed = true;
             ignored_line = trimmed.to_string();
             continue;
         }
 
-        // Keep: actionable warnings (e.g., "be sure to add `/path` to your PATH")
-        // Skip summary lines like "warning: `crate` generated N warnings"
+        // 保留可操作的警告（例如 "be sure to add `/path` to your PATH"）
+        // 跳过类似 "warning: `crate` generated N warnings" 的摘要行
         if line.starts_with("warning:") {
             if !(line.contains("generated") && line.contains("warning")) {
                 replaced_lines.push(line.to_string());
@@ -230,7 +230,7 @@ fn filter_cargo_install(output: &str) -> String {
             continue;
         }
 
-        // Detect error blocks
+        // 识别错误块
         if line.starts_with("error[") || line.starts_with("error:") {
             if line.contains("aborting due to") || line.contains("could not compile") {
                 continue;
@@ -257,13 +257,13 @@ fn filter_cargo_install(output: &str) -> String {
         errors.push(current_error.join("\n"));
     }
 
-    // Already installed / up to date
+    // 已安装 / 已是最新
     if already_installed {
         let info = ignored_line.split('`').nth(1).unwrap_or(&ignored_line);
         return format!("✓ cargo install：{info} 已安装");
     }
 
-    // Errors
+    // 错误
     if error_count > 0 {
         let crate_info = format_crate_info(&installed_crate, &installed_version, "");
         let deps_info = if compiled > 0 {
@@ -297,7 +297,7 @@ fn filter_cargo_install(output: &str) -> String {
         return result.trim().to_string();
     }
 
-    // Success
+    // 成功
     let crate_info = format_crate_info(&installed_crate, &installed_version, "包");
 
     let mut result = format!("✓ cargo install（{crate_info}，已编译 {compiled} 个依赖）");
@@ -309,7 +309,7 @@ fn filter_cargo_install(output: &str) -> String {
     result
 }
 
-/// Push a completed failure block (header + body) into the failures list, then clear the buffers.
+/// 将完整的失败块（标题 + 正文）加入列表，然后清空缓冲区。
 fn flush_failure_block(header: &mut String, body: &mut Vec<String>, failures: &mut Vec<String>) {
     if header.is_empty() {
         return;
@@ -324,7 +324,7 @@ fn flush_failure_block(header: &mut String, body: &mut Vec<String>, failures: &m
     body.clear();
 }
 
-/// Filter cargo nextest output - show failures + compact summary
+/// 过滤 `cargo nextest` 输出：展示失败项和紧凑摘要
 fn filter_cargo_nextest(output: &str) -> String {
     static SUMMARY_RE: OnceLock<regex::Regex> = OnceLock::new();
     let summary_re = SUMMARY_RE.get_or_init(|| {
@@ -350,7 +350,7 @@ fn filter_cargo_nextest(output: &str) -> String {
     for line in output.lines() {
         let trimmed = line.trim();
 
-        // Strip compilation noise
+        // 去除编译噪音
         if trimmed.starts_with("Compiling")
             || trimmed.starts_with("Downloading")
             || trimmed.starts_with("Downloaded")
@@ -361,17 +361,17 @@ fn filter_cargo_nextest(output: &str) -> String {
             continue;
         }
 
-        // Strip separator lines (────)
+        // 去除分隔线（────）
         if trimmed.starts_with("────") {
             continue;
         }
 
-        // Skip post-summary recap lines (FAIL duplicates + "error: test run failed")
+        // 跳过摘要后的重复回顾行（重复 FAIL + "error: test run failed"）
         if past_summary {
             continue;
         }
 
-        // Parse binary count from Starting line
+        // 从 Starting 行解析二进制数量
         if trimmed.starts_with("Starting") {
             if let Some(caps) = starting_re.captures(trimmed)
                 && let Some(m) = caps.get(1)
@@ -381,7 +381,7 @@ fn filter_cargo_nextest(output: &str) -> String {
             continue;
         }
 
-        // Strip PASS lines
+        // 去除 PASS 行
         if trimmed.starts_with("PASS") {
             if in_failure_block {
                 flush_failure_block(
@@ -394,9 +394,9 @@ fn filter_cargo_nextest(output: &str) -> String {
             continue;
         }
 
-        // Detect FAIL lines
+        // 识别 FAIL 行
         if trimmed.starts_with("FAIL") {
-            // Close previous failure block if any
+            // 如有上一个失败块，先收尾
             if in_failure_block {
                 flush_failure_block(
                     &mut current_failure_header,
@@ -409,18 +409,18 @@ fn filter_cargo_nextest(output: &str) -> String {
             continue;
         }
 
-        // Cancellation notice
+        // 取消提示
         if trimmed.starts_with("Cancelling") || trimmed.starts_with("Canceling") {
             has_cancel_line = true;
             continue;
         }
 
-        // Nextest run ID line
+        // Nextest run ID 行
         if trimmed.starts_with("Nextest run ID") {
             continue;
         }
 
-        // Parse summary
+        // 解析摘要
         if trimmed.starts_with("Summary") {
             summary_line = trimmed.to_string();
             if in_failure_block {
@@ -435,13 +435,13 @@ fn filter_cargo_nextest(output: &str) -> String {
             continue;
         }
 
-        // Collect failure body lines (stdout/stderr sections)
+        // 收集失败正文（stdout/stderr 段落）
         if in_failure_block {
             current_failure_body.push(line.to_string());
         }
     }
 
-    // Close last failure block
+    // 收尾最后一个失败块
     if in_failure_block {
         flush_failure_block(
             &mut current_failure_header,
@@ -450,7 +450,7 @@ fn filter_cargo_nextest(output: &str) -> String {
         );
     }
 
-    // Parse summary with regex
+    // 用正则解析摘要
     if let Some(caps) = summary_re.captures(&summary_line) {
         let duration = caps.get(1).map_or("?", |m| m.as_str());
         let passed: u32 = caps
@@ -475,7 +475,7 @@ fn filter_cargo_nextest(output: &str) -> String {
         };
 
         if failed == 0 {
-            // All pass - compact single line
+            // 全部通过：输出紧凑单行
             let mut parts = vec![format!("{passed} 通过")];
             if skipped > 0 {
                 parts.push(format!("{skipped} 跳过"));
@@ -488,7 +488,7 @@ fn filter_cargo_nextest(output: &str) -> String {
             return format!("✓ cargo nextest：{}（{}）", parts.join(", "), meta);
         }
 
-        // With failures - show failure details then summary
+        // 有失败：先展示失败详情，再展示摘要
         let mut result = String::new();
 
         for failure in &failures {
@@ -521,7 +521,7 @@ fn filter_cargo_nextest(output: &str) -> String {
         return result.trim().to_string();
     }
 
-    // Fallback: if summary regex didn't match, show what we have
+    // 回退：如果摘要正则未匹配，则输出已收集内容
     if !failures.is_empty() {
         let mut result = String::new();
         for failure in &failures {
@@ -538,11 +538,11 @@ fn filter_cargo_nextest(output: &str) -> String {
         return summary_line;
     }
 
-    // Empty or unrecognized
+    // 空输出或无法识别
     String::new()
 }
 
-/// Filter cargo build/check output - strip "Compiling"/"Checking" lines, keep errors + summary
+/// 过滤 `cargo build/check` 输出：移除 "Compiling"/"Checking" 行，保留错误和摘要
 fn filter_cargo_build(output: &str) -> String {
     let mut errors: Vec<String> = Vec::new();
     let mut warnings = 0;
@@ -565,9 +565,9 @@ fn filter_cargo_build(output: &str) -> String {
             continue;
         }
 
-        // Detect error/warning blocks
+        // 识别错误/警告块
         if line.starts_with("error[") || line.starts_with("error:") {
-            // Skip "error: aborting due to" summary lines
+            // 跳过 "error: aborting due to" 这类摘要行
             if line.contains("aborting due to") || line.contains("could not compile") {
                 continue;
             }
@@ -632,7 +632,7 @@ fn filter_cargo_build(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Aggregated test results for compact display
+/// 用于紧凑展示的聚合测试结果
 #[derive(Debug, Default, Clone)]
 struct AggregatedTestResult {
     passed: usize,
@@ -646,8 +646,8 @@ struct AggregatedTestResult {
 }
 
 impl AggregatedTestResult {
-    /// Parse a test result summary line
-    /// Format: "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
+    /// 解析测试结果摘要行
+    /// 格式："test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s"
     fn parse_line(line: &str) -> Option<Self> {
         static RE: OnceLock<regex::Regex> = OnceLock::new();
         let re = RE.get_or_init(|| {
@@ -659,7 +659,7 @@ impl AggregatedTestResult {
         let caps = re.captures(line)?;
         let status = caps.get(1)?.as_str();
 
-        // Only aggregate if status is "ok" (all tests passed)
+        // 仅在状态为 "ok"（全部通过）时参与聚合
         if status != "ok" {
             return None;
         }
@@ -688,7 +688,7 @@ impl AggregatedTestResult {
         })
     }
 
-    /// Merge another test result into this one
+    /// 合并另一条测试结果
     fn merge(&mut self, other: &Self) {
         self.passed += other.passed;
         self.failed += other.failed;
@@ -700,7 +700,7 @@ impl AggregatedTestResult {
         self.has_duration = self.has_duration && other.has_duration;
     }
 
-    /// Format as compact single line
+    /// 格式化为紧凑单行
     fn format_compact(&self) -> String {
         let mut parts = vec![format!("{} 通过", self.passed)];
 
@@ -730,7 +730,7 @@ impl AggregatedTestResult {
     }
 }
 
-/// Filter cargo test output - show failures + summary only
+/// 过滤 `cargo test` 输出：仅展示失败项和摘要
 fn filter_cargo_test(output: &str) -> String {
     let mut failures: Vec<String> = Vec::new();
     let mut summary_lines: Vec<String> = Vec::new();
@@ -738,7 +738,7 @@ fn filter_cargo_test(output: &str) -> String {
     let mut current_failure = Vec::new();
 
     for line in output.lines() {
-        // Skip compilation lines
+        // 跳过编译行
         if line.trim_start().starts_with("Compiling")
             || line.trim_start().starts_with("Downloading")
             || line.trim_start().starts_with("Downloaded")
@@ -747,12 +747,12 @@ fn filter_cargo_test(output: &str) -> String {
             continue;
         }
 
-        // Skip "running N tests" and individual "test ... ok" lines
+        // 跳过 "running N tests" 和单条 "test ... ok" 行
         if line.starts_with("running ") || (line.starts_with("test ") && line.ends_with("... ok")) {
             continue;
         }
 
-        // Detect failures section
+        // 识别 failures 段落
         if line == "failures:" {
             in_failure_section = true;
             continue;
@@ -772,7 +772,7 @@ fn filter_cargo_test(output: &str) -> String {
             }
         }
 
-        // Capture test result summary
+        // 收集测试结果摘要
         if !in_failure_section && line.starts_with("test result:") {
             summary_lines.push(line.to_string());
         }
@@ -785,7 +785,7 @@ fn filter_cargo_test(output: &str) -> String {
     let mut result = String::new();
 
     if failures.is_empty() && !summary_lines.is_empty() {
-        // All passed - try to aggregate
+        // 全部通过：尝试聚合
         let mut aggregated: Option<AggregatedTestResult> = None;
         let mut all_parsed = true;
 
@@ -802,7 +802,7 @@ fn filter_cargo_test(output: &str) -> String {
             }
         }
 
-        // If all lines parsed successfully and we have at least one suite, return compact format
+        // 若所有行都解析成功且至少有一个套件，则返回紧凑格式
         if all_parsed
             && let Some(agg) = aggregated
             && agg.suites > 0
@@ -810,7 +810,7 @@ fn filter_cargo_test(output: &str) -> String {
             return agg.format_compact();
         }
 
-        // Fallback: use original behavior if regex failed
+        // 回退：若正则失败，则保留原始行为
         for line in &summary_lines {
             result.push_str(&format!("✓ {line}\n"));
         }
@@ -838,7 +838,7 @@ fn filter_cargo_test(output: &str) -> String {
     }
 
     if result.trim().is_empty() {
-        // Fallback: show last meaningful lines
+        // 回退：展示最后几行有意义的内容
         let meaningful: Vec<&str> = output
             .lines()
             .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with("Compiling"))
@@ -851,18 +851,18 @@ fn filter_cargo_test(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter cargo clippy output - group warnings by lint rule
+/// 过滤 `cargo clippy` 输出：按 lint 规则分组警告
 fn filter_cargo_clippy(output: &str) -> String {
     let mut by_rule: HashMap<String, Vec<String>> = HashMap::new();
     let mut error_count = 0;
     let mut warning_count = 0;
 
-    // Parse clippy output lines
-    // Format: "warning: description\n  --> file:line:col\n  |\n  | code\n"
+    // 解析 clippy 输出行
+    // 格式："warning: description\n  --> file:line:col\n  |\n  | code\n"
     let mut current_rule = String::new();
 
     for line in output.lines() {
-        // Skip compilation lines
+        // 跳过编译行
         if line.trim_start().starts_with("Compiling")
             || line.trim_start().starts_with("Checking")
             || line.trim_start().starts_with("Downloading")
@@ -872,15 +872,15 @@ fn filter_cargo_clippy(output: &str) -> String {
             continue;
         }
 
-        // "warning: unused variable [unused_variables]" or "warning: description [clippy::rule_name]"
+        // "warning: unused variable [unused_variables]" 或 "warning: description [clippy::rule_name]"
         if (line.starts_with("warning:") || line.starts_with("warning["))
             || (line.starts_with("error:") || line.starts_with("error["))
         {
-            // Skip summary lines: "warning: `rtk` (bin) generated 5 warnings"
+            // 跳过摘要行："warning: `rtk` (bin) generated 5 warnings"
             if line.contains("generated") && line.contains("warning") {
                 continue;
             }
-            // Skip "error: aborting" / "error: could not compile"
+            // 跳过 "error: aborting" / "error: could not compile"
             if line.contains("aborting due to") || line.contains("could not compile") {
                 continue;
             }
@@ -892,7 +892,7 @@ fn filter_cargo_clippy(output: &str) -> String {
                 warning_count += 1;
             }
 
-            // Extract rule name from brackets
+            // 从方括号中提取规则名
             current_rule = if let Some(bracket_start) = line.rfind('[') {
                 if let Some(bracket_end) = line.rfind(']') {
                     line[bracket_start + 1..bracket_end].to_string()
@@ -900,7 +900,7 @@ fn filter_cargo_clippy(output: &str) -> String {
                     line.to_string()
                 }
             } else {
-                // No bracket: use the message itself as the rule
+                // 没有方括号时，直接使用消息本身作为规则名
                 let prefix = if is_error { "error: " } else { "warning: " };
                 line.strip_prefix(prefix).unwrap_or(line).to_string()
             };
@@ -925,7 +925,7 @@ fn filter_cargo_clippy(output: &str) -> String {
     ));
     result.push_str("═══════════════════════════════════════\n");
 
-    // Sort rules by frequency
+    // 按出现频率排序规则
     let mut rule_counts: Vec<_> = by_rule.iter().collect();
     rule_counts.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
@@ -946,7 +946,7 @@ fn filter_cargo_clippy(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Runs an unsupported cargo subcommand by passing it through directly
+/// 直接透传不受支持的 cargo 子命令
 pub fn run_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn test_restore_double_dash_with_separator() {
-        // rtk cargo test -- --nocapture → clap gives ["--nocapture"]
+        // `rtk cargo test -- --nocapture` → clap 会给出 ["--nocapture"]
         let args: Vec<String> = vec!["--nocapture".into()];
         let raw = vec![
             "rtk".into(),
@@ -991,7 +991,7 @@ mod tests {
 
     #[test]
     fn test_restore_double_dash_with_test_name() {
-        // rtk cargo test my_test -- --nocapture → clap gives ["my_test", "--nocapture"]
+        // `rtk cargo test my_test -- --nocapture` → clap 会给出 ["my_test", "--nocapture"]
         let args: Vec<String> = vec!["my_test".into(), "--nocapture".into()];
         let raw = vec![
             "rtk".into(),
@@ -1007,7 +1007,7 @@ mod tests {
 
     #[test]
     fn test_restore_double_dash_without_separator() {
-        // rtk cargo test my_test → no --, args unchanged
+        // `rtk cargo test my_test` → 没有 `--`，参数保持不变
         let args: Vec<String> = vec!["my_test".into()];
         let raw = vec![
             "rtk".into(),
@@ -1029,7 +1029,7 @@ mod tests {
 
     #[test]
     fn test_restore_double_dash_clippy() {
-        // rtk cargo clippy -- -D warnings → clap gives ["-D", "warnings"]
+        // `rtk cargo clippy -- -D warnings` → clap 会给出 ["-D", "warnings"]
         let args: Vec<String> = vec!["-D".into(), "warnings".into()];
         let raw = vec![
             "rtk".into(),
@@ -1088,7 +1088,7 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test：15 通过（1 个套件，0.01s）"),
-            "Expected compact format, got: {result}"
+            "应输出紧凑格式，实际得到：{result}"
         );
         assert!(!result.contains("Compiling"));
         assert!(!result.contains("test utils"));
@@ -1144,7 +1144,7 @@ test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test：137 通过（4 个套件，1.45s）"),
-            "Expected aggregated format, got: {result}"
+            "应输出聚合格式，实际得到：{result}"
         );
         assert!(!result.contains("running"));
     }
@@ -1174,14 +1174,14 @@ running 10 tests
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 "#;
         let result = filter_cargo_test(output);
-        // Should NOT aggregate when there are failures
-        assert!(result.contains("失败"), "got: {result}");
-        assert!(result.contains("test_bad"), "got: {result}");
-        assert!(result.contains("test result:"), "got: {result}");
-        // Should show individual summaries
-        assert!(result.contains("20 passed"), "got: {result}");
-        assert!(result.contains("14 passed"), "got: {result}");
-        assert!(result.contains("10 passed"), "got: {result}");
+        // 存在失败时不应聚合
+        assert!(result.contains("失败"), "实际得到：{result}");
+        assert!(result.contains("test_bad"), "实际得到：{result}");
+        assert!(result.contains("test result:"), "实际得到：{result}");
+        // 应保留各自的摘要
+        assert!(result.contains("20 passed"), "实际得到：{result}");
+        assert!(result.contains("14 passed"), "实际得到：{result}");
+        assert!(result.contains("10 passed"), "实际得到：{result}");
     }
 
     #[test]
@@ -1207,7 +1207,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test：0 通过（3 个套件，0.00s）"),
-            "Expected compact format for zero tests, got: {result}"
+            "零测试时应输出紧凑格式，实际得到：{result}"
         );
     }
 
@@ -1226,7 +1226,7 @@ test result: ok. 18 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test：63 通过, 5 忽略, 2 已过滤（2 个套件，0.70s）"),
-            "Expected compact format with ignored and filtered, got: {result}"
+            "包含 ignored 和 filtered 时应输出紧凑格式，实际得到：{result}"
         );
     }
 
@@ -1240,7 +1240,7 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
         let result = filter_cargo_test(output);
         assert!(
             result.contains("✓ cargo test：15 通过（1 个套件，0.01s）"),
-            "Expected singular 'suite', got: {result}"
+            "单套件时应使用单数形式，实际得到：{result}"
         );
     }
 
@@ -1252,10 +1252,10 @@ running 15 tests
 test result: MALFORMED LINE WITHOUT PROPER FORMAT
 "#;
         let result = filter_cargo_test(output);
-        // Should fallback to original behavior (show line with checkmark)
+        // 应回退到原始行为（展示带勾号的结果行）
         assert!(
             result.contains("✓ test result: MALFORMED"),
-            "Expected fallback format, got: {result}"
+            "应回退到默认格式，实际得到：{result}"
         );
     }
 
@@ -1308,12 +1308,12 @@ warning: `rtk` (bin) generated 2 warnings
    Replaced package `rtk v0.9.4` with `rtk v0.11.0` (/Users/user/.cargo/bin/rtk)
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("rtk v0.11.0"), "got: {result}");
-        assert!(result.contains("已编译 5 个依赖"), "got: {result}");
-        assert!(result.contains("Replaced"), "got: {result}");
-        assert!(!result.contains("Compiling"), "got: {result}");
-        assert!(!result.contains("Downloading"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "实际得到：{result}");
+        assert!(result.contains("rtk v0.11.0"), "实际得到：{result}");
+        assert!(result.contains("已编译 5 个依赖"), "实际得到：{result}");
+        assert!(result.contains("Replaced"), "实际得到：{result}");
+        assert!(!result.contains("Compiling"), "实际得到：{result}");
+        assert!(!result.contains("Downloading"), "实际得到：{result}");
     }
 
     #[test]
@@ -1325,9 +1325,9 @@ warning: `rtk` (bin) generated 2 warnings
    Replaced package `rtk v0.9.4` with `rtk v0.11.0` (/Users/user/.cargo/bin/rtk)
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("Replacing"), "got: {result}");
-        assert!(result.contains("Replaced"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "实际得到：{result}");
+        assert!(result.contains("Replacing"), "实际得到：{result}");
+        assert!(result.contains("Replaced"), "实际得到：{result}");
     }
 
     #[test]
@@ -1343,10 +1343,13 @@ error[E0308]: mismatched types
 error: aborting due to 1 previous error
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("cargo install：1 个错误"), "got: {result}");
-        assert!(result.contains("E0308"), "got: {result}");
-        assert!(result.contains("mismatched types"), "got: {result}");
-        assert!(!result.contains("aborting"), "got: {result}");
+        assert!(
+            result.contains("cargo install：1 个错误"),
+            "实际得到：{result}"
+        );
+        assert!(result.contains("E0308"), "实际得到：{result}");
+        assert!(result.contains("mismatched types"), "实际得到：{result}");
+        assert!(!result.contains("aborting"), "实际得到：{result}");
     }
 
     #[test]
@@ -1354,8 +1357,8 @@ error: aborting due to 1 previous error
         let output = r#"  Ignored package `rtk v0.11.0`, is already installed
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("已安装"), "got: {result}");
-        assert!(result.contains("rtk v0.11.0"), "got: {result}");
+        assert!(result.contains("已安装"), "实际得到：{result}");
+        assert!(result.contains("rtk v0.11.0"), "实际得到：{result}");
     }
 
     #[test]
@@ -1363,15 +1366,15 @@ error: aborting due to 1 previous error
         let output = r#"  Ignored package `cargo-deb v2.1.0 (/Users/user/cargo-deb)`, is already installed
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("已安装"), "got: {result}");
-        assert!(result.contains("cargo-deb v2.1.0"), "got: {result}");
+        assert!(result.contains("已安装"), "实际得到：{result}");
+        assert!(result.contains("cargo-deb v2.1.0"), "实际得到：{result}");
     }
 
     #[test]
     fn test_filter_cargo_install_empty_output() {
         let result = filter_cargo_install("");
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("已编译 0 个依赖"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "实际得到：{result}");
+        assert!(result.contains("已编译 0 个依赖"), "实际得到：{result}");
     }
 
     #[test]
@@ -1384,12 +1387,12 @@ error: aborting due to 1 previous error
 warning: be sure to add `/Users/user/.cargo/bin` to your PATH
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "实际得到：{result}");
         assert!(
             result.contains("be sure to add"),
-            "PATH warning should be kept: {result}"
+            "应保留 PATH 警告：{result}"
         );
-        assert!(result.contains("Replaced"), "got: {result}");
+        assert!(result.contains("Replaced"), "实际得到：{result}");
     }
 
     #[test]
@@ -1411,13 +1414,10 @@ error[E0425]: cannot find value `foo`
 error: aborting due to 2 previous errors
 "#;
         let result = filter_cargo_install(output);
-        assert!(
-            result.contains("2 个错误"),
-            "should show 2 个错误: {result}"
-        );
-        assert!(result.contains("E0308"), "got: {result}");
-        assert!(result.contains("E0425"), "got: {result}");
-        assert!(!result.contains("aborting"), "got: {result}");
+        assert!(result.contains("2 个错误"), "应展示 2 个错误：{result}");
+        assert!(result.contains("E0308"), "实际得到：{result}");
+        assert!(result.contains("E0425"), "实际得到：{result}");
+        assert!(!result.contains("aborting"), "实际得到：{result}");
     }
 
     #[test]
@@ -1432,10 +1432,10 @@ error: aborting due to 2 previous errors
   Installing rtk v0.11.0
 "#;
         let result = filter_cargo_install(output);
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(!result.contains("Locking"), "got: {result}");
-        assert!(!result.contains("Blocking"), "got: {result}");
-        assert!(!result.contains("Downloading"), "got: {result}");
+        assert!(result.contains("✓ cargo install"), "实际得到：{result}");
+        assert!(!result.contains("Locking"), "实际得到：{result}");
+        assert!(!result.contains("Blocking"), "实际得到：{result}");
+        assert!(!result.contains("Downloading"), "实际得到：{result}");
     }
 
     #[test]
@@ -1445,9 +1445,9 @@ error: aborting due to 2 previous errors
     Finished `release` profile [optimized] target(s) in 10.0s
 "#;
         let result = filter_cargo_install(output);
-        // Path-based install: crate info not extracted from path
-        assert!(result.contains("✓ cargo install"), "got: {result}");
-        assert!(result.contains("已编译 1 个依赖"), "got: {result}");
+        // 基于路径的安装：不会从路径中提取 crate 信息
+        assert!(result.contains("✓ cargo install"), "实际得到：{result}");
+        assert!(result.contains("已编译 1 个依赖"), "实际得到：{result}");
     }
 
     #[test]
@@ -1473,7 +1473,7 @@ error: aborting due to 2 previous errors
         let result = filter_cargo_nextest(output);
         assert_eq!(
             result, "✓ cargo nextest：301 通过（1 个二进制, 0.192s）",
-            "got: {result}"
+            "实际得到：{result}"
         );
     }
 
@@ -1508,34 +1508,28 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("tests::failing_test"),
-            "should contain first failure: {result}"
+            "应包含第一个失败项：{result}"
         );
         assert!(
             result.contains("tests::another_failing"),
-            "should contain second failure: {result}"
+            "应包含第二个失败项：{result}"
         );
-        assert!(
-            result.contains("panicked"),
-            "should contain stderr detail: {result}"
-        );
+        assert!(result.contains("panicked"), "应包含 stderr 详情：{result}");
         assert!(
             result.contains("2 通过, 2 失败, 1 跳过"),
-            "should contain summary: {result}"
+            "应包含摘要：{result}"
         );
-        assert!(
-            !result.contains("PASS"),
-            "should not contain PASS lines: {result}"
-        );
-        // Post-summary FAIL recaps must not create duplicate FAIL header entries
-        // (test names may appear in both header and stderr body naturally)
+        assert!(!result.contains("PASS"), "不应包含 PASS 行：{result}");
+        // 摘要后的 FAIL 回顾行不应制造重复的 FAIL 标题
+        // （测试名自然可能同时出现在标题和 stderr 正文中）
         assert_eq!(
             result.matches("FAIL [").count(),
             2,
-            "should have exactly 2 FAIL headers (no post-summary duplicates): {result}"
+            "应只有 2 个 FAIL 标题（不能重复）：{result}"
         );
         assert!(
             !result.contains("error: test run failed"),
-            "should not contain post-summary error line: {result}"
+            "不应包含摘要后的错误行：{result}"
         );
     }
 
@@ -1550,7 +1544,7 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert_eq!(
             result, "✓ cargo nextest：50 通过, 3 跳过（2 个二进制, 0.500s）",
-            "got: {result}"
+            "实际得到：{result}"
         );
     }
 
@@ -1573,17 +1567,14 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("assertion failed: false"),
-            "should show panic message: {result}"
+            "应展示 panic 信息：{result}"
         );
-        assert!(
-            result.contains("1 通过, 1 失败"),
-            "should show summary: {result}"
-        );
-        // Post-summary recap must not duplicate FAIL headers
+        assert!(result.contains("1 通过, 1 失败"), "应展示摘要：{result}");
+        // 摘要后的回顾行不应重复 FAIL 标题
         assert_eq!(
             result.matches("FAIL [").count(),
             1,
-            "should have exactly 1 FAIL header (no post-summary duplicate): {result}"
+            "应只有 1 个 FAIL 标题（不能重复）：{result}"
         );
     }
 
@@ -1597,7 +1588,7 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert_eq!(
             result, "✓ cargo nextest：100 通过（5 个二进制, 1.234s）",
-            "got: {result}"
+            "实际得到：{result}"
         );
     }
 
@@ -1614,25 +1605,22 @@ error: test run failed
      Summary [   0.050s] 10 tests run: 10 passed, 0 skipped
 "#;
         let result = filter_cargo_nextest(output);
-        assert!(
-            !result.contains("Compiling"),
-            "should strip Compiling: {result}"
-        );
+        assert!(!result.contains("Compiling"), "应去除 Compiling：{result}");
         assert!(
             !result.contains("Downloading"),
-            "should strip Downloading: {result}"
+            "应去除 Downloading：{result}"
         );
+        assert!(!result.contains("Finished"), "应去除 Finished：{result}");
         assert!(
-            !result.contains("Finished"),
-            "should strip Finished: {result}"
+            result.contains("✓ cargo nextest：10 通过"),
+            "实际得到：{result}"
         );
-        assert!(result.contains("✓ cargo nextest：10 通过"), "got: {result}");
     }
 
     #[test]
     fn test_filter_cargo_nextest_empty() {
         let result = filter_cargo_nextest("");
-        assert!(result.is_empty(), "got: {result}");
+        assert!(result.is_empty(), "实际得到：{result}");
     }
 
     #[test]
@@ -1653,17 +1641,14 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("因测试失败已取消"),
-            "should include cancel notice: {result}"
+            "应包含取消提示：{result}"
         );
-        assert!(
-            result.contains("1 失败"),
-            "should show failure count: {result}"
-        );
-        // Post-summary recap must not duplicate FAIL headers
+        assert!(result.contains("1 失败"), "应展示失败数量：{result}");
+        // 摘要后的回顾行不应重复 FAIL 标题
         assert_eq!(
             result.matches("FAIL [").count(),
             1,
-            "should have exactly 1 FAIL header (no post-summary duplicate): {result}"
+            "应只有 1 个 FAIL 标题（不能重复）：{result}"
         );
     }
 
@@ -1677,7 +1662,7 @@ error: test run failed
         let result = filter_cargo_nextest(output);
         assert!(
             result.contains("Summary MALFORMED"),
-            "should fall back to raw summary: {result}"
+            "应回退到原始摘要：{result}"
         );
     }
 }

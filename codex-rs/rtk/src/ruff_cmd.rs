@@ -36,7 +36,7 @@ struct RuffDiagnostic {
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Detect subcommand: check, format, or version
+    // 检测子命令：check、format 或 version
     let is_check = args.is_empty()
         || args[0] == "check"
         || (!args[0].starts_with('-') && args[0] != "format" && args[0] != "version");
@@ -46,14 +46,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let mut cmd = resolved_command("ruff");
 
     if is_check {
-        // Force JSON output for check command
+        // 为 check 命令强制启用 JSON 输出
         if !args.contains(&"--output-format".to_string()) {
             cmd.arg("check").arg("--output-format=json");
         } else {
             cmd.arg("check");
         }
 
-        // Add user arguments (skip "check" if it was the first arg)
+        // 追加用户参数（若首参是 `check` 则跳过）
         let start_idx = if !args.is_empty() && args[0] == "check" {
             1
         } else {
@@ -63,7 +63,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             cmd.arg(arg);
         }
 
-        // Default to current directory if no path specified
+        // 若未指定路径，则默认使用当前目录
         if args
             .iter()
             .skip(start_idx)
@@ -72,7 +72,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             cmd.arg(".");
         }
     } else {
-        // Format or other commands - pass through
+        // format 或其他命令：直接透传
         for arg in args {
             cmd.arg(arg);
         }
@@ -95,7 +95,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     } else if is_format {
         filter_ruff_format(&raw)
     } else {
-        // Fallback for other commands (version, etc.)
+        // 回退处理其他命令（如 version）
         raw.trim().to_string()
     };
 
@@ -108,7 +108,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }
@@ -116,14 +116,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter ruff check JSON output - group by rule and file
+/// 过滤 `ruff check` 的 JSON 输出，按规则和文件分组
 pub fn filter_ruff_check_json(output: &str) -> String {
     let diagnostics: Result<Vec<RuffDiagnostic>, _> = serde_json::from_str(output);
 
     let diagnostics = match diagnostics {
         Ok(d) => d,
         Err(e) => {
-            // Fallback if JSON parsing fails
+            // JSON 解析失败时回退
             return format!(
                 "Ruff check（JSON 解析失败：{}）\n{}",
                 e,
@@ -139,18 +139,18 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     let total_issues = diagnostics.len();
     let fixable_count = diagnostics.iter().filter(|d| d.fix.is_some()).count();
 
-    // Count unique files
+    // 统计唯一文件数
     let unique_files: std::collections::HashSet<_> =
         diagnostics.iter().map(|d| &d.filename).collect();
     let total_files = unique_files.len();
 
-    // Group by rule code
+    // 按规则编码分组
     let mut by_rule: HashMap<String, usize> = HashMap::new();
     for diag in &diagnostics {
         *by_rule.entry(diag.code.clone()).or_insert(0) += 1;
     }
 
-    // Group by file
+    // 按文件分组
     let mut by_file: HashMap<&str, usize> = HashMap::new();
     for diag in &diagnostics {
         *by_file.entry(&diag.filename).or_insert(0) += 1;
@@ -159,7 +159,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     let mut file_counts: Vec<_> = by_file.iter().collect();
     file_counts.sort_by(|a, b| b.1.cmp(a.1));
 
-    // Build output
+    // 构造输出
     let mut result = String::new();
     result.push_str(&format!(
         "Ruff：{total_files} 个文件，{total_issues} 个问题"
@@ -171,7 +171,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     result.push('\n');
     result.push_str("═══════════════════════════════════════\n");
 
-    // Show top rules
+    // 显示高频规则
     let mut rule_counts: Vec<_> = by_rule.iter().collect();
     rule_counts.sort_by(|a, b| b.1.cmp(a.1));
 
@@ -183,13 +183,13 @@ pub fn filter_ruff_check_json(output: &str) -> String {
         result.push('\n');
     }
 
-    // Show top files
+    // 显示高频文件
     result.push_str("高频文件：\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
         result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
-        // Show top 3 rules in this file
+        // 显示该文件中最常见的 3 条规则
         let mut file_rules: HashMap<String, usize> = HashMap::new();
         for diag in diagnostics.iter().filter(|d| &d.filename == *file) {
             *file_rules.entry(diag.code.clone()).or_insert(0) += 1;
@@ -216,7 +216,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter ruff format output - show files that need formatting
+/// 过滤 `ruff format` 输出，显示需要格式化的文件
 pub fn filter_ruff_format(output: &str) -> String {
     let mut files_to_format: Vec<String> = Vec::new();
     let mut files_checked = 0;
@@ -225,24 +225,24 @@ pub fn filter_ruff_format(output: &str) -> String {
         let trimmed = line.trim();
         let lower = trimmed.to_lowercase();
 
-        // Count "would reformat" lines (check mode) - case insensitive
+        // 统计 `would reformat` 行（check 模式，不区分大小写）
         if lower.contains("would reformat:") {
-            // Extract filename from "Would reformat: path/to/file.py"
+            // 从 `Would reformat: path/to/file.py` 中提取文件名
             if let Some(filename) = trimmed.split(':').nth(1) {
                 files_to_format.push(filename.trim().to_string());
             }
         }
 
-        // Count total checked files - look for patterns like "3 files left unchanged"
+        // 统计检查过的文件总数，例如 `3 files left unchanged`
         if lower.contains("left unchanged") {
-            // Find "X file(s) left unchanged" pattern specifically
-            // Split by comma to handle "2 个文件 would be reformatted, 3 files left unchanged"
+            // 精确查找 `X file(s) left unchanged` 模式
+            // 按逗号切分，兼容 `2 个文件 would be reformatted, 3 files left unchanged`
             let parts: Vec<&str> = trimmed.split(',').collect();
             for part in parts {
                 let part_lower = part.to_lowercase();
                 if part_lower.contains("left unchanged") {
                     let words: Vec<&str> = part.split_whitespace().collect();
-                    // Look for number before "file" or "files"
+                    // 查找位于 `file/files` 之前的数字
                     for (i, word) in words.iter().enumerate() {
                         if (word == &"file" || word == &"files")
                             && i > 0
@@ -260,7 +260,7 @@ pub fn filter_ruff_format(output: &str) -> String {
 
     let output_lower = output.to_lowercase();
 
-    // Check if all files are formatted
+    // 检查是否所有文件都已格式化
     if files_to_format.is_empty() && output_lower.contains("left unchanged") {
         return "✓ Ruff format：所有文件格式正确".to_string();
     }
@@ -268,7 +268,7 @@ pub fn filter_ruff_format(output: &str) -> String {
     let mut result = String::new();
 
     if output_lower.contains("would reformat") {
-        // Check mode: show files that need formatting
+        // check 模式：显示需要格式化的文件
         if files_to_format.is_empty() {
             result.push_str("✓ Ruff format：所有文件格式正确\n");
         } else {
@@ -293,14 +293,14 @@ pub fn filter_ruff_format(output: &str) -> String {
             result.push_str("\n💡 运行 `ruff format` 格式化这些文件\n");
         }
     } else {
-        // Write mode or other output - show summary
+        // write 模式或其他输出：显示摘要
         result.push_str(output.trim());
     }
 
     result.trim().to_string()
 }
 
-/// Compact file path (remove common prefixes)
+/// 压缩文件路径（去除常见公共前缀）
 fn compact_path(path: &str) -> String {
     let path = path.replace('\\', "/");
 

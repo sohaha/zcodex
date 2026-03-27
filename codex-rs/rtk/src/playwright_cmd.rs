@@ -17,7 +17,7 @@ use crate::parser::emit_degradation_warning;
 use crate::parser::emit_passthrough_warning;
 use crate::parser::truncate_output;
 
-/// Matches real Playwright JSON reporter output (suites → specs → tests → results)
+/// 匹配真实的 Playwright JSON reporter 输出（suites → specs → tests → results）
 #[derive(Debug, Deserialize)]
 struct PlaywrightJsonOutput {
     stats: PlaywrightStats,
@@ -30,51 +30,51 @@ struct PlaywrightStats {
     expected: usize,
     unexpected: usize,
     skipped: usize,
-    /// Duration in milliseconds (float in real Playwright output)
+    /// 耗时，单位为毫秒（真实 Playwright 输出中是浮点数）
     #[serde(default)]
     duration: f64,
 }
 
-/// File-level or describe-level suite
+/// 文件级或 describe 级别的 suite
 #[derive(Debug, Deserialize)]
 struct PlaywrightSuite {
     title: String,
     #[serde(default)]
     file: Option<String>,
-    /// Individual test specs (test functions)
+    /// 单个测试 spec（测试函数）
     #[serde(default)]
     specs: Vec<PlaywrightSpec>,
-    /// Nested describe blocks
+    /// 嵌套的 describe 块
     #[serde(default)]
     suites: Vec<PlaywrightSuite>,
 }
 
-/// A single test function (may run in multiple browsers/projects)
+/// 单个测试函数（可能在多个浏览器/项目中运行）
 #[derive(Debug, Deserialize)]
 struct PlaywrightSpec {
     title: String,
-    /// Overall pass/fail status across all projects
+    /// 跨所有项目的整体通过/失败状态
     ok: bool,
-    /// Per-project/browser executions
+    /// 按项目/浏览器区分的执行记录
     #[serde(default)]
     tests: Vec<PlaywrightExecution>,
 }
 
-/// A test execution in a specific browser/project
+/// 某个浏览器/项目中的一次测试执行
 #[derive(Debug, Deserialize)]
 struct PlaywrightExecution {
-    /// "expected", "unexpected", "skipped", "flaky"
+    /// `"expected"`、`"unexpected"`、`"skipped"`、`"flaky"`
     status: String,
     #[serde(default)]
     results: Vec<PlaywrightAttempt>,
 }
 
-/// A single attempt/result for a test execution
+/// 一次测试执行中的单次尝试/结果
 #[derive(Debug, Deserialize)]
 struct PlaywrightAttempt {
-    /// "passed", "failed", "timedOut", "interrupted"
+    /// `"passed"`、`"failed"`、`"timedOut"`、`"interrupted"`
     status: String,
-    /// Error details (array in Playwright >= v1.30)
+    /// 错误详情（Playwright >= v1.30 中为数组）
     #[serde(default)]
     errors: Vec<PlaywrightError>,
 }
@@ -85,14 +85,14 @@ struct PlaywrightError {
     message: String,
 }
 
-/// Parser for Playwright JSON output
+/// Playwright JSON 输出解析器
 pub struct PlaywrightParser;
 
 impl OutputParser for PlaywrightParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // Tier 1: Try JSON parsing
+        // 第 1 层：尝试解析 JSON
         match serde_json::from_str::<PlaywrightJsonOutput>(input) {
             Ok(json) => {
                 let mut failures = Vec::new();
@@ -111,13 +111,13 @@ impl OutputParser for PlaywrightParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // Tier 2: Try regex extraction
+                // 第 2 层：尝试用正则提取
                 match extract_playwright_regex(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // Tier 3: Passthrough
+                        // 第 3 层：直接透传
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -138,7 +138,7 @@ fn collect_test_results(
             *total += 1;
 
             if !spec.ok {
-                // Find the first failed execution and its error message
+                // 找出第一个失败的执行记录及其错误信息
                 let error_msg = spec
                     .tests
                     .iter()
@@ -161,12 +161,12 @@ fn collect_test_results(
             }
         }
 
-        // Recurse into nested suites (describe blocks)
+        // 递归处理嵌套 suite（describe 块）
         collect_test_results(&suite.suites, total, failures);
     }
 }
 
-/// Tier 2: Extract test statistics using regex (degraded mode)
+/// 第 2 层：使用正则提取测试统计信息（降级模式）
 fn extract_playwright_regex(output: &str) -> Option<TestResult> {
     lazy_static::lazy_static! {
         static ref SUMMARY_RE: Regex = crate::utils::compile_regex(
@@ -183,7 +183,7 @@ fn extract_playwright_regex(output: &str) -> Option<TestResult> {
     let mut failed = 0;
     let mut skipped = 0;
 
-    // Parse summary counts
+    // 解析摘要计数
     for caps in SUMMARY_RE.captures_iter(&clean_output) {
         let count: usize = caps[1].parse().unwrap_or(0);
         match &caps[2] {
@@ -194,7 +194,7 @@ fn extract_playwright_regex(output: &str) -> Option<TestResult> {
         }
     }
 
-    // Parse duration
+    // 解析耗时
     let duration_ms = DURATION_RE.captures(&clean_output).and_then(|caps| {
         let value: f64 = caps[1].parse().ok()?;
         let unit = &caps[2];
@@ -206,7 +206,7 @@ fn extract_playwright_regex(output: &str) -> Option<TestResult> {
         })
     });
 
-    // Only return if we found valid data
+    // 仅在提取到有效数据时返回
     let total = passed + failed + skipped;
     if total > 0 {
         Some(TestResult {
@@ -222,7 +222,7 @@ fn extract_playwright_regex(output: &str) -> Option<TestResult> {
     }
 }
 
-/// Extract failures using regex
+/// 使用正则提取失败项
 fn extract_failures_regex(output: &str) -> Vec<TestFailure> {
     lazy_static::lazy_static! {
         static ref TEST_PATTERN: Regex = crate::utils::compile_regex(
@@ -249,8 +249,8 @@ fn extract_failures_regex(output: &str) -> Vec<TestFailure> {
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Skip `which playwright` — it can find pyenv shims or other non-Node
-    // binaries. Always resolve through the package manager.
+    // 不使用 `which playwright`，它可能命中 pyenv shim 或其他非 Node
+    // 可执行文件。统一通过包管理器解析。
     let pm = detect_package_manager();
     let mut cmd = match pm {
         "pnpm" => {
@@ -270,12 +270,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
     };
 
-    // Only inject --reporter=json for `playwright test` runs
+    // 仅在 `playwright test` 时注入 `--reporter=json`
     let is_test = args.first().map(|a| a == "test").unwrap_or(false);
     if is_test {
         cmd.arg("test");
         cmd.arg("--reporter=json");
-        // Strip user's --reporter to avoid conflicts with our forced JSON
+        // 移除用户传入的 --reporter，避免与强制 JSON reporter 冲突
         for arg in &args[1..] {
             if !arg.starts_with("--reporter") {
                 cmd.arg(arg);
@@ -299,7 +299,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
-    // Parse output using PlaywrightParser
+    // 使用 PlaywrightParser 解析输出
     let parse_result = PlaywrightParser::parse(&stdout);
     let mode = FormatMode::from_verbosity(verbose);
 
@@ -331,7 +331,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，方便 CI/CD 使用
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }
@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn test_playwright_parser_json() {
-        // Real Playwright JSON structure: suites → specs, with float duration
+        // 真实 Playwright JSON 结构：suites → specs，duration 为浮点数
         let json = r#"{
             "config": {},
             "stats": {
@@ -395,7 +395,7 @@ mod tests {
 
     #[test]
     fn test_playwright_parser_json_float_duration() {
-        // Real Playwright output uses float duration (e.g. 3519.7039999999997)
+        // 真实 Playwright 输出使用浮点数 duration（例如 3519.7039999999997）
         let json = r#"{
             "stats": {
                 "startTime": "2026-02-18T10:17:53.187Z",
@@ -469,7 +469,7 @@ mod tests {
     fn test_playwright_parser_regex_fallback() {
         let text = "3 passed (7.3s)";
         let result = PlaywrightParser::parse(text);
-        assert_eq!(result.tier(), 2); // Degraded
+        assert_eq!(result.tier(), 2); // 降级解析
         assert!(result.is_ok());
 
         let data = result.unwrap();
@@ -481,7 +481,7 @@ mod tests {
     fn test_playwright_parser_passthrough() {
         let invalid = "random output";
         let result = PlaywrightParser::parse(invalid);
-        assert_eq!(result.tier(), 3); // Passthrough
+        assert_eq!(result.tier(), 3); // 透传
         assert!(!result.is_ok());
     }
 }
