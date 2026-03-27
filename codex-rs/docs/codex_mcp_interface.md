@@ -158,6 +158,7 @@ The `tldr` tool exposes native code-context analysis with daemon-first execution
 - `impact`
 - `cfg`
 - `dfg`
+- `slice`
 - `semantic`
 - `ping`
 - `warm`
@@ -169,15 +170,17 @@ Typical inputs:
 
 - `project` - absolute or relative project root
 - `language` - one of `rust|typescript|javascript|python|go|php|zig`; `extract` can infer from file extension when omitted
-- `symbol` - optional symbol name for `tree|context|impact|cfg|dfg`
+- `symbol` - optional symbol name for `tree|context|impact|cfg|dfg`; required symbol-like target for `slice`
 - `query` - semantic query string for `semantic`
-- `path` - file path for `extract` and dirty file path for `notify`
+- `path` - file path for `extract` / `slice` and dirty file path for `notify`
+- `line` - target line for `slice`
 
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
 For `extract`, the analysis payload also includes the requested `path`, and `analysis.kind` is reported as `extract`.
+For `slice`, the analysis payload includes `path`, `line`, `analysis.kind = "slice"`, plus `analysis.details.slice_target` and `analysis.details.slice_lines` for the current backward slice result.
 For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `source`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata. `source` is either `daemon` (cached `SemanticIndex`) or `local`. The tool now projects a stable public match shape and does **not** expose internal fields such as `unit` or `embedding_text` by default.
 For `status`, the structured output includes `snapshot`, `daemonStatus`, and the latest `reindexReport` for the most recent semantic reindex attempt. `snapshot.last_reindex` remains the latest completed reindex, while `snapshot.last_reindex_attempt` can also surface a failed `warm` attempt. `daemonStatus` details `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons.
-The output schema is modeled as a union of three result families: analysis (`tree|extract|context|impact|cfg|dfg`), `semantic`, and daemon (`ping|warm|snapshot|status|notify`).
+The output schema is modeled as a union of three result families: analysis (`tree|extract|context|impact|cfg|dfg|slice`), `semantic`, and daemon (`ping|warm|snapshot|status|notify`).
 
 ## Approvals (server -> client)
 

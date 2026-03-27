@@ -148,8 +148,8 @@ mod tests {
         assert_eq!(
             tool_json["inputSchema"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree", "extract", "context", "impact", "cfg", "dfg", "semantic", "ping", "warm",
-                "snapshot", "status", "notify"
+                "tree", "extract", "context", "impact", "cfg", "dfg", "slice", "semantic", "ping",
+                "warm", "snapshot", "status", "notify"
             ])
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
@@ -159,7 +159,9 @@ mod tests {
         );
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
-            serde_json::json!(["tree", "extract", "context", "impact", "cfg", "dfg"])
+            serde_json::json!([
+                "tree", "extract", "context", "impact", "cfg", "dfg", "slice"
+            ])
         );
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["semanticResult"]["properties"]["action"]["const"],
@@ -402,6 +404,77 @@ mod tests {
         assert_eq!(structured["summary"], summary);
         assert_eq!(structured["analysis"]["kind"], "extract");
         assert_eq!(structured["path"], "src/lib.rs");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_slice_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary = "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Slice,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: Some("login".to_string()),
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+                line: Some(4),
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(codex_native_tldr::daemon::TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "slice ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Slice,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: Some("login".to_string()),
+                                truncated: false,
+                                slice_target: Some(codex_native_tldr::api::AnalysisSliceTarget {
+                                    path: "src/lib.rs".to_string(),
+                                    symbol: Some("login".to_string()),
+                                    line: 4,
+                                    direction: "backward".to_string(),
+                                }),
+                                slice_lines: vec![3, 4],
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("tool result serializes");
+        let structured = result
+            .structured_content
+            .clone()
+            .expect("structured content should be present");
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("slice rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "slice");
+        assert_eq!(structured["line"], 4);
+        assert_eq!(structured["analysis"]["kind"], "slice");
+        assert_eq!(
+            structured["analysis"]["details"]["slice_lines"],
+            serde_json::json!([3, 4])
+        );
     }
 
     #[tokio::test]

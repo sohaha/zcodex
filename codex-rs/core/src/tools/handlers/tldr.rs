@@ -478,6 +478,7 @@ mod tests {
                 symbol: None,
                 query: Some("auth login".to_string()),
                 path: None,
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -556,6 +557,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -582,6 +584,7 @@ mod tests {
                 symbol: Some("AuthService".to_string()),
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -594,6 +597,8 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("AuthService".to_string()),
                                 truncated: false,
+                                slice_target: None,
+                                slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail {
                                     kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
                                         name: "struct".to_string(),
@@ -695,6 +700,7 @@ mod tests {
                 symbol: Some("AuthService".to_string()),
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -707,6 +713,8 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("AuthService".to_string()),
                                 truncated: false,
+                                slice_target: None,
+                                slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: Vec::new(),
                                 nodes: Vec::new(),
@@ -763,6 +771,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: Some("src/lib.rs".to_string()),
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -777,6 +786,8 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: None,
                                 truncated: false,
+                                    slice_target: None,
+                                    slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: vec![codex_native_tldr::api::AnalysisFileDetail {
                                     path: "src/lib.rs".to_string(),
@@ -825,6 +836,68 @@ mod tests {
         assert_eq!(payload["action"], "extract");
         assert_eq!(payload["path"], "src/lib.rs");
         assert_eq!(payload["analysis"]["kind"], "extract");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_formats_slice_analysis_details() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Slice,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: Some("login".to_string()),
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+                line: Some(4),
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Slice,
+                            summary:
+                                "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]"
+                                    .to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: Some("login".to_string()),
+                                truncated: false,
+                                slice_target: Some(codex_native_tldr::api::AnalysisSliceTarget {
+                                    path: "src/lib.rs".to_string(),
+                                    symbol: Some("login".to_string()),
+                                    line: 4,
+                                    direction: "backward".to_string(),
+                                }),
+                                slice_lines: vec![3, 4],
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        ..daemon_ok("slice")
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("analysis kind: slice"));
+        assert_eq!(payload["action"], "slice");
+        assert_eq!(payload["line"], 4);
+        assert_eq!(payload["analysis"]["kind"], "slice");
+        assert_eq!(
+            payload["analysis"]["details"]["slice_lines"],
+            serde_json::json!([3, 4])
+        );
     }
 
     #[test]
@@ -881,6 +954,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("pong"))) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -906,6 +980,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: Some("src/lib.rs".to_string()),
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -951,6 +1026,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1009,6 +1085,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| {
                 let report = report.clone();
@@ -1078,6 +1155,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1100,6 +1178,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1126,6 +1205,7 @@ mod tests {
                 symbol: Some("AuthService".to_string()),
                 query: None,
                 path: None,
+                line: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
