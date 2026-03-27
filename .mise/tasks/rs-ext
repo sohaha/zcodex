@@ -10,9 +10,16 @@ codex_rs_dir="$repo_root/codex-rs"
 external_volume="${EXTERNAL_VOLUME:-/Volumes/V2}"
 external_tmp_root="${EXTERNAL_TMP_ROOT:-$external_volume/tmp}"
 external_target_dir="${EXTERNAL_TARGET_DIR:-$external_tmp_root/zcodex-cargo-target}"
+use_external_build_root=0
 
-if [ ! -d "$external_volume" ]; then
+if [ -n "${EXTERNAL_VOLUME:-}" ] || [ -n "${EXTERNAL_TMP_ROOT:-}" ] || [ -n "${EXTERNAL_TARGET_DIR:-}" ]; then
+  use_external_build_root=1
+fi
+
+if [ "$use_external_build_root" -eq 0 ]; then
   :
+elif [ ! -d "$external_volume" ]; then
+  echo "[mise] external build root does not exist: $external_volume" >&2
 elif [ -w "$external_volume" ]; then
   mkdir -p "$external_tmp_root" "$external_target_dir"
   if [ -w "$external_tmp_root" ] && [ -w "$external_target_dir" ]; then

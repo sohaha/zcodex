@@ -7,8 +7,26 @@ codex_rs_dir="$repo_root/codex-rs"
 source "$script_dir/lib-artifact-size"
 source "$script_dir/lib-ubuntu-macos-arm64"
 target="aarch64-apple-darwin"
-jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 sdk_path="${SDKROOT:-${MACOS_SDK_PATH:-$repo_root/.cache/macos-sdk/MacOSX.sdk}}"
+
+resolve_default_jobs() {
+  local cpu_count max_jobs
+
+  if command -v nproc >/dev/null 2>&1; then
+    cpu_count="$(nproc)"
+  else
+    cpu_count="$(getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1\n')"
+  fi
+
+  max_jobs="${CODEX_UBUNTU_MACOS_ARM64_MAX_JOBS:-8}"
+  if [ "$cpu_count" -gt "$max_jobs" ]; then
+    printf '%s\n' "$max_jobs"
+  else
+    printf '%s\n' "$cpu_count"
+  fi
+}
+
+jobs="${CARGO_BUILD_JOBS:-$(resolve_default_jobs)}"
 
 ensure_default_release_args() {
   for arg in "$@"; do
