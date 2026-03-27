@@ -150,7 +150,7 @@ Example:
 
 This tool is available only when `codex-mcp-server` is built with `--features tldr`.
 
-The `tldr` tool exposes native code-context analysis with daemon-first execution and local fallback. The current action surface is:
+The `tldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Daemon actions still require a live daemon. The current action surface is:
 
 - `tree`
 - `context`
