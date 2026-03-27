@@ -266,7 +266,7 @@ impl TokenFormatter for BuildOutput {
         if !self.bundles.is_empty() {
             let total_size: u64 = self.bundles.iter().map(|b| b.size_bytes).sum();
             lines.push(format!(
-                "Bundles：{}（{:.1} KB）",
+                "Bundles: {}（{:.1} KB）",
                 self.bundles.len(),
                 total_size as f64 / 1024.0
             ));
@@ -291,7 +291,7 @@ impl TokenFormatter for BuildOutput {
         )];
 
         if !self.bundles.is_empty() {
-            lines.push("\nBundles：".to_string());
+            lines.push("\nBundles:".to_string());
             for bundle in &self.bundles {
                 let gzip_info = bundle
                     .gzip_size_bytes

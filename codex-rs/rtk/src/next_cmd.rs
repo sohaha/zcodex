@@ -141,7 +141,7 @@ fn filter_next_build(output: &str) -> String {
     }
 
     if !bundles.is_empty() {
-        result.push_str("Bundles：\n");
+        result.push_str("Bundles:\n");
 
         // 按体积降序排序并展示前 10 条
         bundles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
