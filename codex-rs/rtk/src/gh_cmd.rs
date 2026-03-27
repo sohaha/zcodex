@@ -271,8 +271,8 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
     if let Some(prs) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("拉取请求\n");
-            println!("拉取请求");
+            filtered.push_str("PR\n");
+            println!("PR");
         } else {
             filtered.push_str("📋 PR 列表\n");
             println!("📋 PR 列表");
@@ -1058,7 +1058,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
         print!("{line}");
     }
 
-    let line = format!("  ⭐ {stars} 星标 | 🔱 {forks} 分叉\n");
+    let line = format!("  ⭐ {stars} 星标 | 🔱 {forks} Fork\n");
     filtered.push_str(&line);
     print!("{line}");
 
