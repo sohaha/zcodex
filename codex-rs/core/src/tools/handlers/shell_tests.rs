@@ -189,13 +189,22 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         ShellCommandHandler::route_command("head -20 src/main.rs").command,
         "codex rtk read src/main.rs --max-lines 20"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("command git status").command,
+        "codex rtk git status"
+    );
 }
 
 #[test]
 fn shell_command_handler_leaves_compound_commands_raw() {
+    let routed = ShellCommandHandler::route_command("git status | head");
+    assert_eq!(routed.command, "git status | head");
     assert_eq!(
-        ShellCommandHandler::route_command("git status | head").command,
-        "git status | head"
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\nreason: contains compound shell syntax\ncommand: git status | head"
+                .to_string()
+        )
     );
 }
 

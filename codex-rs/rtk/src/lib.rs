@@ -61,6 +61,10 @@ pub fn alias_name() -> &'static str {
     RTK_ALIAS_NAME
 }
 
+pub use rewrite::ShellCommandPassthroughReason;
+pub use rewrite::ShellCommandRewriteAnalysis;
+pub use rewrite::ShellCommandRewriteKind;
+pub use rewrite::analyze_shell_command;
 pub use rewrite::rewrite_shell_command;
 
 pub fn is_alias_invocation(argv0: &OsString) -> bool {

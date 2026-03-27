@@ -77,6 +77,13 @@ cargo build --release -p codex-cli --features tldr
 要以非交互方式运行 Codex，可执行 `codex exec PROMPT`（也可通过 `stdin` 传入 prompt）。Codex 会处理任务直到完成并退出，输出会直接打印到终端。你可以设置 `RUST_LOG` 以查看更多日志。
 使用 `codex exec --ephemeral ...` 可在不持久化会话产物的情况下运行。
 
+### shell_command 的内嵌 RTK 路由
+
+Rust CLI 当前不再向模型暴露 `rtk_*` tools。对于 `shell_command` 的一部分
+安全命令形态，`codex-core` 会在内部直接改写到嵌入式 `codex rtk ...`
+过滤层，以减少噪声输出；复杂 shell 语法仍会保留原始命令执行。更详细的
+实现说明见 [`core/README.md`](./core/README.md)。
+
 ### 体验 Codex 沙箱
 
 我们提供以下子命令，用于测试命令在 Codex 沙箱中的行为：

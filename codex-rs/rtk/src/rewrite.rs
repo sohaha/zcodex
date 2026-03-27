@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::Path;
 
 const CODEX_PREFIX: &str = "codex rtk";
 
@@ -36,35 +37,130 @@ const DIRECT_PREFIXES: &[&str] = &[
     "wget",
 ];
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ShellCommandRewriteAnalysis {
+    pub command: String,
+    pub kind: ShellCommandRewriteKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ShellCommandRewriteKind {
+    AlreadyRtk,
+    Rewritten,
+    Passthrough {
+        reason: ShellCommandPassthroughReason,
+        candidate: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellCommandPassthroughReason {
+    Empty,
+    ShellMetacharacters,
+    ParseFailed,
+    MissingCommand,
+    Sudo,
+    UnsupportedCommand,
+    UnsupportedArguments,
+}
+
+impl ShellCommandPassthroughReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Empty => "empty command",
+            Self::ShellMetacharacters => "contains compound shell syntax",
+            Self::ParseFailed => "failed to parse shell words",
+            Self::MissingCommand => "missing command after prefixes",
+            Self::Sudo => "sudo commands are never auto-routed",
+            Self::UnsupportedCommand => "command is not in the embedded RTK allowlist",
+            Self::UnsupportedArguments => {
+                "command shape is not supported by the embedded RTK rewriter"
+            }
+        }
+    }
+}
+
 pub fn rewrite_shell_command(command: &str) -> Option<String> {
+    let analysis = analyze_shell_command(command);
+    match analysis.kind {
+        ShellCommandRewriteKind::AlreadyRtk | ShellCommandRewriteKind::Rewritten => {
+            Some(analysis.command)
+        }
+        ShellCommandRewriteKind::Passthrough { .. } => None,
+    }
+}
+
+pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
     let trimmed = command.trim();
-    if trimmed.is_empty() || contains_shell_metacharacters(trimmed) {
-        return None;
+    if trimmed.is_empty() {
+        return passthrough(trimmed, ShellCommandPassthroughReason::Empty, false);
     }
     if trimmed.starts_with(CODEX_PREFIX) || trimmed == "rtk" || trimmed.starts_with("rtk ") {
-        return Some(trimmed.to_string());
+        return ShellCommandRewriteAnalysis {
+            command: trimmed.to_string(),
+            kind: ShellCommandRewriteKind::AlreadyRtk,
+        };
+    }
+    if contains_shell_metacharacters(trimmed) {
+        return passthrough(
+            trimmed,
+            ShellCommandPassthroughReason::ShellMetacharacters,
+            looks_like_rtk_candidate(trimmed),
+        );
     }
 
-    let args = shlex::split(trimmed)?;
-    let (prefix, routed_args) = split_leading_env_prefix(&args)?;
-    let [first, rest @ ..] = routed_args else {
-        return None;
+    let Some(args) = shlex::split(trimmed) else {
+        return passthrough(
+            trimmed,
+            ShellCommandPassthroughReason::ParseFailed,
+            looks_like_rtk_candidate(trimmed),
+        );
     };
-    if first == "sudo" {
-        return None;
+    let Some((prefix, routed_args)) = split_leading_env_prefix(&args) else {
+        return passthrough(
+            trimmed,
+            ShellCommandPassthroughReason::MissingCommand,
+            looks_like_rtk_candidate(trimmed),
+        );
+    };
+    let Some((target, rest)) = split_command_prefix(routed_args) else {
+        return passthrough(
+            trimmed,
+            ShellCommandPassthroughReason::MissingCommand,
+            looks_like_rtk_candidate(trimmed),
+        );
+    };
+    if target == "sudo" {
+        return passthrough(trimmed, ShellCommandPassthroughReason::Sudo, true);
     }
 
-    let rewritten = match first.as_str() {
+    let rewritten = match target.as_str() {
         "cat" => rewrite_cat(rest),
         "head" => rewrite_head(rest),
         "tail" => rewrite_tail(rest),
         command if DIRECT_PREFIXES.contains(&command) => {
-            Some(format!("{CODEX_PREFIX} {}", join_shell_words(routed_args)))
+            Some(format!("{CODEX_PREFIX} {command}{}", join_rest_args(rest)))
         }
-        _ => None,
-    }?;
+        _ => {
+            return passthrough(
+                trimmed,
+                ShellCommandPassthroughReason::UnsupportedCommand,
+                false,
+            );
+        }
+    };
 
-    Some(prepend_prefix(&prefix, &rewritten))
+    match rewritten {
+        Some(rewritten) => ShellCommandRewriteAnalysis {
+            command: prepend_prefix(&prefix, &rewritten),
+            kind: ShellCommandRewriteKind::Rewritten,
+        },
+        None => passthrough(
+            trimmed,
+            ShellCommandPassthroughReason::UnsupportedArguments,
+            true,
+        ),
+    }
 }
 
 fn rewrite_cat(rest: &[String]) -> Option<String> {
@@ -175,6 +271,10 @@ fn split_leading_env_prefix(args: &[String]) -> Option<(Vec<String>, &[String])>
     if args.get(index).is_some_and(|arg| arg == "env") {
         prefix.push("env".to_string());
         index += 1;
+        if args.get(index).is_some_and(|arg| arg == "--") {
+            prefix.push("--".to_string());
+            index += 1;
+        }
         while let Some(arg) = args.get(index) {
             if is_env_assignment(arg) {
                 prefix.push(arg.clone());
@@ -192,6 +292,27 @@ fn split_leading_env_prefix(args: &[String]) -> Option<(Vec<String>, &[String])>
             Some((prefix, rest))
         }
     })
+}
+
+fn split_command_prefix(args: &[String]) -> Option<(String, &[String])> {
+    let [first, rest @ ..] = args else {
+        return None;
+    };
+    if first == "command" {
+        let [next, tail @ ..] = rest else {
+            return None;
+        };
+        return Some((normalize_command_name(next), tail));
+    }
+    Some((normalize_command_name(first), rest))
+}
+
+fn normalize_command_name(command: &str) -> String {
+    Path::new(command)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(command)
+        .to_string()
 }
 
 fn is_env_assignment(value: &str) -> bool {
@@ -232,6 +353,47 @@ fn join_shell_words(words: &[String]) -> String {
         .join(" ")
 }
 
+fn join_rest_args(words: &[String]) -> String {
+    if words.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", join_shell_words(words))
+    }
+}
+
+fn passthrough(
+    command: &str,
+    reason: ShellCommandPassthroughReason,
+    candidate: bool,
+) -> ShellCommandRewriteAnalysis {
+    ShellCommandRewriteAnalysis {
+        command: command.to_string(),
+        kind: ShellCommandRewriteKind::Passthrough { reason, candidate },
+    }
+}
+
+fn looks_like_rtk_candidate(command: &str) -> bool {
+    let mut words = command.split_whitespace().peekable();
+    while let Some(word) = words.peek().copied() {
+        if is_env_assignment(word) {
+            words.next();
+            continue;
+        }
+        if word == "env" || word == "--" {
+            words.next();
+            continue;
+        }
+        if word == "command" {
+            words.next();
+            continue;
+        }
+        let name = normalize_command_name(word);
+        return matches!(name.as_str(), "cat" | "head" | "tail")
+            || DIRECT_PREFIXES.contains(&name.as_str());
+    }
+    false
+}
+
 fn parse_numeric_short_flag<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
     value
         .strip_prefix(prefix)
@@ -264,6 +426,9 @@ fn shell_escape(value: &str) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
+    use super::ShellCommandPassthroughReason;
+    use super::ShellCommandRewriteKind;
+    use super::analyze_shell_command;
     use super::rewrite_shell_command;
 
     #[test]
@@ -275,6 +440,14 @@ mod tests {
         assert_eq!(
             rewrite_shell_command("cargo test -p codex-core"),
             Some("codex rtk cargo test -p codex-core".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("command git status"),
+            Some("codex rtk git status".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("/usr/bin/git status"),
+            Some("codex rtk git status".to_string())
         );
     }
 
@@ -329,6 +502,23 @@ mod tests {
         assert_eq!(
             rewrite_shell_command("env FOO=1 BAR=2 grep TODO src"),
             Some("env FOO=1 BAR=2 codex rtk grep TODO src".to_string())
+        );
+        assert_eq!(
+            rewrite_shell_command("env -- FOO=1 git status"),
+            Some("env -- FOO=1 codex rtk git status".to_string())
+        );
+    }
+
+    #[test]
+    fn reports_passthrough_reason_for_supported_command_shapes() {
+        let analysis = analyze_shell_command("git status | head");
+        assert_eq!(analysis.command, "git status | head");
+        assert_eq!(
+            analysis.kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::ShellMetacharacters,
+                candidate: true,
+            }
         );
     }
 }

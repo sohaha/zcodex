@@ -98,3 +98,30 @@ enforcement.
 ### All Platforms
 
 Expects the binary containing `codex-core` to simulate the virtual `apply_patch` CLI when `arg1` is `--codex-run-as-apply-patch`. See the `codex-arg0` crate for details.
+
+## Embedded RTK shell routing
+
+`shell_command` no longer exposes model-visible `rtk_*` tools or a separate RTK
+prompt block. Instead, `codex-core` can transparently hard-route a narrow set of
+safe shell invocations through embedded `codex rtk ...` filtering before
+execution.
+
+Current behavior:
+
+- supported direct commands such as `git`, `cargo`, `grep`, `npm`, `pnpm`,
+  `pytest`, `docker`, `kubectl`, `aws`, `psql`, `curl`, and `wget` may be
+  rewritten to `codex rtk ...`
+- file readers such as `cat`, `head`, and `tail` may be rewritten to
+  `codex rtk read ...`
+- simple prefixes such as leading env assignments, `env`, `env --`, and
+  `command` are supported when the routed command shape stays unambiguous
+- compound shell syntax such as pipes, redirects, command substitution, or
+  other unsupported shapes remains raw
+
+Observability:
+
+- when a command is rewritten, the exec event carries the original input via
+  `interaction_input`, and the tool output includes both the original and
+  executed commands
+- when a command looks RTK-eligible but is intentionally kept raw, the tool
+  output includes an explicit skip reason

@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ShellCommandToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
-use codex_rtk::rewrite_shell_command;
+use codex_rtk::ShellCommandRewriteKind;
+use codex_rtk::analyze_shell_command;
 use std::sync::Arc;
 
 use crate::codex::TurnContext;
@@ -122,22 +123,33 @@ impl ShellCommandHandler {
     }
 
     fn route_command(command: &str) -> RoutedCommand {
-        let original = command.trim().to_string();
-        let routed = rewrite_shell_command(command).unwrap_or_else(|| command.to_string());
-        if routed == original {
-            RoutedCommand {
-                command: routed,
+        let analysis = analyze_shell_command(command);
+        match analysis.kind {
+            ShellCommandRewriteKind::AlreadyRtk => RoutedCommand {
+                command: analysis.command,
                 interaction_input: None,
                 model_output_prefix: None,
-            }
-        } else {
-            RoutedCommand {
+            },
+            ShellCommandRewriteKind::Rewritten => RoutedCommand {
                 model_output_prefix: Some(format!(
-                    "[shell_command routed via embedded RTK]\noriginal: {original}\nexecuted: {routed}"
+                    "[shell_command routed via embedded RTK]\noriginal: {}\nexecuted: {}",
+                    command.trim(),
+                    analysis.command
                 )),
-                interaction_input: Some(original),
-                command: routed,
-            }
+                interaction_input: Some(command.trim().to_string()),
+                command: analysis.command,
+            },
+            ShellCommandRewriteKind::Passthrough { reason, candidate } => RoutedCommand {
+                command: analysis.command,
+                interaction_input: None,
+                model_output_prefix: candidate.then(|| {
+                    format!(
+                        "[shell_command kept raw]\nreason: {}\ncommand: {}",
+                        reason.as_str(),
+                        command.trim()
+                    )
+                }),
+            },
         }
     }
 
