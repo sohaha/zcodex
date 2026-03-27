@@ -104,9 +104,23 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
         return passthrough(trimmed, ShellCommandPassthroughReason::Empty, false);
     }
     if let Some(rest) = trimmed.strip_prefix("codex rtk ") {
-        return ShellCommandRewriteAnalysis {
-            command: format!("{RTK_PREFIX} {rest}"),
-            kind: ShellCommandRewriteKind::Rewritten,
+        if rest.starts_with('-') {
+            return ShellCommandRewriteAnalysis {
+                command: format!("{RTK_PREFIX} {rest}"),
+                kind: ShellCommandRewriteKind::Rewritten,
+            };
+        }
+        let nested = analyze_shell_command(rest);
+        return match nested.kind {
+            ShellCommandRewriteKind::AlreadyRtk | ShellCommandRewriteKind::Rewritten => {
+                ShellCommandRewriteAnalysis {
+                    command: nested.command,
+                    kind: ShellCommandRewriteKind::Rewritten,
+                }
+            }
+            ShellCommandRewriteKind::Passthrough { reason, candidate } => {
+                passthrough(trimmed, reason, candidate)
+            }
         };
     }
     if trimmed == "codex rtk" {
@@ -866,6 +880,11 @@ mod tests {
             rewrite_shell_command("codex rtk git status"),
             Some("rtk git status".to_string())
         );
+        assert_eq!(
+            rewrite_shell_command("codex rtk --help"),
+            Some("rtk --help".to_string())
+        );
+        assert_eq!(rewrite_shell_command("codex rtk"), Some("rtk".to_string()));
     }
 
     #[test]
@@ -992,6 +1011,13 @@ mod tests {
         );
         assert_eq!(
             analyze_shell_command("git status >/tmp/out").kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::ShellMetacharacters,
+                candidate: true,
+            }
+        );
+        assert_eq!(
+            analyze_shell_command("codex rtk git status | head").kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::ShellMetacharacters,
                 candidate: true,
