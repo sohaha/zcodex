@@ -63,8 +63,8 @@ struct MypyError {
 
 pub fn filter_mypy_output(output: &str) -> String {
     lazy_static::lazy_static! {
-        // file.py:12: error: Message [error-code]
-        // file.py:12:5: error: Message [error-code]
+        // `file.py:12: error: Message [error-code]`
+        // `file.py:12:5: error: Message [error-code]`
         static ref MYPY_DIAG: Regex = crate::utils::compile_regex(
             r"^(.+?):(\d+)(?::\d+)?: (error|warning|note): (.+?)(?:\s+\[(.+)\])?$"
         );
@@ -78,12 +78,12 @@ pub fn filter_mypy_output(output: &str) -> String {
     while i < lines.len() {
         let line = lines[i];
 
-        // Skip mypy's own summary line
+        // 跳过 mypy 自己的摘要行
         if line.starts_with("Found ") && line.contains(" error") {
             i += 1;
             continue;
         }
-        // Skip "Success: no issues found"
+        // 跳过 `Success: no issues found`
         if line.starts_with("Success:") {
             i += 1;
             continue;
@@ -100,7 +100,7 @@ pub fn filter_mypy_output(output: &str) -> String {
                 .unwrap_or_default();
 
             if severity == "note" {
-                // Attach note to preceding error if same file and line
+                // 如果文件和行号一致，则把 note 挂到前一个错误上
                 if let Some(last) = errors.last_mut()
                     && last.file == file
                 {
@@ -108,7 +108,7 @@ pub fn filter_mypy_output(output: &str) -> String {
                     i += 1;
                     continue;
                 }
-                // Standalone note with no parent -- display as fileless
+                // 没有关联父错误的独立 note：按无文件错误展示
                 fileless_lines.push(line.to_string());
                 i += 1;
                 continue;
@@ -122,7 +122,7 @@ pub fn filter_mypy_output(output: &str) -> String {
                 context_lines: Vec::new(),
             };
 
-            // Capture continuation note lines
+            // 捕获后续连续的 note 行
             i += 1;
             while i < lines.len() {
                 if let Some(next_caps) = MYPY_DIAG.captures(lines[i])
@@ -139,7 +139,7 @@ pub fn filter_mypy_output(output: &str) -> String {
 
             errors.push(err);
         } else if line.contains("error:") && !line.trim().is_empty() {
-            // File-less error (config errors, import errors)
+            // 无文件归属的错误（如配置错误、导入错误）
             fileless_lines.push(line.to_string());
             i += 1;
         } else {
@@ -147,7 +147,7 @@ pub fn filter_mypy_output(output: &str) -> String {
         }
     }
 
-    // No errors at all
+    // 完全没有错误
     if errors.is_empty() && fileless_lines.is_empty() {
         if output.contains("Success: no issues found") || output.contains("no issues found") {
             return "mypy：未发现问题".to_string();
@@ -155,13 +155,13 @@ pub fn filter_mypy_output(output: &str) -> String {
         return "mypy：未发现问题".to_string();
     }
 
-    // Group by file
+    // 按文件分组
     let mut by_file: HashMap<String, Vec<&MypyError>> = HashMap::new();
     for err in &errors {
         by_file.entry(err.file.clone()).or_default().push(err);
     }
 
-    // Count by error code
+    // 按错误码统计
     let mut by_code: HashMap<String, usize> = HashMap::new();
     for err in &errors {
         if !err.code.is_empty() {
@@ -171,7 +171,7 @@ pub fn filter_mypy_output(output: &str) -> String {
 
     let mut result = String::new();
 
-    // File-less errors first
+    // 先输出无文件归属的错误
     for line in &fileless_lines {
         result.push_str(line);
         result.push('\n');
@@ -188,7 +188,7 @@ pub fn filter_mypy_output(output: &str) -> String {
         ));
         result.push_str("═══════════════════════════════════════\n");
 
-        // Top error codes summary (only when 2+ distinct codes)
+        // 错误码汇总（仅在存在 2 个及以上不同错误码时显示）
         let mut code_counts: Vec<_> = by_code.iter().collect();
         code_counts.sort_by(|a, b| b.1.cmp(a.1));
 
@@ -196,12 +196,12 @@ pub fn filter_mypy_output(output: &str) -> String {
             let codes_str: Vec<String> = code_counts
                 .iter()
                 .take(5)
-                .map(|(code, count)| format!("{code} ({count}x)"))
+                .map(|(code, count)| format!("{code}（{count} 次）"))
                 .collect();
             result.push_str(&format!("错误码：{}\n\n", codes_str.join(", ")));
         }
 
-        // Files sorted by error count (most errors first)
+        // 按错误数排序文件（错误最多的在前）
         let mut files_sorted: Vec<_> = by_file.iter().collect();
         files_sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
@@ -250,12 +250,12 @@ Found 5 errors in 2 files (checked 10 source files)
 ";
         let result = filter_mypy_output(output);
         assert!(result.contains("mypy：5 个错误，2 个文件"));
-        // user.py has 3 errors, auth.py has 2 -- user.py should come first
+        // `user.py` 有 3 个错误，`auth.py` 有 2 个，`user.py` 应排在前面
         let user_pos = result.find("user.py").unwrap();
         let auth_pos = result.find("auth.py").unwrap();
         assert!(
             user_pos < auth_pos,
-            "user.py (3 errors) should appear before auth.py (2 errors)"
+            "`user.py`（3 个错误）应排在 `auth.py`（2 个错误）前面"
         );
         assert!(result.contains("user.py（3 个错误）"));
         assert!(result.contains("auth.py（2 个错误）"));
@@ -284,9 +284,9 @@ Found 5 errors in 3 files
 ";
         let result = filter_mypy_output(output);
         assert!(result.contains("错误码："));
-        assert!(result.contains("return-value (3x)"));
-        assert!(result.contains("name-defined (1x)"));
-        assert!(result.contains("arg-type (1x)"));
+        assert!(result.contains("return-value（3 次）"));
+        assert!(result.contains("name-defined（1 次）"));
+        assert!(result.contains("arg-type（1 次）"));
     }
 
     #[test]
@@ -344,14 +344,14 @@ src/api.py:10: error: Name \"foo\" is not defined  [name-defined]
 Found 1 error in 1 file
 ";
         let result = filter_mypy_output(output);
-        // File-less error should appear verbatim before grouped output
+        // 无文件归属的错误应原样出现在分组输出之前
         assert!(result.contains("mypy: error: No module named 'nonexistent'"));
         assert!(result.contains("api.py（1 个错误"));
         let fileless_pos = result.find("No module named").unwrap();
         let grouped_pos = result.find("api.py").unwrap();
         assert!(
             fileless_pos < grouped_pos,
-            "File-less errors should appear before grouped file errors"
+            "无文件归属的错误应出现在按文件分组的错误之前"
         );
     }
 
