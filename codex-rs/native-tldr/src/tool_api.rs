@@ -34,6 +34,7 @@ pub enum TldrToolAction {
     Impact,
     Cfg,
     Dfg,
+    Slice,
     Semantic,
     Ping,
     Warm,
@@ -82,6 +83,8 @@ pub struct TldrToolCallParam {
     pub query: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -116,6 +119,7 @@ where
                 language,
                 args.symbol,
                 None,
+                None,
                 &query,
                 &ensure_running,
             )
@@ -133,6 +137,7 @@ where
                 language,
                 args.symbol,
                 Some(path),
+                None,
                 &query,
                 &ensure_running,
             )
@@ -145,6 +150,7 @@ where
                 TldrToolAction::Context,
                 language,
                 args.symbol,
+                None,
                 None,
                 &query,
                 &ensure_running,
@@ -159,6 +165,7 @@ where
                 language,
                 args.symbol,
                 None,
+                None,
                 &query,
                 &ensure_running,
             )
@@ -171,6 +178,7 @@ where
                 TldrToolAction::Cfg,
                 language,
                 args.symbol,
+                None,
                 None,
                 &query,
                 &ensure_running,
@@ -185,6 +193,28 @@ where
                 language,
                 args.symbol,
                 None,
+                None,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Slice => {
+            let path = args
+                .path
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("`path` is required for action=slice"))?;
+            let line = args
+                .line
+                .ok_or_else(|| anyhow::anyhow!("`line` is required for action=slice"))?;
+            let language = required_or_inferred_language(&args, Some(path.as_str()))?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Slice,
+                language,
+                args.symbol,
+                Some(path),
+                Some(line),
                 &query,
                 &ensure_running,
             )
@@ -256,6 +286,7 @@ async fn run_analysis_tool<Q, E>(
     language: SupportedLanguage,
     symbol: Option<String>,
     path: Option<String>,
+    line: Option<usize>,
     query: &Q,
     ensure_running: &E,
 ) -> Result<TldrToolResult>
@@ -270,6 +301,7 @@ where
         TldrToolAction::Impact => AnalysisKind::Pdg,
         TldrToolAction::Cfg => AnalysisKind::Cfg,
         TldrToolAction::Dfg => AnalysisKind::Dfg,
+        TldrToolAction::Slice => AnalysisKind::Slice,
         _ => unreachable!("analysis action must map to AnalysisKind"),
     };
     let request = AnalysisRequest {
@@ -277,11 +309,12 @@ where
         language,
         symbol: symbol.clone(),
         path: path.clone(),
+        line,
     };
     let daemon_response = query_daemon_with_hooks(
         project_root,
         &TldrDaemonCommand::Analyze {
-            key: analysis_cache_key(kind, language, symbol.as_deref(), path.as_deref()),
+            key: analysis_cache_key(kind, language, symbol.as_deref(), path.as_deref(), line),
             request: request.clone(),
         },
         query,
@@ -318,6 +351,7 @@ where
         "summary": analysis.summary,
         "symbol": symbol,
         "path": path,
+        "line": line,
         "analysis": analysis,
     });
     let text = format!(
@@ -485,6 +519,7 @@ pub fn action_name(action: &TldrToolAction) -> &'static str {
         TldrToolAction::Impact => "impact",
         TldrToolAction::Cfg => "cfg",
         TldrToolAction::Dfg => "dfg",
+        TldrToolAction::Slice => "slice",
         TldrToolAction::Semantic => "semantic",
         TldrToolAction::Ping => "ping",
         TldrToolAction::Warm => "warm",
@@ -499,10 +534,12 @@ pub fn analysis_cache_key(
     language: SupportedLanguage,
     symbol: Option<&str>,
     path: Option<&str>,
+    line: Option<usize>,
 ) -> String {
     let symbol = symbol.unwrap_or("*");
     let path = path.unwrap_or("*");
-    format!("{}:{kind:?}:{symbol}:{path}", language.as_str())
+    let line = line.map_or("*".to_string(), |value| value.to_string());
+    format!("{}:{kind:?}:{symbol}:{path}:{line}", language.as_str())
 }
 
 fn required_language(args: &TldrToolCallParam) -> Result<SupportedLanguage> {
@@ -587,6 +624,19 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "total_symbols": { "type": "integer" },
                 "symbol_query": { "type": ["string", "null"] },
                 "truncated": { "type": "boolean" },
+                "slice_target": {
+                  "type": ["object", "null"],
+                  "properties": {
+                    "path": { "type": "string" },
+                    "symbol": { "type": ["string", "null"] },
+                    "line": { "type": "integer" },
+                    "direction": { "type": "string" }
+                  }
+                },
+                "slice_lines": {
+                  "type": "array",
+                  "items": { "type": "integer" }
+                },
                 "overview": { "$ref": "#/$defs/analysisOverview" },
                 "files": {
                   "type": "array",
@@ -725,7 +775,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
               "type": "object",
               "properties": {
                 "action": {
-                  "enum": ["tree", "extract", "context", "impact", "cfg", "dfg"]
+                  "enum": ["tree", "extract", "context", "impact", "cfg", "dfg", "slice"]
                 },
                 "project": { "type": "string" },
                 "language": { "type": "string" },
@@ -736,6 +786,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "summary": { "type": "string" },
                 "symbol": { "type": ["string", "null"] },
                 "path": { "type": ["string", "null"] },
+                "line": { "type": ["integer", "null"] },
                 "analysis": { "$ref": "#/$defs/analysis" }
               },
               "required": [
@@ -909,6 +960,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -945,6 +998,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -981,6 +1036,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1024,6 +1081,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1075,6 +1134,8 @@ mod tests {
                     symbol: None,
                     query: None,
                     path: None,
+
+                    line: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1102,6 +1163,8 @@ mod tests {
                     symbol: None,
                     query: None,
                     path: None,
+
+                    line: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1129,6 +1192,8 @@ mod tests {
                     symbol: None,
                     query: None,
                     path: None,
+
+                    line: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1156,6 +1221,8 @@ mod tests {
                     symbol: None,
                     query: None,
                     path: None,
+
+                    line: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1180,6 +1247,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1216,6 +1285,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: Some("src/lib.rs".to_string()),
+
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1266,6 +1337,8 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+
+                line: None,
             },
             |_project_root, _command| {
                 let report = report.clone();
@@ -1345,6 +1418,8 @@ mod tests {
                     symbol: None,
                     query: None,
                     path: None,
+
+                    line: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),

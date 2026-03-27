@@ -58,6 +58,9 @@ pub enum TldrSubcommand {
     /// 提取单文件结构摘要。
     Extract(TldrExtractCommand),
 
+    /// 获取指定行的 backward slice。
+    Slice(TldrSliceCommand),
+
     /// 获取上下文概览。
     Context(TldrAnalyzeCommand),
 
@@ -134,6 +137,33 @@ pub struct TldrExtractCommand {
     /// 目标文件路径。
     #[arg(value_name = "PATH")]
     pub path: PathBuf,
+
+    /// 目标语言；未指定时按文件扩展名推断。
+    #[arg(long, value_enum)]
+    pub lang: Option<CliLanguage>,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct TldrSliceCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 目标文件路径。
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+
+    /// 目标符号。
+    #[arg(value_name = "SYMBOL")]
+    pub symbol: String,
+
+    /// 目标行号。
+    #[arg(value_name = "LINE")]
+    pub line: usize,
 
     /// 目标语言；未指定时按文件扩展名推断。
     #[arg(long, value_enum)]
@@ -226,6 +256,9 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         TldrSubcommand::Extract(cmd) => {
             run_extract_command(cmd).await?;
         }
+        TldrSubcommand::Slice(cmd) => {
+            run_slice_command(cmd).await?;
+        }
         TldrSubcommand::Context(cmd) => {
             run_analysis_command(cmd, AnalysisKind::CallGraph).await?;
         }
@@ -267,11 +300,12 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         language,
         symbol: cmd.symbol.clone(),
         path: None,
+        line: None,
     };
     let daemon_response = query_daemon_with_autostart(
         &project_root,
         &TldrDaemonCommand::Analyze {
-            key: analysis_cache_key(kind, language, cmd.symbol.as_deref(), None),
+            key: analysis_cache_key(kind, language, cmd.symbol.as_deref(), None, None),
             request: request.clone(),
         },
     )
@@ -311,6 +345,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
             support,
             symbol: cmd.symbol.as_deref(),
             path: None,
+            line: None,
         },
         &analysis,
     );
@@ -323,6 +358,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
             source,
             support,
             daemon_message.as_deref(),
+            None,
             None,
             &analysis.summary,
         ) {
@@ -348,6 +384,7 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
         language,
         symbol: None,
         path: Some(requested_path.clone()),
+        line: None,
     };
     let daemon_response = query_daemon_with_autostart(
         &project_root,
@@ -357,6 +394,7 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
                 language,
                 None,
                 Some(requested_path.as_str()),
+                None,
             ),
             request: request.clone(),
         },
@@ -397,6 +435,7 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
             support,
             symbol: None,
             path: Some(requested_path.as_str()),
+            line: None,
         },
         &analysis,
     );
@@ -410,6 +449,97 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
             support,
             daemon_message.as_deref(),
             Some(requested_path.as_str()),
+            None,
+            &analysis.summary,
+        ) {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let requested_path = cmd.path.display().to_string();
+    let language = match cmd.lang {
+        Some(language) => SupportedLanguage::from(language),
+        None => SupportedLanguage::from_path(&cmd.path).ok_or_else(|| {
+            anyhow::anyhow!("`--lang` is required when file extension is unsupported")
+        })?,
+    };
+    let config = load_tldr_config(&project_root)?;
+    let request = AnalysisRequest {
+        kind: AnalysisKind::Slice,
+        language,
+        symbol: Some(cmd.symbol.clone()),
+        path: Some(requested_path.clone()),
+        line: Some(cmd.line),
+    };
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Analyze {
+            key: analysis_cache_key(
+                AnalysisKind::Slice,
+                language,
+                Some(cmd.symbol.as_str()),
+                Some(requested_path.as_str()),
+                Some(cmd.line),
+            ),
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (source, daemon_message, analysis, engine_project_root) =
+        if let Some(response) = daemon_response {
+            let analysis = response
+                .analysis
+                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+            (
+                "daemon",
+                Some(response.message),
+                analysis,
+                project_root.clone(),
+            )
+        } else {
+            let engine = TldrEngine::builder(project_root.clone())
+                .with_config(config.clone())
+                .build();
+            let response = engine.analyze(request)?;
+            (
+                "local",
+                Some("daemon unavailable; used local engine".to_string()),
+                response,
+                engine.config().project_root.clone(),
+            )
+        };
+
+    let support = LanguageRegistry::support_for(language);
+    let payload = analysis_payload(
+        AnalysisRenderContext {
+            action: "slice",
+            project_root: &engine_project_root,
+            language,
+            source,
+            message: daemon_message.as_deref(),
+            support,
+            symbol: Some(cmd.symbol.as_str()),
+            path: Some(requested_path.as_str()),
+            line: Some(cmd.line),
+        },
+        &analysis,
+    );
+
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_analysis_response_text(
+            language,
+            source,
+            support,
+            daemon_message.as_deref(),
+            Some(requested_path.as_str()),
+            Some(cmd.line),
             &analysis.summary,
         ) {
             println!("{line}");
@@ -427,6 +557,7 @@ fn analysis_action_name(kind: AnalysisKind) -> &'static str {
         AnalysisKind::Pdg => "impact",
         AnalysisKind::Cfg => "cfg",
         AnalysisKind::Dfg => "dfg",
+        AnalysisKind::Slice => "slice",
     }
 }
 
@@ -492,6 +623,7 @@ struct AnalysisRenderContext<'a> {
     support: &'a codex_native_tldr::lang_support::LanguageSupport,
     symbol: Option<&'a str>,
     path: Option<&'a str>,
+    line: Option<usize>,
 }
 
 fn analysis_payload(
@@ -509,6 +641,7 @@ fn analysis_payload(
         "summary": response.summary.clone(),
         "symbol": context.symbol,
         "path": context.path,
+        "line": context.line,
         "analysis": response,
     })
 }
@@ -543,6 +676,7 @@ fn render_analysis_response_text(
     support: &codex_native_tldr::lang_support::LanguageSupport,
     message: Option<&str>,
     path: Option<&str>,
+    line: Option<usize>,
     summary: &str,
 ) -> Vec<String> {
     let mut lines = vec![
@@ -556,6 +690,9 @@ fn render_analysis_response_text(
     }
     if let Some(path) = path {
         lines.push(format!("path: {path}"));
+    }
+    if let Some(line) = line {
+        lines.push(format!("line: {line}"));
     }
     lines.push(format!("summary: {summary}"));
     lines
@@ -759,10 +896,12 @@ fn analysis_cache_key(
     language: SupportedLanguage,
     symbol: Option<&str>,
     path: Option<&str>,
+    line: Option<usize>,
 ) -> String {
     let symbol = symbol.unwrap_or("*");
     let path = path.unwrap_or("*");
-    format!("{}:{kind:?}:{symbol}:{path}", language.as_str())
+    let line = line.map_or("*".to_string(), |value| value.to_string());
+    format!("{}:{kind:?}:{symbol}:{path}:{line}", language.as_str())
 }
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
@@ -1010,6 +1149,7 @@ mod output_tests {
                 support: LanguageRegistry::support_for(SupportedLanguage::Rust),
                 symbol: Some("main"),
                 path: None,
+                line: None,
             },
             &AnalysisResponse {
                 kind: AnalysisKind::CallGraph,
@@ -1019,6 +1159,8 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: Some("main".to_string()),
                     truncated: false,
+                    slice_target: None,
+                    slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail {
                         kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
                             name: "function".to_string(),
@@ -1124,6 +1266,7 @@ mod output_tests {
                 support: LanguageRegistry::support_for(SupportedLanguage::Rust),
                 symbol: Some("AuthService"),
                 path: None,
+                line: None,
             },
             &AnalysisResponse {
                 kind: AnalysisKind::Pdg,
@@ -1135,6 +1278,8 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: Some("AuthService".to_string()),
                     truncated: false,
+                    slice_target: None,
+                    slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail::default(),
                     files: Vec::new(),
                     nodes: Vec::new(),
@@ -1178,6 +1323,7 @@ mod output_tests {
                 support: LanguageRegistry::support_for(SupportedLanguage::Rust),
                 symbol: Some("AuthService"),
                 path: None,
+                line: None,
             },
             &AnalysisResponse {
                 kind: AnalysisKind::Cfg,
@@ -1188,6 +1334,8 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: Some("AuthService".to_string()),
                     truncated: false,
+                    slice_target: None,
+                    slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail::default(),
                     files: Vec::new(),
                     nodes: Vec::new(),
@@ -1236,6 +1384,7 @@ mod output_tests {
                 support: LanguageRegistry::support_for(SupportedLanguage::Rust),
                 symbol: None,
                 path: Some("src/lib.rs"),
+                line: None,
             },
             &AnalysisResponse {
                 kind: AnalysisKind::Extract,
@@ -1247,6 +1396,8 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: None,
                     truncated: false,
+                    slice_target: None,
+                    slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail::default(),
                     files: vec![AnalysisFileDetail {
                         path: "src/lib.rs".to_string(),
@@ -1359,6 +1510,7 @@ mod output_tests {
             LanguageRegistry::support_for(SupportedLanguage::Rust),
             Some("impact ready"),
             None,
+            None,
             "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1",
         );
 
@@ -1383,6 +1535,7 @@ mod output_tests {
             LanguageRegistry::support_for(SupportedLanguage::Rust),
             Some("extract ready"),
             Some("src/lib.rs"),
+            None,
             "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-1",
         );
 

@@ -247,6 +247,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: Some("main".to_string()),
                 path: None,
+
+                line: None,
             })
             .expect("analysis should succeed");
 
@@ -343,6 +345,8 @@ mod tests {
                     language: SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+
+                    line: None,
                 },
             })
             .await
@@ -355,6 +359,8 @@ mod tests {
                     language: SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+
+                    line: None,
                 },
             })
             .await

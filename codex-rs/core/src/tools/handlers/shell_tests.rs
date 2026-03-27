@@ -354,7 +354,20 @@ fn shell_command_handler_records_original_command_when_rewritten() {
     assert_eq!(
         routed.model_output_prefix,
         Some(
-            "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 rtk git status"
+            "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex rtk git status"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn shell_command_handler_displays_wrapped_rewrites_with_codex_prefix() {
+    let routed = ShellCommandHandler::route_command("nice -n 5 git status");
+    assert_eq!(routed.command, "nice -n 5 rtk git status");
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command routed via embedded RTK]\noriginal: nice -n 5 git status\nrewritten: nice -n 5 codex rtk git status"
                 .to_string()
         )
     );
@@ -422,7 +435,7 @@ fn shell_command_handler_normalizes_codex_rtk_help_commands() {
     assert_eq!(
         routed.model_output_prefix,
         Some(
-            "[shell_command routed via embedded RTK]\noriginal: codex rtk --help\nexecuted: rtk --help"
+            "[shell_command routed via embedded RTK]\noriginal: codex rtk --help\nrewritten: codex rtk --help"
                 .to_string()
         )
     );

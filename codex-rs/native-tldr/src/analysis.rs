@@ -8,6 +8,7 @@ use crate::api::AnalysisNodeDetail;
 use crate::api::AnalysisOverviewDetail;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+use crate::api::AnalysisSliceTarget;
 use crate::api::AnalysisSymbolIndexEntry;
 use crate::api::AnalysisUnitDetail;
 use crate::semantic::EmbeddingUnit;
@@ -34,7 +35,7 @@ pub(crate) fn analyze_project(
         &index.units,
         request.symbol.as_deref(),
         path.as_deref(),
-        request.kind == AnalysisKind::Extract,
+        matches!(request.kind, AnalysisKind::Extract | AnalysisKind::Slice),
     );
     let summary = match request.kind {
         AnalysisKind::Ast => {
@@ -47,6 +48,14 @@ pub(crate) fn analyze_project(
         AnalysisKind::Dfg => summarize_dfg(index.indexed_files, &units, request.symbol.as_deref()),
         AnalysisKind::Pdg => summarize_pdg(index.indexed_files, &units, request.symbol.as_deref()),
         AnalysisKind::Extract => summarize_extract(index.indexed_files, &units, path.as_deref()),
+        AnalysisKind::Slice => summarize_slice(
+            index.indexed_files,
+            &index.units,
+            &units,
+            path.as_deref(),
+            request.symbol.as_deref(),
+            request.line,
+        )?,
     };
 
     Ok(AnalysisResponse {
@@ -54,16 +63,24 @@ pub(crate) fn analyze_project(
         summary,
         details: Some(build_analysis_detail(
             index.indexed_files,
+            &index.units,
             &units,
             request.symbol.clone(),
+            path.as_deref(),
+            request.line,
+            request.kind == AnalysisKind::Slice,
         )),
     })
 }
 
 fn build_analysis_detail(
     indexed_files: usize,
+    all_units: &[EmbeddingUnit],
     units: &[&EmbeddingUnit],
     symbol_query: Option<String>,
+    path: Option<&Path>,
+    line: Option<usize>,
+    include_slice: bool,
 ) -> AnalysisDetail {
     const MAX_UNITS: usize = 20;
     const MAX_FILES: usize = 20;
@@ -79,6 +96,19 @@ fn build_analysis_detail(
     let mut incoming_edges = 0;
     let mut reference_count = 0;
     let mut import_count = 0;
+    let slice_target = include_slice.then(|| AnalysisSliceTarget {
+        path: path
+            .map(|value| value.display().to_string())
+            .unwrap_or_else(|| "<unknown>".to_string()),
+        symbol: symbol_query.clone(),
+        line: line.unwrap_or_default(),
+        direction: "backward".to_string(),
+    });
+    let slice_lines = if include_slice {
+        compute_slice_lines(all_units, units, path, line)
+    } else {
+        Vec::new()
+    };
 
     for unit in units {
         *by_kind.entry(unit.kind.clone()).or_default() += 1;
@@ -163,6 +193,8 @@ fn build_analysis_detail(
         total_symbols: units.len(),
         symbol_query,
         truncated: units.len() > MAX_UNITS,
+        slice_target,
+        slice_lines,
         overview: AnalysisOverviewDetail {
             kinds: by_kind
                 .into_iter()
@@ -607,6 +639,90 @@ fn summarize_extract(
     )
 }
 
+fn summarize_slice(
+    indexed_files: usize,
+    all_units: &[EmbeddingUnit],
+    units: &[&EmbeddingUnit],
+    path: Option<&Path>,
+    symbol: Option<&str>,
+    line: Option<usize>,
+) -> Result<String> {
+    let line = line.ok_or_else(|| anyhow::anyhow!("`line` is required for action=slice"))?;
+    let path_label = path
+        .map(|value| value.display().to_string())
+        .unwrap_or_else(|| "<unknown>".to_string());
+    if units.is_empty() {
+        let symbol_label = symbol.unwrap_or("<unknown>");
+        return Ok(format!(
+            "slice summary: symbol `{symbol_label}` not found in {path_label} ({indexed_files} indexed files)"
+        ));
+    }
+
+    let slice_lines = compute_slice_lines(all_units, units, path, Some(line));
+    let preview = slice_lines
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(format!(
+        "slice summary: backward slice for {}:{}:{} -> {} lines [{}]",
+        path_label,
+        symbol.unwrap_or("<unknown>"),
+        line,
+        slice_lines.len(),
+        preview
+    ))
+}
+
+fn compute_slice_lines(
+    all_units: &[EmbeddingUnit],
+    units: &[&EmbeddingUnit],
+    path: Option<&Path>,
+    line: Option<usize>,
+) -> Vec<usize> {
+    let Some(target_line) = line else {
+        return Vec::new();
+    };
+    let Some(target_unit) = units
+        .iter()
+        .copied()
+        .find(|unit| unit.line <= target_line && unit.span_end_line >= target_line)
+        .or_else(|| units.first().copied())
+    else {
+        return Vec::new();
+    };
+
+    let mut slice_lines = BTreeSet::from([target_line, target_unit.line]);
+    let related_symbols = target_unit
+        .calls
+        .iter()
+        .chain(target_unit.called_by.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for unit in all_units
+        .iter()
+        .filter(|unit| path.is_none_or(|expected| unit.path == expected))
+    {
+        if unit.line > target_line {
+            continue;
+        }
+        if unit.path == target_unit.path
+            && (unit.line == target_unit.line
+                || unit
+                    .symbol
+                    .as_ref()
+                    .is_some_and(|symbol| related_symbols.contains(symbol))
+                || unit
+                    .qualified_symbol
+                    .as_ref()
+                    .is_some_and(|symbol| related_symbols.contains(symbol)))
+        {
+            slice_lines.insert(unit.line);
+        }
+    }
+    slice_lines.into_iter().collect()
+}
+
 fn normalize_request_path(project_root: &Path, path: &str) -> Result<PathBuf> {
     let path = PathBuf::from(path);
     let absolute = if path.is_absolute() {
@@ -695,6 +811,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -739,6 +857,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: Some("validate".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -786,6 +906,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -818,6 +940,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -851,6 +975,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: Some("src/lib.rs".to_string()),
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -885,6 +1011,8 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: Some("logout".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -926,6 +1054,8 @@ mod auth {
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::AuthService::login".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -961,6 +1091,8 @@ mod auth {
                 language: SupportedLanguage::Rust,
                 symbol: Some("login".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -1034,6 +1166,8 @@ fn login_flow(service: &AuthService, session: Session) {
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::AuthService::login".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -1121,6 +1255,8 @@ mod auth {
                     language: SupportedLanguage::Rust,
                     symbol: Some(symbol.to_string()),
                     path: None,
+
+                    line: None,
                 },
             )
             .expect("analysis should succeed");
@@ -1168,6 +1304,8 @@ fn login() {
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::validate".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");
@@ -1181,6 +1319,8 @@ fn login() {
                 language: SupportedLanguage::Rust,
                 symbol: Some("audit::validate".to_string()),
                 path: None,
+
+                line: None,
             },
         )
         .expect("analysis should succeed");

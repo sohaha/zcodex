@@ -147,6 +147,7 @@ impl ShellCommandHandler {
                 }
             }
             ShellCommandRewriteKind::Rewritten => {
+                let display_command = logical_rtk_command(&analysis.command);
                 tracing::info!(
                     target: "codex_core::shell_rtk",
                     original = %trimmed,
@@ -155,8 +156,8 @@ impl ShellCommandHandler {
                 );
                 RoutedCommand {
                     model_output_prefix: Some(format!(
-                        "[shell_command routed via embedded RTK]\noriginal: {}\nexecuted: {}",
-                        trimmed, analysis.command
+                        "[shell_command routed via embedded RTK]\noriginal: {}\nrewritten: {}",
+                        trimmed, display_command
                     )),
                     interaction_input: Some(trimmed.to_string()),
                     command: analysis.command,
@@ -220,6 +221,17 @@ impl ShellCommandHandler {
             arg0: None,
         })
     }
+}
+
+fn logical_rtk_command(command: &str) -> String {
+    let Some(mut tokens) = shlex::split(command) else {
+        return command.to_string();
+    };
+    let Some(index) = tokens.iter().position(|token| token == "rtk") else {
+        return command.to_string();
+    };
+    tokens.insert(index, "codex".to_string());
+    codex_shell_command::parse_command::shlex_join(&tokens)
 }
 
 impl From<ShellCommandBackendConfig> for ShellCommandHandler {

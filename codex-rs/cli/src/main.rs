@@ -1868,6 +1868,32 @@ mod tests {
     }
 
     #[test]
+    fn tldr_extract_parses_path_and_optional_language() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "tldr",
+            "extract",
+            "--project",
+            ".",
+            "--lang",
+            "rust",
+            "src/lib.rs",
+        ])
+        .expect("parse should succeed");
+
+        let Some(Subcommand::Tldr(tldr_cli)) = cli.subcommand else {
+            panic!("expected tldr subcommand");
+        };
+
+        let tldr_cmd::TldrSubcommand::Extract(args) = tldr_cli.subcommand else {
+            panic!("expected extract subcommand");
+        };
+
+        assert_eq!(args.path, std::path::PathBuf::from("src/lib.rs"));
+        assert!(matches!(args.lang, Some(tldr_cmd::CliLanguage::Rust)));
+    }
+
+    #[test]
     fn tldr_help_renders() {
         let mut cmd = localized_multitool_command();
         let render_result = cmd.render_long_help();

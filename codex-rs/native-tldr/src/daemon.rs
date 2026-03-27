@@ -1042,6 +1042,8 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+
+                    line: None,
                 },
             })
             .await
@@ -1300,6 +1302,8 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+
+                    line: None,
                 },
             })
             .await
@@ -1321,6 +1325,8 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+
+                    line: None,
                 },
             })
             .await
@@ -1333,6 +1339,8 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+
+                    line: None,
                 },
             })
             .await
