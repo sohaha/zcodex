@@ -233,7 +233,7 @@ impl ShellCommandHandler {
     }
 }
 
-fn resolve_rtk_physical_command(command: &str, codex_exe: Option<&PathBuf>) -> String {
+fn resolve_rtk_physical_command(command: &str, codex_exe: Option<&std::path::Path>) -> String {
     let Some(codex_exe) = codex_exe else {
         return command.to_string();
     };
@@ -318,6 +318,7 @@ impl ToolHandler for ShellHandler {
                 Self::run_exec_like(RunExecLikeArgs {
                     tool_name: tool_name.clone(),
                     exec_params,
+                    display_command: None,
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
                     interaction_input: None,
@@ -337,6 +338,7 @@ impl ToolHandler for ShellHandler {
                 Self::run_exec_like(RunExecLikeArgs {
                     tool_name: tool_name.clone(),
                     exec_params,
+                    display_command: None,
                     additional_permissions: None,
                     prefix_rule: None,
                     interaction_input: None,

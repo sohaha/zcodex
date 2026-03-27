@@ -2,7 +2,8 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-target_dir="${CODEX_TARGET_DIR:-$repo_root/codex-rs/target}"
+target_dir="${CODEX_TARGET_DIR:-$repo_root/.cargo-target}"
+windows_cross_dist_dir="${CODEX_WINDOWS_CROSS_DIST_DIR:-$repo_root/dist}"
 dist_dir="${CODEX_RELEASE_DIST_DIR:-$repo_root/codex-rs/dist/cnb-release}"
 release_tag="${RELEASE_TAG:-${CNB_BRANCH:-}}"
 github_repo="${GITHUB_REPOSITORY:-${RELEASE_REPOSITORY:-sohaha/zcodex}}"
@@ -41,10 +42,10 @@ stage_asset \
   "$target_dir/aarch64-apple-darwin/release/codex" \
   "codex-aarch64-apple-darwin"
 stage_asset \
-  "$target_dir/x86_64-pc-windows-msvc/release/codex.exe" \
+  "$windows_cross_dist_dir/codex-x86_64-pc-windows-msvc.exe" \
   "codex-x86_64-pc-windows-msvc.exe"
 stage_asset \
-  "$target_dir/aarch64-pc-windows-gnullvm/release/codex.exe" \
+  "$windows_cross_dist_dir/codex-aarch64-pc-windows-gnullvm.exe" \
   "codex-aarch64-pc-windows-gnullvm.exe"
 
 echo "[cnb-release] release tag: $release_tag" >&2

@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 output_dir="${1:-$repo_root/codex-rs/dist/local-windows-cross}"
+cross_dist_dir="${CODEX_WINDOWS_CROSS_DIST_DIR:-$repo_root/dist}"
 
 if command -v zip >/dev/null 2>&1; then
   archive_cmd=zip
@@ -45,11 +46,11 @@ package_one() {
 }
 
 package_one \
-  "$repo_root/codex-rs/target/x86_64-pc-windows-msvc/release/codex.exe" \
+  "$cross_dist_dir/codex-x86_64-pc-windows-msvc.exe" \
   "codex-x86_64-pc-windows-msvc.exe"
 
 package_one \
-  "$repo_root/codex-rs/target/aarch64-pc-windows-gnullvm/release/codex.exe" \
+  "$cross_dist_dir/codex-aarch64-pc-windows-gnullvm.exe" \
   "codex-aarch64-pc-windows-gnullvm.exe"
 
 (

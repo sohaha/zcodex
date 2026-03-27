@@ -967,15 +967,19 @@ fn parse_multitool_cli_from_env() -> MultitoolCli {
         return MultitoolCli::parse();
     }
 
-    if is_rtk_alias_invocation(&raw_args[0]) {
+    let parsed_args = if is_rtk_alias_invocation(&raw_args[0]) {
         let mut injected_args = Vec::with_capacity(raw_args.len() + 1);
         injected_args.push(raw_args[0].clone());
         injected_args.push(rtk_alias_name().into());
         injected_args.extend(raw_args.into_iter().skip(1));
-        parse_multitool_cli(injected_args)
+        injected_args
     } else {
-        parse_multitool_cli(raw_args)
-    }
+        raw_args
+    };
+
+    let mut cli = parse_multitool_cli(parsed_args.clone());
+    restore_rtk_explicit_double_dash(&parsed_args, &mut cli);
+    cli
 }
 
 fn parse_multitool_cli<I, T>(args: I) -> MultitoolCli
@@ -992,6 +996,31 @@ where
             std::process::exit(err.exit_code());
         }
     }
+}
+
+fn restore_rtk_explicit_double_dash(raw_args: &[std::ffi::OsString], cli: &mut MultitoolCli) {
+    let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand.as_mut() else {
+        return;
+    };
+
+    if rtk_cli.args.first().is_some_and(|arg| arg == "--") {
+        return;
+    }
+
+    if rtk_subcommand_uses_explicit_double_dash(raw_args, rtk_cli.args.len()) {
+        rtk_cli.args.insert(0, "--".into());
+    }
+}
+
+fn rtk_subcommand_uses_explicit_double_dash(
+    raw_args: &[std::ffi::OsString],
+    rtk_arg_count: usize,
+) -> bool {
+    raw_args.iter().enumerate().skip(1).any(|(index, arg)| {
+        arg == rtk_alias_name()
+            && raw_args.get(index + 1).is_some_and(|next| next == "--")
+            && raw_args.len().saturating_sub(index + 2) == rtk_arg_count
+    })
 }
 
 fn localized_multitool_command() -> clap::Command {
@@ -1891,6 +1920,40 @@ mod tests {
 
         assert_eq!(args.path, std::path::PathBuf::from("src/lib.rs"));
         assert!(matches!(args.lang, Some(tldr_cmd::CliLanguage::Rust)));
+    }
+
+    #[test]
+    fn rtk_parse_restores_explicit_double_dash_for_raw_wrapper_commands() {
+        let cli = parse_multitool_cli(["codex", "rtk", "--", "env", "FOO=1", "git", "status"]);
+
+        let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand else {
+            panic!("expected rtk subcommand");
+        };
+
+        assert_eq!(
+            rtk_cli.args,
+            vec![
+                "--",
+                "env".into(),
+                "FOO=1".into(),
+                "git".into(),
+                "status".into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn rtk_parse_does_not_inject_double_dash_without_explicit_boundary() {
+        let cli = parse_multitool_cli(["codex", "rtk", "env", "FOO=1", "git", "status"]);
+
+        let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand else {
+            panic!("expected rtk subcommand");
+        };
+
+        assert_eq!(
+            rtk_cli.args,
+            vec!["env".into(), "FOO=1".into(), "git".into(), "status".into()]
+        );
     }
 
     #[test]

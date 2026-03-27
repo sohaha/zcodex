@@ -815,10 +815,16 @@ const REMOVED_BUILTIN_COMMANDS: &[&str] = &[
     "rewrite",
 ];
 
+const RAW_DOUBLE_DASH_WRAPPERS: &[&str] = &["env", "command", "nice", "stdbuf", "ionice", "chrt"];
+
 fn should_show_parse_error(args: &[OsString]) -> bool {
     let Some(first_arg) = first_subcommand_arg(args) else {
         return true;
     };
+
+    if uses_raw_double_dash_wrapper(args, first_arg.as_ref()) {
+        return false;
+    }
 
     if REMOVED_BUILTIN_COMMANDS.contains(&first_arg.as_ref()) {
         return true;
@@ -830,6 +836,14 @@ fn should_show_parse_error(args: &[OsString]) -> bool {
                 .get_all_aliases()
                 .any(|alias| alias == first_arg.as_ref())
     })
+}
+
+fn uses_raw_double_dash_wrapper(args: &[OsString], first_arg: &str) -> bool {
+    args.iter()
+        .position(|arg| arg == "--")
+        .is_some_and(|boundary| {
+            boundary + 1 < args.len() && RAW_DOUBLE_DASH_WRAPPERS.contains(&first_arg)
+        })
 }
 
 fn first_subcommand_arg(args: &[OsString]) -> Option<std::borrow::Cow<'_, str>> {
@@ -1854,6 +1868,19 @@ mod tests {
             OsString::from("--verbose"),
             OsString::from("--"),
             OsString::from("custom-fallback"),
+        ];
+        assert!(!should_show_parse_error(&args));
+    }
+
+    #[test]
+    fn test_should_not_show_parse_error_for_env_wrapper_after_double_dash() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("--"),
+            OsString::from("env"),
+            OsString::from("FOO=1"),
+            OsString::from("git"),
+            OsString::from("status"),
         ];
         assert!(!should_show_parse_error(&args));
     }
