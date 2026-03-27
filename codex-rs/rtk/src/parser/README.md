@@ -4,9 +4,9 @@
 
 解析器基础设施为工具输出提供统一的三层解析体系，并支持可感知的降级处理：
 
-- **第 1 层（Full）**：完整 JSON 解析，保留全部结构化数据
-- **第 2 层（Degraded）**：部分解析并附带警告（回退到正则提取）
-- **第 3 层（Passthrough）**：截断原始输出并标记解析错误
+- **Tier 1（Full）**：完整 JSON 解析，保留全部结构化数据
+- **Tier 2（Degraded）**：部分解析并附带警告（回退到正则提取）
+- **Tier 3（Passthrough）**：截断原始输出并标记解析错误
 
 这样可以确保 RTK **不会在无提示的情况下返回错误数据**，同时尽量保持 token 效率。
 
@@ -21,9 +21,9 @@
 ┌─────────────────────▼───────────────────────────────────┐
 │                   OutputParser<T> Trait                  │
 │  parse() → ParseResult<T>                               │
-│    ├─ Full(T)           - 第 1 层：完整 JSON 解析       │
-│    ├─ Degraded(T, warn) - 第 2 层：部分解析并带警告     │
-│    └─ Passthrough(str)  - 第 3 层：截断原始输出         │
+│    ├─ Full(T)           - Tier 1：完整 JSON 解析       │
+│    ├─ Degraded(T, warn) - Tier 2：部分解析并带警告     │
+│    └─ Passthrough(str)  - Tier 3：截断原始输出         │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
@@ -50,7 +50,7 @@ impl OutputParser for VitestParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // 第 1 层：尝试 JSON 解析
+        // Tier 1：尝试 JSON 解析
         match serde_json::from_str::<VitestJsonOutput>(input) {
             Ok(json) => {
                 let result = TestResult {
@@ -62,14 +62,14 @@ impl OutputParser for VitestParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试正则提取
+                // Tier 2：尝试正则提取
                 if let Some(stats) = extract_stats_regex(input) {
                     ParseResult::Degraded(
                         stats,
                         vec![format!("JSON 解析失败：{}", e)]
                     )
                 } else {
-                    // 第 3 层：直通原始输出
+                    // Tier 3：直通原始输出
                     ParseResult::Passthrough(truncate_output(input, 500))
                 }
             }

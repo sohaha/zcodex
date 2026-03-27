@@ -55,7 +55,7 @@ impl OutputParser for PnpmListParser {
     type Output = DependencyState;
 
     fn parse(input: &str) -> ParseResult<DependencyState> {
-        // 第 1 层：尝试解析 JSON
+        // Tier 1：尝试解析 JSON
         match serde_json::from_str::<PnpmListOutput>(input) {
             Ok(json) => {
                 let mut dependencies = Vec::new();
@@ -80,13 +80,13 @@ impl OutputParser for PnpmListParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试从文本中提取
+                // Tier 2：尝试从文本中提取
                 match extract_list_text(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // 第 3 层：直接透传
+                        // Tier 3：直接透传
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -123,7 +123,7 @@ fn collect_dependencies(
     }
 }
 
-/// 第 2 层：从文本输出中提取列表信息
+/// Tier 2：从文本输出中提取列表信息
 fn extract_list_text(output: &str) -> Option<DependencyState> {
     let mut dependencies = Vec::new();
     let mut count = 0;
@@ -178,7 +178,7 @@ impl OutputParser for PnpmOutdatedParser {
     type Output = DependencyState;
 
     fn parse(input: &str) -> ParseResult<DependencyState> {
-        // 第 1 层：尝试解析 JSON
+        // Tier 1：尝试解析 JSON
         match serde_json::from_str::<PnpmOutdatedOutput>(input) {
             Ok(json) => {
                 let mut dependencies = Vec::new();
@@ -207,13 +207,13 @@ impl OutputParser for PnpmOutdatedParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试从文本中提取
+                // Tier 2：尝试从文本中提取
                 match extract_outdated_text(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // 第 3 层：直接透传
+                        // Tier 3：直接透传
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -222,7 +222,7 @@ impl OutputParser for PnpmOutdatedParser {
     }
 }
 
-/// 第 2 层：从文本输出中提取过期信息
+/// Tier 2：从文本输出中提取过期信息
 fn extract_outdated_text(output: &str) -> Option<DependencyState> {
     let mut dependencies = Vec::new();
     let mut outdated_count = 0;
@@ -331,7 +331,7 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("pnpm list（第 1 层：完整 JSON 解析）");
+                eprintln!("pnpm list（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -383,7 +383,7 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("pnpm outdated（第 1 层：完整 JSON 解析）");
+                eprintln!("pnpm outdated（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }

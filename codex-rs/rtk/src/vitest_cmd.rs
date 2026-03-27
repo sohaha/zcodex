@@ -59,7 +59,7 @@ impl OutputParser for VitestParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // 第 1 层：尝试 JSON 解析（支持从 pnpm/dotenv 前缀中回退提取）
+        // Tier 1：尝试 JSON 解析（支持从 pnpm/dotenv 前缀中回退提取）
         let json_result = serde_json::from_str::<VitestJsonOutput>(input).or_else(|first_err| {
             // 回退方案：尝试从带前缀的输出中提取 JSON 对象
             if let Some(extracted) = extract_json_object(input) {
@@ -89,13 +89,13 @@ impl OutputParser for VitestParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试用正则提取（仅在用户覆盖 --reporter 时触发）
+                // Tier 2：尝试用正则提取（仅在用户覆盖 --reporter 时触发）
                 match extract_stats_regex(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // 第 3 层：直通原始输出
+                        // Tier 3：直通原始输出
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -125,7 +125,7 @@ fn extract_failures_from_json(json: &VitestJsonOutput) -> Vec<TestFailure> {
     failures
 }
 
-/// 第 2 层：通过正则提取测试统计信息（降级模式）
+/// Tier 2：通过正则提取测试统计信息（降级模式）
 fn extract_stats_regex(output: &str) -> Option<TestResult> {
     lazy_static::lazy_static! {
         static ref TEST_FILES_RE: Regex = crate::utils::compile_regex(
@@ -252,7 +252,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("vitest run（第 1 层：完整 JSON 解析）");
+                eprintln!("vitest run（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -350,7 +350,7 @@ Scope: all 6 workspace projects
 {"numTotalTests": 13, "numPassedTests": 13, "numFailedTests": 0, "numPendingTests": 0, "testResults": [], "startTime": 1000, "endTime": 1450}
 "#;
         let result = VitestParser::parse(input);
-        assert_eq!(result.tier(), 1, "应以第 1 层成功解析（完整解析）");
+        assert_eq!(result.tier(), 1, "应以 Tier 1 成功解析（完整解析）");
         assert!(result.is_ok());
 
         let data = result.unwrap();
@@ -367,7 +367,7 @@ Scope: all 6 workspace projects
 {"numTotalTests": 5, "numPassedTests": 4, "numFailedTests": 1, "numPendingTests": 0, "testResults": [], "startTime": 2000, "endTime": 2300}
 "#;
         let result = VitestParser::parse(input);
-        assert_eq!(result.tier(), 1, "应以第 1 层成功解析（完整解析）");
+        assert_eq!(result.tier(), 1, "应以 Tier 1 成功解析（完整解析）");
         assert!(result.is_ok());
 
         let data = result.unwrap();
@@ -383,7 +383,7 @@ Scope: all 6 workspace projects
 {"numTotalTests": 2, "numPassedTests": 2, "numFailedTests": 0, "numPendingTests": 0, "testResults": [{"name": "test.js", "assertionResults": [{"fullName": "nested test", "status": "passed", "failureMessages": []}]}], "startTime": 1000, "endTime": 1100}
 "#;
         let result = VitestParser::parse(input);
-        assert_eq!(result.tier(), 1, "应以第 1 层成功解析（完整解析）");
+        assert_eq!(result.tier(), 1, "应以 Tier 1 成功解析（完整解析）");
         assert!(result.is_ok());
 
         let data = result.unwrap();

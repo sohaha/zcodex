@@ -92,7 +92,7 @@ impl OutputParser for PlaywrightParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // 第 1 层：尝试解析 JSON
+        // Tier 1：尝试解析 JSON
         match serde_json::from_str::<PlaywrightJsonOutput>(input) {
             Ok(json) => {
                 let mut failures = Vec::new();
@@ -111,13 +111,13 @@ impl OutputParser for PlaywrightParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试用正则提取
+                // Tier 2：尝试用正则提取
                 match extract_playwright_regex(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // 第 3 层：直接透传
+                        // Tier 3：直接透传
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -166,7 +166,7 @@ fn collect_test_results(
     }
 }
 
-/// 第 2 层：使用正则提取测试统计信息（降级模式）
+/// Tier 2：使用正则提取测试统计信息（降级模式）
 fn extract_playwright_regex(output: &str) -> Option<TestResult> {
     lazy_static::lazy_static! {
         static ref SUMMARY_RE: Regex = crate::utils::compile_regex(
@@ -306,7 +306,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("playwright test（第 1 层：完整 JSON 解析）");
+                eprintln!("playwright test（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
