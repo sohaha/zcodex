@@ -1018,6 +1018,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn reports_passthrough_reason_for_supported_command_shapes() {
         let analysis = analyze_shell_command("git status | head");
         assert_eq!(analysis.command, "git status | head");

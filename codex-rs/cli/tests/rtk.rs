@@ -514,6 +514,62 @@ fn rtk_builtin_command_after_double_dash_stays_in_parse_error_path() -> Result<(
 }
 
 #[test]
+fn rtk_codex_prefix_rewrites_via_stdbuf_wrapper() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+
+    let stdbuf_script = if cfg!(windows) {
+        "@echo STDBUF %*\r\nexit /b 0\r\n"
+    } else {
+        "#!/bin/sh\necho STDBUF $@\n"
+    };
+    let _ = write_fake_command(&bin_dir, "stdbuf", stdbuf_script)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "command", "-p", "stdbuf", "-oL", "git", "status"])
+        .assert()
+        .success()
+        .stdout(contains("STDBUF -oL rtk git status"));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_codex_prefix_rewrites_through_env_prefix() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+
+    let env_script = if cfg!(windows) {
+        "@echo ENV_OK %*\r\nexit /b 0\r\n"
+    } else {
+        "#!/bin/sh\necho ENV_OK $@\n"
+    };
+    let _ = write_fake_command(&bin_dir, "env", env_script)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args([
+            "rtk",
+            "env",
+            "--chdir=repo",
+            "command",
+            "nice",
+            "-n",
+            "5",
+            "git",
+            "status",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("ENV_OK --chdir=repo nice -n 5 rtk git status"));
+
+    Ok(())
+}
+
+#[test]
 fn rtk_deps_summarizes_cargo_manifest() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
@@ -542,6 +598,54 @@ pretty_assertions = "1"
                 .and(contains("anyhow (1)"))
                 .and(contains("serde (1)")),
         );
+
+    Ok(())
+}
+
+#[test]
+fn rtk_codex_prefix_tail_fallback_stays_raw() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let file = codex_home.path().join("sample.txt");
+    std::fs::write(&file, "one\ntwo\nthree\n")?;
+
+    let tail_script = if cfg!(windows) {
+        "@echo TAIL_RAW %*\r\nexit /b 0\r\n"
+    } else {
+        "#!/bin/sh\necho TAIL_RAW $@\n"
+    };
+    let _ = write_fake_command(&bin_dir, "tail", tail_script)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "tail", "-f", file.to_string_lossy().as_ref()])
+        .assert()
+        .success()
+        .stdout(contains("TAIL_RAW"));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_codex_prefix_chrt_fallback_stays_raw() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+
+    let chrt_script = if cfg!(windows) {
+        "@echo CHRT_RAW %*\r\nexit /b 0\r\n"
+    } else {
+        "#!/bin/sh\necho CHRT_RAW $@\n"
+    };
+    let _ = write_fake_command(&bin_dir, "chrt", chrt_script)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "command", "chrt", "-m", "1", "git", "status"])
+        .assert()
+        .success()
+        .stdout(contains("CHRT_RAW"));
 
     Ok(())
 }
