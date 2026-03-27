@@ -65,6 +65,7 @@ async fn tldr_structure_json_exposes_graph_details() -> Result<()> {
         .expect("edges should be an array");
 
     assert_eq!(payload["analysis"]["kind"], "ast");
+    assert_eq!(payload["action"], "structure");
     assert!(
         nodes
             .iter()
@@ -149,6 +150,7 @@ async fn tldr_context_json_exposes_deduplicated_call_graph() -> Result<()> {
         .count();
 
     assert_eq!(payload["analysis"]["kind"], "call_graph");
+    assert_eq!(payload["action"], "context");
     assert_eq!(calls_main_helper, 1);
     assert_eq!(details["overview"]["incoming_edges"], 1);
     assert!(details["nodes"].as_array().is_some_and(|nodes| {
@@ -202,6 +204,7 @@ async fn tldr_structure_json_supports_language_matrix() -> Result<()> {
             .expect("helper node should exist");
 
         assert_eq!(payload["analysis"]["kind"], "ast");
+        assert_eq!(payload["action"], "structure");
         assert_eq!(helper_node["kind"], "function");
         assert_eq!(details["symbol_index"][0]["symbol"], "helper");
     }
@@ -257,6 +260,7 @@ async fn tldr_impact_json_exposes_pdg_details() -> Result<()> {
         .count();
 
     assert_eq!(payload["analysis"]["kind"], "pdg");
+    assert_eq!(payload["action"], "impact");
     assert_eq!(details["symbol_query"], "helper");
     assert_eq!(details["overview"]["incoming_edges"], 1);
     assert_eq!(helper_node["kind"], "function");

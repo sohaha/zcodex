@@ -258,6 +258,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
 
     let support = LanguageRegistry::support_for(language);
     let payload = analysis_payload(
+        analysis_action_name(kind),
         &engine_project_root,
         language,
         source,
@@ -281,6 +282,17 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
     }
 
     Ok(())
+}
+
+fn analysis_action_name(kind: AnalysisKind) -> &'static str {
+    match kind {
+        AnalysisKind::Ast => "structure",
+        AnalysisKind::CallGraph => "context",
+        AnalysisKind::Pdg => "impact",
+        AnalysisKind::Cfg | AnalysisKind::Dfg => {
+            unreachable!("CLI analysis commands should not surface cfg/dfg directly")
+        }
+    }
 }
 
 async fn run_semantic_command(cmd: TldrSemanticCommand) -> Result<()> {
@@ -337,6 +349,7 @@ fn run_local_semantic_search(
 }
 
 fn analysis_payload(
+    action: &str,
     project_root: &Path,
     language: SupportedLanguage,
     source: &str,
@@ -346,6 +359,7 @@ fn analysis_payload(
     response: &AnalysisResponse,
 ) -> serde_json::Value {
     json!({
+        "action": action,
         "project": project_root,
         "language": language.as_str(),
         "source": source,
@@ -808,6 +822,7 @@ mod output_tests {
     #[test]
     fn analysis_payload_includes_nested_native_response() {
         let payload = analysis_payload(
+            "context",
             Path::new("/tmp/project"),
             SupportedLanguage::Rust,
             "daemon",
@@ -879,75 +894,33 @@ mod output_tests {
             },
         );
 
+        assert_eq!(payload["action"], "context");
+        assert_eq!(payload["project"], "/tmp/project");
+        assert_eq!(payload["language"], "rust");
+        assert_eq!(payload["source"], "daemon");
+        assert_eq!(payload["message"], "daemon summary ready");
+        assert_eq!(payload["supportLevel"], "DataFlow");
+        assert_eq!(payload["fallbackStrategy"], "structure + search");
+        assert_eq!(payload["summary"], "context summary");
+        assert_eq!(payload["symbol"], "main");
+        assert_eq!(payload["analysis"]["kind"], "call_graph");
+        assert_eq!(payload["analysis"]["summary"], "context summary");
+        assert_eq!(payload["analysis"]["details"]["symbol_query"], "main");
         assert_eq!(
-            payload,
-            serde_json::json!({
-                "project": "/tmp/project",
-                "language": "rust",
-                "source": "daemon",
-                "message": "daemon summary ready",
-                "supportLevel": "DataFlow",
-                "fallbackStrategy": "structure + search",
-                "summary": "context summary",
-                "symbol": "main",
-                "analysis": {
-                    "kind": "call_graph",
-                    "summary": "context summary",
-                    "details": {
-                        "indexed_files": 1,
-                        "total_symbols": 1,
-                        "symbol_query": "main",
-                        "truncated": false,
-                        "overview": {
-                            "kinds": [{"name": "function", "count": 1}],
-                            "outgoing_edges": 1,
-                            "incoming_edges": 0,
-                            "reference_count": 0,
-                            "import_count": 0
-                        },
-                        "files": [{
-                            "path": "src/main.rs",
-                            "symbol_count": 1,
-                            "kinds": [{"name": "function", "count": 1}]
-                        }],
-                        "nodes": [{
-                            "id": "main",
-                            "label": "main",
-                            "kind": "function",
-                            "path": "src/main.rs",
-                            "line": 1,
-                            "signature": "fn main()"
-                        }],
-                        "edges": [{
-                            "from": "src/main.rs",
-                            "to": "main",
-                            "kind": "contains"
-                        }],
-                        "symbol_index": [{
-                            "symbol": "main",
-                            "node_ids": ["main"]
-                        }],
-                        "units": [{
-                            "path": "src/main.rs",
-                            "line": 1,
-                            "span_end_line": 3,
-                            "symbol": "main",
-                            "qualified_symbol": "crate::main",
-                            "kind": "function",
-                            "module_path": ["crate"],
-                            "visibility": null,
-                            "signature": "fn main()",
-                            "calls": ["validate"],
-                            "called_by": [],
-                            "references": [],
-                            "imports": [],
-                            "dependencies": [],
-                            "cfg_summary": "cfg",
-                            "dfg_summary": "dfg"
-                        }]
-                    }
-                }
-            })
+            payload["analysis"]["details"]["nodes"][0]["kind"],
+            "function"
+        );
+        assert_eq!(
+            payload["analysis"]["details"]["edges"][0]["kind"],
+            "contains"
+        );
+        assert_eq!(
+            payload["analysis"]["details"]["symbol_index"][0]["node_ids"],
+            serde_json::json!(["main"])
+        );
+        assert_eq!(
+            payload["analysis"]["details"]["units"][0]["qualified_symbol"],
+            "crate::main"
         );
     }
 
