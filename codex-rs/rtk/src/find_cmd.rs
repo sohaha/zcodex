@@ -5,7 +5,7 @@ use ignore::WalkBuilder;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Match a filename against a glob pattern (supports `*` and `?`).
+/// 使用 glob 模式匹配文件名（支持 `*` 和 `?`）。
 fn glob_match(pattern: &str, name: &str) -> bool {
     glob_match_inner(pattern.as_bytes(), name.as_bytes())
 }
@@ -14,7 +14,7 @@ fn glob_match_inner(pat: &[u8], name: &[u8]) -> bool {
     match (pat.first(), name.first()) {
         (None, None) => true,
         (Some(b'*'), _) => {
-            // '*' matches zero or more characters
+            // `*` 匹配零个或多个字符
             glob_match_inner(&pat[1..], name)
                 || (!name.is_empty() && glob_match_inner(pat, &name[1..]))
         }
@@ -24,7 +24,7 @@ fn glob_match_inner(pat: &[u8], name: &[u8]) -> bool {
     }
 }
 
-/// Parsed arguments from either native find or RTK find syntax.
+/// 从原生 find 语法或 RTK find 语法解析后的参数。
 #[derive(Debug)]
 struct FindArgs {
     pattern: String,
@@ -48,21 +48,21 @@ impl Default for FindArgs {
     }
 }
 
-/// Consume the next argument from `args` at position `i`, advancing the index.
-/// Returns `None` if `i` is past the end of `args`.
+/// 读取 `args` 中位置 `i` 的下一个参数，并推进索引。
+/// 如果 `i` 已超过 `args` 末尾，则返回 `None`。
 fn next_arg(args: &[String], i: &mut usize) -> Option<String> {
     *i += 1;
     args.get(*i).cloned()
 }
 
-/// Check if args contain native find flags (-name, -type, -maxdepth, etc.)
+/// 检查参数中是否包含原生 find 标志位（-name、-type、-maxdepth 等）
 fn has_native_find_flags(args: &[String]) -> bool {
     args.iter()
         .any(|a| a == "-name" || a == "-type" || a == "-maxdepth" || a == "-iname")
 }
 
-/// Native find flags that RTK cannot handle correctly.
-/// These involve compound predicates, actions, or semantics we don't support.
+/// 在 RTK 中无法正确处理的原生 find 标志位。
+/// 这些标志涉及组合谓词、动作或暂不支持的语义。
 const UNSUPPORTED_FIND_FLAGS: &[&str] = &[
     "-not", "!", "-or", "-o", "-and", "-a", "-exec", "-execdir", "-delete", "-print0", "-newer",
     "-perm", "-size", "-mtime", "-mmin", "-atime", "-amin", "-ctime", "-cmin", "-empty", "-link",
@@ -74,10 +74,10 @@ fn has_unsupported_find_flags(args: &[String]) -> bool {
         .any(|a| UNSUPPORTED_FIND_FLAGS.contains(&a.as_str()))
 }
 
-/// Parse arguments from raw args vec, supporting both native find and RTK syntax.
+/// 从原始参数向量中解析参数，支持原生 find 和 RTK 两种语法。
 ///
-/// Native find syntax: `find . -name "*.rs" -type f -maxdepth 3`
-/// RTK syntax: `find *.rs [path] [-m max] [-t type]`
+/// 原生 find 语法：`find . -name "*.rs" -type f -maxdepth 3`
+/// 采用 RTK 风格的语法：`find *.rs [path] [-m max] [-t type]`
 fn parse_find_args(args: &[String]) -> Result<FindArgs> {
     if args.is_empty() {
         return Ok(FindArgs::default());
@@ -96,12 +96,12 @@ fn parse_find_args(args: &[String]) -> Result<FindArgs> {
     }
 }
 
-/// Parse native find syntax: `find [path] -name "*.rs" -type f -maxdepth 3`
+/// 解析原生 find 语法：`find [path] -name "*.rs" -type f -maxdepth 3`
 fn parse_native_find_args(args: &[String]) -> Result<FindArgs> {
     let mut parsed = FindArgs::default();
     let mut i = 0;
 
-    // First non-flag argument is the path (standard find behavior)
+    // 第一个非标志参数是路径（标准 find 行为）
     if !args[0].starts_with('-') {
         parsed.path = args[0].clone();
         i = 1;
@@ -141,7 +141,7 @@ fn parse_native_find_args(args: &[String]) -> Result<FindArgs> {
     Ok(parsed)
 }
 
-/// Parse RTK syntax: `find <pattern> [path] [-m max] [-t type]`
+/// 解析 RTK 语法：`find <pattern> [path] [-m max] [-t type]`
 fn parse_rtk_find_args(args: &[String]) -> Result<FindArgs> {
     let mut parsed = FindArgs {
         pattern: args[0].clone(),
@@ -149,7 +149,7 @@ fn parse_rtk_find_args(args: &[String]) -> Result<FindArgs> {
     };
     let mut i = 1;
 
-    // Second positional arg (if not a flag) is the path
+    // 第二个位置参数（如果不是标志位）是路径
     if i < args.len() && !args[i].starts_with('-') {
         parsed.path = args[i].clone();
         i += 1;
@@ -175,7 +175,7 @@ fn parse_rtk_find_args(args: &[String]) -> Result<FindArgs> {
     Ok(parsed)
 }
 
-/// Entry point from main.rs — parses raw args then delegates to run().
+/// 从 `main.rs` 进入的入口：先解析原始参数，再委托给 `run()`。
 pub fn run_from_args(args: &[String], verbose: u8) -> Result<()> {
     let parsed = parse_find_args(args)?;
     run(
@@ -200,7 +200,7 @@ pub fn run(
 ) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Treat "." as match-all
+    // 将 "." 视为匹配全部
     let effective_pattern = if pattern == "." { "*" } else { pattern };
 
     if verbose > 0 {
@@ -211,8 +211,8 @@ pub fn run(
 
     let mut builder = WalkBuilder::new(path);
     builder
-        .hidden(true) // skip hidden files/dirs
-        .git_ignore(true) // respect .gitignore
+        .hidden(true) // 跳过隐藏文件/目录
+        .git_ignore(true) // 遵循 .gitignore
         .git_global(true)
         .git_exclude(true);
     if let Some(depth) = max_depth {
@@ -231,7 +231,7 @@ pub fn run(
         let ft = entry.file_type();
         let is_dir = ft.as_ref().is_some_and(std::fs::FileType::is_dir);
 
-        // Filter by type
+        // 按类型过滤
         if want_dirs && !is_dir {
             continue;
         }
@@ -241,7 +241,7 @@ pub fn run(
 
         let entry_path = entry.path();
 
-        // Get filename for glob matching
+        // 获取用于 glob 匹配的文件名
         let name = match entry_path.file_name() {
             Some(n) => n.to_string_lossy(),
             None => continue,
@@ -256,7 +256,7 @@ pub fn run(
             continue;
         }
 
-        // Store path relative to search root
+        // 存储相对于搜索根目录的路径
         let display_path = entry_path
             .strip_prefix(path)
             .unwrap_or(entry_path)
@@ -284,7 +284,7 @@ pub fn run(
         return Ok(());
     }
 
-    // Group by directory
+    // 按目录分组
     let mut by_dir: HashMap<String, Vec<String>> = HashMap::new();
 
     for file in &files {
@@ -309,7 +309,7 @@ pub fn run(
     println!("📁 {total_files} 个文件 {dirs_count} 个目录：");
     println!();
 
-    // Display with proper --max limiting (count individual files)
+    // 按 `--max` 正确限制展示数量（按单个文件计数）
     let mut shown = 0;
     for dir in &dirs {
         if shown >= max_results {
@@ -328,7 +328,7 @@ pub fn run(
             println!("{}/ {}", dir_display, files_in_dir.join(" "));
             shown += files_in_dir.len();
         } else {
-            // Partial display: show only what fits in budget
+            // 部分展示：只显示剩余预算允许的文件
             let partial: Vec<_> = files_in_dir
                 .iter()
                 .take(remaining_budget)
@@ -344,7 +344,7 @@ pub fn run(
         println!("+{} 个", total_files - shown);
     }
 
-    // Extension summary
+    // 扩展名摘要
     let mut by_ext: HashMap<String, usize> = HashMap::new();
     for file in &files {
         let ext = Path::new(file)
@@ -383,7 +383,7 @@ pub fn run(
 mod tests {
     use super::*;
 
-    /// Convert string slices to Vec<String> for test convenience.
+    /// 为了测试方便，将字符串切片转换为 `Vec<String>`。
     fn args(values: &[&str]) -> Vec<String> {
         values
             .iter()
@@ -391,7 +391,7 @@ mod tests {
             .collect()
     }
 
-    // --- glob_match unit tests ---
+    // --- glob_match 单元测试 ---
 
     #[test]
     fn glob_match_star_rs() {
@@ -427,16 +427,16 @@ mod tests {
         assert!(!glob_match("test_*", "test"));
     }
 
-    // --- dot pattern treated as star ---
+    // --- 将点号模式视为星号 ---
 
     #[test]
     fn dot_becomes_star() {
-        // run() converts "." to "*" internally, test the logic
+        // `run()` 内部会把 "." 转成 "*"，这里测试这段逻辑
         let effective = if "." == "." { "*" } else { "." };
         assert_eq!(effective, "*");
     }
 
-    // --- parse_find_args: native find syntax ---
+    // --- parse_find_args：原生 find 语法 ---
 
     #[test]
     fn parse_native_find_name() {
@@ -467,7 +467,7 @@ mod tests {
         let parsed = parse_find_args(&args(&[".", "-name", "*.toml", "-maxdepth", "2"])).unwrap();
         assert_eq!(parsed.pattern, "*.toml");
         assert_eq!(parsed.max_depth, Some(2));
-        assert_eq!(parsed.max_results, 50); // max_results unchanged by -maxdepth
+        assert_eq!(parsed.max_results, 50); // `-maxdepth` 不会改变 max_results
     }
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
         assert_eq!(parsed.path, ".");
     }
 
-    // --- parse_find_args: unsupported flags ---
+    // --- parse_find_args：不支持的标志位 ---
 
     #[test]
     fn parse_native_find_rejects_not() {
@@ -507,7 +507,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // --- parse_find_args: RTK syntax ---
+    // --- parse_find_args：RTK 语法 ---
 
     #[test]
     fn parse_rtk_syntax_pattern_only() {
@@ -539,41 +539,41 @@ mod tests {
         assert_eq!(parsed.path, ".");
     }
 
-    // --- run_from_args integration tests ---
+    // --- run_from_args 集成测试 ---
 
     #[test]
     fn run_from_args_native_find_syntax() {
-        // Simulates: find . -name "*.rs" -type f
+        // 模拟：`find . -name "*.rs" -type f`
         let result = run_from_args(&args(&[".", "-name", "*.rs", "-type", "f"]), 0);
         assert!(result.is_ok());
     }
 
     #[test]
     fn run_from_args_rtk_syntax() {
-        // Simulates: rtk find *.rs src
+        // 模拟：`rtk find *.rs src`
         let result = run_from_args(&args(&["*.rs", "src"]), 0);
         assert!(result.is_ok());
     }
 
     #[test]
     fn run_from_args_iname_case_insensitive() {
-        // -iname should match case-insensitively
+        // `-iname` 应按大小写不敏感匹配
         let result = run_from_args(&args(&[".", "-iname", "cargo.toml"]), 0);
         assert!(result.is_ok());
     }
 
-    // --- integration: run on this repo ---
+    // --- 集成：在当前仓库上运行 ---
 
     #[test]
     fn find_rs_files_in_src() {
-        // Should find .rs files without error
+        // 应能找到 `.rs` 文件且不报错
         let result = run("*.rs", "src", 100, None, "f", false, 0);
         assert!(result.is_ok());
     }
 
     #[test]
     fn find_dot_pattern_works() {
-        // "." pattern should not error (was broken before)
+        // "." 模式不应报错（之前这里有过问题）
         let result = run(".", "src", 10, None, "f", false, 0);
         assert!(result.is_ok());
     }
@@ -586,17 +586,17 @@ mod tests {
 
     #[test]
     fn find_respects_max() {
-        // With max=2, should not error
+        // 当 max=2 时也不应报错
         let result = run("*.rs", "src", 2, None, "f", false, 0);
         assert!(result.is_ok());
     }
 
     #[test]
     fn find_gitignored_excluded() {
-        // target/ is in .gitignore — files inside should not appear
+        // `target/` 在 `.gitignore` 中，里面的文件不应出现
         let result = run("*", ".", 1000, None, "f", false, 0);
         assert!(result.is_ok());
-        // We can't easily capture stdout in unit tests, but at least
-        // verify it runs without error. The smoke tests verify content.
+        // 单元测试里不方便直接捕获 stdout，但至少要验证它能正常运行。
+        // 具体输出内容由 smoke tests 覆盖。
     }
 }

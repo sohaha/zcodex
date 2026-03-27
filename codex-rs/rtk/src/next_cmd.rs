@@ -10,7 +10,7 @@ use regex::Regex;
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Try next directly first, fallback to npx if not found
+    // 先直接尝试 `next`，找不到时再回退到 `npx`
     let next_exists = tool_exists("next");
 
     let mut cmd = if next_exists {
@@ -45,7 +45,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     timer.track("next build", "rtk next build", &raw, &filtered);
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }
@@ -53,15 +53,15 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter Next.js build output - extract routes, bundles, warnings
+/// 过滤 Next.js 构建输出，提取路由、bundle 和警告信息
 fn filter_next_build(output: &str) -> String {
     lazy_static::lazy_static! {
-        // Route line pattern: ○ /dashboard    1.2 kB  132 kB
+        // 路由行模式：○ /dashboard    1.2 kB  132 kB
         static ref ROUTE_PATTERN: Regex = crate::utils::compile_regex(
             r"^[○●◐λ✓]\s+(/[^\s]*)\s+(\d+(?:\.\d+)?)\s*(kB|B)"
         );
 
-        // Bundle size pattern
+        // 用于匹配 Bundle 大小的模式
         static ref BUNDLE_PATTERN: Regex = crate::utils::compile_regex(
             r"^[○●◐λ✓]\s+([\w/\-\.]+)\s+(\d+(?:\.\d+)?)\s*(kB|B)\s+(\d+(?:\.\d+)?)\s*(kB|B)"
         );
@@ -75,11 +75,11 @@ fn filter_next_build(output: &str) -> String {
     let mut errors = 0;
     let mut build_time = String::new();
 
-    // Strip ANSI codes
+    // 去除 ANSI 颜色码
     let clean_output = strip_ansi(output);
 
     for line in clean_output.lines() {
-        // Count route types by symbol
+        // 按符号统计路由类型
         if line.starts_with("○") {
             routes_static += 1;
             routes_total += 1;
@@ -90,13 +90,13 @@ fn filter_next_build(output: &str) -> String {
             routes_total += 1;
         }
 
-        // Extract bundle information (route + size + total size)
+        // 提取 bundle 信息（路由 + 大小 + 总大小）
         if let Some(caps) = BUNDLE_PATTERN.captures(line) {
             let route = caps[1].to_string();
             let size: f64 = caps[2].parse().unwrap_or(0.0);
             let total: f64 = caps[4].parse().unwrap_or(0.0);
 
-            // Calculate percentage increase if both sizes present
+            // 若两个大小都存在，则计算增幅百分比
             let pct_change = if total > 0.0 {
                 Some(((total - size) / size) * 100.0)
             } else {
@@ -106,7 +106,7 @@ fn filter_next_build(output: &str) -> String {
             bundles.push((route, total, pct_change));
         }
 
-        // Count warnings and errors
+        // 统计警告和错误
         if line.to_lowercase().contains("warning") {
             warnings += 1;
         }
@@ -114,7 +114,7 @@ fn filter_next_build(output: &str) -> String {
             errors += 1;
         }
 
-        // Extract build time
+        // 提取构建耗时
         if (line.contains("Compiled") || line.contains("in"))
             && let Some(time_match) = extract_time(line)
         {
@@ -122,12 +122,12 @@ fn filter_next_build(output: &str) -> String {
         }
     }
 
-    // Detect if build was skipped (already built)
+    // 检测是否跳过了构建（已构建 / 使用缓存）
     let already_built = clean_output.contains("already optimized")
         || clean_output.contains("Cache")
         || (routes_total == 0 && clean_output.contains("Ready"));
 
-    // Build filtered output
+    // 构建过滤后的输出
     let mut result = String::new();
     result.push_str("⚡ Next.js 构建\n");
     result.push_str("═══════════════════════════════════════\n");
@@ -143,7 +143,7 @@ fn filter_next_build(output: &str) -> String {
     if !bundles.is_empty() {
         result.push_str("Bundles：\n");
 
-        // Sort by size (descending) and show top 10
+        // 按体积降序排序并展示前 10 条
         bundles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         for (route, size, pct_change) in bundles.iter().take(10) {
@@ -172,7 +172,7 @@ fn filter_next_build(output: &str) -> String {
         result.push('\n');
     }
 
-    // Show build time and status
+    // 展示构建耗时和状态
     if !build_time.is_empty() {
         result.push_str(&format!("耗时：{build_time} | "));
     }
@@ -182,7 +182,7 @@ fn filter_next_build(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Extract time from build output (e.g., "Compiled in 34.2s")
+/// 从构建输出中提取耗时（例如 `"Compiled in 34.2s"`）
 fn extract_time(line: &str) -> Option<String> {
     lazy_static::lazy_static! {
         static ref TIME_RE: Regex = crate::utils::compile_regex(r"(\d+(?:\.\d+)?)\s*(s|ms)");
@@ -224,7 +224,7 @@ Route (app)                    Size     First Load JS
         let result = filter_next_build(output);
         assert!(result.contains("⚡ Next.js 构建"));
         assert!(result.contains("路由"));
-        assert!(!result.contains("Creating an optimized")); // Should filter verbose logs
+        assert!(!result.contains("Creating an optimized")); // 应过滤冗长日志
     }
 
     #[test]

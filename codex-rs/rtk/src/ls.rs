@@ -3,7 +3,7 @@ use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
 
-/// Noise directories commonly excluded from LLM context
+/// 在 LLM 上下文中通常会排除的噪音目录
 const NOISE_DIRS: &[&str] = &[
     "node_modules",
     ".git",
@@ -34,7 +34,7 @@ const NOISE_DIRS: &[&str] = &[
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Separate flags from paths
+    // 将标志位和路径分开
     let show_all = args
         .iter()
         .any(|a| (a.starts_with('-') && !a.starts_with("--") && a.contains('a')) || a == "--all");
@@ -50,13 +50,13 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         .map(std::string::String::as_str)
         .collect();
 
-    // Build ls -la + any extra flags the user passed (e.g. -R)
-    // Strip -l, -a, -h (we handle all of these ourselves)
+    // 构建 `ls -la`，并附加用户传入的额外标志（如 `-R`）
+    // 去掉 `-l`、`-a`、`-h`（这些由我们自己处理）
     let mut cmd = resolved_command("ls");
     cmd.arg("-la");
     for flag in &flags {
         if flag.starts_with("--") {
-            // Long flags: skip --all (already handled)
+            // 长参数：跳过 `--all`（已自行处理）
             if *flag != "--all" {
                 cmd.arg(flag);
             }
@@ -72,7 +72,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
     }
 
-    // Add paths (default to "." if none)
+    // 添加路径（如果没有则默认用 "."）
     if paths.is_empty() {
         cmd.arg(".");
     } else {
@@ -121,7 +121,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Format bytes into human-readable size
+/// 将字节数格式化为易读的大小
 fn human_size(bytes: u64) -> String {
     if bytes >= 1_048_576 {
         format!("{:.1}M", bytes as f64 / 1_048_576.0)
@@ -132,18 +132,18 @@ fn human_size(bytes: u64) -> String {
     }
 }
 
-/// Parse ls -la output into compact format:
-///   name/  (dirs)
-///   name  size  (files)
+/// 将 `ls -la` 输出解析为紧凑格式：
+///   `name/`（目录）
+///   `name  size`（文件）
 fn compact_ls(raw: &str, show_all: bool) -> String {
     use std::collections::HashMap;
 
     let mut dirs: Vec<String> = Vec::new();
-    let mut files: Vec<(String, String)> = Vec::new(); // (name, size)
+    let mut files: Vec<(String, String)> = Vec::new(); // （名称，大小）
     let mut by_ext: HashMap<String, usize> = HashMap::new();
 
     for line in raw.lines() {
-        // Skip total, empty, . and ..
+        // 跳过 total、空行、`.` 和 `..`
         if line.starts_with("total ") || line.is_empty() {
             continue;
         }
@@ -153,15 +153,15 @@ fn compact_ls(raw: &str, show_all: bool) -> String {
             continue;
         }
 
-        // Filename is everything from column 9 onward (handles spaces)
+        // 文件名从第 9 列开始（可处理空格）
         let name = parts[8..].join(" ");
 
-        // Skip . and ..
+        // 跳过 `.` 和 `..`
         if name == "." || name == ".." {
             continue;
         }
 
-        // Filter noise dirs unless -a
+        // 除非传了 `-a`，否则过滤噪音目录
         if !show_all && NOISE_DIRS.iter().any(|noise| name == *noise) {
             continue;
         }
@@ -188,13 +188,13 @@ fn compact_ls(raw: &str, show_all: bool) -> String {
 
     let mut out = String::new();
 
-    // Dirs first, compact
+    // 先输出目录，保持紧凑
     for d in &dirs {
         out.push_str(d);
         out.push_str("/\n");
     }
 
-    // Files with size
+    // 输出文件及大小
     for (name, size) in &files {
         out.push_str(name);
         out.push_str("  ");
@@ -202,7 +202,7 @@ fn compact_ls(raw: &str, show_all: bool) -> String {
         out.push('\n');
     }
 
-    // Summary line
+    // 摘要行
     out.push('\n');
     let mut summary = format!("📊 {} files, {} dirs", files.len(), dirs.len());
     if !by_ext.is_empty() {
