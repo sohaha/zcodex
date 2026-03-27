@@ -26,7 +26,7 @@ fn language_fixture(language: &str) -> (&'static str, &'static str) {
 }
 
 #[tokio::test]
-async fn tldr_structure_json_exposes_graph_details() -> Result<()> {
+async fn tldr_structure_json_preserves_graph_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
@@ -110,7 +110,7 @@ async fn tldr_structure_json_exposes_graph_details() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tldr_context_json_exposes_deduplicated_call_graph() -> Result<()> {
+async fn tldr_context_json_preserves_call_graph_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
@@ -213,7 +213,7 @@ async fn tldr_structure_json_supports_language_matrix() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tldr_impact_json_exposes_pdg_details() -> Result<()> {
+async fn tldr_impact_json_preserves_pdg_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
@@ -316,7 +316,7 @@ async fn tldr_impact_text_renders_summary_lines() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tldr_cfg_json_exposes_cfg_details() -> Result<()> {
+async fn tldr_cfg_json_preserves_cfg_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
@@ -367,7 +367,7 @@ async fn tldr_cfg_json_exposes_cfg_details() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tldr_dfg_json_exposes_dfg_details() -> Result<()> {
+async fn tldr_dfg_json_preserves_dfg_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
@@ -418,7 +418,7 @@ async fn tldr_dfg_json_exposes_dfg_details() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tldr_daemon_notify_json_exposes_snapshot_details() -> Result<()> {
+async fn tldr_daemon_notify_json_preserves_snapshot_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
@@ -458,7 +458,7 @@ async fn tldr_daemon_notify_json_exposes_snapshot_details() -> Result<()> {
 }
 
 #[tokio::test]
-async fn tldr_daemon_status_json_exposes_daemon_status_fields() -> Result<()> {
+async fn tldr_daemon_status_json_preserves_status_contract() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
     std::fs::create_dir_all(project.path().join("src"))?;
