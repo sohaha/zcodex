@@ -939,6 +939,60 @@ fn login_flow(service: &AuthService, session: Session) {
     }
 
     #[test]
+    fn structure_analysis_supports_multiple_qualified_symbol_queries() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            r#"
+mod auth {
+    pub struct AuthService;
+
+    impl AuthService {
+        pub fn login(&self) {
+            self.validate();
+        }
+
+        fn validate(&self) {}
+    }
+}
+"#,
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        for (symbol, expected_kind, expected_signature) in [
+            ("auth::AuthService::login", "method", "pub fn login(&self)"),
+            (
+                "auth::AuthService::validate",
+                "method",
+                "fn validate(&self)",
+            ),
+        ] {
+            let response = analyze_project(
+                tempdir.path(),
+                &config,
+                AnalysisRequest {
+                    kind: AnalysisKind::Ast,
+                    language: SupportedLanguage::Rust,
+                    symbol: Some(symbol.to_string()),
+                },
+            )
+            .expect("analysis should succeed");
+
+            let details = response.details.expect("details should exist");
+            assert_eq!(details.symbol_query.as_deref(), Some(symbol));
+            assert_eq!(details.units.len(), 1);
+            assert_eq!(details.units[0].qualified_symbol.as_deref(), Some(symbol));
+            assert_eq!(details.units[0].kind, expected_kind);
+            assert_eq!(
+                details.units[0].signature.as_deref(),
+                Some(expected_signature)
+            );
+        }
+    }
+
+    #[test]
     fn context_analysis_uses_qualified_calls_to_reduce_false_incoming_edges() {
         let tempdir = tempdir().expect("tempdir should exist");
         std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
