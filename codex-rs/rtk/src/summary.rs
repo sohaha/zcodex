@@ -36,6 +36,9 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     let summary = summarize_output(&raw, command, output.status.success());
     println!("{summary}");
     timer.track(command, "rtk summary", &raw, &summary);
+    if !output.status.success() {
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
     Ok(())
 }
 

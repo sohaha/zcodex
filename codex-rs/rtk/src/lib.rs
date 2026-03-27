@@ -48,6 +48,7 @@ mod wget_cmd;
 
 use anyhow::Context;
 use anyhow::Result;
+use clap::CommandFactory;
 use clap::Parser;
 use clap::Subcommand;
 use clap::error::ErrorKind;
@@ -798,8 +799,26 @@ const REMOVED_BUILTIN_COMMANDS: &[&str] = &[
     "rewrite",
 ];
 
+fn should_show_parse_error(args: &[OsString]) -> bool {
+    let Some(first_arg) = args.first() else {
+        return true;
+    };
+
+    let first_arg = first_arg.to_string_lossy();
+    if REMOVED_BUILTIN_COMMANDS.contains(&first_arg.as_ref()) {
+        return true;
+    }
+
+    Cli::command().get_subcommands().any(|subcommand| {
+        subcommand.get_name() == first_arg
+            || subcommand
+                .get_all_aliases()
+                .any(|alias| alias == first_arg.as_ref())
+    })
+}
+
 fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
-    if args.is_empty() {
+    if args.is_empty() || should_show_parse_error(args) {
         parse_error.exit();
     }
 
@@ -807,10 +826,6 @@ fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
         .iter()
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
-
-    if REMOVED_BUILTIN_COMMANDS.contains(&rendered_args[0].as_str()) {
-        parse_error.exit();
-    }
 
     let raw_command = rendered_args.join(" ");
     let timer = tracking::TimedExecution::start();

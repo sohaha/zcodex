@@ -57,6 +57,25 @@ fn shell_args(script: &str) -> [&str; 3] {
     ["cmd", "/C", script]
 }
 
+#[cfg(unix)]
+fn write_fake_command(dir: &Path, name: &str, script: &str) -> Result<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = dir.join(name);
+    std::fs::write(&path, script)?;
+    let mut permissions = std::fs::metadata(&path)?.permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions)?;
+    Ok(path)
+}
+
+#[cfg(windows)]
+fn write_fake_command(dir: &Path, name: &str, script: &str) -> Result<PathBuf> {
+    let path = dir.join(format!("{name}.bat"));
+    std::fs::write(&path, script)?;
+    Ok(path)
+}
+
 #[test]
 fn rtk_read_limits_output() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -142,12 +161,20 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
 
     let mut cmd = codex_command(codex_home.path())?;
     cmd.args(["rtk", "--help"]).assert().success().stdout(
-        contains("golangci-lint")
+        contains("gh")
+            .and(contains("env"))
+            .and(contains("wget"))
+            .and(contains("golangci-lint"))
             .and(contains("cargo"))
             .and(contains("summary"))
             .and(contains("  init ").not())
             .and(contains("  gain ").not())
             .and(contains("discover").not())
+            .and(contains("learn").not())
+            .and(contains("config").not())
+            .and(contains("proxy").not())
+            .and(contains("hook-audit").not())
+            .and(contains("cc-economics").not())
             .and(contains("rewrite").not())
             .and(contains("verify").not()),
     );
@@ -159,13 +186,56 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
 fn rtk_removed_meta_commands_fail_instead_of_falling_through() -> Result<()> {
     let codex_home = TempDir::new()?;
 
-    for command_name in ["init", "gain", "discover", "rewrite", "verify"] {
+    for command_name in [
+        "gain",
+        "discover",
+        "learn",
+        "init",
+        "config",
+        "proxy",
+        "hook-audit",
+        "cc-economics",
+        "verify",
+        "rewrite",
+    ] {
         let mut cmd = codex_command(codex_home.path())?;
         cmd.args(["rtk", command_name])
             .assert()
             .failure()
             .stderr(contains("unrecognized subcommand"));
     }
+
+    Ok(())
+}
+
+#[test]
+fn rtk_builtin_parse_errors_do_not_fall_back_to_external_commands() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_read = write_fake_command(
+        &bin_dir,
+        "read",
+        if cfg!(windows) {
+            "@echo FALLBACK_TRIGGERED\r\n"
+        } else {
+            "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
+        },
+    )?;
+
+    let original_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut combined_path = std::ffi::OsString::new();
+    combined_path.push(&bin_dir);
+    combined_path.push(if cfg!(windows) { ";" } else { ":" });
+    combined_path.push(original_path);
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", combined_path)
+        .args(["rtk", "read", "--bogus-flag"])
+        .assert()
+        .failure()
+        .stderr(contains("unexpected argument '--bogus-flag'"))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
 
     Ok(())
 }
@@ -479,6 +549,20 @@ fn rtk_err_preserves_non_zero_exit_code() -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn rtk_summary_preserves_non_zero_exit_code() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "summary", "sh", "-c", "echo boom >&2; exit 9"])
+        .assert()
+        .code(9)
+        .stdout(contains("❌ 命令：").and(contains("boom")));
+
+    Ok(())
+}
+
 #[test]
 fn rtk_tree_ignores_noise_dirs_by_default() -> Result<()> {
     if !command_exists("tree") {
@@ -539,6 +623,20 @@ fn rtk_err_preserves_non_zero_exit_code() -> Result<()> {
         .assert()
         .code(7)
         .stdout(contains("boom"));
+
+    Ok(())
+}
+
+#[cfg(windows)]
+#[test]
+fn rtk_summary_preserves_non_zero_exit_code() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "summary", "cmd", "/C", "echo boom 1>&2 & exit /b 9"])
+        .assert()
+        .code(9)
+        .stdout(contains("❌ 命令：").and(contains("boom")));
 
     Ok(())
 }
