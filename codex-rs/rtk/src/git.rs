@@ -1681,7 +1681,7 @@ mod tests {
         let result = compact_diff(&diff, 500);
         assert!(
             !result.contains("... (truncated)"),
-            "25 lines should not be truncated with max_hunk_lines=30"
+            "在 `max_hunk_lines=30` 时，25 行内容不应被截断"
         );
         assert!(result.contains("+line25"));
     }
@@ -1699,7 +1699,7 @@ mod tests {
         let result = compact_diff(&diff, 500);
         assert!(
             !result.contains("更多变更已截断"),
-            "5 files × 20 lines should not exceed max_lines=500"
+            "5 个文件各 20 行时，不应超过 `max_lines=500`"
         );
     }
 

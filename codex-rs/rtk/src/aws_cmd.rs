@@ -837,7 +837,7 @@ mod tests {
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "EC2 filter: expected >=60% savings, got {savings:.1}%"
+            "EC2 过滤器预期至少节省 60% token，实际为 {savings:.1}%"
         );
     }
 
@@ -854,7 +854,7 @@ mod tests {
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "STS identity filter: expected >=60% savings, got {savings:.1}%"
+            "STS identity 过滤器预期至少节省 60% token，实际为 {savings:.1}%"
         );
     }
 

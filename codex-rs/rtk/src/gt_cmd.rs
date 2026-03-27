@@ -589,7 +589,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt log filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
+            "gt log 过滤器预期至少节省 60% token，实际为 {savings:.1}%（{input_tokens} -> {output_tokens}）"
         );
     }
 
@@ -671,7 +671,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt submit filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
+            "gt submit 过滤器预期至少节省 60% token，实际为 {savings:.1}%（{input_tokens} -> {output_tokens}）"
         );
     }
 
@@ -794,7 +794,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt sync filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
+            "gt sync 过滤器预期至少节省 60% token，实际为 {savings:.1}%（{input_tokens} -> {output_tokens}）"
         );
     }
 
@@ -814,7 +814,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt create filter: expected >=60% savings, got {savings:.1}% ({input_tokens} -> {output_tokens} tokens)"
+            "gt create 过滤器预期至少节省 60% token，实际为 {savings:.1}%（{input_tokens} -> {output_tokens}）"
         );
     }
 
@@ -837,7 +837,7 @@ Restacked branch fix/parsing on feat/add-db
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "gt restack filter: expected >=60% savings, got {savings:.1}%"
+            "gt restack 过滤器预期至少节省 60% token，实际为 {savings:.1}%"
         );
     }
 }

@@ -306,7 +306,7 @@ Scope: all 6 workspace projects
     #[test]
     fn test_extract_json_object_string_with_braces() {
         let input = r#"{"numTotalTests": 1, "message": "test {should} not confuse parser"}"#;
-        let extracted = extract_json_object(input).expect("Should extract JSON");
+        let extracted = extract_json_object(input).expect("应成功提取 JSON");
         assert!(extracted.contains("test {should} not confuse parser"));
         assert_eq!(extracted, input);
     }

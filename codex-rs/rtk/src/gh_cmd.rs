@@ -1646,7 +1646,7 @@ ___
 
         assert!(
             savings >= 30.0,
-            "Expected ≥30% savings, got {savings:.1}% (input: {input_tokens} tokens, output: {output_tokens} tokens)"
+            "预期至少节省 30% token，实际为 {savings:.1}%（输入：{input_tokens}，输出：{output_tokens}）"
         );
 
         // 验证有意义的内容仍被保留

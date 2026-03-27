@@ -84,9 +84,7 @@ fn parse_find_args(args: &[String]) -> Result<FindArgs> {
     }
 
     if has_unsupported_find_flags(args) {
-        anyhow::bail!(
-            "rtk find does not support compound predicates or actions (e.g. -not, -exec). Use `find` directly."
-        );
+        anyhow::bail!("rtk find 不支持复合谓词或动作（如 `-not`、`-exec`），请直接使用 `find`。");
     }
 
     if has_native_find_flags(args) {
@@ -504,7 +502,7 @@ mod tests {
         let result = parse_find_args(&args(&[".", "-name", "*.rs", "-not", "-name", "*_test.rs"]));
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("compound predicates"));
+        assert!(msg.contains("复合谓词"));
     }
 
     #[test]

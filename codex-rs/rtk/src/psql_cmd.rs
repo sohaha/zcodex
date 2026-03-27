@@ -362,7 +362,7 @@ name | bob
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 40.0,
-            "Table filter: expected >=40% savings, got {savings:.1}%"
+            "表格过滤器预期至少节省 40% token，实际为 {savings:.1}%"
         );
     }
 
@@ -375,7 +375,7 @@ name | bob
         let savings = 100.0 - (output_tokens as f64 / input_tokens as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "Expanded filter: expected >=60% savings, got {savings:.1}%"
+            "展开视图过滤器预期至少节省 60% token，实际为 {savings:.1}%"
         );
     }
 }
