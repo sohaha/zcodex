@@ -1252,6 +1252,7 @@ mod output_tests {
     fn analysis_action_name_maps_ast_to_tree() {
         assert_eq!(analysis_action_name(AnalysisKind::Ast), "tree");
         assert_eq!(analysis_action_name(AnalysisKind::Extract), "extract");
+        assert_eq!(analysis_action_name(AnalysisKind::Slice), "slice");
     }
 
     #[test]
@@ -1544,6 +1545,27 @@ mod output_tests {
             lines
                 .iter()
                 .any(|line| line.starts_with("summary: extract summary:"))
+        );
+    }
+
+    #[test]
+    fn render_analysis_response_text_includes_slice_line() {
+        let lines = render_analysis_response_text(
+            SupportedLanguage::Rust,
+            "daemon",
+            LanguageRegistry::support_for(SupportedLanguage::Rust),
+            Some("slice ready"),
+            Some("src/lib.rs"),
+            Some(4),
+            "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]",
+        );
+
+        assert!(lines.contains(&"path: src/lib.rs".to_string()));
+        assert!(lines.contains(&"line: 4".to_string()));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("summary: slice summary:"))
         );
     }
 

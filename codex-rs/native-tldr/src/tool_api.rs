@@ -938,6 +938,7 @@ mod tests {
         assert_eq!(action_name(&TldrToolAction::Impact), "impact");
         assert_eq!(action_name(&TldrToolAction::Cfg), "cfg");
         assert_eq!(action_name(&TldrToolAction::Dfg), "dfg");
+        assert_eq!(action_name(&TldrToolAction::Slice), "slice");
     }
 
     #[test]
@@ -1172,6 +1173,34 @@ mod tests {
             .expect_err("extract without path should fail");
 
         assert_eq!(error.to_string(), "`path` is required for action=extract");
+    }
+
+    #[test]
+    fn slice_action_requires_line() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Slice,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: Some("main".to_string()),
+                    query: None,
+                    path: Some("src/lib.rs".to_string()),
+                    line: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("slice without line should fail");
+
+        assert_eq!(error.to_string(), "`line` is required for action=slice");
     }
 
     #[test]

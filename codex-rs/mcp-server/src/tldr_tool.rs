@@ -180,6 +180,7 @@ mod tests {
             symbol: None,
             query: Some("where is auth".to_string()),
             path: None,
+            line: None,
         })
         .expect("tool call should serialize");
 
@@ -207,6 +208,7 @@ mod tests {
                 symbol: Some("AuthService".to_string()),
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -221,6 +223,8 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("AuthService".to_string()),
                                 truncated: false,
+                                slice_target: None,
+                                slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: Vec::new(),
                                 nodes: Vec::new(),
@@ -278,6 +282,7 @@ mod tests {
                 symbol: Some("AuthService".to_string()),
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -292,6 +297,8 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("AuthService".to_string()),
                                 truncated: false,
+                                slice_target: None,
+                                slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: Vec::new(),
                                 nodes: Vec::new(),
@@ -339,6 +346,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: Some("src/lib.rs".to_string()),
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -353,6 +361,8 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: None,
                                 truncated: false,
+                                slice_target: None,
+                                slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
                                 files: vec![codex_native_tldr::api::AnalysisFileDetail {
                                     path: "src/lib.rs".to_string(),
@@ -405,6 +415,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -447,6 +458,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -489,6 +501,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -538,6 +551,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -588,6 +602,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: Some("src/lib.rs".to_string()),
+                line: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -653,6 +668,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| {
                 let report = report.clone();
@@ -726,6 +742,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
             |_project_root| Box::pin(async move { Ok(false) }),
@@ -751,6 +768,7 @@ mod tests {
                 symbol: None,
                 query: None,
                 path: None,
+                line: None,
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
             |_project_root| Box::pin(async move { Ok(false) }),

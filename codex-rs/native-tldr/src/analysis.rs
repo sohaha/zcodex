@@ -996,6 +996,48 @@ mod tests {
     }
 
     #[test]
+    fn slice_analysis_reports_backward_lines_for_requested_symbol() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            "fn validate() {}\n\nfn login() {\n    validate();\n}\n",
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        let response = analyze_project(
+            tempdir.path(),
+            &config,
+            AnalysisRequest {
+                kind: AnalysisKind::Slice,
+                language: SupportedLanguage::Rust,
+                symbol: Some("login".to_string()),
+                path: Some("src/lib.rs".to_string()),
+                line: Some(4),
+            },
+        )
+        .expect("analysis should succeed");
+
+        assert_eq!(response.kind, AnalysisKind::Slice);
+        assert_eq!(
+            response.summary,
+            "slice summary: backward slice for src/lib.rs:login:4 -> 2 lines [3, 4]"
+        );
+        let details = response.details.expect("details should exist");
+        assert_eq!(
+            details.slice_target,
+            Some(AnalysisSliceTarget {
+                path: "src/lib.rs".to_string(),
+                symbol: Some("login".to_string()),
+                line: 4,
+                direction: "backward".to_string(),
+            })
+        );
+        assert_eq!(details.slice_lines, vec![3, 4]);
+    }
+
+    #[test]
     fn impact_analysis_reports_missing_symbols_cleanly() {
         let tempdir = tempdir().expect("tempdir should exist");
         std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
