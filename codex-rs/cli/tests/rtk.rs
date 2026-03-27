@@ -241,6 +241,26 @@ fn assert_parse_error_without_fallback(
     Ok(())
 }
 
+fn assert_raw_external_command(
+    codex_home: &TempDir,
+    command_name: &str,
+    script: &str,
+    args: &[&str],
+    required_stdout: &[&str],
+) -> Result<()> {
+    let bin_dir = create_fake_bin_dir(codex_home)?;
+    let _fake_command = write_fake_command(&bin_dir, command_name, script)?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let assert = cmd.env("PATH", prepend_path(&bin_dir)).args(args).assert();
+    let mut stdout_assert = assert.success();
+    for pattern in required_stdout {
+        stdout_assert = stdout_assert.stdout(contains(*pattern));
+    }
+
+    Ok(())
+}
+
 fn assert_success_without_fallback(
     codex_home: &TempDir,
     command_name: &str,
@@ -614,67 +634,52 @@ fn rtk_double_dash_falls_back_to_raw_stdbuf_command() -> Result<()> {
 #[test]
 fn rtk_double_dash_falls_back_to_raw_env_command() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-
     let env_script = if cfg!(windows) {
         "@echo ENV_OK %*\r\nexit /b 0\r\n"
     } else {
         "#!/bin/sh\necho ENV_OK $@\n"
     };
-    let _ = write_fake_command(&bin_dir, "env", env_script)?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args([
+    assert_raw_external_command(
+        &codex_home,
+        "env",
+        env_script,
+        &[
             "rtk", "--", "env", "FOO=1", "nice", "-n", "5", "git", "status",
-        ])
-        .assert()
-        .success()
-        .stdout(contains("ENV_OK FOO=1 nice -n 5 git status"));
-
-    Ok(())
+        ],
+        &["ENV_OK FOO=1 nice -n 5 git status"],
+    )
 }
 
 #[test]
 fn rtk_double_dash_preserves_literal_pipe_arg() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-
     let env_script = if cfg!(windows) {
         "@echo ENV_QUOTED %*\r\nexit /b 0\r\n"
     } else {
         "#!/bin/sh\necho ENV_QUOTED \"$@\"\n"
     };
-    let _ = write_fake_command(&bin_dir, "env", env_script)?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--", "env", "FOO=1", "grep", "a|b", "src/main.rs"])
-        .assert()
-        .success()
-        .stdout(contains("ENV_QUOTED").and(contains("FOO=1 grep a|b src/main.rs")));
-
-    Ok(())
+    assert_raw_external_command(
+        &codex_home,
+        "env",
+        env_script,
+        &["rtk", "--", "env", "FOO=1", "grep", "a|b", "src/main.rs"],
+        &["ENV_QUOTED", "FOO=1 grep a|b src/main.rs"],
+    )
 }
 
 #[test]
 fn rtk_double_dash_preserves_git_log_format_literal() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-
     let nice_script = if cfg!(windows) {
         "@echo NICE_QUOTED %*\r\nexit /b 0\r\n"
     } else {
         "#!/bin/sh\necho NICE_QUOTED \"$@\"\n"
     };
-    let _ = write_fake_command(&bin_dir, "nice", nice_script)?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args([
+    assert_raw_external_command(
+        &codex_home,
+        "nice",
+        nice_script,
+        &[
             "rtk",
             "--",
             "nice",
@@ -684,17 +689,9 @@ fn rtk_double_dash_preserves_git_log_format_literal() -> Result<()> {
             "log",
             "--format=%h|%s",
             "-1",
-        ])
-        .assert()
-        .success()
-        .stdout(
-            contains("NICE_QUOTED")
-                .and(contains("git log"))
-                .and(contains("--format=%h|%s"))
-                .and(contains("-1")),
-        );
-
-    Ok(())
+        ],
+        &["NICE_QUOTED", "git log", "--format=%h|%s", "-1"],
+    )
 }
 
 #[test]
@@ -733,8 +730,6 @@ pretty_assertions = "1"
 #[test]
 fn rtk_double_dash_tail_fallback_stays_raw() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
     let file = codex_home.path().join("sample.txt");
     std::fs::write(&file, "one\ntwo\nthree\n")?;
 
@@ -743,39 +738,30 @@ fn rtk_double_dash_tail_fallback_stays_raw() -> Result<()> {
     } else {
         "#!/bin/sh\necho TAIL_RAW $@\n"
     };
-    let _ = write_fake_command(&bin_dir, "tail", tail_script)?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--", "tail", "-f", file.to_string_lossy().as_ref()])
-        .assert()
-        .success()
-        .stdout(contains("TAIL_RAW"));
-
-    Ok(())
+    assert_raw_external_command(
+        &codex_home,
+        "tail",
+        tail_script,
+        &["rtk", "--", "tail", "-f", file.to_string_lossy().as_ref()],
+        &["TAIL_RAW"],
+    )
 }
 
 #[test]
 fn rtk_double_dash_chrt_fallback_stays_raw() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-
     let chrt_script = if cfg!(windows) {
         "@echo CHRT_RAW %*\r\nexit /b 0\r\n"
     } else {
         "#!/bin/sh\necho CHRT_RAW $@\n"
     };
-    let _ = write_fake_command(&bin_dir, "chrt", chrt_script)?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--", "chrt", "-m", "1", "git", "status"])
-        .assert()
-        .success()
-        .stdout(contains("CHRT_RAW"));
-
-    Ok(())
+    assert_raw_external_command(
+        &codex_home,
+        "chrt",
+        chrt_script,
+        &["rtk", "--", "chrt", "-m", "1", "git", "status"],
+        &["CHRT_RAW"],
+    )
 }
 
 #[test]
