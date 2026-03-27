@@ -110,42 +110,6 @@ fn filter_markdown_segment(text: &str) -> String {
     s
 }
 
-fn localize_pr_state(state: &str) -> &str {
-    match state {
-        "OPEN" => "开放",
-        "MERGED" => "已合并",
-        "CLOSED" => "已关闭",
-        _ => state,
-    }
-}
-
-fn localize_issue_state(state: &str) -> &str {
-    match state {
-        "OPEN" => "开放",
-        "CLOSED" => "已关闭",
-        _ => state,
-    }
-}
-
-fn localize_review_decision(decision: &str) -> &str {
-    match decision {
-        "APPROVED" => "已批准",
-        "CHANGES_REQUESTED" => "需修改",
-        "REVIEW_REQUIRED" => "待评审",
-        "PENDING" => "待定",
-        _ => decision,
-    }
-}
-
-fn localize_mergeable_state(state: &str) -> &str {
-    match state {
-        "MERGEABLE" => "可合并",
-        "CONFLICTING" => "有冲突",
-        "UNKNOWN" => "未知",
-        _ => state,
-    }
-}
-
 /// 检查参数中是否包含 `--json`（表示用户想要指定 JSON 字段，而不是 RTK 过滤）
 fn has_json_flag(args: &[String]) -> bool {
     args.iter().any(|a| a == "--json")
@@ -410,11 +374,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         "CONFLICTING" => "✗",
         _ => "?",
     };
-    let line = format!(
-        "  {} | {} {mergeable_str}\n",
-        localize_pr_state(state),
-        localize_mergeable_state(mergeable),
-    );
+    let line = format!("  {state} | {mergeable} {mergeable_str}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -631,7 +591,7 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
                 "  #{} {} [{}]\n",
                 number,
                 truncate(title, /*max_len*/ 50),
-                localize_review_decision(reviews)
+                reviews
             );
             filtered.push_str(&line);
             print!("{line}");
@@ -774,7 +734,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  状态：{}\n", localize_issue_state(state));
+    let line = format!("  状态：{state}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -1378,28 +1338,6 @@ mod tests {
     fn test_ok_confirmation_pr_edit() {
         let result = ok_confirmation("编辑", "#42");
         assert_eq!(result, "已编辑 #42");
-    }
-
-    #[test]
-    fn test_localize_pr_state() {
-        assert_eq!(localize_pr_state("OPEN"), "开放");
-        assert_eq!(localize_pr_state("MERGED"), "已合并");
-        assert_eq!(localize_pr_state("CLOSED"), "已关闭");
-    }
-
-    #[test]
-    fn test_localize_review_decision() {
-        assert_eq!(localize_review_decision("APPROVED"), "已批准");
-        assert_eq!(localize_review_decision("CHANGES_REQUESTED"), "需修改");
-        assert_eq!(localize_review_decision("REVIEW_REQUIRED"), "待评审");
-        assert_eq!(localize_review_decision("PENDING"), "待定");
-    }
-
-    #[test]
-    fn test_localize_mergeable_state() {
-        assert_eq!(localize_mergeable_state("MERGEABLE"), "可合并");
-        assert_eq!(localize_mergeable_state("CONFLICTING"), "有冲突");
-        assert_eq!(localize_mergeable_state("UNKNOWN"), "未知");
     }
 
     #[test]
