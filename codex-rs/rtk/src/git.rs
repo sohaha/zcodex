@@ -1847,9 +1847,9 @@ M  file7.rs
         assert!(result.contains("abc1234"));
         assert!(result.contains("BREAKING CHANGE: removed old API"));
         assert!(!result.contains("Signed-off-by:"));
-        // def5678 没有正文，只应保留头部
+        // `def5678` 没有正文，只应保留头部
         assert!(result.contains("def5678"));
-        // 3 lines: header1, body1 indented, header2
+        // 共 3 行：头部 1、带缩进的正文 1、头部 2
         assert_eq!(result.lines().count(), 3);
     }
 
@@ -1894,7 +1894,7 @@ M  file7.rs
         assert_eq!(
             result.lines().count(),
             20,
-            "User's -20 should return all 20 lines"
+            "用户传入 -20 时应返回完整的 20 行"
         );
     }
 
@@ -1909,14 +1909,11 @@ M  file7.rs
         let result_user = filter_log_output(&line_90_chars, 10, true, false);
 
         // 默认会在 80 字符处截断
-        assert!(
-            result_default.contains("..."),
-            "Default should truncate at 80 chars"
-        );
+        assert!(result_default.contains("..."), "默认应在 80 个字符处截断");
         // 用户自定义 limit 时会使用更宽的阈值（120 字符）
         assert!(
             !result_user.contains("..."),
-            "User limit should not truncate 90-char line"
+            "用户自定义 limit 时不应截断 90 字符的行"
         );
     }
 
@@ -1968,7 +1965,7 @@ M  file7.rs
         let savings = 100.0 - (count_tokens(&output) as f64 / count_tokens(&input) as f64 * 100.0);
         assert!(
             savings >= 60.0,
-            "Expected ≥60% token savings, got {savings:.1}%"
+            "预期节省至少 60% token，实际为 {savings:.1}%"
         );
     }
 
@@ -1990,7 +1987,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
         assert!(result.contains("modified:   src/main.rs"));
         assert!(
             !result.contains("(use \"git"),
-            "Result should not contain git hints"
+            "结果中不应包含 git 提示信息"
         );
     }
 
@@ -2009,7 +2006,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
         // 不应 panic
         assert!(result.contains("abc1234"));
         // 这一行包含 30 个泰文字符和其他文本，总字符数仍未超过阈值
-        // truncate_line 现在按字符数而非字节数计算
+        // `truncate_line` 现在按字符数而非字节数计算
         // 因此这里不应发生截断
         assert!(result.contains("abc1234"));
     }
@@ -2019,7 +2016,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
         let emoji_msg = "abc1234 🎉🎊🎈🎁🎂🎄🎃🎆🎇✨🎉🎊🎈🎁🎂🎄🎃🎆🎇✨ (1 day ago) <user>";
         let result = filter_log_output(emoji_msg, 10, false, false);
         // 不应 panic
-        // 20 emoji + ~30 other chars = ~50 chars < 80, no truncation needed
+        // 20 个 emoji 加上约 30 个其他字符，总长度约 50，小于 80，无需截断
         assert!(result.contains("abc1234"));
     }
 
@@ -2066,11 +2063,11 @@ no changes added to commit (use "git add" and/or "git commit -a")
                               jkl3456 docs: update readme\n\
                               mno7890 test: add tests\n";
 
-        // user_set_limit=true 表示尊重全部输出行数（不设上限）
+        // `user_set_limit=true` 表示尊重全部输出行数（不设上限）
         let result = filter_log_output(oneline_output, 3, true, true);
         assert_eq!(result.lines().count(), 5);
 
-        // user_set_limit=false 表示按 limit 截断
+        // `user_set_limit=false` 表示按 `limit` 截断
         let result = filter_log_output(oneline_output, 3, false, true);
         assert_eq!(result.lines().count(), 3);
     }
@@ -2083,16 +2080,16 @@ no changes added to commit (use "git add" and/or "git commit -a")
     fn test_branch_creation_not_swallowed() {
         let branch = "test-rtk-create-branch-regression";
         // 通过 run_branch 创建分支
-        run_branch(&[branch.to_string()], 0, &[]).expect("run_branch should succeed");
+        run_branch(&[branch.to_string()], 0, &[]).expect("`run_branch` 应执行成功");
         // 验证分支确实存在
         let output = Command::new("git")
             .args(["branch", "--list", branch])
             .output()
-            .expect("git branch --list should work");
+            .expect("`git branch --list` 应执行成功");
         let stdout = crate::utils::decode_output(&output.stdout);
         assert!(
             stdout.contains(branch),
-            "Branch '{branch}' was not created. run_branch silently swallowed the creation."
+            "分支 `{branch}` 未被创建，`run_branch` 静默吞掉了创建操作"
         );
         // 清理
         let _ = Command::new("git").args(["branch", "-d", branch]).output();
@@ -2104,15 +2101,15 @@ no changes added to commit (use "git add" and/or "git commit -a")
     fn test_branch_creation_from_commit() {
         let branch = "test-rtk-create-from-commit";
         run_branch(&[branch.to_string(), "HEAD".to_string()], 0, &[])
-            .expect("run_branch with start-point should succeed");
+            .expect("带起始点的 `run_branch` 应执行成功");
         let output = Command::new("git")
             .args(["branch", "--list", branch])
             .output()
-            .expect("git branch --list should work");
+            .expect("`git branch --list` 应执行成功");
         let stdout = crate::utils::decode_output(&output.stdout);
         assert!(
             stdout.contains(branch),
-            "Branch '{branch}' was not created from commit."
+            "分支 `{branch}` 未能基于指定 commit 创建"
         );
         let _ = Command::new("git").args(["branch", "-d", branch]).output();
     }
@@ -2153,7 +2150,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
         );
     }
 
-    // #327: git commit -am "msg" must pass -am through to git
+    // #327：`git commit -am "msg"` 必须把 `-am` 原样透传给 git
     #[test]
     fn test_commit_am_flag() {
         let args = vec!["-am".to_string(), "quick fix".to_string()];

@@ -114,10 +114,10 @@ mod tests {
 
     #[test]
     fn test_filter_curl_json_small_returns_original() {
-        // 小型 JSON：若 schema 反而更长（issue #297）
+        // 小型 JSON：若结构摘要反而更长（issue #297）
         let output = r#"{"r2Ready":true,"status":"ok"}"#;
         let result = filter_curl_output(output);
-        // schema 会是 "{\n  r2Ready: bool,\n  status: string\n}"，长度更长
+        // 结构摘要会是 "{\n  r2Ready: bool,\n  status: string\n}"，长度更长
         // 应保持返回原始 JSON
         assert_eq!(result.trim(), output.trim());
     }
