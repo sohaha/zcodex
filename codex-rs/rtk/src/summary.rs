@@ -245,7 +245,7 @@ fn summarize_list(output: &str, result: &mut Vec<String>) {
 fn summarize_json(output: &str, result: &mut Vec<String>) {
     result.push("📋 JSON 输出：".to_string());
 
-    // Try to parse and show structure
+    // 尝试解析并展示结构
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(output) {
         match &value {
             serde_json::Value::Array(arr) => {
@@ -277,7 +277,7 @@ fn summarize_generic(output: &str, result: &mut Vec<String>) {
 
     result.push("📋 输出：".to_string());
 
-    // First few lines
+    // 前几行
     for line in lines.iter().take(5) {
         if !line.trim().is_empty() {
             result.push(format!("   {}", truncate(line, /*max_len*/ 75)));
@@ -286,7 +286,7 @@ fn summarize_generic(output: &str, result: &mut Vec<String>) {
 
     if lines.len() > 10 {
         result.push("   ...".to_string());
-        // Last few lines
+        // 最后几行
         for line in lines.iter().skip(lines.len() - 3) {
             if !line.trim().is_empty() {
                 result.push(format!("   {}", truncate(line, /*max_len*/ 75)));

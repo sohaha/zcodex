@@ -1,7 +1,7 @@
-//! PostgreSQL client (psql) output compression.
+//! PostgreSQL 客户端（psql）输出压缩。
 //!
-//! Detects table and expanded display formats, strips borders/padding,
-//! and produces compact tab-separated or key=value output.
+//! 识别表格模式和 expanded 模式，移除边框与填充，
+//! 输出紧凑的制表符分隔或 `key=value` 形式。
 
 use crate::tracking;
 use crate::utils::resolved_command;
@@ -76,7 +76,7 @@ fn filter_psql_output(output: &str) -> String {
     } else if is_table_format(output) {
         filter_table(output)
     } else {
-        // Passthrough: COPY results, notices, etc.
+        // 直通原始输出：例如 COPY 结果、NOTICE 等
         output.to_string()
     }
 }
@@ -92,11 +92,11 @@ fn is_expanded_format(output: &str) -> bool {
     EXPANDED_RECORD.is_match(output)
 }
 
-/// Filter psql table format:
-/// - Strip separator lines (----+----)
-/// - Strip (N rows) footer
-/// - Trim column padding
-/// - Output tab-separated
+/// 过滤 psql 表格模式输出：
+/// - 去掉分隔线（`----+----`）
+/// - 去掉 `(N rows)` 尾注
+/// - 去掉列填充
+/// - 输出为制表符分隔格式
 fn filter_table(output: &str) -> String {
     let mut result = Vec::new();
     let mut data_rows = 0;
@@ -105,25 +105,25 @@ fn filter_table(output: &str) -> String {
     for line in output.lines() {
         let trimmed = line.trim();
 
-        // Skip separator lines
+        // 跳过分隔线
         if SEPARATOR.is_match(trimmed) {
             continue;
         }
 
-        // Skip row count footer
+        // 跳过行数尾注
         if ROW_COUNT.is_match(trimmed) {
             continue;
         }
 
-        // Skip empty lines
+        // 跳过空行
         if trimmed.is_empty() {
             continue;
         }
 
-        // This is a data or header row with | delimiters
+        // 这是带 `|` 分隔符的表头或数据行
         if trimmed.contains('|') {
             total_rows += 1;
-            // First row is header, don't count it as data
+            // 第一行是表头，不计入数据行
             if total_rows > 1 {
                 data_rows += 1;
             }
@@ -133,7 +133,7 @@ fn filter_table(output: &str) -> String {
                 result.push(cols.join("\t"));
             }
         } else {
-            // Non-table line (e.g., command output like SET, NOTICE)
+            // 非表格行（例如 `SET`、`NOTICE` 之类的命令输出）
             result.push(trimmed.to_string());
         }
     }
@@ -145,8 +145,8 @@ fn filter_table(output: &str) -> String {
     result.join("\n")
 }
 
-/// Filter psql expanded format:
-/// Convert -[ RECORD N ]- blocks to one-liner key=val format
+/// 过滤 psql expanded 模式输出：
+/// 将 `-[ RECORD N ]-` 结构压成单行 `key=value` 形式
 fn filter_expanded(output: &str) -> String {
     let mut result = Vec::new();
     let mut current_pairs: Vec<String> = Vec::new();
@@ -161,7 +161,7 @@ fn filter_expanded(output: &str) -> String {
         }
 
         if let Some(caps) = RECORD_HEADER.captures(trimmed) {
-            // Flush previous record
+            // 刷新前一条记录
             if let Some(rec) = current_record.take() {
                 if record_count <= MAX_EXPANDED_RECORDS {
                     result.push(format!("{} {}", rec, current_pairs.join(" ")));
@@ -171,7 +171,7 @@ fn filter_expanded(output: &str) -> String {
             record_count += 1;
             current_record = Some(format!("[{}]", &caps[1]));
         } else if trimmed.contains('|') && current_record.is_some() {
-            // key | value line
+            // `key | value` 行
             let parts: Vec<&str> = trimmed.splitn(2, '|').collect();
             if parts.len() == 2 {
                 let key = parts[0].trim();
@@ -181,12 +181,12 @@ fn filter_expanded(output: &str) -> String {
         } else if trimmed.is_empty() {
             continue;
         } else if current_record.is_none() {
-            // Non-record line before any record (notices, etc.)
+            // 任何记录开始前的非记录行（如 NOTICE）
             result.push(trimmed.to_string());
         }
     }
 
-    // Flush last record
+    // 刷新最后一条记录
     if let Some(rec) = current_record.take()
         && record_count <= MAX_EXPANDED_RECORDS
     {

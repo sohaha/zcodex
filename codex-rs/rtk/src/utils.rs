@@ -118,15 +118,15 @@ pub fn decode_output(bytes: &[u8]) -> Cow<'_, str> {
     }
 }
 
-/// Formats a token count with K/M suffixes for readability.
+/// 将 token 数格式化为带 K/M 后缀的可读形式。
 ///
-/// # Arguments
-/// * `n` - Number of tokens
+/// # 参数
+/// * `n` - token 数量
 ///
-/// # Returns
-/// Formatted string (e.g., "1.2M", "59.2K", "694")
+/// # 返回值
+/// 格式化后的字符串（例如 `"1.2M"`、`"59.2K"`、`"694"`）
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::format_tokens;
 /// assert_eq!(format_tokens(1_234_567), "1.2M");
@@ -144,15 +144,15 @@ pub fn format_tokens(n: usize) -> String {
     }
 }
 
-/// Formats a USD amount with adaptive precision.
+/// 将美元金额按自适应精度格式化。
 ///
-/// # Arguments
-/// * `amount` - Amount in dollars
+/// # 参数
+/// * `amount` - 美元金额
 ///
-/// # Returns
-/// Formatted string with $ prefix
+/// # 返回值
+/// 带 `$` 前缀的格式化字符串
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::format_usd;
 /// assert_eq!(format_usd(1234.567), "$1234.57");
@@ -172,15 +172,15 @@ pub fn format_usd(amount: f64) -> String {
     }
 }
 
-/// Format cost-per-token as $/MTok (e.g., "$3.86/MTok")
+/// 将单 token 成本格式化为 `$ / MTok`（例如 `"$3.86/MTok"`）
 ///
-/// # Arguments
-/// * `cpt` - Cost per token (not per million tokens)
+/// # 参数
+/// * `cpt` - 单 token 成本（不是每百万 token 成本）
 ///
-/// # Returns
-/// Formatted string like "$3.86/MTok"
+/// # 返回值
+/// 形如 `"$3.86/MTok"` 的格式化字符串
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::format_cpt;
 /// assert_eq!(format_cpt(0.000003), "$3.00/MTok");
@@ -196,9 +196,9 @@ pub fn format_cpt(cpt: f64) -> String {
     format!("${cpt_per_million:.2}/MTok")
 }
 
-/// Join items into a newline-separated string, appending an overflow hint when total > max.
+/// 将条目拼成按行分隔的字符串；当 `total > max` 时追加溢出提示。
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::join_with_overflow;
 /// let items = vec!["a".to_string(), "b".to_string()];
@@ -213,9 +213,9 @@ pub fn join_with_overflow(items: &[String], total: usize, max: usize, label: &st
     out
 }
 
-/// Truncate an ISO 8601 datetime string to just the date portion (first 10 chars).
+/// 将 ISO 8601 日期时间截断为仅保留日期部分（前 10 个字符）。
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::truncate_iso_date;
 /// assert_eq!(truncate_iso_date("2024-01-15T10:30:00Z"), "2024-01-15");
@@ -243,10 +243,10 @@ pub fn ok_confirmation(action: &str, detail: &str) -> String {
     }
 }
 
-/// Detect the package manager used in the current directory.
-/// Returns "pnpm", "yarn", or "npm" based on lockfile presence.
+/// 检测当前目录使用的包管理器。
+/// 根据 lockfile 判断，返回 `"pnpm"`、`"yarn"` 或 `"npm"`。
 ///
-/// # Examples
+/// # 示例
 /// ```no_run
 /// use rtk::utils::detect_package_manager;
 /// let pm = detect_package_manager();
@@ -263,8 +263,8 @@ pub fn detect_package_manager() -> &'static str {
     }
 }
 
-/// Build a Command using the detected package manager's exec mechanism.
-/// Returns a Command ready to have tool-specific args appended.
+/// 使用检测到的包管理器的 `exec` 机制构造 `Command`。
+/// 返回值可继续追加工具专属参数。
 pub fn package_manager_exec(tool: &str) -> Command {
     if tool_exists(tool) {
         resolved_command(tool)
@@ -290,36 +290,36 @@ pub fn package_manager_exec(tool: &str) -> Command {
     }
 }
 
-/// Resolve a binary name to its full path, honoring PATHEXT on Windows.
+/// 将二进制名解析为完整路径，并在 Windows 上遵循 `PATHEXT`。
 ///
-/// On Windows, Node.js tools are installed as `.CMD`/`.BAT`/`.PS1` shims.
-/// Rust's `std::process::Command::new()` does NOT honor PATHEXT, so
-/// `Command::new("vitest")` fails even when `vitest.CMD` is on PATH.
+/// 在 Windows 上，Node.js 工具通常以 `.CMD` / `.BAT` / `.PS1` 包装器形式安装。
+/// Rust 的 `std::process::Command::new()` 不会遵循 `PATHEXT`，
+/// 所以即使 `vitest.CMD` 在 PATH 中，`Command::new("vitest")` 也可能失败。
 ///
-/// This function uses the `which` crate to perform proper PATH+PATHEXT resolution.
+/// 本函数借助 `which` crate 做正确的 PATH + PATHEXT 解析。
 ///
-/// # Arguments
-/// * `name` - Binary name (e.g., "vitest", "eslint", "tsc")
+/// # 参数
+/// * `name` - 二进制名称（例如 `"vitest"`、`"eslint"`、`"tsc"`）
 ///
-/// # Returns
-/// Full path to the resolved binary, or error if not found.
+/// # 返回值
+/// 解析后的完整路径；若未找到则返回错误。
 pub fn resolve_binary(name: &str) -> Result<PathBuf> {
     which::which(name).context(format!("PATH 中未找到二进制 '{name}'"))
 }
 
-/// Create a `Command` with PATHEXT-aware binary resolution.
+/// 创建一个支持 `PATHEXT` 解析的 `Command`。
 ///
-/// Drop-in replacement for `Command::new(name)` that works on Windows
-/// with `.CMD`/`.BAT`/`.PS1` wrappers.
+/// 可作为 `Command::new(name)` 的直接替代，用于兼容 Windows 下的
+/// `.CMD` / `.BAT` / `.PS1` 包装器。
 ///
-/// Falls back to `Command::new(name)` if resolution fails, so native
-/// commands (git, cargo) still work even if `which` can't find them.
+/// 若解析失败，则回退到 `Command::new(name)`，保证原生命令
+/// （如 `git`、`cargo`）在 `which` 找不到时仍可尝试运行。
 ///
-/// # Arguments
-/// * `name` - Binary name (e.g., "vitest", "eslint")
+/// # 参数
+/// * `name` - 二进制名称（例如 `"vitest"`、`"eslint"`）
 ///
-/// # Returns
-/// A `Command` configured with the resolved binary path.
+/// # 返回值
+/// 已配置好解析后二进制路径的 `Command`。
 pub fn resolved_command(name: &str) -> Command {
     let resolved = resolve_binary(name);
 
@@ -342,9 +342,9 @@ pub fn resolved_command(name: &str) -> Command {
     }
 }
 
-/// Check if a tool exists on PATH (PATHEXT-aware on Windows).
+/// 检查某个工具是否存在于 PATH 中（Windows 上支持 PATHEXT）。
 ///
-/// Replaces manual `Command::new("which").arg(tool)` checks that fail on Windows.
+/// 可替代手写的 `Command::new("which").arg(tool)` 检查，避免其在 Windows 上失效。
 pub fn tool_exists(name: &str) -> bool {
     which::which(name).is_ok()
 }
@@ -371,11 +371,11 @@ mod tests {
 
     #[test]
     fn test_truncate_edge_case() {
-        // max_len < 3 returns just "..."
+        // 当 `max_len < 3` 时，只返回 `...`
         assert_eq!(truncate("hello", 2), "...");
-        // When string length equals max_len, return as is
+        // 当字符串长度等于 `max_len` 时，原样返回
         assert_eq!(truncate("abc", 3), "abc");
-        // When string is longer and max_len is exactly 3, return "..."
+        // 当字符串更长且 `max_len == 3` 时，返回 `...`
         assert_eq!(truncate("hello world", 3), "...");
     }
 
@@ -512,18 +512,18 @@ mod tests {
 
     #[test]
     fn test_detect_package_manager_default() {
-        // In the test environment (rtk repo), there's no JS lockfile
-        // so it should default to "npm"
+        // 在测试环境（rtk 仓库）中通常没有 JS lockfile，
+        // 因此默认应落到 `npm`
         let pm = detect_package_manager();
         assert!(["pnpm", "yarn", "npm"].contains(&pm));
     }
 
     #[test]
     fn test_truncate_multibyte_thai() {
-        // Thai characters are 3 bytes each
+        // 泰文字符通常占 3 字节
         let thai = "สวัสดีครับ";
         let result = truncate(thai, 5);
-        // Should not panic, should produce valid UTF-8
+        // 不应 panic，且结果必须是合法 UTF-8
         assert!(result.len() <= thai.len());
         assert!(result.ends_with("..."));
     }
@@ -542,11 +542,11 @@ mod tests {
         assert!(result.ends_with("..."));
     }
 
-    // ===== resolve_binary tests (issue #212) =====
+    // ===== `resolve_binary` 测试（issue #212） =====
 
     #[test]
     fn test_resolve_binary_finds_known_command() {
-        // "cargo" must be on PATH in any Rust dev environment
+        // 在任何 Rust 开发环境中，`cargo` 都应存在于 PATH 中
         let result = resolve_binary("cargo");
         assert!(
             result.is_ok(),
@@ -587,7 +587,7 @@ mod tests {
         );
     }
 
-    // ===== resolved_command tests (issue #212) =====
+    // ===== `resolved_command` 测试（issue #212） =====
 
     #[test]
     fn test_resolved_command_executes_known_command() {
@@ -601,7 +601,7 @@ mod tests {
         );
     }
 
-    // ===== tool_exists tests (issue #212) =====
+    // ===== `tool_exists` 测试（issue #212） =====
 
     #[test]
     fn test_tool_exists_finds_cargo() {
@@ -624,14 +624,14 @@ mod tests {
         assert!(tool_exists("git"), "tool_exists('git') should return true");
     }
 
-    // ===== Windows-specific PATHEXT resolution tests (issue #212) =====
+    // ===== Windows 专属 PATHEXT 解析测试（issue #212） =====
 
     #[cfg(target_os = "windows")]
     mod windows_tests {
         use super::super::*;
         use std::fs;
 
-        /// Create a temporary .cmd wrapper to simulate Node.js tool installation
+        /// 创建临时 `.cmd` 包装器，模拟 Node.js 工具安装
         fn create_temp_cmd_wrapper(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
             let cmd_path = dir.join(format!("{}.cmd", name));
             fs::write(&cmd_path, "@echo off\r\necho fake-tool-output\r\n")
@@ -639,7 +639,7 @@ mod tests {
             cmd_path
         }
 
-        /// Build a PATH string that includes the temp dir
+        /// 构造一个包含临时目录的 PATH 字符串
         fn path_with_dir(dir: &std::path::Path) -> std::ffi::OsString {
             let original = std::env::var_os("PATH").unwrap_or_default();
             let mut new_path = std::ffi::OsString::from(dir.as_os_str());
@@ -653,7 +653,7 @@ mod tests {
             let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
             create_temp_cmd_wrapper(temp_dir.path(), "fake-tool-test");
 
-            // Use which::which_in to avoid mutating global PATH (thread-safe)
+            // 使用 `which::which_in`，避免修改全局 PATH（线程安全）
             let search_path = path_with_dir(temp_dir.path());
             let result = which::which_in(
                 "fake-tool-test",
@@ -706,7 +706,7 @@ mod tests {
             let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
             create_temp_cmd_wrapper(temp_dir.path(), "fake-exec-test");
 
-            // Resolve the full path, then execute it directly (no PATH mutation)
+            // 先解析完整路径，再直接执行（不修改 PATH）
             let search_path = path_with_dir(temp_dir.path());
             let resolved = which::which_in(
                 "fake-exec-test",
@@ -732,13 +732,12 @@ mod tests {
 
         #[test]
         fn test_resolved_command_fallback_on_unknown_binary() {
-            // When resolve_binary fails, resolved_command should fall back to
-            // Command::new(name) instead of panicking.  On Windows this also
-            // prints a warning to stderr.
+            // 当 `resolve_binary` 失败时，`resolved_command` 应回退到
+            // `Command::new(name)`，而不是 panic。在 Windows 上还会
+            // 额外向 stderr 打出警告。
             let mut cmd = resolved_command("nonexistent_binary_xyz_99999");
-            // The Command should be created (not panic).  Attempting to run it
-            // will fail, but that's expected — we just verify the fallback path
-            // produces a usable Command.
+            // `Command` 应能成功创建（不能 panic）。
+            // 运行它失败是预期行为；这里只验证回退路径仍能产出可用的 `Command`。
             let result = cmd.output();
             assert!(
                 result.is_err() || !result.unwrap().status.success(),

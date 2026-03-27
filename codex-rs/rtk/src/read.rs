@@ -21,11 +21,11 @@ pub fn run(
         eprintln!("读取：{}（过滤：{}）", file.display(), level);
     }
 
-    // Read file content
+    // 读取文件内容
     let content =
         fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
-    // Detect language from extension
+    // 根据扩展名识别语言
     let lang = file
         .extension()
         .and_then(|e| e.to_str())
@@ -36,7 +36,7 @@ pub fn run(
         eprintln!("检测到语言：{lang:?}");
     }
 
-    // Apply filter
+    // 应用过滤器
     let filter = filter::get_filter(level);
     let mut filtered = filter.filter(&content, lang);
 
@@ -84,21 +84,21 @@ pub fn run_stdin(
         eprintln!("读取 stdin（过滤：{level}）");
     }
 
-    // Read from stdin
+    // 从 stdin 读取
     let mut content = String::new();
     io::stdin()
         .lock()
         .read_to_string(&mut content)
         .context("读取 stdin 失败")?;
 
-    // No file extension, so use Unknown language
+    // stdin 没有扩展名，因此使用 `Unknown` 语言
     let lang = Language::Unknown;
 
     if verbose > 1 {
         eprintln!("语言：{lang:?}（stdin 无扩展名）");
     }
 
-    // Apply filter
+    // 应用过滤器
     let filter = filter::get_filter(level);
     let mut filtered = filter.filter(&content, lang);
 
@@ -179,16 +179,16 @@ fn main() {{
 }}"#
         )?;
 
-        // Just verify it doesn't panic
+        // 只验证不会 panic
         run(file.path(), FilterLevel::Minimal, None, None, false, 0)?;
         Ok(())
     }
 
     #[test]
     fn test_stdin_support_signature() {
-        // Test that run_stdin has correct signature and compiles
-        // We don't actually run it because it would hang waiting for stdin
-        // Compile-time verification that the function exists with correct signature
+        // 验证 `run_stdin` 的签名正确且能通过编译
+        // 这里不实际运行，因为那会阻塞等待 stdin
+        // 这属于编译期验证：确认函数存在且签名正确
     }
 
     #[test]
