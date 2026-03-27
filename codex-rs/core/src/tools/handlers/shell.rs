@@ -255,7 +255,32 @@ fn logical_rtk_command(command: &str) -> String {
         return command.to_string();
     };
     tokens.insert(index, "codex".to_string());
-    codex_shell_command::parse_command::shlex_join(&tokens)
+    tokens
+        .into_iter()
+        .map(render_display_token)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn render_display_token(token: String) -> String {
+    if looks_like_env_assignment(&token) {
+        return token;
+    }
+    codex_shell_command::parse_command::shlex_join(&[token])
+}
+
+fn looks_like_env_assignment(token: &str) -> bool {
+    let Some((name, _value)) = token.split_once('=') else {
+        return false;
+    };
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 impl From<ShellCommandBackendConfig> for ShellCommandHandler {
