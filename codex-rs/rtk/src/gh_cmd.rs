@@ -641,11 +641,11 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
 
     if let Some(issues) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("Issue\n");
-            println!("Issue");
+            filtered.push_str("议题\n");
+            println!("议题");
         } else {
-            filtered.push_str("🐛 Issue\n");
-            println!("🐛 Issue");
+            filtered.push_str("🐛 议题\n");
+            println!("🐛 议题");
         }
         for issue in issues.iter().take(20) {
             let number = issue["number"].as_i64().unwrap_or(0);
@@ -683,7 +683,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let (issue_number, extra_args) = match extract_identifier_and_extra_args(args) {
         Some(result) => result,
-        None => return Err(anyhow::anyhow!("需要 Issue 编号")),
+        None => return Err(anyhow::anyhow!("需要议题编号")),
     };
 
     let mut cmd = resolved_command("gh");
@@ -726,7 +726,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("{icon} Issue #{number}：{title}\n");
+    let line = format!("{icon} 议题 #{number}：{title}\n");
     filtered.push_str(&line);
     print!("{line}");
 

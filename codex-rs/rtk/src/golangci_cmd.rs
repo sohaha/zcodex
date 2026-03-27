@@ -158,7 +158,7 @@ fn filter_golangci_json(output: &str) -> String {
     if !linter_counts.is_empty() {
         result.push_str("高频 linter：\n");
         for (linter, count) in linter_counts.iter().take(10) {
-            result.push_str(&format!("  {linter} ({count}x)\n"));
+            result.push_str(&format!("  {linter}（{count} 次）\n"));
         }
         result.push('\n');
     }
@@ -248,6 +248,7 @@ mod tests {
         assert!(result.contains("gosimple"));
         assert!(result.contains("main.go"));
         assert!(result.contains("utils.go"));
+        assert!(result.contains("errcheck（2 次）"));
     }
 
     #[test]
