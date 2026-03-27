@@ -4,7 +4,6 @@ use codex_protocol::models::ShellCommandToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
 use codex_rtk::ShellCommandRewriteKind;
 use codex_rtk::analyze_shell_command;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -109,18 +108,8 @@ impl ShellHandler {
 }
 
 impl ShellCommandHandler {
-    fn rtk_executable_path(
-        session: &crate::codex::Session,
-        turn_context: &TurnContext,
-    ) -> Option<PathBuf> {
-        let helper_dir = session
-            .services
-            .main_execve_wrapper_exe
-            .as_deref()
-            .or(turn_context.codex_linux_sandbox_exe.as_deref())
-            .and_then(Path::parent)?;
-        let arg0 = if cfg!(windows) { "rtk.bat" } else { "rtk" };
-        Some(helper_dir.join(arg0))
+    fn codex_executable_path() -> Option<PathBuf> {
+        std::env::current_exe().ok()
     }
 
     fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
@@ -244,8 +233,8 @@ impl ShellCommandHandler {
     }
 }
 
-fn resolve_rtk_physical_command(command: &str, rtk_exe: Option<&Path>) -> String {
-    let Some(rtk_exe) = rtk_exe else {
+fn resolve_rtk_physical_command(command: &str, codex_exe: Option<&PathBuf>) -> String {
+    let Some(codex_exe) = codex_exe else {
         return command.to_string();
     };
     let Some(mut tokens) = shlex::split(command) else {
@@ -254,7 +243,8 @@ fn resolve_rtk_physical_command(command: &str, rtk_exe: Option<&Path>) -> String
     let Some(index) = tokens.iter().position(|token| token == "rtk") else {
         return command.to_string();
     };
-    tokens[index] = rtk_exe.to_string_lossy().into_owned();
+    tokens[index] = codex_exe.to_string_lossy().into_owned();
+    tokens.insert(index + 1, "rtk".to_string());
     codex_shell_command::parse_command::shlex_join(&tokens)
 }
 
@@ -429,7 +419,7 @@ impl ToolHandler for ShellCommandHandler {
         .await;
         let mut params = params;
         let mut routed_command = Self::route_command(&params.command);
-        let rtk_exe = Self::rtk_executable_path(session.as_ref(), turn.as_ref());
+        let rtk_exe = Self::codex_executable_path();
         routed_command.command =
             resolve_rtk_physical_command(&routed_command.command, rtk_exe.as_deref());
         let display_command = routed_command
