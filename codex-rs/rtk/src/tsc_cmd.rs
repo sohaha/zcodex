@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // 优先直接调用 tsc；若不存在则回退到 npx tsc
+    // 优先直接调用 `tsc`；若不存在则回退到 `npx tsc`
     let tsc_exists = tool_exists("tsc");
 
     let mut cmd = if tsc_exists {
@@ -53,14 +53,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // 保留 tsc 原始退出码，兼容 CI/CD
+    // 保留 `tsc` 原始退出码，兼容 CI/CD
     std::process::exit(exit_code);
 }
 
 /// 过滤 TypeScript 编译器输出：按文件分组，并显示每一条错误
 fn filter_tsc_output(output: &str) -> String {
     lazy_static::lazy_static! {
-        // 模式：src/file.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
+        // 格式示例：`src/file.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.`
         static ref TSC_ERROR: Regex = crate::utils::compile_regex(
             r"^(.+?)\((\d+),(\d+)\):\s+(error|warning)\s+(TS\d+):\s+(.+)$"
         );
@@ -89,7 +89,7 @@ fn filter_tsc_output(output: &str) -> String {
                 context_lines: Vec::new(),
             };
 
-            // 捕获后续上下文行（tsc 输出的缩进行）
+            // 捕获后续上下文行（`tsc` 输出中的缩进行）
             i += 1;
             while i < lines.len() {
                 let next = lines[i];
