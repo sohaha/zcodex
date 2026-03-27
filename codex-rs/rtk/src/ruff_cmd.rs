@@ -178,7 +178,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     if !rule_counts.is_empty() {
         result.push_str("高频规则：\n");
         for (rule, count) in rule_counts.iter().take(10) {
-            result.push_str(&format!("  {rule} ({count}x)\n"));
+            result.push_str(&format!("  {rule}（{count} 次）\n"));
         }
         result.push('\n');
     }
@@ -365,6 +365,7 @@ mod tests {
         assert!(result.contains("E501"));
         assert!(result.contains("main.py"));
         assert!(result.contains("utils.py"));
+        assert!(result.contains("F401（2 次）"));
     }
 
     #[test]

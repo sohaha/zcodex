@@ -63,8 +63,8 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
     };
 
     let components: Vec<String> = [
-        (!functions.is_empty()).then(|| format!("{} 个 fn", functions.len())),
-        (!structs.is_empty()).then(|| format!("{} 个 struct", structs.len())),
+        (!functions.is_empty()).then(|| format!("{} 个函数", functions.len())),
+        (!structs.is_empty()).then(|| format!("{} 个结构", structs.len())),
         (!traits.is_empty()).then(|| format!("{} 个 trait", traits.len())),
     ]
     .into_iter()
@@ -115,7 +115,7 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
     let line2 = if details.is_empty() {
         "通用代码文件".to_string()
     } else {
-        details.join(" | ")
+        details.join(" ｜ ")
     };
 
     CodeSummary { line1, line2 }
@@ -243,41 +243,41 @@ fn detect_patterns(content: &str, lang: Language) -> Vec<String> {
 
     // 通用模式
     if content.contains("async") && content.contains("await") {
-        patterns.push("async".to_string());
+        patterns.push("异步".to_string());
     }
 
     match lang {
         Language::Rust => {
             if content.contains("impl") && content.contains("for") {
-                patterns.push("trait impl".to_string());
+                patterns.push("trait 实现".to_string());
             }
             if content.contains("#[derive") {
                 patterns.push("derive".to_string());
             }
             if content.contains("Result<") || content.contains("anyhow::") {
-                patterns.push("error handling".to_string());
+                patterns.push("错误处理".to_string());
             }
             if content.contains("#[test]") {
-                patterns.push("tests".to_string());
+                patterns.push("测试".to_string());
             }
             if content.contains("Box<dyn") || content.contains("&dyn") {
-                patterns.push("dyn dispatch".to_string());
+                patterns.push("动态分发".to_string());
             }
         }
         Language::Python => {
             if content.contains("@dataclass") {
-                patterns.push("dataclass".to_string());
+                patterns.push("数据类".to_string());
             }
             if content.contains("def __init__") {
-                patterns.push("OOP".to_string());
+                patterns.push("面向对象".to_string());
             }
         }
         Language::JavaScript | Language::TypeScript => {
             if content.contains("useState") || content.contains("useEffect") {
-                patterns.push("React hooks".to_string());
+                patterns.push("React Hooks".to_string());
             }
             if content.contains("export default") {
-                patterns.push("ES modules".to_string());
+                patterns.push("ES 模块".to_string());
             }
         }
         _ => {}
@@ -308,7 +308,7 @@ fn helper() {}
 "#;
         let summary = analyze_code(code, Language::Rust);
         assert!(summary.line1.contains("Rust"));
-        assert!(summary.line1.contains("fn"));
+        assert!(summary.line1.contains("函数"));
     }
 
     #[test]
@@ -342,5 +342,24 @@ enabled = true
                 line2: "通用代码文件".to_string(),
             }
         );
+    }
+
+    #[test]
+    fn test_patterns_are_localized() {
+        let code = r#"
+use anyhow::Result;
+
+#[test]
+fn test_loader() -> Result<()> {
+    Ok(())
+}
+
+pub trait Loader {}
+impl Loader for Config {}
+"#;
+        let summary = analyze_code(code, Language::Rust);
+        assert!(summary.line2.contains("错误处理"));
+        assert!(summary.line2.contains("trait 实现"));
+        assert!(summary.line2.contains("测试"));
     }
 }

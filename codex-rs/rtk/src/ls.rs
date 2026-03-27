@@ -183,7 +183,7 @@ fn compact_ls(raw: &str, show_all: bool) -> String {
     }
 
     if dirs.is_empty() && files.is_empty() {
-        return "(empty)\n".to_string();
+        return "（空）\n".to_string();
     }
 
     let mut out = String::new();
@@ -204,19 +204,19 @@ fn compact_ls(raw: &str, show_all: bool) -> String {
 
     // 摘要行
     out.push('\n');
-    let mut summary = format!("📊 {} files, {} dirs", files.len(), dirs.len());
+    let mut summary = format!("📊 {} 个文件，{} 个目录", files.len(), dirs.len());
     if !by_ext.is_empty() {
         let mut ext_counts: Vec<_> = by_ext.iter().collect();
         ext_counts.sort_by(|a, b| b.1.cmp(a.1));
         let ext_parts: Vec<String> = ext_counts
             .iter()
             .take(5)
-            .map(|(ext, count)| format!("{count} {ext}"))
+            .map(|(ext, count)| format!("{count} 个 {ext}"))
             .collect();
         summary.push_str(" (");
         summary.push_str(&ext_parts.join(", "));
         if ext_counts.len() > 5 {
-            summary.push_str(&format!(", +{} more", ext_counts.len() - 5));
+            summary.push_str(&format!(", +{} 个更多类型", ext_counts.len() - 5));
         }
         summary.push(')');
     }
@@ -281,7 +281,7 @@ mod tests {
     fn test_compact_empty() {
         let input = "total 0\n";
         let output = compact_ls(input, false);
-        assert_eq!(output, "(empty)\n");
+        assert_eq!(output, "（空）\n");
     }
 
     #[test]
@@ -292,7 +292,7 @@ mod tests {
                      -rw-r--r--  1 user  staff  5678 Jan  1 12:00 lib.rs\n\
                      -rw-r--r--  1 user  staff   100 Jan  1 12:00 Cargo.toml\n";
         let output = compact_ls(input, false);
-        assert!(output.contains("📊 3 files, 1 dirs"));
+        assert!(output.contains("📊 3 个文件，1 个目录"));
         assert!(output.contains(".rs"));
         assert!(output.contains(".toml"));
     }
