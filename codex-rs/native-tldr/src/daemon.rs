@@ -954,6 +954,72 @@ mod tests {
         assert!(!socket_path.exists(), "stale socket should be removed");
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_errors_when_response_json_is_invalid() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("invalid-json-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("client should connect");
+            let (_reader, mut writer) = tokio::io::split(stream);
+            writer
+                .write_all(b"{invalid json}\n")
+                .await
+                .expect("response should write");
+        });
+
+        let error = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect_err("invalid json should error");
+        server.await.expect("server should complete");
+
+        assert!(
+            error.to_string().contains("decode daemon response from"),
+            "unexpected error: {error}"
+        );
+
+        std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_errors_when_peer_disconnects_before_reply() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("disconnect-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("client should connect");
+            drop(stream);
+        });
+
+        let error = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect_err("disconnect before reply should error");
+        server.await.expect("server should complete");
+
+        assert!(
+            error.to_string().contains("read daemon response from"),
+            "unexpected error: {error}"
+        );
+
+        std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
+    }
+
     #[tokio::test]
     async fn notify_invalidates_cached_analyses_when_threshold_is_reached() {
         let project = tempfile::tempdir().expect("tempdir should exist");
