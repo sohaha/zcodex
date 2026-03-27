@@ -361,7 +361,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         }
     };
 
-    let line = format!("{state_icon} PR #{number}：{title}\n");
+    let line = format!("{state_icon} PR #{number}: {title}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -738,7 +738,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  URL：{url}\n");
+    let line = format!("  URL: {url}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -812,7 +812,7 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
     if let Some(runs) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("运行\n");
+            filtered.push_str("Run\n");
             println!("Run");
         } else {
             filtered.push_str("🏃 Workflow Runs\n");
