@@ -974,6 +974,10 @@ mod tests {
                 "env FOO=1 command chrt -r 10 /usr/bin/git status",
                 Some("env FOO=1 chrt -r 10 rtk git status"),
             ),
+            (
+                "env --chdir=repo command -p stdbuf -oL git --help",
+                Some("env --chdir=repo stdbuf -oL rtk git --help"),
+            ),
         ]);
     }
 
@@ -1065,6 +1069,7 @@ mod tests {
             "cat src/main.rs src/lib.rs",
             "head -n 3 src/main.rs src/lib.rs",
             "tail -f src/main.rs",
+            "env FOO=1 command tail -f src/main.rs",
         ] {
             let analysis = analyze_shell_command(command);
             assert_eq!(analysis.command, command);
@@ -1073,6 +1078,26 @@ mod tests {
                 ShellCommandRewriteKind::Passthrough {
                     reason: ShellCommandPassthroughReason::UnsupportedArguments,
                     candidate: true,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn candidate_detection_stays_false_for_non_rtk_commands() {
+        for command in [
+            "python -c 'print(1)'",
+            "env FOO=1 python -c 'print(1)'",
+            "command python -c 'print(1)'",
+            "nice -n 5 python -c 'print(1)'",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::UnsupportedCommand,
+                    candidate: false,
                 }
             );
         }

@@ -56,6 +56,22 @@ fn prepend_path(dir: &Path) -> std::ffi::OsString {
     combined_path
 }
 
+fn fallback_marker_script(stdout: &str) -> &'static str {
+    if cfg!(windows) {
+        match stdout {
+            "FALLBACK_TRIGGERED" => "@echo FALLBACK_TRIGGERED\r\n",
+            "FALLBACK_OK %*" => "@echo FALLBACK_OK %*\r\n",
+            other => panic!("unexpected fallback marker script: {other}"),
+        }
+    } else {
+        match stdout {
+            "FALLBACK_TRIGGERED" => "#!/bin/sh\necho FALLBACK_TRIGGERED\n",
+            "FALLBACK_OK \"$@\"" => "#!/bin/sh\necho FALLBACK_OK \"$@\"\n",
+            other => panic!("unexpected fallback marker script: {other}"),
+        }
+    }
+}
+
 #[cfg(unix)]
 fn shell_args(script: &str) -> [&str; 3] {
     ["sh", "-c", script]
@@ -209,6 +225,37 @@ fn rtk_help_still_works_with_global_flags() -> Result<()> {
 }
 
 #[test]
+fn rtk_git_help_exposes_curated_subcommands() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "git", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            contains("status")
+                .and(contains("log"))
+                .and(contains("diff"))
+                .and(contains("rewrite").not()),
+        );
+
+    Ok(())
+}
+
+#[test]
+fn rtk_git_help_still_works_with_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "--verbose", "git", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("Git 命令，紧凑输出").and(contains("status")));
+
+    Ok(())
+}
+
+#[test]
 fn rtk_removed_meta_commands_fail_instead_of_falling_through() -> Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -242,11 +289,7 @@ fn rtk_builtin_parse_errors_do_not_fall_back_to_external_commands() -> Result<()
     let _fake_read = write_fake_command(
         &bin_dir,
         "read",
-        if cfg!(windows) {
-            "@echo FALLBACK_TRIGGERED\r\n"
-        } else {
-            "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
-        },
+        fallback_marker_script("FALLBACK_TRIGGERED"),
     )?;
     let combined_path = prepend_path(&bin_dir);
 
@@ -269,11 +312,7 @@ fn rtk_builtin_help_does_not_fall_back_to_external_commands_after_global_flags()
     let _fake_read = write_fake_command(
         &bin_dir,
         "read",
-        if cfg!(windows) {
-            "@echo FALLBACK_TRIGGERED\r\n"
-        } else {
-            "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
-        },
+        fallback_marker_script("FALLBACK_TRIGGERED"),
     )?;
 
     let mut cmd = codex_command(codex_home.path())?;
@@ -288,6 +327,28 @@ fn rtk_builtin_help_does_not_fall_back_to_external_commands_after_global_flags()
 }
 
 #[test]
+fn rtk_builtin_parse_errors_do_not_fall_back_after_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_read = write_fake_command(
+        &bin_dir,
+        "read",
+        fallback_marker_script("FALLBACK_TRIGGERED"),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "-vv", "read", "--bogus-flag"])
+        .assert()
+        .failure()
+        .stderr(contains("unexpected argument '--bogus-flag'"))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
+
+    Ok(())
+}
+
+#[test]
 fn rtk_removed_meta_commands_still_do_not_fall_through_after_global_flags() -> Result<()> {
     let codex_home = TempDir::new()?;
     let bin_dir = codex_home.path().join("bin");
@@ -295,11 +356,7 @@ fn rtk_removed_meta_commands_still_do_not_fall_through_after_global_flags() -> R
     let _fake_rewrite = write_fake_command(
         &bin_dir,
         "rewrite",
-        if cfg!(windows) {
-            "@echo FALLBACK_TRIGGERED\r\n"
-        } else {
-            "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
-        },
+        fallback_marker_script("FALLBACK_TRIGGERED"),
     )?;
 
     let mut cmd = codex_command(codex_home.path())?;
@@ -321,11 +378,7 @@ fn rtk_unknown_commands_still_fall_back_after_global_flags() -> Result<()> {
     let _fake_external = write_fake_command(
         &bin_dir,
         "custom-fallback",
-        if cfg!(windows) {
-            "@echo FALLBACK_OK %*\r\n"
-        } else {
-            "#!/bin/sh\necho FALLBACK_OK \"$@\"\n"
-        },
+        fallback_marker_script("FALLBACK_OK \"$@\""),
     )?;
 
     let mut cmd = codex_command(codex_home.path())?;
