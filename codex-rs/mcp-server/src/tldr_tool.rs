@@ -150,6 +150,8 @@ mod tests {
             serde_json::json!([
                 "tree",
                 "extract",
+                "imports",
+                "importers",
                 "context",
                 "impact",
                 "change-impact",
@@ -167,7 +169,7 @@ mod tests {
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
         assert_eq!(
             tool_json["outputSchema"]["oneOf"].as_array().map(Vec::len),
-            Some(3)
+            Some(5)
         );
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
@@ -200,6 +202,7 @@ mod tests {
             language: Some(TldrToolLanguage::Typescript),
             symbol: None,
             query: Some("where is auth".to_string()),
+            module: None,
             path: None,
             line: None,
             paths: None,
@@ -229,6 +232,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -306,6 +310,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: Some(vec!["src/lib.rs".to_string()]),
@@ -422,6 +427,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -488,6 +494,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: None,
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
@@ -550,6 +557,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_imports_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Imports,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                module: None,
+                path: Some("src/lib.rs".to_string()),
+                line: None,
+                paths: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(codex_native_tldr::daemon::TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "imports ready: src/lib.rs".to_string(),
+                        analysis: None,
+                        imports: Some(codex_native_tldr::api::ImportsResponse {
+                            language: codex_native_tldr::lang_support::SupportedLanguage::Rust,
+                            path: "src/lib.rs".to_string(),
+                            indexed_files: 1,
+                            imports: vec!["use crate::auth::token;".to_string()],
+                        }),
+                        importers: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("tool result should serialize");
+        let structured = result
+            .structured_content
+            .clone()
+            .expect("structured content should be present");
+        assert_eq!(
+            result_json["content"][0]["text"],
+            "imports rust via daemon: 1 imports"
+        );
+        assert_eq!(structured["action"], "imports");
+        assert_eq!(structured["path"], "src/lib.rs");
+        assert_eq!(
+            structured["imports"]["imports"],
+            serde_json::json!(["use crate::auth::token;"])
+        );
+    }
+
+    #[tokio::test]
     async fn run_tldr_tool_with_mcp_hooks_preserves_slice_summary_text_contract() {
         let tempdir = tempdir().expect("tempdir should exist");
         let summary = "slice summary: backward slice for src/lib.rs:login:4 -> 3 lines [1, 3, 4]";
@@ -560,6 +623,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: Some("login".to_string()),
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: Some(4),
                 paths: None,
@@ -632,6 +696,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -676,6 +741,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -720,6 +786,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -771,6 +838,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -823,6 +891,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
@@ -890,6 +959,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -965,6 +1035,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -992,6 +1063,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,

@@ -1,6 +1,8 @@
 use crate::TldrEngine;
 use crate::api::AnalysisKind;
 use crate::api::AnalysisRequest;
+use crate::api::ImportersRequest;
+use crate::api::ImportsRequest;
 use crate::daemon::TldrDaemonCommand;
 use crate::daemon::TldrDaemonResponse;
 use crate::daemon::daemon_health;
@@ -30,6 +32,8 @@ use tokio::time::sleep;
 pub enum TldrToolAction {
     Tree,
     Extract,
+    Imports,
+    Importers,
     Context,
     Impact,
     ChangeImpact,
@@ -82,6 +86,8 @@ pub struct TldrToolCallParam {
     pub symbol: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -145,6 +151,22 @@ where
                 &ensure_running,
             )
             .await
+        }
+        TldrToolAction::Imports => {
+            let path = args
+                .path
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("`path` is required for action=imports"))?;
+            let language = required_or_inferred_language(&args, Some(path.as_str()))?;
+            run_imports_tool(&project_root, language, path, &query, &ensure_running).await
+        }
+        TldrToolAction::Importers => {
+            let module = args
+                .module
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("`module` is required for action=importers"))?;
+            let language = required_language(&args)?;
+            run_importers_tool(&project_root, language, module, &query, &ensure_running).await
         }
         TldrToolAction::Context => {
             let language = required_language(&args)?;
@@ -529,6 +551,8 @@ pub fn action_name(action: &TldrToolAction) -> &'static str {
     match action {
         TldrToolAction::Tree => "tree",
         TldrToolAction::Extract => "extract",
+        TldrToolAction::Imports => "imports",
+        TldrToolAction::Importers => "importers",
         TldrToolAction::Context => "context",
         TldrToolAction::Impact => "impact",
         TldrToolAction::ChangeImpact => "change-impact",
@@ -604,6 +628,142 @@ fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
         }
     }
     semantic
+}
+
+async fn run_imports_tool<Q, E>(
+    project_root: &Path,
+    language: SupportedLanguage,
+    path: String,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let request = ImportsRequest {
+        language,
+        path: path.clone(),
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Imports {
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let imports = response
+            .imports
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing imports payload"))?;
+        ("daemon", response.message, imports)
+    } else {
+        let config = load_tldr_config(project_root)?;
+        let engine = TldrEngine::builder(project_root.to_path_buf())
+            .with_config(config)
+            .build();
+        let response = engine.imports(request)?;
+        (
+            "local",
+            "daemon unavailable; used local engine".to_string(),
+            response,
+        )
+    };
+    let structured_content = json!({
+        "action": "imports",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "path": path,
+        "imports": {
+            "path": response.path,
+            "language": response.language.as_str(),
+            "indexedFiles": response.indexed_files,
+            "imports": response.imports,
+        },
+    });
+    let import_count = structured_content["imports"]["imports"]
+        .as_array()
+        .map_or(0, Vec::len);
+    let text = format!(
+        "imports {} via {source}: {import_count} imports",
+        language.as_str()
+    );
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
+async fn run_importers_tool<Q, E>(
+    project_root: &Path,
+    language: SupportedLanguage,
+    module: String,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let request = ImportersRequest {
+        language,
+        module: module.clone(),
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Importers {
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let importers = response
+            .importers
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing importers payload"))?;
+        ("daemon", response.message, importers)
+    } else {
+        let config = load_tldr_config(project_root)?;
+        let engine = TldrEngine::builder(project_root.to_path_buf())
+            .with_config(config)
+            .build();
+        let response = engine.importers(request)?;
+        (
+            "local",
+            "daemon unavailable; used local engine".to_string(),
+            response,
+        )
+    };
+    let structured_content = json!({
+        "action": "importers",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "module": module,
+        "importers": {
+            "module": response.module,
+            "language": response.language.as_str(),
+            "indexedFiles": response.indexed_files,
+            "matches": response.matches,
+        },
+    });
+    let match_count = structured_content["importers"]["matches"]
+        .as_array()
+        .map_or(0, Vec::len);
+    let text = format!(
+        "importers {} via {source}: {match_count} matches",
+        language.as_str()
+    );
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
 }
 
 async fn run_change_impact_tool<Q, E>(
@@ -810,6 +970,15 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 }
               }
             },
+            "importMatch": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "line": { "type": "integer" },
+                "symbol": { "type": ["string", "null"] },
+                "import": { "type": "string" }
+              }
+            },
             "analysis": {
               "type": "object",
               "properties": {
@@ -941,6 +1110,70 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "semantic"
               ]
             },
+            "importsResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "imports" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "path": { "type": "string" },
+                "imports": {
+                  "type": "object",
+                  "properties": {
+                    "path": { "type": "string" },
+                    "language": { "type": "string" },
+                    "indexedFiles": { "type": "integer" },
+                    "imports": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "path",
+                "imports"
+              ]
+            },
+            "importersResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "importers" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "module": { "type": "string" },
+                "importers": {
+                  "type": "object",
+                  "properties": {
+                    "module": { "type": "string" },
+                    "language": { "type": "string" },
+                    "indexedFiles": { "type": "integer" },
+                    "matches": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/importMatch" }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "module",
+                "importers"
+              ]
+            },
             "daemonResult": {
               "type": "object",
               "properties": {
@@ -998,6 +1231,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
           },
           "oneOf": [
             { "$ref": "#/$defs/analysisResult" },
+            { "$ref": "#/$defs/importsResult" },
+            { "$ref": "#/$defs/importersResult" },
             { "$ref": "#/$defs/semanticResult" },
             { "$ref": "#/$defs/daemonResult" }
           ]
@@ -1028,6 +1263,8 @@ mod tests {
     fn action_name_covers_analysis_actions() {
         assert_eq!(action_name(&TldrToolAction::Tree), "tree");
         assert_eq!(action_name(&TldrToolAction::Extract), "extract");
+        assert_eq!(action_name(&TldrToolAction::Imports), "imports");
+        assert_eq!(action_name(&TldrToolAction::Importers), "importers");
         assert_eq!(action_name(&TldrToolAction::Context), "context");
         assert_eq!(action_name(&TldrToolAction::Impact), "impact");
         assert_eq!(action_name(&TldrToolAction::ChangeImpact), "change-impact");
@@ -1055,6 +1292,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
 
                 line: None,
@@ -1066,6 +1304,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "pong".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1094,6 +1334,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
 
                 line: None,
@@ -1105,6 +1346,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "status".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1133,6 +1376,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
 
                 line: None,
@@ -1144,6 +1388,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "already warm".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: Some(crate::session::SessionSnapshot {
                             cached_entries: 0,
@@ -1179,6 +1425,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
 
                 line: None,
@@ -1190,6 +1437,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "snapshot".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: Some(crate::session::SessionSnapshot {
                             cached_entries: 2,
@@ -1233,6 +1482,7 @@ mod tests {
                     language: None,
                     symbol: None,
                     query: None,
+                    module: None,
                     path: None,
 
                     line: None,
@@ -1263,6 +1513,7 @@ mod tests {
                     language: Some(TldrToolLanguage::Rust),
                     symbol: None,
                     query: None,
+                    module: None,
                     path: None,
 
                     line: None,
@@ -1293,6 +1544,7 @@ mod tests {
                     language: Some(TldrToolLanguage::Rust),
                     symbol: Some("main".to_string()),
                     query: None,
+                    module: None,
                     path: Some("src/lib.rs".to_string()),
                     line: None,
                     paths: None,
@@ -1322,6 +1574,7 @@ mod tests {
                     language: Some(TldrToolLanguage::Rust),
                     symbol: None,
                     query: None,
+                    module: None,
                     path: None,
                     line: None,
                     paths: None,
@@ -1334,6 +1587,69 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "`paths` is required for action=change-impact"
+        );
+    }
+
+    #[test]
+    fn imports_action_requires_path() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Imports,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: None,
+                    module: None,
+                    path: None,
+                    line: None,
+                    paths: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("imports without path should fail");
+
+        assert_eq!(error.to_string(), "`path` is required for action=imports");
+    }
+
+    #[test]
+    fn importers_action_requires_module() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::Importers,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: None,
+                    module: None,
+                    path: None,
+                    line: None,
+                    paths: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("importers without module should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "`module` is required for action=importers"
         );
     }
 
@@ -1354,6 +1670,7 @@ mod tests {
                     language: Some(TldrToolLanguage::Rust),
                     symbol: None,
                     query: None,
+                    module: None,
                     path: None,
 
                     line: None,
@@ -1384,6 +1701,7 @@ mod tests {
                     language: None,
                     symbol: None,
                     query: None,
+                    module: None,
                     path: None,
 
                     line: None,
@@ -1411,6 +1729,7 @@ mod tests {
                 language: Some(TldrToolLanguage::Rust),
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
 
                 line: None,
@@ -1422,6 +1741,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "missing".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1450,6 +1771,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
 
                 line: None,
@@ -1461,6 +1783,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "marked src/lib.rs dirty".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1503,6 +1827,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
 
                 line: None,
@@ -1515,6 +1840,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "status".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: Some(crate::session::SessionSnapshot {
                             cached_entries: 1,
@@ -1585,6 +1912,7 @@ mod tests {
                     language: Some(TldrToolLanguage::Rust),
                     symbol: None,
                     query: None,
+                    module: None,
                     path: None,
 
                     line: None,

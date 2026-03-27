@@ -58,6 +58,12 @@ pub enum TldrSubcommand {
     /// 提取单文件结构摘要。
     Extract(TldrExtractCommand),
 
+    /// 列出单文件 import。
+    Imports(TldrExtractCommand),
+
+    /// 查找导入某个模块的符号/文件。
+    Importers(TldrImportersCommand),
+
     /// 获取指定行的 backward slice。
     Slice(TldrSliceCommand),
 
@@ -197,6 +203,25 @@ pub struct TldrChangeImpactCommand {
 }
 
 #[derive(Debug, Parser)]
+pub struct TldrImportersCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 目标语言。
+    #[arg(long, value_enum)]
+    pub lang: CliLanguage,
+
+    /// 模块或 import 片段。
+    #[arg(value_name = "MODULE")]
+    pub module: String,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
 pub struct TldrSemanticCommand {
     /// 项目根目录。
     #[arg(long, default_value = ".")]
@@ -277,6 +302,12 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         }
         TldrSubcommand::Extract(cmd) => {
             run_extract_command(cmd).await?;
+        }
+        TldrSubcommand::Imports(cmd) => {
+            run_imports_command(cmd).await?;
+        }
+        TldrSubcommand::Importers(cmd) => {
+            run_importers_command(cmd).await?;
         }
         TldrSubcommand::Slice(cmd) => {
             run_slice_command(cmd).await?;
@@ -483,6 +514,141 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+async fn run_imports_command(cmd: TldrExtractCommand) -> Result<()> {
+    let requested_path = cmd.path.display().to_string();
+    let language = cmd
+        .lang
+        .map(Into::into)
+        .or_else(|| SupportedLanguage::from_path(&cmd.path))
+        .ok_or_else(|| {
+            anyhow::anyhow!("could not infer language from path {}", cmd.path.display())
+        })?;
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Imports {
+            request: codex_native_tldr::api::ImportsRequest {
+                language,
+                path: requested_path.clone(),
+            },
+        },
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let imports = response
+            .imports
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing imports payload"))?;
+        ("daemon", Some(response.message), imports)
+    } else {
+        let engine = TldrEngine::builder(project_root.clone())
+            .with_config(config.clone())
+            .build();
+        let response = engine.imports(codex_native_tldr::api::ImportsRequest {
+            language,
+            path: requested_path.clone(),
+        })?;
+        (
+            "local",
+            Some("daemon unavailable; used local engine".to_string()),
+            response,
+        )
+    };
+    let payload = json!({
+        "action": "imports",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "path": requested_path,
+        "imports": {
+            "path": response.path,
+            "language": response.language.as_str(),
+            "indexedFiles": response.indexed_files,
+            "imports": response.imports,
+        }
+    });
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_imports_response_text(
+            language,
+            source,
+            payload.get("message").and_then(serde_json::Value::as_str),
+            payload["path"].as_str().unwrap_or_default(),
+            payload["imports"]["imports"].as_array().map_or(0, Vec::len),
+        ) {
+            println!("{line}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_importers_command(cmd: TldrImportersCommand) -> Result<()> {
+    let language: SupportedLanguage = cmd.lang.into();
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Importers {
+            request: codex_native_tldr::api::ImportersRequest {
+                language,
+                module: cmd.module.clone(),
+            },
+        },
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let importers = response
+            .importers
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing importers payload"))?;
+        ("daemon", Some(response.message), importers)
+    } else {
+        let engine = TldrEngine::builder(project_root.clone())
+            .with_config(config.clone())
+            .build();
+        let response = engine.importers(codex_native_tldr::api::ImportersRequest {
+            language,
+            module: cmd.module.clone(),
+        })?;
+        (
+            "local",
+            Some("daemon unavailable; used local engine".to_string()),
+            response,
+        )
+    };
+    let payload = json!({
+        "action": "importers",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "module": cmd.module,
+        "importers": {
+            "module": response.module,
+            "language": response.language.as_str(),
+            "indexedFiles": response.indexed_files,
+            "matches": response.matches,
+        }
+    });
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_importers_response_text(
+            language,
+            source,
+            payload.get("message").and_then(serde_json::Value::as_str),
+            payload["module"].as_str().unwrap_or_default(),
+            payload["importers"]["matches"]
+                .as_array()
+                .map_or(0, Vec::len),
+        ) {
+            println!("{line}");
+        }
+    }
     Ok(())
 }
 
@@ -809,6 +975,44 @@ fn render_analysis_response_text(
         lines.push(format!("line: {line}"));
     }
     lines.push(format!("summary: {summary}"));
+    lines
+}
+
+fn render_imports_response_text(
+    language: SupportedLanguage,
+    source: &str,
+    message: Option<&str>,
+    path: &str,
+    import_count: usize,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("language: {}", language.as_str()),
+        format!("source: {source}"),
+        format!("path: {path}"),
+        format!("imports: {import_count}"),
+    ];
+    if let Some(message) = message {
+        lines.push(format!("message: {message}"));
+    }
+    lines
+}
+
+fn render_importers_response_text(
+    language: SupportedLanguage,
+    source: &str,
+    message: Option<&str>,
+    module: &str,
+    match_count: usize,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("language: {}", language.as_str()),
+        format!("source: {source}"),
+        format!("module: {module}"),
+        format!("matches: {match_count}"),
+    ];
+    if let Some(message) = message {
+        lines.push(format!("message: {message}"));
+    }
     lines
 }
 
@@ -1232,6 +1436,8 @@ mod output_tests {
     use super::cli_semantic_payload;
     use super::daemon_action_and_command;
     use super::render_analysis_response_text;
+    use super::render_importers_response_text;
+    use super::render_imports_response_text;
     use super::render_semantic_response_text;
     use codex_native_tldr::api::AnalysisDetail;
     use codex_native_tldr::api::AnalysisEdgeDetail;
@@ -1737,6 +1943,50 @@ mod output_tests {
     }
 
     #[test]
+    fn render_imports_response_text_preserves_contract() {
+        let lines = render_imports_response_text(
+            SupportedLanguage::Rust,
+            "daemon",
+            Some("imports ready: src/lib.rs"),
+            "src/lib.rs",
+            1,
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "language: rust".to_string(),
+                "source: daemon".to_string(),
+                "path: src/lib.rs".to_string(),
+                "imports: 1".to_string(),
+                "message: imports ready: src/lib.rs".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn render_importers_response_text_preserves_contract() {
+        let lines = render_importers_response_text(
+            SupportedLanguage::Rust,
+            "local",
+            Some("importers ready: auth::token"),
+            "auth::token",
+            2,
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "language: rust".to_string(),
+                "source: local".to_string(),
+                "module: auth::token".to_string(),
+                "matches: 2".to_string(),
+                "message: importers ready: auth::token".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn daemon_action_and_command_maps_notify() {
         let path = PathBuf::from("src/lib.rs");
         let (action, command) =
@@ -1924,6 +2174,8 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "status".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 3,
@@ -1972,6 +2224,8 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -1994,6 +2248,8 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "marked src/lib.rs dirty".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 2,
@@ -2022,6 +2278,8 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "snapshot".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 3,
@@ -2051,6 +2309,8 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "status".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 1,
@@ -2118,6 +2378,8 @@ mod lifecycle_tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -3110,11 +3372,15 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Analyze { .. } => "analyze",
                         TldrDaemonCommand::Semantic { .. } => "semantic",
                         TldrDaemonCommand::Notify { .. } => "notify",
+                        TldrDaemonCommand::Imports { .. } => "imports",
+                        TldrDaemonCommand::Importers { .. } => "importers",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),
                         message: message.to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -3205,11 +3471,15 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Analyze { .. } => "analyze",
                         TldrDaemonCommand::Semantic { .. } => "semantic",
                         TldrDaemonCommand::Notify { .. } => "notify",
+                        TldrDaemonCommand::Imports { .. } => "imports",
+                        TldrDaemonCommand::Importers { .. } => "importers",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),
                         message: message.to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,

@@ -1934,10 +1934,10 @@ mod tests {
             rtk_cli.args,
             vec![
                 "--",
-                "env".into(),
-                "FOO=1".into(),
-                "git".into(),
-                "status".into(),
+                "env",
+                "FOO=1",
+                "git",
+                "status",
             ]
         );
     }
@@ -1952,7 +1952,12 @@ mod tests {
 
         assert_eq!(
             rtk_cli.args,
-            vec!["env".into(), "FOO=1".into(), "git".into(), "status".into()]
+            vec![
+                std::ffi::OsString::from("env"),
+                std::ffi::OsString::from("FOO=1"),
+                std::ffi::OsString::from("git"),
+                std::ffi::OsString::from("status"),
+            ]
         );
     }
 

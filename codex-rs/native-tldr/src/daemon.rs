@@ -2,6 +2,10 @@ use crate::TldrConfig;
 use crate::TldrEngine;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+use crate::api::ImportersRequest;
+use crate::api::ImportersResponse;
+use crate::api::ImportsRequest;
+use crate::api::ImportsResponse;
 use crate::semantic::SemanticReindexReport;
 use crate::semantic::SemanticSearchRequest;
 use crate::semantic::SemanticSearchResponse;
@@ -55,6 +59,12 @@ pub enum TldrDaemonCommand {
         key: String,
         request: AnalysisRequest,
     },
+    Imports {
+        request: ImportsRequest,
+    },
+    Importers {
+        request: ImportersRequest,
+    },
     Semantic {
         request: SemanticSearchRequest,
     },
@@ -70,6 +80,8 @@ pub struct TldrDaemonResponse {
     pub status: String,
     pub message: String,
     pub analysis: Option<AnalysisResponse>,
+    pub imports: Option<ImportsResponse>,
+    pub importers: Option<ImportersResponse>,
     pub semantic: Option<SemanticSearchResponse>,
     pub snapshot: Option<crate::session::SessionSnapshot>,
     pub daemon_status: Option<TldrDaemonStatus>,
@@ -82,6 +94,8 @@ impl TldrDaemonResponse {
             status: "ok".to_string(),
             message: message.into(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -176,6 +190,8 @@ impl TldrDaemon {
                     status: "ok".to_string(),
                     message,
                     analysis: None,
+                    imports: None,
+                    importers: None,
                     semantic: None,
                     snapshot: Some(snapshot.clone()),
                     daemon_status: Some(build_daemon_status(
@@ -190,6 +206,34 @@ impl TldrDaemon {
                 let mut session = self.session.lock().await;
                 analyze_with_session(&mut session, &self.engine, key, request)
             }
+            TldrDaemonCommand::Imports { request } => {
+                let response = self.engine.imports(request)?;
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: format!("imports ready: {}", response.path),
+                    analysis: None,
+                    imports: Some(response),
+                    importers: None,
+                    semantic: None,
+                    snapshot: None,
+                    daemon_status: None,
+                    reindex_report: None,
+                })
+            }
+            TldrDaemonCommand::Importers { request } => {
+                let response = self.engine.importers(request)?;
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: format!("importers ready: {}", response.module),
+                    analysis: None,
+                    imports: None,
+                    importers: Some(response),
+                    semantic: None,
+                    snapshot: None,
+                    daemon_status: None,
+                    reindex_report: None,
+                })
+            }
             TldrDaemonCommand::Notify { path } => {
                 let mut session = self.session.lock().await;
                 let message = notify_session_message(&mut session, path);
@@ -197,6 +241,8 @@ impl TldrDaemon {
                     status: "ok".to_string(),
                     message,
                     analysis: None,
+                    imports: None,
+                    importers: None,
                     semantic: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
@@ -206,6 +252,9 @@ impl TldrDaemon {
             TldrDaemonCommand::Snapshot => {
                 let session = self.session.lock().await;
                 Ok(TldrDaemonResponse {
+                    analysis: None,
+                    imports: None,
+                    importers: None,
                     snapshot: Some(session.snapshot()),
                     ..TldrDaemonResponse::ok("snapshot")
                 })
@@ -214,6 +263,9 @@ impl TldrDaemon {
                 let session = self.session.lock().await;
                 let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
+                    analysis: None,
+                    imports: None,
+                    importers: None,
                     snapshot: Some(snapshot.clone()),
                     reindex_report: session.last_reindex_attempt_report(),
                     daemon_status: Some(build_daemon_status(
@@ -230,6 +282,8 @@ impl TldrDaemon {
                     status: "ok".to_string(),
                     message: response.message.clone(),
                     analysis: None,
+                    imports: None,
+                    importers: None,
                     semantic: Some(response),
                     snapshot: None,
                     daemon_status: None,
@@ -339,6 +393,8 @@ async fn handle_with_session(
                 status: "ok".to_string(),
                 message,
                 analysis: None,
+                imports: None,
+                importers: None,
                 semantic: None,
                 snapshot: Some(snapshot.clone()),
                 daemon_status: Some(build_daemon_status(
@@ -353,6 +409,34 @@ async fn handle_with_session(
             let mut guard = session.lock().await;
             analyze_with_session(&mut guard, engine, key, request)
         }
+        TldrDaemonCommand::Imports { request } => {
+            let response = engine.imports(request)?;
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: format!("imports ready: {}", response.path),
+                analysis: None,
+                imports: Some(response),
+                importers: None,
+                semantic: None,
+                snapshot: None,
+                daemon_status: None,
+                reindex_report: None,
+            })
+        }
+        TldrDaemonCommand::Importers { request } => {
+            let response = engine.importers(request)?;
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: format!("importers ready: {}", response.module),
+                analysis: None,
+                imports: None,
+                importers: Some(response),
+                semantic: None,
+                snapshot: None,
+                daemon_status: None,
+                reindex_report: None,
+            })
+        }
         TldrDaemonCommand::Notify { path } => {
             let mut guard = session.lock().await;
             let message = notify_session_message(&mut guard, path);
@@ -360,6 +444,8 @@ async fn handle_with_session(
                 status: "ok".to_string(),
                 message,
                 analysis: None,
+                imports: None,
+                importers: None,
                 semantic: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
@@ -393,6 +479,8 @@ async fn handle_with_session(
                 status: "ok".to_string(),
                 message: response.message.clone(),
                 analysis: None,
+                imports: None,
+                importers: None,
                 semantic: Some(response),
                 snapshot: None,
                 daemon_status: None,
@@ -415,6 +503,8 @@ fn analyze_with_session(
             status: "ok".to_string(),
             message: "cache hit".to_string(),
             analysis: Some(cached),
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: Some(session.snapshot()),
             daemon_status: None,
@@ -433,6 +523,8 @@ fn analyze_with_session(
         status: "ok".to_string(),
         message: message.to_string(),
         analysis: Some(analysis),
+        imports: None,
+        importers: None,
         semantic: None,
         snapshot: Some(session.snapshot()),
         daemon_status: None,
@@ -892,6 +984,8 @@ mod tests {
                 status: "ok".to_string(),
                 message: "pong".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
                 semantic: None,
                 snapshot: None,
                 daemon_status: None,
@@ -917,6 +1011,8 @@ mod tests {
                 status: "ok".to_string(),
                 message: "pong".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
                 semantic: None,
                 snapshot: None,
                 daemon_status: None,

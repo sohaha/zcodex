@@ -4,6 +4,7 @@ pub mod analysis;
 pub mod api;
 pub mod config;
 pub mod daemon;
+mod import_analysis;
 pub mod lang_support;
 pub mod lifecycle;
 pub mod mcp;
@@ -16,9 +17,15 @@ pub mod wire;
 use crate::analysis::analyze_project;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+use crate::api::ImportersRequest;
+use crate::api::ImportersResponse;
+use crate::api::ImportsRequest;
+use crate::api::ImportsResponse;
 pub use crate::config::load_tldr_config;
 use crate::daemon::DaemonConfig;
 use crate::daemon::TldrDaemonConfigSummary;
+use crate::import_analysis::collect_importers;
+use crate::import_analysis::collect_imports;
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
 use crate::mcp::TldrToolDescriptor;
@@ -151,6 +158,14 @@ impl TldrEngine {
 
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {
         analyze_project(&self.config.project_root, &self.config, request)
+    }
+
+    pub fn imports(&self, request: ImportsRequest) -> Result<ImportsResponse> {
+        collect_imports(&self.config.project_root, &self.config, request)
+    }
+
+    pub fn importers(&self, request: ImportersRequest) -> Result<ImportersResponse> {
+        collect_importers(&self.config.project_root, &self.config, request)
     }
 }
 

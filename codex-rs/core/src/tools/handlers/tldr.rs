@@ -150,6 +150,34 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
         }
     }
 
+    if parts.is_empty() && payload.get("imports").is_some() {
+        if let Some(path) = payload.get("path").and_then(serde_json::Value::as_str) {
+            parts.push(format!("imports path: {path}"));
+        }
+        if let Some(import_count) = payload
+            .get("imports")
+            .and_then(|imports| imports.get("imports"))
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len)
+        {
+            parts.push(format!("imports: {import_count}"));
+        }
+    }
+
+    if parts.is_empty() && payload.get("importers").is_some() {
+        if let Some(module) = payload.get("module").and_then(serde_json::Value::as_str) {
+            parts.push(format!("importers module: {module}"));
+        }
+        if let Some(match_count) = payload
+            .get("importers")
+            .and_then(|importers| importers.get("matches"))
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len)
+        {
+            parts.push(format!("matches: {match_count}"));
+        }
+    }
+
     if parts.is_empty()
         && (payload.get("status").is_some()
             || payload.get("snapshot").is_some()
@@ -410,6 +438,8 @@ mod tests {
             status: "ok".to_string(),
             message: message.to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -477,6 +507,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: None,
                 query: Some("auth login".to_string()),
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -557,6 +588,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -585,6 +617,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -703,6 +736,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -776,6 +810,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: Some(vec!["src/lib.rs".to_string()]),
@@ -880,6 +915,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: None,
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
@@ -960,6 +996,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("login".to_string()),
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: Some(4),
                 paths: None,
@@ -1044,6 +1081,38 @@ mod tests {
     }
 
     #[test]
+    fn render_tldr_summary_surfaces_imports_payload_fields() {
+        let payload = serde_json::json!({
+            "action": "imports",
+            "path": "src/lib.rs",
+            "imports": {
+                "imports": ["use crate::auth::token;"]
+            }
+        });
+
+        assert_eq!(
+            render_tldr_summary(&payload),
+            "imports path: src/lib.rs | imports: 1"
+        );
+    }
+
+    #[test]
+    fn render_tldr_summary_surfaces_importers_payload_fields() {
+        let payload = serde_json::json!({
+            "action": "importers",
+            "module": "auth::token",
+            "importers": {
+                "matches": [{"path": "src/lib.rs"}]
+            }
+        });
+
+        assert_eq!(
+            render_tldr_summary(&payload),
+            "importers module: auth::token | matches: 1"
+        );
+    }
+
+    #[test]
     fn render_tldr_summary_surfaces_daemon_payload_fields() {
         let payload = serde_json::json!({
             "action": "status",
@@ -1067,6 +1136,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -1094,6 +1164,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
@@ -1104,6 +1175,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "marked src/lib.rs dirty".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 1,
@@ -1141,6 +1214,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -1151,6 +1225,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "snapshot".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 2,
@@ -1201,6 +1277,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -1212,6 +1289,8 @@ mod tests {
                         status: "ok".to_string(),
                         message: "status".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 1,
@@ -1272,6 +1351,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -1296,6 +1376,7 @@ mod tests {
                 language: None,
                 symbol: None,
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -1324,6 +1405,7 @@ mod tests {
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
                 query: None,
+                module: None,
                 path: None,
                 line: None,
                 paths: None,
@@ -1339,6 +1421,8 @@ mod tests {
                         }),
                         status: "ok".to_string(),
                         message: "analysis".to_string(),
+                        imports: None,
+                        importers: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,

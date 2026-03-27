@@ -653,6 +653,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn shell_emitter_never_exposes_absolute_rtk_exec_path() {
+        let (session, turn, mut rx) = make_session_and_context_with_rx().await;
+        let emitter = ToolEmitter::shell(
+            vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "/tmp/codex rtk git status".to_string(),
+            ],
+            Some(vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "codex rtk git status".to_string(),
+            ]),
+            turn.cwd.clone(),
+            ExecCommandSource::Agent,
+            true,
+            Some("git status".to_string()),
+            Some(
+                "[shell_command routed via embedded RTK]\noriginal: git status\nrewritten: codex rtk git status"
+                    .to_string(),
+            ),
+        );
+        let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-abs", None);
+
+        emitter.begin(ctx).await;
+        let begin = recv_exec_begin(&mut rx).await;
+        assert_eq!(
+            begin.command,
+            vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "codex rtk git status".to_string(),
+            ]
+        );
+        assert!(!begin.command.join(" ").contains("/tmp/codex"));
+
+        let output = ExecToolCallOutput {
+            stdout: StreamOutput::new("ok".to_string()),
+            aggregated_output: StreamOutput::new("ok".to_string()),
+            duration: Duration::from_millis(8),
+            ..ExecToolCallOutput::default()
+        };
+        let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
+        assert!(result.contains("rewritten: codex rtk git status"));
+        assert!(!result.contains("/tmp/codex"));
+
+        let end = recv_exec_end(&mut rx).await;
+        assert_eq!(end.interaction_input, Some("git status".to_string()));
+        assert!(!end.command.join(" ").contains("/tmp/codex"));
+    }
+
+    #[tokio::test]
     async fn shell_emitter_omits_prefix_for_structured_output() {
         let (session, turn, _rx) = make_session_and_context_with_rx().await;
         let emitter = ToolEmitter::shell(

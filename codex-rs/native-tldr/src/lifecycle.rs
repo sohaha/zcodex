@@ -182,6 +182,8 @@ mod tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,

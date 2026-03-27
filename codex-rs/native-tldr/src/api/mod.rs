@@ -132,3 +132,41 @@ pub struct AnalysisSymbolIndexEntry {
     pub symbol: String,
     pub node_ids: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportsRequest {
+    pub language: SupportedLanguage,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportsResponse {
+    pub language: SupportedLanguage,
+    pub path: String,
+    pub indexed_files: usize,
+    #[serde(default)]
+    pub imports: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportersRequest {
+    pub language: SupportedLanguage,
+    pub module: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImporterMatch {
+    pub path: String,
+    pub line: usize,
+    pub symbol: Option<String>,
+    pub import: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImportersResponse {
+    pub language: SupportedLanguage,
+    pub module: String,
+    pub indexed_files: usize,
+    #[serde(default)]
+    pub matches: Vec<ImporterMatch>,
+}
