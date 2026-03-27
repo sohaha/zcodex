@@ -89,7 +89,6 @@ pub(crate) async fn emit_exec_command_begin(
 // Concrete, allocation-free emitter: avoid trait objects and boxed futures.
 pub(crate) enum ToolEmitter {
     Shell {
-        command: Vec<String>,
         display_command: Vec<String>,
         cwd: PathBuf,
         source: ExecCommandSource,
@@ -124,7 +123,6 @@ impl ToolEmitter {
         let display_command = display_command.unwrap_or_else(|| command.clone());
         let display_parsed_cmd = parse_command(&display_command);
         Self::Shell {
-            command,
             display_command,
             cwd,
             source,

@@ -164,8 +164,7 @@ impl ShellCommandHandler {
                 );
                 RoutedCommand {
                     model_output_prefix: Some(format!(
-                        "[shell_command routed via embedded RTK]\noriginal: {}\nrewritten: {}",
-                        trimmed, display_command
+                        "[shell_command routed via embedded RTK]\noriginal: {trimmed}\nrewritten: {display_command}"
                     )),
                     interaction_input: Some(trimmed.to_string()),
                     command: analysis.command,
