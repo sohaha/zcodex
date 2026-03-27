@@ -239,10 +239,10 @@ if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
   export RUSTC_WRAPPER="$(command -v sccache)"
 fi
 
-if [ -z "${RUSTFLAGS:-}" ] && command -v mold >/dev/null 2>&1; then
-  export RUSTFLAGS="-C link-arg=-fuse-ld=mold"
-elif [ -z "${RUSTFLAGS:-}" ] && command -v ld.lld >/dev/null 2>&1; then
-  export RUSTFLAGS="-C link-arg=-fuse-ld=lld"
+if command -v mold >/dev/null 2>&1; then
+  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold"
+elif command -v ld.lld >/dev/null 2>&1; then
+  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=lld"
 fi
 
 codex_bin="$(resolve_codex_bin "$@")"
