@@ -341,16 +341,16 @@ fn filter_go_test_json(output: &str) -> String {
     let has_failures = total_fail > 0 || total_build_fail > 0;
 
     if !has_failures && total_pass == 0 {
-        return "Go test：未找到测试".to_string();
+        return "Go test: 未找到测试".to_string();
     }
 
     if !has_failures {
-        return format!("✓ Go test：{total_pass} 通过，共 {total_packages} 个包");
+        return format!("✓ Go test: {total_pass} 通过，共 {total_packages} 个包");
     }
 
     let mut result = String::new();
     result.push_str(&format!(
-        "Go test：{} 通过，{} 失败",
+        "Go test: {} 通过，{} 失败",
         total_pass,
         total_fail + total_build_fail
     ));
@@ -447,11 +447,11 @@ fn filter_go_build(output: &str) -> String {
     }
 
     if errors.is_empty() {
-        return "✓ Go build：成功".to_string();
+        return "✓ Go build: 成功".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Go build：{} 个错误\n", errors.len()));
+    result.push_str(&format!("Go build: {} 个错误\n", errors.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, error) in errors.iter().take(20).enumerate() {
@@ -483,11 +483,11 @@ fn filter_go_vet(output: &str) -> String {
     }
 
     if issues.is_empty() {
-        return "✓ Go vet：未发现问题".to_string();
+        return "✓ Go vet: 未发现问题".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Go vet：{} 个问题\n", issues.len()));
+    result.push_str(&format!("Go vet: {} 个问题\n", issues.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, issue) in issues.iter().take(20).enumerate() {

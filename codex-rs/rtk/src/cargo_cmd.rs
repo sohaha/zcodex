@@ -260,7 +260,7 @@ fn filter_cargo_install(output: &str) -> String {
     // 已安装 / 已是最新
     if already_installed {
         let info = ignored_line.split('`').nth(1).unwrap_or(&ignored_line);
-        return format!("✓ cargo install：{info} 已安装");
+        return format!("✓ cargo install: {info} 已安装");
     }
 
     // 错误
@@ -274,10 +274,10 @@ fn filter_cargo_install(output: &str) -> String {
 
         let mut result = String::new();
         if crate_info.is_empty() {
-            result.push_str(&format!("cargo install：{error_count} 个错误{deps_info}\n"));
+            result.push_str(&format!("cargo install: {error_count} 个错误{deps_info}\n"));
         } else {
             result.push_str(&format!(
-                "cargo install：{error_count} 个错误（{crate_info}{deps_info}）\n"
+                "cargo install: {error_count} 个错误（{crate_info}{deps_info}）\n"
             ));
         }
         result.push_str("═══════════════════════════════════════\n");
@@ -485,7 +485,7 @@ fn filter_cargo_nextest(output: &str) -> String {
             } else {
                 format!("{binary_text}, {duration}s")
             };
-            return format!("✓ cargo nextest：{}（{}）", parts.join(", "), meta);
+            return format!("✓ cargo nextest: {}（{}）", parts.join(", "), meta);
         }
 
         // 有失败：先展示失败详情，再展示摘要
@@ -513,7 +513,7 @@ fn filter_cargo_nextest(output: &str) -> String {
             format!("{binary_text}, {duration}s")
         };
         result.push_str(&format!(
-            "cargo nextest：{}（{}）",
+            "cargo nextest: {}（{}）",
             summary_parts.join(", "),
             meta
         ));
@@ -613,7 +613,7 @@ fn filter_cargo_build(output: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&format!(
-        "cargo build：{error_count} 个错误，{warnings} 个警告（{compiled} 个 crate）\n"
+        "cargo build: {error_count} 个错误，{warnings} 个警告（{compiled} 个 crate）\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -721,11 +721,11 @@ impl AggregatedTestResult {
 
         if self.has_duration {
             format!(
-                "✓ cargo test：{}（{}，{:.2}s）",
+                "✓ cargo test: {}（{}，{:.2}s）",
                 counts, suite_text, self.duration_secs
             )
         } else {
-            format!("✓ cargo test：{counts}（{suite_text}）")
+            format!("✓ cargo test: {counts}（{suite_text}）")
         }
     }
 }
@@ -916,12 +916,12 @@ fn filter_cargo_clippy(output: &str) -> String {
     }
 
     if error_count == 0 && warning_count == 0 {
-        return "✓ cargo clippy：未发现问题".to_string();
+        return "✓ cargo clippy: 未发现问题".to_string();
     }
 
     let mut result = String::new();
     result.push_str(&format!(
-        "cargo clippy：{error_count} 个错误，{warning_count} 个警告\n"
+        "cargo clippy: {error_count} 个错误，{warning_count} 个警告\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -1087,7 +1087,7 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 "#;
         let result = filter_cargo_test(output);
         assert!(
-            result.contains("✓ cargo test：15 通过（1 个套件，0.01s）"),
+            result.contains("✓ cargo test: 15 通过（1 个套件，0.01s）"),
             "应输出紧凑格式，实际得到：{result}"
         );
         assert!(!result.contains("Compiling"));
@@ -1143,7 +1143,7 @@ test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 "#;
         let result = filter_cargo_test(output);
         assert!(
-            result.contains("✓ cargo test：137 通过（4 个套件，1.45s）"),
+            result.contains("✓ cargo test: 137 通过（4 个套件，1.45s）"),
             "应输出聚合格式，实际得到：{result}"
         );
         assert!(!result.contains("running"));
@@ -1206,7 +1206,7 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 "#;
         let result = filter_cargo_test(output);
         assert!(
-            result.contains("✓ cargo test：0 通过（3 个套件，0.00s）"),
+            result.contains("✓ cargo test: 0 通过（3 个套件，0.00s）"),
             "零测试时应输出紧凑格式，实际得到：{result}"
         );
     }
@@ -1225,7 +1225,7 @@ test result: ok. 18 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; fin
 "#;
         let result = filter_cargo_test(output);
         assert!(
-            result.contains("✓ cargo test：63 通过, 5 忽略, 2 已过滤（2 个套件，0.70s）"),
+            result.contains("✓ cargo test: 63 通过, 5 忽略, 2 已过滤（2 个套件，0.70s）"),
             "包含 ignored 和 filtered 时应输出紧凑格式，实际得到：{result}"
         );
     }
@@ -1239,7 +1239,7 @@ test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 "#;
         let result = filter_cargo_test(output);
         assert!(
-            result.contains("✓ cargo test：15 通过（1 个套件，0.01s）"),
+            result.contains("✓ cargo test: 15 通过（1 个套件，0.01s）"),
             "单套件时应使用单数形式，实际得到：{result}"
         );
     }
@@ -1265,7 +1265,7 @@ test result: MALFORMED LINE WITHOUT PROPER FORMAT
     Finished dev [unoptimized + debuginfo] target(s) in 1.53s
 "#;
         let result = filter_cargo_clippy(output);
-        assert!(result.contains("✓ cargo clippy：未发现问题"));
+        assert!(result.contains("✓ cargo clippy: 未发现问题"));
     }
 
     #[test]
@@ -1287,7 +1287,7 @@ warning: `rtk` (bin) generated 2 warnings
     Finished dev [unoptimized + debuginfo] target(s) in 1.53s
 "#;
         let result = filter_cargo_clippy(output);
-        assert!(result.contains("cargo clippy：0 个错误，2 个警告"));
+        assert!(result.contains("cargo clippy: 0 个错误，2 个警告"));
         assert!(result.contains("unused_variables"));
         assert!(result.contains("clippy::too_many_arguments"));
     }
@@ -1344,7 +1344,7 @@ error: aborting due to 1 previous error
 "#;
         let result = filter_cargo_install(output);
         assert!(
-            result.contains("cargo install：1 个错误"),
+            result.contains("cargo install: 1 个错误"),
             "实际得到：{result}"
         );
         assert!(result.contains("E0308"), "实际得到：{result}");
@@ -1472,7 +1472,7 @@ error: aborting due to 2 previous errors
 "#;
         let result = filter_cargo_nextest(output);
         assert_eq!(
-            result, "✓ cargo nextest：301 通过（1 个二进制, 0.192s）",
+            result, "✓ cargo nextest: 301 通过（1 个二进制, 0.192s）",
             "实际得到：{result}"
         );
     }
@@ -1543,7 +1543,7 @@ error: test run failed
 "#;
         let result = filter_cargo_nextest(output);
         assert_eq!(
-            result, "✓ cargo nextest：50 通过, 3 跳过（2 个二进制, 0.500s）",
+            result, "✓ cargo nextest: 50 通过, 3 跳过（2 个二进制, 0.500s）",
             "实际得到：{result}"
         );
     }
@@ -1587,7 +1587,7 @@ error: test run failed
 "#;
         let result = filter_cargo_nextest(output);
         assert_eq!(
-            result, "✓ cargo nextest：100 通过（5 个二进制, 1.234s）",
+            result, "✓ cargo nextest: 100 通过（5 个二进制, 1.234s）",
             "实际得到：{result}"
         );
     }
@@ -1612,7 +1612,7 @@ error: test run failed
         );
         assert!(!result.contains("Finished"), "应去除 Finished：{result}");
         assert!(
-            result.contains("✓ cargo nextest：10 通过"),
+            result.contains("✓ cargo nextest: 10 通过"),
             "实际得到：{result}"
         );
     }

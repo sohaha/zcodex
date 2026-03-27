@@ -94,7 +94,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             std::process::exit(code);
         }
         None => {
-            eprintln!("golangci-lint：被信号终止");
+            eprintln!("golangci-lint: 被信号终止");
             std::process::exit(130);
         }
     }
@@ -119,7 +119,7 @@ fn filter_golangci_json(output: &str) -> String {
     let issues = golangci_output.issues;
 
     if issues.is_empty() {
-        return "✓ golangci-lint：未发现问题".to_string();
+        return "✓ golangci-lint: 未发现问题".to_string();
     }
 
     let total_issues = issues.len();
@@ -147,7 +147,7 @@ fn filter_golangci_json(output: &str) -> String {
     // 构建输出
     let mut result = String::new();
     result.push_str(&format!(
-        "golangci-lint：{total_files} 个文件，{total_issues} 个问题\n"
+        "golangci-lint: {total_files} 个文件，{total_issues} 个问题\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
