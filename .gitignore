@@ -35,6 +35,7 @@ AGENTS.override.md
 
 # caches
 .cargo-target/
+.cargo-target-*/
 .cache/
 .turbo/
 .parcel-cache/
