@@ -148,8 +148,20 @@ mod tests {
         assert_eq!(
             tool_json["inputSchema"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree", "extract", "context", "impact", "cfg", "dfg", "slice", "semantic", "ping",
-                "warm", "snapshot", "status", "notify"
+                "tree",
+                "extract",
+                "context",
+                "impact",
+                "change-impact",
+                "cfg",
+                "dfg",
+                "slice",
+                "semantic",
+                "ping",
+                "warm",
+                "snapshot",
+                "status",
+                "notify"
             ])
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
@@ -160,7 +172,14 @@ mod tests {
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree", "extract", "context", "impact", "cfg", "dfg", "slice"
+                "tree",
+                "extract",
+                "context",
+                "impact",
+                "change-impact",
+                "cfg",
+                "dfg",
+                "slice"
             ])
         );
         assert_eq!(
@@ -183,6 +202,7 @@ mod tests {
             query: Some("where is auth".to_string()),
             path: None,
             line: None,
+            paths: None,
         })
         .expect("tool call should serialize");
 
@@ -211,6 +231,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -225,6 +246,7 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("AuthService".to_string()),
                                 truncated: false,
+                                change_paths: Vec::new(),
                                 slice_target: None,
                                 slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
@@ -273,6 +295,123 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_change_impact_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary =
+            "change-impact summary: 1 changed paths -> 2 impacted symbols across 1 indexed files";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::ChangeImpact,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                path: None,
+                line: None,
+                paths: Some(vec!["src/lib.rs".to_string()]),
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "change-impact ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::ChangeImpact,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 2,
+                                symbol_query: None,
+                                truncated: false,
+                                change_paths: vec!["src/lib.rs".to_string()],
+                                slice_target: None,
+                                slice_lines: Vec::new(),
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: vec![codex_native_tldr::api::AnalysisFileDetail {
+                                    path: "src/lib.rs".to_string(),
+                                    symbol_count: 2,
+                                    kinds: vec![codex_native_tldr::api::AnalysisCountDetail {
+                                        name: "function".to_string(),
+                                        count: 2,
+                                    }],
+                                }],
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: vec![
+                                    codex_native_tldr::api::AnalysisUnitDetail {
+                                        path: "src/lib.rs".to_string(),
+                                        line: 1,
+                                        span_end_line: 1,
+                                        symbol: Some("validate".to_string()),
+                                        qualified_symbol: None,
+                                        kind: "function".to_string(),
+                                        module_path: Vec::new(),
+                                        visibility: None,
+                                        signature: Some("fn validate()".to_string()),
+                                        calls: Vec::new(),
+                                        called_by: vec!["login".to_string()],
+                                        references: Vec::new(),
+                                        imports: Vec::new(),
+                                        dependencies: Vec::new(),
+                                        cfg_summary: "cfg".to_string(),
+                                        dfg_summary: "dfg".to_string(),
+                                    },
+                                    codex_native_tldr::api::AnalysisUnitDetail {
+                                        path: "src/lib.rs".to_string(),
+                                        line: 3,
+                                        span_end_line: 4,
+                                        symbol: Some("login".to_string()),
+                                        qualified_symbol: None,
+                                        kind: "function".to_string(),
+                                        module_path: Vec::new(),
+                                        visibility: None,
+                                        signature: Some("fn login()".to_string()),
+                                        calls: vec!["validate".to_string()],
+                                        called_by: Vec::new(),
+                                        references: Vec::new(),
+                                        imports: Vec::new(),
+                                        dependencies: Vec::new(),
+                                        cfg_summary: "cfg".to_string(),
+                                        dfg_summary: "dfg".to_string(),
+                                    },
+                                ],
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("change-impact rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "change-impact");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["paths"], serde_json::json!(["src/lib.rs"]));
+        assert_eq!(structured["analysis"]["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "change_impact");
+        assert_eq!(
+            structured["analysis"]["details"]["change_paths"],
+            serde_json::json!(["src/lib.rs"])
+        );
+    }
+
+    #[tokio::test]
     async fn run_tldr_tool_with_mcp_hooks_preserves_cfg_summary_text_contract() {
         let tempdir = tempdir().expect("tempdir should exist");
         let summary = "cfg summary: 1 symbols across 1 files; sample: AuthService [cfg]";
@@ -285,6 +424,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -299,6 +439,7 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("AuthService".to_string()),
                                 truncated: false,
+                                change_paths: Vec::new(),
                                 slice_target: None,
                                 slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
@@ -349,6 +490,7 @@ mod tests {
                 query: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -363,6 +505,7 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: None,
                                 truncated: false,
+                                change_paths: Vec::new(),
                                 slice_target: None,
                                 slice_lines: Vec::new(),
                                 overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
@@ -419,6 +562,7 @@ mod tests {
                 query: None,
                 path: Some("src/lib.rs".to_string()),
                 line: Some(4),
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -433,6 +577,7 @@ mod tests {
                                 total_symbols: 1,
                                 symbol_query: Some("login".to_string()),
                                 truncated: false,
+                                change_paths: Vec::new(),
                                 slice_target: Some(codex_native_tldr::api::AnalysisSliceTarget {
                                     path: "src/lib.rs".to_string(),
                                     symbol: Some("login".to_string()),
@@ -489,6 +634,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -532,6 +678,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -575,6 +722,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -625,6 +773,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -676,6 +825,7 @@ mod tests {
                 query: None,
                 path: Some("src/lib.rs".to_string()),
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -742,6 +892,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 let report = report.clone();
@@ -816,6 +967,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
             |_project_root| Box::pin(async move { Ok(false) }),
@@ -842,6 +994,7 @@ mod tests {
                 query: None,
                 path: None,
                 line: None,
+                paths: None,
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
             |_project_root| Box::pin(async move { Ok(false) }),

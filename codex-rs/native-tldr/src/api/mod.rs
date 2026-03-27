@@ -13,6 +13,7 @@ pub enum AnalysisKind {
     Pdg,
     Extract,
     Slice,
+    ChangeImpact,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -22,6 +23,8 @@ pub struct AnalysisRequest {
     pub symbol: Option<String>,
     pub path: Option<String>,
     pub line: Option<usize>,
+    #[serde(default)]
+    pub paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -37,6 +40,8 @@ pub struct AnalysisDetail {
     pub total_symbols: usize,
     pub symbol_query: Option<String>,
     pub truncated: bool,
+    #[serde(default)]
+    pub change_paths: Vec<String>,
     pub slice_target: Option<AnalysisSliceTarget>,
     #[serde(default)]
     pub slice_lines: Vec<usize>,

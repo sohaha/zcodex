@@ -32,6 +32,7 @@ pub enum TldrToolAction {
     Extract,
     Context,
     Impact,
+    ChangeImpact,
     Cfg,
     Dfg,
     Slice,
@@ -85,6 +86,8 @@ pub struct TldrToolCallParam {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -170,6 +173,15 @@ where
                 &ensure_running,
             )
             .await
+        }
+        TldrToolAction::ChangeImpact => {
+            let paths = args
+                .paths
+                .clone()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("`paths` is required for action=change-impact"))?;
+            let language = required_language(&args)?;
+            run_change_impact_tool(&project_root, language, paths, &query, &ensure_running).await
         }
         TldrToolAction::Cfg => {
             let language = required_language(&args)?;
@@ -310,6 +322,7 @@ where
         symbol: symbol.clone(),
         path: path.clone(),
         line,
+        paths: Vec::new(),
     };
     let daemon_response = query_daemon_with_hooks(
         project_root,
@@ -352,6 +365,7 @@ where
         "symbol": symbol,
         "path": path,
         "line": line,
+        "paths": serde_json::Value::Null,
         "analysis": analysis,
     });
     let text = format!(
@@ -517,6 +531,7 @@ pub fn action_name(action: &TldrToolAction) -> &'static str {
         TldrToolAction::Extract => "extract",
         TldrToolAction::Context => "context",
         TldrToolAction::Impact => "impact",
+        TldrToolAction::ChangeImpact => "change-impact",
         TldrToolAction::Cfg => "cfg",
         TldrToolAction::Dfg => "dfg",
         TldrToolAction::Slice => "slice",
@@ -591,6 +606,77 @@ fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
     semantic
 }
 
+async fn run_change_impact_tool<Q, E>(
+    project_root: &Path,
+    language: SupportedLanguage,
+    paths: Vec<String>,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let request = AnalysisRequest {
+        kind: AnalysisKind::ChangeImpact,
+        language,
+        symbol: None,
+        path: None,
+        line: None,
+        paths: paths.clone(),
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Analyze {
+            key: analysis_cache_key(AnalysisKind::ChangeImpact, language, None, None, None),
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let support = LanguageRegistry::support_for(language);
+    let (source, message, analysis) = if let Some(response) = daemon_response {
+        let analysis = response
+            .analysis
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+        ("daemon", response.message, analysis)
+    } else {
+        let config = load_tldr_config(project_root)?;
+        let engine = TldrEngine::builder(project_root.to_path_buf())
+            .with_config(config)
+            .build();
+        let response = engine.analyze(request)?;
+        (
+            "local",
+            "daemon unavailable; used local engine".to_string(),
+            response,
+        )
+    };
+
+    let structured_content = json!({
+        "action": "change-impact",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "supportLevel": format!("{:?}", support.support_level),
+        "fallbackStrategy": support.fallback_strategy,
+        "summary": analysis.summary,
+        "paths": paths,
+        "analysis": analysis,
+    });
+    let text = format!(
+        "change-impact {} via {source}: {}",
+        language.as_str(),
+        structured_content["summary"].as_str().unwrap_or_default()
+    );
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
 pub fn tldr_tool_output_schema() -> serde_json::Value {
     serde_json::from_str(
         r##"{
@@ -624,6 +710,10 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "total_symbols": { "type": "integer" },
                 "symbol_query": { "type": ["string", "null"] },
                 "truncated": { "type": "boolean" },
+                "change_paths": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
                 "slice_target": {
                   "type": ["object", "null"],
                   "properties": {
@@ -775,7 +865,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
               "type": "object",
               "properties": {
                 "action": {
-                  "enum": ["tree", "extract", "context", "impact", "cfg", "dfg", "slice"]
+                  "enum": ["tree", "extract", "context", "impact", "change-impact", "cfg", "dfg", "slice"]
                 },
                 "project": { "type": "string" },
                 "language": { "type": "string" },
@@ -787,6 +877,10 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "symbol": { "type": ["string", "null"] },
                 "path": { "type": ["string", "null"] },
                 "line": { "type": ["integer", "null"] },
+                "paths": {
+                  "type": ["array", "null"],
+                  "items": { "type": "string" }
+                },
                 "analysis": { "$ref": "#/$defs/analysis" }
               },
               "required": [
@@ -936,6 +1030,7 @@ mod tests {
         assert_eq!(action_name(&TldrToolAction::Extract), "extract");
         assert_eq!(action_name(&TldrToolAction::Context), "context");
         assert_eq!(action_name(&TldrToolAction::Impact), "impact");
+        assert_eq!(action_name(&TldrToolAction::ChangeImpact), "change-impact");
         assert_eq!(action_name(&TldrToolAction::Cfg), "cfg");
         assert_eq!(action_name(&TldrToolAction::Dfg), "dfg");
         assert_eq!(action_name(&TldrToolAction::Slice), "slice");
@@ -963,6 +1058,7 @@ mod tests {
                 path: None,
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1001,6 +1097,7 @@ mod tests {
                 path: None,
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1039,6 +1136,7 @@ mod tests {
                 path: None,
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1084,6 +1182,7 @@ mod tests {
                 path: None,
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1137,6 +1236,7 @@ mod tests {
                     path: None,
 
                     line: None,
+                    paths: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1166,6 +1266,7 @@ mod tests {
                     path: None,
 
                     line: None,
+                    paths: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1194,6 +1295,7 @@ mod tests {
                     query: None,
                     path: Some("src/lib.rs".to_string()),
                     line: None,
+                    paths: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1201,6 +1303,38 @@ mod tests {
             .expect_err("slice without line should fail");
 
         assert_eq!(error.to_string(), "`line` is required for action=slice");
+    }
+
+    #[test]
+    fn change_impact_action_requires_paths() {
+        let error = tokio::runtime::Runtime::new()
+            .expect("runtime should exist")
+            .block_on(run_tldr_tool_with_hooks(
+                TldrToolCallParam {
+                    action: TldrToolAction::ChangeImpact,
+                    project: Some(
+                        tempdir()
+                            .expect("tempdir should exist")
+                            .path()
+                            .display()
+                            .to_string(),
+                    ),
+                    language: Some(TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: None,
+                    path: None,
+                    line: None,
+                    paths: None,
+                },
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| Box::pin(async move { Ok(false) }),
+            ))
+            .expect_err("change-impact without paths should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "`paths` is required for action=change-impact"
+        );
     }
 
     #[test]
@@ -1223,6 +1357,7 @@ mod tests {
                     path: None,
 
                     line: None,
+                    paths: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1252,6 +1387,7 @@ mod tests {
                     path: None,
 
                     line: None,
+                    paths: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1278,6 +1414,7 @@ mod tests {
                 path: None,
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1316,6 +1453,7 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1368,6 +1506,7 @@ mod tests {
                 path: None,
 
                 line: None,
+                paths: None,
             },
             |_project_root, _command| {
                 let report = report.clone();
@@ -1449,6 +1588,7 @@ mod tests {
                     path: None,
 
                     line: None,
+                    paths: None,
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),

@@ -67,6 +67,9 @@ pub enum TldrSubcommand {
     /// 获取影响分析概览。
     Impact(TldrAnalyzeCommand),
 
+    /// 评估变更文件的影响范围。
+    ChangeImpact(TldrChangeImpactCommand),
+
     /// 获取控制流概览。
     Cfg(TldrAnalyzeCommand),
 
@@ -175,6 +178,25 @@ pub struct TldrSliceCommand {
 }
 
 #[derive(Debug, Parser)]
+pub struct TldrChangeImpactCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 目标语言。
+    #[arg(long, value_enum)]
+    pub lang: CliLanguage,
+
+    /// 发生变更的路径列表。
+    #[arg(value_name = "PATH")]
+    pub paths: Vec<PathBuf>,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
 pub struct TldrSemanticCommand {
     /// 项目根目录。
     #[arg(long, default_value = ".")]
@@ -265,6 +287,9 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         TldrSubcommand::Impact(cmd) => {
             run_analysis_command(cmd, AnalysisKind::Pdg).await?;
         }
+        TldrSubcommand::ChangeImpact(cmd) => {
+            run_change_impact_command(cmd).await?;
+        }
         TldrSubcommand::Cfg(cmd) => {
             run_analysis_command(cmd, AnalysisKind::Cfg).await?;
         }
@@ -300,6 +325,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         language,
         symbol: cmd.symbol.clone(),
         path: None,
+        paths: Vec::new(),
         line: None,
     };
     let daemon_response = query_daemon_with_autostart(
@@ -384,6 +410,7 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
         language,
         symbol: None,
         path: Some(requested_path.clone()),
+        paths: Vec::new(),
         line: None,
     };
     let daemon_response = query_daemon_with_autostart(
@@ -474,6 +501,7 @@ async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
         language,
         symbol: Some(cmd.symbol.clone()),
         path: Some(requested_path.clone()),
+        paths: Vec::new(),
         line: Some(cmd.line),
     };
     let daemon_response = query_daemon_with_autostart(
@@ -549,12 +577,98 @@ async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
     Ok(())
 }
 
+async fn run_change_impact_command(cmd: TldrChangeImpactCommand) -> Result<()> {
+    let language: SupportedLanguage = cmd.lang.into();
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let requested_paths = cmd
+        .paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    if requested_paths.is_empty() {
+        bail!("at least one path is required for change-impact");
+    }
+    let request = AnalysisRequest {
+        kind: AnalysisKind::ChangeImpact,
+        language,
+        symbol: None,
+        path: None,
+        line: None,
+        paths: requested_paths.clone(),
+    };
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Analyze {
+            key: analysis_cache_key(AnalysisKind::ChangeImpact, language, None, None, None),
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (source, daemon_message, analysis, engine_project_root) =
+        if let Some(response) = daemon_response {
+            let analysis = response
+                .analysis
+                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+            (
+                "daemon",
+                Some(response.message),
+                analysis,
+                project_root.clone(),
+            )
+        } else {
+            let engine = TldrEngine::builder(project_root.clone())
+                .with_config(config.clone())
+                .build();
+            let response = engine.analyze(request)?;
+            (
+                "local",
+                Some("daemon unavailable; used local engine".to_string()),
+                response,
+                engine.config().project_root.clone(),
+            )
+        };
+
+    let support = LanguageRegistry::support_for(language);
+    let payload = json!({
+        "action": "change-impact",
+        "project": engine_project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": daemon_message,
+        "supportLevel": format!("{:?}", support.support_level),
+        "fallbackStrategy": support.fallback_strategy,
+        "summary": analysis.summary,
+        "paths": requested_paths,
+        "analysis": analysis,
+    });
+
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_analysis_response_text(
+            language,
+            source,
+            support,
+            payload.get("message").and_then(serde_json::Value::as_str),
+            None,
+            None,
+            payload["summary"].as_str().unwrap_or_default(),
+        ) {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
 fn analysis_action_name(kind: AnalysisKind) -> &'static str {
     match kind {
         AnalysisKind::Ast => "tree",
         AnalysisKind::Extract => "extract",
         AnalysisKind::CallGraph => "context",
         AnalysisKind::Pdg => "impact",
+        AnalysisKind::ChangeImpact => "change-impact",
         AnalysisKind::Cfg => "cfg",
         AnalysisKind::Dfg => "dfg",
         AnalysisKind::Slice => "slice",
@@ -1134,6 +1248,7 @@ mod output_tests {
     use codex_native_tldr::semantic::SemanticMatch;
     use codex_native_tldr::semantic::SemanticSearchResponse;
     use pretty_assertions::assert_eq;
+    use serde_json::json;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -1159,6 +1274,7 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: Some("main".to_string()),
                     truncated: false,
+                    change_paths: Vec::new(),
                     slice_target: None,
                     slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail {
@@ -1279,6 +1395,7 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: Some("AuthService".to_string()),
                     truncated: false,
+                    change_paths: Vec::new(),
                     slice_target: None,
                     slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail::default(),
@@ -1313,6 +1430,54 @@ mod output_tests {
     }
 
     #[test]
+    fn analysis_payload_preserves_change_impact_paths_and_summary() {
+        let payload = json!({
+            "action": "change-impact",
+            "project": "/tmp/project",
+            "language": "rust",
+            "source": "daemon",
+            "message": "change-impact ready",
+            "supportLevel": "DataFlow",
+            "fallbackStrategy": "structure + search",
+            "summary": "change-impact summary: 1 changed paths -> 2 impacted symbols across 1 indexed files",
+            "paths": ["src/lib.rs"],
+            "analysis": {
+                "kind": "change_impact",
+                "summary": "change-impact summary: 1 changed paths -> 2 impacted symbols across 1 indexed files",
+                "details": {
+                    "indexed_files": 1,
+                    "total_symbols": 2,
+                    "symbol_query": null,
+                    "truncated": false,
+                    "change_paths": ["src/lib.rs"],
+                    "slice_target": null,
+                    "slice_lines": [],
+                    "overview": {
+                        "kinds": [],
+                        "outgoing_edges": 0,
+                        "incoming_edges": 0,
+                        "reference_count": 0,
+                        "import_count": 0
+                    },
+                    "files": [],
+                    "nodes": [],
+                    "edges": [],
+                    "symbol_index": [],
+                    "units": []
+                }
+            }
+        });
+
+        assert_eq!(payload["action"], "change-impact");
+        assert_eq!(payload["paths"], serde_json::json!(["src/lib.rs"]));
+        assert_eq!(payload["analysis"]["kind"], "change_impact");
+        assert_eq!(
+            payload["analysis"]["details"]["change_paths"],
+            serde_json::json!(["src/lib.rs"])
+        );
+    }
+
+    #[test]
     fn analysis_payload_preserves_cfg_action_and_summary() {
         let payload = analysis_payload(
             AnalysisRenderContext {
@@ -1335,6 +1500,7 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: Some("AuthService".to_string()),
                     truncated: false,
+                    change_paths: Vec::new(),
                     slice_target: None,
                     slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail::default(),
@@ -1397,6 +1563,7 @@ mod output_tests {
                     total_symbols: 1,
                     symbol_query: None,
                     truncated: false,
+                                change_paths: Vec::new(),
                     slice_target: None,
                     slice_lines: Vec::new(),
                     overview: AnalysisOverviewDetail::default(),

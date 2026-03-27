@@ -31,12 +31,22 @@ pub(crate) fn analyze_project(
         .as_deref()
         .map(|value| normalize_request_path(project_root, value))
         .transpose()?;
+    let change_paths = request
+        .paths
+        .iter()
+        .map(|value| normalize_request_path(project_root, value))
+        .collect::<Result<Vec<_>>>()?;
     let units = filter_units(
         &index.units,
         request.symbol.as_deref(),
         path.as_deref(),
         matches!(request.kind, AnalysisKind::Extract | AnalysisKind::Slice),
     );
+    let units = if request.kind == AnalysisKind::ChangeImpact {
+        filter_change_impact_units(&index.units, &change_paths)
+    } else {
+        units
+    };
     let summary = match request.kind {
         AnalysisKind::Ast => {
             summarize_structure(index.indexed_files, &units, request.symbol.as_deref())
@@ -56,6 +66,9 @@ pub(crate) fn analyze_project(
             request.symbol.as_deref(),
             request.line,
         )?,
+        AnalysisKind::ChangeImpact => {
+            summarize_change_impact(index.indexed_files, &index.units, &change_paths)
+        }
     };
 
     Ok(AnalysisResponse {
@@ -66,6 +79,7 @@ pub(crate) fn analyze_project(
             &index.units,
             &units,
             request.symbol.clone(),
+            &change_paths,
             path.as_deref(),
             request.line,
             request.kind == AnalysisKind::Slice,
@@ -78,6 +92,7 @@ fn build_analysis_detail(
     all_units: &[EmbeddingUnit],
     units: &[&EmbeddingUnit],
     symbol_query: Option<String>,
+    change_paths: &[PathBuf],
     path: Option<&Path>,
     line: Option<usize>,
     include_slice: bool,
@@ -193,6 +208,10 @@ fn build_analysis_detail(
         total_symbols: units.len(),
         symbol_query,
         truncated: units.len() > MAX_UNITS,
+        change_paths: change_paths
+            .iter()
+            .map(|value| value.display().to_string())
+            .collect(),
         slice_target,
         slice_lines,
         overview: AnalysisOverviewDetail {
@@ -639,6 +658,36 @@ fn summarize_extract(
     )
 }
 
+fn summarize_change_impact(
+    indexed_files: usize,
+    all_units: &[EmbeddingUnit],
+    change_paths: &[PathBuf],
+) -> String {
+    if change_paths.is_empty() {
+        return "change-impact summary: no changed paths were provided".to_string();
+    }
+
+    let changed = all_units
+        .iter()
+        .filter(|unit| change_paths.contains(&unit.path))
+        .collect::<Vec<_>>();
+    let mut impacted = BTreeSet::new();
+    for unit in &changed {
+        if let Some(symbol) = unit.symbol.as_ref().or(unit.qualified_symbol.as_ref()) {
+            impacted.insert(symbol.clone());
+        }
+        for caller in &unit.called_by {
+            impacted.insert(caller.clone());
+        }
+    }
+    format!(
+        "change-impact summary: {} changed paths -> {} impacted symbols across {} indexed files",
+        change_paths.len(),
+        impacted.len(),
+        indexed_files
+    )
+}
+
 fn summarize_slice(
     indexed_files: usize,
     all_units: &[EmbeddingUnit],
@@ -721,6 +770,40 @@ fn compute_slice_lines(
         }
     }
     slice_lines.into_iter().collect()
+}
+
+fn filter_change_impact_units<'a>(
+    units: &'a [EmbeddingUnit],
+    change_paths: &[PathBuf],
+) -> Vec<&'a EmbeddingUnit> {
+    let changed = units
+        .iter()
+        .filter(|unit| change_paths.contains(&unit.path))
+        .collect::<Vec<_>>();
+    let impacted_symbols = changed
+        .iter()
+        .flat_map(|unit| {
+            unit.symbol
+                .iter()
+                .chain(unit.qualified_symbol.iter())
+                .chain(unit.called_by.iter())
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    units
+        .iter()
+        .filter(|unit| {
+            change_paths.contains(&unit.path)
+                || unit
+                    .symbol
+                    .as_ref()
+                    .is_some_and(|symbol| impacted_symbols.contains(symbol))
+                || unit
+                    .qualified_symbol
+                    .as_ref()
+                    .is_some_and(|symbol| impacted_symbols.contains(symbol))
+        })
+        .collect()
 }
 
 fn normalize_request_path(project_root: &Path, path: &str) -> Result<PathBuf> {
@@ -812,6 +895,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -858,6 +942,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: Some("validate".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -907,6 +992,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -941,6 +1027,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -976,6 +1063,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: None,
                 path: Some("src/lib.rs".to_string()),
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -1015,6 +1103,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: Some("login".to_string()),
                 path: Some("src/lib.rs".to_string()),
+                paths: Vec::new(),
                 line: Some(4),
             },
         )
@@ -1039,6 +1128,52 @@ mod tests {
     }
 
     #[test]
+    fn change_impact_analysis_summarizes_impacted_callers() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            "fn validate() {}\n\nfn login() {\n    validate();\n}\n",
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        let response = analyze_project(
+            tempdir.path(),
+            &config,
+            AnalysisRequest {
+                kind: AnalysisKind::ChangeImpact,
+                language: SupportedLanguage::Rust,
+                symbol: None,
+                path: None,
+                line: None,
+                paths: vec!["src/lib.rs".to_string()],
+            },
+        )
+        .expect("analysis should succeed");
+
+        assert_eq!(response.kind, AnalysisKind::ChangeImpact);
+        assert_eq!(
+            response.summary,
+            "change-impact summary: 1 changed paths -> 2 impacted symbols across 1 indexed files"
+        );
+        let details = response.details.expect("details should exist");
+        assert_eq!(details.change_paths, vec!["src/lib.rs".to_string()]);
+        assert!(
+            details
+                .units
+                .iter()
+                .any(|unit| unit.symbol.as_deref() == Some("validate"))
+        );
+        assert!(
+            details
+                .units
+                .iter()
+                .any(|unit| unit.symbol.as_deref() == Some("login"))
+        );
+    }
+
+    #[test]
     fn impact_analysis_reports_missing_symbols_cleanly() {
         let tempdir = tempdir().expect("tempdir should exist");
         std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
@@ -1054,6 +1189,7 @@ mod tests {
                 language: SupportedLanguage::Rust,
                 symbol: Some("logout".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -1097,6 +1233,7 @@ mod auth {
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::AuthService::login".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -1134,6 +1271,7 @@ mod auth {
                 language: SupportedLanguage::Rust,
                 symbol: Some("login".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -1209,6 +1347,7 @@ fn login_flow(service: &AuthService, session: Session) {
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::AuthService::login".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -1298,6 +1437,7 @@ mod auth {
                     language: SupportedLanguage::Rust,
                     symbol: Some(symbol.to_string()),
                     path: None,
+                    paths: Vec::new(),
 
                     line: None,
                 },
@@ -1347,6 +1487,7 @@ fn login() {
                 language: SupportedLanguage::Rust,
                 symbol: Some("auth::validate".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
@@ -1362,6 +1503,7 @@ fn login() {
                 language: SupportedLanguage::Rust,
                 symbol: Some("audit::validate".to_string()),
                 path: None,
+                paths: Vec::new(),
 
                 line: None,
             },
