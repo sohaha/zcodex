@@ -1043,6 +1043,143 @@ mod tldr_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_context_graph_matches_between_local_and_daemon() {
+        if let Err(err) = tldr_tool_context_graph_matches_between_local_and_daemon().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_context_graph_matches_between_local_and_daemon() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
+        let project = TempDir::new()?;
+        let canonical_project = project.path().canonicalize()?;
+        std::fs::create_dir_all(canonical_project.join("src"))?;
+        std::fs::write(
+            canonical_project.join("src/main.rs"),
+            "fn helper() {}\nfn main() { helper(); }\n",
+        )?;
+
+        let expected_analysis = codex_native_tldr::TldrEngine::builder(canonical_project.clone())
+            .with_config(TldrConfig::for_project(canonical_project.clone()))
+            .build()
+            .analyze(codex_native_tldr::api::AnalysisRequest {
+                kind: AnalysisKind::CallGraph,
+                language: SupportedLanguage::Rust,
+                symbol: Some("helper".to_string()),
+            })?;
+
+        let local_structured = {
+            let McpHandle {
+                process: mut mcp_process,
+                server: _server,
+                dir: _dir,
+            } = create_mcp_process(Vec::new()).await?;
+            let request_id = mcp_process
+                .send_named_tool_call(
+                    "tldr",
+                    Some(serde_json::Map::from_iter([
+                        ("action".to_string(), json!("context")),
+                        (
+                            "project".to_string(),
+                            json!(canonical_project.to_string_lossy()),
+                        ),
+                        ("language".to_string(), json!("rust")),
+                        ("symbol".to_string(), json!("helper")),
+                    ])),
+                )
+                .await?;
+            let response = timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+            )
+            .await??;
+            response.result["structuredContent"].clone()
+        };
+
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+        let listener = bind_test_unix_listener(&socket_path)?;
+        let daemon_analysis = expected_analysis.clone();
+        let server_handle = task::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (reader, mut writer) = tokio::io::split(stream);
+            let mut lines = BufReader::new(reader).lines();
+            let line = lines
+                .next_line()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
+            let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+            match command {
+                TldrDaemonCommand::Analyze { request, .. } => {
+                    assert_eq!(request.kind, AnalysisKind::CallGraph);
+                    assert_eq!(request.language, SupportedLanguage::Rust);
+                    assert_eq!(request.symbol.as_deref(), Some("helper"));
+                }
+                other => panic!("expected analyze, got {other:?}"),
+            }
+            let response = TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: "daemon".to_string(),
+                analysis: Some(daemon_analysis),
+                semantic: None,
+                snapshot: Some(SessionSnapshot {
+                    cached_entries: 0,
+                    dirty_files: 0,
+                    dirty_file_threshold: 20,
+                    reindex_pending: false,
+                    last_query_at: None,
+                    last_reindex: None,
+                    last_reindex_attempt: None,
+                }),
+                daemon_status: None,
+                reindex_report: None,
+            };
+            writer
+                .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+
+        let daemon_structured = {
+            let McpHandle {
+                process: mut mcp_process,
+                server: _server,
+                dir: _dir,
+            } = create_mcp_process(Vec::new()).await?;
+            let request_id = mcp_process
+                .send_named_tool_call(
+                    "tldr",
+                    Some(serde_json::Map::from_iter([
+                        ("action".to_string(), json!("context")),
+                        (
+                            "project".to_string(),
+                            json!(canonical_project.to_string_lossy()),
+                        ),
+                        ("language".to_string(), json!("rust")),
+                        ("symbol".to_string(), json!("helper")),
+                    ])),
+                )
+                .await?;
+            let response = timeout(
+                DEFAULT_READ_TIMEOUT,
+                mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+            )
+            .await??;
+            response.result["structuredContent"].clone()
+        };
+
+        server_handle.await??;
+
+        assert_eq!(local_structured["analysis"], daemon_structured["analysis"]);
+        assert_eq!(local_structured["symbol"], daemon_structured["symbol"]);
+        assert_eq!(local_structured["language"], daemon_structured["language"]);
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_tldr_tool_semantic_uses_daemon_when_available() {
         if let Err(err) = tldr_tool_semantic_uses_daemon_when_available().await {
             panic!("failure: {err}");

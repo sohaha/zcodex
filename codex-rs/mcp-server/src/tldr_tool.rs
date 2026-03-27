@@ -107,6 +107,7 @@ mod tests {
     use codex_native_tldr::tool_api::TldrToolCallParam;
     use codex_native_tldr::tool_api::TldrToolLanguage;
     use codex_native_tldr::tool_api::query_daemon_with_hooks;
+    use codex_native_tldr::tool_api::tldr_tool_output_schema;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
