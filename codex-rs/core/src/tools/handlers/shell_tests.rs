@@ -206,6 +206,22 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
             .command,
         "codex rtk cargo --manifest-path Cargo.toml test -p codex-core"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("git --git-dir .git --work-tree . status").command,
+        "codex rtk git --git-dir .git --work-tree . status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("nice -n 5 git status").command,
+        "nice -n 5 codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("stdbuf -oL git status").command,
+        "stdbuf -oL codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("env --chdir=repo nice -n 5 git status").command,
+        "env --chdir=repo nice -n 5 codex rtk git status"
+    );
 }
 
 #[test]

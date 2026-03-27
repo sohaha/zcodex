@@ -548,3 +548,116 @@ async fn emit_patch_end(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ToolEmitter;
+    use super::ToolEventCtx;
+    use crate::codex::make_session_and_context_with_rx;
+    use crate::exec::ExecToolCallOutput;
+    use crate::exec::StreamOutput;
+    use crate::protocol::EventMsg;
+    use crate::protocol::ExecCommandBeginEvent;
+    use crate::protocol::ExecCommandEndEvent;
+    use crate::protocol::ExecCommandSource;
+    use pretty_assertions::assert_eq;
+    use std::time::Duration;
+
+    async fn recv_exec_begin(
+        rx: &mut async_channel::Receiver<crate::protocol::Event>,
+    ) -> ExecCommandBeginEvent {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = rx.recv().await.expect("event");
+                if let EventMsg::ExecCommandBegin(begin) = event.msg {
+                    break begin;
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for exec begin")
+    }
+
+    async fn recv_exec_end(
+        rx: &mut async_channel::Receiver<crate::protocol::Event>,
+    ) -> ExecCommandEndEvent {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let event = rx.recv().await.expect("event");
+                if let EventMsg::ExecCommandEnd(end) = event.msg {
+                    break end;
+                }
+            }
+        })
+        .await
+        .expect("timed out waiting for exec end")
+    }
+
+    #[tokio::test]
+    async fn shell_emitter_preserves_interaction_input_in_exec_events() {
+        let (session, turn, mut rx) = make_session_and_context_with_rx().await;
+        let emitter = ToolEmitter::shell(
+            vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "FOO=1 codex rtk git status".to_string(),
+            ],
+            turn.cwd.clone(),
+            ExecCommandSource::Agent,
+            true,
+            Some("FOO=1 git status".to_string()),
+            Some(
+                "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 codex rtk git status"
+                    .to_string(),
+            ),
+        );
+        let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-1", None);
+
+        emitter.begin(ctx).await;
+        let begin = recv_exec_begin(&mut rx).await;
+        assert_eq!(
+            begin.interaction_input,
+            Some("FOO=1 git status".to_string())
+        );
+
+        let output = ExecToolCallOutput {
+            stdout: StreamOutput::new("ok".to_string()),
+            aggregated_output: StreamOutput::new("ok".to_string()),
+            duration: Duration::from_millis(12),
+            ..ExecToolCallOutput::default()
+        };
+        let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
+        assert!(result.contains("[shell_command routed via embedded RTK]"));
+        assert!(result.contains("executed: FOO=1 codex rtk git status"));
+        assert!(result.contains("ok"));
+
+        let end = recv_exec_end(&mut rx).await;
+        assert_eq!(end.interaction_input, Some("FOO=1 git status".to_string()));
+        assert_eq!(end.stdout, "ok");
+        assert_eq!(end.status, crate::protocol::ExecCommandStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn shell_emitter_omits_prefix_for_structured_output() {
+        let (session, turn, _rx) = make_session_and_context_with_rx().await;
+        let emitter = ToolEmitter::shell(
+            vec!["bash".to_string(), "-lc".to_string(), "git status".to_string()],
+            turn.cwd.clone(),
+            ExecCommandSource::Agent,
+            false,
+            None,
+            Some("[shell_command kept raw]\nreason: contains compound shell syntax\ncommand: git status | head".to_string()),
+        );
+        let ctx = ToolEventCtx::new(session.as_ref(), turn.as_ref(), "call-2", None);
+
+        let output = ExecToolCallOutput {
+            stdout: StreamOutput::new("stdout".to_string()),
+            aggregated_output: StreamOutput::new("stdout".to_string()),
+            duration: Duration::from_millis(5),
+            ..ExecToolCallOutput::default()
+        };
+        let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
+        assert!(!result.contains("[shell_command kept raw]"));
+        assert!(result.contains("stdout"));
+    }
+}

@@ -166,7 +166,15 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
 }
 
 fn parse_command_target(args: &[String]) -> Option<ParsedCommandTarget<'_>> {
-    let (prefix, routed_args) = split_leading_env_prefix(args)?;
+    let (mut prefix, mut routed_args) = split_leading_env_prefix(args)?;
+    loop {
+        let (wrapper_prefix, rest) = split_safe_wrapper_prefix(routed_args)?;
+        if wrapper_prefix.is_empty() {
+            break;
+        }
+        prefix.extend(wrapper_prefix);
+        routed_args = rest;
+    }
     let (target, rest) = split_command_prefix(routed_args)?;
     Some(ParsedCommandTarget {
         prefix,
@@ -290,9 +298,7 @@ fn split_leading_env_prefix(args: &[String]) -> Option<(Vec<String>, &[String])>
                 continue;
             }
             if matches!(arg.as_str(), "-u" | "-C") {
-                let Some(value) = args.get(index + 1) else {
-                    return None;
-                };
+                let value = args.get(index + 1)?;
                 prefix.push(arg.clone());
                 prefix.push(value.clone());
                 index += 2;
@@ -351,6 +357,100 @@ fn split_command_prefix(args: &[String]) -> Option<(String, &[String])> {
     Some((normalize_command_name(first), rest))
 }
 
+fn split_safe_wrapper_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
+    let [first, rest @ ..] = args else {
+        return None;
+    };
+    match first.as_str() {
+        "nice" => split_nice_prefix(rest),
+        "stdbuf" => split_stdbuf_prefix(rest),
+        _ => Some((Vec::new(), args)),
+    }
+}
+
+fn split_nice_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
+    let mut prefix = vec!["nice".to_string()];
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            index += 1;
+            break;
+        }
+        if matches!(arg.as_str(), "-n" | "--adjustment") {
+            let value = args.get(index + 1)?;
+            if !is_signed_integer(value) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            prefix.push(value.clone());
+            index += 2;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-n") {
+            if value.is_empty() || !is_signed_integer(value) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if matches_nice_adjustment_flag(arg) {
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--adjustment=") {
+            if value.is_empty() || !is_signed_integer(value) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    let rest = args.get(index..)?;
+    if rest.is_empty() {
+        return None;
+    }
+    Some((prefix, rest))
+}
+
+fn split_stdbuf_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
+    let mut prefix = vec!["stdbuf".to_string()];
+    let mut index = 0;
+    let mut saw_option = false;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            index += 1;
+            break;
+        }
+        if matches!(
+            arg.as_str(),
+            "-i" | "-o" | "-e" | "--input" | "--output" | "--error"
+        ) {
+            let value = args.get(index + 1)?;
+            prefix.push(arg.clone());
+            prefix.push(value.clone());
+            index += 2;
+            saw_option = true;
+            continue;
+        }
+        if matches_stdbuf_attached_flag(arg) {
+            prefix.push(arg.clone());
+            index += 1;
+            saw_option = true;
+            continue;
+        }
+        break;
+    }
+    let rest = args.get(index..)?;
+    if !saw_option || rest.is_empty() {
+        return None;
+    }
+    Some((prefix, rest))
+}
+
 fn normalize_command_name(command: &str) -> String {
     Path::new(command)
         .file_name()
@@ -378,6 +478,34 @@ fn strip_flag_terminators(rest: &[String]) -> Vec<&str> {
             }
         })
         .collect()
+}
+
+fn matches_nice_adjustment_flag(value: &str) -> bool {
+    value
+        .strip_prefix('-')
+        .filter(|suffix| !suffix.is_empty())
+        .is_some_and(is_signed_integer)
+}
+
+fn is_signed_integer(value: &str) -> bool {
+    let Some(first) = value.chars().next() else {
+        return false;
+    };
+    let rest = if matches!(first, '+' | '-') {
+        &value[1..]
+    } else {
+        value
+    };
+    !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn matches_stdbuf_attached_flag(value: &str) -> bool {
+    matches!(
+        value.chars().next(),
+        Some('-') if value.len() > 2 && matches!(value.as_bytes().get(1), Some(b'i' | b'o' | b'e'))
+    ) || value.starts_with("--input=")
+        || value.starts_with("--output=")
+        || value.starts_with("--error=")
 }
 
 fn prepend_prefix(prefix: &[String], rewritten: &str) -> String {
@@ -430,6 +558,14 @@ fn looks_like_rtk_candidate(command: &str) -> bool {
         if word == "command" {
             words.next();
             continue;
+        }
+        if word == "nice" || word == "stdbuf" {
+            words.next();
+            return words.any(|value| {
+                let name = normalize_command_name(value);
+                matches!(name.as_str(), "cat" | "head" | "tail")
+                    || DIRECT_PREFIXES.contains(&name.as_str())
+            });
         }
         let name = normalize_command_name(word);
         return matches!(name.as_str(), "cat" | "head" | "tail")
@@ -509,6 +645,26 @@ mod tests {
                 "cargo --manifest-path Cargo.toml test -p codex-core",
                 Some("codex rtk cargo --manifest-path Cargo.toml test -p codex-core"),
             ),
+            (
+                "git --git-dir .git --work-tree . status",
+                Some("codex rtk git --git-dir .git --work-tree . status"),
+            ),
+            (
+                "nice -n 5 git status",
+                Some("nice -n 5 codex rtk git status"),
+            ),
+            (
+                "nice -5 -- git status",
+                Some("nice -5 codex rtk git status"),
+            ),
+            (
+                "stdbuf -oL git status",
+                Some("stdbuf -oL codex rtk git status"),
+            ),
+            (
+                "nice -n 5 stdbuf -oL git status",
+                Some("nice -n 5 stdbuf -oL codex rtk git status"),
+            ),
         ]);
     }
 
@@ -569,6 +725,10 @@ mod tests {
                 "env -i -u HOME git -C repo status",
                 Some("env -i -u HOME codex rtk git -C repo status"),
             ),
+            (
+                "env --chdir=repo nice -n 5 git status",
+                Some("env --chdir=repo nice -n 5 codex rtk git status"),
+            ),
         ]);
     }
 
@@ -580,6 +740,16 @@ mod tests {
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::ShellMetacharacters,
+                candidate: true,
+            }
+        );
+
+        let analysis = analyze_shell_command("nice -n git status");
+        assert_eq!(analysis.command, "nice -n git status");
+        assert_eq!(
+            analysis.kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::MissingCommand,
                 candidate: true,
             }
         );
