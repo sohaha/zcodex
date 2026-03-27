@@ -153,6 +153,22 @@ mod tests {
             ])
         );
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
+        assert_eq!(
+            tool_json["outputSchema"]["oneOf"].as_array().map(Vec::len),
+            Some(3)
+        );
+        assert_eq!(
+            tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
+            serde_json::json!(["tree", "context", "impact", "cfg", "dfg"])
+        );
+        assert_eq!(
+            tool_json["outputSchema"]["$defs"]["semanticResult"]["properties"]["action"]["const"],
+            "semantic"
+        );
+        assert_eq!(
+            tool_json["outputSchema"]["$defs"]["daemonResult"]["properties"]["action"]["enum"],
+            serde_json::json!(["ping", "warm", "snapshot", "status", "notify"])
+        );
     }
 
     #[test]

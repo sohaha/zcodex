@@ -175,6 +175,7 @@ Typical inputs:
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
 For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `source`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata. `source` is either `daemon` (cached `SemanticIndex`) or `local`. The tool now projects a stable public match shape and does **not** expose internal fields such as `unit` or `embedding_text` by default.
 For `status`, the structured output includes `snapshot`, `daemonStatus`, and the latest `reindexReport` for the most recent semantic reindex attempt. `snapshot.last_reindex` remains the latest completed reindex, while `snapshot.last_reindex_attempt` can also surface a failed `warm` attempt. `daemonStatus` details `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons.
+The output schema is modeled as a union of three result families: analysis (`tree|context|impact|cfg|dfg`), `semantic`, and daemon (`ping|warm|snapshot|status|notify`).
 
 ## Approvals (server -> client)
 
