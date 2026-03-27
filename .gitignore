@@ -44,6 +44,7 @@ AGENTS.override.md
 .jest/
 *.tsbuildinfo
 .measure-default/
+.xwin-cache/
 
 # logs
 *.log
