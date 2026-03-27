@@ -238,8 +238,8 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
             filtered.push_str("PR\n");
             println!("PR");
         } else {
-            filtered.push_str("📋 PR 列表\n");
-            println!("📋 PR 列表");
+            filtered.push_str("📋 PRs\n");
+            println!("📋 PRs");
         }
 
         for pr in prs.iter().take(20) {
@@ -580,7 +580,7 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     let mut filtered = String::new();
 
     if let Some(created_by) = json["createdBy"].as_array() {
-        let line = format!("📝 你的 PR（{}）：\n", created_by.len());
+        let line = format!("📝 Your PRs ({})：\n", created_by.len());
         filtered.push_str(&line);
         print!("{line}");
         for pr in created_by.iter().take(5) {
@@ -641,11 +641,11 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
 
     if let Some(issues) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("议题\n");
-            println!("议题");
+            filtered.push_str("Issue\n");
+            println!("Issue");
         } else {
-            filtered.push_str("🐛 议题\n");
-            println!("🐛 议题");
+            filtered.push_str("🐛 Issues\n");
+            println!("🐛 Issues");
         }
         for issue in issues.iter().take(20) {
             let number = issue["number"].as_i64().unwrap_or(0);
@@ -683,7 +683,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let (issue_number, extra_args) = match extract_identifier_and_extra_args(args) {
         Some(result) => result,
-        None => return Err(anyhow::anyhow!("需要议题编号")),
+        None => return Err(anyhow::anyhow!("需要 Issue 编号")),
     };
 
     let mut cmd = resolved_command("gh");
@@ -726,7 +726,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("{icon} 议题 #{number}：{title}\n");
+    let line = format!("{icon} Issue #{number}：{title}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -813,10 +813,10 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     if let Some(runs) = json.as_array() {
         if ultra_compact {
             filtered.push_str("运行\n");
-            println!("运行");
+            println!("Run");
         } else {
-            filtered.push_str("🏃 工作流运行\n");
-            println!("🏃 工作流运行");
+            filtered.push_str("🏃 Workflow Runs\n");
+            println!("🏃 Workflow Runs");
         }
         for run in runs {
             let id = run["databaseId"].as_i64().unwrap_or(0);
@@ -911,7 +911,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("🏃 工作流运行 #{run_id}\n");
+    let line = format!("🏃 Workflow Run #{run_id}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -1018,7 +1018,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
         print!("{line}");
     }
 
-    let line = format!("  ⭐ {stars} 星标 | 🔱 {forks} Fork\n");
+    let line = format!("  ⭐ {stars} Stars | 🔱 {forks} Forks\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -1146,7 +1146,7 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let filtered = if raw.trim().is_empty() {
-        let msg = "无差异\n";
+        let msg = "No diff\n";
         print!("{msg}");
         msg.to_string()
     } else {
