@@ -316,6 +316,108 @@ async fn tldr_impact_text_renders_summary_lines() -> Result<()> {
 }
 
 #[tokio::test]
+async fn tldr_cfg_json_exposes_cfg_details() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join("src/lib.rs"),
+        "fn helper(flag: bool) { if flag { println!(\"ok\"); } }\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "cfg",
+            "--lang",
+            "rust",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "helper",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    let details = &payload["analysis"]["details"];
+
+    assert_eq!(payload["action"], "cfg");
+    assert_eq!(payload["analysis"]["kind"], "cfg");
+    assert_eq!(details["symbol_query"], "helper");
+    assert!(
+        payload["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.starts_with("cfg summary:"))
+    );
+    assert!(
+        details["units"][0]["cfg_summary"]
+            .as_str()
+            .is_some_and(|summary| !summary.is_empty())
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn tldr_dfg_json_exposes_dfg_details() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(
+        project.path().join("src/lib.rs"),
+        "fn helper(input: i32) -> i32 { let value = input + 1; value }\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let output = cmd
+        .args([
+            "tldr",
+            "dfg",
+            "--lang",
+            "rust",
+            "--project",
+            project
+                .path()
+                .to_str()
+                .expect("project path should be utf-8"),
+            "--json",
+            "helper",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let payload: serde_json::Value = serde_json::from_slice(&output)?;
+    let details = &payload["analysis"]["details"];
+
+    assert_eq!(payload["action"], "dfg");
+    assert_eq!(payload["analysis"]["kind"], "dfg");
+    assert_eq!(details["symbol_query"], "helper");
+    assert!(
+        payload["summary"]
+            .as_str()
+            .is_some_and(|summary| summary.starts_with("dfg summary:"))
+    );
+    assert!(
+        details["units"][0]["dfg_summary"]
+            .as_str()
+            .is_some_and(|summary| !summary.is_empty())
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn tldr_daemon_notify_json_exposes_snapshot_details() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;
