@@ -771,6 +771,14 @@ mod tests {
                 Some("codex rtk cargo --manifest-path Cargo.toml test -p codex-core"),
             ),
             (
+                "cargo +nightly test -p codex-core",
+                Some("codex rtk cargo '+nightly' test -p codex-core"),
+            ),
+            (
+                "git -c color.ui=always -C repo status",
+                Some("codex rtk git -c color.ui=always -C repo status"),
+            ),
+            (
                 "git --git-dir .git --work-tree . status",
                 Some("codex rtk git --git-dir .git --work-tree . status"),
             ),
@@ -797,6 +805,10 @@ mod tests {
             (
                 "command -p stdbuf -oL git status",
                 Some("stdbuf -oL codex rtk git status"),
+            ),
+            (
+                "command cargo +nightly test -p codex-core",
+                Some("codex rtk cargo '+nightly' test -p codex-core"),
             ),
             (
                 "/usr/bin/nice -n 5 git status",

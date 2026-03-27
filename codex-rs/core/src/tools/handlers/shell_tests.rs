@@ -207,6 +207,14 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         "codex rtk cargo --manifest-path Cargo.toml test -p codex-core"
     );
     assert_eq!(
+        ShellCommandHandler::route_command("cargo +nightly test -p codex-core").command,
+        "codex rtk cargo '+nightly' test -p codex-core"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("git -c color.ui=always -C repo status").command,
+        "codex rtk git -c color.ui=always -C repo status"
+    );
+    assert_eq!(
         ShellCommandHandler::route_command("git --git-dir .git --work-tree . status").command,
         "codex rtk git --git-dir .git --work-tree . status"
     );
@@ -229,6 +237,10 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
     assert_eq!(
         ShellCommandHandler::route_command("command -p stdbuf -oL git status").command,
         "stdbuf -oL codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("command cargo +nightly test -p codex-core").command,
+        "codex rtk cargo '+nightly' test -p codex-core"
     );
     assert_eq!(
         ShellCommandHandler::route_command("/usr/bin/nice -n 5 git status").command,
