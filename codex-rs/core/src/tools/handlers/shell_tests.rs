@@ -246,6 +246,18 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         ShellCommandHandler::route_command("nice -n 5 ionice -c2 git status").command,
         "nice -n 5 ionice -c2 codex rtk git status"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("chrt -r 10 git status").command,
+        "chrt -r 10 codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("command chrt -b 0 git status").command,
+        "chrt -b 0 codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("nice -n 5 chrt -r 10 git status").command,
+        "nice -n 5 chrt -r 10 codex rtk git status"
+    );
 }
 
 #[test]

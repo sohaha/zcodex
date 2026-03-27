@@ -374,11 +374,59 @@ fn split_safe_wrapper_target<'a>(
     rest: &'a [String],
 ) -> Option<(Vec<String>, &'a [String])> {
     match target {
+        "chrt" => split_chrt_prefix(rest),
         "ionice" => split_ionice_prefix(rest),
         "nice" => split_nice_prefix(rest),
         "stdbuf" => split_stdbuf_prefix(rest),
         _ => Some((Vec::new(), rest)),
     }
+}
+
+fn split_chrt_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
+    let mut prefix = vec!["chrt".to_string()];
+    let mut index = 0;
+    let mut saw_policy = false;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            index += 1;
+            break;
+        }
+        if matches!(arg.as_str(), "-a" | "--all-tasks") {
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if matches!(
+            arg.as_str(),
+            "-b" | "-f" | "-i" | "-o" | "-r" | "--batch" | "--fifo" | "--idle" | "--other" | "--rr"
+        ) {
+            prefix.push(arg.clone());
+            index += 1;
+            saw_policy = true;
+            continue;
+        }
+        break;
+    }
+    if !saw_policy {
+        return Some((Vec::new(), args));
+    }
+
+    let priority = args.get(index)?;
+    if !priority.chars().all(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    prefix.push(priority.clone());
+    index += 1;
+
+    if args.get(index).is_some_and(|arg| arg == "--") {
+        index += 1;
+    }
+
+    let rest = args.get(index..)?;
+    if rest.is_empty() {
+        return None;
+    }
+    Some((prefix, rest))
 }
 
 fn split_ionice_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
@@ -636,7 +684,7 @@ fn looks_like_rtk_candidate(command: &str) -> bool {
             words.next();
             continue;
         }
-        if matches!(word, "ionice" | "nice" | "stdbuf") {
+        if matches!(word, "chrt" | "ionice" | "nice" | "stdbuf") {
             words.next();
             return words.any(|value| {
                 let name = normalize_command_name(value);
@@ -770,6 +818,22 @@ mod tests {
                 "nice -n 5 ionice -c2 git status",
                 Some("nice -n 5 ionice -c2 codex rtk git status"),
             ),
+            (
+                "chrt -r 10 git status",
+                Some("chrt -r 10 codex rtk git status"),
+            ),
+            (
+                "chrt --fifo 20 -- git status",
+                Some("chrt --fifo 20 codex rtk git status"),
+            ),
+            (
+                "command chrt -b 0 git status",
+                Some("chrt -b 0 codex rtk git status"),
+            ),
+            (
+                "nice -n 5 chrt -r 10 git status",
+                Some("nice -n 5 chrt -r 10 codex rtk git status"),
+            ),
         ]);
     }
 
@@ -861,6 +925,16 @@ mod tests {
 
         let analysis = analyze_shell_command("ionice -p 123 git status");
         assert_eq!(analysis.command, "ionice -p 123 git status");
+        assert_eq!(
+            analysis.kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::UnsupportedCommand,
+                candidate: true,
+            }
+        );
+
+        let analysis = analyze_shell_command("chrt -m git status");
+        assert_eq!(analysis.command, "chrt -m git status");
         assert_eq!(
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
