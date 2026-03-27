@@ -21,8 +21,8 @@ pub enum GitCommand {
     Worktree,
 }
 
-/// Create a git Command with global options (e.g. -C, -c, --git-dir, --work-tree)
-/// prepended before any subcommand arguments.
+/// 创建带全局选项的 git Command（如 `-C`、`-c`、`--git-dir`、`--work-tree`），
+/// 并将这些选项放在所有子命令参数之前。
 fn git_cmd(global_args: &[String]) -> Command {
     let mut cmd = resolved_command("git");
     for arg in global_args {
@@ -64,16 +64,16 @@ fn run_diff(
 ) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Check if user wants stat output
+    // 检查用户是否想看 stat 输出
     let wants_stat = args
         .iter()
         .any(|arg| arg == "--stat" || arg == "--numstat" || arg == "--shortstat");
 
-    // Check if user wants compact diff (default RTK behavior)
+    // 检查用户是否想要紧凑 diff（RTK 默认行为）
     let wants_compact = !args.iter().any(|arg| arg == "--no-compact");
 
     if wants_stat || !wants_compact {
-        // User wants stat or explicitly no compacting - pass through directly
+        // 用户想看 stat，或明确要求不要压缩，直接透传
         let mut cmd = git_cmd(global_args);
         cmd.arg("diff");
         for arg in args {
@@ -101,7 +101,7 @@ fn run_diff(
         return Ok(());
     }
 
-    // Default RTK behavior: stat first, then compacted diff
+    // RTK 默认行为：先显示 stat，再显示压缩后的 diff
     let mut cmd = git_cmd(global_args);
     cmd.arg("diff").arg("--stat");
 
@@ -116,10 +116,10 @@ fn run_diff(
         eprintln!("Git diff 摘要：");
     }
 
-    // Print stat summary first
+    // 先输出 stat 摘要
     println!("{}", stat_stdout.trim());
 
-    // Now get actual diff but compact it
+    // 再获取实际 diff 并压缩
     let mut diff_cmd = git_cmd(global_args);
     diff_cmd.arg("diff");
     for arg in args {
@@ -156,7 +156,7 @@ fn run_show(
 ) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // If user wants --stat or --format only, pass through
+    // 如果用户只想要 --stat 或 --format，则直接透传
     let wants_stat_only = args
         .iter()
         .any(|arg| arg == "--stat" || arg == "--numstat" || arg == "--shortstat");
@@ -165,8 +165,8 @@ fn run_show(
         .iter()
         .any(|arg| arg.starts_with("--pretty") || arg.starts_with("--format"));
 
-    // `git show rev:path` prints a blob, not a commit diff. In this mode we should
-    // pass through directly to avoid duplicated output from compact-show steps.
+    // `git show rev:path` 输出的是 blob，而不是 commit diff。
+    // 这种模式下应直接透传，避免 compact-show 步骤造成重复输出。
     let wants_blob_show = args.iter().any(|arg| is_blob_show_arg(arg));
 
     if wants_stat_only || wants_format || wants_blob_show {
@@ -198,7 +198,7 @@ fn run_show(
         return Ok(());
     }
 
-    // Get raw output for tracking
+    // 获取原始输出用于统计
     let mut raw_cmd = git_cmd(global_args);
     raw_cmd.arg("show");
     for arg in args {
@@ -209,7 +209,7 @@ fn run_show(
         .map(|o| crate::utils::decode_output(&o.stdout).to_string())
         .unwrap_or_default();
 
-    // Step 1: one-line commit summary
+    // 第 1 步：单行 commit 摘要
     let mut summary_cmd = git_cmd(global_args);
     summary_cmd.args(["show", "--no-patch", "--pretty=format:%h %s (%ar) <%an>"]);
     for arg in args {
@@ -224,7 +224,7 @@ fn run_show(
     let summary = crate::utils::decode_output(&summary_output.stdout);
     println!("{}", summary.trim());
 
-    // Step 2: --stat summary
+    // 第 2 步：--stat 摘要
     let mut stat_cmd = git_cmd(global_args);
     stat_cmd.args(["show", "--stat", "--pretty=format:"]);
     for arg in args {
@@ -237,7 +237,7 @@ fn run_show(
         println!("{stat_text}");
     }
 
-    // Step 3: compacted diff
+    // 第 3 步：压缩后的 diff
     let mut diff_cmd = git_cmd(global_args);
     diff_cmd.args(["show", "--pretty=format:"]);
     for arg in args {
@@ -268,7 +268,7 @@ fn run_show(
 }
 
 fn is_blob_show_arg(arg: &str) -> bool {
-    // Detect `rev:path` style arguments while ignoring flags like `--pretty=format:...`.
+    // 识别 `rev:path` 形式的参数，同时忽略 `--pretty=format:...` 这类 flag。
     !arg.starts_with('-') && arg.contains(':')
 }
 
@@ -284,7 +284,7 @@ pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
 
     for line in diff.lines() {
         if line.starts_with("diff --git") {
-            // New file
+            // 新文件段
             if !current_file.is_empty() && (added > 0 || removed > 0) {
                 result.push(format!("  +{added} -{removed}"));
             }
@@ -294,7 +294,7 @@ pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
             removed = 0;
             in_hunk = false;
         } else if line.starts_with("@@") {
-            // New hunk
+            // 新 hunk
             in_hunk = true;
             hunk_lines = 0;
             let hunk_info = line.split("@@").nth(1).unwrap_or("").trim();
@@ -313,7 +313,7 @@ pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
                     hunk_lines += 1;
                 }
             } else if hunk_lines < max_hunk_lines && !line.starts_with("\\") {
-                // Context line
+                // 上下文行
                 if hunk_lines > 0 {
                     result.push(format!("  {line}"));
                     hunk_lines += 1;
@@ -356,41 +356,41 @@ fn run_log(
     let mut cmd = git_cmd(global_args);
     cmd.arg("log");
 
-    // Check if user provided format flags
+    // 检查用户是否提供了 format 相关 flag
     let has_format_flag = args.iter().any(|arg| {
         arg.starts_with("--oneline") || arg.starts_with("--pretty") || arg.starts_with("--format")
     });
 
-    // Check if user provided limit flag (-N, -n N, --max-count=N, --max-count N)
+    // 检查用户是否提供了 limit 相关 flag（-N、-n N、--max-count=N、--max-count N）
     let has_limit_flag = args.iter().any(|arg| {
         (arg.starts_with('-') && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit()))
             || arg == "-n"
             || arg.starts_with("--max-count")
     });
 
-    // Apply RTK defaults only if user didn't specify them
-    // Use %b (body) to preserve first line of commit body for agent context
-    // (BREAKING CHANGE, Closes #xxx, design notes)
+    // 仅在用户未显式指定时才应用 RTK 默认值
+    // 使用 %b（body）保留 commit 正文首行，给 agent 提供更多上下文
+    // （如 BREAKING CHANGE、Closes #xxx、设计说明）
     if !has_format_flag {
         cmd.args(["--pretty=format:%h %s (%ar) <%an>%n%b%n---END---"]);
     }
 
-    // Determine limit: respect user's explicit -N flag, use sensible defaults otherwise
+    // 决定 limit：若用户显式传入 -N 则尊重用户，否则使用合理默认值
     let (limit, user_set_limit) = if has_limit_flag {
-        // User explicitly passed -N / -n N / --max-count=N → respect their choice
+        // 用户显式传入 -N / -n N / --max-count=N：尊重用户选择
         let n = parse_user_limit(args).unwrap_or(10);
         (n, true)
     } else if has_format_flag {
-        // --oneline / --pretty without -N: user wants compact output, allow more
+        // --oneline / --pretty 但没有 -N：说明用户想要紧凑输出，可适当放宽数量
         cmd.arg("-50");
         (50, false)
     } else {
-        // No flags at all: default to 10
+        // 完全没传 flag：默认 10 条
         cmd.arg("-10");
         (10, false)
     };
 
-    // Only add --no-merges if user didn't explicitly request merge commits
+    // 仅当用户未显式要求 merge commit 时才添加 --no-merges
     let wants_merges = args
         .iter()
         .any(|arg| arg == "--merges" || arg == "--min-parents=2");
@@ -398,7 +398,7 @@ fn run_log(
         cmd.arg("--no-merges");
     }
 
-    // Pass all user arguments
+    // 透传所有用户参数
     for arg in args {
         cmd.arg(arg);
     }
@@ -408,7 +408,7 @@ fn run_log(
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("{stderr}");
-        // Propagate git's exit code
+        // 透传 git 的退出码
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
@@ -418,7 +418,7 @@ fn run_log(
         eprintln!("Git log 输出：");
     }
 
-    // Post-process: truncate long messages, cap lines only if RTK set the default
+    // 后处理：截断过长消息；只有 RTK 自己设定默认值时才限制行数
     let filtered = filter_log_output(&stdout, limit, user_set_limit, has_format_flag);
     println!("{filtered}");
 
@@ -432,13 +432,13 @@ fn run_log(
     Ok(())
 }
 
-/// Filter git log output: truncate long messages, cap lines
-/// Parse the user-specified limit from git log args.
-/// Handles: -20, -n 20, --max-count=20, --max-count 20
+/// 过滤 git log 输出：截断过长消息，并控制行数。
+/// 从 git log 参数中解析用户指定的 limit。
+/// 支持：`-20`、`-n 20`、`--max-count=20`、`--max-count 20`
 fn parse_user_limit(args: &[String]) -> Option<usize> {
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        // -20 (combined digit form)
+        // -20（数字与 flag 合并的形式）
         if arg.starts_with('-')
             && arg.len() > 1
             && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
@@ -446,7 +446,7 @@ fn parse_user_limit(args: &[String]) -> Option<usize> {
         {
             return Some(n);
         }
-        // -n 20 (two-token form)
+        // -n 20（双 token 形式）
         if arg == "-n"
             && let Some(next) = iter.next()
             && let Ok(n) = next.parse::<usize>()
@@ -459,7 +459,7 @@ fn parse_user_limit(args: &[String]) -> Option<usize> {
         {
             return Some(n);
         }
-        // --max-count 20 (two-token form)
+        // --max-count 20（双 token 形式）
         if arg == "--max-count"
             && let Some(next) = iter.next()
             && let Ok(n) = next.parse::<usize>()
@@ -470,10 +470,10 @@ fn parse_user_limit(args: &[String]) -> Option<usize> {
     None
 }
 
-/// When `user_set_limit` is true, the user explicitly passed `-N` to git log,
-/// so we skip line capping (git already returns exactly N commits) and use a
-/// wider truncation threshold (120 chars) to preserve commit context that LLMs
-/// need for rebase/squash operations.
+/// 当 `user_set_limit` 为 true 时，表示用户显式给 git log 传了 `-N`。
+/// 此时不再额外裁剪行数（因为 git 已经只返回 N 条 commit），同时将
+/// 截断阈值放宽到 120 个字符，以保留 LLM 在 rebase/squash 场景下
+/// 需要的 commit 上下文。
 fn filter_log_output(
     output: &str,
     limit: usize,
@@ -482,8 +482,8 @@ fn filter_log_output(
 ) -> String {
     let truncate_width = if user_set_limit { 120 } else { 80 };
 
-    // When user specified their own format (--oneline, --pretty, --format),
-    // RTK did not inject ---END--- markers. Use simple line-based truncation.
+    // 当用户指定了自己的格式（--oneline、--pretty、--format）时，
+    // RTK 不会注入 ---END--- 标记，因此改用简单的按行截断。
     if user_format {
         let lines: Vec<&str> = output.lines().collect();
         let max_lines = if user_set_limit { lines.len() } else { limit };
@@ -495,7 +495,7 @@ fn filter_log_output(
             .join("\n");
     }
 
-    // RTK injected format: split output into commit blocks separated by ---END---
+    // RTK 注入格式时：按 ---END--- 分隔成 commit 块
     let commits: Vec<&str> = output.split("---END---").collect();
     let max_commits = if user_set_limit { commits.len() } else { limit };
 
@@ -506,12 +506,12 @@ fn filter_log_output(
             continue;
         }
         let mut lines = block.lines();
-        // First line is the header: hash subject (date) <author>
+        // 第一行是头部：hash subject (date) <author>
         let header = match lines.next() {
             Some(h) => truncate_line(h.trim(), truncate_width),
             None => continue,
         };
-        // Remaining lines are the body — keep first non-empty line only
+        // 剩余行是正文：只保留第一条非空行
         let body_line = lines.map(str::trim).find(|l| {
             !l.is_empty() && !l.starts_with("Signed-off-by:") && !l.starts_with("Co-authored-by:")
         });
@@ -528,7 +528,7 @@ fn filter_log_output(
     result.join("\n").trim().to_string()
 }
 
-/// Truncate a single line to `width` characters, appending "..." if needed
+/// 将单行截断到 `width` 个字符，必要时追加 `...`
 fn truncate_line(line: &str, width: usize) -> String {
     if line.chars().count() > width {
         let truncated: String = line.chars().take(width - 3).collect();
@@ -538,7 +538,7 @@ fn truncate_line(line: &str, width: usize) -> String {
     }
 }
 
-/// Format porcelain output into compact RTK status display
+/// 将 porcelain 输出格式化为紧凑的 RTK status 展示
 fn format_status_output(porcelain: &str) -> String {
     let lines: Vec<&str> = porcelain.lines().collect();
 
@@ -548,7 +548,7 @@ fn format_status_output(porcelain: &str) -> String {
 
     let mut output = String::new();
 
-    // Parse branch info
+    // 解析分支信息
     if let Some(branch_line) = lines.first()
         && branch_line.starts_with("##")
     {
@@ -556,7 +556,7 @@ fn format_status_output(porcelain: &str) -> String {
         output.push_str(&format!("* {branch}\n"));
     }
 
-    // Count changes by type
+    // 按类型统计变更
     let mut staged = 0;
     let mut modified = 0;
     let mut untracked = 0;
@@ -596,7 +596,7 @@ fn format_status_output(porcelain: &str) -> String {
         }
     }
 
-    // Build summary
+    // 生成摘要
     if staged > 0 {
         output.push_str(&format!("+ 已暂存：{staged} 个文件\n"));
         for f in staged_files.iter().take(5) {

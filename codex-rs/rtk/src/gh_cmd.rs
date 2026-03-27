@@ -1,7 +1,7 @@
-//! GitHub CLI (gh) command output compression.
+//! GitHub CLI（gh）命令输出压缩。
 //!
-//! Provides token-optimized alternatives to verbose `gh` commands.
-//! Focuses on extracting essential information from JSON outputs.
+//! 为冗长的 `gh` 命令提供更节省 token 的替代输出。
+//! 重点从 JSON 输出中提取关键信息。
 
 use crate::git;
 use crate::tracking;
@@ -25,20 +25,20 @@ lazy_static! {
     static ref MULTI_BLANK_RE: Regex = crate::utils::compile_regex(r"\n{3,}");
 }
 
-/// Filter markdown body to remove noise while preserving meaningful content.
-/// Removes HTML comments, badge lines, image-only lines, horizontal rules,
-/// and collapses excessive blank lines. Preserves code blocks untouched.
+/// 过滤 markdown 正文中的噪声，同时保留有意义的内容。
+/// 会移除 HTML 注释、badge 行、纯图片行、分隔线，
+/// 并折叠过多空行；代码块内容保持不变。
 fn filter_markdown_body(body: &str) -> String {
     if body.is_empty() {
         return String::new();
     }
 
-    // Split into code blocks and non-code segments
+    // 拆分为代码块与非代码块片段
     let mut result = String::new();
     let mut remaining = body;
 
     loop {
-        // Find next code block opening (``` or ~~~)
+        // 查找下一个代码块起始标记（``` 或 ~~~）
         let fence_pos = remaining
             .find("```")
             .or_else(|| remaining.find("~~~"))
@@ -53,13 +53,13 @@ fn filter_markdown_body(body: &str) -> String {
 
         match fence_pos {
             Some((start, fence)) => {
-                // Filter the text before the code block
+                // 过滤代码块前面的文本
                 let before = &remaining[..start];
                 result.push_str(&filter_markdown_segment(before));
 
-                // Find the closing fence
+                // 查找闭合 fence
                 let after_open = start + fence.len();
-                // Skip past the opening fence line
+                // 跳过起始 fence 所在行
                 let code_start = remaining[after_open..]
                     .find('\n')
                     .map(|p| after_open + p + 1)
@@ -71,9 +71,9 @@ fn filter_markdown_body(body: &str) -> String {
 
                 match close_pos {
                     Some(end) => {
-                        // Preserve the entire code block as-is
+                        // 原样保留整个代码块
                         result.push_str(&remaining[start..end]);
-                        // Include the rest of the closing fence line
+                        // 连同闭合 fence 所在行的剩余部分一起保留
                         let after_close = remaining[end..]
                             .find('\n')
                             .map(|p| end + p + 1)
@@ -82,25 +82,25 @@ fn filter_markdown_body(body: &str) -> String {
                         remaining = &remaining[after_close..];
                     }
                     None => {
-                        // Unclosed code block — preserve everything
+                        // 未闭合的代码块：后续内容全部原样保留
                         result.push_str(&remaining[start..]);
                         remaining = "";
                     }
                 }
             }
             None => {
-                // No more code blocks, filter the rest
+                // 没有更多代码块了，过滤剩余文本
                 result.push_str(&filter_markdown_segment(remaining));
                 break;
             }
         }
     }
 
-    // Final cleanup: trim trailing whitespace
+    // 最后清理：去掉末尾空白
     result.trim().to_string()
 }
 
-/// Filter a markdown segment that is NOT inside a code block.
+/// 过滤不在代码块内的 markdown 片段。
 fn filter_markdown_segment(text: &str) -> String {
     let mut s = HTML_COMMENT_RE.replace_all(text, "").to_string();
     s = BADGE_LINE_RE.replace_all(&s, "").to_string();
@@ -110,20 +110,20 @@ fn filter_markdown_segment(text: &str) -> String {
     s
 }
 
-/// Check if args contain --json flag (user wants specific JSON fields, not RTK filtering)
+/// 检查参数中是否包含 `--json`（表示用户想要指定 JSON 字段，而不是 RTK 过滤）
 fn has_json_flag(args: &[String]) -> bool {
     args.iter().any(|a| a == "--json")
 }
 
-/// Extract a positional identifier (PR/issue number) from args, returning it
-/// separately from the remaining extra flags (like -R, --repo, etc.).
-/// Handles both `view 123 -R owner/repo` and `view -R owner/repo 123`.
+/// 从参数中提取位置标识符（PR/issue 编号），
+/// 并把它与其余附加参数（如 `-R`、`--repo`）分开返回。
+/// 同时处理 `view 123 -R owner/repo` 和 `view -R owner/repo 123` 两种写法。
 fn extract_identifier_and_extra_args(args: &[String]) -> Option<(String, Vec<String>)> {
     if args.is_empty() {
         return None;
     }
 
-    // Known gh flags that take a value — skip these and their values
+    // 已知会携带取值的 gh flag：需要连同其值一起跳过
     let flags_with_value = [
         "-R",
         "--repo",
@@ -153,7 +153,7 @@ fn extract_identifier_and_extra_args(args: &[String]) -> Option<(String, Vec<Str
             extra.push(arg.clone());
             continue;
         }
-        // First non-flag arg is the identifier (number/URL)
+        // 第一个非 flag 参数就是标识符（编号/URL）
         if identifier.is_none() {
             identifier = Some(arg.clone());
         } else {
@@ -164,9 +164,9 @@ fn extract_identifier_and_extra_args(args: &[String]) -> Option<(String, Vec<Str
     identifier.map(|id| (id, extra))
 }
 
-/// Run a gh command with token-optimized output
+/// 以节省 token 的方式运行 gh 命令
 pub fn run(subcommand: &str, args: &[String], verbose: u8, ultra_compact: bool) -> Result<()> {
-    // When user explicitly passes --json, they want raw gh JSON output, not RTK filtering
+    // 用户显式传入 --json 时，期望的是原始 gh JSON，而不是 RTK 过滤结果
     if has_json_flag(args) {
         return run_passthrough("gh", subcommand, args);
     }
@@ -178,7 +178,7 @@ pub fn run(subcommand: &str, args: &[String], verbose: u8, ultra_compact: bool) 
         "repo" => run_repo(args, verbose, ultra_compact),
         "api" => run_api(args, verbose),
         _ => {
-            // Unknown subcommand, pass through
+            // 未知子命令，直接透传
             run_passthrough("gh", subcommand, args)
         }
     }
@@ -214,7 +214,7 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         "number,title,state,author,updatedAt",
     ]);
 
-    // Pass through additional flags
+    // 透传附加参数
     for arg in args {
         cmd.arg(arg);
     }
@@ -300,8 +300,8 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         None => return Err(anyhow::anyhow!("需要 PR 编号")),
     };
 
-    // If the user provides --jq or --web, pass through directly.
-    // Note: --json is already handled globally by run() via has_json_flag.
+    // 如果用户提供了 --jq 或 --web，则直接透传。
+    // 注意：--json 已由 run() 通过 has_json_flag 全局处理。
     if should_passthrough_pr_view(&extra_args) {
         return run_passthrough_with_extra("gh", &["pr", "view", &pr_number], &extra_args);
     }
@@ -337,7 +337,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
     let mut filtered = String::new();
 
-    // Extract essential info
+    // 提取关键信息
     let number = json["number"].as_i64().unwrap_or(0);
     let title = json["title"].as_str().unwrap_or("未知");
     let state = json["state"].as_str().unwrap_or("未知");
@@ -378,7 +378,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     filtered.push_str(&line);
     print!("{line}");
 
-    // Show reviews summary
+    // 显示评审摘要
     if let Some(reviews) = json["reviews"]["nodes"].as_array() {
         let approved = reviews
             .iter()
@@ -396,7 +396,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         }
     }
 
-    // Show checks summary
+    // 显示检查摘要
     if let Some(checks) = json["statusCheckRollup"].as_array() {
         let total = checks.len();
         let passed = checks
@@ -440,7 +440,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     filtered.push_str(&line);
     print!("{line}");
 
-    // Show filtered body
+    // 显示过滤后的正文
     if let Some(body) = json["body"].as_str()
         && !body.is_empty()
     {
@@ -496,7 +496,7 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 
     let stdout = crate::utils::decode_output(&output.stdout);
 
-    // Parse and compress checks output
+    // 解析并压缩 checks 输出
     let mut passed = 0;
     let mut failed = 0;
     let mut pending = 0;

@@ -229,7 +229,7 @@ pub fn truncate_iso_date(date: &str) -> &str {
 /// 格式化确认消息："已\<action\> \<detail\>"
 /// 用于写操作（merge、create、comment、edit 等）
 ///
-/// # Examples
+/// # 示例
 /// ```
 /// use rtk::utils::ok_confirmation;
 /// assert_eq!(ok_confirmation("合并", "#42"), "已合并 #42");
@@ -250,7 +250,7 @@ pub fn ok_confirmation(action: &str, detail: &str) -> String {
 /// ```no_run
 /// use rtk::utils::detect_package_manager;
 /// let pm = detect_package_manager();
-/// // Returns "pnpm" if pnpm-lock.yaml exists, "yarn" if yarn.lock, else "npm"
+/// // 若存在 pnpm-lock.yaml 返回 "pnpm"，存在 yarn.lock 返回 "yarn"，否则返回 "npm"
 /// ```
 #[allow(dead_code)]
 pub fn detect_package_manager() -> &'static str {
@@ -292,7 +292,7 @@ pub fn package_manager_exec(tool: &str) -> Command {
 
 /// 将二进制名解析为完整路径，并在 Windows 上遵循 `PATHEXT`。
 ///
-/// 在 Windows 上，Node.js 工具通常以 `.CMD` / `.BAT` / `.PS1` 包装器形式安装。
+/// 在 Windows 上，Node.js 工具通常以 `.CMD` / `.BAT` / `.PS1` 包装脚本形式安装。
 /// Rust 的 `std::process::Command::new()` 不会遵循 `PATHEXT`，
 /// 所以即使 `vitest.CMD` 在 PATH 中，`Command::new("vitest")` 也可能失败。
 ///
@@ -565,7 +565,7 @@ mod tests {
         let result = resolve_binary("cargo");
         assert!(
             result.is_ok(),
-            "resolve_binary('cargo') should succeed, got: {:?}",
+            "resolve_binary('cargo') 应成功，实际得到：{:?}",
             result.err()
         );
     }
@@ -575,17 +575,14 @@ mod tests {
         let path = resolve_binary("cargo").expect("cargo should be resolvable");
         assert!(
             path.is_absolute(),
-            "resolve_binary should return absolute path, got: {path:?}"
+            "resolve_binary 应返回绝对路径，实际得到：{path:?}"
         );
     }
 
     #[test]
     fn test_resolve_binary_fails_for_unknown() {
         let result = resolve_binary("nonexistent_binary_xyz_99999");
-        assert!(
-            result.is_err(),
-            "resolve_binary should fail for nonexistent binary"
-        );
+        assert!(result.is_err(), "不存在的二进制应导致 resolve_binary 失败");
     }
 
     #[test]
@@ -595,10 +592,10 @@ mod tests {
             .file_name()
             .expect("should have filename")
             .to_string_lossy();
-        // On Windows this could be "cargo.exe", on Unix just "cargo"
+        // Windows 上可能是 "cargo.exe"，Unix 上通常就是 "cargo"
         assert!(
             filename.starts_with("cargo"),
-            "resolved path filename should start with 'cargo', got: {filename}"
+            "解析后的文件名应以 'cargo' 开头，实际得到：{filename}"
         );
     }
 
@@ -609,10 +606,10 @@ mod tests {
         let output = resolved_command("cargo")
             .arg("--version")
             .output()
-            .expect("resolved_command('cargo') should execute");
+            .expect("resolved_command('cargo') 应可执行");
         assert!(
             output.status.success(),
-            "cargo --version should succeed via resolved_command"
+            "通过 resolved_command 执行 cargo --version 应成功"
         );
     }
 
@@ -620,23 +617,20 @@ mod tests {
 
     #[test]
     fn test_tool_exists_finds_cargo() {
-        assert!(
-            tool_exists("cargo"),
-            "tool_exists('cargo') should return true"
-        );
+        assert!(tool_exists("cargo"), "tool_exists('cargo') 应返回 true");
     }
 
     #[test]
     fn test_tool_exists_rejects_unknown() {
         assert!(
             !tool_exists("nonexistent_binary_xyz_99999"),
-            "tool_exists should return false for nonexistent binary"
+            "对于不存在的二进制，tool_exists 应返回 false"
         );
     }
 
     #[test]
     fn test_tool_exists_finds_git() {
-        assert!(tool_exists("git"), "tool_exists('git') should return true");
+        assert!(tool_exists("git"), "tool_exists('git') 应返回 true");
     }
 
     // ===== Windows 专属 PATHEXT 解析测试（issue #212） =====
