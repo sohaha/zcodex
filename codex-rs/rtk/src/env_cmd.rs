@@ -8,7 +8,7 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Environment variables:");
+        eprintln!("环境变量：");
     }
 
     let sensitive_patterns = get_sensitive_patterns();
@@ -39,7 +39,7 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
             mask_value(value)
         } else if value.len() > 100 {
             let preview: String = value.chars().take(50).collect();
-            format!("{}... ({} chars)", preview, value.chars().count())
+            format!("{}...（{} 字符）", preview, value.chars().count())
         } else {
             value.clone()
         };
@@ -62,17 +62,17 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
 
     // Print categorized
     if !path_vars.is_empty() {
-        println!("📂 PATH Variables:");
+        println!("📂 PATH 变量：");
         for (k, v) in &path_vars {
             if k == "PATH" {
                 // Split PATH for readability
                 let paths: Vec<&str> = v.split(':').collect();
-                println!("  PATH ({} entries):", paths.len());
+                println!("  PATH（{} 项）：", paths.len());
                 for p in paths.iter().take(5) {
                     println!("    {p}");
                 }
                 if paths.len() > 5 {
-                    println!("    ... +{} more", paths.len() - 5);
+                    println!("    ... +{} 项", paths.len() - 5);
                 }
             } else {
                 println!("  {k}={v}");
@@ -81,33 +81,33 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
     }
 
     if !lang_vars.is_empty() {
-        println!("\n🔧 Language/Runtime:");
+        println!("\n🔧 语言/运行时：");
         for (k, v) in &lang_vars {
             println!("  {k}={v}");
         }
     }
 
     if !cloud_vars.is_empty() {
-        println!("\n☁️  Cloud/Services:");
+        println!("\n☁️  云/服务：");
         for (k, v) in &cloud_vars {
             println!("  {k}={v}");
         }
     }
 
     if !tool_vars.is_empty() {
-        println!("\n🛠️  Tools:");
+        println!("\n🛠️  工具：");
         for (k, v) in &tool_vars {
             println!("  {k}={v}");
         }
     }
 
     if !other_vars.is_empty() {
-        println!("\n📋 Other:");
+        println!("\n📋 其他：");
         for (k, v) in other_vars.iter().take(20) {
             println!("  {k}={v}");
         }
         if other_vars.len() > 20 {
-            println!("  ... +{} more", other_vars.len() - 20);
+            println!("  ... +{} 项", other_vars.len() - 20);
         }
     }
 
@@ -118,11 +118,11 @@ pub fn run(filter: Option<&str>, show_all: bool, verbose: u8) -> Result<()> {
         + tool_vars.len()
         + other_vars.len().min(20);
     if filter.is_none() {
-        println!("\n📊 Total: {total} vars (showing {shown} relevant)");
+        println!("\n📊 总计：{total} 个变量（显示 {shown} 个相关）");
     }
 
     let raw: String = vars.iter().map(|(k, v)| format!("{k}={v}\n")).collect();
-    let rtk = format!("{total} vars -> {shown} shown");
+    let rtk = format!("{total} 个变量 -> 显示 {shown}");
     timer.track("env", "rtk env", &raw, &rtk);
     Ok(())
 }

@@ -73,7 +73,7 @@ fn rtk_read_limits_output() -> Result<()> {
     ])
     .assert()
     .success()
-    .stdout(contains("one").and(contains("2 more lines (total: 3)")));
+    .stdout(contains("one").and(contains("省略 2 行（共 3 行）")));
 
     Ok(())
 }
@@ -194,8 +194,8 @@ pretty_assertions = "1"
         .assert()
         .success()
         .stdout(
-            contains("Rust (Cargo.toml)")
-                .and(contains("Dependencies (2)"))
+            contains("Rust（Cargo.toml）")
+                .and(contains("依赖（2）"))
                 .and(contains("anyhow (1)"))
                 .and(contains("serde (1)")),
         );
@@ -216,7 +216,7 @@ fn rtk_git_status_defaults_to_short_output() -> Result<()> {
         .args(["rtk", "git", "status"])
         .assert()
         .success()
-        .stdout(contains("? Untracked: 1 files").and(contains("new.txt")));
+        .stdout(contains("? 未跟踪：1 个文件").and(contains("new.txt")));
 
     Ok(())
 }
@@ -262,7 +262,7 @@ fn rtk_git_status_reports_clean_tree() -> Result<()> {
         .args(["rtk", "git", "status"])
         .assert()
         .success()
-        .stdout(contains("* ").and(contains("clean — nothing to commit")));
+        .stdout(contains("* ").and(contains("干净 — 没有可提交内容")));
 
     Ok(())
 }
@@ -397,8 +397,8 @@ fn rtk_log_keeps_interesting_lines() -> Result<()> {
         .assert()
         .success()
         .stdout(
-            contains("1 errors (1 unique)")
-                .and(contains("1 warnings (1 unique)"))
+            contains("1 个错误（1 个唯一）")
+                .and(contains("1 个警告（1 个唯一）"))
                 .and(contains("warning: heads up"))
                 .and(contains("error: boom")),
         );
@@ -416,9 +416,9 @@ fn rtk_log_falls_back_to_last_40_lines_without_matches() -> Result<()> {
         .assert()
         .success()
         .stdout(
-            contains("0 errors (0 unique)")
-                .and(contains("0 warnings (0 unique)"))
-                .and(contains("0 info messages")),
+            contains("0 个错误（0 个唯一）")
+                .and(contains("0 个警告（0 个唯一）"))
+                .and(contains("0 条信息")),
         );
 
     Ok(())

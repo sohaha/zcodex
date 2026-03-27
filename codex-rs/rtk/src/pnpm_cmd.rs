@@ -83,7 +83,7 @@ impl OutputParser for PnpmListParser {
                 // Tier 2: Try text extraction
                 match extract_list_text(input) {
                     Some(result) => {
-                        ParseResult::Degraded(result, vec![format!("JSON parse failed: {}", e)])
+                        ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
                         // Tier 3: Passthrough
@@ -210,7 +210,7 @@ impl OutputParser for PnpmOutdatedParser {
                 // Tier 2: Try text extraction
                 match extract_outdated_text(input) {
                     Some(result) => {
-                        ParseResult::Degraded(result, vec![format!("JSON parse failed: {}", e)])
+                        ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
                         // Tier 3: Passthrough
@@ -315,11 +315,11 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run pnpm list")?;
+    let output = cmd.output().context("运行 pnpm list 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
-        anyhow::bail!("pnpm list failed: {stderr}");
+        anyhow::bail!("pnpm list 失败：{stderr}");
     }
 
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -331,7 +331,7 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("pnpm list (Tier 1: Full JSON parse)");
+                eprintln!("pnpm list（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -342,7 +342,7 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
             data.format(mode)
         }
         ParseResult::Passthrough(raw) => {
-            emit_passthrough_warning("pnpm list", "All parsing tiers failed");
+            emit_passthrough_warning("pnpm list", "所有解析层级均失败");
             raw
         }
     };
@@ -371,7 +371,7 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run pnpm outdated")?;
+    let output = cmd.output().context("运行 pnpm outdated 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let combined = format!("{stdout}{stderr}");
@@ -383,7 +383,7 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("pnpm outdated (Tier 1: Full JSON parse)");
+                eprintln!("pnpm outdated（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -394,13 +394,13 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
             data.format(mode)
         }
         ParseResult::Passthrough(raw) => {
-            emit_passthrough_warning("pnpm outdated", "All parsing tiers failed");
+            emit_passthrough_warning("pnpm outdated", "所有解析层级均失败");
             raw
         }
     };
 
     if filtered.trim().is_empty() {
-        println!("All packages up-to-date ✓");
+        println!("所有包已是最新 ✓");
     } else {
         println!("{filtered}");
     }
@@ -416,7 +416,7 @@ fn run_install(packages: &[String], args: &[String], verbose: u8) -> Result<()> 
     // Validate package names to prevent command injection
     for pkg in packages {
         if !is_valid_package_name(pkg) {
-            anyhow::bail!("Invalid package name: '{pkg}' (contains unsafe characters)");
+            anyhow::bail!("无效的包名：'{pkg}'（包含不安全字符）");
         }
     }
 
@@ -432,15 +432,15 @@ fn run_install(packages: &[String], args: &[String], verbose: u8) -> Result<()> 
     }
 
     if verbose > 0 {
-        eprintln!("pnpm install running...");
+        eprintln!("pnpm install 运行中...");
     }
 
-    let output = cmd.output().context("Failed to run pnpm install")?;
+    let output = cmd.output().context("运行 pnpm install 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
 
     if !output.status.success() {
-        anyhow::bail!("pnpm install failed: {stderr}");
+        anyhow::bail!("pnpm install 失败：{stderr}");
     }
 
     let combined = format!("{stdout}{stderr}");
@@ -491,7 +491,7 @@ fn filter_pnpm_install(output: &str) -> String {
     }
 
     if result.is_empty() {
-        "ok ✓".to_string()
+        "已完成 ✓".to_string()
     } else {
         result.join("\n")
     }
@@ -502,12 +502,12 @@ pub fn run_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("pnpm passthrough: {args:?}");
+        eprintln!("pnpm 透传：{args:?}");
     }
     let status = resolved_command("pnpm")
         .args(args)
         .status()
-        .context("Failed to run pnpm")?;
+        .context("运行 pnpm 失败")?;
 
     let args_str = tracking::args_display(args);
     timer.track_passthrough(

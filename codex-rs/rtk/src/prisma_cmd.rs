@@ -49,12 +49,12 @@ fn run_generate(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: prisma generate");
+        eprintln!("运行：prisma generate");
     }
 
     let output = cmd
         .output()
-        .context("Failed to run prisma generate (try: npm install -g prisma)")?;
+        .context("运行 prisma generate 失败（可尝试：npm install -g prisma）")?;
 
     let exit_code = output.status.code().unwrap_or(1);
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -108,10 +108,10 @@ fn run_migrate(subcommand: MigrateSubcommand, args: &[String], verbose: u8) -> R
     }
 
     if verbose > 0 {
-        eprintln!("Running: {cmd_name}");
+        eprintln!("运行：{cmd_name}");
     }
 
-    let output = cmd.output().context("Failed to run prisma migrate")?;
+    let output = cmd.output().context("运行 prisma migrate 失败")?;
 
     let exit_code = output.status.code().unwrap_or(1);
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -152,10 +152,10 @@ fn run_db_push(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: prisma db push");
+        eprintln!("运行：prisma db push");
     }
 
-    let output = cmd.output().context("Failed to run prisma db push")?;
+    let output = cmd.output().context("运行 prisma db push 失败")?;
 
     let exit_code = output.status.code().unwrap_or(1);
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -224,16 +224,16 @@ fn filter_prisma_generate(output: &str) -> String {
     }
 
     let mut result = String::new();
-    result.push_str("✓ Prisma Client generated\n");
+    result.push_str("✓ Prisma Client 已生成\n");
 
     if models > 0 || enums > 0 || types > 0 {
         result.push_str(&format!(
-            "  • {models} models, {enums} enums, {types} types\n"
+            "  • {models} 个 model，{enums} 个 enum，{types} 个 type\n"
         ));
     }
 
     if !output_path.is_empty() {
-        result.push_str("  • Output: node_modules/@prisma/client\n");
+        result.push_str("  • 输出：node_modules/@prisma/client\n");
     }
 
     result.trim().to_string()
@@ -286,27 +286,27 @@ fn filter_migrate_dev(output: &str) -> String {
     let mut result = String::new();
 
     if !migration_name.is_empty() {
-        result.push_str(&format!("🗃️  Migration: {migration_name}\n"));
+        result.push_str(&format!("🗃️  迁移：{migration_name}\n"));
         result.push_str("═══════════════════════════════════════\n");
     }
 
-    result.push_str("Changes:\n");
+    result.push_str("变更：\n");
     if tables_added > 0 {
-        result.push_str(&format!("  + {tables_added} table(s)\n"));
+        result.push_str(&format!("  + {tables_added} 张表\n"));
     }
     if tables_modified > 0 {
-        result.push_str(&format!("  ~ {tables_modified} table(s) modified\n"));
+        result.push_str(&format!("  ~ {tables_modified} 张表已修改\n"));
     }
     if !relations.is_empty() {
-        result.push_str(&format!("  + {} relation(s)\n", relations.len()));
+        result.push_str(&format!("  + {} 条关系\n", relations.len()));
     }
     if !indexes.is_empty() {
-        result.push_str(&format!("  ~ {} index(es)\n", indexes.len()));
+        result.push_str(&format!("  ~ {} 个索引\n", indexes.len()));
     }
 
     result.push('\n');
     if applied {
-        result.push_str("✓ Applied | Pending: 0\n");
+        result.push_str("✓ 已应用 | 待应用：0\n");
     }
 
     result.trim().to_string()
@@ -336,11 +336,11 @@ fn filter_migrate_status(output: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&format!(
-        "Migrations: {applied_count} applied, {pending_count} pending\n"
+        "迁移：已应用 {applied_count}，待应用 {pending_count}\n"
     ));
 
     if !latest_migration.is_empty() {
-        result.push_str(&format!("Latest: {latest_migration}\n"));
+        result.push_str(&format!("最新：{latest_migration}\n"));
     }
 
     result.trim().to_string()
@@ -363,9 +363,9 @@ fn filter_migrate_deploy(output: &str) -> String {
     let mut result = String::new();
 
     if errors.is_empty() {
-        result.push_str(&format!("✓ {deployed} migration(s) deployed\n"));
+        result.push_str(&format!("✓ 已部署 {deployed} 个迁移\n"));
     } else {
-        result.push_str("❌ Deployment failed:\n");
+        result.push_str("❌ 部署失败：\n");
         for err in errors.iter().take(5) {
             result.push_str(&format!("  {err}\n"));
         }
@@ -393,11 +393,11 @@ fn filter_db_push(output: &str) -> String {
     }
 
     let mut result = String::new();
-    result.push_str("✓ Schema pushed to database\n");
+    result.push_str("✓ Schema 已推送到数据库\n");
 
     if tables_added > 0 || columns_modified > 0 || dropped > 0 {
         result.push_str(&format!(
-            "  + {tables_added} tables, ~ {columns_modified} columns, - {dropped} dropped\n"
+            "  + {tables_added} 张表，~ {columns_modified} 列，- {dropped} 删除\n"
         ));
     }
 
@@ -462,7 +462,7 @@ import { PrismaClient } from '@prisma/client'
 42 models, 18 enums, 890 types generated
 "#;
         let result = filter_prisma_generate(output);
-        assert!(result.contains("✓ Prisma Client generated"));
+        assert!(result.contains("✓ Prisma Client 已生成"));
         // Parser may not extract exact counts from this format, just check it doesn't crash
         assert!(!result.contains("Prisma schema loaded"));
         assert!(!result.contains("Start by importing"));
@@ -485,8 +485,8 @@ CREATE INDEX "session_status_idx" ON "Session"("status");
 "#;
         let result = filter_migrate_dev(output);
         assert!(result.contains("20260128_add_sessions"));
-        assert!(result.contains("+ 1 table"));
-        assert!(result.contains("✓ Applied"));
+        assert!(result.contains("+ 1 张表"));
+        assert!(result.contains("✓ 已应用"));
     }
 
     #[test]

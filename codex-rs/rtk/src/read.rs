@@ -18,12 +18,12 @@ pub fn run(
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Reading: {} (filter: {})", file.display(), level);
+        eprintln!("读取：{}（过滤：{}）", file.display(), level);
     }
 
     // Read file content
-    let content = fs::read_to_string(file)
-        .with_context(|| format!("Failed to read file: {}", file.display()))?;
+    let content =
+        fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
     // Detect language from extension
     let lang = file
@@ -33,7 +33,7 @@ pub fn run(
         .unwrap_or(Language::Unknown);
 
     if verbose > 1 {
-        eprintln!("Detected language: {lang:?}");
+        eprintln!("检测到语言：{lang:?}");
     }
 
     // Apply filter
@@ -48,7 +48,7 @@ pub fn run(
         } else {
             0.0
         };
-        eprintln!("Lines: {original_lines} -> {filtered_lines} ({reduction:.1}% reduction)");
+        eprintln!("行数：{original_lines} -> {filtered_lines}（减少 {reduction:.1}%）");
     }
 
     filtered = apply_line_window(&filtered, max_lines, tail_lines, lang);
@@ -81,7 +81,7 @@ pub fn run_stdin(
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Reading from stdin (filter: {level})");
+        eprintln!("读取 stdin（过滤：{level}）");
     }
 
     // Read from stdin
@@ -89,13 +89,13 @@ pub fn run_stdin(
     io::stdin()
         .lock()
         .read_to_string(&mut content)
-        .context("Failed to read from stdin")?;
+        .context("读取 stdin 失败")?;
 
     // No file extension, so use Unknown language
     let lang = Language::Unknown;
 
     if verbose > 1 {
-        eprintln!("Language: {lang:?} (stdin has no extension)");
+        eprintln!("语言：{lang:?}（stdin 无扩展名）");
     }
 
     // Apply filter
@@ -110,7 +110,7 @@ pub fn run_stdin(
         } else {
             0.0
         };
-        eprintln!("Lines: {original_lines} -> {filtered_lines} ({reduction:.1}% reduction)");
+        eprintln!("行数：{original_lines} -> {filtered_lines}（减少 {reduction:.1}%）");
     }
 
     filtered = apply_line_window(&filtered, max_lines, tail_lines, lang);
@@ -210,6 +210,6 @@ fn main() {{
         let input = "a\nb\nc\nd\n";
         let output = apply_line_window(input, Some(2), None, Language::Unknown);
         assert!(output.starts_with("a\n"));
-        assert!(output.contains("more lines"));
+        assert!(output.contains("省略"));
     }
 }

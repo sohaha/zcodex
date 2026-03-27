@@ -107,10 +107,10 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: npm {}", args.join(" "));
+        eprintln!("运行：npm {}", args.join(" "));
     }
 
-    let output = cmd.output().context("Failed to run npm")?;
+    let output = cmd.output().context("运行 npm 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
@@ -161,7 +161,7 @@ fn filter_npm_output(output: &str) -> String {
     }
 
     if result.is_empty() {
-        "ok ✓".to_string()
+        "已完成 ✓".to_string()
     } else {
         result.join("\n")
     }
@@ -230,6 +230,6 @@ npm notice
     fn test_filter_npm_output_empty() {
         let output = "\n\n\n";
         let result = filter_npm_output(output);
-        assert_eq!(result, "ok ✓");
+        assert_eq!(result, "已完成 ✓");
     }
 }

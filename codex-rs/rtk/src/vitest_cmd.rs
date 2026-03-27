@@ -92,7 +92,7 @@ impl OutputParser for VitestParser {
                 // Tier 2: Try regex extraction (only fires if user overrides --reporter flag)
                 match extract_stats_regex(input) {
                     Some(result) => {
-                        ParseResult::Degraded(result, vec![format!("JSON parse failed: {}", e)])
+                        ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
                         // Tier 3: Passthrough
@@ -240,7 +240,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run vitest")?;
+    let output = cmd.output().context("运行 vitest 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let combined = format!("{stdout}{stderr}");
@@ -252,7 +252,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("vitest run (Tier 1: Full JSON parse)");
+                eprintln!("vitest run（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -263,7 +263,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
             data.format(mode)
         }
         ParseResult::Passthrough(raw) => {
-            emit_passthrough_warning("vitest", "All parsing tiers failed");
+            emit_passthrough_warning("vitest", "所有解析层级均失败");
             raw
         }
     };

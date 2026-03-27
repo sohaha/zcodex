@@ -1,33 +1,33 @@
-# Parser Infrastructure
+# 解析器基础设施
 
-## Overview
+## 概览
 
-The parser infrastructure provides a unified, three-tier parsing system for tool outputs with graceful degradation:
+解析器基础设施为工具输出提供统一的三层解析体系，并支持可感知的降级处理：
 
-- **Tier 1 (Full)**: Complete JSON parsing with all structured data
-- **Tier 2 (Degraded)**: Partial parsing with warnings (fallback regex)
-- **Tier 3 (Passthrough)**: Raw output truncation with error markers
+- **第 1 层（Full）**：完整 JSON 解析，保留全部结构化数据
+- **第 2 层（Degraded）**：部分解析并附带警告（回退到正则提取）
+- **第 3 层（Passthrough）**：截断原始输出并标记解析错误
 
-This ensures RTK **never returns false data silently** while maintaining maximum token efficiency.
+这样可以确保 RTK **不会在无提示的情况下返回错误数据**，同时尽量保持 token 效率。
 
-## Architecture
+## 架构
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    ToolCommand Builder                   │
+│                    ToolCommand 构建器                   │
 │  Command::new("vitest").arg("--reporter=json")          │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
 │                   OutputParser<T> Trait                  │
 │  parse() → ParseResult<T>                               │
-│    ├─ Full(T)           - Tier 1: Complete JSON parse   │
-│    ├─ Degraded(T, warn) - Tier 2: Partial with warnings │
-│    └─ Passthrough(str)  - Tier 3: Truncated raw output  │
+│    ├─ Full(T)           - 第 1 层：完整 JSON 解析       │
+│    ├─ Degraded(T, warn) - 第 2 层：部分解析并带警告     │
+│    └─ Passthrough(str)  - 第 3 层：截断原始输出         │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
-│                  Canonical Types                         │
+│                     标准类型                             │
 │  TestResult, LintResult, DependencyState, BuildOutput   │
 └─────────────────────┬───────────────────────────────────┘
                       │
@@ -37,9 +37,9 @@ This ensures RTK **never returns false data silently** while maintaining maximum
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Usage Example
+## 使用示例
 
-### 1. Define Tool-Specific Parser
+### 1. 定义工具专用解析器
 
 ```rust
 use crate::parser::{OutputParser, ParseResult, TestResult};
@@ -50,26 +50,26 @@ impl OutputParser for VitestParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // Tier 1: Try JSON parsing
+        // 第 1 层：尝试 JSON 解析
         match serde_json::from_str::<VitestJsonOutput>(input) {
             Ok(json) => {
                 let result = TestResult {
                     total: json.num_total_tests,
                     passed: json.num_passed_tests,
                     failed: json.num_failed_tests,
-                    // ... map fields
+                    // ... 映射字段
                 };
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // Tier 2: Try regex extraction
+                // 第 2 层：尝试正则提取
                 if let Some(stats) = extract_stats_regex(input) {
                     ParseResult::Degraded(
                         stats,
-                        vec![format!("JSON parse failed: {}", e)]
+                        vec![format!("JSON 解析失败：{}", e)]
                     )
                 } else {
-                    // Tier 3: Passthrough
+                    // 第 3 层：直通原始输出
                     ParseResult::Passthrough(truncate_output(input, 500))
                 }
             }
@@ -78,7 +78,7 @@ impl OutputParser for VitestParser {
 }
 ```
 
-### 2. Use Parser in Command Module
+### 2. 在命令模块中使用解析器
 
 ```rust
 use crate::parser::{OutputParser, TokenFormatter, FormatMode};
@@ -86,109 +86,109 @@ use crate::parser::{OutputParser, TokenFormatter, FormatMode};
 pub fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let mut cmd = Command::new("pnpm");
     cmd.arg("vitest").arg("--reporter=json");
-    // ... add args
+    // ... 添加参数
 
     let output = cmd.output()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Parse output
+    // 解析输出
     let result = VitestParser::parse(&stdout);
 
-    // Format based on verbosity
+    // 按详细级别格式化
     let mode = FormatMode::from_verbosity(verbose);
     let formatted = match result {
         ParseResult::Full(data) => data.format(mode),
         ParseResult::Degraded(data, warnings) => {
             if verbose > 0 {
                 for warn in warnings {
-                    eprintln!("[RTK:DEGRADED] {}", warn);
+                    eprintln!("[RTK:DEGRADED] {warn}");
                 }
             }
             data.format(mode)
         }
         ParseResult::Passthrough(raw) => {
-            eprintln!("[RTK:PASSTHROUGH] Parser failed, showing truncated output");
+            eprintln!("[RTK:PASSTHROUGH] 解析失败，显示截断后的输出");
             raw
         }
     };
 
-    println!("{}", formatted);
+    println!("{formatted}");
     Ok(())
 }
 ```
 
-## Canonical Types
+## 标准类型
 
 ### TestResult
-For test runners (vitest, playwright, jest, etc.)
-- Fields: `total`, `passed`, `failed`, `skipped`, `duration_ms`, `failures`
-- Formatter: Shows summary + failure details (compact: top 5, verbose: all)
+适用于测试运行器（vitest、playwright、jest 等）
+- 字段：`total`、`passed`、`failed`、`skipped`、`duration_ms`、`failures`
+- 格式化：显示摘要和失败详情（compact 显示前 5 条，verbose 显示全部）
 
 ### LintResult
-For linters (eslint, biome, tsc, etc.)
-- Fields: `total_files`, `files_with_issues`, `total_issues`, `errors`, `warnings`, `issues`
-- Formatter: Groups by rule_id, shows top violations
+适用于 linter（eslint、biome、tsc 等）
+- 字段：`total_files`、`files_with_issues`、`total_issues`、`errors`、`warnings`、`issues`
+- 格式化：按 `rule_id` 分组，显示高频违规项
 
 ### DependencyState
-For package managers (pnpm, npm, cargo, etc.)
-- Fields: `total_packages`, `outdated_count`, `dependencies`
-- Formatter: Shows upgrade paths (current → latest)
+适用于包管理器（pnpm、npm、cargo 等）
+- 字段：`total_packages`、`outdated_count`、`dependencies`
+- 格式化：显示升级路径（current → latest）
 
 ### BuildOutput
-For build tools (next, webpack, vite, cargo, etc.)
-- Fields: `success`, `duration_ms`, `bundles`, `routes`, `warnings`, `errors`
-- Formatter: Shows bundle sizes, route metrics
+适用于构建工具（next、webpack、vite、cargo 等）
+- 字段：`success`、`duration_ms`、`bundles`、`routes`、`warnings`、`errors`
+- 格式化：显示 bundle 大小与路由指标
 
-## Format Modes
+## 格式模式
 
-### Compact (default, verbosity=0)
-- Summary only
-- Top 5-10 items
-- Token-optimized
+### Compact（默认，verbosity=0）
+- 仅显示摘要
+- 显示前 5-10 项
+- 面向 token 优化
 
-### Verbose (verbosity=1)
-- Full details
-- All items (up to 20)
-- Human-readable
+### Verbose（verbosity=1）
+- 显示完整细节
+- 显示全部项目（最多 20 项）
+- 更适合人工阅读
 
-### Ultra (verbosity=2+)
-- Symbols: ✓✗⚠📦⬆️
-- Ultra-compressed
-- 30-50% token reduction
+### Ultra（verbosity=2+）
+- 使用符号：✓✗⚠📦⬆️
+- 极致压缩
+- 减少约 30-50% token
 
-## Error Handling
+## 错误处理
 
-### ParseError Types
-- `JsonError`: Line/column context for debugging
-- `PatternMismatch`: Regex pattern failed
-- `PartialParse`: Some fields missing
-- `InvalidFormat`: Unexpected structure
-- `MissingField`: Required field absent
-- `VersionMismatch`: Tool version incompatible
-- `EmptyOutput`: No data to parse
+### ParseError 类型
+- `JsonError`：包含行/列上下文，便于调试
+- `PatternMismatch`：正则模式匹配失败
+- `PartialParse`：部分字段缺失
+- `InvalidFormat`：结构不符合预期
+- `MissingField`：缺少必填字段
+- `VersionMismatch`：工具版本不兼容
+- `EmptyOutput`：没有可解析的数据
 
-### Degradation Warnings
+### 降级警告
 
 ```
-[RTK:DEGRADED] vitest parser: JSON parse failed at line 42, using regex fallback
-[RTK:PASSTHROUGH] playwright parser: Pattern mismatch, showing truncated output
+[RTK:DEGRADED] vitest parser: 第 42 行 JSON 解析失败，已回退到正则提取
+[RTK:PASSTHROUGH] playwright parser: 模式不匹配，显示截断后的输出
 ```
 
-## Migration Guide
+## 迁移指南
 
-### Existing Module → Parser Trait
+### 现有模块 → Parser Trait
 
-**Before:**
+**修改前：**
 ```rust
 fn run_vitest(args: &[String]) -> Result<()> {
     let output = Command::new("vitest").output()?;
     let filtered = filter_vitest_output(&output.stdout);
-    println!("{}", filtered);
+    println!("{filtered}");
     Ok(())
 }
 ```
 
-**After:**
+**修改后：**
 ```rust
 fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let output = Command::new("vitest")
@@ -203,33 +203,33 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
             println!("{}", data.format(mode));
         }
         ParseResult::Passthrough(raw) => {
-            println!("{}", raw);
+            println!("{raw}");
         }
     }
     Ok(())
 }
 ```
 
-## Testing
+## 测试
 
-### Unit Tests
+### 单元测试
 ```bash
 cargo test parser::tests
 ```
 
-### Integration Tests
+### 集成测试
 ```bash
-# Test with real tool outputs
+# 使用真实工具输出进行测试
 echo '{"testResults": [...]}' | cargo run -- vitest parse
 ```
 
-### Tier Validation
+### 层级验证
 ```rust
 #[test]
 fn test_vitest_json_parsing() {
     let json = include_str!("fixtures/vitest-v1.json");
     let result = VitestParser::parse(json);
-    assert_eq!(result.tier(), 1); // Full parse
+    assert_eq!(result.tier(), 1); // 完整解析
     assert!(result.is_ok());
 }
 
@@ -237,23 +237,23 @@ fn test_vitest_json_parsing() {
 fn test_vitest_regex_fallback() {
     let text = "Test Files  2 passed (2)\n Tests  13 passed (13)";
     let result = VitestParser::parse(text);
-    assert_eq!(result.tier(), 2); // Degraded
+    assert_eq!(result.tier(), 2); // 降级解析
     assert!(!result.warnings().is_empty());
 }
 ```
 
-## Benefits
+## 收益
 
-1. **Maintenance**: Tool version changes break gracefully (Tier 2/3 fallback)
-2. **Reliability**: Never silent failures or false data
-3. **Observability**: Clear degradation markers in verbose mode
-4. **Token Efficiency**: Structured data enables better compression
-5. **Consistency**: Unified interface across all tool types
-6. **Testing**: Fixture-based regression tests for multiple versions
+1. **可维护性**：工具版本变化时可平滑降级（第 2/3 层回退）
+2. **可靠性**：不会静默失败，也不会返回错误数据
+3. **可观测性**：在 verbose 模式下可清晰看到降级标记
+4. **Token 效率**：结构化数据更利于压缩
+5. **一致性**：所有工具类型使用统一接口
+6. **可测试性**：基于 fixture 的回归测试可覆盖多个版本
 
-## Roadmap
+## 路线图
 
-### Phase 4: Module Migration
+### 第 4 阶段：模块迁移
 - [ ] vitest_cmd.rs → VitestParser
 - [ ] playwright_cmd.rs → PlaywrightParser
 - [ ] pnpm_cmd.rs → PnpmParser (list, outdated)
@@ -261,7 +261,7 @@ fn test_vitest_regex_fallback() {
 - [ ] tsc_cmd.rs → TscParser
 - [ ] gh_cmd.rs → GhParser
 
-### Phase 5: Observability
-- [ ] Extend tracking.db: `parse_tier`, `format_mode`
-- [ ] `rtk parse-health` command
-- [ ] Alert if degradation > 10%
+### 第 5 阶段：可观测性
+- [ ] 扩展 `tracking.db`：加入 `parse_tier`、`format_mode`
+- [ ] 增加 `rtk parse-health` 命令
+- [ ] 当降级比例 > 10% 时告警

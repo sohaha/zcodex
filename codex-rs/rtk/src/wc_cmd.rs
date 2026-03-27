@@ -20,10 +20,10 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: wc {}", args.join(" "));
+        eprintln!("运行：wc {}", args.join(" "));
     }
 
-    let output = cmd.output().context("Failed to run wc")?;
+    let output = cmd.output().context("运行 wc 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
 
@@ -33,7 +33,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         } else {
             stderr.trim().to_string()
         };
-        eprintln!("FAILED: wc {msg}");
+        eprintln!("失败：wc {msg}");
         std::process::exit(output.status.code().unwrap_or(1));
     }
 

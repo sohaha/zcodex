@@ -81,7 +81,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
     }
 
-    let output = cmd.output().context("Failed to run ls")?;
+    let output = cmd.output().context("运行 ls 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -94,7 +94,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if verbose > 0 {
         eprintln!(
-            "Chars: {} → {} ({}% reduction)",
+            "字符数：{} → {}（减少 {}%）",
             raw.len(),
             filtered.len(),
             if !raw.is_empty() {

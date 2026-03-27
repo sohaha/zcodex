@@ -78,103 +78,103 @@ pub fn is_alias_invocation(argv0: &OsString) -> bool {
 #[command(
     name = "rtk",
     version,
-    about = "Rust Token Killer - Minimize LLM token consumption",
-    long_about = "A high-performance CLI proxy designed to filter and summarize system outputs before they reach your LLM context."
+    about = "Rust Token Killer - 最小化 LLM token 消耗",
+    long_about = "高性能 CLI 代理，在输出进入 LLM 上下文前进行过滤与摘要。"
 )]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Verbosity level (-v, -vv, -vvv)
+    /// 详细级别 (-v, -vv, -vvv)
     #[arg(short, long, action = clap::ArgAction::Count, global = true)]
     verbose: u8,
 
-    /// Ultra-compact mode: ASCII icons, inline format (Level 2 optimizations)
+    /// 超紧凑模式：ASCII 图标、行内格式（Level 2 优化）
     #[arg(short = 'u', long, global = true)]
     ultra_compact: bool,
 
-    /// Set SKIP_ENV_VALIDATION=1 for child processes (Next.js, tsc, lint, prisma)
+    /// 为子进程设置 SKIP_ENV_VALIDATION=1（Next.js、tsc、lint、prisma）
     #[arg(long = "skip-env", global = true)]
     skip_env: bool,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// List directory contents with token-optimized output (proxy to native ls)
+    /// 列出目录内容，输出更省 token（代理原生 ls）
     Ls {
-        /// Arguments passed to ls (supports all native ls flags like -l, -a, -h, -R)
+        /// 传给 ls 的参数（支持原生 ls 的 -l、-a、-h、-R 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Directory tree with token-optimized output (proxy to native tree)
+    /// 目录树，输出更省 token（代理原生 tree）
     Tree {
-        /// Arguments passed to tree (supports all native tree flags like -L, -d, -a)
+        /// 传给 tree 的参数（支持原生 tree 的 -L、-d、-a 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Read file with intelligent filtering
+    /// 读取文件并智能过滤
     Read {
-        /// File to read
+        /// 要读取的文件
         file: PathBuf,
-        /// Filter: none, minimal, aggressive
+        /// 过滤级别：none、minimal、aggressive
         #[arg(short, long, default_value = "minimal")]
         level: filter::FilterLevel,
-        /// Max lines
+        /// 最大行数
         #[arg(short, long, conflicts_with = "tail_lines")]
         max_lines: Option<usize>,
-        /// Keep only last N lines
+        /// 仅保留最后 N 行
         #[arg(long, conflicts_with = "max_lines")]
         tail_lines: Option<usize>,
-        /// Show line numbers
+        /// 显示行号
         #[arg(short = 'n', long)]
         line_numbers: bool,
     },
 
-    /// Generate 2-line technical summary (heuristic-based)
+    /// 生成 2 行技术摘要（基于启发式）
     Smart {
-        /// File to analyze
+        /// 要分析的文件
         file: PathBuf,
-        /// Model: heuristic
+        /// 模型：heuristic
         #[arg(short, long, default_value = "heuristic")]
         model: String,
-        /// Force model download
+        /// 强制下载模型
         #[arg(long)]
         force_download: bool,
     },
 
-    /// Git commands with compact output
+    /// Git 命令，紧凑输出
     Git {
-        /// Change to directory before executing (like git -C <path>, can be repeated)
+        /// 执行前切换目录（等价 git -C <path>，可重复）
         #[arg(short = 'C', action = clap::ArgAction::Append)]
         directory: Vec<String>,
 
-        /// Git configuration override (like git -c key=value, can be repeated)
+        /// Git 配置覆盖（等价 git -c key=value，可重复）
         #[arg(short = 'c', action = clap::ArgAction::Append)]
         config_override: Vec<String>,
 
-        /// Set the path to the .git directory
+        /// 设置 .git 目录路径
         #[arg(long = "git-dir")]
         git_dir: Option<String>,
 
-        /// Set the path to the working tree
+        /// 设置工作区路径
         #[arg(long = "work-tree")]
         work_tree: Option<String>,
 
-        /// Disable pager (like git --no-pager)
+        /// 禁用分页器（等价 git --no-pager）
         #[arg(long = "no-pager")]
         no_pager: bool,
 
-        /// Skip optional locks (like git --no-optional-locks)
+        /// 跳过可选锁（等价 git --no-optional-locks）
         #[arg(long = "no-optional-locks")]
         no_optional_locks: bool,
 
-        /// Treat repository as bare (like git --bare)
+        /// 按裸仓库处理（等价 git --bare）
         #[arg(long)]
         bare: bool,
 
-        /// Treat pathspecs literally (like git --literal-pathspecs)
+        /// 按字面匹配 pathspec（等价 git --literal-pathspecs）
         #[arg(long = "literal-pathspecs")]
         literal_pathspecs: bool,
 
@@ -182,288 +182,288 @@ enum Commands {
         command: GitCommands,
     },
 
-    /// GitHub CLI (gh) commands with token-optimized output
+    /// GitHub CLI (gh) 命令，输出更省 token
     Gh {
-        /// Subcommand: pr, issue, run, repo
+        /// 子命令：pr、issue、run、repo
         subcommand: String,
-        /// Additional arguments
+        /// 附加参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// AWS CLI with compact output (force JSON, compress)
+    /// AWS CLI 紧凑输出（强制 JSON，压缩）
     Aws {
-        /// AWS service subcommand (e.g., sts, s3, ec2, ecs, rds, cloudformation)
+        /// AWS 服务子命令（如 sts、s3、ec2、ecs、rds、cloudformation）
         subcommand: String,
-        /// Additional arguments
+        /// 附加参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// PostgreSQL client with compact output (strip borders, compress tables)
+    /// PostgreSQL 客户端紧凑输出（去边框、压缩表格）
     Psql {
-        /// psql arguments
+        /// psql 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// pnpm commands with ultra-compact output
+    /// pnpm 命令超紧凑输出
     Pnpm {
         #[command(subcommand)]
         command: PnpmCommands,
     },
 
-    /// Run command and show only errors/warnings
+    /// 运行命令，仅显示错误/警告
     Err {
-        /// Command to run
+        /// 要运行的命令
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
 
-    /// Run tests and show only failures
+    /// 运行测试，仅显示失败项
     Test {
-        /// Test command (e.g. cargo test)
+        /// 测试命令（如 cargo test）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
 
-    /// Show JSON structure without values
+    /// 仅显示 JSON 结构，不显示值
     Json {
-        /// JSON file
+        /// JSON 文件
         file: PathBuf,
-        /// Max depth
+        /// 最大深度
         #[arg(short, long, default_value = "5")]
         depth: usize,
     },
 
-    /// Summarize project dependencies
+    /// 汇总项目依赖
     Deps {
-        /// Project path
+        /// 项目路径
         #[arg(default_value = ".")]
         path: PathBuf,
     },
 
-    /// Show environment variables (filtered, sensitive masked)
+    /// 显示环境变量（过滤，敏感信息打码）
     Env {
-        /// Filter by name (e.g. PATH, AWS)
+        /// 按名称过滤（如 PATH、AWS）
         #[arg(short, long)]
         filter: Option<String>,
-        /// Show all (include sensitive)
+        /// 显示全部（含敏感）
         #[arg(long)]
         show_all: bool,
     },
 
-    /// Find files with compact tree output (accepts native find flags like -name, -type)
+    /// 查找文件，紧凑树形输出（支持原生 find 参数如 -name、-type）
     Find {
-        /// All find arguments (supports both RTK and native find syntax)
+        /// 全部 find 参数（支持 RTK 与原生 find 语法）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Ultra-condensed diff (only changed lines)
+    /// 超精简 diff（仅保留变更行）
     Diff {
-        /// First file or - for stdin (unified diff)
+        /// 第一个文件，或用 - 代表 stdin（统一 diff）
         file1: PathBuf,
-        /// Second file (optional if stdin)
+        /// 第二个文件（stdin 模式可省略）
         file2: Option<PathBuf>,
     },
 
-    /// Filter and deduplicate log output
+    /// 过滤并去重日志输出
     Log {
-        /// Log file (omit for stdin)
+        /// 日志文件（省略则读 stdin）
         file: Option<PathBuf>,
     },
 
-    /// Docker commands with compact output
+    /// Docker 命令紧凑输出
     Docker {
         #[command(subcommand)]
         command: DockerCommands,
     },
 
-    /// Kubectl commands with compact output
+    /// kubectl 命令紧凑输出
     Kubectl {
         #[command(subcommand)]
         command: KubectlCommands,
     },
 
-    /// Run command and show heuristic summary
+    /// 运行命令并给出启发式摘要
     Summary {
-        /// Command to run and summarize
+        /// 要运行并摘要的命令
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         command: Vec<String>,
     },
 
-    /// Compact grep - strips whitespace, truncates, groups by file
+    /// 紧凑 grep：去空白、截断、按文件分组
     Grep {
-        /// Pattern to search
+        /// 要搜索的模式
         pattern: String,
-        /// Path to search in
+        /// 搜索路径
         #[arg(default_value = ".")]
         path: String,
-        /// Max line length
+        /// 最大行长度
         #[arg(short = 'l', long, default_value = "80")]
         max_len: usize,
-        /// Max results to show
+        /// 最大结果数
         #[arg(short, long, default_value = "50")]
         max: usize,
-        /// Show only match context (not full line)
+        /// 仅显示匹配片段（不显示整行）
         #[arg(short, long)]
         context_only: bool,
-        /// Filter by file type (e.g., ts, py, rust)
+        /// 按文件类型过滤（如 ts、py、rust）
         #[arg(short = 't', long)]
         file_type: Option<String>,
-        /// Show line numbers (always on, accepted for grep/rg compatibility)
+        /// 显示行号（始终开启，仅为 grep/rg 兼容）
         #[arg(short = 'n', long)]
         line_numbers: bool,
-        /// Extra ripgrep arguments (e.g., -i, -A 3, -w, --glob)
+        /// 额外 ripgrep 参数（如 -i、-A 3、-w、--glob）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         extra_args: Vec<String>,
     },
 
-    /// Download with compact output (strips progress bars)
+    /// 下载并紧凑输出（去进度条）
     Wget {
-        /// URL to download
+        /// 下载 URL
         url: String,
-        /// Output to stdout instead of file
+        /// 输出到 stdout 而非文件
         #[arg(short = 'O', long)]
         stdout: bool,
-        /// Additional wget arguments
+        /// 额外 wget 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Word/line/byte count with compact output (strips paths and padding)
+    /// 紧凑的字/行/字节统计（去路径和对齐）
     Wc {
-        /// Arguments passed to wc (files, flags like -l, -w, -c)
+        /// 传给 wc 的参数（文件、-l、-w、-c 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Vitest commands with compact output
+    /// Vitest 命令紧凑输出
     Vitest {
         #[command(subcommand)]
         command: VitestCommands,
     },
 
-    /// Prisma commands with compact output (no ASCII art)
+    /// Prisma 命令紧凑输出（无 ASCII art）
     Prisma {
         #[command(subcommand)]
         command: PrismaCommands,
     },
 
-    /// TypeScript compiler with grouped error output
+    /// TypeScript 编译器，错误分组输出
     Tsc {
-        /// TypeScript compiler arguments
+        /// TypeScript 编译器参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Next.js build with compact output
+    /// Next.js build 紧凑输出
     Next {
-        /// Next.js build arguments
+        /// Next.js build 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// ESLint with grouped rule violations
+    /// ESLint 规则违规分组输出
     Lint {
-        /// Linter arguments
+        /// Linter 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Prettier format checker with compact output
+    /// Prettier 格式检查紧凑输出
     Prettier {
-        /// Prettier arguments (e.g., --check, --write)
+        /// Prettier 参数（如 --check、--write）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Universal format checker (prettier, black, ruff format)
+    /// 通用格式检查（prettier、black、ruff format）
     Format {
-        /// Formatter arguments (auto-detects formatter from project files)
+        /// 格式化器参数（自动从项目文件检测）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Playwright E2E tests with compact output
+    /// Playwright E2E 测试紧凑输出
     Playwright {
-        /// Playwright arguments
+        /// Playwright 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Cargo commands with compact output
+    /// Cargo 命令紧凑输出
     Cargo {
         #[command(subcommand)]
         command: CargoCommands,
     },
 
-    /// npm run with filtered output (strip boilerplate)
+    /// npm run 过滤输出（去模板信息）
     Npm {
-        /// npm run arguments (script name + options)
+        /// npm run 参数（脚本名 + 选项）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// npx with intelligent routing (tsc, eslint, prisma -> specialized filters)
+    /// npx 智能路由（tsc、eslint、prisma → 专用过滤）
     Npx {
-        /// npx arguments (command + options)
+        /// npx 参数（命令 + 选项）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Curl with auto-JSON detection and schema output
+    /// curl 自动识别 JSON 并输出 schema
     Curl {
-        /// Curl arguments (URL + options)
+        /// curl 参数（URL + 选项）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Ruff linter/formatter with compact output
+    /// Ruff linter/formatter 紧凑输出
     Ruff {
-        /// Ruff arguments (e.g., check, format --check)
+        /// Ruff 参数（如 check、format --check）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Pytest test runner with compact output
+    /// Pytest 测试运行器紧凑输出
     Pytest {
-        /// Pytest arguments
+        /// Pytest 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Mypy type checker with grouped error output
+    /// Mypy 类型检查器，错误分组输出
     Mypy {
-        /// Mypy arguments
+        /// Mypy 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Pip package manager with compact output (auto-detects uv)
+    /// pip 包管理器紧凑输出（自动识别 uv）
     Pip {
-        /// Pip arguments (e.g., list, outdated, install)
+        /// pip 参数（如 list、outdated、install）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// Go commands with compact output
+    /// Go 命令紧凑输出
     Go {
         #[command(subcommand)]
         command: GoCommands,
     },
 
-    /// Graphite (gt) stacked PR commands with compact output
+    /// Graphite (gt) 叠栈 PR 命令紧凑输出
     Gt {
         #[command(subcommand)]
         command: GtCommands,
     },
 
-    /// golangci-lint with compact output
+    /// golangci-lint 紧凑输出
     #[command(name = "golangci-lint")]
     GolangciLint {
-        /// golangci-lint arguments
+        /// golangci-lint 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -471,198 +471,198 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum GitCommands {
-    /// Condensed diff output
+    /// 精简 diff 输出
     Diff {
-        /// Git arguments (supports all git diff flags like --stat, --cached, etc)
+        /// Git 参数（支持 git diff 的 --stat、--cached 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// One-line commit history
+    /// 单行提交历史
     Log {
-        /// Git arguments (supports all git log flags like --oneline, --graph, --all)
+        /// Git 参数（支持 git log 的 --oneline、--graph、--all 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact status (supports all git status flags)
+    /// 紧凑状态（支持 git status 的全部参数）
     Status {
-        /// Git arguments (supports all git status flags like --porcelain, --short, -s)
+        /// Git 参数（支持 git status 的 --porcelain、--short、-s 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact show (commit summary + stat + compacted diff)
+    /// 紧凑 show（提交摘要 + 统计 + 压缩 diff）
     Show {
-        /// Git arguments (supports all git show flags)
+        /// Git 参数（支持 git show 的全部参数）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Add files → "ok"
+    /// 添加文件 → "已完成 / 已暂存 ..."
     Add {
-        /// Files and flags to add (supports all git add flags like -A, -p, --all, etc)
+        /// 要添加的文件与参数（支持 git add 的 -A、-p、--all 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Commit → "ok \<hash\>"
+    /// 提交 → "已提交 <hash>"
     Commit {
-        /// Git commit arguments (supports -a, -m, --amend, --allow-empty, etc)
+        /// Git commit 参数（支持 -a、-m、--amend、--allow-empty 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Push → "ok \<branch\>"
+    /// 推送 → "已推送 <branch>"
     Push {
-        /// Git push arguments (supports -u, remote, branch, etc.)
+        /// Git push 参数（支持 -u、remote、branch 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Pull → "ok \<stats\>"
+    /// 拉取 → "已拉取 <stats>"
     Pull {
-        /// Git pull arguments (supports --rebase, remote, branch, etc.)
+        /// Git pull 参数（支持 --rebase、remote、branch 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact branch listing (current/local/remote)
+    /// 紧凑分支列表（当前/本地/远端）
     Branch {
-        /// Git branch arguments (supports -d, -D, -m, etc.)
+        /// Git branch 参数（支持 -d、-D、-m 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Fetch → "ok fetched (N new refs)"
+    /// fetch → "已拉取（N 个新引用）"
     Fetch {
-        /// Git fetch arguments
+        /// Git fetch 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Stash management (list, show, pop, apply, drop)
+    /// stash 管理（list、show、pop、apply、drop）
     Stash {
-        /// Subcommand: list, show, pop, apply, drop, push
+        /// 子命令：list、show、pop、apply、drop、push
         subcommand: Option<String>,
-        /// Additional arguments
+        /// 附加参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact worktree listing
+    /// 紧凑 worktree 列表
     Worktree {
-        /// Git worktree arguments (add, remove, prune, or empty for list)
+        /// Git worktree 参数（add、remove、prune，或空参列出）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Passthrough: runs any unsupported git subcommand directly
+    /// 透传：直接运行不支持的 git 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
 
 #[derive(Subcommand)]
 enum PnpmCommands {
-    /// List installed packages (ultra-dense)
+    /// 列出已安装包（超密集）
     List {
-        /// Depth level (default: 0)
+        /// 深度（默认：0）
         #[arg(short, long, default_value = "0")]
         depth: usize,
-        /// Additional pnpm arguments
+        /// 额外 pnpm 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Show outdated packages (condensed: "pkg: old → new")
+    /// 显示过期包（精简："pkg: old → new"）
     Outdated {
-        /// Additional pnpm arguments
+        /// 额外 pnpm 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Install packages (filter progress bars)
+    /// 安装包（过滤进度条）
     Install {
-        /// Packages to install
+        /// 要安装的包
         packages: Vec<String>,
-        /// Additional pnpm arguments
+        /// 额外 pnpm 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Build (generic passthrough, no framework-specific filter)
+    /// 构建（通用透传，不做框架特定过滤）
     Build {
-        /// Additional build arguments
+        /// 额外构建参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Typecheck (delegates to tsc filter)
+    /// 类型检查（委托给 tsc 过滤）
     Typecheck {
-        /// Additional typecheck arguments
+        /// 额外类型检查参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Passthrough: runs any unsupported pnpm subcommand directly
+    /// 透传：直接运行不支持的 pnpm 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
 
 #[derive(Subcommand)]
 enum DockerCommands {
-    /// List running containers
+    /// 列出运行中的容器
     Ps,
-    /// List images
+    /// 列出镜像
     Images,
-    /// Show container logs (deduplicated)
+    /// 显示容器日志（去重）
     Logs { container: String },
-    /// Docker Compose commands with compact output
+    /// Docker Compose 命令紧凑输出
     Compose {
         #[command(subcommand)]
         command: ComposeCommands,
     },
-    /// Passthrough: runs any unsupported docker subcommand directly
+    /// 透传：直接运行不支持的 docker 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
 
 #[derive(Subcommand)]
 enum ComposeCommands {
-    /// List compose services (compact)
+    /// 列出 compose 服务（紧凑）
     Ps,
-    /// Show compose logs (deduplicated)
+    /// 显示 compose 日志（去重）
     Logs {
-        /// Optional service name
+        /// 可选服务名
         service: Option<String>,
     },
-    /// Build compose services (summary)
+    /// 构建 compose 服务（摘要）
     Build {
-        /// Optional service name
+        /// 可选服务名
         service: Option<String>,
     },
-    /// Passthrough: runs any unsupported compose subcommand directly
+    /// 透传：直接运行不支持的 compose 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
 
 #[derive(Subcommand)]
 enum KubectlCommands {
-    /// List pods
+    /// 列出 pods
     Pods {
         #[arg(short, long)]
         namespace: Option<String>,
-        /// All namespaces
+        /// 所有命名空间
         #[arg(short = 'A', long)]
         all: bool,
     },
-    /// List services
+    /// 列出 services
     Services {
         #[arg(short, long)]
         namespace: Option<String>,
-        /// All namespaces
+        /// 所有命名空间
         #[arg(short = 'A', long)]
         all: bool,
     },
-    /// Show pod logs (deduplicated)
+    /// 显示 pod 日志（去重）
     Logs {
         pod: String,
         #[arg(short, long)]
         container: Option<String>,
     },
-    /// Passthrough: runs any unsupported kubectl subcommand directly
+    /// 透传：直接运行不支持的 kubectl 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
 
 #[derive(Subcommand)]
 enum VitestCommands {
-    /// Run tests with filtered output (90% token reduction)
+    /// 运行测试并过滤输出（约 90% token 缩减）
     Run {
-        /// Additional vitest arguments
+        /// 额外 vitest 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -670,20 +670,20 @@ enum VitestCommands {
 
 #[derive(Subcommand)]
 enum PrismaCommands {
-    /// Generate Prisma Client (strip ASCII art)
+    /// 生成 Prisma Client（去 ASCII art）
     Generate {
-        /// Additional prisma arguments
+        /// 额外 prisma 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Manage migrations
+    /// 管理迁移
     Migrate {
         #[command(subcommand)]
         command: PrismaMigrateCommands,
     },
-    /// Push schema to database
+    /// 推送 schema 到数据库
     DbPush {
-        /// Additional prisma arguments
+        /// 额外 prisma 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -691,24 +691,24 @@ enum PrismaCommands {
 
 #[derive(Subcommand)]
 enum PrismaMigrateCommands {
-    /// Create and apply migration
+    /// 创建并应用迁移
     Dev {
-        /// Migration name
+        /// 迁移名
         #[arg(short, long)]
         name: Option<String>,
-        /// Additional arguments
+        /// 额外参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Check migration status
+    /// 检查迁移状态
     Status {
-        /// Additional arguments
+        /// 额外参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Deploy migrations to production
+    /// 部署迁移到生产
     Deploy {
-        /// Additional arguments
+        /// 额外参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -716,68 +716,68 @@ enum PrismaMigrateCommands {
 
 #[derive(Subcommand)]
 enum CargoCommands {
-    /// Build with compact output (strip Compiling lines, keep errors)
+    /// build 紧凑输出（去除 Compiling 行，保留错误）
     Build {
-        /// Additional cargo build arguments
+        /// 额外 cargo build 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Test with failures-only output
+    /// test 仅输出失败
     Test {
-        /// Additional cargo test arguments
+        /// 额外 cargo test 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Clippy with warnings grouped by lint rule
+    /// Clippy 按规则分组警告
     Clippy {
-        /// Additional cargo clippy arguments
+        /// 额外 cargo clippy 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Check with compact output (strip Checking lines, keep errors)
+    /// check 紧凑输出（去除 Checking 行，保留错误）
     Check {
-        /// Additional cargo check arguments
+        /// 额外 cargo check 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Install with compact output (strip dep compilation, keep installed/errors)
+    /// install 紧凑输出（去除依赖编译，保留安装/错误）
     Install {
-        /// Additional cargo install arguments
+        /// 额外 cargo install 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Nextest with failures-only output
+    /// nextest 仅输出失败
     Nextest {
-        /// Additional cargo nextest arguments (e.g., run, list, --lib)
+        /// 额外 cargo nextest 参数（如 run、list、--lib）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Passthrough: runs any unsupported cargo subcommand directly
+    /// 透传：直接运行不支持的 cargo 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
 
 #[derive(Subcommand)]
 enum GoCommands {
-    /// Run tests with compact output (90% token reduction via JSON streaming)
+    /// 运行测试并紧凑输出（JSON 流式，约 90% token 缩减）
     Test {
-        /// Additional go test arguments
+        /// 额外 go test 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Build with compact output (errors only)
+    /// 构建紧凑输出（仅错误）
     Build {
-        /// Additional go build arguments
+        /// 额外 go build 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Vet with compact output
+    /// vet 紧凑输出
     Vet {
-        /// Additional go vet arguments
+        /// 额外 go vet 参数
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Passthrough: runs any unsupported go subcommand directly
+    /// 透传：直接运行不支持的 go 子命令
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
@@ -840,37 +840,37 @@ fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
 
 #[derive(Subcommand)]
 enum GtCommands {
-    /// Compact stack log output
+    /// 紧凑 stack log 输出
     Log {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact submit output
+    /// 紧凑 submit 输出
     Submit {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact sync output
+    /// 紧凑 sync 输出
     Sync {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact restack output
+    /// 紧凑 restack 输出
     Restack {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Compact create output
+    /// 紧凑 create 输出
     Create {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Branch info and management
+    /// 分支信息与管理
     Branch {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Passthrough: git-passthrough detection or direct gt execution
+    /// 透传：git 透传检测或直接执行 gt
     #[command(external_subcommand)]
     Other(Vec<OsString>),
 }
@@ -1414,7 +1414,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                                 for arg in &args {
                                     cmd.arg(arg);
                                 }
-                                let status = cmd.status().context("Failed to run npx prisma")?;
+                                let status = cmd.status().context("运行 npx prisma 失败")?;
                                 let args_str = args.join(" ");
                                 timer.track_passthrough(
                                     &format!("npx {args_str}"),
@@ -1430,7 +1430,7 @@ fn run_cli(cli: Cli) -> Result<()> {
                         let status = utils::resolved_command("npx")
                             .arg("prisma")
                             .status()
-                            .context("Failed to run npx prisma")?;
+                            .context("运行 npx prisma 失败")?;
                         timer.track_passthrough("npx prisma", "rtk npx prisma (passthrough)");
                         if !status.success() {
                             std::process::exit(status.code().unwrap_or(1));

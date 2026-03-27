@@ -27,12 +27,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if verbose > 0 {
         let tool = if tsc_exists { "tsc" } else { "npx tsc" };
-        eprintln!("Running: {} {}", tool, args.join(" "));
+        eprintln!("运行：{tool} {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run tsc (try: npm install -g typescript)")?;
+        .context("运行 tsc 失败（可尝试：npm install -g typescript）")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
@@ -112,9 +112,9 @@ fn filter_tsc_output(output: &str) -> String {
 
     if errors.is_empty() {
         if output.contains("Found 0 errors") {
-            return "✓ TypeScript: No errors found".to_string();
+            return "✓ TypeScript：未发现错误".to_string();
         }
-        return "TypeScript compilation completed".to_string();
+        return "TypeScript 编译完成".to_string();
     }
 
     // Group by file
@@ -131,7 +131,7 @@ fn filter_tsc_output(output: &str) -> String {
 
     let mut result = String::new();
     result.push_str(&format!(
-        "TypeScript: {} errors in {} files\n",
+        "TypeScript：{} 个错误，{} 个文件\n",
         errors.len(),
         by_file.len()
     ));
@@ -147,7 +147,7 @@ fn filter_tsc_output(output: &str) -> String {
             .take(5)
             .map(|(code, count)| format!("{code} ({count}x)"))
             .collect();
-        result.push_str(&format!("Top codes: {}\n\n", codes_str.join(", ")));
+        result.push_str(&format!("错误码：{}\n\n", codes_str.join(", ")));
     }
 
     // Files sorted by error count (most errors first)
@@ -156,11 +156,11 @@ fn filter_tsc_output(output: &str) -> String {
 
     // Show every error per file — no limits
     for (file, file_errors) in &files_sorted {
-        result.push_str(&format!("{} ({} errors)\n", file, file_errors.len()));
+        result.push_str(&format!("{}（{} 个错误）\n", file, file_errors.len()));
 
         for err in *file_errors {
             result.push_str(&format!(
-                "  L{}: {} {}\n",
+                "  行{}：{} {}\n",
                 err.line,
                 err.code,
                 truncate(&err.message, /*max_len*/ 120)
@@ -190,9 +190,9 @@ src/components/Button.tsx(10,5): error TS2322: Type 'string' is not assignable t
 Found 4 errors in 2 files.
 "#;
         let result = filter_tsc_output(output);
-        assert!(result.contains("TypeScript: 4 errors in 2 files"));
-        assert!(result.contains("auth.ts (2 errors)"));
-        assert!(result.contains("Button.tsx (2 errors)"));
+        assert!(result.contains("TypeScript：4 个错误，2 个文件"));
+        assert!(result.contains("auth.ts（2 个错误）"));
+        assert!(result.contains("Button.tsx（2 个错误）"));
         assert!(result.contains("TS2322"));
         assert!(!result.contains("Found 4 errors")); // Summary line should be replaced
     }
@@ -209,9 +209,9 @@ src/api.ts(30,5): error TS2322: Type 'null' is not assignable to type 'object'.
         assert!(result.contains("Type 'string' is not assignable to type 'number'"));
         assert!(result.contains("Type 'boolean' is not assignable to type 'string'"));
         assert!(result.contains("Type 'null' is not assignable to type 'object'"));
-        assert!(result.contains("L10:"));
-        assert!(result.contains("L20:"));
-        assert!(result.contains("L30:"));
+        assert!(result.contains("行10："));
+        assert!(result.contains("行20："));
+        assert!(result.contains("行30："));
     }
 
     #[test]
@@ -223,8 +223,8 @@ src/app.tsx(20,5): error TS2345: Argument of type 'number' is not assignable to 
 ";
         let result = filter_tsc_output(output);
         assert!(result.contains("Property 'children' does not exist on type 'Props'"));
-        assert!(result.contains("L10:"));
-        assert!(result.contains("L20:"));
+        assert!(result.contains("行10："));
+        assert!(result.contains("行20："));
     }
 
     #[test]
@@ -237,7 +237,7 @@ src/app.tsx(20,5): error TS2345: Argument of type 'number' is not assignable to 
             ));
         }
         let result = filter_tsc_output(&output);
-        assert!(result.contains("15 errors in 15 files"));
+        assert!(result.contains("15 个错误，15 个文件"));
         for i in 1..=15 {
             assert!(
                 result.contains(&format!("file{i}.ts")),
@@ -250,6 +250,6 @@ src/app.tsx(20,5): error TS2345: Argument of type 'number' is not assignable to 
     fn test_filter_no_errors() {
         let output = "Found 0 errors. Watching for file changes.";
         let result = filter_tsc_output(output);
-        assert!(result.contains("No errors found"));
+        assert!(result.contains("未发现错误"));
     }
 }

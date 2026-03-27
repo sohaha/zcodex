@@ -8,7 +8,7 @@ use crate::filter::Language;
 /// Heuristic-based code summarizer - no external model needed
 pub fn run(file: &Path, _model: &str, _force_download: bool, verbose: u8) -> Result<()> {
     if verbose > 0 {
-        eprintln!("Analyzing: {}", file.display());
+        eprintln!("分析：{}", file.display());
     }
 
     let content = fs::read_to_string(file)
@@ -48,32 +48,36 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
 
     // Build line 1: What it is
     let lang_name = lang_display_name(lang);
-    let main_type = if !structs.is_empty() && !functions.is_empty() {
-        format!("{lang_name} module")
+    let main_type = if matches!(lang, Language::Data) {
+        "数据文件".to_string()
+    } else if matches!(lang, Language::Unknown) {
+        "代码文件".to_string()
+    } else if !structs.is_empty() && !functions.is_empty() {
+        format!("{lang_name} 模块")
     } else if !structs.is_empty() {
-        format!("{lang_name} data structures")
+        format!("{lang_name} 数据结构")
     } else if !functions.is_empty() {
-        format!("{lang_name} functions")
+        format!("{lang_name} 函数")
     } else {
-        format!("{lang_name} code")
+        format!("{lang_name} 代码")
     };
 
     let components: Vec<String> = [
-        (!functions.is_empty()).then(|| format!("{} fn", functions.len())),
-        (!structs.is_empty()).then(|| format!("{} struct", structs.len())),
-        (!traits.is_empty()).then(|| format!("{} trait", traits.len())),
+        (!functions.is_empty()).then(|| format!("{} 个 fn", functions.len())),
+        (!structs.is_empty()).then(|| format!("{} 个 struct", structs.len())),
+        (!traits.is_empty()).then(|| format!("{} 个 trait", traits.len())),
     ]
     .into_iter()
     .flatten()
     .collect();
 
     let line1 = if components.is_empty() {
-        format!("{main_type} ({total_lines} lines)")
+        format!("{main_type}（{total_lines} 行）")
     } else {
         format!(
-            "{} ({}) - {} lines",
+            "{}（{}）- {} 行",
             main_type,
-            components.join(", "),
+            components.join("，"),
             total_lines
         )
     };
@@ -88,12 +92,12 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
             .take(3)
             .map(std::string::String::as_str)
             .collect();
-        details.push(format!("uses: {}", key_imports.join(", ")));
+        details.push(format!("依赖：{}", key_imports.join(", ")));
     }
 
     // Key patterns detected
     if !patterns.is_empty() {
-        details.push(format!("patterns: {}", patterns.join(", ")));
+        details.push(format!("模式：{}", patterns.join(", ")));
     }
 
     // Main functions/structs
@@ -104,12 +108,12 @@ fn analyze_code(content: &str, lang: Language) -> CodeSummary {
             .map(std::string::String::as_str)
             .collect();
         if details.is_empty() {
-            details.push(format!("defines: {}", key_fns.join(", ")));
+            details.push(format!("定义：{}", key_fns.join(", ")));
         }
     }
 
     let line2 = if details.is_empty() {
-        "General purpose code file".to_string()
+        "通用代码文件".to_string()
     } else {
         details.join(" | ")
     };
@@ -129,8 +133,8 @@ fn lang_display_name(lang: Language) -> &'static str {
         Language::Java => "Java",
         Language::Ruby => "Ruby",
         Language::Shell => "Shell",
-        Language::Data => "Data",
-        Language::Unknown => "Code",
+        Language::Data => "数据",
+        Language::Unknown => "代码",
     }
 }
 
@@ -334,8 +338,8 @@ enabled = true
         assert_eq!(
             summary,
             CodeSummary {
-                line1: "Data code (3 lines)".to_string(),
-                line2: "General purpose code file".to_string(),
+                line1: "数据文件（3 行）".to_string(),
+                line2: "通用代码文件".to_string(),
             }
         );
     }

@@ -81,7 +81,7 @@ pub fn execute_command(cmd: &str, args: &[&str]) -> Result<(String, String, i32)
     let output = resolved_command(cmd)
         .args(args)
         .output()
-        .context(format!("Failed to execute {cmd}"))?;
+        .context(format!("执行命令失败：{cmd}"))?;
 
     let stdout = decode_output(&output.stdout).to_string();
     let stderr = decode_output(&output.stderr).to_string();
@@ -226,20 +226,20 @@ pub fn truncate_iso_date(date: &str) -> &str {
     if date.len() >= 10 { &date[..10] } else { date }
 }
 
-/// Format a confirmation message: "ok \<action\> \<detail\>"
-/// Used for write operations (merge, create, comment, edit, etc.)
+/// 格式化确认消息："已\<action\> \<detail\>"
+/// 用于写操作（merge、create、comment、edit 等）
 ///
 /// # Examples
 /// ```
 /// use rtk::utils::ok_confirmation;
-/// assert_eq!(ok_confirmation("merged", "#42"), "ok merged #42");
-/// assert_eq!(ok_confirmation("created", "PR #5 https://..."), "ok created PR #5 https://...");
+/// assert_eq!(ok_confirmation("合并", "#42"), "已合并 #42");
+/// assert_eq!(ok_confirmation("创建", "PR #5 https://..."), "已创建 PR #5 https://...");
 /// ```
 pub fn ok_confirmation(action: &str, detail: &str) -> String {
     if detail.is_empty() {
-        format!("ok {action}")
+        format!("已{action}")
     } else {
-        format!("ok {action} {detail}")
+        format!("已{action} {detail}")
     }
 }
 
@@ -304,7 +304,7 @@ pub fn package_manager_exec(tool: &str) -> Command {
 /// # Returns
 /// Full path to the resolved binary, or error if not found.
 pub fn resolve_binary(name: &str) -> Result<PathBuf> {
-    which::which(name).context(format!("Binary '{name}' not found on PATH"))
+    which::which(name).context(format!("PATH 中未找到二进制 '{name}'"))
 }
 
 /// Create a `Command` with PATHEXT-aware binary resolution.
@@ -326,14 +326,14 @@ pub fn resolved_command(name: &str) -> Command {
     #[cfg(target_os = "windows")]
     if let Err(error) = &resolved {
         eprintln!(
-            "rtk: Failed to resolve '{}' via PATH, falling back to direct exec: {}",
+            "rtk：通过 PATH 解析 '{}' 失败，回退到直接执行：{}",
             name, error
         );
     }
 
     #[cfg(all(not(target_os = "windows"), debug_assertions))]
     if let Err(error) = &resolved {
-        eprintln!("rtk: Failed to resolve '{name}' via PATH, falling back to direct exec: {error}");
+        eprintln!("rtk：通过 PATH 解析 '{name}' 失败，回退到直接执行：{error}");
     }
 
     match resolved {
@@ -483,16 +483,16 @@ mod tests {
 
     #[test]
     fn test_ok_confirmation_with_detail() {
-        assert_eq!(ok_confirmation("merged", "#42"), "ok merged #42");
+        assert_eq!(ok_confirmation("合并", "#42"), "已合并 #42");
         assert_eq!(
-            ok_confirmation("created", "PR #5 https://github.com/foo/bar/pull/5"),
-            "ok created PR #5 https://github.com/foo/bar/pull/5"
+            ok_confirmation("创建", "PR #5 https://github.com/foo/bar/pull/5"),
+            "已创建 PR #5 https://github.com/foo/bar/pull/5"
         );
     }
 
     #[test]
     fn test_ok_confirmation_no_detail() {
-        assert_eq!(ok_confirmation("commented", ""), "ok commented");
+        assert_eq!(ok_confirmation("评论", ""), "已评论");
     }
 
     #[test]

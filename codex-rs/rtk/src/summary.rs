@@ -11,7 +11,7 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Running and summarizing: {command}");
+        eprintln!("运行并摘要：{command}");
     }
 
     let output = if cfg!(target_os = "windows") {
@@ -27,7 +27,7 @@ pub fn run(command: &str, verbose: u8) -> Result<()> {
             .stderr(Stdio::piped())
             .output()
     }
-    .context("Failed to execute command")?;
+    .context("执行命令失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -46,11 +46,11 @@ fn summarize_output(output: &str, command: &str, success: bool) -> String {
     // Status
     let status_icon = if success { "✅" } else { "❌" };
     result.push(format!(
-        "{} Command: {}",
+        "{} 命令：{}",
         status_icon,
         truncate(command, /*max_len*/ 60)
     ));
-    result.push(format!("   {line_count} lines of output"));
+    result.push(format!("   {line_count} 行输出"));
     result.push(String::new());
 
     // Detect type of output and summarize accordingly
@@ -112,7 +112,7 @@ fn detect_output_type(output: &str, command: &str) -> OutputType {
 }
 
 fn summarize_tests(output: &str, result: &mut Vec<String>) {
-    result.push("📋 Test Results:".to_string());
+    result.push("📋 测试结果：".to_string());
 
     let mut passed = 0;
     let mut failed = 0;
@@ -144,17 +144,17 @@ fn summarize_tests(output: &str, result: &mut Vec<String>) {
         }
     }
 
-    result.push(format!("   ✅ {passed} passed"));
+    result.push(format!("   ✅ {passed} 通过"));
     if failed > 0 {
-        result.push(format!("   ❌ {failed} failed"));
+        result.push(format!("   ❌ {failed} 失败"));
     }
     if skipped > 0 {
-        result.push(format!("   ⏭️  {skipped} skipped"));
+        result.push(format!("   ⏭️  {skipped} 跳过"));
     }
 
     if !failures.is_empty() {
         result.push(String::new());
-        result.push("   Failures:".to_string());
+        result.push("   失败项：".to_string());
         for f in failures.iter().take(5) {
             result.push(format!("   • {}", truncate(f, /*max_len*/ 70)));
         }
@@ -162,7 +162,7 @@ fn summarize_tests(output: &str, result: &mut Vec<String>) {
 }
 
 fn summarize_build(output: &str, result: &mut Vec<String>) {
-    result.push("🔨 Build Summary:".to_string());
+    result.push("🔨 构建摘要：".to_string());
 
     let mut errors = 0;
     let mut warnings = 0;
@@ -186,21 +186,21 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
     }
 
     if compiled > 0 {
-        result.push(format!("   📦 {compiled} crates/files compiled"));
+        result.push(format!("   📦 已编译 {compiled} 个 crate/文件"));
     }
     if errors > 0 {
-        result.push(format!("   ❌ {errors} errors"));
+        result.push(format!("   ❌ {errors} 个错误"));
     }
     if warnings > 0 {
-        result.push(format!("   ⚠️  {warnings} warnings"));
+        result.push(format!("   ⚠️  {warnings} 个警告"));
     }
     if errors == 0 && warnings == 0 {
-        result.push("   ✅ Build successful".to_string());
+        result.push("   ✅ 构建成功".to_string());
     }
 
     if !error_msgs.is_empty() {
         result.push(String::new());
-        result.push("   Errors:".to_string());
+        result.push("   错误：".to_string());
         for e in &error_msgs {
             result.push(format!("   • {}", truncate(e, /*max_len*/ 70)));
         }
@@ -208,7 +208,7 @@ fn summarize_build(output: &str, result: &mut Vec<String>) {
 }
 
 fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
-    result.push("📝 Log Summary:".to_string());
+    result.push("📝 日志摘要：".to_string());
 
     let mut errors = 0;
     let mut warnings = 0;
@@ -225,39 +225,39 @@ fn summarize_logs_quick(output: &str, result: &mut Vec<String>) {
         }
     }
 
-    result.push(format!("   ❌ {errors} errors"));
-    result.push(format!("   ⚠️  {warnings} warnings"));
-    result.push(format!("   ℹ️  {info} info"));
+    result.push(format!("   ❌ {errors} 个错误"));
+    result.push(format!("   ⚠️  {warnings} 个警告"));
+    result.push(format!("   ℹ️  {info} 条信息"));
 }
 
 fn summarize_list(output: &str, result: &mut Vec<String>) {
     let lines: Vec<&str> = output.lines().filter(|l| !l.trim().is_empty()).collect();
-    result.push(format!("📋 List ({} items):", lines.len()));
+    result.push(format!("📋 列表（{} 项）：", lines.len()));
 
     for line in lines.iter().take(10) {
         result.push(format!("   • {}", truncate(line, /*max_len*/ 70)));
     }
     if lines.len() > 10 {
-        result.push(format!("   ... +{} more", lines.len() - 10));
+        result.push(format!("   ... +{} 项", lines.len() - 10));
     }
 }
 
 fn summarize_json(output: &str, result: &mut Vec<String>) {
-    result.push("📋 JSON Output:".to_string());
+    result.push("📋 JSON 输出：".to_string());
 
     // Try to parse and show structure
     if let Ok(value) = serde_json::from_str::<serde_json::Value>(output) {
         match &value {
             serde_json::Value::Array(arr) => {
-                result.push(format!("   Array with {} items", arr.len()));
+                result.push(format!("   数组，共 {} 项", arr.len()));
             }
             serde_json::Value::Object(obj) => {
-                result.push(format!("   Object with {} keys:", obj.len()));
+                result.push(format!("   对象，共 {} 个键：", obj.len()));
                 for key in obj.keys().take(10) {
                     result.push(format!("   • {key}"));
                 }
                 if obj.len() > 10 {
-                    result.push(format!("   ... +{} more keys", obj.len() - 10));
+                    result.push(format!("   ... +{} 个键", obj.len() - 10));
                 }
             }
             _ => {
@@ -268,14 +268,14 @@ fn summarize_json(output: &str, result: &mut Vec<String>) {
             }
         }
     } else {
-        result.push("   (Invalid JSON)".to_string());
+        result.push("   （JSON 无效）".to_string());
     }
 }
 
 fn summarize_generic(output: &str, result: &mut Vec<String>) {
     let lines: Vec<&str> = output.lines().collect();
 
-    result.push("📋 Output:".to_string());
+    result.push("📋 输出：".to_string());
 
     // First few lines
     for line in lines.iter().take(5) {

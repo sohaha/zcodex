@@ -24,12 +24,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: mypy {}", args.join(" "));
+        eprintln!("运行：mypy {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run mypy. Is it installed? Try: pip install mypy")?;
+        .context("运行 mypy 失败。请确认已安装：pip install mypy")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -150,9 +150,9 @@ pub fn filter_mypy_output(output: &str) -> String {
     // No errors at all
     if errors.is_empty() && fileless_lines.is_empty() {
         if output.contains("Success: no issues found") || output.contains("no issues found") {
-            return "mypy: No issues found".to_string();
+            return "mypy：未发现问题".to_string();
         }
-        return "mypy: No issues found".to_string();
+        return "mypy：未发现问题".to_string();
     }
 
     // Group by file
@@ -182,7 +182,7 @@ pub fn filter_mypy_output(output: &str) -> String {
 
     if !errors.is_empty() {
         result.push_str(&format!(
-            "mypy: {} errors in {} files\n",
+            "mypy：{} 个错误，{} 个文件\n",
             errors.len(),
             by_file.len()
         ));
@@ -198,7 +198,7 @@ pub fn filter_mypy_output(output: &str) -> String {
                 .take(5)
                 .map(|(code, count)| format!("{code} ({count}x)"))
                 .collect();
-            result.push_str(&format!("Top codes: {}\n\n", codes_str.join(", ")));
+            result.push_str(&format!("错误码：{}\n\n", codes_str.join(", ")));
         }
 
         // Files sorted by error count (most errors first)
@@ -206,18 +206,18 @@ pub fn filter_mypy_output(output: &str) -> String {
         files_sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
         for (file, file_errors) in &files_sorted {
-            result.push_str(&format!("{} ({} errors)\n", file, file_errors.len()));
+            result.push_str(&format!("{}（{} 个错误）\n", file, file_errors.len()));
 
             for err in *file_errors {
                 if err.code.is_empty() {
                     result.push_str(&format!(
-                        "  L{}: {}\n",
+                        "  行{}：{}\n",
                         err.line,
                         truncate(&err.message, /*max_len*/ 120)
                     ));
                 } else {
                     result.push_str(&format!(
-                        "  L{}: [{}] {}\n",
+                        "  行{}：[{}] {}\n",
                         err.line,
                         err.code,
                         truncate(&err.message, /*max_len*/ 120)
@@ -249,7 +249,7 @@ src/models/user.py:20: error: Missing return statement  [return]
 Found 5 errors in 2 files (checked 10 source files)
 ";
         let result = filter_mypy_output(output);
-        assert!(result.contains("mypy: 5 errors in 2 files"));
+        assert!(result.contains("mypy：5 个错误，2 个文件"));
         // user.py has 3 errors, auth.py has 2 -- user.py should come first
         let user_pos = result.find("user.py").unwrap();
         let auth_pos = result.find("auth.py").unwrap();
@@ -257,8 +257,8 @@ Found 5 errors in 2 files (checked 10 source files)
             user_pos < auth_pos,
             "user.py (3 errors) should appear before auth.py (2 errors)"
         );
-        assert!(result.contains("user.py (3 errors)"));
-        assert!(result.contains("auth.py (2 errors)"));
+        assert!(result.contains("user.py（3 个错误）"));
+        assert!(result.contains("auth.py（2 个错误）"));
     }
 
     #[test]
@@ -267,7 +267,7 @@ Found 5 errors in 2 files (checked 10 source files)
 src/api.py:10:5: error: Incompatible return value type  [return-value]
 ";
         let result = filter_mypy_output(output);
-        assert!(result.contains("L10:"));
+        assert!(result.contains("行10："));
         assert!(result.contains("[return-value]"));
         assert!(result.contains("Incompatible return value type"));
     }
@@ -283,7 +283,7 @@ c.py:1: error: Error five  [arg-type]
 Found 5 errors in 3 files
 ";
         let result = filter_mypy_output(output);
-        assert!(result.contains("Top codes:"));
+        assert!(result.contains("错误码："));
         assert!(result.contains("return-value (3x)"));
         assert!(result.contains("name-defined (1x)"));
         assert!(result.contains("arg-type (1x)"));
@@ -299,8 +299,8 @@ Found 3 errors in 2 files
 ";
         let result = filter_mypy_output(output);
         assert!(
-            !result.contains("Top codes:"),
-            "Top codes should not appear with only one distinct code"
+            !result.contains("错误码："),
+            "错误码在只有一种 code 时不应出现"
         );
     }
 
@@ -315,9 +315,9 @@ src/api.py:30: error: Name \"bar\" is not defined  [name-defined]
         assert!(result.contains("Type \"str\" not assignable to \"int\""));
         assert!(result.contains("Missing return statement"));
         assert!(result.contains("Name \"bar\" is not defined"));
-        assert!(result.contains("L10:"));
-        assert!(result.contains("L20:"));
-        assert!(result.contains("L30:"));
+        assert!(result.contains("行10："));
+        assert!(result.contains("行20："));
+        assert!(result.contains("行30："));
     }
 
     #[test]
@@ -332,8 +332,8 @@ src/app.py:20: error: Missing return statement  [return]
         assert!(result.contains("Incompatible types in assignment"));
         assert!(result.contains("Expected type \"int\""));
         assert!(result.contains("Got type \"str\""));
-        assert!(result.contains("L10:"));
-        assert!(result.contains("L20:"));
+        assert!(result.contains("行10："));
+        assert!(result.contains("行20："));
     }
 
     #[test]
@@ -346,7 +346,7 @@ Found 1 error in 1 file
         let result = filter_mypy_output(output);
         // File-less error should appear verbatim before grouped output
         assert!(result.contains("mypy: error: No module named 'nonexistent'"));
-        assert!(result.contains("api.py (1 error"));
+        assert!(result.contains("api.py（1 个错误"));
         let fileless_pos = result.find("No module named").unwrap();
         let grouped_pos = result.find("api.py").unwrap();
         assert!(
@@ -359,7 +359,7 @@ Found 1 error in 1 file
     fn test_filter_mypy_no_errors() {
         let output = "Success: no issues found in 5 source files\n";
         let result = filter_mypy_output(output);
-        assert_eq!(result, "mypy: No issues found");
+        assert_eq!(result, "mypy：未发现问题");
     }
 
     #[test]
@@ -372,7 +372,7 @@ Found 1 error in 1 file
         }
         output.push_str("Found 15 errors in 15 files\n");
         let result = filter_mypy_output(&output);
-        assert!(result.contains("15 errors in 15 files"));
+        assert!(result.contains("15 个错误，15 个文件"));
         for i in 1..=15 {
             assert!(
                 result.contains(&format!("file{i}.py")),

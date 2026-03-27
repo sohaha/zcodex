@@ -338,7 +338,7 @@ pub fn smart_truncate(content: &str, max_lines: usize, _lang: Language) -> Strin
 
     if max_lines == 0 {
         let total_lines = lines.len();
-        return format!("// ... {total_lines} more lines (total: {total_lines})");
+        return format!("// ... 省略 {total_lines} 行（共 {total_lines} 行）");
     }
 
     let mut result = Vec::with_capacity(max_lines);
@@ -368,7 +368,7 @@ pub fn smart_truncate(content: &str, max_lines: usize, _lang: Language) -> Strin
         if is_important || kept_lines < max_lines / 2 {
             if skipped_section {
                 let omitted_lines = lines.len() - kept_lines;
-                result.push(format!("    // ... {omitted_lines} lines omitted"));
+                result.push(format!("    // ... 省略 {omitted_lines} 行"));
                 skipped_section = false;
             }
             result.push((*line).to_string());
@@ -386,7 +386,7 @@ pub fn smart_truncate(content: &str, max_lines: usize, _lang: Language) -> Strin
         let omitted_lines = lines.len() - kept_lines;
         let total_lines = lines.len();
         result.push(format!(
-            "// ... {omitted_lines} more lines (total: {total_lines})"
+            "// ... 省略 {omitted_lines} 行（共 {total_lines} 行）"
         ));
     }
 

@@ -14,7 +14,7 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
     };
 
     if verbose > 0 {
-        eprintln!("Scanning dependencies in: {}", dir.display());
+        eprintln!("正在扫描依赖：{}", dir.display());
     }
 
     let mut found = false;
@@ -25,7 +25,7 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
     if cargo_path.exists() {
         found = true;
         raw.push_str(&fs::read_to_string(&cargo_path).unwrap_or_default());
-        rtk.push_str("📦 Rust (Cargo.toml):\n");
+        rtk.push_str("📦 Rust（Cargo.toml）：\n");
         rtk.push_str(&summarize_cargo_str(&cargo_path)?);
     }
 
@@ -33,7 +33,7 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
     if package_path.exists() {
         found = true;
         raw.push_str(&fs::read_to_string(&package_path).unwrap_or_default());
-        rtk.push_str("📦 Node.js (package.json):\n");
+        rtk.push_str("📦 Node.js（package.json）：\n");
         rtk.push_str(&summarize_package_json_str(&package_path)?);
     }
 
@@ -41,7 +41,7 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
     if requirements_path.exists() {
         found = true;
         raw.push_str(&fs::read_to_string(&requirements_path).unwrap_or_default());
-        rtk.push_str("📦 Python (requirements.txt):\n");
+        rtk.push_str("📦 Python（requirements.txt）：\n");
         rtk.push_str(&summarize_requirements_str(&requirements_path)?);
     }
 
@@ -49,7 +49,7 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
     if pyproject_path.exists() {
         found = true;
         raw.push_str(&fs::read_to_string(&pyproject_path).unwrap_or_default());
-        rtk.push_str("📦 Python (pyproject.toml):\n");
+        rtk.push_str("📦 Python（pyproject.toml）：\n");
         rtk.push_str(&summarize_pyproject_str(&pyproject_path)?);
     }
 
@@ -57,12 +57,12 @@ pub fn run(path: &Path, verbose: u8) -> Result<()> {
     if gomod_path.exists() {
         found = true;
         raw.push_str(&fs::read_to_string(&gomod_path).unwrap_or_default());
-        rtk.push_str("📦 Go (go.mod):\n");
+        rtk.push_str("📦 Go（go.mod）：\n");
         rtk.push_str(&summarize_gomod_str(&gomod_path)?);
     }
 
     if !found {
-        rtk.push_str(&format!("No dependency files found in {}", dir.display()));
+        rtk.push_str(&format!("未在 {} 找到依赖文件", dir.display()));
     }
 
     print!("{rtk}");
@@ -104,21 +104,21 @@ fn summarize_cargo_str(path: &Path) -> Result<String> {
     }
 
     if !deps.is_empty() {
-        out.push_str(&format!("  Dependencies ({}):\n", deps.len()));
+        out.push_str(&format!("  依赖（{}）：\n", deps.len()));
         for d in deps.iter().take(10) {
             out.push_str(&format!("    {d}\n"));
         }
         if deps.len() > 10 {
-            out.push_str(&format!("    ... +{} more\n", deps.len() - 10));
+            out.push_str(&format!("    ... +{} 个\n", deps.len() - 10));
         }
     }
     if !dev_deps.is_empty() {
-        out.push_str(&format!("  Dev ({}):\n", dev_deps.len()));
+        out.push_str(&format!("  开发依赖（{}）：\n", dev_deps.len()));
         for d in dev_deps.iter().take(5) {
             out.push_str(&format!("    {d}\n"));
         }
         if dev_deps.len() > 5 {
-            out.push_str(&format!("    ... +{} more\n", dev_deps.len() - 5));
+            out.push_str(&format!("    ... +{} 个\n", dev_deps.len() - 5));
         }
     }
     Ok(out)
@@ -134,10 +134,10 @@ fn summarize_package_json_str(path: &Path) -> Result<String> {
         out.push_str(&format!("  {name} @ {version}\n"));
     }
     if let Some(deps) = json.get("dependencies").and_then(|v| v.as_object()) {
-        out.push_str(&format!("  Dependencies ({}):\n", deps.len()));
+        out.push_str(&format!("  依赖（{}）：\n", deps.len()));
         for (i, (name, version)) in deps.iter().enumerate() {
             if i >= 10 {
-                out.push_str(&format!("    ... +{} more\n", deps.len() - 10));
+                out.push_str(&format!("    ... +{} 个\n", deps.len() - 10));
                 break;
             }
             out.push_str(&format!(
@@ -148,10 +148,10 @@ fn summarize_package_json_str(path: &Path) -> Result<String> {
         }
     }
     if let Some(dev_deps) = json.get("devDependencies").and_then(|v| v.as_object()) {
-        out.push_str(&format!("  Dev Dependencies ({}):\n", dev_deps.len()));
+        out.push_str(&format!("  开发依赖（{}）：\n", dev_deps.len()));
         for (i, (name, _)) in dev_deps.iter().enumerate() {
             if i >= 5 {
-                out.push_str(&format!("    ... +{} more\n", dev_deps.len() - 5));
+                out.push_str(&format!("    ... +{} 个\n", dev_deps.len() - 5));
                 break;
             }
             out.push_str(&format!("    {name}\n"));
@@ -178,12 +178,12 @@ fn summarize_requirements_str(path: &Path) -> Result<String> {
         }
     }
 
-    out.push_str(&format!("  Packages ({}):\n", deps.len()));
+    out.push_str(&format!("  包（{}）：\n", deps.len()));
     for d in deps.iter().take(15) {
         out.push_str(&format!("    {d}\n"));
     }
     if deps.len() > 15 {
-        out.push_str(&format!("    ... +{} more\n", deps.len() - 15));
+        out.push_str(&format!("    ... +{} 个\n", deps.len() - 15));
     }
     Ok(out)
 }
@@ -213,12 +213,12 @@ fn summarize_pyproject_str(path: &Path) -> Result<String> {
     }
 
     if !deps.is_empty() {
-        out.push_str(&format!("  Dependencies ({}):\n", deps.len()));
+        out.push_str(&format!("  依赖（{}）：\n", deps.len()));
         for d in deps.iter().take(10) {
             out.push_str(&format!("    {d}\n"));
         }
         if deps.len() > 10 {
-            out.push_str(&format!("    ... +{} more\n", deps.len() - 10));
+            out.push_str(&format!("    ... +{} 个\n", deps.len() - 10));
         }
     }
     Ok(out)
@@ -256,12 +256,12 @@ fn summarize_gomod_str(path: &Path) -> Result<String> {
         out.push_str(&format!("  {module_name} (go {go_version})\n"));
     }
     if !deps.is_empty() {
-        out.push_str(&format!("  Dependencies ({}):\n", deps.len()));
+        out.push_str(&format!("  依赖（{}）：\n", deps.len()));
         for d in deps.iter().take(10) {
             out.push_str(&format!("    {d}\n"));
         }
         if deps.len() > 10 {
-            out.push_str(&format!("    ... +{} more\n", deps.len() - 10));
+            out.push_str(&format!("    ... +{} 个\n", deps.len() - 10));
         }
     }
     Ok(out)

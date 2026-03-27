@@ -114,7 +114,7 @@ impl OutputParser for PlaywrightParser {
                 // Tier 2: Try regex extraction
                 match extract_playwright_regex(input) {
                     Some(result) => {
-                        ParseResult::Degraded(result, vec![format!("JSON parse failed: {}", e)])
+                        ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
                         // Tier 3: Passthrough
@@ -150,7 +150,7 @@ fn collect_test_results(
                     })
                     .and_then(|r| r.errors.first())
                     .map(|e| e.message.clone())
-                    .unwrap_or_else(|| "Test failed".to_string());
+                    .unwrap_or_else(|| "测试失败".to_string());
 
                 failures.push(TestFailure {
                     test_name: spec.title.clone(),
@@ -288,12 +288,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: playwright {}", args.join(" "));
+        eprintln!("运行：playwright {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run playwright (try: npm install -g playwright)")?;
+        .context("运行 playwright 失败（可尝试：npm install -g playwright）")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -306,7 +306,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("playwright test (Tier 1: Full JSON parse)");
+                eprintln!("playwright test（Tier 1：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -317,7 +317,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             data.format(mode)
         }
         ParseResult::Passthrough(raw) => {
-            emit_passthrough_warning("playwright", "All parsing tiers failed");
+            emit_passthrough_warning("playwright", "所有解析层级均失败");
             raw
         }
     };

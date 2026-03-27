@@ -8,7 +8,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("wget: {url}");
+        eprintln!("wget：{url}");
     }
 
     // Run wget normally but capture output to parse it
@@ -23,7 +23,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let output = resolved_command("wget")
         .args(&cmd_args)
         .output()
-        .context("Failed to run wget")?;
+        .context("运行 wget 失败")?;
 
     let stderr = crate::utils::decode_output(&output.stderr);
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -34,7 +34,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
         let filename = extract_filename_from_output(&stderr, url, args);
         let size = get_file_size(&filename);
         let msg = format!(
-            "⬇️ {} ok | {} | {}",
+            "⬇️ {} 成功 | {} | {}",
             compact_url(url),
             filename,
             format_size(size)
@@ -43,7 +43,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
         timer.track(&format!("wget {url}"), "rtk wget", &raw_output, &msg);
     } else {
         let error = parse_error(&stderr, &stdout);
-        let msg = format!("⬇️ {} FAILED: {}", compact_url(url), error);
+        let msg = format!("⬇️ {} 失败：{}", compact_url(url), error);
         println!("{msg}");
         timer.track(&format!("wget {url}"), "rtk wget", &raw_output, &msg);
     }
@@ -56,7 +56,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("wget: {url} -> stdout");
+        eprintln!("wget：{url} -> stdout");
     }
 
     let mut cmd_args = vec!["-q", "-O", "-"];
@@ -68,7 +68,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let output = resolved_command("wget")
         .args(&cmd_args)
         .output()
-        .context("Failed to run wget")?;
+        .context("运行 wget 失败")?;
 
     if output.status.success() {
         let content = crate::utils::decode_output(&output.stdout);
@@ -79,18 +79,18 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
         let mut rtk_output = String::new();
         if total > 20 {
             rtk_output.push_str(&format!(
-                "⬇️ {} ok | {} lines | {}\n",
+                "⬇️ {} 成功 | {} 行 | {}\n",
                 compact_url(url),
                 total,
                 format_size(output.stdout.len() as u64)
             ));
-            rtk_output.push_str("--- first 10 lines ---\n");
+            rtk_output.push_str("--- 前 10 行 ---\n");
             for line in lines.iter().take(10) {
                 rtk_output.push_str(&format!("{}\n", truncate_line(line, /*max*/ 100)));
             }
-            rtk_output.push_str(&format!("... +{} more lines", total - 10));
+            rtk_output.push_str(&format!("... +{} 行", total - 10));
         } else {
-            rtk_output.push_str(&format!("⬇️ {} ok | {} lines\n", compact_url(url), total));
+            rtk_output.push_str(&format!("⬇️ {} 成功 | {} 行\n", compact_url(url), total));
             for line in &lines {
                 rtk_output.push_str(&format!("{line}\n"));
             }
@@ -105,7 +105,7 @@ pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     } else {
         let stderr = crate::utils::decode_output(&output.stderr);
         let error = parse_error(&stderr, "");
-        let msg = format!("⬇️ {} FAILED: {}", compact_url(url), error);
+        let msg = format!("⬇️ {} 失败：{}", compact_url(url), error);
         println!("{msg}");
         timer.track(&format!("wget -O - {url}"), "rtk wget -o", &stderr, &msg);
     }
@@ -212,28 +212,28 @@ fn parse_error(stderr: &str, stdout: &str) -> String {
     let combined = format!("{stderr}\n{stdout}");
 
     if combined.contains("404") {
-        return "404 Not Found".to_string();
+        return "404 未找到".to_string();
     }
     if combined.contains("403") {
-        return "403 Forbidden".to_string();
+        return "403 禁止访问".to_string();
     }
     if combined.contains("401") {
-        return "401 Unauthorized".to_string();
+        return "401 未授权".to_string();
     }
     if combined.contains("500") {
-        return "500 Server Error".to_string();
+        return "500 服务器错误".to_string();
     }
     if combined.contains("Connection refused") {
-        return "Connection refused".to_string();
+        return "连接被拒绝".to_string();
     }
     if combined.contains("unable to resolve") || combined.contains("Name or service not known") {
-        return "DNS lookup failed".to_string();
+        return "DNS 解析失败".to_string();
     }
     if combined.contains("timed out") {
-        return "Connection timed out".to_string();
+        return "连接超时".to_string();
     }
     if combined.contains("SSL") || combined.contains("certificate") {
-        return "SSL/TLS error".to_string();
+        return "SSL/TLS 错误".to_string();
     }
 
     // Return first meaningful line
@@ -248,7 +248,7 @@ fn parse_error(stderr: &str, stdout: &str) -> String {
         }
     }
 
-    "Unknown error".to_string()
+    "未知错误".to_string()
 }
 
 fn truncate_line(line: &str, max: usize) -> String {

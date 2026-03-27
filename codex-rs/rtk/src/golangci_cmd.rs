@@ -56,11 +56,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: golangci-lint run --out-format=json");
+        eprintln!("运行：golangci-lint run --out-format=json");
     }
 
     let output = cmd.output().context(
-        "Failed to run golangci-lint. Is it installed? Try: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest",
+        "运行 golangci-lint 失败。请确认已安装：go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest",
     )?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -94,7 +94,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             std::process::exit(code);
         }
         None => {
-            eprintln!("golangci-lint: killed by signal");
+            eprintln!("golangci-lint：被信号终止");
             std::process::exit(130);
         }
     }
@@ -109,7 +109,7 @@ fn filter_golangci_json(output: &str) -> String {
         Err(e) => {
             // Fallback if JSON parsing fails
             return format!(
-                "golangci-lint (JSON parse failed: {})\n{}",
+                "golangci-lint（JSON 解析失败：{}）\n{}",
                 e,
                 truncate(output, /*max_len*/ 500)
             );
@@ -119,7 +119,7 @@ fn filter_golangci_json(output: &str) -> String {
     let issues = golangci_output.issues;
 
     if issues.is_empty() {
-        return "✓ golangci-lint: No issues found".to_string();
+        return "✓ golangci-lint：未发现问题".to_string();
     }
 
     let total_issues = issues.len();
@@ -147,7 +147,7 @@ fn filter_golangci_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "golangci-lint: {total_issues} issues in {total_files} files\n"
+        "golangci-lint：{total_files} 个文件，{total_issues} 个问题\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -156,7 +156,7 @@ fn filter_golangci_json(output: &str) -> String {
     linter_counts.sort_by(|a, b| b.1.cmp(a.1));
 
     if !linter_counts.is_empty() {
-        result.push_str("Top linters:\n");
+        result.push_str("高频 linter：\n");
         for (linter, count) in linter_counts.iter().take(10) {
             result.push_str(&format!("  {linter} ({count}x)\n"));
         }
@@ -164,10 +164,10 @@ fn filter_golangci_json(output: &str) -> String {
     }
 
     // Show top files
-    result.push_str("Top files:\n");
+    result.push_str("高频文件：\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
-        result.push_str(&format!("  {short_path} ({count} issues)\n"));
+        result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
         // Show top 3 linters in this file
         let mut file_linters: HashMap<String, usize> = HashMap::new();
@@ -184,7 +184,7 @@ fn filter_golangci_json(output: &str) -> String {
     }
 
     if file_counts.len() > 10 {
-        result.push_str(&format!("\n... +{} more files\n", file_counts.len() - 10));
+        result.push_str(&format!("\n... +{} 个文件\n", file_counts.len() - 10));
     }
 
     result.trim().to_string()
@@ -216,7 +216,7 @@ mod tests {
         let output = r#"{"Issues":[]}"#;
         let result = filter_golangci_json(output);
         assert!(result.contains("✓ golangci-lint"));
-        assert!(result.contains("No issues found"));
+        assert!(result.contains("未发现问题"));
     }
 
     #[test]
@@ -242,8 +242,8 @@ mod tests {
 }"#;
 
         let result = filter_golangci_json(output);
-        assert!(result.contains("3 issues"));
-        assert!(result.contains("2 files"));
+        assert!(result.contains("3 个问题"));
+        assert!(result.contains("2 个文件"));
         assert!(result.contains("errcheck"));
         assert!(result.contains("gosimple"));
         assert!(result.contains("main.go"));

@@ -15,10 +15,10 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: curl -s {}", args.join(" "));
+        eprintln!("运行：curl -s {}", args.join(" "));
     }
 
-    let output = cmd.output().context("Failed to run curl")?;
+    let output = cmd.output().context("运行 curl 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
 
@@ -28,7 +28,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         } else {
             stderr.trim().to_string()
         };
-        eprintln!("FAILED: curl {msg}");
+        eprintln!("失败：curl {msg}");
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
@@ -68,7 +68,7 @@ fn filter_curl_output(output: &str) -> String {
         let mut result: Vec<&str> = lines[..30].to_vec();
         result.push("");
         let msg = format!(
-            "... ({} more lines, {} bytes total)",
+            "...（剩余 {} 行，共 {} 字节）",
             lines.len() - 30,
             trimmed.len()
         );
@@ -129,6 +129,6 @@ mod tests {
         let result = filter_curl_output(&output);
         assert!(result.contains("Line 0"));
         assert!(result.contains("Line 29"));
-        assert!(result.contains("more lines"));
+        assert!(result.contains("剩余"));
     }
 }

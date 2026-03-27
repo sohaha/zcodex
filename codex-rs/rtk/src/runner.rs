@@ -12,10 +12,10 @@ pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
     let command_display = command.join(" ");
 
     if verbose > 0 {
-        eprintln!("Running: {command_display}");
+        eprintln!("运行：{command_display}");
     }
 
-    let output = execute_command(command).context("Failed to execute command")?;
+    let output = execute_command(command).context("执行命令失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -25,10 +25,10 @@ pub fn run_err(command: &[String], verbose: u8) -> Result<()> {
 
     if filtered.is_empty() {
         if output.status.success() {
-            rtk.push_str("✅ Command completed successfully (no errors)");
+            rtk.push_str("✅ 命令执行成功（无错误）");
         } else {
             rtk.push_str(&format!(
-                "❌ Command failed (exit code: {:?})\n",
+                "❌ 命令执行失败（退出码：{:?}）\n",
                 output.status.code()
             ));
             let lines: Vec<&str> = raw.lines().collect();
@@ -62,10 +62,10 @@ pub fn run_test(command: &[String], verbose: u8) -> Result<()> {
     let command_display = command.join(" ");
 
     if verbose > 0 {
-        eprintln!("Running tests: {command_display}");
+        eprintln!("运行测试：{command_display}");
     }
 
-    let output = execute_command(command).context("Failed to execute test command")?;
+    let output = execute_command(command).context("执行测试命令失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -89,14 +89,14 @@ pub fn run_test(command: &[String], verbose: u8) -> Result<()> {
 }
 
 fn execute_command(command: &[String]) -> Result<Output> {
-    let (program, args) = command.split_first().context("No command provided")?;
+    let (program, args) = command.split_first().context("未提供命令")?;
 
     Command::new(program)
         .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .with_context(|| format!("Failed to spawn command: {program}"))
+        .with_context(|| format!("启动命令失败：{program}"))
 }
 
 fn filter_errors(output: &str) -> String {
@@ -216,24 +216,24 @@ fn extract_test_summary(output: &str, command: &str) -> String {
     let mut output = String::new();
 
     if !failures.is_empty() {
-        output.push_str("❌ FAILURES:\n");
+        output.push_str("❌ 失败：\n");
         for f in failures.iter().take(10) {
             output.push_str(&format!("  {f}\n"));
         }
         if failures.len() > 10 {
-            output.push_str(&format!("  ... +{} more failures\n", failures.len() - 10));
+            output.push_str(&format!("  ... +{} 个失败\n", failures.len() - 10));
         }
         output.push('\n');
     }
 
     if !result.is_empty() {
-        output.push_str("📊 SUMMARY:\n");
+        output.push_str("📊 摘要：\n");
         for r in &result {
             output.push_str(&format!("  {r}\n"));
         }
     } else {
         // Fallback: show last few lines
-        output.push_str("📊 OUTPUT (last 5 lines):\n");
+        output.push_str("📊 输出（最后 5 行）：\n");
         let start = lines.len().saturating_sub(5);
         for line in &lines[start..] {
             if !line.trim().is_empty() {

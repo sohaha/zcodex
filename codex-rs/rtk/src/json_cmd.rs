@@ -42,7 +42,7 @@ pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Analyzing JSON: {}", file.display());
+        eprintln!("分析 JSON：{}", file.display());
     }
 
     let content = fs::read_to_string(file)
@@ -64,7 +64,7 @@ pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Analyzing JSON from stdin");
+        eprintln!("分析 stdin 的 JSON");
     }
 
     let mut content = String::new();

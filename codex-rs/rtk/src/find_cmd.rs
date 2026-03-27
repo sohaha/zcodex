@@ -127,11 +127,11 @@ fn parse_native_find_args(args: &[String]) -> Result<FindArgs> {
             }
             "-maxdepth" => {
                 if let Some(val) = next_arg(args, &mut i) {
-                    parsed.max_depth = Some(val.parse().context("invalid -maxdepth value")?);
+                    parsed.max_depth = Some(val.parse().context("无效的 -maxdepth 值")?);
                 }
             }
             flag if flag.starts_with('-') => {
-                eprintln!("rtk find: unknown flag '{flag}', ignored");
+                eprintln!("rtk find：未知参数 '{flag}'，已忽略");
             }
             _ => {}
         }
@@ -159,7 +159,7 @@ fn parse_rtk_find_args(args: &[String]) -> Result<FindArgs> {
         match args[i].as_str() {
             "-m" | "--max" => {
                 if let Some(val) = next_arg(args, &mut i) {
-                    parsed.max_results = val.parse().context("invalid --max value")?;
+                    parsed.max_results = val.parse().context("无效的 --max 值")?;
                 }
             }
             "-t" | "--file-type" => {
@@ -204,7 +204,7 @@ pub fn run(
     let effective_pattern = if pattern == "." { "*" } else { pattern };
 
     if verbose > 0 {
-        eprintln!("find: {effective_pattern} in {path}");
+        eprintln!("find：在 {path} 中搜索 {effective_pattern}");
     }
 
     let want_dirs = file_type == "d";
@@ -306,7 +306,7 @@ pub fn run(
     let dirs_count = dirs.len();
     let total_files = files.len();
 
-    println!("📁 {total_files}F {dirs_count}D:");
+    println!("📁 {total_files} 个文件 {dirs_count} 个目录：");
     println!();
 
     // Display with proper --max limiting (count individual files)
@@ -341,7 +341,7 @@ pub fn run(
     }
 
     if shown < total_files {
-        println!("+{} more", total_files - shown);
+        println!("+{} 个", total_files - shown);
     }
 
     // Extension summary
@@ -350,7 +350,7 @@ pub fn run(
         let ext = Path::new(file)
             .extension()
             .map(|e| e.to_string_lossy().to_string())
-            .unwrap_or_else(|| "none".to_string());
+            .unwrap_or_else(|| "无".to_string());
         *by_ext.entry(ext).or_default() += 1;
     }
 
@@ -364,11 +364,11 @@ pub fn run(
             .take(5)
             .map(|(e, c)| format!(".{e}({c})"))
             .collect();
-        ext_line = format!("ext: {}", ext_str.join(" "));
+        ext_line = format!("扩展名：{}", ext_str.join(" "));
         println!("{ext_line}");
     }
 
-    let rtk_output = format!("{total_files}F {dirs_count}D + {ext_line}");
+    let rtk_output = format!("{total_files} 个文件 {dirs_count} 个目录 + {ext_line}");
     timer.track(
         &format!("find {path} -name '{effective_pattern}'"),
         "rtk find",

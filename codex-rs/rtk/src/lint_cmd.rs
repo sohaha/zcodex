@@ -164,20 +164,20 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: {linter} with structured output");
+        eprintln!("运行：{linter}（结构化输出）");
     }
 
     let output = cmd.output().context(format!(
-        "Failed to run {linter}. Is it installed? Try: pip install {linter} (or npm/pnpm for JS linters)"
+        "运行 {linter} 失败。请确认已安装：pip install {linter}（JS linter 用 npm/pnpm）"
     ))?;
 
     // Check if process was killed by signal (SIGABRT, SIGKILL, etc.)
     if !output.status.success() && output.status.code().is_none() {
         let stderr = crate::utils::decode_output(&output.stderr);
-        eprintln!("⚠️  Linter process terminated abnormally (possibly out of memory)");
+        eprintln!("⚠️  Linter 进程异常退出（可能是内存不足）");
         if !stderr.is_empty() {
             eprintln!(
-                "stderr: {}",
+                "stderr：{}",
                 stderr.lines().take(5).collect::<Vec<_>>().join("\n")
             );
         }
@@ -196,7 +196,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
             if !stdout.trim().is_empty() {
                 ruff_cmd::filter_ruff_check_json(&stdout)
             } else {
-                "✓ Ruff: No issues found".to_string()
+                "✓ Ruff：未发现问题".to_string()
             }
         }
         "pylint" => filter_pylint_json(&stdout),
@@ -237,7 +237,7 @@ fn filter_eslint_json(output: &str) -> String {
         Err(e) => {
             // Fallback if JSON parsing fails
             return format!(
-                "ESLint output (JSON parse failed: {})\n{}",
+                "ESLint 输出（JSON 解析失败：{}）\n{}",
                 e,
                 truncate(output, /*max_len*/ 500)
             );
@@ -250,7 +250,7 @@ fn filter_eslint_json(output: &str) -> String {
     let total_files = results.iter().filter(|r| !r.messages.is_empty()).count();
 
     if total_errors == 0 && total_warnings == 0 {
-        return "✓ ESLint: No issues found".to_string();
+        return "✓ ESLint：未发现问题".to_string();
     }
 
     // Group messages by rule
@@ -274,7 +274,7 @@ fn filter_eslint_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "ESLint: {total_errors} errors, {total_warnings} warnings in {total_files} files\n"
+        "ESLint：{total_files} 个文件，{total_errors} 个错误，{total_warnings} 个警告\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
@@ -283,7 +283,7 @@ fn filter_eslint_json(output: &str) -> String {
     rule_counts.sort_by(|a, b| b.1.cmp(a.1));
 
     if !rule_counts.is_empty() {
-        result.push_str("Top rules:\n");
+        result.push_str("高频规则：\n");
         for (rule, count) in rule_counts.iter().take(10) {
             result.push_str(&format!("  {rule} ({count}x)\n"));
         }
@@ -291,10 +291,10 @@ fn filter_eslint_json(output: &str) -> String {
     }
 
     // Show top files with most issues
-    result.push_str("Top files:\n");
+    result.push_str("高频文件：\n");
     for (file_result, count) in by_file.iter().take(10) {
         let short_path = compact_path(&file_result.file_path);
-        result.push_str(&format!("  {short_path} ({count} issues)\n"));
+        result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
         // Show top 3 rules in this file
         let mut file_rules: HashMap<String, usize> = HashMap::new();
@@ -313,7 +313,7 @@ fn filter_eslint_json(output: &str) -> String {
     }
 
     if by_file.len() > 10 {
-        result.push_str(&format!("\n... +{} more files\n", by_file.len() - 10));
+        result.push_str(&format!("\n... +{} 个文件\n", by_file.len() - 10));
     }
 
     result.trim().to_string()
@@ -328,7 +328,7 @@ fn filter_pylint_json(output: &str) -> String {
         Err(e) => {
             // Fallback if JSON parsing fails
             return format!(
-                "Pylint output (JSON parse failed: {})\n{}",
+                "Pylint 输出（JSON 解析失败：{}）\n{}",
                 e,
                 truncate(output, /*max_len*/ 500)
             );
@@ -336,7 +336,7 @@ fn filter_pylint_json(output: &str) -> String {
     };
 
     if diagnostics.is_empty() {
-        return "✓ Pylint: No issues found".to_string();
+        return "✓ Pylint：未发现问题".to_string();
     }
 
     // Count by type
@@ -378,17 +378,14 @@ fn filter_pylint_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "Pylint: {} issues in {} files\n",
-        diagnostics.len(),
-        total_files
+        "Pylint：{total_files} 个文件，{} 个问题\n",
+        diagnostics.len()
     ));
 
     if errors > 0 || warnings > 0 {
-        result.push_str(&format!("  {errors} errors, {warnings} warnings"));
+        result.push_str(&format!("  {errors} 个错误，{warnings} 个警告"));
         if conventions > 0 || refactors > 0 {
-            result.push_str(&format!(
-                ", {conventions} conventions, {refactors} refactors"
-            ));
+            result.push_str(&format!("，{conventions} 个规范，{refactors} 个重构"));
         }
         result.push('\n');
     }
@@ -400,7 +397,7 @@ fn filter_pylint_json(output: &str) -> String {
     symbol_counts.sort_by(|a, b| b.1.cmp(a.1));
 
     if !symbol_counts.is_empty() {
-        result.push_str("Top rules:\n");
+        result.push_str("高频规则：\n");
         for (symbol, count) in symbol_counts.iter().take(10) {
             result.push_str(&format!("  {symbol} ({count}x)\n"));
         }
@@ -408,10 +405,10 @@ fn filter_pylint_json(output: &str) -> String {
     }
 
     // Show top files
-    result.push_str("Top files:\n");
+    result.push_str("高频文件：\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
-        result.push_str(&format!("  {short_path} ({count} issues)\n"));
+        result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
         // Show top 3 rules in this file
         let mut file_symbols: HashMap<String, usize> = HashMap::new();
@@ -429,7 +426,7 @@ fn filter_pylint_json(output: &str) -> String {
     }
 
     if file_counts.len() > 10 {
-        result.push_str(&format!("\n... +{} more files\n", file_counts.len() - 10));
+        result.push_str(&format!("\n... +{} 个文件\n", file_counts.len() - 10));
     }
 
     result.trim().to_string()
@@ -454,11 +451,11 @@ fn filter_generic_lint(output: &str) -> String {
     }
 
     if errors == 0 && warnings == 0 {
-        return "✓ Lint: No issues found".to_string();
+        return "✓ Lint：未发现问题".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Lint: {errors} errors, {warnings} warnings\n"));
+    result.push_str(&format!("Lint：{errors} 个错误，{warnings} 个警告\n"));
     result.push_str("═══════════════════════════════════════\n");
 
     for issue in issues.iter().take(20) {
@@ -466,7 +463,7 @@ fn filter_generic_lint(output: &str) -> String {
     }
 
     if issues.len() > 20 {
-        result.push_str(&format!("\n... +{} more issues\n", issues.len() - 20));
+        result.push_str(&format!("\n... +{} 个问题\n", issues.len() - 20));
     }
 
     result.trim().to_string()
@@ -533,7 +530,7 @@ mod tests {
         ]"#;
 
         let result = filter_eslint_json(json);
-        assert!(result.contains("ESLint:"));
+        assert!(result.contains("ESLint："));
         assert!(result.contains("prefer-const"));
         assert!(result.contains("no-unused-vars"));
         assert!(result.contains("src/utils.ts"));
@@ -557,7 +554,7 @@ mod tests {
         let output = "[]";
         let result = filter_pylint_json(output);
         assert!(result.contains("✓ Pylint"));
-        assert!(result.contains("No issues found"));
+        assert!(result.contains("未发现问题"));
     }
 
     #[test]
@@ -599,9 +596,9 @@ mod tests {
         ]"#;
 
         let result = filter_pylint_json(json);
-        assert!(result.contains("3 issues"));
-        assert!(result.contains("2 files"));
-        assert!(result.contains("1 errors, 2 warnings"));
+        assert!(result.contains("3 个问题"));
+        assert!(result.contains("2 个文件"));
+        assert!(result.contains("1 个错误，2 个警告"));
         assert!(result.contains("unused-variable (W0612)"));
         assert!(result.contains("undefined-variable (E0602)"));
         assert!(result.contains("main.py"));

@@ -24,7 +24,7 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Analyzing log: {}", file.display());
+        eprintln!("分析日志：{}", file.display());
     }
 
     let content = fs::read_to_string(file)?;
@@ -106,23 +106,23 @@ fn analyze_logs(content: &str) -> String {
     let total_warnings: usize = warn_counts.values().sum();
     let total_info: usize = info_counts.values().sum();
 
-    result.push("📊 Log Summary".to_string());
+    result.push("📊 日志摘要".to_string());
     result.push(format!(
-        "   ❌ {} errors ({} unique)",
+        "   ❌ {} 个错误（{} 个唯一）",
         total_errors,
         error_counts.len()
     ));
     result.push(format!(
-        "   ⚠️  {} warnings ({} unique)",
+        "   ⚠️  {} 个警告（{} 个唯一）",
         total_warnings,
         warn_counts.len()
     ));
-    result.push(format!("   ℹ️  {total_info} info messages"));
+    result.push(format!("   ℹ️  {total_info} 条信息"));
     result.push(String::new());
 
     // Errors with counts
     if !unique_errors.is_empty() {
-        result.push("❌ ERRORS:".to_string());
+        result.push("❌ 错误：".to_string());
 
         // Sort by count
         let mut error_list: Vec<_> = error_counts.iter().collect();
@@ -154,17 +154,14 @@ fn analyze_logs(content: &str) -> String {
         }
 
         if error_list.len() > 10 {
-            result.push(format!(
-                "   ... +{} more unique errors",
-                error_list.len() - 10
-            ));
+            result.push(format!("   ... +{} 条唯一错误", error_list.len() - 10));
         }
         result.push(String::new());
     }
 
     // Warnings with counts
     if !unique_warnings.is_empty() {
-        result.push("⚠️  WARNINGS:".to_string());
+        result.push("⚠️  警告：".to_string());
 
         let mut warn_list: Vec<_> = warn_counts.iter().collect();
         warn_list.sort_by(|a, b| b.1.cmp(a.1));
@@ -194,10 +191,7 @@ fn analyze_logs(content: &str) -> String {
         }
 
         if warn_list.len() > 5 {
-            result.push(format!(
-                "   ... +{} more unique warnings",
-                warn_list.len() - 5
-            ));
+            result.push(format!("   ... +{} 条唯一警告", warn_list.len() - 5));
         }
     }
 
@@ -235,7 +229,7 @@ mod tests {
 "#;
         let result = analyze_logs(logs);
         assert!(result.contains("×3"));
-        assert!(result.contains("ERRORS"));
+        assert!(result.contains("错误"));
     }
 
     #[test]
@@ -248,6 +242,6 @@ mod tests {
         );
         let result = analyze_logs(&logs);
         // Should not panic even with very long multi-byte messages
-        assert!(result.contains("ERRORS"));
+        assert!(result.contains("错误"));
     }
 }

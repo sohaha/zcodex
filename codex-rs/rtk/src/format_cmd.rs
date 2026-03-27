@@ -66,8 +66,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     };
 
     if verbose > 0 {
-        eprintln!("Detected formatter: {formatter}");
-        eprintln!("Arguments: {}", args[start_idx..].join(" "));
+        eprintln!("检测到格式化器：{formatter}");
+        eprintln!("参数：{}", args[start_idx..].join(" "));
     }
 
     // Build command based on formatter
@@ -108,11 +108,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: {} {}", formatter, user_args.join(" "));
+        eprintln!("运行：{} {}", formatter, user_args.join(" "));
     }
 
     let output = cmd.output().context(format!(
-        "Failed to run {formatter}. Is it installed? Try: pip install {formatter} (or npm/pnpm for JS formatters)"
+        "运行 {formatter} 失败。请确认已安装：pip install {formatter}（JS 格式化器用 npm/pnpm）"
     ))?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -230,9 +230,9 @@ fn filter_black_output(output: &str) -> String {
 
     if !needs_formatting && (all_done || files_unchanged > 0) {
         // All files formatted correctly
-        result.push_str("✓ Format (black): All files formatted");
+        result.push_str("✓ 格式（black）：所有文件格式正确");
         if files_unchanged > 0 {
-            result.push_str(&format!(" ({files_unchanged} files checked)"));
+            result.push_str(&format!("（检查了 {files_unchanged} 个文件）"));
         }
     } else if needs_formatting {
         // Files need formatting
@@ -242,7 +242,7 @@ fn filter_black_output(output: &str) -> String {
             files_would_reformat
         };
 
-        result.push_str(&format!("Format (black): {count} files need formatting\n"));
+        result.push_str(&format!("格式（black）：{count} 个文件需要格式化\n"));
         result.push_str("═══════════════════════════════════════\n");
 
         if !files_to_format.is_empty() {
@@ -251,18 +251,15 @@ fn filter_black_output(output: &str) -> String {
             }
 
             if files_to_format.len() > 10 {
-                result.push_str(&format!(
-                    "\n... +{} more files\n",
-                    files_to_format.len() - 10
-                ));
+                result.push_str(&format!("\n... +{} 个文件\n", files_to_format.len() - 10));
             }
         }
 
         if files_unchanged > 0 {
-            result.push_str(&format!("\n✓ {files_unchanged} files already formatted\n"));
+            result.push_str(&format!("\n✓ {files_unchanged} 个文件已格式化\n"));
         }
 
-        result.push_str("\n💡 Run `black .` to format these files\n");
+        result.push_str("\n💡 运行 `black .` 格式化这些文件\n");
     } else {
         // Fallback: show raw output
         result.push_str(output.trim());
@@ -347,9 +344,9 @@ mod tests {
     fn test_filter_black_all_formatted() {
         let output = "All done! ✨ 🍰 ✨\n5 files left unchanged.";
         let result = filter_black_output(output);
-        assert!(result.contains("✓ Format (black)"));
-        assert!(result.contains("All files formatted"));
-        assert!(result.contains("5 files checked"));
+        assert!(result.contains("✓ 格式（black）"));
+        assert!(result.contains("所有文件格式正确"));
+        assert!(result.contains("检查了 5 个文件"));
     }
 
     #[test]
@@ -360,11 +357,11 @@ Oh no! 💥 💔 💥
 2 files would be reformatted, 3 files would be left unchanged."#;
 
         let result = filter_black_output(output);
-        assert!(result.contains("2 files need formatting"));
+        assert!(result.contains("2 个文件需要格式化"));
         assert!(result.contains("main.py"));
         assert!(result.contains("test_utils.py"));
-        assert!(result.contains("3 files already formatted"));
-        assert!(result.contains("Run `black .`"));
+        assert!(result.contains("3 个文件已格式化"));
+        assert!(result.contains("运行 `black .`"));
     }
 
     #[test]

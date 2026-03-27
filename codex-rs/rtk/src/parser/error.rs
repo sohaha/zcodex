@@ -3,32 +3,32 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ParseError {
-    #[error("JSON parse failed at line {line}, column {col}: {msg}")]
+    #[error("JSON 解析失败（行 {line}，列 {col}）：{msg}")]
     JsonError {
         line: usize,
         col: usize,
         msg: String,
     },
 
-    #[error("Pattern mismatch: expected {expected}")]
+    #[error("模式不匹配：期望 {expected}")]
     PatternMismatch { expected: &'static str },
 
-    #[error("Partial parse: got {found}, missing fields: {missing:?}")]
+    #[error("解析不完整：已得到 {found}，缺失字段：{missing:?}")]
     PartialParse {
         found: String,
         missing: Vec<&'static str>,
     },
 
-    #[error("Invalid format: {0}")]
+    #[error("无效格式：{0}")]
     InvalidFormat(String),
 
-    #[error("Missing required field: {0}")]
+    #[error("缺少必填字段：{0}")]
     MissingField(&'static str),
 
-    #[error("Version mismatch: got {got}, expected {expected}")]
+    #[error("版本不匹配：得到 {got}，期望 {expected}")]
     VersionMismatch { got: String, expected: String },
 
-    #[error("Empty output")]
+    #[error("输出为空")]
     EmptyOutput,
 
     #[error(transparent)]

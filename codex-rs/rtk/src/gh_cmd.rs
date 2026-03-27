@@ -197,8 +197,8 @@ fn run_pr(args: &[String], verbose: u8, ultra_compact: bool) -> Result<()> {
         "create" => pr_create(&args[1..], verbose),
         "merge" => pr_merge(&args[1..], verbose),
         "diff" => pr_diff(&args[1..], verbose),
-        "comment" => pr_action("commented", args, verbose),
-        "edit" => pr_action("edited", args, verbose),
+        "comment" => pr_action("评论", args, verbose),
+        "edit" => pr_action("编辑", args, verbose),
         _ => run_passthrough("gh", "pr", args),
     }
 }
@@ -219,7 +219,7 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh pr list")?;
+    let output = cmd.output().context("运行 gh pr list 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -229,25 +229,24 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh pr list output")?;
+    let json: Value = serde_json::from_slice(&output.stdout).context("解析 gh pr list 输出失败")?;
 
     let mut filtered = String::new();
 
     if let Some(prs) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("PRs\n");
-            println!("PRs");
+            filtered.push_str("PR\n");
+            println!("PR");
         } else {
-            filtered.push_str("📋 Pull Requests\n");
-            println!("📋 Pull Requests");
+            filtered.push_str("📋 PR 列表\n");
+            println!("📋 PR 列表");
         }
 
         for pr in prs.iter().take(20) {
             let number = pr["number"].as_i64().unwrap_or(0);
-            let title = pr["title"].as_str().unwrap_or("???");
-            let state = pr["state"].as_str().unwrap_or("???");
-            let author = pr["author"]["login"].as_str().unwrap_or("???");
+            let title = pr["title"].as_str().unwrap_or("未知");
+            let state = pr["state"].as_str().unwrap_or("未知");
+            let author = pr["author"]["login"].as_str().unwrap_or("未知");
 
             let state_icon = if ultra_compact {
                 match state {
@@ -277,7 +276,7 @@ fn list_prs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         }
 
         if prs.len() > 20 {
-            let more_line = format!("  ... {} more (use gh pr list for all)\n", prs.len() - 20);
+            let more_line = format!("  ... {} 个（用 gh pr list 查看全部）\n", prs.len() - 20);
             filtered.push_str(&more_line);
             print!("{more_line}");
         }
@@ -298,7 +297,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
     let (pr_number, extra_args) = match extract_identifier_and_extra_args(args) {
         Some(result) => result,
-        None => return Err(anyhow::anyhow!("PR number required")),
+        None => return Err(anyhow::anyhow!("需要 PR 编号")),
     };
 
     // If the user provides --jq or --web, pass through directly.
@@ -319,7 +318,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh pr view")?;
+    let output = cmd.output().context("运行 gh pr view 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -334,18 +333,17 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh pr view output")?;
+    let json: Value = serde_json::from_slice(&output.stdout).context("解析 gh pr view 输出失败")?;
 
     let mut filtered = String::new();
 
     // Extract essential info
     let number = json["number"].as_i64().unwrap_or(0);
-    let title = json["title"].as_str().unwrap_or("???");
-    let state = json["state"].as_str().unwrap_or("???");
-    let author = json["author"]["login"].as_str().unwrap_or("???");
+    let title = json["title"].as_str().unwrap_or("未知");
+    let state = json["state"].as_str().unwrap_or("未知");
+    let author = json["author"]["login"].as_str().unwrap_or("未知");
     let url = json["url"].as_str().unwrap_or("");
-    let mergeable = json["mergeable"].as_str().unwrap_or("UNKNOWN");
+    let mergeable = json["mergeable"].as_str().unwrap_or("未知");
 
     let state_icon = if ultra_compact {
         match state {
@@ -363,11 +361,11 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         }
     };
 
-    let line = format!("{state_icon} PR #{number}: {title}\n");
+    let line = format!("{state_icon} PR #{number}：{title}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  {author}\n");
+    let line = format!("  作者：{author}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -392,7 +390,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
             .count();
 
         if approved > 0 || changes > 0 {
-            let line = format!("  Reviews: {approved} approved, {changes} changes requested\n");
+            let line = format!("  评审：{approved} 通过，{changes} 需修改\n");
             filtered.push_str(&line);
             print!("{line}");
         }
@@ -418,7 +416,7 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
         if ultra_compact {
             if failed > 0 {
-                let line = format!("  ✗{passed}/{total}  {failed} fail\n");
+                let line = format!("  ✗{passed}/{total}  {failed} 失败\n");
                 filtered.push_str(&line);
                 print!("{line}");
             } else {
@@ -427,11 +425,11 @@ fn view_pr(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
                 print!("{line}");
             }
         } else {
-            let line = format!("  Checks: {passed}/{total} passed\n");
+            let line = format!("  检查：{passed}/{total} 通过\n");
             filtered.push_str(&line);
             print!("{line}");
             if failed > 0 {
-                let line = format!("  ⚠️  {failed} checks failed\n");
+                let line = format!("  ⚠️  {failed} 项检查失败\n");
                 filtered.push_str(&line);
                 print!("{line}");
             }
@@ -472,7 +470,7 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 
     let (pr_number, extra_args) = match extract_identifier_and_extra_args(args) {
         Some(result) => result,
-        None => return Err(anyhow::anyhow!("PR number required")),
+        None => return Err(anyhow::anyhow!("需要 PR 编号")),
     };
 
     let mut cmd = resolved_command("gh");
@@ -481,7 +479,7 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh pr checks")?;
+    let output = cmd.output().context("运行 gh pr checks 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -517,26 +515,26 @@ fn pr_checks(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> 
 
     let mut filtered = String::new();
 
-    let line = "🔍 CI Checks Summary:\n";
+    let line = "🔍 CI 检查摘要：\n";
     filtered.push_str(line);
     print!("{line}");
 
-    let line = format!("  ✅ Passed: {passed}\n");
+    let line = format!("  ✅ 通过：{passed}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  ❌ Failed: {failed}\n");
+    let line = format!("  ❌ 失败：{failed}\n");
     filtered.push_str(&line);
     print!("{line}");
 
     if pending > 0 {
-        let line = format!("  ⏳ Pending: {pending}\n");
+        let line = format!("  ⏳ 待定：{pending}\n");
         filtered.push_str(&line);
         print!("{line}");
     }
 
     if !failed_checks.is_empty() {
-        let line = "\n  Failed checks:\n";
+        let line = "\n  失败的检查：\n";
         filtered.push_str(line);
         print!("{line}");
         for check in failed_checks {
@@ -566,7 +564,7 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
         "currentBranch,createdBy,reviewDecision,statusCheckRollup",
     ]);
 
-    let output = cmd.output().context("Failed to run gh pr status")?;
+    let output = cmd.output().context("运行 gh pr status 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -577,17 +575,17 @@ fn pr_status(_verbose: u8, _ultra_compact: bool) -> Result<()> {
     }
 
     let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh pr status output")?;
+        serde_json::from_slice(&output.stdout).context("解析 gh pr status 输出失败")?;
 
     let mut filtered = String::new();
 
     if let Some(created_by) = json["createdBy"].as_array() {
-        let line = format!("📝 Your PRs ({}):\n", created_by.len());
+        let line = format!("📝 你的 PR（{}）：\n", created_by.len());
         filtered.push_str(&line);
         print!("{line}");
         for pr in created_by.iter().take(5) {
             let number = pr["number"].as_i64().unwrap_or(0);
-            let title = pr["title"].as_str().unwrap_or("???");
+            let title = pr["title"].as_str().unwrap_or("未知");
             let reviews = pr["reviewDecision"].as_str().unwrap_or("PENDING");
             let line = format!(
                 "  #{} {} [{}]\n",
@@ -626,7 +624,7 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh issue list")?;
+    let output = cmd.output().context("运行 gh issue list 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -637,22 +635,22 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
     }
 
     let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh issue list output")?;
+        serde_json::from_slice(&output.stdout).context("解析 gh issue list 输出失败")?;
 
     let mut filtered = String::new();
 
     if let Some(issues) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("Issues\n");
-            println!("Issues");
+            filtered.push_str("Issue\n");
+            println!("Issue");
         } else {
-            filtered.push_str("🐛 Issues\n");
-            println!("🐛 Issues");
+            filtered.push_str("🐛 Issue\n");
+            println!("🐛 Issue");
         }
         for issue in issues.iter().take(20) {
             let number = issue["number"].as_i64().unwrap_or(0);
-            let title = issue["title"].as_str().unwrap_or("???");
-            let state = issue["state"].as_str().unwrap_or("???");
+            let title = issue["title"].as_str().unwrap_or("未知");
+            let state = issue["state"].as_str().unwrap_or("未知");
 
             let icon = if ultra_compact {
                 if state == "OPEN" { "O" } else { "C" }
@@ -670,7 +668,7 @@ fn list_issues(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()>
         }
 
         if issues.len() > 20 {
-            let line = format!("  ... {} more\n", issues.len() - 20);
+            let line = format!("  ... {} 个\n", issues.len() - 20);
             filtered.push_str(&line);
             print!("{line}");
         }
@@ -685,7 +683,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
 
     let (issue_number, extra_args) = match extract_identifier_and_extra_args(args) {
         Some(result) => result,
-        None => return Err(anyhow::anyhow!("Issue number required")),
+        None => return Err(anyhow::anyhow!("需要 Issue 编号")),
     };
 
     let mut cmd = resolved_command("gh");
@@ -700,7 +698,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh issue view")?;
+    let output = cmd.output().context("运行 gh issue view 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -716,31 +714,31 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh issue view output")?;
+        serde_json::from_slice(&output.stdout).context("解析 gh issue view 输出失败")?;
 
     let number = json["number"].as_i64().unwrap_or(0);
-    let title = json["title"].as_str().unwrap_or("???");
-    let state = json["state"].as_str().unwrap_or("???");
-    let author = json["author"]["login"].as_str().unwrap_or("???");
+    let title = json["title"].as_str().unwrap_or("未知");
+    let state = json["state"].as_str().unwrap_or("未知");
+    let author = json["author"]["login"].as_str().unwrap_or("未知");
     let url = json["url"].as_str().unwrap_or("");
 
     let icon = if state == "OPEN" { "🟢" } else { "🔴" };
 
     let mut filtered = String::new();
 
-    let line = format!("{icon} Issue #{number}: {title}\n");
+    let line = format!("{icon} Issue #{number}：{title}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  Author: @{author}\n");
+    let line = format!("  作者：@{author}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  Status: {state}\n");
+    let line = format!("  状态：{state}\n");
     filtered.push_str(&line);
     print!("{line}");
 
-    let line = format!("  URL: {url}\n");
+    let line = format!("  URL：{url}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -749,7 +747,7 @@ fn view_issue(args: &[String], _verbose: u8) -> Result<()> {
     {
         let body_filtered = filter_markdown_body(body);
         if !body_filtered.is_empty() {
-            let line = "\n  Description:\n";
+            let line = "\n  描述：\n";
             filtered.push_str(line);
             print!("{line}");
             for line in body_filtered.lines() {
@@ -797,7 +795,7 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh run list")?;
+    let output = cmd.output().context("运行 gh run list 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -808,22 +806,22 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
     }
 
     let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh run list output")?;
+        serde_json::from_slice(&output.stdout).context("解析 gh run list 输出失败")?;
 
     let mut filtered = String::new();
 
     if let Some(runs) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("Runs\n");
-            println!("Runs");
+            filtered.push_str("运行\n");
+            println!("运行");
         } else {
-            filtered.push_str("🏃 Workflow Runs\n");
-            println!("🏃 Workflow Runs");
+            filtered.push_str("🏃 工作流运行\n");
+            println!("🏃 工作流运行");
         }
         for run in runs {
             let id = run["databaseId"].as_i64().unwrap_or(0);
-            let name = run["name"].as_str().unwrap_or("???");
-            let status = run["status"].as_str().unwrap_or("???");
+            let name = run["name"].as_str().unwrap_or("未知");
+            let status = run["status"].as_str().unwrap_or("未知");
             let conclusion = run["conclusion"].as_str().unwrap_or("");
 
             let icon = if ultra_compact {
@@ -876,7 +874,7 @@ fn should_passthrough_run_view(extra_args: &[String]) -> bool {
 fn view_run(args: &[String], _verbose: u8) -> Result<()> {
     let (run_id, extra_args) = match extract_identifier_and_extra_args(args) {
         Some(result) => result,
-        None => return Err(anyhow::anyhow!("Run ID required")),
+        None => return Err(anyhow::anyhow!("需要 Run ID")),
     };
 
     // Pass through when user requests logs or JSON — the filter would strip them
@@ -892,7 +890,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh run view")?;
+    let output = cmd.output().context("运行 gh run view 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -913,7 +911,7 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
 
     let mut filtered = String::new();
 
-    let line = format!("🏃 Workflow Run #{run_id}\n");
+    let line = format!("🏃 工作流运行 #{run_id}\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -933,7 +931,10 @@ fn view_run(args: &[String], _verbose: u8) -> Result<()> {
                 print!("{formatted}");
             }
         } else if line.contains("Status:") || line.contains("Conclusion:") {
-            let formatted = format!("  {}\n", line.trim());
+            let formatted_line = line
+                .replace("Status:", "状态：")
+                .replace("Conclusion:", "结论：");
+            let formatted = format!("  {}\n", formatted_line.trim());
             filtered.push_str(&formatted);
             print!("{formatted}");
         }
@@ -974,7 +975,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
         "name,owner,description,url,stargazerCount,forkCount,isPrivate",
     ]);
 
-    let output = cmd.output().context("Failed to run gh repo view")?;
+    let output = cmd.output().context("运行 gh repo view 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -985,10 +986,10 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
     }
 
     let json: Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse gh repo view output")?;
+        serde_json::from_slice(&output.stdout).context("解析 gh repo view 输出失败")?;
 
-    let name = json["name"].as_str().unwrap_or("???");
-    let owner = json["owner"]["login"].as_str().unwrap_or("???");
+    let name = json["name"].as_str().unwrap_or("未知");
+    let owner = json["owner"]["login"].as_str().unwrap_or("未知");
     let description = json["description"].as_str().unwrap_or("");
     let url = json["url"].as_str().unwrap_or("");
     let stars = json["stargazerCount"].as_i64().unwrap_or(0);
@@ -996,9 +997,9 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
     let private = json["isPrivate"].as_bool().unwrap_or(false);
 
     let visibility = if private {
-        "🔒 Private"
+        "🔒 私有"
     } else {
-        "🌐 Public"
+        "🌐 公开"
     };
 
     let mut filtered = String::new();
@@ -1017,7 +1018,7 @@ fn run_repo(args: &[String], _verbose: u8, _ultra_compact: bool) -> Result<()> {
         print!("{line}");
     }
 
-    let line = format!("  ⭐ {stars} stars | 🔱 {forks} forks\n");
+    let line = format!("  ⭐ {stars} 星标 | 🔱 {forks} fork\n");
     filtered.push_str(&line);
     print!("{line}");
 
@@ -1038,7 +1039,7 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh pr create")?;
+    let output = cmd.output().context("运行 gh pr create 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout).to_string();
     let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
@@ -1060,7 +1061,7 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
         url.to_string()
     };
 
-    let filtered = ok_confirmation("created", &detail);
+    let filtered = ok_confirmation("创建", &detail);
     println!("{filtered}");
 
     timer.track("gh pr create", "rtk gh pr create", &stdout, &filtered);
@@ -1076,7 +1077,7 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh pr merge")?;
+    let output = cmd.output().context("运行 gh pr merge 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout).to_string();
     let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
@@ -1099,7 +1100,7 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
         String::new()
     };
 
-    let filtered = ok_confirmation("merged", &detail);
+    let filtered = ok_confirmation("合并", &detail);
     println!("{filtered}");
 
     // Use stdout or detail as raw input (gh pr merge doesn't output much)
@@ -1134,7 +1135,7 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run gh pr diff")?;
+    let output = cmd.output().context("运行 gh pr diff 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -1169,9 +1170,7 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd
-        .output()
-        .context(format!("Failed to run gh pr {subcmd}"))?;
+    let output = cmd.output().context(format!("运行 gh pr {subcmd} 失败"))?;
     let stdout = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -1231,10 +1230,9 @@ fn run_passthrough_with_extra(cmd: &str, base_args: &[&str], extra_args: &[Strin
         command.arg(arg);
     }
 
-    let status =
-        command
-            .status()
-            .context(format!("Failed to run {} {}", cmd, base_args.join(" ")))?;
+    let status = command
+        .status()
+        .context(format!("运行 {} {} 失败", cmd, base_args.join(" ")))?;
 
     let full_cmd = format!(
         "{} {} {}",
@@ -1267,7 +1265,7 @@ fn run_passthrough(cmd: &str, subcommand: &str, args: &[String]) -> Result<()> {
 
     let status = command
         .status()
-        .context(format!("Failed to run {cmd} {subcommand}"))?;
+        .context(format!("运行 {cmd} {subcommand} 失败"))?;
 
     let args_str = tracking::args_display(
         &args
@@ -1319,27 +1317,27 @@ mod tests {
 
     #[test]
     fn test_ok_confirmation_pr_create() {
-        let result = ok_confirmation("created", "#42 https://github.com/foo/bar/pull/42");
-        assert!(result.contains("ok created"));
+        let result = ok_confirmation("创建", "#42 https://github.com/foo/bar/pull/42");
+        assert!(result.contains("已创建"));
         assert!(result.contains("#42"));
     }
 
     #[test]
     fn test_ok_confirmation_pr_merge() {
-        let result = ok_confirmation("merged", "#42");
-        assert_eq!(result, "ok merged #42");
+        let result = ok_confirmation("合并", "#42");
+        assert_eq!(result, "已合并 #42");
     }
 
     #[test]
     fn test_ok_confirmation_pr_comment() {
-        let result = ok_confirmation("commented", "#42");
-        assert_eq!(result, "ok commented #42");
+        let result = ok_confirmation("评论", "#42");
+        assert_eq!(result, "已评论 #42");
     }
 
     #[test]
     fn test_ok_confirmation_pr_edit() {
-        let result = ok_confirmation("edited", "#42");
-        assert_eq!(result, "ok edited #42");
+        let result = ok_confirmation("编辑", "#42");
+        assert_eq!(result, "已编辑 #42");
     }
 
     #[test]

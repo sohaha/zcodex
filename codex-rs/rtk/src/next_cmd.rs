@@ -29,12 +29,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if verbose > 0 {
         let tool = if next_exists { "next" } else { "npx next" };
-        eprintln!("Running: {tool} build");
+        eprintln!("运行：{tool} build");
     }
 
     let output = cmd
         .output()
-        .context("Failed to run next build (try: npm install -g next)")?;
+        .context("运行 next build 失败（可尝试：npm install -g next）")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
@@ -129,19 +129,19 @@ fn filter_next_build(output: &str) -> String {
 
     // Build filtered output
     let mut result = String::new();
-    result.push_str("⚡ Next.js Build\n");
+    result.push_str("⚡ Next.js 构建\n");
     result.push_str("═══════════════════════════════════════\n");
 
     if already_built && routes_total == 0 {
-        result.push_str("✓ Already built (using cache)\n\n");
+        result.push_str("✓ 已构建（使用缓存）\n\n");
     } else if routes_total > 0 {
         result.push_str(&format!(
-            "✓ {routes_total} routes ({routes_static} static, {routes_dynamic} dynamic)\n\n"
+            "✓ {routes_total} 条路由（{routes_static} 静态，{routes_dynamic} 动态）\n\n"
         ));
     }
 
     if !bundles.is_empty() {
-        result.push_str("Bundles:\n");
+        result.push_str("Bundles：\n");
 
         // Sort by size (descending) and show top 10
         bundles.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -166,7 +166,7 @@ fn filter_next_build(output: &str) -> String {
         }
 
         if bundles.len() > 10 {
-            result.push_str(&format!("\n  ... +{} more routes\n", bundles.len() - 10));
+            result.push_str(&format!("\n  ... +{} 条路由\n", bundles.len() - 10));
         }
 
         result.push('\n');
@@ -174,10 +174,10 @@ fn filter_next_build(output: &str) -> String {
 
     // Show build time and status
     if !build_time.is_empty() {
-        result.push_str(&format!("Time: {build_time} | "));
+        result.push_str(&format!("耗时：{build_time} | "));
     }
 
-    result.push_str(&format!("Errors: {errors} | Warnings: {warnings}\n"));
+    result.push_str(&format!("错误：{errors} | 警告：{warnings}\n"));
 
     result.trim().to_string()
 }
@@ -222,8 +222,8 @@ Route (app)                    Size     First Load JS
 ✓ Built in 34.2s
 "#;
         let result = filter_next_build(output);
-        assert!(result.contains("⚡ Next.js Build"));
-        assert!(result.contains("routes"));
+        assert!(result.contains("⚡ Next.js 构建"));
+        assert!(result.contains("路由"));
         assert!(!result.contains("Creating an optimized")); // Should filter verbose logs
     }
 

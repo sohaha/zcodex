@@ -41,7 +41,7 @@ fn docker_ps(_verbose: u8) -> Result<()> {
             "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}",
         ])
         .output()
-        .context("Failed to run docker ps")?;
+        .context("运行 docker ps 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -54,14 +54,14 @@ fn docker_ps(_verbose: u8) -> Result<()> {
     let mut rtk = String::new();
 
     if stdout.trim().is_empty() {
-        rtk.push_str("🐳 0 containers");
+        rtk.push_str("🐳 0 个容器");
         println!("{rtk}");
         timer.track("docker ps", "rtk docker ps", &raw, &rtk);
         return Ok(());
     }
 
     let count = stdout.lines().count();
-    rtk.push_str(&format!("🐳 {count} containers:\n"));
+    rtk.push_str(&format!("🐳 {count} 个容器：\n"));
 
     for line in stdout.lines().take(15) {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -83,7 +83,7 @@ fn docker_ps(_verbose: u8) -> Result<()> {
         }
     }
     if count > 15 {
-        rtk.push_str(&format!("  ... +{} more", count - 15));
+        rtk.push_str(&format!("  ... +{} 个", count - 15));
     }
 
     print!("{rtk}");
@@ -103,7 +103,7 @@ fn docker_images(_verbose: u8) -> Result<()> {
     let output = resolved_command("docker")
         .args(["images", "--format", "{{.Repository}}:{{.Tag}}\t{{.Size}}"])
         .output()
-        .context("Failed to run docker images")?;
+        .context("运行 docker images 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -117,7 +117,7 @@ fn docker_images(_verbose: u8) -> Result<()> {
     let mut rtk = String::new();
 
     if lines.is_empty() {
-        rtk.push_str("🐳 0 images");
+        rtk.push_str("🐳 0 个镜像");
         println!("{rtk}");
         timer.track("docker images", "rtk docker images", &raw, &rtk);
         return Ok(());
@@ -144,7 +144,7 @@ fn docker_images(_verbose: u8) -> Result<()> {
     } else {
         format!("{total_size_mb:.0}MB")
     };
-    rtk.push_str(&format!("🐳 {} images ({})\n", lines.len(), total_display));
+    rtk.push_str(&format!("🐳 {} 个镜像（{}）\n", lines.len(), total_display));
 
     for line in lines.iter().take(15) {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -160,7 +160,7 @@ fn docker_images(_verbose: u8) -> Result<()> {
         }
     }
     if lines.len() > 15 {
-        rtk.push_str(&format!("  ... +{} more", lines.len() - 15));
+        rtk.push_str(&format!("  ... +{} 个", lines.len() - 15));
     }
 
     print!("{rtk}");
@@ -173,21 +173,21 @@ fn docker_logs(args: &[String], _verbose: u8) -> Result<()> {
 
     let container = args.first().map(std::string::String::as_str).unwrap_or("");
     if container.is_empty() {
-        println!("Usage: rtk docker logs <container>");
+        println!("用法：rtk docker logs <container>");
         return Ok(());
     }
 
     let output = resolved_command("docker")
         .args(["logs", "--tail", "100", container])
         .output()
-        .context("Failed to run docker logs")?;
+        .context("运行 docker logs 失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
     let analyzed = crate::log_cmd::run_stdin_str(&raw);
-    let rtk = format!("🐳 Logs for {container}:\n{analyzed}");
+    let rtk = format!("🐳 {container} 日志：\n{analyzed}");
     println!("{rtk}");
     timer.track(
         &format!("docker logs {container}"),
@@ -207,14 +207,14 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run kubectl get pods")?;
+    let output = cmd.output().context("运行 kubectl get pods 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
     let mut rtk = String::new();
 
     let json: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => {
-            rtk.push_str("☸️  No pods found");
+            rtk.push_str("☸️  未找到 Pod");
             println!("{rtk}");
             timer.track("kubectl get pods", "rtk kubectl pods", &raw, &rtk);
             return Ok(());
@@ -222,7 +222,7 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
     };
 
     let Some(pods) = json["items"].as_array().filter(|a| !a.is_empty()) else {
-        rtk.push_str("☸️  No pods found");
+        rtk.push_str("☸️  未找到 Pod");
         println!("{rtk}");
         timer.track("kubectl get pods", "rtk kubectl pods", &raw, &rtk);
         return Ok(());
@@ -233,7 +233,7 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
     for pod in pods {
         let ns = pod["metadata"]["namespace"].as_str().unwrap_or("-");
         let name = pod["metadata"]["name"].as_str().unwrap_or("-");
-        let phase = pod["status"]["phase"].as_str().unwrap_or("Unknown");
+        let phase = pod["status"]["phase"].as_str().unwrap_or("未知");
 
         if let Some(containers) = pod["status"]["containerStatuses"].as_array() {
             for c in containers {
@@ -245,11 +245,16 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
             "Running" => running += 1,
             "Pending" => {
                 pending += 1;
-                issues.push(format!("{ns}/{name} Pending"));
+                issues.push(format!("{ns}/{name} 等待"));
             }
             "Failed" | "Error" => {
                 failed += 1;
-                issues.push(format!("{ns}/{name} {phase}"));
+                let phase_label = match phase {
+                    "Failed" => "失败",
+                    "Error" => "错误",
+                    _ => phase,
+                };
+                issues.push(format!("{ns}/{name} {phase_label}"));
             }
             _ => {
                 if let Some(containers) = pod["status"]["containerStatuses"].as_array() {
@@ -271,23 +276,27 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
         parts.push(format!("{running} ✓"));
     }
     if pending > 0 {
-        parts.push(format!("{pending} pending"));
+        parts.push(format!("{pending} 等待"));
     }
     if failed > 0 {
         parts.push(format!("{failed} ✗"));
     }
     if restarts_total > 0 {
-        parts.push(format!("{restarts_total} restarts"));
+        parts.push(format!("{restarts_total} 次重启"));
     }
 
-    rtk.push_str(&format!("☸️  {} pods: {}\n", pods.len(), parts.join(", ")));
+    rtk.push_str(&format!(
+        "☸️  {} 个 Pod：{}\n",
+        pods.len(),
+        parts.join(", ")
+    ));
     if !issues.is_empty() {
-        rtk.push_str("⚠️  Issues:\n");
+        rtk.push_str("⚠️  问题：\n");
         for issue in issues.iter().take(10) {
             rtk.push_str(&format!("  {issue}\n"));
         }
         if issues.len() > 10 {
-            rtk.push_str(&format!("  ... +{} more", issues.len() - 10));
+            rtk.push_str(&format!("  ... +{} 个", issues.len() - 10));
         }
     }
 
@@ -305,14 +314,14 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run kubectl get services")?;
+    let output = cmd.output().context("运行 kubectl get services 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
     let mut rtk = String::new();
 
     let json: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => {
-            rtk.push_str("☸️  No services found");
+            rtk.push_str("☸️  未找到 Service");
             println!("{rtk}");
             timer.track("kubectl get svc", "rtk kubectl svc", &raw, &rtk);
             return Ok(());
@@ -320,12 +329,12 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
     };
 
     let Some(services) = json["items"].as_array().filter(|a| !a.is_empty()) else {
-        rtk.push_str("☸️  No services found");
+        rtk.push_str("☸️  未找到 Service");
         println!("{rtk}");
         timer.track("kubectl get svc", "rtk kubectl svc", &raw, &rtk);
         return Ok(());
     };
-    rtk.push_str(&format!("☸️  {} services:\n", services.len()));
+    rtk.push_str(&format!("☸️  {} 个 Service：\n", services.len()));
 
     for svc in services.iter().take(15) {
         let ns = svc["metadata"]["namespace"].as_str().unwrap_or("-");
@@ -359,7 +368,7 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
         ));
     }
     if services.len() > 15 {
-        rtk.push_str(&format!("  ... +{} more", services.len() - 15));
+        rtk.push_str(&format!("  ... +{} 个", services.len() - 15));
     }
 
     print!("{rtk}");
@@ -372,7 +381,7 @@ fn kubectl_logs(args: &[String], _verbose: u8) -> Result<()> {
 
     let pod = args.first().map(std::string::String::as_str).unwrap_or("");
     if pod.is_empty() {
-        println!("Usage: rtk kubectl logs <pod>");
+        println!("用法：rtk kubectl logs <pod>");
         return Ok(());
     }
 
@@ -382,10 +391,10 @@ fn kubectl_logs(args: &[String], _verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run kubectl logs")?;
+    let output = cmd.output().context("运行 kubectl logs 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
     let analyzed = crate::log_cmd::run_stdin_str(&raw);
-    let rtk = format!("☸️  Logs for {pod}:\n{analyzed}");
+    let rtk = format!("☸️  {pod} 日志：\n{analyzed}");
     println!("{rtk}");
     timer.track(
         &format!("kubectl logs {pod}"),
@@ -403,10 +412,10 @@ pub fn format_compose_ps(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().filter(|l| !l.trim().is_empty()).collect();
 
     if lines.is_empty() {
-        return "🐳 0 compose services".to_string();
+        return "🐳 0 个 Compose 服务".to_string();
     }
 
-    let mut result = format!("🐳 {} compose services:\n", lines.len());
+    let mut result = format!("🐳 {} 个 Compose 服务：\n", lines.len());
 
     for line in lines.iter().take(20) {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -433,7 +442,7 @@ pub fn format_compose_ps(raw: &str) -> String {
         }
     }
     if lines.len() > 20 {
-        result.push_str(&format!("  ... +{} more\n", lines.len() - 20));
+        result.push_str(&format!("  ... +{} 个\n", lines.len() - 20));
     }
 
     result.trim_end().to_string()
@@ -442,19 +451,19 @@ pub fn format_compose_ps(raw: &str) -> String {
 /// Format `docker compose logs` output into compact form
 pub fn format_compose_logs(raw: &str) -> String {
     if raw.trim().is_empty() {
-        return "🐳 No logs".to_string();
+        return "🐳 无日志".to_string();
     }
 
     // docker compose logs prefixes each line with "service-N  | "
     // Use the existing log deduplication engine
     let analyzed = crate::log_cmd::run_stdin_str(raw);
-    format!("🐳 Compose logs:\n{analyzed}")
+    format!("🐳 Compose 日志：\n{analyzed}")
 }
 
 /// Format `docker compose build` output into compact summary
 pub fn format_compose_build(raw: &str) -> String {
     if raw.trim().is_empty() {
-        return "🐳 Build: no output".to_string();
+        return "🐳 构建：无输出".to_string();
     }
 
     let mut result = String::new();
@@ -472,7 +481,7 @@ pub fn format_compose_build(raw: &str) -> String {
         if let Some(line) = raw.lines().find(|l| l.contains("Building")) {
             result.push_str(&format!("🐳 {}\n", line.trim()));
         } else {
-            result.push_str("🐳 Build:\n");
+            result.push_str("🐳 构建：\n");
         }
     }
 
@@ -493,7 +502,7 @@ pub fn format_compose_build(raw: &str) -> String {
     }
 
     if !services.is_empty() {
-        result.push_str(&format!("  Services: {}\n", services.join(", ")));
+        result.push_str(&format!("  服务：{}\n", services.join(", ")));
     }
 
     // Count build steps (lines starting with " => ")
@@ -502,7 +511,7 @@ pub fn format_compose_build(raw: &str) -> String {
         .filter(|l| l.trim_start().starts_with("=> "))
         .count();
     if step_count > 0 {
-        result.push_str(&format!("  Steps: {step_count}"));
+        result.push_str(&format!("  步骤：{step_count}"));
     }
 
     result.trim_end().to_string()
@@ -535,12 +544,12 @@ pub fn run_docker_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("docker passthrough: {args:?}");
+        eprintln!("docker 透传：{args:?}");
     }
     let status = resolved_command("docker")
         .args(args)
         .status()
-        .context("Failed to run docker")?;
+        .context("运行 docker 失败")?;
 
     let args_str = tracking::args_display(args);
     timer.track_passthrough(
@@ -562,7 +571,7 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
     let raw_output = resolved_command("docker")
         .args(["compose", "ps"])
         .output()
-        .context("Failed to run docker compose ps")?;
+        .context("运行 docker compose ps 失败")?;
 
     if !raw_output.status.success() {
         let stderr = crate::utils::decode_output(&raw_output.stderr);
@@ -580,7 +589,7 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
             "{{.Name}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}",
         ])
         .output()
-        .context("Failed to run docker compose ps --format")?;
+        .context("运行 docker compose ps --format 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -590,7 +599,7 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
     let structured = crate::utils::decode_output(&output.stdout).to_string();
 
     if verbose > 0 {
-        eprintln!("raw docker compose ps:\n{raw}");
+        eprintln!("原始 docker compose ps：\n{raw}");
     }
 
     let rtk = format_compose_ps(&structured);
@@ -609,7 +618,7 @@ pub fn run_compose_logs(service: Option<&str>, verbose: u8) -> Result<()> {
         cmd.arg(svc);
     }
 
-    let output = cmd.output().context("Failed to run docker compose logs")?;
+    let output = cmd.output().context("运行 docker compose logs 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -622,7 +631,7 @@ pub fn run_compose_logs(service: Option<&str>, verbose: u8) -> Result<()> {
     let raw = format!("{stdout}\n{stderr}");
 
     if verbose > 0 {
-        eprintln!("raw docker compose logs:\n{raw}");
+        eprintln!("原始 docker compose logs：\n{raw}");
     }
 
     let rtk = format_compose_logs(&raw);
@@ -647,7 +656,7 @@ pub fn run_compose_build(service: Option<&str>, verbose: u8) -> Result<()> {
         cmd.arg(svc);
     }
 
-    let output = cmd.output().context("Failed to run docker compose build")?;
+    let output = cmd.output().context("运行 docker compose build 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -660,7 +669,7 @@ pub fn run_compose_build(service: Option<&str>, verbose: u8) -> Result<()> {
     let raw = format!("{stdout}\n{stderr}");
 
     if verbose > 0 {
-        eprintln!("raw docker compose build:\n{raw}");
+        eprintln!("原始 docker compose build：\n{raw}");
     }
 
     let rtk = format_compose_build(&raw);
@@ -680,13 +689,13 @@ pub fn run_compose_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("docker compose passthrough: {args:?}");
+        eprintln!("docker compose 透传：{args:?}");
     }
     let status = resolved_command("docker")
         .arg("compose")
         .args(args)
         .status()
-        .context("Failed to run docker compose")?;
+        .context("运行 docker compose 失败")?;
 
     let args_str = tracking::args_display(args);
     timer.track_passthrough(
@@ -705,12 +714,12 @@ pub fn run_kubectl_passthrough(args: &[OsString], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("kubectl passthrough: {args:?}");
+        eprintln!("kubectl 透传：{args:?}");
     }
     let status = resolved_command("kubectl")
         .args(args)
         .status()
-        .context("Failed to run kubectl")?;
+        .context("运行 kubectl 失败")?;
 
     let args_str = tracking::args_display(args);
     timer.track_passthrough(
@@ -802,7 +811,7 @@ api-1  | Server listening on port 3000
 api-1  | Connected to database";
         let out = format_compose_logs(raw);
         assert!(
-            out.contains("Compose logs"),
+            out.contains("Compose 日志"),
             "should have compose logs header"
         );
     }
@@ -810,7 +819,7 @@ api-1  | Connected to database";
     #[test]
     fn test_format_compose_logs_empty() {
         let out = format_compose_logs("");
-        assert!(out.contains("No logs"), "should indicate no logs");
+        assert!(out.contains("无日志"), "should indicate no logs");
     }
 
     // ── format_compose_build ───────────────────────────────

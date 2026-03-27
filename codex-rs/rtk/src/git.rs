@@ -2194,18 +2194,18 @@ no changes added to commit (use "git add" and/or "git commit -a")
             .join("rtk");
         assert!(
             bin_path.exists(),
-            "Debug binary not found at {bin_path:?} — run `cargo build` first"
+            "未在 {bin_path:?} 找到调试二进制，请先运行 `cargo build`"
         );
         let output = std::process::Command::new(&bin_path)
             .args(["git", "status"])
             .current_dir(&tmp)
             .output()
-            .expect("Failed to run rtk");
+            .expect("运行 rtk 失败");
 
         // Should exit with non-zero (128 from git)
         assert!(
             !output.status.success(),
-            "Expected non-zero exit code for git status outside a repo, got {:?}",
+            "预期在仓库外执行 git status 时返回非零退出码，实际得到 {:?}",
             output.status.code()
         );
 

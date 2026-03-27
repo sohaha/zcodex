@@ -9,7 +9,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("Comparing: {} vs {}", file1.display(), file2.display());
+        eprintln!("比较：{} vs {}", file1.display(), file2.display());
     }
 
     let content1 = fs::read_to_string(file1)?;
@@ -22,7 +22,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
     let mut rtk = String::new();
 
     if diff.added == 0 && diff.removed == 0 {
-        rtk.push_str("✅ Files are identical");
+        rtk.push_str("✅ 文件完全一致");
         println!("{rtk}");
         timer.track(
             &format!("diff {} {}", file1.display(), file2.display()),
@@ -35,7 +35,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
 
     rtk.push_str(&format!("📊 {} → {}\n", file1.display(), file2.display()));
     rtk.push_str(&format!(
-        "   +{} added, -{} removed, ~{} modified\n\n",
+        "   +{} 新增，-{} 删除，~{} 修改\n\n",
         diff.added, diff.removed, diff.modified
     ));
 
@@ -56,7 +56,7 @@ pub fn run(file1: &Path, file2: &Path, verbose: u8) -> Result<()> {
         }
     }
     if diff.changes.len() > 50 {
-        rtk.push_str(&format!("... +{} more changes", diff.changes.len() - 50));
+        rtk.push_str(&format!("... +{} 处变更", diff.changes.len() - 50));
     }
 
     print!("{rtk}");

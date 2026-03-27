@@ -48,7 +48,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     // Check if tree is installed
     if !tool_exists("tree") {
         anyhow::bail!(
-            "tree command not found. Install it first:\n\
+            "未找到 tree 命令，请先安装：\n\
              - macOS: brew install tree\n\
              - Ubuntu/Debian: sudo apt install tree\n\
              - Fedora/RHEL: sudo dnf install tree\n\
@@ -73,7 +73,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run tree")?;
+    let output = cmd.output().context("运行 tree 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -86,7 +86,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     if verbose > 0 {
         eprintln!(
-            "Lines: {} → {} ({}% reduction)",
+            "行数：{} → {}（减少 {}%）",
             raw.lines().count(),
             filtered.lines().count(),
             if raw.lines().count() > 0 {
