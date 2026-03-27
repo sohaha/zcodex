@@ -73,14 +73,14 @@ impl OutputParser for PnpmListParser {
 
                 let result = DependencyState {
                     total_packages: total_count,
-                    outdated_count: 0, // list doesn't provide outdated info
+                    outdated_count: 0, // `list` 不提供 outdated 信息
                     dependencies,
                 };
 
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试从文本提取
+                // 第 2 层：尝试从文本中提取
                 match extract_list_text(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
@@ -95,7 +95,7 @@ impl OutputParser for PnpmListParser {
     }
 }
 
-/// 递归收集 pnpm 包树中的依赖
+/// 递归收集 `pnpm` 包树中的依赖
 fn collect_dependencies(
     name: &str,
     pkg: &PnpmPackage,
@@ -139,7 +139,7 @@ fn extract_list_text(output: &str) -> Option<DependencyState> {
             continue;
         }
 
-        // 解析形如 "package@1.2.3" 的行
+        // 解析形如 `package@1.2.3` 的行
         let parts: Vec<&str> = line.split_whitespace().collect();
         if !parts.is_empty() {
             let pkg_str = parts[0];
@@ -207,7 +207,7 @@ impl OutputParser for PnpmOutdatedParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试从文本提取
+                // 第 2 层：尝试从文本中提取
                 match extract_outdated_text(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])

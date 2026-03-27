@@ -17,7 +17,7 @@ use crate::parser::emit_degradation_warning;
 use crate::parser::emit_passthrough_warning;
 use crate::parser::truncate_output;
 
-/// 匹配真实的 Playwright JSON reporter 输出（suites → specs → tests → results）
+/// 匹配真实的 Playwright `JSON reporter` 输出（`suites` → `specs` → `tests` → `results`）
 #[derive(Debug, Deserialize)]
 struct PlaywrightJsonOutput {
     stats: PlaywrightStats,
@@ -35,7 +35,7 @@ struct PlaywrightStats {
     duration: f64,
 }
 
-/// 文件级或 describe 级别的 suite
+/// 文件级或 `describe` 级别的 suite
 #[derive(Debug, Deserialize)]
 struct PlaywrightSuite {
     title: String,
@@ -44,23 +44,23 @@ struct PlaywrightSuite {
     /// 单个测试 spec（测试函数）
     #[serde(default)]
     specs: Vec<PlaywrightSpec>,
-    /// 嵌套的 describe 块
+    /// 嵌套的 `describe` 块
     #[serde(default)]
     suites: Vec<PlaywrightSuite>,
 }
 
-/// 单个测试函数（可能在多个浏览器/项目中运行）
+/// 单个测试函数（可能在多个浏览器或项目中运行）
 #[derive(Debug, Deserialize)]
 struct PlaywrightSpec {
     title: String,
     /// 跨所有项目的整体通过/失败状态
     ok: bool,
-    /// 按项目/浏览器区分的执行记录
+    /// 按项目或浏览器区分的执行记录
     #[serde(default)]
     tests: Vec<PlaywrightExecution>,
 }
 
-/// 某个浏览器/项目中的一次测试执行
+/// 某个浏览器或项目中的一次测试执行
 #[derive(Debug, Deserialize)]
 struct PlaywrightExecution {
     /// `"expected"`、`"unexpected"`、`"skipped"`、`"flaky"`
@@ -69,7 +69,7 @@ struct PlaywrightExecution {
     results: Vec<PlaywrightAttempt>,
 }
 
-/// 一次测试执行中的单次尝试/结果
+/// 一次测试执行中的单次尝试或结果
 #[derive(Debug, Deserialize)]
 struct PlaywrightAttempt {
     /// `"passed"`、`"failed"`、`"timedOut"`、`"interrupted"`
@@ -138,7 +138,7 @@ fn collect_test_results(
             *total += 1;
 
             if !spec.ok {
-                // 找出第一个失败的执行记录及其错误信息
+                // 找出第一条失败的执行记录及其错误信息
                 let error_msg = spec
                     .tests
                     .iter()
@@ -161,7 +161,7 @@ fn collect_test_results(
             }
         }
 
-        // 递归处理嵌套 suite（describe 块）
+        // 递归处理嵌套 suite（`describe` 块）
         collect_test_results(&suite.suites, total, failures);
     }
 }

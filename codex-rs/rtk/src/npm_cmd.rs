@@ -3,7 +3,7 @@ use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
 
-/// 已知 npm 子命令：这些命令前不应自动注入 `run`。
+/// 已知 `npm` 子命令：这些命令前不应自动注入 `run`。
 /// 生产代码与测试共享这份列表，避免两边行为漂移。
 const NPM_SUBCOMMANDS: &[&str] = &[
     "install",
@@ -77,7 +77,7 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
 
     let mut cmd = resolved_command("npm");
 
-    // 判断这是 `npm run <script>` 还是其他 npm 子命令（如 install、list 等）。
+    // 判断这是 `npm run <script>` 还是其他 `npm` 子命令（如 `install`、`list`）。
     // 只有当参数看起来像脚本名时才注入 `run`，已知子命令不注入。
     let first_arg = args.first().map(std::string::String::as_str);
     let is_run_explicit = first_arg == Some("run");
@@ -132,16 +132,16 @@ pub fn run(args: &[String], verbose: u8, skip_env: bool) -> Result<()> {
     Ok(())
 }
 
-/// 过滤 npm 输出：去掉样板信息、进度条和 npm WARN
+/// 过滤 `npm` 输出：去掉样板信息、进度条和 `npm WARN`
 fn filter_npm_output(output: &str) -> String {
     let mut result = Vec::new();
 
     for line in output.lines() {
-        // 跳过 npm 样板输出
+        // 跳过 `npm` 样板输出
         if line.starts_with('>') && line.contains('@') {
             continue;
         }
-        // 跳过 npm 生命周期脚本提示
+        // 跳过 `npm` 生命周期脚本提示
         if line.trim_start().starts_with("npm WARN") {
             continue;
         }
