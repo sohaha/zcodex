@@ -163,6 +163,30 @@ fn make_rtk_alias(codex_home: &Path) -> Result<PathBuf> {
     Ok(alias)
 }
 
+fn assert_help_contains(
+    codex_home: &Path,
+    args: &[&str],
+    required: &[&str],
+    forbidden: &[&str],
+) -> Result<()> {
+    let mut cmd = codex_command(codex_home)?;
+    let assert = cmd.args(args).assert().success();
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout);
+    for pattern in required {
+        assert!(
+            stdout.contains(pattern),
+            "stdout did not contain required pattern `{pattern}`.\nstdout:\n{stdout}"
+        );
+    }
+    for pattern in forbidden {
+        assert!(
+            !stdout.contains(pattern),
+            "stdout unexpectedly contained forbidden pattern `{pattern}`.\nstdout:\n{stdout}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn rtk_alias_routes_to_rtk_parser() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -183,74 +207,43 @@ fn rtk_alias_routes_to_rtk_parser() -> Result<()> {
 #[test]
 fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
     let codex_home = TempDir::new()?;
+    let cases = [
+        (
+            vec!["rtk", "--help"],
+            vec!["gh", "env", "wget", "golangci-lint", "cargo", "summary"],
+            vec![
+                "  init ",
+                "  gain ",
+                "discover",
+                "learn",
+                "config",
+                "proxy",
+                "hook-audit",
+                "cc-economics",
+                "rewrite",
+                "verify",
+            ],
+        ),
+        (
+            vec!["rtk", "--verbose", "--help"],
+            vec!["高性能 CLI 代理", "golangci-lint"],
+            vec!["rewrite"],
+        ),
+        (
+            vec!["rtk", "git", "--help"],
+            vec!["status", "log", "diff"],
+            vec!["rewrite"],
+        ),
+        (
+            vec!["rtk", "--verbose", "git", "--help"],
+            vec!["Git 命令，紧凑输出", "status"],
+            vec!["rewrite"],
+        ),
+    ];
 
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["rtk", "--help"]).assert().success().stdout(
-        contains("gh")
-            .and(contains("env"))
-            .and(contains("wget"))
-            .and(contains("golangci-lint"))
-            .and(contains("cargo"))
-            .and(contains("summary"))
-            .and(contains("  init ").not())
-            .and(contains("  gain ").not())
-            .and(contains("discover").not())
-            .and(contains("learn").not())
-            .and(contains("config").not())
-            .and(contains("proxy").not())
-            .and(contains("hook-audit").not())
-            .and(contains("cc-economics").not())
-            .and(contains("rewrite").not())
-            .and(contains("verify").not()),
-    );
-
-    Ok(())
-}
-
-#[test]
-fn rtk_help_still_works_with_global_flags() -> Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["rtk", "--verbose", "--help"])
-        .assert()
-        .success()
-        .stdout(
-            contains("高性能 CLI 代理")
-                .and(contains("golangci-lint"))
-                .and(contains("rewrite").not()),
-        );
-
-    Ok(())
-}
-
-#[test]
-fn rtk_git_help_exposes_curated_subcommands() -> Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["rtk", "git", "--help"])
-        .assert()
-        .success()
-        .stdout(
-            contains("status")
-                .and(contains("log"))
-                .and(contains("diff"))
-                .and(contains("rewrite").not()),
-        );
-
-    Ok(())
-}
-
-#[test]
-fn rtk_git_help_still_works_with_global_flags() -> Result<()> {
-    let codex_home = TempDir::new()?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.args(["rtk", "--verbose", "git", "--help"])
-        .assert()
-        .success()
-        .stdout(contains("Git 命令，紧凑输出").and(contains("status")));
+    for (args, required, forbidden) in cases {
+        assert_help_contains(codex_home.path(), &args, &required, &forbidden)?;
+    }
 
     Ok(())
 }

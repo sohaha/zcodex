@@ -209,40 +209,28 @@ fn rewrite_cat(rest: &[String]) -> Option<String> {
 }
 
 fn rewrite_head(rest: &[String]) -> Option<String> {
+    rewrite_read_window(rest, "--max-lines")
+}
+
+fn rewrite_tail(rest: &[String]) -> Option<String> {
+    rewrite_read_window(rest, "--tail-lines")
+}
+
+fn rewrite_read_window(rest: &[String], line_flag: &str) -> Option<String> {
     let rest = strip_flag_terminators(rest);
     match rest.as_slice() {
         [path] => Some(format!(
-            "{RTK_PREFIX} read {} --max-lines 10",
+            "{RTK_PREFIX} read {} {line_flag} 10",
             shell_escape(path)
         )),
-        [count, path] => {
-            if let Some(lines) = parse_numeric_short_flag(count, "-") {
-                return Some(format!(
-                    "{RTK_PREFIX} read {} --max-lines {lines}",
-                    shell_escape(path)
-                ));
-            }
-            if let Some(lines) = parse_equals_flag(count, "--lines=") {
-                return Some(format!(
-                    "{RTK_PREFIX} read {} --max-lines {lines}",
-                    shell_escape(path)
-                ));
-            }
-            if let Some(lines) = parse_numeric_short_flag(count, "-n") {
-                return Some(format!(
-                    "{RTK_PREFIX} read {} --max-lines {lines}",
-                    shell_escape(path)
-                ));
-            }
-            None
-        }
-        [flag, lines, path] if *flag == "-n" => Some(format!(
-            "{RTK_PREFIX} read {} --max-lines {}",
-            shell_escape(path),
-            shell_escape(lines)
-        )),
-        [flag, lines, path] if *flag == "--lines" => Some(format!(
-            "{RTK_PREFIX} read {} --max-lines {}",
+        [count, path] => parse_read_window_count(count).map(|lines| {
+            format!(
+                "{RTK_PREFIX} read {} {line_flag} {lines}",
+                shell_escape(path)
+            )
+        }),
+        [flag, lines, path] if matches!(*flag, "-n" | "--lines") => Some(format!(
+            "{RTK_PREFIX} read {} {line_flag} {}",
             shell_escape(path),
             shell_escape(lines)
         )),
@@ -250,46 +238,10 @@ fn rewrite_head(rest: &[String]) -> Option<String> {
     }
 }
 
-fn rewrite_tail(rest: &[String]) -> Option<String> {
-    let rest = strip_flag_terminators(rest);
-    match rest.as_slice() {
-        [path] => Some(format!(
-            "{RTK_PREFIX} read {} --tail-lines 10",
-            shell_escape(path)
-        )),
-        [count, path] => {
-            if let Some(lines) = parse_numeric_short_flag(count, "-") {
-                return Some(format!(
-                    "{RTK_PREFIX} read {} --tail-lines {lines}",
-                    shell_escape(path)
-                ));
-            }
-            if let Some(lines) = parse_equals_flag(count, "--lines=") {
-                return Some(format!(
-                    "{RTK_PREFIX} read {} --tail-lines {lines}",
-                    shell_escape(path)
-                ));
-            }
-            if let Some(lines) = parse_numeric_short_flag(count, "-n") {
-                return Some(format!(
-                    "{RTK_PREFIX} read {} --tail-lines {lines}",
-                    shell_escape(path)
-                ));
-            }
-            None
-        }
-        [flag, lines, path] if *flag == "-n" => Some(format!(
-            "{RTK_PREFIX} read {} --tail-lines {}",
-            shell_escape(path),
-            shell_escape(lines)
-        )),
-        [flag, lines, path] if *flag == "--lines" => Some(format!(
-            "{RTK_PREFIX} read {} --tail-lines {}",
-            shell_escape(path),
-            shell_escape(lines)
-        )),
-        _ => None,
-    }
+fn parse_read_window_count(value: &str) -> Option<&str> {
+    parse_numeric_short_flag(value, "-")
+        .or_else(|| parse_equals_flag(value, "--lines="))
+        .or_else(|| parse_numeric_short_flag(value, "-n"))
 }
 
 fn split_leading_env_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
@@ -682,33 +634,17 @@ fn passthrough(
 }
 
 fn looks_like_rtk_candidate(command: &str) -> bool {
-    let mut words = command.split_whitespace().peekable();
-    while let Some(word) = words.peek().copied() {
-        if is_env_assignment(word) {
-            words.next();
-            continue;
-        }
-        if word == "env" || word == "--" {
-            words.next();
-            continue;
-        }
-        if word == "command" {
-            words.next();
-            continue;
-        }
-        if matches!(word, "chrt" | "ionice" | "nice" | "stdbuf") {
-            words.next();
-            return words.any(|value| {
-                let name = normalize_command_name(value);
-                matches!(name.as_str(), "cat" | "head" | "tail")
-                    || DIRECT_PREFIXES.contains(&name.as_str())
-            });
-        }
-        let name = normalize_command_name(word);
-        return matches!(name.as_str(), "cat" | "head" | "tail")
-            || DIRECT_PREFIXES.contains(&name.as_str());
-    }
-    false
+    let Some(args) = shlex::split(command) else {
+        return false;
+    };
+    let Some(parsed) = parse_command_target(&args) else {
+        return false;
+    };
+    is_rtk_candidate_name(parsed.target.as_str())
+}
+
+fn is_rtk_candidate_name(command: &str) -> bool {
+    matches!(command, "cat" | "head" | "tail") || DIRECT_PREFIXES.contains(&command)
 }
 
 fn parse_numeric_short_flag<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
@@ -999,7 +935,7 @@ mod tests {
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::MissingCommand,
-                candidate: true,
+                candidate: false,
             }
         );
 
@@ -1009,7 +945,7 @@ mod tests {
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::UnsupportedCommand,
-                candidate: true,
+                candidate: false,
             }
         );
 
@@ -1019,7 +955,7 @@ mod tests {
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::UnsupportedCommand,
-                candidate: true,
+                candidate: false,
             }
         );
     }
