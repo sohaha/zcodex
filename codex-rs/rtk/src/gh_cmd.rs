@@ -812,8 +812,8 @@ fn list_runs(args: &[String], _verbose: u8, ultra_compact: bool) -> Result<()> {
 
     if let Some(runs) = json.as_array() {
         if ultra_compact {
-            filtered.push_str("Run\n");
-            println!("Run");
+            filtered.push_str("Runs\n");
+            println!("Runs");
         } else {
             filtered.push_str("🏃 Workflow Runs\n");
             println!("🏃 Workflow Runs");
