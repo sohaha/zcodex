@@ -241,6 +241,31 @@ fn assert_parse_error_without_fallback(
     Ok(())
 }
 
+fn assert_success_without_fallback(
+    codex_home: &TempDir,
+    command_name: &str,
+    args: &[&str],
+    required_stdout: &[&str],
+) -> Result<()> {
+    let bin_dir = create_fake_bin_dir(codex_home)?;
+    let _fake_command = write_fake_command(
+        &bin_dir,
+        command_name,
+        fallback_marker_script("FALLBACK_TRIGGERED"),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    let assert = cmd.env("PATH", prepend_path(&bin_dir)).args(args).assert();
+    let mut stdout_assert = assert
+        .success()
+        .stdout(contains("FALLBACK_TRIGGERED").not());
+    for pattern in required_stdout {
+        stdout_assert = stdout_assert.stdout(contains(*pattern));
+    }
+
+    Ok(())
+}
+
 #[test]
 fn rtk_alias_routes_to_rtk_parser() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -377,67 +402,35 @@ fn rtk_builtin_parse_errors_do_not_fall_back_to_external_commands() -> Result<()
 }
 
 #[test]
-fn rtk_builtin_help_does_not_fall_back_to_external_commands_after_global_flags() -> Result<()> {
+fn rtk_builtin_commands_stay_internal_after_global_flags_matrix() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_read = write_fake_command(
-        &bin_dir,
+
+    assert_success_without_fallback(
+        &codex_home,
         "read",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
+        &["rtk", "--verbose", "read", "--help"],
+        &["读取文件并智能过滤"],
     )?;
 
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--verbose", "read", "--help"])
-        .assert()
-        .success()
-        .stdout(contains("读取文件并智能过滤"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
+    assert_parse_error_without_fallback(
+        &codex_home,
+        "read",
+        &["rtk", "-vv", "read", "--bogus-flag"],
+        "unexpected argument '--bogus-flag'",
+    )?;
 
     Ok(())
 }
 
 #[test]
-fn rtk_builtin_parse_errors_do_not_fall_back_after_global_flags() -> Result<()> {
+fn rtk_removed_meta_commands_stay_in_parse_error_path_after_global_flags_matrix() -> Result<()> {
     let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_read = write_fake_command(
-        &bin_dir,
-        "read",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
+    let cases: &[(&[&str], &str)] =
+        &[(&["rtk", "--verbose", "rewrite"], "unrecognized subcommand")];
 
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "-vv", "read", "--bogus-flag"])
-        .assert()
-        .failure()
-        .stderr(contains("unexpected argument '--bogus-flag'"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
-
-    Ok(())
-}
-
-#[test]
-fn rtk_removed_meta_commands_still_do_not_fall_through_after_global_flags() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    let bin_dir = codex_home.path().join("bin");
-    std::fs::create_dir(&bin_dir)?;
-    let _fake_rewrite = write_fake_command(
-        &bin_dir,
-        "rewrite",
-        fallback_marker_script("FALLBACK_TRIGGERED"),
-    )?;
-
-    let mut cmd = codex_command(codex_home.path())?;
-    cmd.env("PATH", prepend_path(&bin_dir))
-        .args(["rtk", "--verbose", "rewrite"])
-        .assert()
-        .failure()
-        .stderr(contains("unrecognized subcommand"))
-        .stdout(contains("FALLBACK_TRIGGERED").not());
+    for (args, stderr_pattern) in cases {
+        assert_parse_error_without_fallback(&codex_home, "rewrite", args, stderr_pattern)?;
+    }
 
     Ok(())
 }
