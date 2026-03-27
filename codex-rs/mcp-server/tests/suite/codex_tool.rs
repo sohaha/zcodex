@@ -809,6 +809,106 @@ mod tldr_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_tldr_tool_structure_exposes_graph_detail_kinds() {
+        if let Err(err) = tldr_tool_structure_exposes_graph_detail_kinds().await {
+            panic!("failure: {err}");
+        }
+    }
+
+    async fn tldr_tool_structure_exposes_graph_detail_kinds() -> anyhow::Result<()> {
+        let McpHandle {
+            process: mut mcp_process,
+            server: _server,
+            dir: _dir,
+        } = create_mcp_process(Vec::new()).await?;
+        let project = TempDir::new()?;
+        std::fs::create_dir_all(project.path().join("src"))?;
+        std::fs::write(
+            project.path().join("src/main.rs"),
+            "use crate::auth::Session;\n\nfn helper(session: Session) {}\nfn main() { helper(todo!()); }\n",
+        )?;
+
+        let request_id = mcp_process
+            .send_named_tool_call(
+                "tldr",
+                Some(
+                    serde_json::json!({
+                        "action": "tree",
+                        "project": project.path(),
+                        "language": "rust"
+                    })
+                    .as_object()
+                    .ok_or_else(|| anyhow::anyhow!("tool call args should be object"))?
+                    .clone(),
+                ),
+            )
+            .await?;
+        let response = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
+        )
+        .await??;
+
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        let details = structured["analysis"]["details"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("analysis.details should be an object"))?;
+        let nodes = details["nodes"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("analysis.details.nodes should be an array"))?;
+        let edges = details["edges"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("analysis.details.edges should be an array"))?;
+        let symbol_index = details["symbol_index"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("analysis.details.symbol_index should be an array"))?;
+
+        assert!(
+            nodes
+                .iter()
+                .any(|node| { node["id"] == "src/main.rs" && node["kind"] == "file" })
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|node| { node["id"] == "helper" && node["kind"] == "function" })
+        );
+        assert!(
+            nodes.iter().any(|node| {
+                node["kind"] == "import" && node["id"] == "use crate::auth::Session;"
+            })
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|node| { node["kind"] == "reference" && node["id"] == "Session" })
+        );
+
+        assert!(edges.iter().any(|edge| {
+            edge["kind"] == "contains" && edge["from"] == "src/main.rs" && edge["to"] == "helper"
+        }));
+        assert!(edges.iter().any(|edge| {
+            edge["kind"] == "calls" && edge["from"] == "main" && edge["to"] == "helper"
+        }));
+        assert!(edges.iter().any(|edge| {
+            edge["kind"] == "imports" && edge["to"] == "use crate::auth::Session;"
+        }));
+        assert!(
+            edges
+                .iter()
+                .any(|edge| { edge["kind"] == "references" && edge["to"] == "Session" })
+        );
+
+        assert!(symbol_index.iter().any(|entry| {
+            entry["symbol"] == "helper" && entry["node_ids"] == serde_json::json!(["helper"])
+        }));
+
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_tldr_tool_semantic_uses_daemon_when_available() {
         if let Err(err) = tldr_tool_semantic_uses_daemon_when_available().await {
             panic!("failure: {err}");
