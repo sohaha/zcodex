@@ -470,6 +470,48 @@ fn rtk_unknown_commands_still_fall_back_after_double_dash() -> Result<()> {
 }
 
 #[test]
+fn rtk_external_help_still_falls_back_after_double_dash() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_external = write_fake_command(
+        &bin_dir,
+        "custom-fallback",
+        fallback_marker_script("FALLBACK_OK \"$@\""),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "--", "custom-fallback", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("FALLBACK_OK").and(contains("--help")));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_external_version_still_falls_back_after_double_dash() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_external = write_fake_command(
+        &bin_dir,
+        "custom-fallback",
+        fallback_marker_script("FALLBACK_OK \"$@\""),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "--", "custom-fallback", "--version"])
+        .assert()
+        .success()
+        .stdout(contains("FALLBACK_OK").and(contains("--version")));
+
+    Ok(())
+}
+
+#[test]
 fn rtk_builtin_help_after_double_dash_stays_in_parse_error_path() -> Result<()> {
     let codex_home = TempDir::new()?;
     let bin_dir = codex_home.path().join("bin");
@@ -486,6 +528,28 @@ fn rtk_builtin_help_after_double_dash_stays_in_parse_error_path() -> Result<()> 
         .assert()
         .failure()
         .stderr(contains("subcommand 'read' exists"))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
+
+    Ok(())
+}
+
+#[test]
+fn rtk_removed_meta_help_after_double_dash_stays_in_parse_error_path() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_rewrite = write_fake_command(
+        &bin_dir,
+        "rewrite",
+        fallback_marker_script("FALLBACK_TRIGGERED"),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "--", "rewrite", "--help"])
+        .assert()
+        .failure()
+        .stderr(contains("unrecognized subcommand 'rewrite'"))
         .stdout(contains("FALLBACK_TRIGGERED").not());
 
     Ok(())
