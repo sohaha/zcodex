@@ -125,7 +125,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
         Err(e) => {
             // JSON 解析失败时回退
             return format!(
-                "Ruff check（JSON 解析失败：{}）\n{}",
+                "Ruff check (JSON 解析失败: {})\n{}",
                 e,
                 truncate(output, /*max_len*/ 500)
             );

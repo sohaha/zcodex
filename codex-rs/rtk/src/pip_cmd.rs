@@ -21,7 +21,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let base_cmd = if use_uv { "uv" } else { "pip" };
 
     if verbose > 0 && use_uv {
-        eprintln!("使用 uv（兼容 pip）");
+        eprintln!("使用 uv (兼容 pip)");
     }
 
     // 识别子命令
@@ -159,7 +159,7 @@ fn filter_pip_list(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip list（JSON 解析失败：{e}）");
+            return format!("pip list (JSON 解析失败: {e})");
         }
     };
 
@@ -206,7 +206,7 @@ fn filter_pip_outdated(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip outdated（JSON 解析失败：{e}）");
+            return format!("pip outdated (JSON 解析失败: {e})");
         }
     };
 
