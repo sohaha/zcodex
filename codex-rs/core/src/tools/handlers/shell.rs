@@ -54,12 +54,21 @@ struct RunExecLikeArgs {
     exec_params: ExecParams,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
+    interaction_input: Option<String>,
+    model_output_prefix: Option<String>,
     session: Arc<crate::codex::Session>,
     turn: Arc<TurnContext>,
     tracker: crate::tools::context::SharedTurnDiffTracker,
     call_id: String,
     freeform: bool,
     shell_runtime_backend: ShellRuntimeBackend,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RoutedCommand {
+    command: String,
+    interaction_input: Option<String>,
+    model_output_prefix: Option<String>,
 }
 
 impl ShellHandler {
@@ -112,8 +121,24 @@ impl ShellCommandHandler {
         shell.derive_exec_args(command, use_login_shell)
     }
 
-    fn route_command(command: &str) -> String {
-        rewrite_shell_command(command).unwrap_or_else(|| command.to_string())
+    fn route_command(command: &str) -> RoutedCommand {
+        let original = command.trim().to_string();
+        let routed = rewrite_shell_command(command).unwrap_or_else(|| command.to_string());
+        if routed == original {
+            RoutedCommand {
+                command: routed,
+                interaction_input: None,
+                model_output_prefix: None,
+            }
+        } else {
+            RoutedCommand {
+                model_output_prefix: Some(format!(
+                    "[shell_command routed via embedded RTK]\noriginal: {original}\nexecuted: {routed}"
+                )),
+                interaction_input: Some(original),
+                command: routed,
+            }
+        }
     }
 
     fn to_exec_params(
@@ -207,6 +232,8 @@ impl ToolHandler for ShellHandler {
                     exec_params,
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
+                    interaction_input: None,
+                    model_output_prefix: None,
                     session,
                     turn,
                     tracker,
@@ -224,6 +251,8 @@ impl ToolHandler for ShellHandler {
                     exec_params,
                     additional_permissions: None,
                     prefix_rule: None,
+                    interaction_input: None,
+                    model_output_prefix: None,
                     session,
                     turn,
                     tracker,
@@ -301,7 +330,8 @@ impl ToolHandler for ShellCommandHandler {
         )
         .await;
         let mut params = params;
-        params.command = Self::route_command(&params.command);
+        let routed_command = Self::route_command(&params.command);
+        params.command = routed_command.command.clone();
         let prefix_rule = params.prefix_rule.clone();
         let exec_params = Self::to_exec_params(
             &params,
@@ -315,6 +345,8 @@ impl ToolHandler for ShellCommandHandler {
             exec_params,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
+            interaction_input: routed_command.interaction_input,
+            model_output_prefix: routed_command.model_output_prefix,
             session,
             turn,
             tracker,
@@ -333,6 +365,8 @@ impl ShellHandler {
             exec_params,
             additional_permissions,
             prefix_rule,
+            interaction_input,
+            model_output_prefix,
             session,
             turn,
             tracker,
@@ -426,6 +460,8 @@ impl ShellHandler {
             exec_params.cwd.clone(),
             source,
             freeform,
+            interaction_input,
+            model_output_prefix,
         );
         let event_ctx = ToolEventCtx::new(
             session.as_ref(),

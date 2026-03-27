@@ -94,6 +94,8 @@ pub(crate) enum ToolEmitter {
         source: ExecCommandSource,
         parsed_cmd: Vec<ParsedCommand>,
         freeform: bool,
+        interaction_input: Option<String>,
+        model_output_prefix: Option<String>,
     },
     ApplyPatch {
         changes: HashMap<PathBuf, FileChange>,
@@ -114,6 +116,8 @@ impl ToolEmitter {
         cwd: PathBuf,
         source: ExecCommandSource,
         freeform: bool,
+        interaction_input: Option<String>,
+        model_output_prefix: Option<String>,
     ) -> Self {
         let parsed_cmd = parse_command(&command);
         Self::Shell {
@@ -122,6 +126,8 @@ impl ToolEmitter {
             source,
             parsed_cmd,
             freeform,
+            interaction_input,
+            model_output_prefix,
         }
     }
 
@@ -156,6 +162,7 @@ impl ToolEmitter {
                     cwd,
                     source,
                     parsed_cmd,
+                    interaction_input,
                     ..
                 },
                 stage,
@@ -167,7 +174,7 @@ impl ToolEmitter {
                         cwd.as_path(),
                         parsed_cmd,
                         *source,
-                        /*interaction_input*/ None,
+                        interaction_input.as_deref(),
                         /*process_id*/ None,
                     ),
                     stage,
@@ -296,8 +303,19 @@ impl ToolEmitter {
         ctx: ToolEventCtx<'_>,
     ) -> String {
         match self {
-            Self::Shell { freeform: true, .. } => {
-                super::format_exec_output_for_model_freeform(output, ctx.turn.truncation_policy)
+            Self::Shell {
+                freeform: true,
+                model_output_prefix,
+                ..
+            } => {
+                let content = super::format_exec_output_for_model_freeform(
+                    output,
+                    ctx.turn.truncation_policy,
+                );
+                match model_output_prefix {
+                    Some(prefix) => format!("{prefix}\n\n{content}"),
+                    None => content,
+                }
             }
             _ => super::format_exec_output_for_model_structured(output, ctx.turn.truncation_policy),
         }

@@ -3539,7 +3539,7 @@ impl Session {
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
     ) {
-        // Replacement histories that omit the canonical RTK developer prefix must also clear the
+        // Replacement histories that omit the canonical reference context must also clear the
         // diff baseline so the next real turn fully reinjects stable initial context.
         let reference_context_item =
             Self::filter_reference_context_item_for_history(&items, reference_context_item);

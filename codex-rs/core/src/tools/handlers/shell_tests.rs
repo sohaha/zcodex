@@ -182,11 +182,11 @@ fn shell_command_handler_rejects_login_when_disallowed() {
 #[test]
 fn shell_command_handler_routes_supported_commands_through_rtk() {
     assert_eq!(
-        ShellCommandHandler::route_command("git status"),
+        ShellCommandHandler::route_command("git status").command,
         "codex rtk git status"
     );
     assert_eq!(
-        ShellCommandHandler::route_command("head -20 src/main.rs"),
+        ShellCommandHandler::route_command("head -20 src/main.rs").command,
         "codex rtk read src/main.rs --max-lines 20"
     );
 }
@@ -194,7 +194,24 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
 #[test]
 fn shell_command_handler_leaves_compound_commands_raw() {
     assert_eq!(
-        ShellCommandHandler::route_command("git status | head"),
+        ShellCommandHandler::route_command("git status | head").command,
         "git status | head"
+    );
+}
+
+#[test]
+fn shell_command_handler_records_original_command_when_rewritten() {
+    let routed = ShellCommandHandler::route_command("FOO=1 git status");
+    assert_eq!(routed.command, "FOO=1 codex rtk git status");
+    assert_eq!(
+        routed.interaction_input,
+        Some("FOO=1 git status".to_string())
+    );
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 codex rtk git status"
+                .to_string()
+        )
     );
 }

@@ -4325,7 +4325,7 @@ async fn build_initial_context_restates_realtime_start_when_reference_context_is
 }
 
 #[tokio::test]
-async fn build_initial_context_omits_removed_rtk_guidance() {
+async fn build_initial_context_omits_removed_shell_routing_guidance() {
     let (session, turn_context) = make_session_and_context().await;
     let initial_context = session.build_initial_context(&turn_context).await;
     let developer_texts = developer_input_texts(&initial_context);
@@ -4333,7 +4333,7 @@ async fn build_initial_context_omits_removed_rtk_guidance() {
         !developer_texts
             .iter()
             .any(|text| text.contains("# RTK (Codex Curated)")),
-        "expected initial context to omit removed RTK guidance, got {developer_texts:?}"
+        "expected initial context to omit removed shell routing guidance, got {developer_texts:?}"
     );
 }
 

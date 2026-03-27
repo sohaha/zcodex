@@ -199,7 +199,7 @@ pub(crate) fn build_settings_update_items(
     // deterministically.
     let contextual_user_message = build_environment_update_item(previous, next, shell);
     let developer_update_sections = [
-        // Only emit turn-local diffs here. Stable prefix guidance such as RTK lives in
+        // Only emit turn-local diffs here. Stable initial context lives in
         // `build_initial_context()` so ordinary turns preserve provider-side prefix caching.
         // Keep model-switch instructions first so model-specific guidance is read before
         // any other context diffs on this turn.

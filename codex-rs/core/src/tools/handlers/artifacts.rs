@@ -224,6 +224,8 @@ async fn emit_exec_begin(session: &Session, turn: &TurnContext, call_id: &str) {
         turn.cwd.clone(),
         ExecCommandSource::Agent,
         /*freeform*/ true,
+        None,
+        None,
     );
     let ctx = ToolEventCtx::new(session, turn, call_id, /*turn_diff_tracker*/ None);
     emitter.emit(ctx, ToolEventStage::Begin).await;
@@ -250,6 +252,8 @@ async fn emit_exec_end(
         turn.cwd.clone(),
         ExecCommandSource::Agent,
         /*freeform*/ true,
+        None,
+        None,
     );
     let ctx = ToolEventCtx::new(session, turn, call_id, /*turn_diff_tracker*/ None);
     let stage = if success {

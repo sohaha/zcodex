@@ -1749,16 +1749,6 @@ async fn includes_developer_instructions_message_in_request() {
         "expected developer instructions in a developer message, got {:?}",
         request_body["input"]
     );
-    assert!(
-        developer_messages.iter().any(|item| {
-            message_input_texts(item)
-                .iter()
-                .any(|text| text.contains("Prefer `codex rtk` for noisy shell output."))
-        }),
-        "expected RTK guidance in a developer message, got {:?}",
-        request_body["input"]
-    );
-
     assert_message_role(&request_body["input"][1], "user");
     let user_context_texts = message_input_texts(&request_body["input"][1]);
     assert!(
