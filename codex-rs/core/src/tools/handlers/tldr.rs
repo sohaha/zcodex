@@ -762,6 +762,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_handler_with_hooks_summarizes_notify_payload() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Notify,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+            },
+            &|_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "marked src/lib.rs dirty".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                            cached_entries: 1,
+                            dirty_files: 1,
+                            dirty_file_threshold: 20,
+                            reindex_pending: false,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+
+        assert!(text.contains("action: notify | status: ok | message: marked src/lib.rs dirty"));
+        assert_eq!(payload["action"], "notify");
+        assert_eq!(payload["snapshot"]["dirty_files"], 1);
+    }
+
+    #[tokio::test]
     async fn run_tldr_handler_with_hooks_sanitizes_marker_collisions_in_text() {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(

@@ -805,6 +805,49 @@ mod tests {
         assert_eq!(result.structured_content["message"], "status");
     }
 
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_preserves_warm_snapshot_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Warm,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "already warm".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(crate::session::SessionSnapshot {
+                            cached_entries: 0,
+                            dirty_files: 0,
+                            dirty_file_threshold: 20,
+                            reindex_pending: false,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("warm tool should succeed");
+
+        assert_eq!(result.text, "already warm");
+        assert_eq!(result.structured_content["action"], "warm");
+        assert_eq!(result.structured_content["snapshot"]["dirty_files"], 0);
+    }
+
     #[test]
     fn notify_action_requires_path() {
         let error = tokio::runtime::Runtime::new()

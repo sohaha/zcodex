@@ -354,6 +354,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_notify_snapshot_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Notify,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "marked src/lib.rs dirty".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: Some(codex_native_tldr::session::SessionSnapshot {
+                            cached_entries: 1,
+                            dirty_files: 1,
+                            dirty_file_threshold: 20,
+                            reindex_pending: false,
+                            last_query_at: None,
+                            last_reindex: None,
+                            last_reindex_attempt: None,
+                        }),
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result_json["content"][0]["text"], "marked src/lib.rs dirty");
+        assert_eq!(structured["action"], "notify");
+        assert_eq!(structured["snapshot"]["dirty_files"], 1);
+        assert_eq!(structured["message"], "marked src/lib.rs dirty");
+    }
+
+    #[tokio::test]
     async fn query_daemon_with_hooks_retries_when_external_daemon_becomes_ready() {
         let tempdir = tempdir().expect("tempdir should exist");
         let command = TldrDaemonCommand::Ping;
