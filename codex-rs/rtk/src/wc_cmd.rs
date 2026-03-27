@@ -140,22 +140,22 @@ fn filter_wc_output(raw: &str, mode: &WcMode) -> String {
         return String::new();
     }
 
-    // Single file (one output line, no "total")
+    // 单文件（只有一行输出，且不含 `total`）
     if lines.len() == 1 {
         return format_single_line(lines[0], mode);
     }
 
-    // Multiple files — compact table
+    // 多文件 —— 使用紧凑表格
     format_multi_line(&lines, mode)
 }
 
-/// Format a single wc output line (one file or stdin)
+/// 格式化单行 `wc` 输出（单文件或 stdin）
 fn format_single_line(line: &str, mode: &WcMode) -> String {
     let parts: Vec<&str> = line.split_whitespace().collect();
 
     match mode {
         WcMode::Lines | WcMode::Words | WcMode::Bytes | WcMode::Chars => {
-            // First number is the only requested column
+            // 第一个数字就是用户请求的唯一列
             parts
                 .first()
                 .map(std::string::ToString::to_string)
@@ -169,7 +169,7 @@ fn format_single_line(line: &str, mode: &WcMode) -> String {
             }
         }
         WcMode::Mixed => {
-            // Strip file path, keep numbers only
+            // 去掉文件路径，只保留数字
             if parts.len() >= 2 {
                 let last_is_path = parts.last().is_some_and(|p| p.parse::<u64>().is_err());
                 if last_is_path {
@@ -184,11 +184,11 @@ fn format_single_line(line: &str, mode: &WcMode) -> String {
     }
 }
 
-/// Format multiple files as a compact table
+/// 将多文件输出格式化为紧凑表格
 fn format_multi_line(lines: &[&str], mode: &WcMode) -> String {
     let mut result = Vec::new();
 
-    // Find common directory prefix to shorten paths
+    // 找出公共目录前缀，缩短路径显示
     let paths: Vec<&str> = lines
         .iter()
         .filter_map(|line| {
@@ -258,7 +258,7 @@ fn format_multi_line(lines: &[&str], mode: &WcMode) -> String {
     result.join("\n")
 }
 
-/// Find common directory prefix among paths
+/// 找出路径之间的公共目录前缀
 fn find_common_prefix(paths: &[&str]) -> String {
     if paths.len() <= 1 {
         return String::new();
@@ -275,7 +275,7 @@ fn find_common_prefix(paths: &[&str]) -> String {
         return prefix.to_string();
     }
 
-    // Try shorter prefixes by removing right-most segments
+    // 逐步移除最右侧路径段，尝试更短前缀
     let mut candidate = prefix.to_string();
     while !candidate.is_empty() {
         if paths.iter().all(|p| p.starts_with(&candidate)) {
@@ -290,7 +290,7 @@ fn find_common_prefix(paths: &[&str]) -> String {
     String::new()
 }
 
-/// Strip common prefix from a path
+/// 从路径中去掉公共前缀
 fn strip_prefix<'a>(path: &'a str, prefix: &str) -> &'a str {
     if prefix.is_empty() {
         return path;

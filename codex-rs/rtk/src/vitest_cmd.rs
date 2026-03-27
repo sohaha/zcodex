@@ -17,7 +17,7 @@ use crate::tracking;
 use crate::utils::package_manager_exec;
 use crate::utils::strip_ansi;
 
-/// Vitest JSON output structures (tool-specific format)
+/// Vitest JSON 输出结构（工具专用格式）
 #[derive(Debug, Deserialize)]
 struct VitestJsonOutput {
     #[serde(rename = "testResults")]
@@ -52,16 +52,16 @@ struct VitestTest {
     failure_messages: Vec<String>,
 }
 
-/// Parser for Vitest JSON output
+/// Vitest JSON 输出解析器
 pub struct VitestParser;
 
 impl OutputParser for VitestParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // Tier 1: Try JSON parsing (with extraction fallback for pnpm/dotenv prefixes)
+        // 第 1 层：尝试 JSON 解析（支持 pnpm/dotenv 前缀回退提取）
         let json_result = serde_json::from_str::<VitestJsonOutput>(input).or_else(|first_err| {
-            // Fallback: Try extracting JSON object from prefixed output
+            // 回退方案：尝试从带前缀的输出中提取 JSON 对象
             if let Some(extracted) = extract_json_object(input) {
                 serde_json::from_str::<VitestJsonOutput>(extracted)
             } else {
@@ -89,13 +89,13 @@ impl OutputParser for VitestParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // Tier 2: Try regex extraction (only fires if user overrides --reporter flag)
+                // 第 2 层：尝试正则提取（仅在用户覆盖 --reporter 时触发）
                 match extract_stats_regex(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
                     }
                     None => {
-                        // Tier 3: Passthrough
+                        // 第 3 层：直通原始输出
                         ParseResult::Passthrough(truncate_output(input, /*max_chars*/ 500))
                     }
                 }
@@ -104,7 +104,7 @@ impl OutputParser for VitestParser {
     }
 }
 
-/// Extract failures from JSON structure
+/// 从 JSON 结构中提取失败项
 fn extract_failures_from_json(json: &VitestJsonOutput) -> Vec<TestFailure> {
     let mut failures = Vec::new();
 
@@ -125,7 +125,7 @@ fn extract_failures_from_json(json: &VitestJsonOutput) -> Vec<TestFailure> {
     failures
 }
 
-/// Tier 2: Extract test statistics using regex (degraded mode)
+/// 第 2 层：通过正则提取测试统计信息（降级模式）
 fn extract_stats_regex(output: &str) -> Option<TestResult> {
     lazy_static::lazy_static! {
         static ref TEST_FILES_RE: Regex = crate::utils::compile_regex(
@@ -145,7 +145,7 @@ fn extract_stats_regex(output: &str) -> Option<TestResult> {
     let mut failed = 0;
     let mut total = 0;
 
-    // Parse test counts
+    // 解析测试数量
     if let Some(caps) = TESTS_RE.captures(&clean_output) {
         if let Some(fail_str) = caps.get(1) {
             failed = fail_str.as_str().parse().unwrap_or(0);
@@ -156,7 +156,7 @@ fn extract_stats_regex(output: &str) -> Option<TestResult> {
         total = passed + failed;
     }
 
-    // Parse duration
+    // 解析耗时
     let duration_ms = DURATION_RE.captures(&clean_output).and_then(|caps| {
         let value: f64 = caps[1].parse().ok()?;
         let unit = &caps[2];
@@ -167,7 +167,7 @@ fn extract_stats_regex(output: &str) -> Option<TestResult> {
         })
     });
 
-    // Only return if we found valid data
+    // 仅在成功提取到有效数据时返回结果
     if total > 0 {
         Some(TestResult {
             total,
@@ -182,7 +182,7 @@ fn extract_stats_regex(output: &str) -> Option<TestResult> {
     }
 }
 
-/// Extract failures using regex
+/// 使用正则提取失败项
 fn extract_failures_regex(output: &str) -> Vec<TestFailure> {
     let mut failures = Vec::new();
     let lines: Vec<&str> = output.lines().collect();
@@ -194,7 +194,7 @@ fn extract_failures_regex(output: &str) -> Vec<TestFailure> {
             let mut error_lines = vec![line.to_string()];
             i += 1;
 
-            // Collect subsequent indented lines
+            // 收集后续缩进行
             while i < lines.len() && lines[i].starts_with("  ") {
                 error_lines.push(lines[i].trim().to_string());
                 i += 1;
@@ -231,9 +231,9 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     let mut cmd = package_manager_exec("vitest");
-    cmd.arg("run"); // Force non-watch mode
+    cmd.arg("run"); // 强制关闭 watch 模式
 
-    // Add JSON reporter for structured output
+    // 添加 JSON reporter，便于结构化解析
     cmd.arg("--reporter=json");
 
     for arg in args {
@@ -245,7 +245,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let combined = format!("{stdout}{stderr}");
 
-    // Parse output using VitestParser
+    // 使用 VitestParser 解析输出
     let parse_result = VitestParser::parse(&stdout);
     let mode = FormatMode::from_verbosity(verbose);
 
@@ -277,7 +277,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
 
     timer.track("vitest run", "rtk vitest run", &combined, &filtered);
 
-    // Propagate original exit code
+    // 透传原始退出码
     std::process::exit(exit_code)
 }
 
@@ -317,7 +317,7 @@ mod tests {
         "#;
 
         let result = VitestParser::parse(text);
-        assert_eq!(result.tier(), 2); // Degraded
+        assert_eq!(result.tier(), 2); // 降级解析
         assert!(result.is_ok());
 
         let data = result.unwrap();
@@ -329,7 +329,7 @@ mod tests {
     fn test_vitest_parser_passthrough() {
         let invalid = "random output with no structure";
         let result = VitestParser::parse(invalid);
-        assert_eq!(result.tier(), 3); // Passthrough
+        assert_eq!(result.tier(), 3); // 直通原始输出
         assert!(!result.is_ok());
     }
 
@@ -350,7 +350,7 @@ Scope: all 6 workspace projects
 {"numTotalTests": 13, "numPassedTests": 13, "numFailedTests": 0, "numPendingTests": 0, "testResults": [], "startTime": 1000, "endTime": 1450}
 "#;
         let result = VitestParser::parse(input);
-        assert_eq!(result.tier(), 1, "Should succeed with Tier 1 (full parse)");
+        assert_eq!(result.tier(), 1, "应以第 1 层成功解析（完整解析）");
         assert!(result.is_ok());
 
         let data = result.unwrap();
@@ -367,7 +367,7 @@ Scope: all 6 workspace projects
 {"numTotalTests": 5, "numPassedTests": 4, "numFailedTests": 1, "numPendingTests": 0, "testResults": [], "startTime": 2000, "endTime": 2300}
 "#;
         let result = VitestParser::parse(input);
-        assert_eq!(result.tier(), 1, "Should succeed with Tier 1 (full parse)");
+        assert_eq!(result.tier(), 1, "应以第 1 层成功解析（完整解析）");
         assert!(result.is_ok());
 
         let data = result.unwrap();
@@ -383,7 +383,7 @@ Scope: all 6 workspace projects
 {"numTotalTests": 2, "numPassedTests": 2, "numFailedTests": 0, "numPendingTests": 0, "testResults": [{"name": "test.js", "assertionResults": [{"fullName": "nested test", "status": "passed", "failureMessages": []}]}], "startTime": 1000, "endTime": 1100}
 "#;
         let result = VitestParser::parse(input);
-        assert_eq!(result.tier(), 1, "Should succeed with Tier 1 (full parse)");
+        assert_eq!(result.tier(), 1, "应以第 1 层成功解析（完整解析）");
         assert!(result.is_ok());
 
         let data = result.unwrap();

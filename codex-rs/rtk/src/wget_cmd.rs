@@ -126,11 +126,11 @@ fn extract_filename_from_output(stderr: &str, url: &str, args: &[String]) -> Str
         }
     }
 
-    // Parse wget output for "Sauvegarde en" or "Saving to"
+    // 解析 wget 输出中的 `"Sauvegarde en"` / `"Saving to"`
     for line in stderr.lines() {
-        // French: Sauvegarde en : « filename »
+        // 法语示例：`Sauvegarde en : « filename »`
         if line.contains("Sauvegarde en") || line.contains("Saving to") {
-            // Use char-based parsing to handle Unicode properly
+            // 使用基于字符的解析，避免 Unicode 被错误切分
             let chars: Vec<char> = line.chars().collect();
             let mut start_idx = None;
             let mut end_idx = None;
@@ -153,7 +153,7 @@ fn extract_filename_from_output(stderr: &str, url: &str, args: &[String]) -> Str
         }
     }
 
-    // Fallback: extract from URL
+    // 回退方案：直接从 URL 提取文件名
     let path = url.rsplit("://").next().unwrap_or(url);
     let filename = path
         .rsplit('/')
@@ -190,13 +190,13 @@ fn format_size(bytes: u64) -> String {
 }
 
 fn compact_url(url: &str) -> String {
-    // Remove protocol
+    // 去掉协议头
     let without_proto = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))
         .unwrap_or(url);
 
-    // Truncate if too long
+    // 过长时进行截断
     let chars: Vec<char> = without_proto.chars().collect();
     if chars.len() <= 50 {
         without_proto.to_string()
@@ -236,7 +236,7 @@ fn parse_error(stderr: &str, stdout: &str) -> String {
         return "SSL/TLS 错误".to_string();
     }
 
-    // Return first meaningful line
+    // 返回第一条有意义的报错行
     for line in stderr.lines() {
         let trimmed = line.trim();
         if !trimmed.is_empty() && !trimmed.starts_with("--") {

@@ -1,7 +1,7 @@
-//! AWS CLI output compression.
+//! AWS CLI 输出压缩。
 //!
-//! Replaces verbose `--output table`/`text` with JSON, then compresses.
-//! Specialized filters for high-frequency commands (STS, S3, EC2, ECS, RDS, CloudFormation).
+//! 将冗长的 `--output table` / `text` 替换为 JSON，再进一步压缩。
+//! 对高频命令（STS、S3、EC2、ECS、RDS、CloudFormation）提供专用过滤器。
 
 use crate::json_cmd;
 use crate::tracking;
@@ -15,16 +15,17 @@ use serde_json::Value;
 const MAX_ITEMS: usize = 20;
 const JSON_COMPRESS_DEPTH: usize = 4;
 
-/// Run an AWS CLI command with token-optimized output
+/// 运行 AWS CLI 命令，并输出 token 优化后的结果
 pub fn run(subcommand: &str, args: &[String], verbose: u8) -> Result<()> {
-    // Build the full sub-path: e.g. "sts" + ["get-caller-identity"] -> "sts get-caller-identity"
+    // 构造完整子路径，例如：
+    // `sts` + `["get-caller-identity"]` -> `sts get-caller-identity`
     let full_sub = if args.is_empty() {
         subcommand.to_string()
     } else {
         format!("{} {}", subcommand, args.join(" "))
     };
 
-    // Route to specialized handlers
+    // 路由到专用处理器
     match subcommand {
         "sts" if !args.is_empty() && args[0] == "get-caller-identity" => {
             run_sts_identity(&args[1..], verbose)
@@ -52,15 +53,15 @@ pub fn run(subcommand: &str, args: &[String], verbose: u8) -> Result<()> {
     }
 }
 
-/// Returns true for operations that return structured JSON (describe-*, list-*, get-*).
-/// Mutating/transfer operations (s3 cp, s3 sync, s3 mb, etc.) emit plain text progress
-/// and do not accept --output json, so we must not inject it for them.
+/// 对会返回结构化 JSON 的操作返回 true（如 describe-*、list-*、get-*）。
+/// 变更类或传输类操作（如 s3 cp、s3 sync、s3 mb 等）输出的是纯文本进度，
+/// 且不接受 `--output json`，因此不能为它们自动注入该参数。
 fn is_structured_operation(args: &[String]) -> bool {
     let op = args.first().map(std::string::String::as_str).unwrap_or("");
     op.starts_with("describe-") || op.starts_with("list-") || op.starts_with("get-")
 }
 
-/// Generic strategy: force --output json for structured ops, compress via json_cmd schema
+/// 通用策略：对结构化操作强制使用 `--output json`，再通过 `json_cmd` 压缩
 fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -75,9 +76,9 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
         cmd.arg(arg);
     }
 
-    // Only inject --output json for structured read operations.
-    // Mutating/transfer operations (s3 cp, s3 sync, s3 mb, cloudformation deploy…)
-    // emit plain-text progress and reject --output json.
+    // 仅为结构化读取操作注入 `--output json`。
+    // 变更类/传输类操作（s3 cp、s3 sync、s3 mb、cloudformation deploy…）
+    // 会输出纯文本进度，并拒绝 `--output json`。
     if !has_output_flag && is_structured_operation(args) {
         cmd.args(["--output", "json"]);
     }
@@ -107,7 +108,7 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
             schema
         }
         Err(_) => {
-            // Fallback: print raw (maybe not JSON)
+            // 回退：直接打印原始输出（可能不是 JSON）
             print!("{raw}");
             raw.clone()
         }
@@ -133,7 +134,7 @@ fn run_aws_json(
         cmd.arg(arg);
     }
 
-    // Replace --output table/text with --output json
+    // 将 `--output table/text` 替换为 `--output json`
     let mut skip_next = false;
     for arg in extra_args {
         if skip_next {
@@ -196,7 +197,7 @@ fn run_sts_identity(extra_args: &[String], verbose: u8) -> Result<()> {
 fn run_s3_ls(extra_args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // s3 ls doesn't support --output json, run as-is and filter text
+    // `s3 ls` 不支持 `--output json`，因此按原样执行并过滤文本输出
     let mut cmd = resolved_command("aws");
     cmd.args(["s3", "ls"]);
     for arg in extra_args {
@@ -401,7 +402,7 @@ fn run_cfn_describe_stacks(extra_args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-// --- Filter functions (all use serde_json::Value for resilience) ---
+// --- 过滤函数（统一使用 `serde_json::Value`，提升兼容性） ---
 
 fn filter_sts_identity(json_str: &str) -> Option<String> {
     let v: Value = serde_json::from_str(json_str).ok()?;
@@ -417,7 +418,7 @@ fn filter_s3_ls(output: &str) -> String {
 
     if total > MAX_ITEMS + 10 {
         result.truncate(MAX_ITEMS + 10);
-        result.push(""); // will be replaced
+        result.push(""); // 占位，后续会替换
         return format!(
             "{}\n... +{} 个条目",
             result[..result.len() - 1].join("\n"),
@@ -441,7 +442,7 @@ fn filter_ec2_instances(json_str: &str) -> Option<String> {
                 let itype = inst["InstanceType"].as_str().unwrap_or("?");
                 let ip = inst["PrivateIpAddress"].as_str().unwrap_or("-");
 
-                // Extract Name tag
+                // 提取 Name 标签
                 let name = inst["Tags"]
                     .as_array()
                     .and_then(|tags| tags.iter().find(|t| t["Key"].as_str() == Some("Name")))
@@ -476,7 +477,8 @@ fn filter_ecs_list_services(json_str: &str) -> Option<String> {
 
     for arn in arns.iter().take(MAX_ITEMS) {
         let arn_str = arn.as_str().unwrap_or("?");
-        // Extract short name from ARN: arn:aws:ecs:...:service/cluster/name -> name
+        // 从 ARN 中提取短名称：
+        // `arn:aws:ecs:...:service/cluster/name` -> `name`
         let short = arn_str.rsplit('/').next().unwrap_or(arn_str);
         result.push(short.to_string());
     }
@@ -558,7 +560,7 @@ fn filter_cfn_describe_stacks(json_str: &str) -> Option<String> {
             .unwrap_or("?");
         result.push(format!("{} {} {}", name, status, truncate_iso_date(date)));
 
-        // Show outputs if present
+        // 若存在 Outputs，则一并显示
         if let Some(outputs) = stack["Outputs"].as_array() {
             for out in outputs {
                 let key = out["OutputKey"].as_str().unwrap_or("?");
