@@ -332,12 +332,28 @@ fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
         Some("grep 'a|b' src/main.rs".to_string())
     );
 
+    let double_quoted = ShellCommandHandler::route_command("grep \"a|b\" src/main.rs");
+    assert_eq!(double_quoted.command, "rtk grep 'a|b' src/main.rs");
+
     let kept_raw = ShellCommandHandler::route_command("grep \"$(pwd)\" src/main.rs");
     assert_eq!(kept_raw.command, "grep \"$(pwd)\" src/main.rs");
     assert_eq!(
         kept_raw.model_output_prefix,
         Some(
             "[shell_command kept raw]\noriginal: grep \"$(pwd)\" src/main.rs\nexecuted: grep \"$(pwd)\" src/main.rs\nreason: contains compound shell syntax"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn shell_command_handler_leaves_unsupported_read_shapes_raw() {
+    let routed = ShellCommandHandler::route_command("tail -f src/main.rs");
+    assert_eq!(routed.command, "tail -f src/main.rs");
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: tail -f src/main.rs\nexecuted: tail -f src/main.rs\nreason: command shape is not supported by the embedded RTK rewriter"
                 .to_string()
         )
     );

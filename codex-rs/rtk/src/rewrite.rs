@@ -1025,6 +1025,10 @@ mod tests {
         assert_rewrite_cases(&[
             ("grep 'a|b' src/main.rs", Some("rtk grep 'a|b' src/main.rs")),
             (
+                "grep \"a|b\" src/main.rs",
+                Some("rtk grep 'a|b' src/main.rs"),
+            ),
+            (
                 "curl 'https://example.com?a=1&b=2'",
                 Some("rtk curl 'https://example.com?a=1&b=2'"),
             ),
@@ -1053,5 +1057,24 @@ mod tests {
                 candidate: true,
             }
         );
+    }
+
+    #[test]
+    fn leaves_unsupported_cat_head_tail_shapes_raw() {
+        for command in [
+            "cat src/main.rs src/lib.rs",
+            "head -n 3 src/main.rs src/lib.rs",
+            "tail -f src/main.rs",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::UnsupportedArguments,
+                    candidate: true,
+                }
+            );
+        }
     }
 }

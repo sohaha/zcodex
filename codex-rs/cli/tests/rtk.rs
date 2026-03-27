@@ -192,6 +192,23 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
 }
 
 #[test]
+fn rtk_help_still_works_with_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.args(["rtk", "--verbose", "--help"])
+        .assert()
+        .success()
+        .stdout(
+            contains("高性能 CLI 代理")
+                .and(contains("golangci-lint"))
+                .and(contains("rewrite").not()),
+        );
+
+    Ok(())
+}
+
+#[test]
 fn rtk_removed_meta_commands_fail_instead_of_falling_through() -> Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -239,6 +256,32 @@ fn rtk_builtin_parse_errors_do_not_fall_back_to_external_commands() -> Result<()
         .assert()
         .failure()
         .stderr(contains("unexpected argument '--bogus-flag'"))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
+
+    Ok(())
+}
+
+#[test]
+fn rtk_builtin_help_does_not_fall_back_to_external_commands_after_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_read = write_fake_command(
+        &bin_dir,
+        "read",
+        if cfg!(windows) {
+            "@echo FALLBACK_TRIGGERED\r\n"
+        } else {
+            "#!/bin/sh\necho FALLBACK_TRIGGERED\n"
+        },
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "read", "--help"])
+        .assert()
+        .success()
+        .stdout(contains("读取文件并智能过滤"))
         .stdout(contains("FALLBACK_TRIGGERED").not());
 
     Ok(())
