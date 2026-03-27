@@ -23,3 +23,4 @@ output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex
 
 dist_bin="$(move_artifact_to_dist "$output_bin" "$target" "$repo_root")"
 print_artifact_size "build-ubuntu-win-amd64" "$dist_bin"
+print_remote_download_command "$dist_bin"

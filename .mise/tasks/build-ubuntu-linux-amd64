@@ -20,6 +20,27 @@ ensure_default_release_args() {
   printf '%s\0' "$@" --release
 }
 
+resolve_remote_ssh_target() {
+  local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
+  local ssh_target
+
+  if [ -z "$ssh_schema" ]; then
+    return 1
+  fi
+
+  ssh_target="${ssh_schema#vscode://vscode-remote/ssh-remote+}"
+  if [ "$ssh_target" = "$ssh_schema" ]; then
+    return 1
+  fi
+
+  ssh_target="${ssh_target%%/*}"
+  if ! printf '%s\n' "$ssh_target" | grep -Eq '.+@.+'; then
+    return 1
+  fi
+
+  printf '%s\n' "$ssh_target"
+}
+
 if [ "$(uname -s)" != "Linux" ]; then
   echo "[build-ubuntu-linux-amd64] 该 task 仅用于 Ubuntu/Linux 构建 Linux amd64" >&2
   exit 1
@@ -57,3 +78,11 @@ output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex
 CODEX_SKIP_ARTIFACT_SIZE_PRINT=1 "$script_dir/build" --target "$target" "${build_args[@]}"
 dist_bin="$(move_artifact_to_dist "$output_bin" "$target" "$repo_root")"
 print_artifact_size "build-ubuntu-linux-amd64" "$dist_bin"
+
+if remote_ssh_target="$(resolve_remote_ssh_target)"; then
+  printf '\n下载命令:\nscp %s:%s ./codex\n' \
+    "$remote_ssh_target" \
+    "$dist_bin"
+else
+  echo "[build-ubuntu-linux-amd64] 未检测到可用的 CNB_VSCODE_REMOTE_SSH_SCHEMA，已跳过下载命令输出" >&2
+fi
