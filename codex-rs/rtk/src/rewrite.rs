@@ -910,6 +910,22 @@ mod tests {
                 "env --chdir=repo nice -n 5 git status",
                 Some("env --chdir=repo nice -n 5 codex rtk git status"),
             ),
+            (
+                "FOO=1 command nice -n 5 git status",
+                Some("FOO=1 nice -n 5 codex rtk git status"),
+            ),
+            (
+                "env -i BAR=2 command -p stdbuf -oL git status",
+                Some("env -i BAR=2 stdbuf -oL codex rtk git status"),
+            ),
+            (
+                "env --chdir=repo command ionice -c2 nice -n 5 git status",
+                Some("env --chdir=repo ionice -c2 nice -n 5 codex rtk git status"),
+            ),
+            (
+                "env FOO=1 command chrt -r 10 /usr/bin/git status",
+                Some("env FOO=1 chrt -r 10 codex rtk git status"),
+            ),
         ]);
     }
 
