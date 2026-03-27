@@ -884,6 +884,10 @@ mod tests {
             rewrite_shell_command("codex rtk --help"),
             Some("rtk --help".to_string())
         );
+        assert_eq!(
+            rewrite_shell_command("codex rtk --version"),
+            Some("rtk --version".to_string())
+        );
         assert_eq!(rewrite_shell_command("codex rtk"), Some("rtk".to_string()));
     }
 
@@ -931,6 +935,10 @@ mod tests {
             ),
             (
                 "env --chdir=repo command -p stdbuf -oL git --help",
+                Some("env --chdir=repo stdbuf -oL rtk git --help"),
+            ),
+            (
+                "codex rtk env --chdir=repo command -p stdbuf -oL git --help",
                 Some("env --chdir=repo stdbuf -oL rtk git --help"),
             ),
         ]);
@@ -1023,6 +1031,13 @@ mod tests {
                 candidate: true,
             }
         );
+        assert_eq!(
+            analyze_shell_command("codex rtk sudo git status").kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::Sudo,
+                candidate: true,
+            }
+        );
     }
 
     #[test]
@@ -1052,6 +1067,7 @@ mod tests {
             "env FOO=1 python -c 'print(1)'",
             "command python -c 'print(1)'",
             "nice -n 5 python -c 'print(1)'",
+            "codex rtk python -c 'print(1)'",
         ] {
             let analysis = analyze_shell_command(command);
             assert_eq!(analysis.command, command);
