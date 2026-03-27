@@ -68,7 +68,7 @@ const FUNCTION_CALL_LIMIT_MSG: &str = "function call limit push";
 const POST_AUTO_USER_MSG: &str = "post auto follow-up";
 const PRETURN_CONTEXT_DIFF_CWD: &str = "/tmp/PRETURN_CONTEXT_DIFF_CWD";
 
-pub(super) const COMPACT_WARNING_MESSAGE: &str = "Heads up: Long threads and multiple compactions can cause the model to be less accurate. Start a new thread when possible to keep threads small and targeted.";
+pub(super) const COMPACT_WARNING_MESSAGE: &str = "提示：线程过长且多次压缩可能导致模型准确性下降。尽可能在条件允许时开启新线程，以保持线程简短且聚焦。";
 
 fn auto_summary(summary: &str) -> String {
     summary.to_string()

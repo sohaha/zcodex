@@ -5,5 +5,5 @@ expression: combined
 • 正在运行 调用工具前 钩子: warming the shell
 
 调用工具前 钩子（已完成）
-  警告：Heads up from the hook
+  警告：来自钩子的提示
   钩子上下文：Remember the startup checklist.

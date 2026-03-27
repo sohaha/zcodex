@@ -6257,7 +6257,7 @@ fn system_bwrap_warning_reports_missing_system_bwrap() {
     let warning = system_bwrap_warning_for_path(Path::new("/definitely/not/a/bwrap"))
         .expect("missing system bwrap should emit a warning");
 
-    assert!(warning.contains("could not find system bubblewrap"));
+    assert!(warning.contains("未找到系统 bubblewrap"));
 }
 
 #[cfg(target_os = "linux")]
@@ -6276,7 +6276,7 @@ exit 1
     let warning = system_bwrap_warning_for_path(fake_bwrap_path)
         .expect("old system bwrap should emit a warning");
 
-    assert!(warning.contains("too old to support `--argv0`"));
+    assert!(warning.contains("版本过旧"));
 }
 
 #[cfg(target_os = "linux")]

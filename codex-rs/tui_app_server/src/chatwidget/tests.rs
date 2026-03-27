@@ -12710,7 +12710,7 @@ async fn assert_hook_events_snapshot(
                 entries: vec![
                     codex_protocol::protocol::HookOutputEntry {
                         kind: codex_protocol::protocol::HookOutputEntryKind::Warning,
-                        text: "Heads up from the hook".to_string(),
+                        text: "来自钩子的提示".to_string(),
                     },
                     codex_protocol::protocol::HookOutputEntry {
                         kind: codex_protocol::protocol::HookOutputEntryKind::Context,

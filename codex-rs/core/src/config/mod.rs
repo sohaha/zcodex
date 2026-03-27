@@ -171,7 +171,7 @@ pub fn system_bwrap_warning() -> Option<String> {
 fn system_bwrap_warning_for_path(system_bwrap_path: &Path) -> Option<String> {
     if !system_bwrap_path.is_file() {
         return Some(format!(
-            "Codex could not find system bubblewrap at {}. Please install bubblewrap with your package manager. Codex will use the vendored bubblewrap in the meantime.",
+            "Codex 未在 {} 找到系统 bubblewrap。请使用包管理器安装 bubblewrap。期间 Codex 将使用内置的 bubblewrap。",
             system_bwrap_path.display()
         ));
     }
@@ -180,7 +180,7 @@ fn system_bwrap_warning_for_path(system_bwrap_path: &Path) -> Option<String> {
     }
 
     Some(format!(
-        "Codex found system bubblewrap at {}, but it is too old to support `--argv0`. Please upgrade bubblewrap with your package manager. Codex will use the vendored bubblewrap in the meantime.",
+        "Codex 在 {} 找到了系统 bubblewrap，但版本过旧，不支持 `--argv0`。请使用包管理器升级 bubblewrap。期间 Codex 将使用内置的 bubblewrap。",
         system_bwrap_path.display()
     ))
 }
