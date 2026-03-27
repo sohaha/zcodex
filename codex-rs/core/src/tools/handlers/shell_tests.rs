@@ -222,6 +222,18 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
         ShellCommandHandler::route_command("env --chdir=repo nice -n 5 git status").command,
         "env --chdir=repo nice -n 5 codex rtk git status"
     );
+    assert_eq!(
+        ShellCommandHandler::route_command("command nice -n 5 git status").command,
+        "nice -n 5 codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("command -p stdbuf -oL git status").command,
+        "stdbuf -oL codex rtk git status"
+    );
+    assert_eq!(
+        ShellCommandHandler::route_command("/usr/bin/nice -n 5 git status").command,
+        "nice -n 5 codex rtk git status"
+    );
 }
 
 #[test]

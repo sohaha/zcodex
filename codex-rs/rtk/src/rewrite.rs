@@ -170,17 +170,22 @@ fn parse_command_target(args: &[String]) -> Option<ParsedCommandTarget<'_>> {
     loop {
         let (wrapper_prefix, rest) = split_safe_wrapper_prefix(routed_args)?;
         if wrapper_prefix.is_empty() {
-            break;
+            let (target, rest) = split_command_prefix(routed_args)?;
+            let (wrapper_prefix, rest) = split_safe_wrapper_target(&target, rest)?;
+            if wrapper_prefix.is_empty() {
+                return Some(ParsedCommandTarget {
+                    prefix,
+                    target,
+                    rest,
+                });
+            }
+            prefix.extend(wrapper_prefix);
+            routed_args = rest;
+            continue;
         }
         prefix.extend(wrapper_prefix);
         routed_args = rest;
     }
-    let (target, rest) = split_command_prefix(routed_args)?;
-    Some(ParsedCommandTarget {
-        prefix,
-        target,
-        rest,
-    })
 }
 
 fn rewrite_cat(rest: &[String]) -> Option<String> {
@@ -361,10 +366,17 @@ fn split_safe_wrapper_prefix(args: &[String]) -> Option<(Vec<String>, &[String])
     let [first, rest @ ..] = args else {
         return None;
     };
-    match first.as_str() {
+    split_safe_wrapper_target(first, rest)
+}
+
+fn split_safe_wrapper_target<'a>(
+    target: &str,
+    rest: &'a [String],
+) -> Option<(Vec<String>, &'a [String])> {
+    match target {
         "nice" => split_nice_prefix(rest),
         "stdbuf" => split_stdbuf_prefix(rest),
-        _ => Some((Vec::new(), args)),
+        _ => Some((Vec::new(), rest)),
     }
 }
 
@@ -664,6 +676,18 @@ mod tests {
             (
                 "nice -n 5 stdbuf -oL git status",
                 Some("nice -n 5 stdbuf -oL codex rtk git status"),
+            ),
+            (
+                "command nice -n 5 git status",
+                Some("nice -n 5 codex rtk git status"),
+            ),
+            (
+                "command -p stdbuf -oL git status",
+                Some("stdbuf -oL codex rtk git status"),
+            ),
+            (
+                "/usr/bin/nice -n 5 git status",
+                Some("nice -n 5 codex rtk git status"),
             ),
         ]);
     }
