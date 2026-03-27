@@ -306,7 +306,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("playwright test（Tier 1：完整 JSON 解析）");
+                eprintln!("playwright test（第 1 层：完整 JSON 解析）");
             }
             data.format(mode)
         }

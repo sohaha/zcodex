@@ -331,7 +331,7 @@ fn run_list(depth: usize, args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("pnpm list（Tier 1：完整 JSON 解析）");
+                eprintln!("pnpm list（第 1 层：完整 JSON 解析）");
             }
             data.format(mode)
         }
@@ -383,7 +383,7 @@ fn run_outdated(args: &[String], verbose: u8) -> Result<()> {
     let filtered = match parse_result {
         ParseResult::Full(data) => {
             if verbose > 0 {
-                eprintln!("pnpm outdated（Tier 1：完整 JSON 解析）");
+                eprintln!("pnpm outdated（第 1 层：完整 JSON 解析）");
             }
             data.format(mode)
         }
