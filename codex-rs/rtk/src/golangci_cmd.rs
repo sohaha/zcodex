@@ -156,7 +156,7 @@ fn filter_golangci_json(output: &str) -> String {
     linter_counts.sort_by(|a, b| b.1.cmp(a.1));
 
     if !linter_counts.is_empty() {
-        result.push_str("高频 linter：\n");
+        result.push_str("高频 linter:\n");
         for (linter, count) in linter_counts.iter().take(10) {
             result.push_str(&format!("  {linter}（{count} 次）\n"));
         }

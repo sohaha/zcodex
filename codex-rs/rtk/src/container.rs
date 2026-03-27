@@ -286,7 +286,7 @@ fn kubectl_pods(args: &[String], _verbose: u8) -> Result<()> {
     }
 
     rtk.push_str(&format!(
-        "☸️  {} 个 Pod：{}\n",
+        "☸️  {} 个 Pods: {}\n",
         pods.len(),
         parts.join(", ")
     ));
@@ -321,7 +321,7 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
     let json: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
         Err(_) => {
-            rtk.push_str("☸️  未找到 Service");
+            rtk.push_str("☸️  未找到 Services");
             println!("{rtk}");
             timer.track("kubectl get svc", "rtk kubectl svc", &raw, &rtk);
             return Ok(());
@@ -329,12 +329,12 @@ fn kubectl_services(args: &[String], _verbose: u8) -> Result<()> {
     };
 
     let Some(services) = json["items"].as_array().filter(|a| !a.is_empty()) else {
-        rtk.push_str("☸️  未找到 Service");
+        rtk.push_str("☸️  未找到 Services");
         println!("{rtk}");
         timer.track("kubectl get svc", "rtk kubectl svc", &raw, &rtk);
         return Ok(());
     };
-    rtk.push_str(&format!("☸️  {} 个 Service：\n", services.len()));
+    rtk.push_str(&format!("☸️  {} 个 Services:\n", services.len()));
 
     for svc in services.iter().take(15) {
         let ns = svc["metadata"]["namespace"].as_str().unwrap_or("-");
@@ -599,7 +599,7 @@ pub fn run_compose_ps(verbose: u8) -> Result<()> {
     let structured = crate::utils::decode_output(&output.stdout).to_string();
 
     if verbose > 0 {
-        eprintln!("原始 docker compose ps：\n{raw}");
+        eprintln!("原始 docker compose ps:\n{raw}");
     }
 
     let rtk = format_compose_ps(&structured);
@@ -631,7 +631,7 @@ pub fn run_compose_logs(service: Option<&str>, verbose: u8) -> Result<()> {
     let raw = format!("{stdout}\n{stderr}");
 
     if verbose > 0 {
-        eprintln!("原始 docker compose logs：\n{raw}");
+        eprintln!("原始 docker compose logs:\n{raw}");
     }
 
     let rtk = format_compose_logs(&raw);
@@ -669,7 +669,7 @@ pub fn run_compose_build(service: Option<&str>, verbose: u8) -> Result<()> {
     let raw = format!("{stdout}\n{stderr}");
 
     if verbose > 0 {
-        eprintln!("原始 docker compose build：\n{raw}");
+        eprintln!("原始 docker compose build:\n{raw}");
     }
 
     let rtk = format_compose_build(&raw);

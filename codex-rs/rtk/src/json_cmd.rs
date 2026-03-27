@@ -42,7 +42,7 @@ pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("分析 JSON：{}", file.display());
+        eprintln!("分析 JSON: {}", file.display());
     }
 
     let content =
