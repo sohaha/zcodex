@@ -145,7 +145,7 @@ fn filter_tsc_output(output: &str) -> String {
         let codes_str: Vec<String> = code_counts
             .iter()
             .take(5)
-            .map(|(code, count)| format!("{code} ({count}x)"))
+            .map(|(code, count)| format!("{code}（{count} 次）"))
             .collect();
         result.push_str(&format!("错误码：{}\n\n", codes_str.join(", ")));
     }
@@ -195,6 +195,19 @@ Found 4 errors in 2 files.
         assert!(result.contains("Button.tsx（2 个错误）"));
         assert!(result.contains("TS2322"));
         assert!(!result.contains("Found 4 errors")); // 原摘要行应被替换
+    }
+
+    #[test]
+    fn test_error_code_summary_is_localized() {
+        let output = "\
+src/a.ts(1,1): error TS2322: Error one.
+src/b.ts(2,1): error TS2322: Error two.
+src/c.ts(3,1): error TS2345: Error three.
+";
+        let result = filter_tsc_output(output);
+        assert!(result.contains("错误码："));
+        assert!(result.contains("TS2322（2 次）"));
+        assert!(result.contains("TS2345（1 次）"));
     }
 
     #[test]

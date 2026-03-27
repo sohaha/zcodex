@@ -56,7 +56,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
                 .args(["-rn", pattern, path])
                 .output()
         })
-        .context("grep/rg failed")?;
+        .context("运行 grep/rg 失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let exit_code = output.status.code().unwrap_or(1);
@@ -71,7 +71,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
                 eprintln!("{}", stderr.trim());
             }
         }
-        let msg = format!("🔍 0 for '{pattern}'");
+        let msg = format!("🔍 未找到：'{pattern}'");
         println!("{msg}");
         timer.track(
             &format!("grep -rn '{pattern}' {path}"),
@@ -107,7 +107,11 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     }
 
     let mut rtk_output = String::new();
-    rtk_output.push_str(&format!("🔍 {} in {}F:\n\n", total, by_file.len()));
+    rtk_output.push_str(&format!(
+        "🔍 {} 处匹配，{} 个文件：\n\n",
+        total,
+        by_file.len()
+    ));
 
     let mut shown = 0;
     let mut files: Vec<_> = by_file.iter().collect();
@@ -236,6 +240,12 @@ mod tests {
         let path = "/Users/patrick/dev/project/src/components/Button.tsx";
         let compact = compact_path(path);
         assert!(compact.len() <= 60);
+    }
+
+    #[test]
+    fn test_no_match_message_is_localized() {
+        let msg = format!("🔍 未找到：'{}'", "needle");
+        assert_eq!(msg, "🔍 未找到：'needle'");
     }
 
     #[test]

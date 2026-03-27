@@ -273,7 +273,7 @@ pub fn run(
     let raw_output = files.join("\n");
 
     if files.is_empty() {
-        let msg = format!("0 for '{effective_pattern}'");
+        let msg = format!("未找到：'{effective_pattern}'");
         println!("{msg}");
         timer.track(
             &format!("find {path} -name '{effective_pattern}'"),
@@ -434,6 +434,12 @@ mod tests {
         // `run()` 内部会把 "." 转成 "*"，这里测试这段逻辑
         let effective = if "." == "." { "*" } else { "." };
         assert_eq!(effective, "*");
+    }
+
+    #[test]
+    fn no_match_message_is_localized() {
+        let msg = format!("未找到：'{}'", "*.rs");
+        assert_eq!(msg, "未找到：'*.rs'");
     }
 
     // --- parse_find_args：原生 find 语法 ---

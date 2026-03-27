@@ -285,7 +285,7 @@ fn filter_eslint_json(output: &str) -> String {
     if !rule_counts.is_empty() {
         result.push_str("高频规则：\n");
         for (rule, count) in rule_counts.iter().take(10) {
-            result.push_str(&format!("  {rule} ({count}x)\n"));
+            result.push_str(&format!("  {rule}（{count} 次）\n"));
         }
         result.push('\n');
     }
@@ -399,7 +399,7 @@ fn filter_pylint_json(output: &str) -> String {
     if !symbol_counts.is_empty() {
         result.push_str("高频规则：\n");
         for (symbol, count) in symbol_counts.iter().take(10) {
-            result.push_str(&format!("  {symbol} ({count}x)\n"));
+            result.push_str(&format!("  {symbol}（{count} 次）\n"));
         }
         result.push('\n');
     }
@@ -534,6 +534,7 @@ mod tests {
         assert!(result.contains("prefer-const"));
         assert!(result.contains("no-unused-vars"));
         assert!(result.contains("src/utils.ts"));
+        assert!(result.contains("prefer-const（2 次）"));
     }
 
     #[test]
@@ -603,6 +604,7 @@ mod tests {
         assert!(result.contains("undefined-variable (E0602)"));
         assert!(result.contains("main.py"));
         assert!(result.contains("utils.py"));
+        assert!(result.contains("unused-variable (W0612)（2 次）"));
     }
 
     #[test]
