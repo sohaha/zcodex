@@ -2694,8 +2694,7 @@ impl ChatWidget {
                 ));
             } else {
                 self.add_to_history(history_cell::new_error_event(
-                    "对话已中断——请告诉模型接下来该如何调整。若出现问题，可使用 `/feedback` 反馈。"
-                        .to_owned(),
+                    "对话已中断——请告诉模型接下来该如何调整。".to_owned(),
                 ));
             }
         }
