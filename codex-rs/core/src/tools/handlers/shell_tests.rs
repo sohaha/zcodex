@@ -307,6 +307,20 @@ fn shell_command_handler_leaves_compound_commands_raw() {
 }
 
 #[test]
+fn shell_command_handler_reports_missing_command_after_prefixes() {
+    let routed = ShellCommandHandler::route_command("env -i");
+    assert_eq!(routed.command, "env -i");
+    assert_eq!(routed.interaction_input, None);
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: env -i\nexecuted: env -i\nreason: missing command after prefixes"
+                .to_string()
+        )
+    );
+}
+
+#[test]
 fn shell_command_handler_records_original_command_when_rewritten() {
     let routed = ShellCommandHandler::route_command("FOO=1 git status");
     assert_eq!(routed.command, "FOO=1 rtk git status");
@@ -318,6 +332,20 @@ fn shell_command_handler_records_original_command_when_rewritten() {
         routed.model_output_prefix,
         Some(
             "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nexecuted: FOO=1 rtk git status"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn shell_command_handler_reports_unsupported_wrapper_flags_as_raw() {
+    let routed = ShellCommandHandler::route_command("env FOO=1 ionice -p 123 git status");
+    assert_eq!(routed.command, "env FOO=1 ionice -p 123 git status");
+    assert_eq!(routed.interaction_input, None);
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(
+            "[shell_command kept raw]\noriginal: env FOO=1 ionice -p 123 git status\nexecuted: env FOO=1 ionice -p 123 git status\nreason: command is not in the embedded RTK allowlist"
                 .to_string()
         )
     );

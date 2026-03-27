@@ -988,6 +988,47 @@ mod tests {
     }
 
     #[test]
+    fn reports_missing_command_after_prefixes() {
+        for command in [
+            "env -i",
+            "env --chdir=repo --",
+            "command -p",
+            "command -p --",
+            "stdbuf -oL",
+            "codex rtk env -i",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::MissingCommand,
+                    candidate: false,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_wrapper_flags_do_not_mark_candidates() {
+        for command in [
+            "env FOO=1 ionice -p 123 git status",
+            "command chrt -m git status",
+            "codex rtk ionice -p 123 git status",
+        ] {
+            let analysis = analyze_shell_command(command);
+            assert_eq!(analysis.command, command);
+            assert_eq!(
+                analysis.kind,
+                ShellCommandRewriteKind::Passthrough {
+                    reason: ShellCommandPassthroughReason::UnsupportedCommand,
+                    candidate: false,
+                }
+            );
+        }
+    }
+
+    #[test]
     fn preserves_quoted_literals_while_blocking_real_shell_syntax() {
         assert_rewrite_cases(&[
             ("grep 'a|b' src/main.rs", Some("rtk grep 'a|b' src/main.rs")),
