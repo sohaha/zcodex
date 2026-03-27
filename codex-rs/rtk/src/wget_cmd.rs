@@ -3,7 +3,7 @@ use crate::utils::resolved_command;
 use anyhow::Context;
 use anyhow::Result;
 
-/// 紧凑版 `wget`：去掉进度条，只保留结果
+/// 紧凑版 `wget`：去掉进度条，只保留结果摘要
 pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -11,7 +11,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
         eprintln!("wget：{url}");
     }
 
-    // 正常运行 `wget`，但先捕获输出再解析
+    // 正常运行 `wget`，但先捕获输出后再解析
     let mut cmd_args: Vec<&str> = vec![];
 
     // 追加用户参数
@@ -51,7 +51,7 @@ pub fn run(url: &str, args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// 运行 `wget` 并输出到 `stdout`（便于管道传递）
+/// 运行 `wget` 并输出到标准输出（便于管道传递）
 pub fn run_stdout(url: &str, args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -126,7 +126,7 @@ fn extract_filename_from_output(stderr: &str, url: &str, args: &[String]) -> Str
         }
     }
 
-    // 解析 `wget` 输出中的 `"Sauvegarde en"` / `"Saving to"`
+    // 解析 `wget` 输出中的 `"Sauvegarde en"` / `"Saving to"` 提示
     for line in stderr.lines() {
         // 法语示例：`Sauvegarde en : « filename »`
         if line.contains("Sauvegarde en") || line.contains("Saving to") {
