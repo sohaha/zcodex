@@ -54,12 +54,10 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: go test -json {}", args.join(" "));
+        eprintln!("运行：go test -json {}", args.join(" "));
     }
 
-    let output = cmd
-        .output()
-        .context("Failed to run go test. Is Go installed?")?;
+    let output = cmd.output().context("运行 go test 失败。是否已安装 Go？")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -108,12 +106,12 @@ pub fn run_build(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: go build {}", args.join(" "));
+        eprintln!("运行：go build {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run go build. Is Go installed?")?;
+        .context("运行 go build 失败。是否已安装 Go？")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -161,12 +159,10 @@ pub fn run_vet(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: go vet {}", args.join(" "));
+        eprintln!("运行：go vet {}", args.join(" "));
     }
 
-    let output = cmd
-        .output()
-        .context("Failed to run go vet. Is Go installed?")?;
+    let output = cmd.output().context("运行 go vet 失败。是否已安装 Go？")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -219,12 +215,12 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: go {subcommand} ...");
+        eprintln!("运行：go {subcommand} ...");
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run go {subcommand}"))?;
+        .with_context(|| format!("运行 go {subcommand} 失败"))?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -345,23 +341,23 @@ fn filter_go_test_json(output: &str) -> String {
     let has_failures = total_fail > 0 || total_build_fail > 0;
 
     if !has_failures && total_pass == 0 {
-        return "Go test: No tests found".to_string();
+        return "Go test：未找到测试".to_string();
     }
 
     if !has_failures {
-        return format!("✓ Go test: {total_pass} passed in {total_packages} packages");
+        return format!("✓ Go test：{total_pass} 通过，共 {total_packages} 个包");
     }
 
     let mut result = String::new();
     result.push_str(&format!(
-        "Go test: {} passed, {} failed",
+        "Go test：{} 通过，{} 失败",
         total_pass,
         total_fail + total_build_fail
     ));
     if total_skip > 0 {
-        result.push_str(&format!(", {total_skip} skipped"));
+        result.push_str(&format!("，{total_skip} 跳过"));
     }
-    result.push_str(&format!(" in {total_packages} packages\n"));
+    result.push_str(&format!("，共 {total_packages} 个包\n"));
     result.push_str("═══════════════════════════════════════\n");
 
     // Show build failures first
@@ -371,7 +367,7 @@ fn filter_go_test_json(output: &str) -> String {
         }
 
         result.push_str(&format!(
-            "\n📦 {} [build failed]\n",
+            "\n📦 {} [构建失败]\n",
             compact_package_name(package)
         ));
 
@@ -391,7 +387,7 @@ fn filter_go_test_json(output: &str) -> String {
         }
 
         result.push_str(&format!(
-            "\n📦 {} ({} passed, {} failed)\n",
+            "\n📦 {}（{} 通过，{} 失败）\n",
             compact_package_name(package),
             pkg_result.pass,
             pkg_result.fail
@@ -451,11 +447,11 @@ fn filter_go_build(output: &str) -> String {
     }
 
     if errors.is_empty() {
-        return "✓ Go build: Success".to_string();
+        return "✓ Go build：成功".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Go build: {} errors\n", errors.len()));
+    result.push_str(&format!("Go build：{} 个错误\n", errors.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, error) in errors.iter().take(20).enumerate() {
@@ -467,7 +463,7 @@ fn filter_go_build(output: &str) -> String {
     }
 
     if errors.len() > 20 {
-        result.push_str(&format!("\n... +{} more errors\n", errors.len() - 20));
+        result.push_str(&format!("\n... +{} 个错误\n", errors.len() - 20));
     }
 
     result.trim().to_string()
@@ -487,11 +483,11 @@ fn filter_go_vet(output: &str) -> String {
     }
 
     if issues.is_empty() {
-        return "✓ Go vet: No issues found".to_string();
+        return "✓ Go vet：未发现问题".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Go vet: {} issues\n", issues.len()));
+    result.push_str(&format!("Go vet：{} 个问题\n", issues.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, issue) in issues.iter().take(20).enumerate() {
@@ -503,7 +499,7 @@ fn filter_go_vet(output: &str) -> String {
     }
 
     if issues.len() > 20 {
-        result.push_str(&format!("\n... +{} more issues\n", issues.len() - 20));
+        result.push_str(&format!("\n... +{} 个问题\n", issues.len() - 20));
     }
 
     result.trim().to_string()
@@ -532,8 +528,8 @@ mod tests {
 
         let result = filter_go_test_json(output);
         assert!(result.contains("✓ Go test"));
-        assert!(result.contains("1 passed"));
-        assert!(result.contains("1 packages"));
+        assert!(result.contains("1 通过"));
+        assert!(result.contains("1 个包"));
     }
 
     #[test]
@@ -545,7 +541,7 @@ mod tests {
 {"Time":"2024-01-01T10:00:03Z","Action":"fail","Package":"example.com/foo","Elapsed":0.5}"#;
 
         let result = filter_go_test_json(output);
-        assert!(result.contains("1 failed"));
+        assert!(result.contains("1 失败"));
         assert!(result.contains("TestFail"));
         assert!(result.contains("expected 5, got 3"));
     }
@@ -555,7 +551,7 @@ mod tests {
         let output = "";
         let result = filter_go_build(output);
         assert!(result.contains("✓ Go build"));
-        assert!(result.contains("Success"));
+        assert!(result.contains("成功"));
     }
 
     #[test]
@@ -565,7 +561,7 @@ main.go:10:5: undefined: missingFunc
 main.go:15:2: cannot use x (type int) as type string"#;
 
         let result = filter_go_build(output);
-        assert!(result.contains("2 errors"));
+        assert!(result.contains("2 个错误"));
         assert!(result.contains("undefined: missingFunc"));
         assert!(result.contains("cannot use x"));
     }
@@ -575,7 +571,7 @@ main.go:15:2: cannot use x (type int) as type string"#;
         let output = "";
         let result = filter_go_vet(output);
         assert!(result.contains("✓ Go vet"));
-        assert!(result.contains("No issues found"));
+        assert!(result.contains("未发现问题"));
     }
 
     #[test]
@@ -584,7 +580,7 @@ main.go:15:2: cannot use x (type int) as type string"#;
 utils.go:15:5: unreachable code"#;
 
         let result = filter_go_vet(output);
-        assert!(result.contains("2 issues"));
+        assert!(result.contains("2 个问题"));
         assert!(result.contains("Printf format"));
         assert!(result.contains("unreachable code"));
     }

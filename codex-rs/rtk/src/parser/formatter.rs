@@ -45,7 +45,7 @@ pub trait TokenFormatter {
 
 impl TokenFormatter for TestResult {
     fn format_compact(&self) -> String {
-        let mut lines = vec![format!("PASS ({}) FAIL ({})", self.passed, self.failed)];
+        let mut lines = vec![format!("通过 ({}) 失败 ({})", self.passed, self.failed)];
 
         if !self.failures.is_empty() {
             lines.push(String::new());
@@ -61,12 +61,12 @@ impl TokenFormatter for TestResult {
             }
 
             if self.failures.len() > 5 {
-                lines.push(format!("\n... +{} more failures", self.failures.len() - 5));
+                lines.push(format!("\n... +{} 项失败", self.failures.len() - 5));
             }
         }
 
         if let Some(duration) = self.duration_ms {
-            lines.push(format!("\nTime: {duration}ms"));
+            lines.push(format!("\n耗时：{duration}ms"));
         }
 
         lines.join("\n")
@@ -74,12 +74,12 @@ impl TokenFormatter for TestResult {
 
     fn format_verbose(&self) -> String {
         let mut lines = vec![format!(
-            "Tests: {} passed, {} failed, {} skipped (total: {})",
+            "测试：{} 通过，{} 失败，{} 跳过（共 {}）",
             self.passed, self.failed, self.skipped, self.total
         )];
 
         if !self.failures.is_empty() {
-            lines.push("\nFailures:".to_string());
+            lines.push("\n失败：".to_string());
             for (idx, failure) in self.failures.iter().enumerate() {
                 lines.push(format!(
                     "\n{}. {} ({})",
@@ -97,7 +97,7 @@ impl TokenFormatter for TestResult {
         }
 
         if let Some(duration) = self.duration_ms {
-            lines.push(format!("\nDuration: {duration}ms"));
+            lines.push(format!("\n耗时：{duration}ms"));
         }
 
         lines.join("\n")
@@ -117,7 +117,7 @@ impl TokenFormatter for TestResult {
 impl TokenFormatter for LintResult {
     fn format_compact(&self) -> String {
         let mut lines = vec![format!(
-            "Errors: {} | Warnings: {} | Files: {}",
+            "错误：{} | 警告：{} | 文件：{}",
             self.errors, self.warnings, self.files_with_issues
         )];
 
@@ -137,14 +137,14 @@ impl TokenFormatter for LintResult {
 
             lines.push(String::new());
             for (rule, issues) in rules.iter().take(5) {
-                lines.push(format!("{}: {} occurrences", rule, issues.len()));
+                lines.push(format!("{}：{} 次", rule, issues.len()));
                 for issue in issues.iter().take(2) {
                     lines.push(format!("  {}:{}", issue.file_path, issue.line));
                 }
             }
 
             if by_rule.len() > 5 {
-                lines.push(format!("\n... +{} more rule violations", by_rule.len() - 5));
+                lines.push(format!("\n... +{} 条规则", by_rule.len() - 5));
             }
         }
 
@@ -153,12 +153,12 @@ impl TokenFormatter for LintResult {
 
     fn format_verbose(&self) -> String {
         let mut lines = vec![format!(
-            "Total issues: {} ({} errors, {} warnings) in {} files",
+            "问题总数：{}（{} 错误，{} 警告），涉及 {} 个文件",
             self.total_issues, self.errors, self.warnings, self.files_with_issues
         )];
 
         if !self.issues.is_empty() {
-            lines.push("\nIssues:".to_string());
+            lines.push("\n问题：".to_string());
             for issue in self.issues.iter().take(20) {
                 let severity_symbol = match issue.severity {
                     LintSeverity::Error => "✗",
@@ -177,7 +177,7 @@ impl TokenFormatter for LintResult {
             }
 
             if self.issues.len() > 20 {
-                lines.push(format!("\n... +{} more issues", self.issues.len() - 20));
+                lines.push(format!("\n... +{} 个问题", self.issues.len() - 20));
             }
         }
 
@@ -195,11 +195,11 @@ impl TokenFormatter for LintResult {
 impl TokenFormatter for DependencyState {
     fn format_compact(&self) -> String {
         if self.outdated_count == 0 {
-            return "All packages up-to-date ✓".to_string();
+            return "所有包均为最新 ✓".to_string();
         }
 
         let mut lines = vec![format!(
-            "{} outdated packages (of {})",
+            "{} 个过期包（共 {}）",
             self.outdated_count, self.total_packages
         )];
 
@@ -215,7 +215,7 @@ impl TokenFormatter for DependencyState {
         }
 
         if self.outdated_count > 10 {
-            lines.push(format!("\n... +{} more", self.outdated_count - 10));
+            lines.push(format!("\n... +{} 个", self.outdated_count - 10));
         }
 
         lines.join("\n")
@@ -223,17 +223,17 @@ impl TokenFormatter for DependencyState {
 
     fn format_verbose(&self) -> String {
         let mut lines = vec![format!(
-            "Total packages: {} ({} outdated)",
+            "包总数：{}（{} 个过期）",
             self.total_packages, self.outdated_count
         )];
 
         if self.outdated_count > 0 {
-            lines.push("\nOutdated packages:".to_string());
+            lines.push("\n过期包：".to_string());
             for dep in &self.dependencies {
                 if let Some(latest) = &dep.latest_version
                     && &dep.current_version != latest
                 {
-                    let dev_marker = if dep.dev_dependency { " (dev)" } else { "" };
+                    let dev_marker = if dep.dev_dependency { "（dev）" } else { "" };
                     lines.push(format!(
                         "  {}: {} → {}{}",
                         dep.name, dep.current_version, latest, dev_marker
@@ -241,7 +241,7 @@ impl TokenFormatter for DependencyState {
                     if let Some(wanted) = &dep.wanted_version
                         && wanted != latest
                     {
-                        lines.push(format!("    (wanted: {wanted})"));
+                        lines.push(format!("    （期望：{wanted}）"));
                     }
                 }
             }
@@ -259,39 +259,39 @@ impl TokenFormatter for BuildOutput {
     fn format_compact(&self) -> String {
         let status = if self.success { "✓" } else { "✗" };
         let mut lines = vec![format!(
-            "{} Build: {} errors, {} warnings",
+            "{} 构建：{} 错误，{} 警告",
             status, self.errors, self.warnings
         )];
 
         if !self.bundles.is_empty() {
             let total_size: u64 = self.bundles.iter().map(|b| b.size_bytes).sum();
             lines.push(format!(
-                "Bundles: {} ({:.1} KB)",
+                "Bundles：{}（{:.1} KB）",
                 self.bundles.len(),
                 total_size as f64 / 1024.0
             ));
         }
 
         if !self.routes.is_empty() {
-            lines.push(format!("Routes: {}", self.routes.len()));
+            lines.push(format!("路由：{}", self.routes.len()));
         }
 
         if let Some(duration) = self.duration_ms {
-            lines.push(format!("Time: {duration}ms"));
+            lines.push(format!("耗时：{duration}ms"));
         }
 
         lines.join("\n")
     }
 
     fn format_verbose(&self) -> String {
-        let status = if self.success { "Success" } else { "Failed" };
+        let status = if self.success { "成功" } else { "失败" };
         let mut lines = vec![format!(
-            "Build {}: {} errors, {} warnings",
-            status, self.errors, self.warnings
+            "构建{status}：{} 错误，{} 警告",
+            self.errors, self.warnings
         )];
 
         if !self.bundles.is_empty() {
-            lines.push("\nBundles:".to_string());
+            lines.push("\nBundles：".to_string());
             for bundle in &self.bundles {
                 let gzip_info = bundle
                     .gzip_size_bytes
@@ -307,17 +307,17 @@ impl TokenFormatter for BuildOutput {
         }
 
         if !self.routes.is_empty() {
-            lines.push("\nRoutes:".to_string());
+            lines.push("\n路由：".to_string());
             for route in self.routes.iter().take(10) {
                 lines.push(format!("  {}: {:.1} KB", route.path, route.size_kb));
             }
             if self.routes.len() > 10 {
-                lines.push(format!("  ... +{} more routes", self.routes.len() - 10));
+                lines.push(format!("  ... +{} 条路由", self.routes.len() - 10));
             }
         }
 
         if let Some(duration) = self.duration_ms {
-            lines.push(format!("\nDuration: {duration}ms"));
+            lines.push(format!("\n耗时：{duration}ms"));
         }
 
         lines.join("\n")

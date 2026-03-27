@@ -42,12 +42,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: pytest --tb=short -q {}", args.join(" "));
+        eprintln!("运行：pytest --tb=short -q {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run pytest. Is it installed? Try: pip install pytest")?;
+        .context("运行 pytest 失败。请确认已安装：pip install pytest")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -170,17 +170,17 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     let (passed, failed, skipped) = parse_summary_line(summary);
 
     if failed == 0 && passed > 0 {
-        return format!("✓ Pytest: {passed} passed");
+        return format!("✓ Pytest：{passed} 通过");
     }
 
     if passed == 0 && failed == 0 {
-        return "Pytest: No tests collected".to_string();
+        return "Pytest：未收集到测试".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("Pytest: {passed} passed, {failed} failed"));
+    result.push_str(&format!("Pytest：{passed} 通过，{failed} 失败"));
     if skipped > 0 {
-        result.push_str(&format!(", {skipped} skipped"));
+        result.push_str(&format!("，{skipped} 跳过"));
     }
     result.push('\n');
     result.push_str("═══════════════════════════════════════\n");
@@ -190,7 +190,7 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     }
 
     // Show failures (limit to key information)
-    result.push_str("\nFailures:\n");
+    result.push_str("\n失败项：\n");
 
     for (i, failure) in failures.iter().take(5).enumerate() {
         // Extract test name and key error info
@@ -238,7 +238,7 @@ fn build_pytest_summary(summary: &str, _test_files: &[String], failures: &[Strin
     }
 
     if failures.len() > 5 {
-        result.push_str(&format!("\n... +{} more failures\n", failures.len() - 5));
+        result.push_str(&format!("\n... +{} 个失败\n", failures.len() - 5));
     }
 
     result.trim().to_string()
@@ -292,7 +292,7 @@ tests/test_foo.py .....                                            [100%]
 
         let result = filter_pytest_output(output);
         assert!(result.contains("✓ Pytest"));
-        assert!(result.contains("5 passed"));
+        assert!(result.contains("5 通过"));
     }
 
     #[test]
@@ -316,7 +316,8 @@ FAILED tests/test_foo.py::test_something - assert False
 === 4 passed, 1 failed in 0.50s ==="#;
 
         let result = filter_pytest_output(output);
-        assert!(result.contains("4 passed, 1 failed"));
+        assert!(result.contains("4 通过"));
+        assert!(result.contains("1 失败"));
         assert!(result.contains("test_something"));
         assert!(result.contains("assert False"));
     }
@@ -342,7 +343,7 @@ FAILED tests/test_foo.py::test_three - KeyError
 === 3 failed in 0.20s ==="#;
 
         let result = filter_pytest_output(output);
-        assert!(result.contains("3 failed"));
+        assert!(result.contains("3 失败"));
         assert!(result.contains("test_one"));
         assert!(result.contains("test_two"));
         assert!(result.contains("expected 5"));
@@ -356,7 +357,7 @@ collected 0 items
 === no tests ran in 0.00s ==="#;
 
         let result = filter_pytest_output(output);
-        assert!(result.contains("No tests collected"));
+        assert!(result.contains("未收集到测试"));
     }
 
     #[test]

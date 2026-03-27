@@ -83,10 +83,10 @@ fn run_generic(subcommand: &str, args: &[String], verbose: u8, full_sub: &str) -
     }
 
     if verbose > 0 {
-        eprintln!("Running: aws {full_sub}");
+        eprintln!("运行：aws {full_sub}");
     }
 
-    let output = cmd.output().context("Failed to run aws CLI")?;
+    let output = cmd.output().context("运行 aws CLI 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
     let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
@@ -150,10 +150,10 @@ fn run_aws_json(
 
     let cmd_desc = format!("aws {}", sub_args.join(" "));
     if verbose > 0 {
-        eprintln!("Running: {cmd_desc}");
+        eprintln!("运行：{cmd_desc}");
     }
 
-    let output = cmd.output().context(format!("Failed to run {cmd_desc}"))?;
+    let output = cmd.output().context(format!("运行 {cmd_desc} 失败"))?;
     let stdout = crate::utils::decode_output(&output.stdout).to_string();
     let stderr = crate::utils::decode_output(&output.stderr).to_string();
 
@@ -204,10 +204,10 @@ fn run_s3_ls(extra_args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: aws s3 ls {}", extra_args.join(" "));
+        eprintln!("运行：aws s3 ls {}", extra_args.join(" "));
     }
 
-    let output = cmd.output().context("Failed to run aws s3 ls")?;
+    let output = cmd.output().context("运行 aws s3 ls 失败")?;
     let raw = crate::utils::decode_output(&output.stdout).to_string();
 
     if !output.status.success() {
@@ -407,7 +407,7 @@ fn filter_sts_identity(json_str: &str) -> Option<String> {
     let v: Value = serde_json::from_str(json_str).ok()?;
     let account = v["Account"].as_str().unwrap_or("?");
     let arn = v["Arn"].as_str().unwrap_or("?");
-    Some(format!("AWS: {account} {arn}"))
+    Some(format!("AWS：{account} {arn}"))
 }
 
 fn filter_s3_ls(output: &str) -> String {
@@ -419,7 +419,7 @@ fn filter_s3_ls(output: &str) -> String {
         result.truncate(MAX_ITEMS + 10);
         result.push(""); // will be replaced
         return format!(
-            "{}\n... +{} more items",
+            "{}\n... +{} 个条目",
             result[..result.len() - 1].join("\n"),
             total - MAX_ITEMS - 10
         );
@@ -454,14 +454,14 @@ fn filter_ec2_instances(json_str: &str) -> Option<String> {
     }
 
     let total = instances.len();
-    let mut result = format!("EC2: {total} instances\n");
+    let mut result = format!("EC2：{total} 个实例\n");
 
     for inst in instances.iter().take(MAX_ITEMS) {
         result.push_str(&format!("  {inst}\n"));
     }
 
     if total > MAX_ITEMS {
-        result.push_str(&format!("  ... +{} more\n", total - MAX_ITEMS));
+        result.push_str(&format!("  ... +{} 个\n", total - MAX_ITEMS));
     }
 
     Some(result.trim_end().to_string())
@@ -481,7 +481,7 @@ fn filter_ecs_list_services(json_str: &str) -> Option<String> {
         result.push(short.to_string());
     }
 
-    Some(join_with_overflow(&result, total, MAX_ITEMS, "services"))
+    Some(join_with_overflow(&result, total, MAX_ITEMS, "服务"))
 }
 
 fn filter_ecs_describe_services(json_str: &str) -> Option<String> {
@@ -500,7 +500,7 @@ fn filter_ecs_describe_services(json_str: &str) -> Option<String> {
         result.push(format!("{name} {status} {running}/{desired} ({launch})"));
     }
 
-    Some(join_with_overflow(&result, total, MAX_ITEMS, "services"))
+    Some(join_with_overflow(&result, total, MAX_ITEMS, "服务"))
 }
 
 fn filter_rds_instances(json_str: &str) -> Option<String> {
@@ -519,7 +519,7 @@ fn filter_rds_instances(json_str: &str) -> Option<String> {
         result.push(format!("{name} {engine} {version} {class} {status}"));
     }
 
-    Some(join_with_overflow(&result, total, MAX_ITEMS, "instances"))
+    Some(join_with_overflow(&result, total, MAX_ITEMS, "实例"))
 }
 
 fn filter_cfn_list_stacks(json_str: &str) -> Option<String> {
@@ -539,7 +539,7 @@ fn filter_cfn_list_stacks(json_str: &str) -> Option<String> {
         result.push(format!("{} {} {}", name, status, truncate_iso_date(date)));
     }
 
-    Some(join_with_overflow(&result, total, MAX_ITEMS, "stacks"))
+    Some(join_with_overflow(&result, total, MAX_ITEMS, "栈"))
 }
 
 fn filter_cfn_describe_stacks(json_str: &str) -> Option<String> {
@@ -568,7 +568,7 @@ fn filter_cfn_describe_stacks(json_str: &str) -> Option<String> {
         }
     }
 
-    Some(join_with_overflow(&result, total, MAX_ITEMS, "stacks"))
+    Some(join_with_overflow(&result, total, MAX_ITEMS, "栈"))
 }
 
 #[cfg(test)]
@@ -585,7 +585,7 @@ mod tests {
         let result = filter_sts_identity(json).unwrap();
         assert_eq!(
             result,
-            "AWS: 123456789012 arn:aws:iam::123456789012:user/dev-user"
+            "AWS：123456789012 arn:aws:iam::123456789012:user/dev-user"
         );
     }
 
@@ -593,7 +593,7 @@ mod tests {
     fn test_snapshot_ec2_instances() {
         let json = r#"{"Reservations":[{"Instances":[{"InstanceId":"i-0a1b2c3d4e5f00001","InstanceType":"t3.micro","PrivateIpAddress":"10.0.1.10","State":{"Code":16,"Name":"running"},"Tags":[{"Key":"Name","Value":"web-server-1"}],"BlockDeviceMappings":[],"SecurityGroups":[]},{"InstanceId":"i-0a1b2c3d4e5f00002","InstanceType":"t3.large","PrivateIpAddress":"10.0.2.20","State":{"Code":80,"Name":"stopped"},"Tags":[{"Key":"Name","Value":"worker-1"}],"BlockDeviceMappings":[],"SecurityGroups":[]}]}]}"#;
         let result = filter_ec2_instances(json).unwrap();
-        assert!(result.contains("EC2: 2 instances"));
+        assert!(result.contains("EC2：2 个实例"));
         assert!(result.contains("i-0a1b2c3d4e5f00001 running t3.micro 10.0.1.10 (web-server-1)"));
         assert!(result.contains("i-0a1b2c3d4e5f00002 stopped t3.large 10.0.2.20 (worker-1)"));
     }
@@ -608,7 +608,7 @@ mod tests {
         let result = filter_sts_identity(json).unwrap();
         assert_eq!(
             result,
-            "AWS: 123456789012 arn:aws:iam::123456789012:user/dev"
+            "AWS：123456789012 arn:aws:iam::123456789012:user/dev"
         );
     }
 
@@ -616,7 +616,7 @@ mod tests {
     fn test_filter_sts_identity_missing_fields() {
         let json = r#"{}"#;
         let result = filter_sts_identity(json).unwrap();
-        assert_eq!(result, "AWS: ? ?");
+        assert_eq!(result, "AWS：? ?");
     }
 
     #[test]
@@ -641,7 +641,7 @@ mod tests {
         }
         let input = lines.join("\n");
         let result = filter_s3_ls(&input);
-        assert!(result.contains("... +20 more items"));
+        assert!(result.contains("... +20 个条目"));
     }
 
     #[test]
@@ -664,7 +664,7 @@ mod tests {
             }]
         }"#;
         let result = filter_ec2_instances(json).unwrap();
-        assert!(result.contains("EC2: 2 instances"));
+        assert!(result.contains("EC2：2 个实例"));
         assert!(result.contains("i-abc123 running t3.micro 10.0.1.5 (web-server)"));
         assert!(result.contains("i-def456 stopped t3.large 10.0.1.6 (worker)"));
     }
@@ -866,6 +866,6 @@ mod tests {
         }
         let json = format!(r#"{{"DBInstances": [{}]}}"#, dbs.join(","));
         let result = filter_rds_instances(&json).unwrap();
-        assert!(result.contains("... +5 more instances"));
+        assert!(result.contains("... +5 more 实例"));
     }
 }

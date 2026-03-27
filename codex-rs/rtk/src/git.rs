@@ -80,7 +80,7 @@ fn run_diff(
             cmd.arg(arg);
         }
 
-        let output = cmd.output().context("Failed to run git diff")?;
+        let output = cmd.output().context("运行 git diff 失败")?;
 
         if !output.status.success() {
             let stderr = crate::utils::decode_output(&output.stderr);
@@ -109,11 +109,11 @@ fn run_diff(
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run git diff")?;
+    let output = cmd.output().context("运行 git diff 失败")?;
     let stat_stdout = crate::utils::decode_output(&output.stdout);
 
     if verbose > 0 {
-        eprintln!("Git diff summary:");
+        eprintln!("Git diff 摘要：");
     }
 
     // Print stat summary first
@@ -126,15 +126,15 @@ fn run_diff(
         diff_cmd.arg(arg);
     }
 
-    let diff_output = diff_cmd.output().context("Failed to run git diff")?;
+    let diff_output = diff_cmd.output().context("运行 git diff 失败")?;
     let diff_stdout = crate::utils::decode_output(&diff_output.stdout);
 
     let mut final_output = stat_stdout.to_string();
     if !diff_stdout.is_empty() {
-        println!("\n--- Changes ---");
+        println!("\n--- 变更 ---");
         let compacted = compact_diff(&diff_stdout, max_lines.unwrap_or(500));
         println!("{compacted}");
-        final_output.push_str("\n--- Changes ---\n");
+        final_output.push_str("\n--- 变更 ---\n");
         final_output.push_str(&compacted);
     }
 
@@ -175,7 +175,7 @@ fn run_show(
         for arg in args {
             cmd.arg(arg);
         }
-        let output = cmd.output().context("Failed to run git show")?;
+        let output = cmd.output().context("运行 git show 失败")?;
         if !output.status.success() {
             let stderr = crate::utils::decode_output(&output.stderr);
             eprintln!("{stderr}");
@@ -215,7 +215,7 @@ fn run_show(
     for arg in args {
         summary_cmd.arg(arg);
     }
-    let summary_output = summary_cmd.output().context("Failed to run git show")?;
+    let summary_output = summary_cmd.output().context("运行 git show 失败")?;
     if !summary_output.status.success() {
         let stderr = crate::utils::decode_output(&summary_output.stderr);
         eprintln!("{stderr}");
@@ -230,7 +230,7 @@ fn run_show(
     for arg in args {
         stat_cmd.arg(arg);
     }
-    let stat_output = stat_cmd.output().context("Failed to run git show --stat")?;
+    let stat_output = stat_cmd.output().context("运行 git show --stat 失败")?;
     let stat_stdout = crate::utils::decode_output(&stat_output.stdout);
     let stat_text = stat_stdout.trim();
     if !stat_text.is_empty() {
@@ -243,14 +243,14 @@ fn run_show(
     for arg in args {
         diff_cmd.arg(arg);
     }
-    let diff_output = diff_cmd.output().context("Failed to run git show (diff)")?;
+    let diff_output = diff_cmd.output().context("运行 git show（diff）失败")?;
     let diff_stdout = crate::utils::decode_output(&diff_output.stdout);
     let diff_text = diff_stdout.trim();
 
     let mut final_output = summary.to_string();
     if !diff_text.is_empty() {
         if verbose > 0 {
-            println!("\n--- Changes ---");
+            println!("\n--- 变更 ---");
         }
         let compacted = compact_diff(diff_text, max_lines.unwrap_or(500));
         println!("{compacted}");
@@ -328,7 +328,7 @@ pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
         }
 
         if result.len() >= max_lines {
-            result.push("\n... (more changes truncated)".to_string());
+            result.push("\n... (更多变更已截断)".to_string());
             was_truncated = true;
             break;
         }
@@ -403,7 +403,7 @@ fn run_log(
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run git log")?;
+    let output = cmd.output().context("运行 git log 失败")?;
 
     if !output.status.success() {
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -415,7 +415,7 @@ fn run_log(
     let stdout = crate::utils::decode_output(&output.stdout);
 
     if verbose > 0 {
-        eprintln!("Git log output:");
+        eprintln!("Git log 输出：");
     }
 
     // Post-process: truncate long messages, cap lines only if RTK set the default
@@ -543,7 +543,7 @@ fn format_status_output(porcelain: &str) -> String {
     let lines: Vec<&str> = porcelain.lines().collect();
 
     if lines.is_empty() {
-        return "clean — nothing to commit".to_string();
+        return "干净 — 没有可提交内容".to_string();
     }
 
     let mut output = String::new();
@@ -598,41 +598,41 @@ fn format_status_output(porcelain: &str) -> String {
 
     // Build summary
     if staged > 0 {
-        output.push_str(&format!("+ Staged: {staged} files\n"));
+        output.push_str(&format!("+ 已暂存：{staged} 个文件\n"));
         for f in staged_files.iter().take(5) {
             output.push_str(&format!("   {f}\n"));
         }
         if staged_files.len() > 5 {
-            output.push_str(&format!("   ... +{} more\n", staged_files.len() - 5));
+            output.push_str(&format!("   ... +{} 个\n", staged_files.len() - 5));
         }
     }
 
     if modified > 0 {
-        output.push_str(&format!("~ Modified: {modified} files\n"));
+        output.push_str(&format!("~ 已修改：{modified} 个文件\n"));
         for f in modified_files.iter().take(5) {
             output.push_str(&format!("   {f}\n"));
         }
         if modified_files.len() > 5 {
-            output.push_str(&format!("   ... +{} more\n", modified_files.len() - 5));
+            output.push_str(&format!("   ... +{} 个\n", modified_files.len() - 5));
         }
     }
 
     if untracked > 0 {
-        output.push_str(&format!("? Untracked: {untracked} files\n"));
+        output.push_str(&format!("? 未跟踪：{untracked} 个文件\n"));
         for f in untracked_files.iter().take(3) {
             output.push_str(&format!("   {f}\n"));
         }
         if untracked_files.len() > 3 {
-            output.push_str(&format!("   ... +{} more\n", untracked_files.len() - 3));
+            output.push_str(&format!("   ... +{} 个\n", untracked_files.len() - 3));
         }
     }
 
     if conflicts > 0 {
-        output.push_str(&format!("conflicts: {conflicts} files\n"));
+        output.push_str(&format!("冲突：{conflicts} 个文件\n"));
     }
 
     if staged == 0 && modified == 0 && untracked == 0 && conflicts == 0 {
-        output.push_str("clean — nothing to commit\n");
+        output.push_str("干净 — 没有可提交内容\n");
     }
 
     output.trim_end().to_string()
@@ -669,7 +669,7 @@ fn filter_status_with_args(output: &str) -> String {
     }
 
     if result.is_empty() {
-        "ok".to_string()
+        "干净".to_string()
     } else {
         result.join("\n")
     }
@@ -684,7 +684,7 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             .arg("status")
             .args(args)
             .output()
-            .context("Failed to run git status")?;
+            .context("运行 git status 失败")?;
 
         let stdout = crate::utils::decode_output(&output.stdout);
         let stderr = crate::utils::decode_output(&output.stderr);
@@ -732,13 +732,13 @@ fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     let output = git_cmd(global_args)
         .args(["status", "--porcelain", "-b"])
         .output()
-        .context("Failed to run git status")?;
+        .context("运行 git status 失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
 
     if !stderr.is_empty() && stderr.contains("not a git repository") {
-        let message = "Not a git repository".to_string();
+        let message = "不是 git 仓库".to_string();
         eprintln!("{message}");
         timer.track("git status", "rtk git status", &raw_output, &message);
         std::process::exit(output.status.code().unwrap_or(128));
@@ -769,10 +769,10 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
         }
     }
 
-    let output = cmd.output().context("Failed to run git add")?;
+    let output = cmd.output().context("运行 git add 失败")?;
 
     if verbose > 0 {
-        eprintln!("git add executed");
+        eprintln!("已执行 git add");
     }
 
     let raw_output = format!(
@@ -786,18 +786,18 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
         let status_output = git_cmd(global_args)
             .args(["diff", "--cached", "--stat", "--shortstat"])
             .output()
-            .context("Failed to check staged files")?;
+            .context("检查暂存文件失败")?;
 
         let stat = crate::utils::decode_output(&status_output.stdout);
         let compact = if stat.trim().is_empty() {
-            "ok (nothing to add)".to_string()
+            "已完成（没有可添加内容）".to_string()
         } else {
             // Parse "1 file changed, 5 insertions(+)" format
             let short = stat.lines().last().unwrap_or("").trim();
             if short.is_empty() {
-                "ok".to_string()
+                "已完成".to_string()
             } else {
-                format!("ok {short}")
+                format!("已暂存 {short}")
             }
         };
 
@@ -812,7 +812,7 @@ fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
     } else {
         let stderr = crate::utils::decode_output(&output.stderr);
         let stdout = crate::utils::decode_output(&output.stdout);
-        eprintln!("FAILED: git add");
+        eprintln!("失败：git add");
         if !stderr.trim().is_empty() {
             eprintln!("{stderr}");
         }
@@ -846,7 +846,7 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
 
     let output = build_commit_command(args, global_args)
         .output()
-        .context("Failed to run git commit")?;
+        .context("运行 git commit 失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -858,15 +858,15 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
             if let Some(hash_start) = line.find(' ') {
                 let hash = line[1..hash_start].split(' ').next_back().unwrap_or("");
                 if !hash.is_empty() && hash.len() >= 7 {
-                    format!("ok {}", &hash[..7.min(hash.len())])
+                    format!("已提交 {}", &hash[..7.min(hash.len())])
                 } else {
-                    "ok".to_string()
+                    "已提交".to_string()
                 }
             } else {
-                "ok".to_string()
+                "已提交".to_string()
             }
         } else {
-            "ok".to_string()
+            "已提交".to_string()
         };
 
         println!("{compact}");
@@ -874,13 +874,8 @@ fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         timer.track(&original_cmd, "rtk git commit", &raw_output, &compact);
     } else {
         if stderr.contains("nothing to commit") || stdout.contains("nothing to commit") {
-            println!("ok (nothing to commit)");
-            timer.track(
-                &original_cmd,
-                "rtk git commit",
-                &raw_output,
-                "ok (nothing to commit)",
-            );
+            println!("无可提交内容");
+            timer.track(&original_cmd, "rtk git commit", &raw_output, "无可提交内容");
         } else {
             if !stderr.trim().is_empty() {
                 eprint!("{stderr}");
@@ -900,7 +895,7 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git push");
+        eprintln!("运行：git push");
     }
 
     let mut cmd = git_cmd(global_args);
@@ -909,7 +904,7 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run git push")?;
+    let output = cmd.output().context("运行 git push 失败")?;
 
     let stderr = crate::utils::decode_output(&output.stderr);
     let stdout = crate::utils::decode_output(&output.stdout);
@@ -917,14 +912,14 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
 
     if output.status.success() {
         let compact = if stderr.contains("Everything up-to-date") {
-            "ok (up-to-date)".to_string()
+            "已是最新".to_string()
         } else {
             let mut result = String::new();
             for line in stderr.lines() {
                 if line.contains("->") {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 3 {
-                        result = format!("ok {}", parts[parts.len() - 1]);
+                        result = format!("已推送 {}", parts[parts.len() - 1]);
                         break;
                     }
                 }
@@ -932,7 +927,7 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
             if !result.is_empty() {
                 result
             } else {
-                "ok".to_string()
+                "已推送".to_string()
             }
         };
 
@@ -945,7 +940,7 @@ fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
             &compact,
         );
     } else {
-        eprintln!("FAILED: git push");
+        eprintln!("失败：git push");
         if !stderr.trim().is_empty() {
             eprintln!("{stderr}");
         }
@@ -962,7 +957,7 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git pull");
+        eprintln!("运行：git pull");
     }
 
     let mut cmd = git_cmd(global_args);
@@ -971,7 +966,7 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run git pull")?;
+    let output = cmd.output().context("运行 git pull 失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -980,7 +975,7 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
     if output.status.success() {
         let compact =
             if stdout.contains("Already up to date") || stdout.contains("Already up-to-date") {
-                "ok (up-to-date)".to_string()
+                "已是最新".to_string()
             } else {
                 // Count files changed
                 let mut files = 0;
@@ -1016,9 +1011,9 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
                 }
 
                 if files > 0 {
-                    format!("ok {files} files +{insertions} -{deletions}")
+                    format!("已更新 {files} 个文件 +{insertions} -{deletions}")
                 } else {
-                    "ok".to_string()
+                    "已更新".to_string()
                 }
             };
 
@@ -1031,7 +1026,7 @@ fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> 
             &compact,
         );
     } else {
-        eprintln!("FAILED: git pull");
+        eprintln!("失败：git pull");
         if !stderr.trim().is_empty() {
             eprintln!("{stderr}");
         }
@@ -1048,7 +1043,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git branch");
+        eprintln!("运行：git branch");
     }
 
     // Detect write operations: delete, rename, copy, upstream tracking
@@ -1096,7 +1091,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         for arg in args {
             cmd.arg(arg);
         }
-        let output = cmd.output().context("Failed to run git branch")?;
+        let output = cmd.output().context("运行 git branch 失败")?;
         let stdout = crate::utils::decode_output(&output.stdout);
         let stderr = crate::utils::decode_output(&output.stderr);
         let combined = format!("{stdout}{stderr}");
@@ -1112,7 +1107,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         if output.status.success() {
             println!("{trimmed}");
         } else {
-            eprintln!("FAILED: git branch {}", args.join(" "));
+            eprintln!("失败：git branch {}", args.join(" "));
             if !stderr.trim().is_empty() {
                 eprintln!("{stderr}");
             }
@@ -1128,13 +1123,13 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         for arg in args {
             cmd.arg(arg);
         }
-        let output = cmd.output().context("Failed to run git branch")?;
+        let output = cmd.output().context("运行 git branch 失败")?;
         let stdout = crate::utils::decode_output(&output.stdout);
         let stderr = crate::utils::decode_output(&output.stderr);
         let combined = format!("{stdout}{stderr}");
 
         let msg = if output.status.success() {
-            "ok"
+            "已完成"
         } else {
             &combined
         };
@@ -1147,9 +1142,9 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         );
 
         if output.status.success() {
-            println!("ok");
+            println!("已完成");
         } else {
-            eprintln!("FAILED: git branch {}", args.join(" "));
+            eprintln!("失败：git branch {}", args.join(" "));
             if !stderr.trim().is_empty() {
                 eprintln!("{stderr}");
             }
@@ -1172,7 +1167,7 @@ fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run git branch")?;
+    let output = cmd.output().context("运行 git branch 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let raw = stdout.to_string();
 
@@ -1244,12 +1239,12 @@ fn filter_branch_output(output: &str) -> String {
             .filter(|r| *r != &current && !local.contains(r))
             .collect();
         if !remote_only.is_empty() {
-            result.push(format!("  remote-only ({}):", remote_only.len()));
+            result.push(format!("  仅远端（{}）：", remote_only.len()));
             for b in remote_only.iter().take(10) {
                 result.push(format!("    {b}"));
             }
             if remote_only.len() > 10 {
-                result.push(format!("    ... +{} more", remote_only.len() - 10));
+                result.push(format!("    ... +{} 个", remote_only.len() - 10));
             }
         }
     }
@@ -1261,7 +1256,7 @@ fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()>
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git fetch");
+        eprintln!("运行：git fetch");
     }
 
     let mut cmd = git_cmd(global_args);
@@ -1270,13 +1265,13 @@ fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()>
         cmd.arg(arg);
     }
 
-    let output = cmd.output().context("Failed to run git fetch")?;
+    let output = cmd.output().context("运行 git fetch 失败")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}{stderr}");
 
     if !output.status.success() {
-        eprintln!("FAILED: git fetch");
+        eprintln!("失败：git fetch");
         if !stderr.trim().is_empty() {
             eprintln!("{stderr}");
         }
@@ -1290,9 +1285,9 @@ fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()>
         .count();
 
     let msg = if new_refs > 0 {
-        format!("ok fetched ({new_refs} new refs)")
+        format!("已拉取（{new_refs} 个新引用）")
     } else {
-        "ok fetched".to_string()
+        "已拉取".to_string()
     };
 
     println!("{msg}");
@@ -1310,7 +1305,7 @@ fn run_stash(
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git stash {subcommand:?}");
+        eprintln!("运行：git stash {subcommand:?}");
     }
 
     match subcommand {
@@ -1318,12 +1313,12 @@ fn run_stash(
             let output = git_cmd(global_args)
                 .args(["stash", "list"])
                 .output()
-                .context("Failed to run git stash list")?;
+                .context("运行 git stash list 失败")?;
             let stdout = crate::utils::decode_output(&output.stdout);
             let raw = stdout.to_string();
 
             if stdout.trim().is_empty() {
-                let msg = "No stashes";
+                let msg = "无 stash";
                 println!("{msg}");
                 timer.track("git stash list", "rtk git stash list", &raw, msg);
                 return Ok(());
@@ -1339,12 +1334,12 @@ fn run_stash(
             for arg in args {
                 cmd.arg(arg);
             }
-            let output = cmd.output().context("Failed to run git stash show")?;
+            let output = cmd.output().context("运行 git stash show 失败")?;
             let stdout = crate::utils::decode_output(&output.stdout);
             let raw = stdout.to_string();
 
             let filtered = if stdout.trim().is_empty() {
-                let msg = "Empty stash";
+                let msg = "空 stash";
                 println!("{msg}");
                 msg.to_string()
             } else {
@@ -1361,17 +1356,17 @@ fn run_stash(
             for arg in args {
                 cmd.arg(arg);
             }
-            let output = cmd.output().context("Failed to run git stash")?;
+            let output = cmd.output().context("运行 git stash 失败")?;
             let stdout = crate::utils::decode_output(&output.stdout);
             let stderr = crate::utils::decode_output(&output.stderr);
             let combined = format!("{stdout}{stderr}");
 
             let msg = if output.status.success() {
-                let msg = format!("ok stash {sub}");
+                let msg = format!("已执行 stash {sub}");
                 println!("{msg}");
                 msg
             } else {
-                eprintln!("FAILED: git stash {sub}");
+                eprintln!("失败：git stash {sub}");
                 if !stderr.trim().is_empty() {
                     eprintln!("{stderr}");
                 }
@@ -1395,17 +1390,17 @@ fn run_stash(
             for arg in args {
                 cmd.arg(arg);
             }
-            let output = cmd.output().context("Failed to run git stash")?;
+            let output = cmd.output().context("运行 git stash 失败")?;
             let stdout = crate::utils::decode_output(&output.stdout);
             let stderr = crate::utils::decode_output(&output.stderr);
             let combined = format!("{stdout}{stderr}");
 
             let msg = if output.status.success() {
-                let msg = format!("ok stash {sub}");
+                let msg = format!("已执行 stash {sub}");
                 println!("{msg}");
                 msg
             } else {
-                eprintln!("FAILED: git stash {sub}");
+                eprintln!("失败：git stash {sub}");
                 if !stderr.trim().is_empty() {
                     eprintln!("{stderr}");
                 }
@@ -1430,23 +1425,23 @@ fn run_stash(
             for arg in args {
                 cmd.arg(arg);
             }
-            let output = cmd.output().context("Failed to run git stash")?;
+            let output = cmd.output().context("运行 git stash 失败")?;
             let stdout = crate::utils::decode_output(&output.stdout);
             let stderr = crate::utils::decode_output(&output.stderr);
             let combined = format!("{stdout}{stderr}");
 
             let msg = if output.status.success() {
                 if stdout.contains("No local changes") {
-                    let msg = "ok (nothing to stash)";
+                    let msg = "无可 stash 内容";
                     println!("{msg}");
                     msg.to_string()
                 } else {
-                    let msg = "ok stashed";
+                    let msg = "已 stash";
                     println!("{msg}");
                     msg.to_string()
                 }
             } else {
-                eprintln!("FAILED: git stash");
+                eprintln!("失败：git stash");
                 if !stderr.trim().is_empty() {
                     eprintln!("{stderr}");
                 }
@@ -1489,7 +1484,7 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git worktree list");
+        eprintln!("运行：git worktree list");
     }
 
     // If args contain "add", "remove", "prune" etc., pass through
@@ -1503,13 +1498,13 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
         for arg in args {
             cmd.arg(arg);
         }
-        let output = cmd.output().context("Failed to run git worktree")?;
+        let output = cmd.output().context("运行 git worktree 失败")?;
         let stdout = crate::utils::decode_output(&output.stdout);
         let stderr = crate::utils::decode_output(&output.stderr);
         let combined = format!("{stdout}{stderr}");
 
         let msg = if output.status.success() {
-            "ok"
+            "已完成"
         } else {
             &combined
         };
@@ -1522,9 +1517,9 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
         );
 
         if output.status.success() {
-            println!("ok");
+            println!("已完成");
         } else {
-            eprintln!("FAILED: git worktree {}", args.join(" "));
+            eprintln!("失败：git worktree {}", args.join(" "));
             if !stderr.trim().is_empty() {
                 eprintln!("{stderr}");
             }
@@ -1537,7 +1532,7 @@ fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<
     let output = git_cmd(global_args)
         .args(["worktree", "list"])
         .output()
-        .context("Failed to run git worktree list")?;
+        .context("运行 git worktree list 失败")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let raw = stdout.to_string();
@@ -1581,12 +1576,12 @@ pub fn run_passthrough(args: &[OsString], global_args: &[String], verbose: u8) -
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {
-        eprintln!("git passthrough: {args:?}");
+        eprintln!("git 透传：{args:?}");
     }
     let status = git_cmd(global_args)
         .args(args)
         .status()
-        .context("Failed to run git")?;
+        .context("运行 git 失败")?;
 
     let args_str = tracking::args_display(args);
     timer.track_passthrough(
@@ -1703,7 +1698,7 @@ mod tests {
         }
         let result = compact_diff(&diff, 500);
         assert!(
-            !result.contains("more changes truncated"),
+            !result.contains("更多变更已截断"),
             "5 files × 20 lines should not exceed max_lines=500"
         );
     }
@@ -1725,7 +1720,7 @@ mod tests {
         assert!(result.contains("feature/auth"));
         assert!(result.contains("fix/bug-123"));
         // remote-only should show release/v2 but not main or feature/auth (already local)
-        assert!(result.contains("remote-only"));
+        assert!(result.contains("仅远端"));
         assert!(result.contains("release/v2"));
     }
 
@@ -1735,7 +1730,7 @@ mod tests {
         let result = filter_branch_output(output);
         assert!(result.contains("* main"));
         assert!(result.contains("develop"));
-        assert!(!result.contains("remote-only"));
+        assert!(!result.contains("仅远端"));
     }
 
     #[test]
@@ -1761,7 +1756,7 @@ mod tests {
     fn test_format_status_output_clean() {
         let porcelain = "";
         let result = format_status_output(porcelain);
-        assert_eq!(result, "clean — nothing to commit");
+        assert_eq!(result, "干净 — 没有可提交内容");
     }
 
     #[test]
@@ -1769,11 +1764,11 @@ mod tests {
         let porcelain = "## main...origin/main\n M src/main.rs\n M src/lib.rs\n";
         let result = format_status_output(porcelain);
         assert!(result.contains("* main...origin/main"));
-        assert!(result.contains("~ Modified: 2 files"));
+        assert!(result.contains("~ 已修改：2 个文件"));
         assert!(result.contains("src/main.rs"));
         assert!(result.contains("src/lib.rs"));
-        assert!(!result.contains("Staged"));
-        assert!(!result.contains("Untracked"));
+        assert!(!result.contains("已暂存"));
+        assert!(!result.contains("未跟踪"));
     }
 
     #[test]
@@ -1781,11 +1776,11 @@ mod tests {
         let porcelain = "## feature/new\n?? temp.txt\n?? debug.log\n?? test.sh\n";
         let result = format_status_output(porcelain);
         assert!(result.contains("* feature/new"));
-        assert!(result.contains("? Untracked: 3 files"));
+        assert!(result.contains("? 未跟踪：3 个文件"));
         assert!(result.contains("temp.txt"));
         assert!(result.contains("debug.log"));
         assert!(result.contains("test.sh"));
-        assert!(!result.contains("Modified"));
+        assert!(!result.contains("已修改"));
     }
 
     #[test]
@@ -1798,12 +1793,12 @@ A  added.rs
 "#;
         let result = format_status_output(porcelain);
         assert!(result.contains("* main"));
-        assert!(result.contains("+ Staged: 2 files"));
+        assert!(result.contains("+ 已暂存：2 个文件"));
         assert!(result.contains("staged.rs"));
         assert!(result.contains("added.rs"));
-        assert!(result.contains("~ Modified: 1 files"));
+        assert!(result.contains("~ 已修改：1 个文件"));
         assert!(result.contains("modified.rs"));
-        assert!(result.contains("? Untracked: 1 files"));
+        assert!(result.contains("? 未跟踪：1 个文件"));
         assert!(result.contains("untracked.txt"));
     }
 
@@ -1820,10 +1815,10 @@ M  file6.rs
 M  file7.rs
 "#;
         let result = format_status_output(porcelain);
-        assert!(result.contains("+ Staged: 7 files"));
+        assert!(result.contains("+ 已暂存：7 个文件"));
         assert!(result.contains("file1.rs"));
         assert!(result.contains("file5.rs"));
-        assert!(result.contains("... +2 more"));
+        assert!(result.contains("... +2 个"));
         assert!(!result.contains("file6.rs"));
         assert!(!result.contains("file7.rs"));
     }

@@ -39,12 +39,12 @@ fn run_gt_filtered(
 
     let subcmd_str = subcmd.join(" ");
     if verbose > 0 {
-        eprintln!("Running: gt {} {}", subcmd_str, args.join(" "));
+        eprintln!("运行：gt {} {}", subcmd_str, args.join(" "));
     }
 
     let cmd_output = cmd
         .output()
-        .with_context(|| format!("Failed to run gt {subcmd_str}. Is gt (Graphite) installed?"))?;
+        .with_context(|| format!("运行 gt {subcmd_str} 失败。是否已安装 gt（Graphite）？"))?;
 
     let stdout = crate::utils::decode_output(&cmd_output.stdout);
     let stderr = crate::utils::decode_output(&cmd_output.stderr);
@@ -130,7 +130,7 @@ pub fn run_branch(args: &[String], verbose: u8) -> Result<()> {
 
 pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
     if args.is_empty() {
-        anyhow::bail!("gt: no subcommand specified");
+        anyhow::bail!("gt：未指定子命令");
     }
 
     let subcommand = args[0].to_string_lossy();
@@ -225,12 +225,12 @@ fn passthrough_gt(subcommand: &str, args: &[String], verbose: u8) -> Result<()> 
     }
 
     if verbose > 0 {
-        eprintln!("Running: gt {} {}", subcommand, args.join(" "));
+        eprintln!("运行：gt {} {}", subcommand, args.join(" "));
     }
 
     let status = cmd
         .status()
-        .with_context(|| format!("Failed to run gt {subcommand}"))?;
+        .with_context(|| format!("运行 gt {subcommand} 失败"))?;
 
     let args_str = if args.is_empty() {
         subcommand.to_string()
@@ -273,7 +273,7 @@ fn filter_gt_log_entries(input: &str) -> String {
         if entry_count >= MAX_LOG_ENTRIES {
             let remaining = lines[i + 1..].iter().filter(|l| is_graph_node(l)).count();
             if remaining > 0 {
-                result.push(format!("... +{remaining} more entries"));
+                result.push(format!("... +{remaining} 条"));
             }
             break;
         }
@@ -300,19 +300,22 @@ fn filter_gt_submit(input: &str) -> String {
         if line.contains("pushed") || line.contains("Pushed") {
             pushed.push(extract_branch_name(line));
         } else if let Some(caps) = PR_LINE_RE.captures(line) {
-            let action = caps[1].to_lowercase();
+            let action = match caps[1].to_lowercase().as_str() {
+                "created" => "创建",
+                "updated" => "更新",
+                _ => "更新",
+            };
             let num = &caps[2];
             let branch = &caps[3];
             if let Some(url) = caps.get(4) {
                 prs.push(format!(
-                    "{} PR #{} {} {}",
-                    action,
+                    "已{action} PR #{} {} {}",
                     num,
                     branch,
                     url.as_str()
                 ));
             } else {
-                prs.push(format!("{action} PR #{num} {branch}"));
+                prs.push(format!("已{action} PR #{num} {branch}"));
             }
         }
     }
@@ -326,9 +329,9 @@ fn filter_gt_submit(input: &str) -> String {
             .filter(|s| !s.is_empty())
             .collect();
         if !branch_names.is_empty() {
-            summary.push(format!("pushed {}", branch_names.join(", ")));
+            summary.push(format!("已推送 {}", branch_names.join(", ")));
         } else {
-            summary.push(format!("pushed {} branches", pushed.len()));
+            summary.push(format!("已推送 {} 个分支", pushed.len()));
         }
     }
 
@@ -374,26 +377,25 @@ fn filter_gt_sync(input: &str) -> String {
     let mut parts = Vec::new();
 
     if synced > 0 {
-        parts.push(format!("{synced} synced"));
+        parts.push(format!("已同步 {synced} 个"));
     }
 
     if deleted > 0 {
         if deleted_names.is_empty() {
-            parts.push(format!("{deleted} deleted"));
+            parts.push(format!("已删除 {deleted} 个"));
         } else {
             parts.push(format!(
-                "{} deleted ({})",
-                deleted,
+                "已删除 {deleted} 个（{}）",
                 deleted_names.join(", ")
             ));
         }
     }
 
     if parts.is_empty() {
-        return ok_confirmation("synced", "");
+        return ok_confirmation("同步", "");
     }
 
-    format!("ok sync: {}", parts.join(", "))
+    parts.join("，")
 }
 
 fn filter_gt_restack(input: &str) -> String {
@@ -411,9 +413,9 @@ fn filter_gt_restack(input: &str) -> String {
     }
 
     if restacked > 0 {
-        ok_confirmation("restacked", &format!("{restacked} branches"))
+        ok_confirmation("重排", &format!("{restacked} 个分支"))
     } else {
-        ok_confirmation("restacked", "")
+        ok_confirmation("重排", "")
     }
 }
 
@@ -437,9 +439,9 @@ fn filter_gt_create(input: &str) -> String {
 
     if branch_name.is_empty() {
         let first_line = trimmed.lines().next().unwrap_or("");
-        ok_confirmation("created", first_line.trim())
+        ok_confirmation("创建", first_line.trim())
     } else {
-        ok_confirmation("created", &branch_name)
+        ok_confirmation("创建", &branch_name)
     }
 }
 
@@ -508,9 +510,9 @@ Updated pull request #40 for feat/add-db
 "#;
         let output = filter_gt_submit(input);
         let expected = "\
-pushed feat/add-auth, feat/add-db
-created PR #42 feat/add-auth
-updated PR #40 feat/add-db";
+已推送 feat/add-auth, feat/add-db
+已创建 PR #42 feat/add-auth
+已更新 PR #40 feat/add-db";
         assert_eq!(output, expected);
     }
 
@@ -523,7 +525,7 @@ Deleted branch fix/old-hotfix
         let output = filter_gt_sync(input);
         assert_eq!(
             output,
-            "ok sync: 1 synced, 2 deleted (feat/merged-feature, fix/old-hotfix)"
+            "已同步 1 个，已删除 2 个（feat/merged-feature, fix/old-hotfix）"
         );
     }
 
@@ -534,14 +536,14 @@ Restacked branch feat/add-db on feat/add-auth
 Restacked branch fix/parsing on feat/add-db
 "#;
         let output = filter_gt_restack(input);
-        assert_eq!(output, "ok restacked 3 branches");
+        assert_eq!(output, "已重排 3 个分支");
     }
 
     #[test]
     fn test_filter_gt_create_exact_format() {
         let input = "Created branch feat/new-feature\n";
         let output = filter_gt_create(input);
-        assert_eq!(output, "ok created feat/new-feature");
+        assert_eq!(output, "已创建 feat/new-feature");
     }
 
     #[test]
@@ -681,9 +683,8 @@ Deleted branch fix/old-hotfix
 "#;
 
         let output = filter_gt_sync(input);
-        assert!(output.contains("ok sync"));
-        assert!(output.contains("synced"));
-        assert!(output.contains("deleted"));
+        assert!(output.contains("已同步"));
+        assert!(output.contains("已删除"));
     }
 
     #[test]
@@ -695,9 +696,8 @@ Deleted branch fix/old-hotfix
     fn test_filter_gt_sync_no_deletes() {
         let input = "Synced with remote\n";
         let output = filter_gt_sync(input);
-        assert!(output.contains("ok sync"));
-        assert!(output.contains("synced"));
-        assert!(!output.contains("deleted"));
+        assert!(output.contains("已同步"));
+        assert!(!output.contains("已删除"));
     }
 
     #[test]
@@ -708,8 +708,8 @@ Restacked branch fix/parsing on feat/add-db
 "#;
 
         let output = filter_gt_restack(input);
-        assert!(output.contains("ok restacked"));
-        assert!(output.contains("3 branches"));
+        assert!(output.contains("已重排"));
+        assert!(output.contains("3 个分支"));
     }
 
     #[test]
@@ -721,7 +721,7 @@ Restacked branch fix/parsing on feat/add-db
     fn test_filter_gt_create() {
         let input = "Created branch feat/new-feature\n";
         let output = filter_gt_create(input);
-        assert_eq!(output, "ok created feat/new-feature");
+        assert_eq!(output, "已创建 feat/new-feature");
     }
 
     #[test]
@@ -733,7 +733,7 @@ Restacked branch fix/parsing on feat/add-db
     fn test_filter_gt_create_no_branch_name() {
         let input = "Some unexpected output\n";
         let output = filter_gt_create(input);
-        assert!(output.starts_with("ok created"));
+        assert!(output.starts_with("已创建"));
     }
 
     #[test]

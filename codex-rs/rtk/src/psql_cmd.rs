@@ -29,12 +29,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: psql {}", args.join(" "));
+        eprintln!("运行：psql {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run psql (is PostgreSQL client installed?)")?;
+        .context("运行 psql 失败（是否已安装 PostgreSQL 客户端？）")?;
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
 
@@ -139,7 +139,7 @@ fn filter_table(output: &str) -> String {
     }
 
     if data_rows > MAX_TABLE_ROWS {
-        result.push(format!("... +{} more rows", data_rows - MAX_TABLE_ROWS));
+        result.push(format!("... +{} 行", data_rows - MAX_TABLE_ROWS));
     }
 
     result.join("\n")
@@ -195,7 +195,7 @@ fn filter_expanded(output: &str) -> String {
 
     if record_count > MAX_EXPANDED_RECORDS {
         result.push(format!(
-            "... +{} more records",
+            "... +{} 条记录",
             record_count - MAX_EXPANDED_RECORDS
         ));
     }
@@ -272,7 +272,7 @@ mod tests {
         let input = lines.join("\n");
 
         let result = filter_table(&input);
-        assert!(result.contains("... +10 more rows"));
+        assert!(result.contains("... +10 行"));
         // Header + 30 data rows + overflow line
         assert_eq!(result.lines().count(), 32); // 1 header + 30 data + 1 overflow
     }
@@ -309,7 +309,7 @@ name | bob
         let input = lines.join("\n");
 
         let result = filter_expanded(&input);
-        assert!(result.contains("... +5 more records"));
+        assert!(result.contains("... +5 条记录"));
     }
 
     #[test]

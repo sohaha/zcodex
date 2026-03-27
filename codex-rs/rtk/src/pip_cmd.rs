@@ -21,7 +21,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let base_cmd = if use_uv { "uv" } else { "pip" };
 
     if verbose > 0 && use_uv {
-        eprintln!("Using uv (pip-compatible)");
+        eprintln!("使用 uv（兼容 pip）");
     }
 
     // Detect subcommand
@@ -36,7 +36,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         }
         _ => {
             anyhow::bail!(
-                "rtk pip: unsupported subcommand '{subcommand}'\nSupported: list, outdated, install, uninstall, show"
+                "rtk pip：不支持的子命令 '{subcommand}'\n支持：list、outdated、install、uninstall、show"
             );
         }
     };
@@ -65,12 +65,12 @@ fn run_list(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String, Str
     }
 
     if verbose > 0 {
-        eprintln!("Running: {base_cmd} pip list --format=json");
+        eprintln!("运行：{base_cmd} pip list --format=json");
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {base_cmd} pip list"))?;
+        .with_context(|| format!("运行 {base_cmd} pip list 失败"))?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -100,12 +100,12 @@ fn run_outdated(base_cmd: &str, args: &[String], verbose: u8) -> Result<(String,
     }
 
     if verbose > 0 {
-        eprintln!("Running: {base_cmd} pip list --outdated --format=json");
+        eprintln!("运行：{base_cmd} pip list --outdated --format=json");
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {base_cmd} pip list --outdated"))?;
+        .with_context(|| format!("运行 {base_cmd} pip list --outdated 失败"))?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -133,12 +133,12 @@ fn run_passthrough(base_cmd: &str, args: &[String], verbose: u8) -> Result<(Stri
     }
 
     if verbose > 0 {
-        eprintln!("Running: {} pip {}", base_cmd, args.join(" "));
+        eprintln!("运行：{} pip {}", base_cmd, args.join(" "));
     }
 
     let output = cmd
         .output()
-        .with_context(|| format!("Failed to run {} pip {}", base_cmd, args.join(" ")))?;
+        .with_context(|| format!("运行 {} pip {} 失败", base_cmd, args.join(" ")))?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -159,16 +159,16 @@ fn filter_pip_list(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip list (JSON parse failed: {e})");
+            return format!("pip list（JSON 解析失败：{e}）");
         }
     };
 
     if packages.is_empty() {
-        return "pip list: No packages installed".to_string();
+        return "pip list：未安装任何包".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("pip list: {} packages\n", packages.len()));
+    result.push_str(&format!("pip list：{} 个包\n", packages.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     // Group by first letter for easier scanning
@@ -194,7 +194,7 @@ fn filter_pip_list(output: &str) -> String {
         }
 
         if pkgs.len() > 10 {
-            result.push_str(&format!("  ... +{} more\n", pkgs.len() - 10));
+            result.push_str(&format!("  ... +{} 个\n", pkgs.len() - 10));
         }
     }
 
@@ -206,16 +206,16 @@ fn filter_pip_outdated(output: &str) -> String {
     let packages: Vec<Package> = match serde_json::from_str(output) {
         Ok(p) => p,
         Err(e) => {
-            return format!("pip outdated (JSON parse failed: {e})");
+            return format!("pip outdated（JSON 解析失败：{e}）");
         }
     };
 
     if packages.is_empty() {
-        return "✓ pip outdated: All packages up to date".to_string();
+        return "✓ pip outdated：所有包已是最新".to_string();
     }
 
     let mut result = String::new();
-    result.push_str(&format!("pip outdated: {} packages\n", packages.len()));
+    result.push_str(&format!("pip outdated：{} 个包\n", packages.len()));
     result.push_str("═══════════════════════════════════════\n");
 
     for (i, pkg) in packages.iter().take(20).enumerate() {
@@ -230,10 +230,10 @@ fn filter_pip_outdated(output: &str) -> String {
     }
 
     if packages.len() > 20 {
-        result.push_str(&format!("\n... +{} more packages\n", packages.len() - 20));
+        result.push_str(&format!("\n... +{} 个包\n", packages.len() - 20));
     }
 
-    result.push_str("\n💡 Run `pip install --upgrade <package>` to update\n");
+    result.push_str("\n💡 运行 `pip install --upgrade <package>` 进行更新\n");
 
     result.trim().to_string()
 }
@@ -251,7 +251,7 @@ mod tests {
 ]"#;
 
         let result = filter_pip_list(output);
-        assert!(result.contains("3 packages"));
+        assert!(result.contains("3 个包"));
         assert!(result.contains("requests"));
         assert!(result.contains("2.31.0"));
         assert!(result.contains("pytest"));
@@ -261,7 +261,7 @@ mod tests {
     fn test_filter_pip_list_empty() {
         let output = "[]";
         let result = filter_pip_list(output);
-        assert!(result.contains("No packages installed"));
+        assert!(result.contains("未安装任何包"));
     }
 
     #[test]
@@ -269,7 +269,7 @@ mod tests {
         let output = "[]";
         let result = filter_pip_outdated(output);
         assert!(result.contains("✓"));
-        assert!(result.contains("All packages up to date"));
+        assert!(result.contains("所有包已是最新"));
     }
 
     #[test]
@@ -280,7 +280,7 @@ mod tests {
 ]"#;
 
         let result = filter_pip_outdated(output);
-        assert!(result.contains("2 packages"));
+        assert!(result.contains("2 个包"));
         assert!(result.contains("requests"));
         assert!(result.contains("2.31.0 → 2.32.0"));
         assert!(result.contains("pytest"));

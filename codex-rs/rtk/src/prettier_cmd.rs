@@ -14,12 +14,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: prettier {}", args.join(" "));
+        eprintln!("运行：prettier {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run prettier (try: npm install -g prettier)")?;
+        .context("运行 prettier 失败（尝试：npm install -g prettier）")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -31,7 +31,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     if !has_output && !output.status.success() {
         let msg = stderr.trim();
         if msg.is_empty() {
-            eprintln!("Error: prettier not found or produced no output");
+            eprintln!("错误：未找到 prettier 或未产生输出");
         } else {
             eprintln!("{msg}");
         }
@@ -67,7 +67,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 pub fn filter_prettier_output(output: &str) -> String {
     // #221: empty or whitespace-only output means prettier didn't run
     if output.trim().is_empty() {
-        return "Error: prettier produced no output".to_string();
+        return "错误：prettier 未产生输出".to_string();
     }
 
     let mut files_to_format: Vec<String> = Vec::new();
@@ -112,7 +112,7 @@ pub fn filter_prettier_output(output: &str) -> String {
 
     // Check if all files are formatted
     if files_to_format.is_empty() && output.contains("All matched files use Prettier") {
-        return "✓ Prettier: All files formatted correctly".to_string();
+        return "✓ Prettier：所有文件格式正确".to_string();
     }
 
     // Check if files were written (write mode)
@@ -125,10 +125,10 @@ pub fn filter_prettier_output(output: &str) -> String {
     if is_check_mode {
         // Check mode: show files that need formatting
         if files_to_format.is_empty() {
-            result.push_str("✓ Prettier: All files formatted correctly\n");
+            result.push_str("✓ Prettier：所有文件格式正确\n");
         } else {
             result.push_str(&format!(
-                "Prettier: {} files need formatting\n",
+                "Prettier：{} 个文件需要格式化\n",
                 files_to_format.len()
             ));
             result.push_str("═══════════════════════════════════════\n");
@@ -138,15 +138,12 @@ pub fn filter_prettier_output(output: &str) -> String {
             }
 
             if files_to_format.len() > 10 {
-                result.push_str(&format!(
-                    "\n... +{} more files\n",
-                    files_to_format.len() - 10
-                ));
+                result.push_str(&format!("\n... +{} 个文件\n", files_to_format.len() - 10));
             }
 
             if files_checked > 0 {
                 result.push_str(&format!(
-                    "\n✓ {} files already formatted\n",
+                    "\n✓ {} 个文件已格式化\n",
                     files_checked - files_to_format.len()
                 ));
             }
@@ -154,7 +151,7 @@ pub fn filter_prettier_output(output: &str) -> String {
     } else {
         // Write mode: show what was formatted
         result.push_str(&format!(
-            "✓ Prettier: {} files formatted\n",
+            "✓ Prettier：已格式化 {} 个文件\n",
             files_to_format.len()
         ));
     }
@@ -174,7 +171,7 @@ All matched files use Prettier code style!
         "#;
         let result = filter_prettier_output(output);
         assert!(result.contains("✓ Prettier"));
-        assert!(result.contains("All files formatted correctly"));
+        assert!(result.contains("所有文件格式正确"));
     }
 
     #[test]
@@ -187,7 +184,7 @@ src/pages/dashboard.tsx
 Code style issues found in the above file(s). Forgot to run Prettier?
         "#;
         let result = filter_prettier_output(output);
-        assert!(result.contains("3 files need formatting"));
+        assert!(result.contains("3 个文件需要格式化"));
         assert!(result.contains("button.tsx"));
         assert!(result.contains("session.ts"));
     }
@@ -199,8 +196,8 @@ Code style issues found in the above file(s). Forgot to run Prettier?
             output.push_str(&format!("src/file{i}.ts\n"));
         }
         let result = filter_prettier_output(&output);
-        assert!(result.contains("15 files need formatting"));
-        assert!(result.contains("... +5 more files"));
+        assert!(result.contains("15 个文件需要格式化"));
+        assert!(result.contains("... +5 个文件"));
     }
 
     // --- #221: empty output should not say "All files formatted" ---
@@ -208,14 +205,14 @@ Code style issues found in the above file(s). Forgot to run Prettier?
     #[test]
     fn test_filter_empty_output() {
         let result = filter_prettier_output("");
-        assert!(result.contains("Error"));
-        assert!(!result.contains("All files formatted"));
+        assert!(result.contains("错误"));
+        assert!(!result.contains("所有文件格式正确"));
     }
 
     #[test]
     fn test_filter_whitespace_only_output() {
         let result = filter_prettier_output("   \n\n  ");
-        assert!(result.contains("Error"));
-        assert!(!result.contains("All files formatted"));
+        assert!(result.contains("错误"));
+        assert!(!result.contains("所有文件格式正确"));
     }
 }

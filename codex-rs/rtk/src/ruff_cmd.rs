@@ -79,12 +79,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 
     if verbose > 0 {
-        eprintln!("Running: ruff {}", args.join(" "));
+        eprintln!("运行：ruff {}", args.join(" "));
     }
 
     let output = cmd
         .output()
-        .context("Failed to run ruff. Is it installed? Try: pip install ruff")?;
+        .context("运行 ruff 失败。请确认已安装：pip install ruff")?;
 
     let stdout = crate::utils::decode_output(&output.stdout);
     let stderr = crate::utils::decode_output(&output.stderr);
@@ -125,7 +125,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
         Err(e) => {
             // Fallback if JSON parsing fails
             return format!(
-                "Ruff check (JSON parse failed: {})\n{}",
+                "Ruff check（JSON 解析失败：{}）\n{}",
                 e,
                 truncate(output, /*max_len*/ 500)
             );
@@ -133,7 +133,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     };
 
     if diagnostics.is_empty() {
-        return "✓ Ruff: No issues found".to_string();
+        return "✓ Ruff：未发现问题".to_string();
     }
 
     let total_issues = diagnostics.len();
@@ -162,11 +162,11 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     // Build output
     let mut result = String::new();
     result.push_str(&format!(
-        "Ruff: {total_issues} issues in {total_files} files"
+        "Ruff：{total_files} 个文件，{total_issues} 个问题"
     ));
 
     if fixable_count > 0 {
-        result.push_str(&format!(" ({fixable_count} fixable)"));
+        result.push_str(&format!("（{fixable_count} 个可修复）"));
     }
     result.push('\n');
     result.push_str("═══════════════════════════════════════\n");
@@ -176,7 +176,7 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     rule_counts.sort_by(|a, b| b.1.cmp(a.1));
 
     if !rule_counts.is_empty() {
-        result.push_str("Top rules:\n");
+        result.push_str("高频规则：\n");
         for (rule, count) in rule_counts.iter().take(10) {
             result.push_str(&format!("  {rule} ({count}x)\n"));
         }
@@ -184,10 +184,10 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     }
 
     // Show top files
-    result.push_str("Top files:\n");
+    result.push_str("高频文件：\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
-        result.push_str(&format!("  {short_path} ({count} issues)\n"));
+        result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
         // Show top 3 rules in this file
         let mut file_rules: HashMap<String, usize> = HashMap::new();
@@ -204,12 +204,12 @@ pub fn filter_ruff_check_json(output: &str) -> String {
     }
 
     if file_counts.len() > 10 {
-        result.push_str(&format!("\n... +{} more files\n", file_counts.len() - 10));
+        result.push_str(&format!("\n... +{} 个文件\n", file_counts.len() - 10));
     }
 
     if fixable_count > 0 {
         result.push_str(&format!(
-            "\n💡 Run `ruff check --fix` to auto-fix {fixable_count} issues\n"
+            "\n💡 运行 `ruff check --fix` 自动修复 {fixable_count} 个问题\n"
         ));
     }
 
@@ -236,7 +236,7 @@ pub fn filter_ruff_format(output: &str) -> String {
         // Count total checked files - look for patterns like "3 files left unchanged"
         if lower.contains("left unchanged") {
             // Find "X file(s) left unchanged" pattern specifically
-            // Split by comma to handle "2 files would be reformatted, 3 files left unchanged"
+            // Split by comma to handle "2 个文件 would be reformatted, 3 files left unchanged"
             let parts: Vec<&str> = trimmed.split(',').collect();
             for part in parts {
                 let part_lower = part.to_lowercase();
@@ -262,7 +262,7 @@ pub fn filter_ruff_format(output: &str) -> String {
 
     // Check if all files are formatted
     if files_to_format.is_empty() && output_lower.contains("left unchanged") {
-        return "✓ Ruff format: All files formatted correctly".to_string();
+        return "✓ Ruff format：所有文件格式正确".to_string();
     }
 
     let mut result = String::new();
@@ -270,10 +270,10 @@ pub fn filter_ruff_format(output: &str) -> String {
     if output_lower.contains("would reformat") {
         // Check mode: show files that need formatting
         if files_to_format.is_empty() {
-            result.push_str("✓ Ruff format: All files formatted correctly\n");
+            result.push_str("✓ Ruff format：所有文件格式正确\n");
         } else {
             result.push_str(&format!(
-                "Ruff format: {} files need formatting\n",
+                "Ruff format：{} 个文件需要格式化\n",
                 files_to_format.len()
             ));
             result.push_str("═══════════════════════════════════════\n");
@@ -283,17 +283,14 @@ pub fn filter_ruff_format(output: &str) -> String {
             }
 
             if files_to_format.len() > 10 {
-                result.push_str(&format!(
-                    "\n... +{} more files\n",
-                    files_to_format.len() - 10
-                ));
+                result.push_str(&format!("\n... +{} 个文件\n", files_to_format.len() - 10));
             }
 
             if files_checked > 0 {
-                result.push_str(&format!("\n✓ {files_checked} files already formatted\n"));
+                result.push_str(&format!("\n✓ {files_checked} 个文件已格式化\n"));
             }
 
-            result.push_str("\n💡 Run `ruff format` to format these files\n");
+            result.push_str("\n💡 运行 `ruff format` 格式化这些文件\n");
         }
     } else {
         // Write mode or other output - show summary
@@ -329,7 +326,7 @@ mod tests {
         let output = "[]";
         let result = filter_ruff_check_json(output);
         assert!(result.contains("✓ Ruff"));
-        assert!(result.contains("No issues found"));
+        assert!(result.contains("未发现问题"));
     }
 
     #[test]
@@ -361,9 +358,9 @@ mod tests {
   }
 ]"#;
         let result = filter_ruff_check_json(output);
-        assert!(result.contains("3 issues"));
-        assert!(result.contains("2 files"));
-        assert!(result.contains("1 fixable"));
+        assert!(result.contains("3 个问题"));
+        assert!(result.contains("2 个文件"));
+        assert!(result.contains("1 个可修复"));
         assert!(result.contains("F401"));
         assert!(result.contains("E501"));
         assert!(result.contains("main.py"));
@@ -375,19 +372,19 @@ mod tests {
         let output = "5 files left unchanged";
         let result = filter_ruff_format(output);
         assert!(result.contains("✓ Ruff format"));
-        assert!(result.contains("All files formatted correctly"));
+        assert!(result.contains("所有文件格式正确"));
     }
 
     #[test]
     fn test_filter_ruff_format_needs_formatting() {
         let output = r#"Would reformat: src/main.py
 Would reformat: tests/test_utils.py
-2 files would be reformatted, 3 files left unchanged"#;
+2 个文件 would be reformatted, 3 files left unchanged"#;
         let result = filter_ruff_format(output);
-        assert!(result.contains("2 files need formatting"));
+        assert!(result.contains("2 个文件需要格式化"));
         assert!(result.contains("main.py"));
         assert!(result.contains("test_utils.py"));
-        assert!(result.contains("3 files already formatted"));
+        assert!(result.contains("3 个文件已格式化"));
     }
 
     #[test]

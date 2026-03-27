@@ -105,7 +105,7 @@ pub fn truncate_output(output: &str, max_chars: usize) -> String {
 
     let truncated: String = chars[..max_chars].iter().collect();
     format!(
-        "{}\n\n[RTK:PASSTHROUGH] Output truncated ({} chars → {} chars)",
+        "{}\n\n[RTK:PASSTHROUGH] 输出已截断（{} 字符 → {} 字符）",
         truncated,
         chars.len(),
         max_chars
@@ -114,12 +114,12 @@ pub fn truncate_output(output: &str, max_chars: usize) -> String {
 
 /// Helper to emit degradation warning
 pub fn emit_degradation_warning(tool: &str, reason: &str) {
-    eprintln!("[RTK:DEGRADED] {tool} parser: {reason}");
+    eprintln!("[RTK:DEGRADED] {tool} 解析器：{reason}");
 }
 
 /// Helper to emit passthrough warning
 pub fn emit_passthrough_warning(tool: &str, reason: &str) {
-    eprintln!("[RTK:PASSTHROUGH] {tool} parser: {reason}");
+    eprintln!("[RTK:PASSTHROUGH] {tool} 解析器：{reason}");
 }
 
 /// Extract a complete JSON object from input that may have non-JSON prefix (pnpm banner, dotenv messages, etc.)
@@ -230,7 +230,7 @@ mod tests {
         let long = "a".repeat(1000);
         let truncated = truncate_output(&long, 100);
         assert!(truncated.contains("[RTK:PASSTHROUGH]"));
-        assert!(truncated.contains("1000 chars → 100 chars"));
+        assert!(truncated.contains("1000 字符 → 100 字符"));
     }
 
     #[test]
