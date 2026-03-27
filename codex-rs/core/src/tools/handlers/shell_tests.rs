@@ -65,6 +65,30 @@ fn assert_safe(shell: &Shell, command: &str) {
     ));
 }
 
+fn assert_kept_raw(command: &str, reason: &str) {
+    let routed = ShellCommandHandler::route_command(command);
+    assert_eq!(routed.command, command);
+    assert_eq!(routed.interaction_input, None);
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(format!(
+            "[shell_command kept raw]\noriginal: {command}\nexecuted: {command}\nreason: {reason}"
+        ))
+    );
+}
+
+fn assert_rewritten(command: &str, rewritten_command: &str, display_command: &str) {
+    let routed = ShellCommandHandler::route_command(command);
+    assert_eq!(routed.command, rewritten_command);
+    assert_eq!(routed.interaction_input, Some(command.to_string()));
+    assert_eq!(
+        routed.model_output_prefix,
+        Some(format!(
+            "[shell_command routed via embedded RTK]\noriginal: {command}\nrewritten: {display_command}"
+        ))
+    );
+}
+
 #[tokio::test]
 async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_context() {
     let (session, turn_context) = make_session_and_context().await;
@@ -338,87 +362,43 @@ fn shell_command_handler_routes_supported_commands_through_rtk() {
 
 #[test]
 fn shell_command_handler_leaves_compound_commands_raw() {
-    let routed = ShellCommandHandler::route_command("git status | head");
-    assert_eq!(routed.command, "git status | head");
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: git status | head\nexecuted: git status | head\nreason: contains compound shell syntax"
-                .to_string()
-        )
-    );
+    assert_kept_raw("git status | head", "contains compound shell syntax");
 }
 
 #[test]
 fn shell_command_handler_reports_missing_command_after_prefixes() {
-    let routed = ShellCommandHandler::route_command("env -i");
-    assert_eq!(routed.command, "env -i");
-    assert_eq!(routed.interaction_input, None);
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: env -i\nexecuted: env -i\nreason: missing command after prefixes"
-                .to_string()
-        )
-    );
+    assert_kept_raw("env -i", "missing command after prefixes");
 }
 
 #[test]
 fn shell_command_handler_records_original_command_when_rewritten() {
-    let routed = ShellCommandHandler::route_command("FOO=1 git status");
-    assert_eq!(routed.command, "FOO=1 rtk git status");
-    assert_eq!(
-        routed.interaction_input,
-        Some("FOO=1 git status".to_string())
-    );
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex rtk git status"
-                .to_string()
-        )
+    assert_rewritten(
+        "FOO=1 git status",
+        "FOO=1 rtk git status",
+        "FOO=1 codex rtk git status",
     );
 }
 
 #[test]
 fn shell_command_handler_displays_wrapped_rewrites_with_codex_prefix() {
-    let routed = ShellCommandHandler::route_command("nice -n 5 git status");
-    assert_eq!(routed.command, "nice -n 5 rtk git status");
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command routed via embedded RTK]\noriginal: nice -n 5 git status\nrewritten: nice -n 5 codex rtk git status"
-                .to_string()
-        )
+    assert_rewritten(
+        "nice -n 5 git status",
+        "nice -n 5 rtk git status",
+        "nice -n 5 codex rtk git status",
     );
 }
 
 #[test]
 fn shell_command_handler_reports_unsupported_wrapper_flags_as_raw() {
-    let routed = ShellCommandHandler::route_command("env FOO=1 ionice -p 123 git status");
-    assert_eq!(routed.command, "env FOO=1 ionice -p 123 git status");
-    assert_eq!(routed.interaction_input, None);
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: env FOO=1 ionice -p 123 git status\nexecuted: env FOO=1 ionice -p 123 git status\nreason: command is not in the embedded RTK allowlist"
-                .to_string()
-        )
+    assert_kept_raw(
+        "env FOO=1 ionice -p 123 git status",
+        "command is not in the embedded RTK allowlist",
     );
 }
 
 #[test]
 fn shell_command_handler_reports_parse_failures_as_raw() {
-    let routed = ShellCommandHandler::route_command("git 'unterminated");
-    assert_eq!(routed.command, "git 'unterminated");
-    assert_eq!(routed.interaction_input, None);
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: git 'unterminated\nexecuted: git 'unterminated\nreason: failed to parse shell words"
-                .to_string()
-        )
-    );
+    assert_kept_raw("git 'unterminated", "failed to parse shell words");
 }
 
 #[test]
@@ -433,92 +413,43 @@ fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
     let double_quoted = ShellCommandHandler::route_command("grep \"a|b\" src/main.rs");
     assert_eq!(double_quoted.command, "rtk grep 'a|b' src/main.rs");
 
-    let kept_raw = ShellCommandHandler::route_command("grep \"$(pwd)\" src/main.rs");
-    assert_eq!(kept_raw.command, "grep \"$(pwd)\" src/main.rs");
-    assert_eq!(
-        kept_raw.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: grep \"$(pwd)\" src/main.rs\nexecuted: grep \"$(pwd)\" src/main.rs\nreason: contains compound shell syntax"
-                .to_string()
-        )
+    assert_kept_raw(
+        "grep \"$(pwd)\" src/main.rs",
+        "contains compound shell syntax",
     );
 }
 
 #[test]
 fn shell_command_handler_normalizes_codex_rtk_help_commands() {
-    let routed = ShellCommandHandler::route_command("codex rtk --help");
-    assert_eq!(routed.command, "rtk --help");
-    assert_eq!(
-        routed.interaction_input,
-        Some("codex rtk --help".to_string())
-    );
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command routed via embedded RTK]\noriginal: codex rtk --help\nrewritten: codex rtk --help"
-                .to_string()
-        )
-    );
+    assert_rewritten("codex rtk --help", "rtk --help", "codex rtk --help");
 }
 
 #[test]
 fn shell_command_handler_keeps_codex_rtk_compounds_raw() {
-    let routed = ShellCommandHandler::route_command("codex rtk git status | head");
-    assert_eq!(routed.command, "codex rtk git status | head");
-    assert_eq!(routed.interaction_input, None);
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: codex rtk git status | head\nexecuted: codex rtk git status | head\nreason: contains compound shell syntax"
-                .to_string()
-        )
+    assert_kept_raw(
+        "codex rtk git status | head",
+        "contains compound shell syntax",
     );
 }
 
 #[test]
 fn shell_command_handler_keeps_sudo_commands_raw_even_with_prefixes() {
-    let routed = ShellCommandHandler::route_command("env FOO=1 sudo git status");
-    assert_eq!(routed.command, "env FOO=1 sudo git status");
-    assert_eq!(routed.interaction_input, None);
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: env FOO=1 sudo git status\nexecuted: env FOO=1 sudo git status\nreason: sudo commands are never auto-routed"
-                .to_string()
-        )
+    assert_kept_raw(
+        "env FOO=1 sudo git status",
+        "sudo commands are never auto-routed",
     );
 }
 
 #[test]
 fn shell_command_handler_keeps_codex_rtk_passthrough_matrix_raw() {
-    let unsupported_args = ShellCommandHandler::route_command("codex rtk tail -f src/main.rs");
-    assert_eq!(unsupported_args.command, "codex rtk tail -f src/main.rs");
-    assert_eq!(
-        unsupported_args.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: codex rtk tail -f src/main.rs\nexecuted: codex rtk tail -f src/main.rs\nreason: command shape is not supported by the embedded RTK rewriter"
-                .to_string()
-        )
+    assert_kept_raw(
+        "codex rtk tail -f src/main.rs",
+        "command shape is not supported by the embedded RTK rewriter",
     );
-
-    let missing = ShellCommandHandler::route_command("codex rtk env -i");
-    assert_eq!(missing.command, "codex rtk env -i");
-    assert_eq!(
-        missing.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: codex rtk env -i\nexecuted: codex rtk env -i\nreason: missing command after prefixes"
-                .to_string()
-        )
-    );
-
-    let unsupported = ShellCommandHandler::route_command("codex rtk command chrt -m git status");
-    assert_eq!(unsupported.command, "codex rtk command chrt -m git status");
-    assert_eq!(
-        unsupported.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: codex rtk command chrt -m git status\nexecuted: codex rtk command chrt -m git status\nreason: command is not in the embedded RTK allowlist"
-                .to_string()
-        )
+    assert_kept_raw("codex rtk env -i", "missing command after prefixes");
+    assert_kept_raw(
+        "codex rtk command chrt -m git status",
+        "command is not in the embedded RTK allowlist",
     );
 }
 
@@ -534,14 +465,9 @@ fn shell_command_handler_keeps_codex_rtk_shell_syntax_raw() {
 
 #[test]
 fn shell_command_handler_leaves_unsupported_read_shapes_raw() {
-    let routed = ShellCommandHandler::route_command("tail -f src/main.rs");
-    assert_eq!(routed.command, "tail -f src/main.rs");
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(
-            "[shell_command kept raw]\noriginal: tail -f src/main.rs\nexecuted: tail -f src/main.rs\nreason: command shape is not supported by the embedded RTK rewriter"
-                .to_string()
-        )
+    assert_kept_raw(
+        "tail -f src/main.rs",
+        "command shape is not supported by the embedded RTK rewriter",
     );
 }
 
