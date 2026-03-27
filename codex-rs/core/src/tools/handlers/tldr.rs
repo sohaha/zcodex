@@ -83,10 +83,7 @@ where
             let summary = render_tldr_summary(&result.structured_content);
             let rendered_text = sanitize_tldr_text(&result.text);
             Ok(FunctionToolOutput::from_text(
-                format!(
-                    "{}\n{}\n{}\n{}\n{}",
-                    rendered_text, summary, TLDR_JSON_BEGIN, json, TLDR_JSON_END
-                ),
+                format!("{rendered_text}\n{summary}\n{TLDR_JSON_BEGIN}\n{json}\n{TLDR_JSON_END}"),
                 Some(true),
             ))
         }
@@ -501,6 +498,7 @@ mod tests {
         .await
         .expect("handler helper should succeed");
         let text = output.into_text();
+        let payload = extract_json_block(&text);
 
         assert!(text.contains("semantic rust enabled=true via daemon"));
         assert!(text.contains("structured payload attached"));
@@ -510,6 +508,9 @@ mod tests {
         assert!(text.contains("\"signature\": \"pub struct AuthService\""));
         assert!(text.contains("\"embedding_score\": 0.75"));
         assert!(text.contains(TLDR_JSON_END));
+        assert_eq!(payload["action"], "semantic");
+        assert_eq!(payload["summary"], "structured payload attached");
+        assert_eq!(payload["semantic"]["query"], "auth login");
     }
 
     #[tokio::test]
@@ -634,6 +635,7 @@ mod tests {
         assert!(text.contains("edges: 1"));
         assert!(text.contains("symbol index: 1"));
         assert!(text.contains("\nanalysis kind: ast | nodes: 1 | edges: 1 | symbol index: 1\n"));
+        assert_eq!(payload["action"], "tree");
         assert_eq!(payload["analysis"]["summary"], "structure summary");
         assert_eq!(
             payload["analysis"]["details"]["symbol_query"],

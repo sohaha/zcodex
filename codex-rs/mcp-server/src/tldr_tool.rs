@@ -1,3 +1,4 @@
+use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
@@ -47,13 +48,27 @@ pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResu
         None => return error_result("Missing arguments for tldr tool-call.".to_string()),
     };
 
-    match run_tldr_tool_with_hooks(
+    run_tldr_tool_with_mcp_hooks(
         args,
         |project_root, command| Box::pin(query_daemon(project_root, command)),
         |project_root| Box::pin(wait_for_external_daemon(project_root)),
     )
     .await
-    {
+}
+
+async fn run_tldr_tool_with_mcp_hooks<Q, E>(
+    args: TldrToolCallParam,
+    query: Q,
+    ensure_running: E,
+) -> CallToolResult
+where
+    Q: for<'a> Fn(
+        &'a std::path::Path,
+        &'a TldrDaemonCommand,
+    ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a std::path::Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
+{
+    match run_tldr_tool_with_hooks(args, query, ensure_running).await {
         Ok(result) => success_result(result.text, result.structured_content),
         Err(err) => error_result(format!("tldr tool failed: {err}")),
     }
@@ -101,6 +116,7 @@ fn create_tool_input_schema(
 #[cfg(test)]
 mod tests {
     use super::create_tool_for_tldr_tool_call_param;
+    use super::run_tldr_tool_with_mcp_hooks;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::tool_api::TldrToolAction;
@@ -159,6 +175,78 @@ mod tests {
                 "language": "typescript",
                 "query": "where is auth"
             })
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_impact_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary =
+            "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Impact,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: Some("AuthService".to_string()),
+                query: None,
+                path: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "impact ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Pdg,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: Some("AuthService".to_string()),
+                                truncated: false,
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: vec![codex_native_tldr::api::AnalysisEdgeDetail {
+                                    from: "AuthService".to_string(),
+                                    to: "auth::audit".to_string(),
+                                    kind: "depends_on".to_string(),
+                                }],
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result_json["content"][0]["type"], "text");
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("impact rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "impact");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "pdg");
+        assert_eq!(
+            structured["analysis"]["details"]["symbol_query"],
+            "AuthService"
         );
     }
 
