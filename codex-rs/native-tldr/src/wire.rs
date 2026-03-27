@@ -380,4 +380,68 @@ mod tests {
         assert!(payload.get("analysis").is_none());
         assert!(payload.get("semantic").is_none());
     }
+
+    #[test]
+    fn daemon_response_payload_keeps_status_detail_fields() {
+        let report = crate::semantic::SemanticReindexReport {
+            status: crate::semantic::SemanticReindexStatus::Completed,
+            languages: vec![crate::lang_support::SupportedLanguage::Rust],
+            indexed_files: 2,
+            indexed_units: 3,
+            truncated: false,
+            started_at: std::time::SystemTime::UNIX_EPOCH,
+            finished_at: std::time::SystemTime::UNIX_EPOCH,
+            message: "done".to_string(),
+            embedding_enabled: true,
+            embedding_dimensions: 256,
+        };
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "status".to_string(),
+            analysis: None,
+            semantic: None,
+            snapshot: Some(crate::session::SessionSnapshot {
+                cached_entries: 1,
+                dirty_files: 0,
+                dirty_file_threshold: 20,
+                reindex_pending: false,
+                last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
+                last_reindex: Some(report.clone()),
+                last_reindex_attempt: Some(report.clone()),
+            }),
+            daemon_status: Some(crate::daemon::TldrDaemonStatus {
+                project_root: PathBuf::from("/tmp/project"),
+                socket_path: PathBuf::from("/tmp/project.sock"),
+                pid_path: PathBuf::from("/tmp/project.pid"),
+                lock_path: PathBuf::from("/tmp/project.lock"),
+                socket_exists: true,
+                pid_is_live: true,
+                lock_is_held: true,
+                healthy: true,
+                stale_socket: false,
+                stale_pid: false,
+                health_reason: None,
+                recovery_hint: None,
+                semantic_reindex_pending: false,
+                last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
+                config: crate::daemon::TldrDaemonConfigSummary {
+                    auto_start: true,
+                    socket_mode: "unix".to_string(),
+                    semantic_enabled: true,
+                    semantic_auto_reindex_threshold: 20,
+                    session_dirty_file_threshold: 20,
+                },
+            }),
+            reindex_report: Some(report),
+        };
+
+        let payload = daemon_response_payload("status", Path::new("/tmp/project"), &response);
+        assert_eq!(payload["daemonStatus"]["healthy"], true);
+        assert_eq!(payload["reindexReport"]["status"], "Completed");
+        assert_eq!(payload["snapshot"]["last_reindex"]["status"], "Completed");
+        assert_eq!(
+            payload["snapshot"]["last_reindex_attempt"]["status"],
+            "Completed"
+        );
+    }
 }
