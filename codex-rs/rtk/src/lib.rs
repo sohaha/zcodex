@@ -80,7 +80,19 @@ pub fn is_alias_invocation(argv0: &OsString) -> bool {
     name = "rtk",
     version,
     about = "Rust Token Killer - 最小化 LLM token 消耗",
-    long_about = "高性能 CLI 代理，在输出进入 LLM 上下文前进行过滤与摘要。"
+    long_about = "高性能 CLI 代理，在输出进入 LLM 上下文前进行过滤与摘要。",
+    disable_help_flag = true,
+    disable_help_subcommand = true,
+    subcommand_help_heading = "命令",
+    help_template = "\
+{before-help}{about-with-newline}
+用法: {usage}
+
+命令:
+{subcommands}
+
+选项:
+{options}{after-help}"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -97,6 +109,10 @@ struct Cli {
     /// 为子进程设置 SKIP_ENV_VALIDATION=1（Next.js、tsc、lint、prisma）
     #[arg(long = "skip-env", global = true)]
     skip_env: bool,
+
+    /// 显示帮助信息（可使用 '-h' 查看摘要）
+    #[arg(short = 'h', long = "help", action = clap::ArgAction::Help, global = true)]
+    help: Option<bool>,
 }
 
 #[derive(Subcommand)]
@@ -800,11 +816,10 @@ const REMOVED_BUILTIN_COMMANDS: &[&str] = &[
 ];
 
 fn should_show_parse_error(args: &[OsString]) -> bool {
-    let Some(first_arg) = args.first() else {
+    let Some(first_arg) = first_subcommand_arg(args) else {
         return true;
     };
 
-    let first_arg = first_arg.to_string_lossy();
     if REMOVED_BUILTIN_COMMANDS.contains(&first_arg.as_ref()) {
         return true;
     }
@@ -815,6 +830,37 @@ fn should_show_parse_error(args: &[OsString]) -> bool {
                 .get_all_aliases()
                 .any(|alias| alias == first_arg.as_ref())
     })
+}
+
+fn first_subcommand_arg(args: &[OsString]) -> Option<std::borrow::Cow<'_, str>> {
+    let mut parsing_global_flags = true;
+
+    for arg in args {
+        let arg = arg.to_string_lossy();
+        if parsing_global_flags {
+            if arg == "--" {
+                parsing_global_flags = false;
+                continue;
+            }
+            if matches!(
+                arg.as_ref(),
+                "-v" | "--verbose" | "-u" | "--ultra-compact" | "--skip-env"
+            ) || is_global_short_flag_cluster(arg.as_ref())
+            {
+                continue;
+            }
+        }
+
+        return Some(arg);
+    }
+
+    None
+}
+
+fn is_global_short_flag_cluster(arg: &str) -> bool {
+    arg.strip_prefix('-')
+        .filter(|flags| !flags.is_empty() && !flags.starts_with('-'))
+        .is_some_and(|flags| flags.chars().all(|flag| matches!(flag, 'u' | 'v')))
 }
 
 fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
@@ -1678,6 +1724,16 @@ mod tests {
     }
 
     #[test]
+    fn test_help_output_is_localized() {
+        let mut command = Cli::command();
+        let help = command.render_long_help().to_string();
+        assert!(help.contains("用法: "));
+        assert!(help.contains("命令:\n"));
+        assert!(help.contains("选项:\n"));
+        assert!(help.contains("显示帮助信息"));
+    }
+
+    #[test]
     fn test_try_parse_version_is_display_version() {
         match Cli::try_parse_from(["rtk", "--version"]) {
             Err(e) => assert_eq!(e.kind(), ErrorKind::DisplayVersion),
@@ -1711,5 +1767,42 @@ mod tests {
                 _ => panic!("Expected Git command"),
             }
         }
+    }
+
+    #[test]
+    fn test_first_subcommand_arg_skips_global_flags() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("-uvv"),
+            OsString::from("--skip-env"),
+            OsString::from("rewrite"),
+        ];
+        assert_eq!(first_subcommand_arg(&args).as_deref(), Some("rewrite"));
+    }
+
+    #[test]
+    fn test_should_show_parse_error_for_removed_command_after_global_flags() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("--ultra-compact"),
+            OsString::from("rewrite"),
+        ];
+        assert!(should_show_parse_error(&args));
+    }
+
+    #[test]
+    fn test_should_show_parse_error_for_builtin_command_after_global_flags() {
+        let args = vec![OsString::from("-vv"), OsString::from("read")];
+        assert!(should_show_parse_error(&args));
+    }
+
+    #[test]
+    fn test_should_not_show_parse_error_for_unknown_command_after_global_flags() {
+        let args = vec![
+            OsString::from("--skip-env"),
+            OsString::from("-u"),
+            OsString::from("custom-fallback"),
+        ];
+        assert!(!should_show_parse_error(&args));
     }
 }

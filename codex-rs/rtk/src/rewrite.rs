@@ -724,10 +724,57 @@ fn parse_equals_flag<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
 }
 
 fn contains_shell_metacharacters(command: &str) -> bool {
-    ['|', '&', ';', '<', '>', '\n', '\r', '`']
-        .into_iter()
-        .any(|char| command.contains(char))
-        || command.contains("$(")
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum QuoteState {
+        Unquoted,
+        SingleQuoted,
+        DoubleQuoted,
+    }
+
+    let mut chars = command.chars().peekable();
+    let mut quote_state = QuoteState::Unquoted;
+    let mut escaped = false;
+
+    while let Some(ch) = chars.next() {
+        match quote_state {
+            QuoteState::Unquoted => {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+
+                match ch {
+                    '\\' => escaped = true,
+                    '\'' => quote_state = QuoteState::SingleQuoted,
+                    '"' => quote_state = QuoteState::DoubleQuoted,
+                    '|' | '&' | ';' | '<' | '>' | '\n' | '\r' | '`' => return true,
+                    '$' if chars.peek().is_some_and(|next| *next == '(') => return true,
+                    _ => {}
+                }
+            }
+            QuoteState::SingleQuoted => {
+                if ch == '\'' {
+                    quote_state = QuoteState::Unquoted;
+                }
+            }
+            QuoteState::DoubleQuoted => {
+                if escaped {
+                    escaped = false;
+                    continue;
+                }
+
+                match ch {
+                    '\\' => escaped = true,
+                    '"' => quote_state = QuoteState::Unquoted,
+                    '`' => return true,
+                    '$' if chars.peek().is_some_and(|next| *next == '(') => return true,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    false
 }
 
 fn shell_escape(value: &str) -> Cow<'_, str> {
@@ -968,6 +1015,41 @@ mod tests {
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::UnsupportedCommand,
+                candidate: true,
+            }
+        );
+    }
+
+    #[test]
+    fn preserves_quoted_literals_while_blocking_real_shell_syntax() {
+        assert_rewrite_cases(&[
+            ("grep 'a|b' src/main.rs", Some("rtk grep 'a|b' src/main.rs")),
+            (
+                "curl 'https://example.com?a=1&b=2'",
+                Some("rtk curl 'https://example.com?a=1&b=2'"),
+            ),
+            (
+                "git log --format='%h|%s' -1",
+                Some("rtk git log '--format=%h|%s' -1"),
+            ),
+            ("grep a\\|b src/main.rs", Some("rtk grep 'a|b' src/main.rs")),
+        ]);
+
+        assert_eq!(
+            analyze_shell_command("grep \"$(pwd)\" src/main.rs").kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::ShellMetacharacters,
+                candidate: true,
+            }
+        );
+        assert_eq!(
+            analyze_shell_command("grep '$(pwd)' src/main.rs").kind,
+            ShellCommandRewriteKind::Rewritten
+        );
+        assert_eq!(
+            analyze_shell_command("git status >/tmp/out").kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::ShellMetacharacters,
                 candidate: true,
             }
         );
