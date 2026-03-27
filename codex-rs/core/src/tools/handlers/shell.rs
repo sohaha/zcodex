@@ -156,10 +156,11 @@ impl ShellCommandHandler {
                 }
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => {
+                let executed_command = analysis.command.clone();
                 tracing::info!(
                     target: "codex_core::shell_rtk",
                     original = %trimmed,
-                    executed = %analysis.command,
+                    executed = %executed_command,
                     reason = %reason.as_str(),
                     candidate = candidate,
                     "shell_command kept raw"
@@ -167,13 +168,12 @@ impl ShellCommandHandler {
                 RoutedCommand {
                     command: analysis.command,
                     interaction_input: None,
-                    model_output_prefix: candidate.then(|| {
-                        format!(
-                            "[shell_command kept raw]\nreason: {}\ncommand: {}",
-                            reason.as_str(),
-                            trimmed
-                        )
-                    }),
+                    model_output_prefix: Some(format!(
+                        "[shell_command kept raw]\noriginal: {}\nexecuted: {}\nreason: {}",
+                        trimmed,
+                        executed_command,
+                        reason.as_str()
+                    )),
                 }
             }
         }

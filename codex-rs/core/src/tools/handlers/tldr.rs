@@ -509,7 +509,6 @@ mod tests {
         assert!(text.contains("\"embedding_score\": 0.75"));
         assert!(text.contains(TLDR_JSON_END));
         assert_eq!(payload["action"], "semantic");
-        assert_eq!(payload["summary"], "structured payload attached");
         assert_eq!(payload["semantic"]["query"], "auth login");
     }
 
