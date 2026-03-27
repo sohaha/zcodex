@@ -454,7 +454,7 @@ pub fn format_compose_logs(raw: &str) -> String {
         return "🐳 无日志".to_string();
     }
 
-    // docker compose logs 会为每一行添加 "service-N  | " 前缀
+    // `docker compose logs` 会为每一行添加 `"service-N  | "` 前缀
     // 复用现有的日志去重引擎
     let analyzed = crate::log_cmd::run_stdin_str(raw);
     format!("🐳 Compose 日志：\n{analyzed}")
@@ -487,7 +487,7 @@ pub fn format_compose_build(raw: &str) -> String {
 
     // 从类似 "[web 1/4]" 的构建步骤里提取唯一服务名
     let mut services: Vec<String> = Vec::new();
-    // find('[') 返回字节偏移，因此这里全程使用字节切片
+    // `find('[')` 返回字节偏移，因此这里全程使用字节切片
     // '[' 和 ']' 都是单字节 ASCII，字节运算是安全的
     for line in raw.lines() {
         if let Some(start) = line.find('[')

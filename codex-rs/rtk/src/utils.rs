@@ -587,9 +587,9 @@ mod tests {
 
     #[test]
     fn test_resolve_binary_path_contains_binary_name() {
-        let path = resolve_binary("cargo").expect("cargo should be resolvable");
+        let path = resolve_binary("cargo").expect("应能解析到 cargo");
         let filename = path.file_name().expect("应包含文件名").to_string_lossy();
-        // Windows 上可能是 "cargo.exe"，Unix 上通常就是 "cargo"
+        // Windows 上可能是 `cargo.exe`，Unix 上通常就是 `cargo`
         assert!(
             filename.starts_with("cargo"),
             "解析后的文件名应以 'cargo' 开头，实际得到：{filename}"

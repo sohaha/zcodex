@@ -29,7 +29,7 @@ pub fn run(cmd: CargoCommand, args: &[String], verbose: u8) -> Result<()> {
 }
 
 /// 从原始命令行重建参数，并保留 `--` 分隔符。
-/// Clap 会在解析后移除 `--`，但 cargo 子命令需要它来区分
+/// `clap` 会在解析后移除 `--`，但 cargo 子命令需要它来区分
 /// 自身参数和测试运行器参数（例如 `cargo test -- --nocapture`）。
 fn restore_double_dash(args: &[String]) -> Vec<String> {
     let raw_args: Vec<String> = std::env::args().collect();
@@ -415,7 +415,7 @@ fn filter_cargo_nextest(output: &str) -> String {
             continue;
         }
 
-        // Nextest run ID 行
+        // `nextest` 的 run ID 行
         if trimmed.starts_with("Nextest run ID") {
             continue;
         }

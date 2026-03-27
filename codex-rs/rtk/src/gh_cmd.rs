@@ -1049,7 +1049,7 @@ fn pr_create(args: &[String], _verbose: u8) -> Result<()> {
         std::process::exit(output.status.code().unwrap_or(1));
     }
 
-    // gh pr create 成功时会输出 URL
+    // `gh pr create` 成功时会输出 URL
     let url = stdout.trim();
 
     // 尝试从 URL 中提取 PR 编号（例如 https://github.com/owner/repo/pull/42）
@@ -1159,7 +1159,7 @@ fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// comment/edit 共用的通用 PR 动作处理器
+/// `comment`/`edit` 共用的通用 PR 动作处理器
 fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
     let subcmd = &args[0];
@@ -1212,13 +1212,13 @@ fn pr_action(action: &str, args: &[String], _verbose: u8) -> Result<()> {
 }
 
 fn run_api(args: &[String], _verbose: u8) -> Result<()> {
-    // gh api 是显式的高级命令——用户明确知道自己要什么。
-    // 把 JSON 转成 schema 会丢掉所有值，并迫使 Claude 重新抓取数据。
+    // `gh api` 是显式的高级命令——用户明确知道自己要什么。
+    // 把 JSON 转成 schema 会丢掉所有值，并迫使模型重新抓取数据。
     // 直接透传可以保留完整响应，同时按 0% 节省率记录统计。
     run_passthrough("gh", "api", args)
 }
 
-/// 使用基础参数 + 附加参数透传命令，并按 passthrough 记录统计。
+/// 使用基础参数 + 附加参数透传命令，并按“透传”方式记录统计。
 fn run_passthrough_with_extra(cmd: &str, base_args: &[&str], extra_args: &[String]) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -1300,7 +1300,7 @@ mod tests {
 
     #[test]
     fn test_truncate_multibyte_utf8() {
-        // Emoji：🚀 占 4 字节，但只算 1 个字符
+        // Emoji：🚀 占 4 字节，但字符数只算 1
         assert_eq!(truncate("🚀🎉🔥abc", 6), "🚀🎉🔥abc"); // 6 chars, fits
         assert_eq!(truncate("🚀🎉🔥abcdef", 8), "🚀🎉🔥ab..."); // 10 chars > 8
         // 边界情况：全部都是多字节字符

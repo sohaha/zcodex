@@ -277,7 +277,7 @@ fn filter_go_test_json(output: &str) -> String {
                 continue;
             }
             "build-fail" => {
-                // build-fail 带有 ImportPath，等包级 fail 到来时再处理
+                // `build-fail` 事件带有 ImportPath，等包级 `fail` 事件到来时再处理
                 continue;
             }
             _ => {}
