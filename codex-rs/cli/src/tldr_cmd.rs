@@ -271,14 +271,15 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
     if cmd.json {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("language: {}", language.as_str());
-        println!("source: {source}");
-        println!("support: {:?}", support.support_level);
-        println!("fallback: {}", support.fallback_strategy);
-        if let Some(message) = daemon_message {
-            println!("message: {message}");
+        for line in render_analysis_response_text(
+            language,
+            source,
+            support,
+            daemon_message.as_deref(),
+            &analysis.summary,
+        ) {
+            println!("{line}");
         }
-        println!("summary: {}", analysis.summary);
     }
 
     Ok(())
@@ -394,6 +395,26 @@ fn semantic_result_payload(payload: &serde_json::Value) -> serde_json::Value {
         }
     }
     semantic
+}
+
+fn render_analysis_response_text(
+    language: SupportedLanguage,
+    source: &str,
+    support: &codex_native_tldr::lang_support::LanguageSupport,
+    message: Option<&str>,
+    summary: &str,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("language: {}", language.as_str()),
+        format!("source: {source}"),
+        format!("support: {:?}", support.support_level),
+        format!("fallback: {}", support.fallback_strategy),
+    ];
+    if let Some(message) = message {
+        lines.push(format!("message: {message}"));
+    }
+    lines.push(format!("summary: {summary}"));
+    lines
 }
 
 fn render_semantic_response_text(
@@ -800,6 +821,7 @@ fn cleanup_file_if_exists(path: PathBuf) {
 mod output_tests {
     use super::analysis_payload;
     use super::cli_semantic_payload;
+    use super::render_analysis_response_text;
     use super::render_semantic_response_text;
     use codex_native_tldr::api::AnalysisDetail;
     use codex_native_tldr::api::AnalysisEdgeDetail;
@@ -925,6 +947,57 @@ mod output_tests {
     }
 
     #[test]
+    fn analysis_payload_preserves_impact_action_and_summary() {
+        let payload = analysis_payload(
+            "impact",
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "daemon",
+            Some("impact ready"),
+            LanguageRegistry::support_for(SupportedLanguage::Rust),
+            Some("AuthService"),
+            &AnalysisResponse {
+                kind: AnalysisKind::Pdg,
+                summary:
+                    "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1"
+                        .to_string(),
+                details: Some(AnalysisDetail {
+                    indexed_files: 1,
+                    total_symbols: 1,
+                    symbol_query: Some("AuthService".to_string()),
+                    truncated: false,
+                    overview: AnalysisOverviewDetail::default(),
+                    files: Vec::new(),
+                    nodes: Vec::new(),
+                    edges: vec![AnalysisEdgeDetail {
+                        from: "AuthService".to_string(),
+                        to: "auth::audit".to_string(),
+                        kind: "depends_on".to_string(),
+                    }],
+                    symbol_index: Vec::new(),
+                    units: Vec::new(),
+                }),
+            },
+        );
+
+        assert_eq!(payload["action"], "impact");
+        assert_eq!(payload["message"], "impact ready");
+        assert_eq!(
+            payload["summary"],
+            "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1"
+        );
+        assert_eq!(payload["analysis"]["kind"], "pdg");
+        assert_eq!(
+            payload["analysis"]["summary"],
+            "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1"
+        );
+        assert_eq!(
+            payload["analysis"]["details"]["symbol_query"],
+            "AuthService"
+        );
+    }
+
+    #[test]
     fn cli_semantic_payload_wraps_public_semantic_result() {
         let payload = cli_semantic_payload(
             Path::new("/tmp/project"),
@@ -982,6 +1055,29 @@ mod output_tests {
             payload["semantic"]["matches"][0]
                 .get("embedding_text")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn render_analysis_response_text_preserves_impact_summary_contract() {
+        let lines = render_analysis_response_text(
+            SupportedLanguage::Rust,
+            "daemon",
+            LanguageRegistry::support_for(SupportedLanguage::Rust),
+            Some("impact ready"),
+            "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1",
+        );
+
+        assert_eq!(
+            lines,
+            vec![
+                "language: rust".to_string(),
+                "source: daemon".to_string(),
+                "support: DataFlow".to_string(),
+                "fallback: structure + search".to_string(),
+                "message: impact ready".to_string(),
+                "summary: impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1".to_string(),
+            ]
         );
     }
 
