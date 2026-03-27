@@ -123,33 +123,60 @@ impl ShellCommandHandler {
     }
 
     fn route_command(command: &str) -> RoutedCommand {
+        let trimmed = command.trim();
         let analysis = analyze_shell_command(command);
         match analysis.kind {
-            ShellCommandRewriteKind::AlreadyRtk => RoutedCommand {
-                command: analysis.command,
-                interaction_input: None,
-                model_output_prefix: None,
-            },
-            ShellCommandRewriteKind::Rewritten => RoutedCommand {
-                model_output_prefix: Some(format!(
-                    "[shell_command routed via embedded RTK]\noriginal: {}\nexecuted: {}",
-                    command.trim(),
-                    analysis.command
-                )),
-                interaction_input: Some(command.trim().to_string()),
-                command: analysis.command,
-            },
-            ShellCommandRewriteKind::Passthrough { reason, candidate } => RoutedCommand {
-                command: analysis.command,
-                interaction_input: None,
-                model_output_prefix: candidate.then(|| {
-                    format!(
-                        "[shell_command kept raw]\nreason: {}\ncommand: {}",
-                        reason.as_str(),
-                        command.trim()
-                    )
-                }),
-            },
+            ShellCommandRewriteKind::AlreadyRtk => {
+                tracing::info!(
+                    target: "codex_core::shell_rtk",
+                    original = %trimmed,
+                    executed = %analysis.command,
+                    "shell_command already routed via RTK"
+                );
+                RoutedCommand {
+                    command: analysis.command,
+                    interaction_input: None,
+                    model_output_prefix: None,
+                }
+            }
+            ShellCommandRewriteKind::Rewritten => {
+                tracing::info!(
+                    target: "codex_core::shell_rtk",
+                    original = %trimmed,
+                    executed = %analysis.command,
+                    "shell_command routed via embedded RTK"
+                );
+                RoutedCommand {
+                    model_output_prefix: Some(format!(
+                        "[shell_command routed via embedded RTK]\noriginal: {}\nexecuted: {}",
+                        trimmed, analysis.command
+                    )),
+                    interaction_input: Some(trimmed.to_string()),
+                    command: analysis.command,
+                }
+            }
+            ShellCommandRewriteKind::Passthrough { reason, candidate } => {
+                if candidate {
+                    tracing::info!(
+                        target: "codex_core::shell_rtk",
+                        original = %trimmed,
+                        executed = %analysis.command,
+                        reason = %reason.as_str(),
+                        "shell_command kept raw"
+                    );
+                }
+                RoutedCommand {
+                    command: analysis.command,
+                    interaction_input: None,
+                    model_output_prefix: candidate.then(|| {
+                        format!(
+                            "[shell_command kept raw]\nreason: {}\ncommand: {}",
+                            reason.as_str(),
+                            trimmed
+                        )
+                    }),
+                }
+            }
         }
     }
 
