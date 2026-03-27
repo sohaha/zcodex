@@ -1751,6 +1751,14 @@ mod tests {
     }
 
     #[test]
+    fn test_try_parse_version_after_global_flags_is_display_version() {
+        match Cli::try_parse_from(["rtk", "--verbose", "--version"]) {
+            Err(e) => assert_eq!(e.kind(), ErrorKind::DisplayVersion),
+            Ok(_) => panic!("Expected DisplayVersion error"),
+        }
+    }
+
+    #[test]
     fn test_try_parse_unknown_subcommand_is_error() {
         match Cli::try_parse_from(["rtk", "nonexistent-command"]) {
             Err(e) => assert!(!matches!(
@@ -1848,5 +1856,15 @@ mod tests {
             OsString::from("custom-fallback"),
         ];
         assert!(!should_show_parse_error(&args));
+    }
+
+    #[test]
+    fn test_should_show_parse_error_for_removed_command_after_double_dash() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("--"),
+            OsString::from("rewrite"),
+        ];
+        assert!(should_show_parse_error(&args));
     }
 }

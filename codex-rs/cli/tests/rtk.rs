@@ -187,6 +187,12 @@ fn assert_help_contains(
     Ok(())
 }
 
+fn assert_version_contains(codex_home: &Path, args: &[&str]) -> Result<()> {
+    let mut cmd = codex_command(codex_home)?;
+    cmd.args(args).assert().success().stdout(contains("rtk "));
+    Ok(())
+}
+
 #[test]
 fn rtk_alias_routes_to_rtk_parser() -> Result<()> {
     let codex_home = TempDir::new()?;
@@ -253,6 +259,21 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
 
     for (args, required, forbidden) in cases {
         assert_help_contains(codex_home.path(), &args, &required, &forbidden)?;
+    }
+
+    Ok(())
+}
+
+#[test]
+fn rtk_version_still_works_with_global_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    for args in [
+        vec!["rtk", "--version"],
+        vec!["rtk", "--verbose", "--version"],
+        vec!["rtk", "-u", "--version"],
+    ] {
+        assert_version_contains(codex_home.path(), &args)?;
     }
 
     Ok(())
@@ -422,6 +443,28 @@ fn rtk_unknown_commands_still_fall_back_after_double_dash() -> Result<()> {
         .assert()
         .success()
         .stdout(contains("FALLBACK_OK").and(contains("alpha")));
+
+    Ok(())
+}
+
+#[test]
+fn rtk_builtin_help_after_double_dash_stays_in_parse_error_path() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let bin_dir = codex_home.path().join("bin");
+    std::fs::create_dir(&bin_dir)?;
+    let _fake_read = write_fake_command(
+        &bin_dir,
+        "read",
+        fallback_marker_script("FALLBACK_TRIGGERED"),
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env("PATH", prepend_path(&bin_dir))
+        .args(["rtk", "--verbose", "--", "read", "--help"])
+        .assert()
+        .failure()
+        .stderr(contains("subcommand 'read' exists"))
+        .stdout(contains("FALLBACK_TRIGGERED").not());
 
     Ok(())
 }
