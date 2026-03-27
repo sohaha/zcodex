@@ -17,7 +17,7 @@ use crate::tracking;
 use crate::utils::package_manager_exec;
 use crate::utils::strip_ansi;
 
-/// Vitest JSON 输出结构（工具专用格式）
+/// Vitest JSON 输出结构（本工具专用格式）
 #[derive(Debug, Deserialize)]
 struct VitestJsonOutput {
     #[serde(rename = "testResults")]
@@ -59,7 +59,7 @@ impl OutputParser for VitestParser {
     type Output = TestResult;
 
     fn parse(input: &str) -> ParseResult<TestResult> {
-        // 第 1 层：尝试 JSON 解析（支持 pnpm/dotenv 前缀回退提取）
+        // 第 1 层：尝试 JSON 解析（支持从 pnpm/dotenv 前缀中回退提取）
         let json_result = serde_json::from_str::<VitestJsonOutput>(input).or_else(|first_err| {
             // 回退方案：尝试从带前缀的输出中提取 JSON 对象
             if let Some(extracted) = extract_json_object(input) {
@@ -89,7 +89,7 @@ impl OutputParser for VitestParser {
                 ParseResult::Full(result)
             }
             Err(e) => {
-                // 第 2 层：尝试正则提取（仅在用户覆盖 --reporter 时触发）
+                // 第 2 层：尝试用正则提取（仅在用户覆盖 --reporter 时触发）
                 match extract_stats_regex(input) {
                     Some(result) => {
                         ParseResult::Degraded(result, vec![format!("JSON 解析失败：{e}")])
@@ -104,7 +104,7 @@ impl OutputParser for VitestParser {
     }
 }
 
-/// 从 JSON 结构中提取失败项
+/// 从 JSON 结构中提取失败用例
 fn extract_failures_from_json(json: &VitestJsonOutput) -> Vec<TestFailure> {
     let mut failures = Vec::new();
 
@@ -233,7 +233,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let mut cmd = package_manager_exec("vitest");
     cmd.arg("run"); // 强制关闭 watch 模式
 
-    // 添加 JSON reporter，便于结构化解析
+    // 添加 JSON reporter，便于做结构化解析
     cmd.arg("--reporter=json");
 
     for arg in args {
@@ -245,7 +245,7 @@ fn run_vitest(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let combined = format!("{stdout}{stderr}");
 
-    // 使用 VitestParser 解析输出
+    // 使用 `VitestParser` 解析输出
     let parse_result = VitestParser::parse(&stdout);
     let mode = FormatMode::from_verbosity(verbose);
 

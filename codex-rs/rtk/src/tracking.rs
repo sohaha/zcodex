@@ -1,9 +1,9 @@
 use std::ffi::OsString;
 use std::time::Instant;
 
-/// 为运行期命令包装器保留的最小时序统计垫片。
+/// 为运行期命令包装器保留的最小时序统计适配层。
 ///
-/// Codex 将 RTK 作为轻量命令过滤层嵌入，因此不会携带上游的分析、
+/// Codex 将 RTK 作为轻量命令过滤层嵌入，因此不会包含上游的分析、
 /// 持久化或遥测功能。
 pub struct TimedExecution {
     started_at: Instant,
