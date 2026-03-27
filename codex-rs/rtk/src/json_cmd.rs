@@ -8,7 +8,7 @@ use std::io::Read;
 use std::io::{self};
 use std::path::Path;
 
-/// Reject non-JSON files with a clear error before doing any I/O.
+/// 在执行 I/O 前明确拒绝非 JSON 文件。
 fn validate_json_extension(file: &Path) -> Result<()> {
     if let Some(ext) = file.extension().and_then(|e| e.to_str()) {
         let format_name = match ext {
@@ -18,17 +18,17 @@ fn validate_json_extension(file: &Path) -> Result<()> {
             "csv" => Some("CSV"),
             "ini" => Some("INI"),
             "env" => Some("env"),
-            "txt" => Some("plain text"),
+            "txt" => Some("纯文本"),
             _ => None,
         };
         if let Some(fmt) = format_name {
             let mut msg = format!(
-                "{} is not a JSON file (detected {}). Use `rtk read` for non-JSON files.",
+                "{} 不是 JSON 文件（检测到 {}）。非 JSON 文件请使用 `rtk read`。",
                 file.display(),
                 fmt
             );
             if ext == "toml" && file.file_name().is_some_and(|n| n == "Cargo.toml") {
-                msg.push_str(" Tip: use `rtk deps` for Cargo.toml.");
+                msg.push_str(" 提示：处理 Cargo.toml 可使用 `rtk deps`。");
             }
             bail!("{msg}");
         }
@@ -36,7 +36,7 @@ fn validate_json_extension(file: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Show JSON structure without values
+/// 展示不含具体值的 JSON 结构
 pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
     validate_json_extension(file)?;
     let timer = tracking::TimedExecution::start();
@@ -45,8 +45,8 @@ pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
         eprintln!("分析 JSON：{}", file.display());
     }
 
-    let content = fs::read_to_string(file)
-        .with_context(|| format!("Failed to read file: {}", file.display()))?;
+    let content =
+        fs::read_to_string(file).with_context(|| format!("读取文件失败：{}", file.display()))?;
 
     let schema = filter_json_string(&content, max_depth)?;
     println!("{schema}");
@@ -59,7 +59,7 @@ pub fn run(file: &Path, max_depth: usize, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Show JSON structure from stdin
+/// 展示来自 stdin 的 JSON 结构
 pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -71,7 +71,7 @@ pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
     io::stdin()
         .lock()
         .read_to_string(&mut content)
-        .context("Failed to read from stdin")?;
+        .context("从 stdin 读取失败")?;
 
     let schema = filter_json_string(&content, max_depth)?;
     println!("{schema}");
@@ -79,10 +79,10 @@ pub fn run_stdin(max_depth: usize, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Parse a JSON string and return its schema representation.
-/// Useful for piping JSON from other commands (e.g., `gh api`, `curl`).
+/// 解析 JSON 字符串并返回其结构表示。
+/// 适用于管道输入的 JSON（例如 `gh api`、`curl`）。
 pub fn filter_json_string(json_str: &str, max_depth: usize) -> Result<String> {
-    let value: Value = serde_json::from_str(json_str).context("Failed to parse JSON")?;
+    let value: Value = serde_json::from_str(json_str).context("解析 JSON 失败")?;
     Ok(extract_schema(&value, /*depth*/ 0, max_depth))
 }
 
@@ -145,7 +145,7 @@ fn extract_schema(value: &Value, depth: usize, max_depth: usize) -> String {
                     let val_schema = extract_schema(val, depth + 1, max_depth);
                     let val_trimmed = val_schema.trim();
 
-                    // Inline simple types
+                    // 简单类型直接内联显示
                     let is_simple = matches!(
                         val,
                         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)
@@ -162,9 +162,9 @@ fn extract_schema(value: &Value, depth: usize, max_depth: usize) -> String {
                         lines.push(val_schema);
                     }
 
-                    // Limit keys shown
+                    // 限制展示的键数量
                     if i >= 15 {
-                        lines.push(format!("{}  ... +{} more keys", indent, keys.len() - i - 1));
+                        lines.push(format!("{}  ... +{} 个键", indent, keys.len() - i - 1));
                         break;
                     }
                 }
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn test_toml_file_rejected() {
         let err = validate_json_extension(Path::new("config.toml")).unwrap_err();
-        assert!(err.to_string().contains("not a JSON file"));
+        assert!(err.to_string().contains("不是 JSON 文件"));
         assert!(err.to_string().contains("TOML"));
     }
 
@@ -230,5 +230,19 @@ mod tests {
         let schema = extract_schema(&json, 0, 5);
         assert!(schema.contains("items"));
         assert!(schema.contains("(3)"));
+    }
+
+    #[test]
+    fn test_extract_schema_limits_key_count_in_chinese() {
+        let json = serde_json::json!({
+            "k00": 0, "k01": 1, "k02": 2, "k03": 3,
+            "k04": 4, "k05": 5, "k06": 6, "k07": 7,
+            "k08": 8, "k09": 9, "k10": 10, "k11": 11,
+            "k12": 12, "k13": 13, "k14": 14, "k15": 15,
+            "k16": 16
+        });
+
+        let schema = extract_schema(&json, 0, 5);
+        assert!(schema.contains("... +1 个键"), "实际得到：{schema}");
     }
 }
