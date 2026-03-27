@@ -134,6 +134,22 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
         }
     }
 
+    if parts.is_empty() && payload.get("semantic").is_some() {
+        if let Some(query) = payload.get("query").and_then(serde_json::Value::as_str) {
+            parts.push(format!("semantic query: {query}"));
+        }
+        if let Some(enabled) = payload.get("enabled").and_then(serde_json::Value::as_bool) {
+            parts.push(format!("enabled: {enabled}"));
+        }
+        if let Some(match_count) = payload
+            .get("matches")
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len)
+        {
+            parts.push(format!("matches: {match_count}"));
+        }
+    }
+
     if parts.is_empty()
         && (payload.get("status").is_some()
             || payload.get("snapshot").is_some()
@@ -518,7 +534,7 @@ mod tests {
         let payload = extract_json_block(&text);
 
         assert!(text.contains("semantic rust enabled=true via daemon"));
-        assert!(text.contains("structured payload attached"));
+        assert!(text.contains("semantic query: auth login | enabled: true | matches: 1"));
         assert!(text.contains(TLDR_JSON_BEGIN));
         assert!(text.contains("\"qualifiedSymbol\": \"auth::AuthService\""));
         assert!(text.contains("\"kind\": \"struct\""));
@@ -745,6 +761,24 @@ mod tests {
         });
 
         assert_eq!(render_tldr_summary(&payload), "structured payload attached");
+    }
+
+    #[test]
+    fn render_tldr_summary_surfaces_semantic_payload_fields() {
+        let payload = serde_json::json!({
+            "action": "semantic",
+            "query": "auth login",
+            "enabled": true,
+            "matches": [{}],
+            "semantic": {
+                "query": "auth login"
+            }
+        });
+
+        assert_eq!(
+            render_tldr_summary(&payload),
+            "semantic query: auth login | enabled: true | matches: 1"
+        );
     }
 
     #[test]

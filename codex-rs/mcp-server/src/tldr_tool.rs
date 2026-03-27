@@ -363,7 +363,7 @@ mod tests {
             .expect("structured content should be present");
 
         assert_eq!(result.is_error, Some(false));
-        assert_eq!(result_json["content"][0]["text"], "status");
+        assert_eq!(result_json["content"][0]["text"], "status: status");
         assert_eq!(structured["action"], "status");
         assert_eq!(structured["status"], "ok");
         assert_eq!(structured["message"], "status");
@@ -405,7 +405,7 @@ mod tests {
             .expect("structured content should be present");
 
         assert_eq!(result.is_error, Some(false));
-        assert_eq!(result_json["content"][0]["text"], "pong");
+        assert_eq!(result_json["content"][0]["text"], "ping: pong");
         assert_eq!(structured["action"], "ping");
         assert_eq!(structured["status"], "ok");
         assert_eq!(structured["message"], "pong");
@@ -455,7 +455,7 @@ mod tests {
             .expect("structured content should be present");
 
         assert_eq!(result.is_error, Some(false));
-        assert_eq!(result_json["content"][0]["text"], "already warm");
+        assert_eq!(result_json["content"][0]["text"], "warm: already warm");
         assert_eq!(structured["action"], "warm");
         assert_eq!(structured["snapshot"]["dirty_files"], 0);
     }
@@ -504,7 +504,7 @@ mod tests {
             .expect("structured content should be present");
 
         assert_eq!(result.is_error, Some(false));
-        assert_eq!(result_json["content"][0]["text"], "snapshot");
+        assert_eq!(result_json["content"][0]["text"], "snapshot: snapshot");
         assert_eq!(structured["action"], "snapshot");
         assert_eq!(structured["snapshot"]["cached_entries"], 2);
         assert_eq!(structured["snapshot"]["dirty_files"], 1);
@@ -554,7 +554,10 @@ mod tests {
             .expect("structured content should be present");
 
         assert_eq!(result.is_error, Some(false));
-        assert_eq!(result_json["content"][0]["text"], "marked src/lib.rs dirty");
+        assert_eq!(
+            result_json["content"][0]["text"],
+            "notify: marked src/lib.rs dirty"
+        );
         assert_eq!(structured["action"], "notify");
         assert_eq!(structured["snapshot"]["dirty_files"], 1);
         assert_eq!(structured["message"], "marked src/lib.rs dirty");

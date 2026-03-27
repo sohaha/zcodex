@@ -489,7 +489,7 @@ async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
             ))?
         );
     } else {
-        for line in render_daemon_response_text(&response) {
+        for line in render_daemon_response_text(action, &response) {
             println!("{line}");
         }
     }
@@ -512,12 +512,14 @@ fn daemon_action_and_command(
 }
 
 fn render_daemon_response_text(
+    action: &str,
     response: &codex_native_tldr::daemon::TldrDaemonResponse,
 ) -> Vec<String> {
     let daemon_status = response.daemon_status.as_ref();
     let reindex_report = response.reindex_report.as_ref();
     let snapshot = response.snapshot.as_ref();
     let mut lines = vec![
+        format!("action: {action}"),
         format!("status: {}", response.status),
         format!("message: {}", response.message),
     ];
@@ -1390,7 +1392,7 @@ mod lifecycle_tests {
             reindex_report: None,
         };
 
-        let output = render_daemon_response_text(&response).join("\n");
+        let output = render_daemon_response_text("status", &response).join("\n");
 
         assert!(output.contains("last completed reindex: Completed"));
         assert!(output.contains("last reindex attempt: Failed"));
@@ -1409,8 +1411,12 @@ mod lifecycle_tests {
         };
 
         assert_eq!(
-            render_daemon_response_text(&response),
-            vec!["status: ok".to_string(), "message: pong".to_string()]
+            render_daemon_response_text("ping", &response),
+            vec![
+                "action: ping".to_string(),
+                "status: ok".to_string(),
+                "message: pong".to_string()
+            ]
         );
     }
 
@@ -1434,7 +1440,8 @@ mod lifecycle_tests {
             reindex_report: None,
         };
 
-        let output = render_daemon_response_text(&response).join("\n");
+        let output = render_daemon_response_text("notify", &response).join("\n");
+        assert!(output.contains("action: notify"));
         assert!(output.contains("message: marked src/lib.rs dirty"));
         assert!(output.contains("cached entries: 2"));
         assert!(output.contains("dirty files: 1"));
@@ -1461,7 +1468,8 @@ mod lifecycle_tests {
             reindex_report: None,
         };
 
-        let output = render_daemon_response_text(&response).join("\n");
+        let output = render_daemon_response_text("snapshot", &response).join("\n");
+        assert!(output.contains("action: snapshot"));
         assert!(output.contains("message: snapshot"));
         assert!(output.contains("cached entries: 3"));
         assert!(output.contains("dirty files: 1"));
@@ -1522,7 +1530,7 @@ mod lifecycle_tests {
             }),
         };
 
-        let output = render_daemon_response_text(&response).join("\n");
+        let output = render_daemon_response_text("status", &response).join("\n");
 
         assert!(output.contains("pid is live: true"));
         assert!(output.contains("lock is held: true"));

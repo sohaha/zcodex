@@ -401,11 +401,11 @@ where
         ));
     };
     let structured_content = daemon_response_payload(action, project_root, &response);
-    let text = structured_content
+    let message = structured_content
         .get("message")
         .and_then(serde_json::Value::as_str)
-        .unwrap_or("ok")
-        .to_string();
+        .unwrap_or("ok");
+    let text = format!("{action}: {message}");
     Ok(TldrToolResult {
         text,
         structured_content,
@@ -875,7 +875,7 @@ mod tests {
         .await
         .expect("ping tool should succeed");
 
-        assert_eq!(result.text, "pong");
+        assert_eq!(result.text, "ping: pong");
         assert_eq!(result.structured_content["action"], "ping");
         assert_eq!(result.structured_content["status"], "ok");
         assert_eq!(result.structured_content["message"], "pong");
@@ -911,7 +911,7 @@ mod tests {
         .await
         .expect("status tool should succeed");
 
-        assert_eq!(result.text, "status");
+        assert_eq!(result.text, "status: status");
         assert_eq!(result.structured_content["action"], "status");
         assert_eq!(result.structured_content["status"], "ok");
         assert_eq!(result.structured_content["message"], "status");
@@ -955,7 +955,7 @@ mod tests {
         .await
         .expect("warm tool should succeed");
 
-        assert_eq!(result.text, "already warm");
+        assert_eq!(result.text, "warm: already warm");
         assert_eq!(result.structured_content["action"], "warm");
         assert_eq!(result.structured_content["snapshot"]["dirty_files"], 0);
     }
@@ -998,7 +998,7 @@ mod tests {
         .await
         .expect("snapshot tool should succeed");
 
-        assert_eq!(result.text, "snapshot");
+        assert_eq!(result.text, "snapshot: snapshot");
         assert_eq!(result.structured_content["action"], "snapshot");
         assert_eq!(result.structured_content["snapshot"]["cached_entries"], 2);
         assert_eq!(result.structured_content["snapshot"]["dirty_files"], 1);
@@ -1122,6 +1122,44 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "daemon response missing analysis payload"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_preserves_notify_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Notify,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                path: Some("src/lib.rs".to_string()),
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "marked src/lib.rs dirty".to_string(),
+                        analysis: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("notify tool should succeed");
+
+        assert_eq!(result.text, "notify: marked src/lib.rs dirty");
+        assert_eq!(result.structured_content["action"], "notify");
+        assert_eq!(
+            result.structured_content["message"],
+            "marked src/lib.rs dirty"
         );
     }
 
