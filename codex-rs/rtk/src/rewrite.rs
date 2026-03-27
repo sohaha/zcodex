@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-const CODEX_RTK_PREFIX: &str = "codex rtk";
 const RTK_PREFIX: &str = "rtk";
 const ENV_PREFIX_FLAGS: &[&str] = &["-i", "--ignore-environment"];
 
@@ -104,8 +103,19 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
     if trimmed.is_empty() {
         return passthrough(trimmed, ShellCommandPassthroughReason::Empty, false);
     }
-    if trimmed.starts_with(CODEX_RTK_PREFIX) || trimmed == RTK_PREFIX || trimmed.starts_with("rtk ")
-    {
+    if let Some(rest) = trimmed.strip_prefix("codex rtk ") {
+        return ShellCommandRewriteAnalysis {
+            command: format!("{RTK_PREFIX} {rest}"),
+            kind: ShellCommandRewriteKind::Rewritten,
+        };
+    }
+    if trimmed == "codex rtk" {
+        return ShellCommandRewriteAnalysis {
+            command: RTK_PREFIX.to_string(),
+            kind: ShellCommandRewriteKind::Rewritten,
+        };
+    }
+    if trimmed == RTK_PREFIX || trimmed.starts_with("rtk ") {
         return ShellCommandRewriteAnalysis {
             command: trimmed.to_string(),
             kind: ShellCommandRewriteKind::AlreadyRtk,
@@ -871,7 +881,7 @@ mod tests {
         );
         assert_eq!(
             rewrite_shell_command("codex rtk git status"),
-            Some("codex rtk git status".to_string())
+            Some("rtk git status".to_string())
         );
     }
 
