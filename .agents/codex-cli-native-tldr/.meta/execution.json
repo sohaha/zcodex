@@ -256,6 +256,10 @@
     {
       "at": "2026-03-26T18:58:00Z",
       "note": "reran Stage 4 verification with cargo nextest per user request; native-tldr (50) and mcp-server (31) passed, but codex-cli nextest and release build remained blocked by existing app-server ChatCompletionChunk compile errors"
+    },
+    {
+      "at": "2026-03-27T18:26:24Z",
+      "note": "completed selective sync for llm-tldr imports/importers surfaces plus targeted regressions across native-tldr, CLI, MCP, and core"
     }
   ],
   "feature": "codex-cli-native-tldr",

@@ -11,6 +11,16 @@
 - **最新代码提交**：`a4175dee8`（补齐 native-tldr artifact 测试隔离；Stage 3 文档元数据已同步）
 
 ### 已完成验证
+- `cargo check -p codex-native-tldr -p codex-cli -p codex-mcp-server -p codex-core`：通过（imports/importers selective sync）
+- `cargo test -p codex-native-tldr import_analysis::tests::collect_imports_returns_unique_file_imports -- --exact`：通过
+- `cargo test -p codex-native-tldr import_analysis::tests::collect_importers_returns_matching_units -- --exact`：通过
+- `cargo test -p codex-native-tldr tool_api::tests::imports_action_requires_path -- --exact`：通过
+- `cargo test -p codex-native-tldr tool_api::tests::importers_action_requires_module -- --exact`：通过
+- `cargo test -p codex-cli render_imports_response_text_preserves_contract`：通过
+- `cargo test -p codex-cli render_importers_response_text_preserves_contract`：通过
+- `cargo test -p codex-mcp-server`：通过（含 imports/importers schema/contract 回归）
+- `cargo test -p codex-core render_tldr_summary_surfaces_imports_payload_fields -- --exact`：通过
+- `cargo test -p codex-core render_tldr_summary_surfaces_importers_payload_fields -- --exact`：通过
 - `codex rtk cargo test -p codex-native-tldr`：通过（50 个测试；`semantic_command_reuses_cached_index_across_requests` 不再依赖全局 build counter）
 - `codex rtk cargo test -p codex-cli --bin codex`：通过（61 个测试；生命周期回归在默认并行套件下稳定通过）
 - `codex rtk cargo test -p codex-mcp-server`：通过（31 个测试）
