@@ -147,7 +147,7 @@ pub fn analyze_shell_command(command: &str) -> ShellCommandRewriteAnalysis {
             return passthrough(
                 trimmed,
                 ShellCommandPassthroughReason::UnsupportedCommand,
-                false,
+                looks_like_rtk_candidate(trimmed),
             );
         }
     };
@@ -374,10 +374,75 @@ fn split_safe_wrapper_target<'a>(
     rest: &'a [String],
 ) -> Option<(Vec<String>, &'a [String])> {
     match target {
+        "ionice" => split_ionice_prefix(rest),
         "nice" => split_nice_prefix(rest),
         "stdbuf" => split_stdbuf_prefix(rest),
         _ => Some((Vec::new(), rest)),
     }
+}
+
+fn split_ionice_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
+    let mut prefix = vec!["ionice".to_string()];
+    let mut index = 0;
+    while let Some(arg) = args.get(index) {
+        if arg == "--" {
+            index += 1;
+            break;
+        }
+        if matches!(arg.as_str(), "-c" | "-n" | "--class" | "--classdata") {
+            let value = args.get(index + 1)?;
+            if !value.chars().all(|ch| ch.is_ascii_digit()) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            prefix.push(value.clone());
+            index += 2;
+            continue;
+        }
+        if matches!(arg.as_str(), "-t" | "--ignore") {
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-c") {
+            if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_digit()) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-n") {
+            if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_digit()) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--class=") {
+            if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_digit()) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("--classdata=") {
+            if value.is_empty() || !value.chars().all(|ch| ch.is_ascii_digit()) {
+                return None;
+            }
+            prefix.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    let rest = args.get(index..)?;
+    if rest.is_empty() {
+        return None;
+    }
+    Some((prefix, rest))
 }
 
 fn split_nice_prefix(args: &[String]) -> Option<(Vec<String>, &[String])> {
@@ -571,7 +636,7 @@ fn looks_like_rtk_candidate(command: &str) -> bool {
             words.next();
             continue;
         }
-        if word == "nice" || word == "stdbuf" {
+        if matches!(word, "ionice" | "nice" | "stdbuf") {
             words.next();
             return words.any(|value| {
                 let name = normalize_command_name(value);
@@ -689,6 +754,22 @@ mod tests {
                 "/usr/bin/nice -n 5 git status",
                 Some("nice -n 5 codex rtk git status"),
             ),
+            (
+                "ionice -c 3 git status",
+                Some("ionice -c 3 codex rtk git status"),
+            ),
+            (
+                "ionice -c2 -n7 -- git status",
+                Some("ionice -c2 -n7 codex rtk git status"),
+            ),
+            (
+                "command ionice -c2 git status",
+                Some("ionice -c2 codex rtk git status"),
+            ),
+            (
+                "nice -n 5 ionice -c2 git status",
+                Some("nice -n 5 ionice -c2 codex rtk git status"),
+            ),
         ]);
     }
 
@@ -774,6 +855,16 @@ mod tests {
             analysis.kind,
             ShellCommandRewriteKind::Passthrough {
                 reason: ShellCommandPassthroughReason::MissingCommand,
+                candidate: true,
+            }
+        );
+
+        let analysis = analyze_shell_command("ionice -p 123 git status");
+        assert_eq!(analysis.command, "ionice -p 123 git status");
+        assert_eq!(
+            analysis.kind,
+            ShellCommandRewriteKind::Passthrough {
+                reason: ShellCommandPassthroughReason::UnsupportedCommand,
                 candidate: true,
             }
         );
