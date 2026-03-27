@@ -1042,6 +1042,7 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+                    paths: Vec::new(),
 
                     line: None,
                 },
@@ -1302,6 +1303,7 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+                    paths: Vec::new(),
 
                     line: None,
                 },
@@ -1325,6 +1327,7 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+                    paths: Vec::new(),
 
                     line: None,
                 },
@@ -1339,6 +1342,7 @@ mod tests {
                     language: crate::lang_support::SupportedLanguage::Rust,
                     symbol: Some("main".to_string()),
                     path: None,
+                    paths: Vec::new(),
 
                     line: None,
                 },
