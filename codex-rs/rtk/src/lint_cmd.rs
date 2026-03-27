@@ -51,13 +51,13 @@ struct PylintDiagnostic {
     message_id: String, // e.g., "W0612"
 }
 
-/// Check if a linter is Python-based (uses pip/pipx, not npm/pnpm)
+/// 判断 linter 是否基于 Python（使用 pip/pipx，而不是 npm/pnpm）
 fn is_python_linter(linter: &str) -> bool {
     matches!(linter, "ruff" | "pylint" | "mypy" | "flake8")
 }
 
-/// Strip package manager prefixes (npx, bunx, pnpm, pnpm exec, yarn) from args.
-/// Returns the number of args to skip.
+/// 从参数中移除包管理器前缀（npx、bunx、pnpm、pnpm exec、yarn）。
+/// 返回需要跳过的参数个数。
 fn strip_pm_prefix(args: &[String]) -> usize {
     let pm_names = ["npx", "bunx", "pnpm", "yarn"];
     let mut skip = 0;
@@ -71,8 +71,8 @@ fn strip_pm_prefix(args: &[String]) -> usize {
     skip
 }
 
-/// Detect the linter name from args (after stripping PM prefixes).
-/// Returns the linter name and whether it was explicitly specified.
+/// 从参数中检测 linter 名称（会先去掉包管理器前缀）。
+/// 返回 linter 名称，以及它是否为显式指定。
 fn detect_linter(args: &[String]) -> (&str, bool) {
     let is_path_or_flag = args.is_empty()
         || args[0].starts_with('-')
@@ -94,44 +94,44 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let (linter, explicit) = detect_linter(effective_args);
 
-    // Python linters use resolved_command() directly (they're on PATH via pip/pipx)
-    // JS linters use package_manager_exec (npx/pnpm exec)
+    // 对于 Python 类 linter，直接使用 resolved_command()（通过 pip/pipx 暴露到 PATH）
+    // 对于 JS 类 linter，使用 package_manager_exec（npx/pnpm exec）
     let mut cmd = if is_python_linter(linter) {
         resolved_command(linter)
     } else {
         package_manager_exec(linter)
     };
 
-    // Add format flags based on linter
+    // 根据 linter 添加格式参数
     match linter {
         "eslint" => {
             cmd.arg("-f").arg("json");
         }
         "ruff" => {
-            // Force JSON output for ruff check
+            // 为 ruff check 强制启用 JSON 输出
             if !effective_args.contains(&"--output-format".to_string()) {
                 cmd.arg("check").arg("--output-format=json");
             }
         }
         "pylint" => {
-            // Force JSON2 output for pylint
+            // 为 pylint 强制启用 JSON2 输出
             if !effective_args.contains(&"--output-format".to_string()) {
                 cmd.arg("--output-format=json2");
             }
         }
         "mypy" => {
-            // mypy uses default text output (no special flags)
+            // `mypy` 使用默认文本输出（无需特殊参数）
         }
         _ => {
-            // Other linters: no special formatting
+            // 其他 linter：不做特殊格式化
         }
     }
 
-    // Add user arguments (skip first if it was the linter name, and skip "check" for ruff if we added it)
+    // 追加用户参数（若首个参数是 linter 名称则跳过；若 ruff 的 `check` 已自动添加也跳过）
     let start_idx = if !explicit {
         0
     } else if linter == "ruff" && !effective_args.is_empty() && effective_args[0] == "ruff" {
-        // Skip "ruff" and "check" if we already added "check"
+        // 如果已自动补上 `check`，则跳过 `ruff` 和 `check`
         if effective_args.len() > 1 && effective_args[1] == "check" {
             2
         } else {
@@ -142,7 +142,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     };
 
     for arg in &effective_args[start_idx..] {
-        // Skip --output-format if we already added it
+        // 如果已自动补上 --output-format，则跳过用户传入的同类参数
         if linter == "ruff" && arg.starts_with("--output-format") {
             continue;
         }
@@ -152,7 +152,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         cmd.arg(arg);
     }
 
-    // Default to current directory if no path specified (for ruff/pylint/mypy/eslint)
+    // 若未指定路径，则默认使用当前目录（适用于 ruff/pylint/mypy/eslint）
     if matches!(linter, "ruff" | "pylint" | "mypy" | "eslint") {
         let has_path = effective_args
             .iter()
@@ -171,7 +171,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         "运行 {linter} 失败。请确认已安装：pip install {linter}（JS linter 用 npm/pnpm）"
     ))?;
 
-    // Check if process was killed by signal (SIGABRT, SIGKILL, etc.)
+    // 检查进程是否被信号终止（SIGABRT、SIGKILL 等）
     if !output.status.success() && output.status.code().is_none() {
         let stderr = crate::utils::decode_output(&output.stderr);
         eprintln!("⚠️  Linter 进程异常退出（可能是内存不足）");
@@ -188,11 +188,11 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
-    // Dispatch to appropriate filter based on linter
+    // 根据 linter 分发到对应过滤器
     let filtered = match linter {
         "eslint" => filter_eslint_json(&stdout),
         "ruff" => {
-            // Reuse ruff_cmd's JSON parser
+            // 复用 ruff_cmd 的 JSON 解析器
             if !stdout.trim().is_empty() {
                 ruff_cmd::filter_ruff_check_json(&stdout)
             } else {
@@ -228,14 +228,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter ESLint JSON output - group by rule and file
+/// 过滤 ESLint JSON 输出，按规则和文件分组
 fn filter_eslint_json(output: &str) -> String {
     let results: Result<Vec<EslintResult>, _> = serde_json::from_str(output);
 
     let results = match results {
         Ok(r) => r,
         Err(e) => {
-            // Fallback if JSON parsing fails
+            // 若 JSON 解析失败则回退
             return format!(
                 "ESLint 输出（JSON 解析失败：{}）\n{}",
                 e,
@@ -244,7 +244,7 @@ fn filter_eslint_json(output: &str) -> String {
         }
     };
 
-    // Count total issues
+    // 统计问题总数
     let total_errors: usize = results.iter().map(|r| r.error_count).sum();
     let total_warnings: usize = results.iter().map(|r| r.warning_count).sum();
     let total_files = results.iter().filter(|r| !r.messages.is_empty()).count();
@@ -253,7 +253,7 @@ fn filter_eslint_json(output: &str) -> String {
         return "✓ ESLint：未发现问题".to_string();
     }
 
-    // Group messages by rule
+    // 按规则分组消息
     let mut by_rule: HashMap<String, usize> = HashMap::new();
     for result in &results {
         for msg in &result.messages {
@@ -263,7 +263,7 @@ fn filter_eslint_json(output: &str) -> String {
         }
     }
 
-    // Group by file
+    // 按文件分组
     let mut by_file: Vec<(&EslintResult, usize)> = results
         .iter()
         .filter(|r| !r.messages.is_empty())
@@ -271,14 +271,14 @@ fn filter_eslint_json(output: &str) -> String {
         .collect();
     by_file.sort_by(|a, b| b.1.cmp(&a.1));
 
-    // Build output
+    // 构建输出
     let mut result = String::new();
     result.push_str(&format!(
         "ESLint：{total_files} 个文件，{total_errors} 个错误，{total_warnings} 个警告\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
-    // Show top rules
+    // 显示高频规则
     let mut rule_counts: Vec<_> = by_rule.iter().collect();
     rule_counts.sort_by(|a, b| b.1.cmp(a.1));
 
@@ -290,13 +290,13 @@ fn filter_eslint_json(output: &str) -> String {
         result.push('\n');
     }
 
-    // Show top files with most issues
+    // 显示问题最多的文件
     result.push_str("高频文件：\n");
     for (file_result, count) in by_file.iter().take(10) {
         let short_path = compact_path(&file_result.file_path);
         result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
-        // Show top 3 rules in this file
+        // 显示该文件中最常见的 3 条规则
         let mut file_rules: HashMap<String, usize> = HashMap::new();
         for msg in &file_result.messages {
             if let Some(rule) = &msg.rule_id {
@@ -319,14 +319,14 @@ fn filter_eslint_json(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter pylint JSON2 output - group by symbol and file
+/// 过滤 pylint JSON2 输出，按 symbol 和文件分组
 fn filter_pylint_json(output: &str) -> String {
     let diagnostics: Result<Vec<PylintDiagnostic>, _> = serde_json::from_str(output);
 
     let diagnostics = match diagnostics {
         Ok(d) => d,
         Err(e) => {
-            // Fallback if JSON parsing fails
+            // 若 JSON 解析失败则回退
             return format!(
                 "Pylint 输出（JSON 解析失败：{}）\n{}",
                 e,
@@ -339,7 +339,7 @@ fn filter_pylint_json(output: &str) -> String {
         return "✓ Pylint：未发现问题".to_string();
     }
 
-    // Count by type
+    // 按类型统计
     let mut errors = 0;
     let mut warnings = 0;
     let mut conventions = 0;
@@ -355,18 +355,18 @@ fn filter_pylint_json(output: &str) -> String {
         }
     }
 
-    // Count unique files
+    // 统计唯一文件数
     let unique_files: std::collections::HashSet<_> = diagnostics.iter().map(|d| &d.path).collect();
     let total_files = unique_files.len();
 
-    // Group by symbol (rule code)
+    // 按 symbol（规则编码）分组
     let mut by_symbol: HashMap<String, usize> = HashMap::new();
     for diag in &diagnostics {
         let key = format!("{} ({})", diag.symbol, diag.message_id);
         *by_symbol.entry(key).or_insert(0) += 1;
     }
 
-    // Group by file
+    // 按文件分组
     let mut by_file: HashMap<&str, usize> = HashMap::new();
     for diag in &diagnostics {
         *by_file.entry(&diag.path).or_insert(0) += 1;
@@ -375,7 +375,7 @@ fn filter_pylint_json(output: &str) -> String {
     let mut file_counts: Vec<_> = by_file.iter().collect();
     file_counts.sort_by(|a, b| b.1.cmp(a.1));
 
-    // Build output
+    // 构建输出
     let mut result = String::new();
     result.push_str(&format!(
         "Pylint：{total_files} 个文件，{} 个问题\n",
@@ -392,7 +392,7 @@ fn filter_pylint_json(output: &str) -> String {
 
     result.push_str("═══════════════════════════════════════\n");
 
-    // Show top symbols (rules)
+    // 显示高频 symbol（规则）
     let mut symbol_counts: Vec<_> = by_symbol.iter().collect();
     symbol_counts.sort_by(|a, b| b.1.cmp(a.1));
 
@@ -404,13 +404,13 @@ fn filter_pylint_json(output: &str) -> String {
         result.push('\n');
     }
 
-    // Show top files
+    // 显示高频文件
     result.push_str("高频文件：\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
         result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
-        // Show top 3 rules in this file
+        // 显示该文件中最常见的 3 条规则
         let mut file_symbols: HashMap<String, usize> = HashMap::new();
         for diag in diagnostics.iter().filter(|d| &d.path == *file) {
             let key = format!("{} ({})", diag.symbol, diag.message_id);
@@ -432,7 +432,7 @@ fn filter_pylint_json(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter generic linter output (fallback for non-ESLint linters)
+/// 过滤通用 linter 输出（用于非 ESLint 的回退场景）
 fn filter_generic_lint(output: &str) -> String {
     let mut warnings = 0;
     let mut errors = 0;
@@ -469,9 +469,9 @@ fn filter_generic_lint(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Compact file path (remove common prefixes)
+/// 压缩文件路径（移除常见公共前缀）
 fn compact_path(path: &str) -> String {
-    // Remove common prefixes like /Users/..., /home/..., C:\
+    // 移除常见前缀，如 /Users/...、/home/...、C:\
     let path = path.replace('\\', "/");
 
     if let Some(pos) = path.rfind("/src/") {
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn test_detect_linter_after_npx_strip() {
-        // Simulates: rtk lint npx eslint src/ → after strip_pm_prefix, args = ["eslint", "src/"]
+        // 模拟：`rtk lint npx eslint src/` → strip_pm_prefix 后参数为 ["eslint", "src/"]
         let full_args: Vec<String> = vec!["npx".into(), "eslint".into(), "src/".into()];
         let skip = strip_pm_prefix(&full_args);
         let effective = &full_args[skip..];

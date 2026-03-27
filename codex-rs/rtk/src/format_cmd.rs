@@ -7,14 +7,14 @@ use anyhow::Context;
 use anyhow::Result;
 use std::path::Path;
 
-/// Detect formatter from project files or explicit argument
+/// 从项目文件或显式参数中检测格式化器
 fn detect_formatter(args: &[String]) -> String {
     detect_formatter_in_dir(args, Path::new("."))
 }
 
-/// Detect formatter with explicit directory (for testing)
+/// 在指定目录中检测格式化器（用于测试）
 fn detect_formatter_in_dir(args: &[String], dir: &Path) -> String {
-    // Check if first arg is a known formatter
+    // 检查第一个参数是否为已知格式化器
     if !args.is_empty() {
         let first_arg = &args[0];
         if matches!(first_arg.as_str(), "prettier" | "black" | "ruff" | "biome") {
@@ -22,24 +22,24 @@ fn detect_formatter_in_dir(args: &[String], dir: &Path) -> String {
         }
     }
 
-    // Auto-detect from project files
-    // Priority: pyproject.toml > package.json > fallback
+    // 根据项目文件自动检测
+    // 优先级：pyproject.toml > package.json > fallback
     let pyproject_path = dir.join("pyproject.toml");
     if pyproject_path.exists() {
-        // Read pyproject.toml to detect formatter
+        // 读取 pyproject.toml 以检测格式化器
         if let Ok(content) = std::fs::read_to_string(&pyproject_path) {
-            // Check for [tool.black] section
+            // 检查 [tool.black] 段
             if content.contains("[tool.black]") {
                 return "black".to_string();
             }
-            // Check for [tool.ruff.format] section
+            // 检查 [tool.ruff.format] 段
             if content.contains("[tool.ruff.format]") || content.contains("[tool.ruff]") {
                 return "ruff".to_string();
             }
         }
     }
 
-    // Check for package.json or prettier config
+    // 检查 package.json 或 prettier 配置
     if dir.join("package.json").exists()
         || dir.join(".prettierrc").exists()
         || dir.join(".prettierrc.json").exists()
@@ -48,21 +48,21 @@ fn detect_formatter_in_dir(args: &[String], dir: &Path) -> String {
         return "prettier".to_string();
     }
 
-    // Fallback: try ruff -> black -> prettier in order
+    // 回退：按 ruff -> black -> prettier 的顺序尝试
     "ruff".to_string()
 }
 
 pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
-    // Detect formatter
+    // 检测格式化器
     let formatter = detect_formatter(args);
 
-    // Determine start index for actual arguments
+    // 确定实际参数的起始下标
     let start_idx = if !args.is_empty() && args[0] == formatter {
-        1 // Skip formatter name if it was explicitly provided
+        1 // 若显式提供了格式化器名称，则跳过
     } else {
-        0 // Use all args if formatter was auto-detected
+        0 // 若为自动检测，则使用全部参数
     };
 
     if verbose > 0 {
@@ -70,7 +70,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         eprintln!("参数：{}", args[start_idx..].join(" "));
     }
 
-    // Build command based on formatter
+    // 根据格式化器构建命令
     let mut cmd = match formatter.as_str() {
         "prettier" => package_manager_exec("prettier"),
         "black" | "ruff" => resolved_command(formatter.as_str()),
@@ -78,18 +78,18 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         _ => resolved_command(formatter.as_str()),
     };
 
-    // Add formatter-specific flags
+    // 添加格式化器专属参数
     let user_args = args[start_idx..].to_vec();
 
     match formatter.as_str() {
         "black" => {
-            // Inject --check if not present for check mode
+            // 在检查模式下，若未提供 --check，则自动注入
             if !user_args.iter().any(|a| a == "--check" || a == "--diff") {
                 cmd.arg("--check");
             }
         }
         "ruff" => {
-            // Add "format" subcommand if not present
+            // 若不存在 `format` 子命令，则自动补上
             if user_args.is_empty() || !user_args[0].starts_with("format") {
                 cmd.arg("format");
             }
@@ -97,12 +97,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         _ => {}
     }
 
-    // Add user arguments
+    // 追加用户参数
     for arg in &user_args {
         cmd.arg(arg);
     }
 
-    // Default to current directory if no path specified
+    // 若未指定路径，则默认使用当前目录
     if user_args.iter().all(|a| a.starts_with('-')) {
         cmd.arg(".");
     }
@@ -119,7 +119,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     let stderr = crate::utils::decode_output(&output.stderr);
     let raw = format!("{stdout}\n{stderr}");
 
-    // Dispatch to appropriate filter based on formatter
+    // 根据格式化器分发到对应过滤器
     let filtered = match formatter.as_str() {
         "prettier" => prettier_cmd::filter_prettier_output(&raw),
         "ruff" => ruff_cmd::filter_ruff_format(&raw),
@@ -136,7 +136,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }
@@ -144,7 +144,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter black output - show files that need formatting
+/// 过滤 black 输出，仅显示需要格式化的文件
 fn filter_black_output(output: &str) -> String {
     let mut files_to_format: Vec<String> = Vec::new();
     let mut files_unchanged = 0;
@@ -156,23 +156,23 @@ fn filter_black_output(output: &str) -> String {
         let trimmed = line.trim();
         let lower = trimmed.to_lowercase();
 
-        // Check for "would reformat" lines
+        // 检查 `would reformat` 行
         if lower.starts_with("would reformat:") {
-            // Extract filename from "would reformat: path/to/file.py"
+            // 从 `would reformat: path/to/file.py` 中提取文件名
             if let Some(filename) = trimmed.split(':').nth(1) {
                 files_to_format.push(filename.trim().to_string());
             }
         }
 
-        // Parse summary line like "2 files would be reformatted, 3 files would be left unchanged."
+        // 解析类似 `2 files would be reformatted, 3 files would be left unchanged.` 的摘要行
         if lower.contains("would be reformatted") || lower.contains("would be left unchanged") {
-            // Split by comma to handle both parts
+            // 按逗号拆分，分别处理两部分
             for part in trimmed.split(',') {
                 let part_lower = part.to_lowercase();
                 let words: Vec<&str> = part.split_whitespace().collect();
 
                 if part_lower.contains("would be reformatted") {
-                    // Parse "X file(s) would be reformatted"
+                    // 解析 `X file(s) would be reformatted`
                     for (i, word) in words.iter().enumerate() {
                         if (word == &"file" || word == &"files")
                             && i > 0
@@ -185,7 +185,7 @@ fn filter_black_output(output: &str) -> String {
                 }
 
                 if part_lower.contains("would be left unchanged") {
-                    // Parse "X file(s) would be left unchanged"
+                    // 解析 `X file(s) would be left unchanged`
                     for (i, word) in words.iter().enumerate() {
                         if (word == &"file" || word == &"files")
                             && i > 0
@@ -199,7 +199,7 @@ fn filter_black_output(output: &str) -> String {
             }
         }
 
-        // Check for "left unchanged" (standalone)
+        // 检查独立出现的 `left unchanged`
         if lower.contains("left unchanged") && !lower.contains("would be") {
             let words: Vec<&str> = trimmed.split_whitespace().collect();
             for (i, word) in words.iter().enumerate() {
@@ -213,7 +213,7 @@ fn filter_black_output(output: &str) -> String {
             }
         }
 
-        // Check for success/failure indicators
+        // 检查成功/失败标记
         if lower.contains("all done!") || lower.contains("all done ✨") {
             all_done = true;
         }
@@ -222,20 +222,20 @@ fn filter_black_output(output: &str) -> String {
         }
     }
 
-    // Build output
+    // 构建输出
     let mut result = String::new();
 
-    // Determine if all files are formatted
+    // 判断是否所有文件都已格式化
     let needs_formatting = !files_to_format.is_empty() || files_would_reformat > 0 || oh_no;
 
     if !needs_formatting && (all_done || files_unchanged > 0) {
-        // All files formatted correctly
+        // 所有文件格式都正确
         result.push_str("✓ 格式（black）：所有文件格式正确");
         if files_unchanged > 0 {
             result.push_str(&format!("（检查了 {files_unchanged} 个文件）"));
         }
     } else if needs_formatting {
-        // Files need formatting
+        // 存在需要格式化的文件
         let count = if !files_to_format.is_empty() {
             files_to_format.len()
         } else {
@@ -261,14 +261,14 @@ fn filter_black_output(output: &str) -> String {
 
         result.push_str("\n💡 运行 `black .` 格式化这些文件\n");
     } else {
-        // Fallback: show raw output
+        // 回退：直接显示原始输出
         result.push_str(output.trim());
     }
 
     result.trim().to_string()
 }
 
-/// Compact file path (remove common prefixes)
+/// 压缩文件路径（移除常见公共前缀）
 fn compact_path(path: &str) -> String {
     let path = path.replace('\\', "/");
 

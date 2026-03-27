@@ -19,7 +19,7 @@ lazy_static! {
     static ref PATH_RE: Regex = crate::utils::compile_regex(r"/[\w./\-]+");
 }
 
-/// Filter and deduplicate log output
+/// 过滤并去重日志输出
 pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -39,7 +39,7 @@ pub fn run_file(file: &Path, verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Filter logs from stdin
+/// 过滤来自 stdin 的日志
 pub fn run_stdin(_verbose: u8) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
@@ -58,7 +58,7 @@ pub fn run_stdin(_verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// For use by other modules
+/// 供其他模块调用
 pub fn run_stdin_str(content: &str) -> String {
     analyze_logs(content)
 }
@@ -71,16 +71,16 @@ fn analyze_logs(content: &str) -> String {
     let mut unique_errors: Vec<String> = Vec::new();
     let mut unique_warnings: Vec<String> = Vec::new();
 
-    // Use module-level lazy_static regexes for normalization
+    // 使用模块级 lazy_static 正则做归一化
 
     for line in content.lines() {
         let line_lower = line.to_lowercase();
 
-        // Normalize for deduplication
+        // 为去重做归一化
         let normalized =
             normalize_log_line(line, &TIMESTAMP_RE, &UUID_RE, &HEX_RE, &NUM_RE, &PATH_RE);
 
-        // Categorize
+        // 分类
         if line_lower.contains("error")
             || line_lower.contains("fatal")
             || line_lower.contains("panic")
@@ -101,7 +101,7 @@ fn analyze_logs(content: &str) -> String {
         }
     }
 
-    // Summary
+    // 摘要
     let total_errors: usize = error_counts.values().sum();
     let total_warnings: usize = warn_counts.values().sum();
     let total_info: usize = info_counts.values().sum();
@@ -120,16 +120,16 @@ fn analyze_logs(content: &str) -> String {
     result.push(format!("   ℹ️  {total_info} 条信息"));
     result.push(String::new());
 
-    // Errors with counts
+    // 带计数的错误列表
     if !unique_errors.is_empty() {
         result.push("❌ 错误：".to_string());
 
-        // Sort by count
+        // 按次数排序
         let mut error_list: Vec<_> = error_counts.iter().collect();
         error_list.sort_by(|a, b| b.1.cmp(a.1));
 
         for (normalized, count) in error_list.iter().take(10) {
-            // Find original message
+            // 找到原始消息
             let original = unique_errors
                 .iter()
                 .find(|e| {
@@ -159,7 +159,7 @@ fn analyze_logs(content: &str) -> String {
         result.push(String::new());
     }
 
-    // Warnings with counts
+    // 带计数的警告列表
     if !unique_warnings.is_empty() {
         result.push("⚠️  警告：".to_string());
 
@@ -241,7 +241,7 @@ mod tests {
             "คำเตือน".repeat(15)
         );
         let result = analyze_logs(&logs);
-        // Should not panic even with very long multi-byte messages
+        // 即使遇到超长多字节消息也不应 panic
         assert!(result.contains("错误"));
     }
 }
