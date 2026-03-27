@@ -220,7 +220,7 @@ fn condense_unified_diff(diff: &str) -> String {
 mod tests {
     use super::*;
 
-    // --- similarity ---
+    // --- `similarity` ---
 
     #[test]
     fn test_similarity_identical() {
@@ -251,7 +251,7 @@ mod tests {
         assert!(similarity("let x = 1;", "let x = 2;") > 0.5);
     }
 
-    // --- truncate ---
+    // --- `truncate` ---
 
     #[test]
     fn test_truncate_short_string() {
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(truncate("hello world!", 8), "hello...");
     }
 
-    // --- compute_diff ---
+    // --- `compute_diff` ---
 
     #[test]
     fn test_compute_diff_identical() {
@@ -329,7 +329,7 @@ mod tests {
         assert!(result.changes.is_empty());
     }
 
-    // --- condense_unified_diff ---
+    // --- `condense_unified_diff` ---
 
     #[test]
     fn test_condense_unified_diff_single_file() {

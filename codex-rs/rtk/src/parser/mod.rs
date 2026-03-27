@@ -29,7 +29,7 @@ pub enum ParseResult<T> {
 }
 
 impl<T> ParseResult<T> {
-    /// 取出解析后的数据；若为 Passthrough 则 panic
+    /// 取出解析后的数据；若为 `Passthrough` 则触发 panic
     pub fn unwrap(self) -> T {
         match self {
             ParseResult::Full(data) => data,
@@ -38,7 +38,7 @@ impl<T> ParseResult<T> {
         }
     }
 
-    /// 获取层级编号（1 = Full，2 = Degraded，3 = Passthrough）
+    /// 获取层级编号（1 = `Full`，2 = `Degraded`，3 = `Passthrough`）
     pub fn tier(&self) -> u8 {
         match self {
             ParseResult::Full(_) => 1,
@@ -47,7 +47,7 @@ impl<T> ParseResult<T> {
         }
     }
 
-    /// 检查解析是否成功（Full 或 Degraded）
+    /// 检查解析是否成功（`Full` 或 `Degraded`）
     pub fn is_ok(&self) -> bool {
         !matches!(self, ParseResult::Passthrough(_))
     }

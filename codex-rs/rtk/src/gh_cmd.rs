@@ -1115,7 +1115,7 @@ fn pr_merge(args: &[String], _verbose: u8) -> Result<()> {
 }
 
 fn pr_diff(args: &[String], _verbose: u8) -> Result<()> {
-    // --no-compact: pass full diff through (gh CLI doesn't know this flag, strip it)
+    // `--no-compact`：透传完整 diff（gh CLI 不认识这个参数，所以先剥离）
     let no_compact = args.iter().any(|a| a == "--no-compact");
     let gh_args: Vec<String> = args
         .iter()
@@ -1478,7 +1478,7 @@ mod tests {
         assert_eq!(extra, vec!["--attempt", "3"]);
     }
 
-    // --- should_passthrough_pr_view tests ---
+    // --- `should_passthrough_pr_view` 测试 ---
 
     #[test]
     fn test_should_passthrough_pr_view_json() {
@@ -1508,7 +1508,7 @@ mod tests {
         assert!(!should_passthrough_pr_view(&["--comments".into()]));
     }
 
-    // --- filter_markdown_body tests ---
+    // --- `filter_markdown_body` 测试 ---
 
     #[test]
     fn test_filter_markdown_body_html_comment_single_line() {

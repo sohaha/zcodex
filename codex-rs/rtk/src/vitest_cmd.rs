@@ -335,9 +335,9 @@ mod tests {
 
     #[test]
     fn test_strip_ansi() {
-        let input = "\x1b[32m✓\x1b[0m test passed";
+        let input = "\x1b[32m✓\x1b[0m 测试通过";
         let output = strip_ansi(input);
-        assert_eq!(output, "✓ test passed");
+        assert_eq!(output, "✓ 测试通过");
         assert!(!output.contains("\x1b"));
     }
 

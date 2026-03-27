@@ -5,7 +5,7 @@
 /// - `wc -l file.py`  → `30`
 /// - `wc -w file.py`  → `96`
 /// - `wc -c file.py`  → `978`
-/// - `wc -l *.py`     → table with common path prefix stripped
+/// - `wc -l *.py`     → 去除公共路径前缀后的紧凑表格
 use crate::tracking;
 use crate::utils::resolved_command;
 use anyhow::Context;
@@ -149,7 +149,7 @@ fn filter_wc_output(raw: &str, mode: &WcMode) -> String {
     format_multi_line(&lines, mode)
 }
 
-/// 格式化单行 `wc` 输出（单文件或 stdin）
+/// 格式化单行 `wc` 输出（单文件或 `stdin`）
 fn format_single_line(line: &str, mode: &WcMode) -> String {
     let parts: Vec<&str> = line.split_whitespace().collect();
 

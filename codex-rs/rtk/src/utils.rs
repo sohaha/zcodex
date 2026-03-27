@@ -519,9 +519,9 @@ mod tests {
 
     #[test]
     fn test_format_cpt_edge_cases() {
-        assert_eq!(format_cpt(0.0), "$0.00/MTok"); // zero
-        assert_eq!(format_cpt(-0.000001), "$0.00/MTok"); // negative
-        assert_eq!(format_cpt(f64::INFINITY), "$0.00/MTok"); // infinite
+        assert_eq!(format_cpt(0.0), "$0.00/MTok"); // 零值
+        assert_eq!(format_cpt(-0.000001), "$0.00/MTok"); // 负值
+        assert_eq!(format_cpt(f64::INFINITY), "$0.00/MTok"); // 无穷大
         assert_eq!(format_cpt(f64::NAN), "$0.00/MTok"); // NaN
     }
 
