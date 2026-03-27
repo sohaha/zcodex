@@ -90,9 +90,10 @@ pub(crate) async fn emit_exec_command_begin(
 pub(crate) enum ToolEmitter {
     Shell {
         command: Vec<String>,
+        display_command: Vec<String>,
         cwd: PathBuf,
         source: ExecCommandSource,
-        parsed_cmd: Vec<ParsedCommand>,
+        display_parsed_cmd: Vec<ParsedCommand>,
         freeform: bool,
         interaction_input: Option<String>,
         model_output_prefix: Option<String>,
@@ -113,18 +114,21 @@ pub(crate) enum ToolEmitter {
 impl ToolEmitter {
     pub fn shell(
         command: Vec<String>,
+        display_command: Option<Vec<String>>,
         cwd: PathBuf,
         source: ExecCommandSource,
         freeform: bool,
         interaction_input: Option<String>,
         model_output_prefix: Option<String>,
     ) -> Self {
-        let parsed_cmd = parse_command(&command);
+        let display_command = display_command.unwrap_or_else(|| command.clone());
+        let display_parsed_cmd = parse_command(&display_command);
         Self::Shell {
             command,
+            display_command,
             cwd,
             source,
-            parsed_cmd,
+            display_parsed_cmd,
             freeform,
             interaction_input,
             model_output_prefix,
@@ -158,10 +162,10 @@ impl ToolEmitter {
         match (self, stage) {
             (
                 Self::Shell {
-                    command,
+                    display_command,
                     cwd,
                     source,
-                    parsed_cmd,
+                    display_parsed_cmd,
                     interaction_input,
                     ..
                 },
@@ -170,9 +174,9 @@ impl ToolEmitter {
                 emit_exec_stage(
                     ctx,
                     ExecCommandInput::new(
-                        command,
+                        display_command,
                         cwd.as_path(),
-                        parsed_cmd,
+                        display_parsed_cmd,
                         *source,
                         interaction_input.as_deref(),
                         /*process_id*/ None,
@@ -602,6 +606,11 @@ mod tests {
                 "-lc".to_string(),
                 "FOO=1 rtk git status".to_string(),
             ],
+            Some(vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "FOO=1 codex rtk git status".to_string(),
+            ]),
             turn.cwd.clone(),
             ExecCommandSource::Agent,
             true,
@@ -615,6 +624,14 @@ mod tests {
 
         emitter.begin(ctx).await;
         let begin = recv_exec_begin(&mut rx).await;
+        assert_eq!(
+            begin.command,
+            vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "FOO=1 codex rtk git status".to_string(),
+            ]
+        );
         assert_eq!(
             begin.interaction_input,
             Some("FOO=1 git status".to_string())
@@ -642,6 +659,7 @@ mod tests {
         let (session, turn, _rx) = make_session_and_context_with_rx().await;
         let emitter = ToolEmitter::shell(
             vec!["bash".to_string(), "-lc".to_string(), "git status".to_string()],
+            None,
             turn.cwd.clone(),
             ExecCommandSource::Agent,
             false,

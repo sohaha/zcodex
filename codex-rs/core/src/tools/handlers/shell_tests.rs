@@ -134,6 +134,26 @@ fn shell_handler_prepends_rtk_helper_dir_to_path() {
 }
 
 #[test]
+fn shell_command_handler_resolves_rtk_to_absolute_helper_path() {
+    let resolved = super::resolve_rtk_physical_command(
+        "nice -n 5 rtk git status",
+        Some(std::path::Path::new("/tmp/codex-arg0/rtk")),
+    );
+
+    assert_eq!(resolved, "nice -n 5 /tmp/codex-arg0/rtk git status");
+}
+
+#[test]
+fn shell_command_handler_leaves_non_rtk_commands_unchanged_when_resolving_physical_path() {
+    let resolved = super::resolve_rtk_physical_command(
+        "git status",
+        Some(std::path::Path::new("/tmp/codex-arg0/rtk")),
+    );
+
+    assert_eq!(resolved, "git status");
+}
+
+#[test]
 fn shell_command_handler_respects_explicit_login_flag() {
     let (_tx, shell_snapshot) = watch::channel(Some(Arc::new(ShellSnapshot {
         path: PathBuf::from("/tmp/snapshot.sh"),

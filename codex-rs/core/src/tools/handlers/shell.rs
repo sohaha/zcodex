@@ -4,6 +4,8 @@ use codex_protocol::models::ShellCommandToolCallParams;
 use codex_protocol::models::ShellToolCallParams;
 use codex_rtk::ShellCommandRewriteKind;
 use codex_rtk::analyze_shell_command;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::codex::TurnContext;
@@ -54,6 +56,7 @@ pub struct ShellCommandHandler {
 struct RunExecLikeArgs {
     tool_name: String,
     exec_params: ExecParams,
+    display_command: Option<Vec<String>>,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
     interaction_input: Option<String>,
@@ -69,6 +72,7 @@ struct RunExecLikeArgs {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RoutedCommand {
     command: String,
+    display_command: Option<String>,
     interaction_input: Option<String>,
     model_output_prefix: Option<String>,
 }
@@ -105,6 +109,20 @@ impl ShellHandler {
 }
 
 impl ShellCommandHandler {
+    fn rtk_executable_path(
+        session: &crate::codex::Session,
+        turn_context: &TurnContext,
+    ) -> Option<PathBuf> {
+        let helper_dir = session
+            .services
+            .main_execve_wrapper_exe
+            .as_deref()
+            .or(turn_context.codex_linux_sandbox_exe.as_deref())
+            .and_then(Path::parent)?;
+        let arg0 = if cfg!(windows) { "rtk.bat" } else { "rtk" };
+        Some(helper_dir.join(arg0))
+    }
+
     fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
         match self.backend {
             ShellCommandBackend::Classic => ShellRuntimeBackend::ShellCommandClassic,
@@ -142,6 +160,7 @@ impl ShellCommandHandler {
                 );
                 RoutedCommand {
                     command: analysis.command,
+                    display_command: Some(trimmed.to_string()),
                     interaction_input: None,
                     model_output_prefix: None,
                 }
@@ -161,6 +180,7 @@ impl ShellCommandHandler {
                     )),
                     interaction_input: Some(trimmed.to_string()),
                     command: analysis.command,
+                    display_command: Some(display_command),
                 }
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => {
@@ -175,6 +195,7 @@ impl ShellCommandHandler {
                 );
                 RoutedCommand {
                     command: analysis.command,
+                    display_command: None,
                     interaction_input: None,
                     model_output_prefix: Some(format!(
                         "[shell_command kept raw]\noriginal: {}\nexecuted: {}\nreason: {}",
@@ -221,6 +242,20 @@ impl ShellCommandHandler {
             arg0: None,
         })
     }
+}
+
+fn resolve_rtk_physical_command(command: &str, rtk_exe: Option<&Path>) -> String {
+    let Some(rtk_exe) = rtk_exe else {
+        return command.to_string();
+    };
+    let Some(mut tokens) = shlex::split(command) else {
+        return command.to_string();
+    };
+    let Some(index) = tokens.iter().position(|token| token == "rtk") else {
+        return command.to_string();
+    };
+    tokens[index] = rtk_exe.to_string_lossy().into_owned();
+    codex_shell_command::parse_command::shlex_join(&tokens)
 }
 
 fn logical_rtk_command(command: &str) -> String {
@@ -393,7 +428,14 @@ impl ToolHandler for ShellCommandHandler {
         )
         .await;
         let mut params = params;
-        let routed_command = Self::route_command(&params.command);
+        let mut routed_command = Self::route_command(&params.command);
+        let rtk_exe = Self::rtk_executable_path(session.as_ref(), turn.as_ref());
+        routed_command.command =
+            resolve_rtk_physical_command(&routed_command.command, rtk_exe.as_deref());
+        let display_command = routed_command
+            .display_command
+            .as_deref()
+            .and_then(shlex::split);
         params.command = routed_command.command.clone();
         let prefix_rule = params.prefix_rule.clone();
         let exec_params = Self::to_exec_params(
@@ -406,6 +448,7 @@ impl ToolHandler for ShellCommandHandler {
         ShellHandler::run_exec_like(RunExecLikeArgs {
             tool_name,
             exec_params,
+            display_command,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             interaction_input: routed_command.interaction_input,
@@ -426,6 +469,7 @@ impl ShellHandler {
         let RunExecLikeArgs {
             tool_name,
             exec_params,
+            display_command,
             additional_permissions,
             prefix_rule,
             interaction_input,
@@ -519,6 +563,7 @@ impl ShellHandler {
         let source = ExecCommandSource::Agent;
         let emitter = ToolEmitter::shell(
             exec_params.command.clone(),
+            display_command,
             exec_params.cwd.clone(),
             source,
             freeform,
