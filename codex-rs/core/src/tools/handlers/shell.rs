@@ -156,15 +156,14 @@ impl ShellCommandHandler {
                 }
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => {
-                if candidate {
-                    tracing::info!(
-                        target: "codex_core::shell_rtk",
-                        original = %trimmed,
-                        executed = %analysis.command,
-                        reason = %reason.as_str(),
-                        "shell_command kept raw"
-                    );
-                }
+                tracing::info!(
+                    target: "codex_core::shell_rtk",
+                    original = %trimmed,
+                    executed = %analysis.command,
+                    reason = %reason.as_str(),
+                    candidate = candidate,
+                    "shell_command kept raw"
+                );
                 RoutedCommand {
                     command: analysis.command,
                     interaction_input: None,
