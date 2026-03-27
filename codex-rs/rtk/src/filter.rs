@@ -50,7 +50,7 @@ pub enum Language {
     Java,
     Ruby,
     Shell,
-    /// Data formats should not have comment-like syntax stripped.
+    /// 数据格式不应移除看起来像注释的语法。
     Data,
     Unknown,
 }
@@ -174,7 +174,7 @@ impl FilterStrategy for MinimalFilter {
         for line in content.lines() {
             let trimmed = line.trim();
 
-            // Handle block comments
+            // 处理块注释
             if let (Some(start), Some(end)) = (patterns.block_start, patterns.block_end) {
                 if !in_docstring
                     && trimmed.contains(start)
@@ -190,7 +190,7 @@ impl FilterStrategy for MinimalFilter {
                 }
             }
 
-            // Handle Python docstrings (keep them in minimal mode)
+            // 处理 Python docstring（在 minimal 模式下保留）
             if lang == Language::Python && trimmed.starts_with("\"\"\"") {
                 in_docstring = !in_docstring;
                 result.push_str(line);
@@ -204,11 +204,11 @@ impl FilterStrategy for MinimalFilter {
                 continue;
             }
 
-            // Skip single-line comments (but keep doc comments)
+            // 跳过单行注释（但保留文档注释）
             if let Some(line_comment) = patterns.line
                 && trimmed.starts_with(line_comment)
             {
-                // Keep doc comments
+                // 保留文档注释
                 if let Some(doc) = patterns.doc_line
                     && trimmed.starts_with(doc)
                 {
@@ -218,7 +218,7 @@ impl FilterStrategy for MinimalFilter {
                 continue;
             }
 
-            // Skip empty lines at this point, we'll normalize later
+            // 此处先保留空行，稍后统一规范化
             if trimmed.is_empty() {
                 result.push('\n');
                 continue;
@@ -228,7 +228,7 @@ impl FilterStrategy for MinimalFilter {
             result.push('\n');
         }
 
-        // Normalize multiple blank lines to max 2
+        // 将连续空行规范到最多 2 行
         let result = MULTIPLE_BLANK_LINES.replace_all(&result, "\n\n");
         result.trim().to_string()
     }
@@ -262,14 +262,14 @@ impl FilterStrategy for AggressiveFilter {
         for line in minimal.lines() {
             let trimmed = line.trim();
 
-            // Always keep imports
+            // 始终保留 import
             if IMPORT_PATTERN.is_match(trimmed) {
                 result.push_str(line);
                 result.push('\n');
                 continue;
             }
 
-            // Always keep function/struct/class signatures
+            // 始终保留函数/结构体/类签名
             if FUNC_SIGNATURE.is_match(trimmed) {
                 result.push_str(line);
                 result.push('\n');
@@ -278,7 +278,7 @@ impl FilterStrategy for AggressiveFilter {
                 continue;
             }
 
-            // Track brace depth for implementation bodies
+            // 跟踪实现体中的花括号深度
             let open_braces = trimmed.matches('{').count();
             let close_braces = trimmed.matches('}').count();
 
@@ -286,7 +286,7 @@ impl FilterStrategy for AggressiveFilter {
                 brace_depth += open_braces as i32;
                 brace_depth -= close_braces as i32;
 
-                // Only keep the opening and closing braces
+                // 只保留开闭花括号
                 if brace_depth <= 1 && (trimmed == "{" || trimmed == "}" || trimmed.ends_with('{'))
                 {
                     result.push_str(line);
@@ -302,7 +302,7 @@ impl FilterStrategy for AggressiveFilter {
                 continue;
             }
 
-            // Keep type definitions, constants, etc.
+            // 保留类型定义、常量等
             if trimmed.starts_with("const ")
                 || trimmed.starts_with("static ")
                 || trimmed.starts_with("let ")
@@ -348,7 +348,7 @@ pub fn smart_truncate(content: &str, max_lines: usize, _lang: Language) -> Strin
     for line in &lines {
         let trimmed = line.trim();
 
-        // Always keep signatures and important structural elements
+        // 始终保留签名和重要结构元素
         let is_important = FUNC_SIGNATURE.is_match(trimmed)
             || IMPORT_PATTERN.is_match(trimmed)
             || trimmed.starts_with("pub ")
@@ -450,7 +450,7 @@ mod tests {
         let result = filter.filter(json, Language::Data);
         assert!(
             result.contains("packages/*"),
-            "packages/* should not be treated as a block comment"
+            "`packages/*` 不应被当作块注释"
         );
         assert!(
             result.contains("scripts"),
@@ -462,7 +462,7 @@ mod tests {
         );
         assert!(
             result.contains("**/package.json"),
-            "**/package.json should not be stripped"
+            "`**/package.json` 不应被移除"
         );
     }
 
@@ -488,7 +488,7 @@ mod tests {
     #[test]
     fn test_minimal_filter_removes_comments() {
         let code = r#"
-// This is a comment
+// 这是一条注释
 fn main() {
     println!("Hello");
 }

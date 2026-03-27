@@ -35,7 +35,7 @@ struct PackageResult {
     skip: usize,
     build_failed: bool,
     build_errors: Vec<String>,
-    failed_tests: Vec<(String, Vec<String>)>, // (test_name, output_lines)
+    failed_tests: Vec<(String, Vec<String>)>, // （测试名，输出行）
 }
 
 pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
@@ -44,7 +44,7 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
     let mut cmd = resolved_command("go");
     cmd.arg("test");
 
-    // Force JSON output if not already specified
+    // 如果尚未指定，则强制启用 JSON 输出
     if !args.iter().any(|a| a == "-json") {
         cmd.arg("-json");
     }
@@ -75,7 +75,7 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
         println!("{filtered}");
     }
 
-    // Include stderr if present (build errors, etc.)
+    // 如有 stderr，也一并输出（构建错误等）
     if !stderr.trim().is_empty() {
         eprintln!("{}", stderr.trim());
     }
@@ -87,7 +87,7 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(exit_code);
     }
@@ -140,7 +140,7 @@ pub fn run_build(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(exit_code);
     }
@@ -191,7 +191,7 @@ pub fn run_vet(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // Preserve exit code for CI/CD
+    // 保留退出码，兼容 CI/CD
     if !output.status.success() {
         std::process::exit(exit_code);
     }
@@ -233,10 +233,10 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
         &format!("go {subcommand}"),
         &format!("rtk go {subcommand}"),
         &raw,
-        &raw, // No filtering for unsupported commands
+        &raw, // 不支持的命令不做过滤
     );
 
-    // Preserve exit code
+    // 保留退出码
     if !output.status.success() {
         std::process::exit(output.status.code().unwrap_or(1));
     }
@@ -244,7 +244,7 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
     Ok(())
 }
 
-/// Parse go test -json output (NDJSON format)
+/// 解析 `go test -json` 输出（NDJSON 格式）
 fn filter_go_test_json(output: &str) -> String {
     let mut packages: HashMap<String, PackageResult> = HashMap::new();
     let mut current_test_output: HashMap<(String, String), Vec<String>> = HashMap::new(); // (package, test) -> outputs
@@ -258,10 +258,10 @@ fn filter_go_test_json(output: &str) -> String {
 
         let event: GoTestEvent = match serde_json::from_str(trimmed) {
             Ok(e) => e,
-            Err(_) => continue, // Skip non-JSON lines
+            Err(_) => continue, // 跳过非 JSON 行
         };
 
-        // Handle build-output/build-fail events (use ImportPath, no Package)
+        // 处理 build-output/build-fail 事件（使用 ImportPath，没有 Package）
         match event.action.as_str() {
             "build-output" => {
                 if let (Some(import_path), Some(output_text)) = (&event.import_path, &event.output)
@@ -277,7 +277,7 @@ fn filter_go_test_json(output: &str) -> String {
                 continue;
             }
             "build-fail" => {
-                // build-fail has ImportPath — we'll handle it when the package-level fail arrives
+                // build-fail 带有 ImportPath，等包级 fail 到来时再处理
                 continue;
             }
             _ => {}
@@ -294,17 +294,17 @@ fn filter_go_test_json(output: &str) -> String {
             }
             "fail" => {
                 if let Some(test) = &event.test {
-                    // Individual test failure
+                    // 单个测试失败
                     pkg_result.fail += 1;
 
-                    // Collect output for failed test
+                    // 收集失败测试的输出
                     let key = (package.clone(), test.clone());
                     let outputs = current_test_output.remove(&key).unwrap_or_default();
                     pkg_result.failed_tests.push((test.clone(), outputs));
                 } else if event.failed_build.is_some() {
-                    // Package-level build failure
+                    // 包级构建失败
                     pkg_result.build_failed = true;
-                    // Collect build errors from the import path
+                    // 从 import path 中收集构建错误
                     if let Some(import_path) = &event.failed_build
                         && let Some(errors) = build_output.remove(import_path)
                     {
@@ -318,7 +318,7 @@ fn filter_go_test_json(output: &str) -> String {
                 }
             }
             "output" => {
-                // Collect output for current test
+                // 收集当前测试的输出
                 if let (Some(test), Some(output_text)) = (&event.test, &event.output) {
                     let key = (package.clone(), test.clone());
                     current_test_output
@@ -327,11 +327,11 @@ fn filter_go_test_json(output: &str) -> String {
                         .push(output_text.trim_end().to_string());
                 }
             }
-            _ => {} // run, pause, cont, etc.
+            _ => {} // `run`、`pause`、`cont` 等
         }
     }
 
-    // Build summary
+    // 构建摘要
     let total_packages = packages.len();
     let total_pass: usize = packages.values().map(|p| p.pass).sum();
     let total_fail: usize = packages.values().map(|p| p.fail).sum();
@@ -360,7 +360,7 @@ fn filter_go_test_json(output: &str) -> String {
     result.push_str(&format!("，共 {total_packages} 个包\n"));
     result.push_str("═══════════════════════════════════════\n");
 
-    // Show build failures first
+    // 先展示构建失败
     for (package, pkg_result) in packages.iter() {
         if !pkg_result.build_failed {
             continue;
@@ -373,14 +373,14 @@ fn filter_go_test_json(output: &str) -> String {
 
         for line in &pkg_result.build_errors {
             let trimmed = line.trim();
-            // Skip the "# package" header line
+            // 跳过 `# package` 头部行
             if !trimmed.starts_with('#') && !trimmed.is_empty() {
                 result.push_str(&format!("  {}\n", truncate(trimmed, /*max_len*/ 120)));
             }
         }
     }
 
-    // Show failed tests grouped by package
+    // 按包分组展示失败测试
     for (package, pkg_result) in packages.iter() {
         if pkg_result.fail == 0 {
             continue;
@@ -396,7 +396,7 @@ fn filter_go_test_json(output: &str) -> String {
         for (test, outputs) in &pkg_result.failed_tests {
             result.push_str(&format!("  ❌ {test}\n"));
 
-            // Show failure output (limit to key lines)
+            // 展示失败输出（只保留关键行）
             let relevant_lines: Vec<&String> = outputs
                 .iter()
                 .filter(|line| {
@@ -422,7 +422,7 @@ fn filter_go_test_json(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter go build output - show only errors
+/// 过滤 `go build` 输出，只显示错误
 fn filter_go_build(output: &str) -> String {
     let mut errors: Vec<String> = Vec::new();
 
@@ -430,12 +430,12 @@ fn filter_go_build(output: &str) -> String {
         let trimmed = line.trim();
         let lower = trimmed.to_lowercase();
 
-        // Skip package markers (# package/name lines without errors)
+        // 跳过包标记（无错误的 `# package/name` 行）
         if trimmed.starts_with('#') && !lower.contains("error") {
             continue;
         }
 
-        // Collect error lines (file:line:col format or error keywords)
+        // 收集错误行（`file:line:col` 格式或包含错误关键字）
         if !trimmed.is_empty()
             && (lower.contains("error")
                 || trimmed.contains(".go:")
@@ -469,14 +469,14 @@ fn filter_go_build(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Filter go vet output - show issues
+/// 过滤 `go vet` 输出，显示问题
 fn filter_go_vet(output: &str) -> String {
     let mut issues: Vec<String> = Vec::new();
 
     for line in output.lines() {
         let trimmed = line.trim();
 
-        // Collect issue lines (vet reports issues with file:line:col format)
+        // 收集问题行（vet 通常以 `file:line:col` 格式报告）
         if !trimmed.is_empty() && !trimmed.starts_with('#') && trimmed.contains(".go:") {
             issues.push(trimmed.to_string());
         }
@@ -505,9 +505,9 @@ fn filter_go_vet(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Compact package name (remove long paths)
+/// 压缩包名（移除过长路径）
 fn compact_package_name(package: &str) -> String {
-    // Remove common module prefixes like github.com/user/repo/
+    // 移除常见模块前缀，如 `github.com/user/repo/`
     if let Some(pos) = package.rfind('/') {
         package[pos + 1..].to_string()
     } else {

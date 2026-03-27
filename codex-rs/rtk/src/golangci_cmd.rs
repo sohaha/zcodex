@@ -40,7 +40,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     let mut cmd = resolved_command("golangci-lint");
 
-    // Force JSON output
+    // 强制启用 JSON 输出
     let has_format = args
         .iter()
         .any(|a| a == "--out-format" || a.starts_with("--out-format="));
@@ -71,7 +71,7 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     println!("{filtered}");
 
-    // Include stderr if present (config errors, etc.)
+    // 如有 stderr，也一并输出（配置错误等）
     if !stderr.trim().is_empty() && verbose > 0 {
         eprintln!("{}", stderr.trim());
     }
@@ -83,8 +83,8 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
         &filtered,
     );
 
-    // golangci-lint: exit 0 = clean, exit 1 = lint issues, exit 2+ = config/build error
-    // None = killed by signal (OOM, SIGKILL) — always fatal
+    // 对于 golangci-lint：exit 0 = 干净，exit 1 = 有 lint 问题，exit 2+ = 配置/构建错误
+    // 若为 None，则表示被信号终止（OOM、SIGKILL）—— 总是致命错误
     match output.status.code() {
         Some(0) | Some(1) => Ok(()),
         Some(code) => {
@@ -100,14 +100,14 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
     }
 }
 
-/// Filter golangci-lint JSON output - group by linter and file
+/// 过滤 golangci-lint 的 JSON 输出，按 linter 和文件分组
 fn filter_golangci_json(output: &str) -> String {
     let result: Result<GolangciOutput, _> = serde_json::from_str(output);
 
     let golangci_output = match result {
         Ok(o) => o,
         Err(e) => {
-            // Fallback if JSON parsing fails
+            // JSON 解析失败时回退
             return format!(
                 "golangci-lint（JSON 解析失败：{}）\n{}",
                 e,
@@ -124,18 +124,18 @@ fn filter_golangci_json(output: &str) -> String {
 
     let total_issues = issues.len();
 
-    // Count unique files
+    // 统计唯一文件数
     let unique_files: std::collections::HashSet<_> =
         issues.iter().map(|i| &i.pos.filename).collect();
     let total_files = unique_files.len();
 
-    // Group by linter
+    // 按 linter 分组
     let mut by_linter: HashMap<String, usize> = HashMap::new();
     for issue in &issues {
         *by_linter.entry(issue.from_linter.clone()).or_insert(0) += 1;
     }
 
-    // Group by file
+    // 按文件分组
     let mut by_file: HashMap<&str, usize> = HashMap::new();
     for issue in &issues {
         *by_file.entry(&issue.pos.filename).or_insert(0) += 1;
@@ -144,14 +144,14 @@ fn filter_golangci_json(output: &str) -> String {
     let mut file_counts: Vec<_> = by_file.iter().collect();
     file_counts.sort_by(|a, b| b.1.cmp(a.1));
 
-    // Build output
+    // 构建输出
     let mut result = String::new();
     result.push_str(&format!(
         "golangci-lint：{total_files} 个文件，{total_issues} 个问题\n"
     ));
     result.push_str("═══════════════════════════════════════\n");
 
-    // Show top linters
+    // 显示高频 linter
     let mut linter_counts: Vec<_> = by_linter.iter().collect();
     linter_counts.sort_by(|a, b| b.1.cmp(a.1));
 
@@ -163,13 +163,13 @@ fn filter_golangci_json(output: &str) -> String {
         result.push('\n');
     }
 
-    // Show top files
+    // 显示高频文件
     result.push_str("高频文件：\n");
     for (file, count) in file_counts.iter().take(10) {
         let short_path = compact_path(file);
         result.push_str(&format!("  {short_path}（{count} 个问题）\n"));
 
-        // Show top 3 linters in this file
+        // 显示该文件中最常见的 3 个 linter
         let mut file_linters: HashMap<String, usize> = HashMap::new();
         for issue in issues.iter().filter(|i| &i.pos.filename == *file) {
             *file_linters.entry(issue.from_linter.clone()).or_insert(0) += 1;
@@ -190,7 +190,7 @@ fn filter_golangci_json(output: &str) -> String {
     result.trim().to_string()
 }
 
-/// Compact file path (remove common prefixes)
+/// 压缩文件路径（移除常见公共前缀）
 fn compact_path(path: &str) -> String {
     let path = path.replace('\\', "/");
 

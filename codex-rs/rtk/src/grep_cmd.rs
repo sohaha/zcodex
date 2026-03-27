@@ -31,7 +31,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
         eprintln!("grep：在 {path} 中搜索 '{pattern}'");
     }
 
-    // Fix: convert BRE alternation \| → | for rg (which uses PCRE-style regex)
+    // 兼容处理：把 BRE 的 `\|` 转成 rg 可用的 `|`
     let rg_pattern = pattern.replace(r"\|", "|");
 
     let mut rg_cmd = resolved_command("rg");
@@ -42,7 +42,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     }
 
     for arg in extra_args {
-        // Fix: skip grep-ism -r flag (rg is recursive by default; rg -r means --replace)
+        // 兼容处理：跳过 grep 风格的 `-r`（rg 默认递归；rg 的 `-r` 表示 `--replace`）
         if arg == "-r" || arg == "--recursive" {
             continue;
         }
@@ -64,7 +64,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     let raw_output = stdout.to_string();
 
     if stdout.trim().is_empty() {
-        // Show stderr for errors (bad regex, missing file, etc.)
+        // 遇到错误时显示 stderr（错误正则、文件缺失等）
         if exit_code == 2 {
             let stderr = crate::utils::decode_output(&output.stderr);
             if !stderr.trim().is_empty() {
@@ -240,18 +240,18 @@ mod tests {
 
     #[test]
     fn test_extra_args_accepted() {
-        // Test that the function signature accepts extra_args
-        // This is a compile-time test - if it compiles, the signature is correct
+        // 验证函数签名允许接收 extra_args
+        // 这是编译期测试：只要能编译，就说明签名正确
         let _extra: Vec<String> = vec!["-i".to_string(), "-A".to_string(), "3".to_string()];
-        // No need to actually run - we're verifying the parameter exists
+        // 无需实际运行，这里只验证参数存在
     }
 
     #[test]
     fn test_clean_line_multibyte() {
-        // Thai text that exceeds max_len in bytes
+        // 超过 max_len 字节数的泰文文本
         let line = "  สวัสดีครับ นี่คือข้อความที่ยาวมากสำหรับทดสอบ  ";
         let cleaned = clean_line(line, 20, false, "ครับ");
-        // Should not panic
+        // 不应 panic
         assert!(!cleaned.is_empty());
     }
 
@@ -262,7 +262,7 @@ mod tests {
         assert!(!cleaned.is_empty());
     }
 
-    // Fix: BRE \| alternation is translated to PCRE | for rg
+    // 兼容：BRE 的 `\|` 会被转换成 rg 可接受的 `|`
     #[test]
     fn test_bre_alternation_translated() {
         let pattern = r"fn foo\|pub.*bar";
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(rg_pattern, "fn foo|pub.*bar");
     }
 
-    // Fix: -r flag (grep recursive) is stripped from extra_args (rg is recursive by default)
+    // 兼容：从 extra_args 中移除 `-r`（rg 默认递归）
     #[test]
     fn test_recursive_flag_stripped() {
         let extra_args: Vec<String> = vec!["-r".to_string(), "-i".to_string()];
@@ -282,21 +282,21 @@ mod tests {
         assert_eq!(filtered[0], "-i");
     }
 
-    // Verify line numbers are always enabled in rg invocation (grep_cmd.rs:24).
-    // The -n/--line-numbers clap flag in main.rs is a no-op accepted for compat.
+    // 验证 rg 调用始终带有行号参数。
+    // `main.rs` 中的 `-n/--line-numbers` clap 标志只是为兼容而保留的空操作。
     #[test]
     fn test_rg_always_has_line_numbers() {
-        // grep_cmd::run() always passes "-n" to rg (line 24).
-        // This test documents that -n is built-in, so the clap flag is safe to ignore.
+        // `grep_cmd::run()` 总是向 rg 传入 `-n`。
+        // 该测试用于说明 `-n` 是内建行为，因此 clap 标志可以安全忽略。
         let mut cmd = resolved_command("rg");
         cmd.args(["-n", "--no-heading", "NONEXISTENT_PATTERN_12345", "."]);
-        // If rg is available, it should accept -n without error (exit 1 = no match, not error)
+        // 如果安装了 rg，它应接受 `-n` 且不报错（exit 1 表示无匹配，不是错误）
         if let Ok(output) = cmd.output() {
             assert!(
                 output.status.code() == Some(1) || output.status.success(),
-                "rg -n should be accepted"
+                "`rg -n` 应被正常接受"
             );
         }
-        // If rg is not installed, skip gracefully (test still passes)
+        // 如果未安装 rg，则优雅跳过（测试仍然通过）
     }
 }
