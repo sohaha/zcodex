@@ -200,3 +200,48 @@ These guidelines apply to app-server protocol work in `codex-rs`, especially:
 - Validate with `cargo nextest run -p codex-app-server-protocol` when `cargo-nextest` is installed; otherwise use `cargo test -p codex-app-server-protocol`. 
 - Avoid boilerplate tests that only assert experimental field markers for individual
   request fields in `common.rs`; rely on schema generation/tests and behavioral coverage instead.
+
+<!-- vbm:start -->
+## Vibe Memory
+
+先遵守现有用户规则和项目规则。
+本区块只补充记忆工作流，不覆盖已有规则。
+
+1. 每次任务开始时，先读取：
+   - `.ai/project/overview.md`
+   - `.ai/project/config-map.md`
+   - `.ai/memory/handoff.md`
+   - `.ai/memory/known-risks.md`
+
+2. 修改代码前，先搜索相关记忆：
+   - `.ai/memory/bugs/`
+   - `.ai/memory/decisions/`
+   - `.ai/project/business-rules.md`
+
+3. 如果项目记忆中已经存在配置位置、业务规则或历史行为说明，禁止凭猜测回答，必须先检索。
+
+4. 每轮任务结束时，优先自动执行会话收尾流程：
+   - 更新 `.ai/memory/handoff.md`
+   - 有代码变更时优先生成候选记忆
+   - 只有内容已验证时，才正式写入 `.ai/memory/bugs/` 或 `.ai/memory/decisions/`
+   - 最后重建 `.ai/index/`
+
+5. 只允许写回已验证、可复用、与项目相关的知识：
+   - 稳定事实
+   - 业务规则
+   - 问题根因
+   - 回归风险
+   - 实现决策
+
+6. 禁止把密码、令牌、私钥或完整连接串写入记忆文件。
+
+7. 项目记忆优先级高于全局偏好；新的已验证记录优先级高于旧记录。
+
+8. 只更新本受控区块和本协议创建的 `.ai/` 文件，禁止覆盖用户自行编写的其他规则内容。
+
+9. 默认不需要点名 `vbm`；只要当前任务属于项目开发且已启用本协议，就应自动读取、自动整理、自动更新交接记忆。
+
+10. 当用户明确说“使用vbm记下来刚刚的事情”、“使用 vbm 记下来刚刚的事情”或相近表达时，优先更新 `.ai/memory/handoff.md`。
+
+11. 当用户明确说“使用vbm记住这个 bug”、“使用 vbm 记住这个 bug”、“使用vbm记录这次决策”或“使用 vbm 记录这次决策”时，优先写入正式记忆。
+<!-- vbm:end -->
