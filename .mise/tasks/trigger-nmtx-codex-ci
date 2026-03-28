@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="触发 sohaha/nmtx 的 codex 发布工作流"
 set -euo pipefail
 
 repo="sohaha/nmtx"

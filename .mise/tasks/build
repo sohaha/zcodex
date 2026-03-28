@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="构建 codex CLI，可选择本机构建或交叉编译目标"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

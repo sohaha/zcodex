@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="运行 codex-core 测试"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

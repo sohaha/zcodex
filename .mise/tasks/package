@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="打包交叉构建产物"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

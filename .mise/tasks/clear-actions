@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="清理 sohaha/zcodex 仓库已完成的 GitHub Actions 运行记录"
 set -euo pipefail
 
 repo="sohaha/zcodex"

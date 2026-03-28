@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="安装本机或交叉编译所需依赖"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="打包 Ubuntu 交叉构建出的 Windows 发布产物"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

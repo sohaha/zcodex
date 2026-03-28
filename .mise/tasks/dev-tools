@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="安装或升级本仓库常用的 Rust 开发工具"
 set -euo pipefail
 
 if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then

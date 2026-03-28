@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="在 Ubuntu/Linux 上构建 Linux amd64 发行二进制"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

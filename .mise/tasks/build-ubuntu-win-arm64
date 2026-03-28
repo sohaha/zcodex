@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="在 Ubuntu/Linux 上交叉构建 Windows arm64 二进制"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

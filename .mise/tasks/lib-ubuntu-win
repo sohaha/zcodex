@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="Windows 交叉编译辅助函数库（内部）"
 set -euo pipefail
 
 : "${script_dir:?}"

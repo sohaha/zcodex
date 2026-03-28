@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="运行指定 Rust crate 的测试，并按需预编译工作区二进制"
 set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

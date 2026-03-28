@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+#MISE description="在外部磁盘或自定义目录运行 Rust 命令"
 set -euo pipefail
 
 if [ "$#" -eq 0 ]; then
