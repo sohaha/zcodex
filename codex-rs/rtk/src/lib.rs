@@ -82,6 +82,7 @@ pub fn is_alias_invocation(argv0: &OsString) -> bool {
     about = "Token Killer - 最小化 LLM token 消耗",
     long_about = "高性能 CLI 代理，在输出进入 LLM 上下文前进行过滤与摘要。",
     disable_help_flag = true,
+    disable_version_flag = true,
     disable_help_subcommand = true,
     subcommand_help_heading = "命令",
     help_template = "\
@@ -113,6 +114,10 @@ struct Cli {
     /// 显示帮助信息
     #[arg(short = 'h', long = "help", action = clap::ArgAction::Help, global = true)]
     help: Option<bool>,
+
+    /// 显示版本
+    #[arg(short = 'V', long = "version", action = clap::ArgAction::Version, global = true)]
+    version: Option<bool>,
 }
 
 #[derive(Subcommand)]
@@ -1754,6 +1759,8 @@ mod tests {
         assert!(help.contains("命令:\n"));
         assert!(help.contains("选项:\n"));
         assert!(help.contains("显示帮助信息"));
+        assert!(help.contains("显示版本"));
+        assert!(!help.contains("Print version"));
     }
 
     #[test]
