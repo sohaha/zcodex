@@ -74,7 +74,7 @@ $:
               CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
           runner:
               tags: cnb:arch:amd64
-              cpus: 10
+              cpus: 20
           stages:
             - name: bootstrap rust speedup
               script: |
