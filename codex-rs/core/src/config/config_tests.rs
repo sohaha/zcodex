@@ -5966,6 +5966,68 @@ auto_tldr_routing = "off"
 }
 
 #[test]
+fn config_defaults_auto_tldr_routing_to_safe() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+model = "gpt-5.1"
+"#,
+    )
+    .expect("TOML deserialization should succeed without auto_tldr_routing");
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.auto_tldr_routing, AutoTldrRoutingMode::Safe);
+    Ok(())
+}
+
+#[test]
+fn config_loads_all_auto_tldr_routing_modes_from_toml() {
+    let parse = |value: &str| {
+        let toml = format!(
+            r#"
+model = "gpt-5.1"
+auto_tldr_routing = "{value}"
+"#
+        );
+        toml::from_str::<ConfigToml>(&toml).expect("TOML deserialization should succeed")
+    };
+
+    assert_eq!(
+        parse("off").auto_tldr_routing,
+        Some(AutoTldrRoutingMode::Off)
+    );
+    assert_eq!(
+        parse("safe").auto_tldr_routing,
+        Some(AutoTldrRoutingMode::Safe)
+    );
+    assert_eq!(
+        parse("aggressive").auto_tldr_routing,
+        Some(AutoTldrRoutingMode::Aggressive)
+    );
+}
+
+#[test]
+fn config_rejects_invalid_auto_tldr_routing_value() {
+    let err = toml::from_str::<ConfigToml>(
+        r#"
+model = "gpt-5.1"
+auto_tldr_routing = "maybe"
+"#,
+    )
+    .expect_err("invalid auto_tldr_routing should fail");
+
+    assert!(
+        err.to_string().contains("auto_tldr_routing"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
 fn config_loads_mcp_oauth_callback_url_from_toml() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let toml = r#"

@@ -1808,7 +1808,7 @@ fn create_tldr_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "tldr".to_string(),
-        description: "Structured code context analysis via native-tldr with daemon-first execution. Prefer this tool for symbol discovery, code context, impact analysis, and behavior-oriented code search before broad manual file reading."
+        description: "Structured code context analysis via native-tldr with daemon-first execution. Prefer this tool for symbol discovery, code context, impact analysis, and behavior-oriented code search before broad manual file reading. Runtime may auto-route some grep_files code-understanding queries here when auto_tldr_routing is enabled, but explicit raw grep/read requests still use the raw tools."
             .to_string(),
         strict: false,
         defer_loading: None,

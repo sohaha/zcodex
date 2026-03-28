@@ -9,3 +9,6 @@ regenerate the schema:
 ```
 just write-config-schema
 ```
+
+Recent examples include config fields such as `allow_login_shell` and
+`auto_tldr_routing`.

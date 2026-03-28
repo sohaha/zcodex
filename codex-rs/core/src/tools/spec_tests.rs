@@ -904,6 +904,32 @@ fn tldr_tool_uses_shared_output_schema_contract() {
 }
 
 #[test]
+fn tldr_tool_description_mentions_soft_auto_routing_without_promising_forced_rewrites() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let available_models = Vec::new();
+    let features = Features::with_defaults();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, _) = build_specs(&tools_config, None, None, &[]).build();
+    let tool = find_tool(&tools, "tldr");
+
+    let ToolSpec::Function(tool) = &tool.spec else {
+        panic!("tldr must be a function tool");
+    };
+    assert!(tool.description.contains("auto-route some grep_files"));
+    assert!(tool.description.contains("explicit raw grep/read requests"));
+    assert!(!tool.description.contains("always routed"));
+}
+
+#[test]
 fn request_user_input_description_reflects_default_mode_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
