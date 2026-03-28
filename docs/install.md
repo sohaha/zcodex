@@ -70,6 +70,25 @@ mise run build
 mise run build cli
 mise run build codex
 
+# Build a local release binary for the current platform
+mise run build local-release
+# short alias:
+mise run build release
+# output: ./target/release/codex
+
+# 上面的本地构建命令默认不再静态链接 fastembed/ort 预编译 ONNX Runtime，
+# 因此 Debian 12 / glibc 2.36 这类环境也可以直接完成编译。
+
+# 如果你要实际运行 native-tldr 的 semantic embedding，
+# 还需要在运行时提供共享库：
+ORT_DYLIB_PATH=/path/to/libonnxruntime.so ./target/debug/codex tldr languages
+
+# 在 glibc < 2.38 的 Linux 上，如果当前工作区仍会被
+# fastembed/ort 的预编译 ONNX Runtime 阻塞，`mise run build`
+# 会自动回退到 Ubuntu 24.04 Docker 容器构建。
+# 如需关闭这个自动回退：
+CODEX_BUILD_ORT_GLIBC_FALLBACK=0 mise run build
+
 # Run crate tests through the shared wrapper
 mise run test core
 mise run test tui
