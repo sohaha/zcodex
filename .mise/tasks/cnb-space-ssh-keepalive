@@ -3,6 +3,7 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 state_dir="$repo_root/.tmp/cnb-space-ssh-keepalive"
 pid_file="$state_dir/daemon.pid"
 log_file="$state_dir/daemon.log"
@@ -13,6 +14,7 @@ reconnect_delay_seconds="${CNB_SSH_RECONNECT_DELAY_SECONDS:-5}"
 connect_timeout_seconds="${CNB_SSH_CONNECT_TIMEOUT_SECONDS:-10}"
 server_alive_interval="${CNB_SSH_SERVER_ALIVE_INTERVAL:-30}"
 server_alive_count_max="${CNB_SSH_SERVER_ALIVE_COUNT_MAX:-3}"
+strict_host_key_checking="${CNB_SSH_STRICT_HOST_KEY_CHECKING:-accept-new}"
 
 timestamp() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -71,6 +73,10 @@ read_pid() {
   cat "$pid_file"
 }
 
+list_daemon_pids() {
+  pgrep -f "bash $script_path --daemon" || true
+}
+
 is_process_running() {
   local pid="$1"
 
@@ -91,6 +97,11 @@ cleanup_state_if_current() {
   fi
 }
 
+handle_shutdown() {
+  cleanup_state_if_current
+  exit 0
+}
+
 ensure_runtime_requirements() {
   validate_positive_integer "CNB_SSH_RECONNECT_DELAY_SECONDS" "$reconnect_delay_seconds"
   validate_positive_integer "CNB_SSH_CONNECT_TIMEOUT_SECONDS" "$connect_timeout_seconds"
@@ -106,7 +117,8 @@ ensure_runtime_requirements() {
 run_daemon() {
   local target
 
-  trap cleanup_state_if_current EXIT INT TERM
+  trap cleanup_state_if_current EXIT
+  trap handle_shutdown INT TERM
 
   ensure_state_dir
   ensure_runtime_requirements
@@ -121,6 +133,7 @@ run_daemon() {
       -T \
       -o "BatchMode=yes" \
       -o "ConnectTimeout=$connect_timeout_seconds" \
+      -o "StrictHostKeyChecking=$strict_host_key_checking" \
       -o "ServerAliveInterval=$server_alive_interval" \
       -o "ServerAliveCountMax=$server_alive_count_max" \
       "$target"; then
@@ -138,23 +151,24 @@ run_daemon() {
 }
 
 start_daemon() {
-  local existing_pid
+  local -a existing_pids=()
   local daemon_pid
 
   ensure_state_dir
   ensure_runtime_requirements
   resolve_remote_ssh_target >/dev/null
 
-  existing_pid="$(read_pid 2>/dev/null || true)"
-  if is_process_running "$existing_pid"; then
-    printf '已在后台运行，pid=%s\n日志: %s\n' "$existing_pid" "$log_file"
+  mapfile -t existing_pids < <(list_daemon_pids)
+  if [ "${#existing_pids[@]}" -gt 0 ]; then
+    printf '%s\n' "${existing_pids[0]}" >"$pid_file"
+    printf '已在后台运行，pid=%s\n日志: %s\n' "${existing_pids[0]}" "$log_file"
     return
   fi
 
   rm -f "$pid_file"
-  touch "$log_file"
+  : >"$log_file"
 
-  nohup "$0" --daemon >>"$log_file" 2>&1 </dev/null &
+  nohup "$script_path" --daemon >>"$log_file" 2>&1 </dev/null &
   daemon_pid=$!
 
   sleep 1
@@ -168,16 +182,17 @@ start_daemon() {
 }
 
 status_daemon() {
-  local existing_pid
+  local -a existing_pids=()
   local target="<unknown>"
 
-  existing_pid="$(read_pid 2>/dev/null || true)"
+  mapfile -t existing_pids < <(list_daemon_pids)
   if [ -f "$target_file" ]; then
     target="$(cat "$target_file")"
   fi
 
-  if is_process_running "$existing_pid"; then
-    printf '运行中，pid=%s\n日志: %s\n目标: %s\n' "$existing_pid" "$log_file" "$target"
+  if [ "${#existing_pids[@]}" -gt 0 ]; then
+    printf '%s\n' "${existing_pids[0]}" >"$pid_file"
+    printf '运行中，pid=%s\n日志: %s\n目标: %s\n' "${existing_pids[0]}" "$log_file" "$target"
     return
   fi
 
@@ -186,20 +201,41 @@ status_daemon() {
 }
 
 stop_daemon() {
-  local existing_pid
+  local -a existing_pids=()
+  local -a child_pids=()
+  local pid
+  local child_pid
 
-  existing_pid="$(read_pid 2>/dev/null || true)"
-  if ! is_process_running "$existing_pid"; then
+  mapfile -t existing_pids < <(list_daemon_pids)
+  if [ "${#existing_pids[@]}" -eq 0 ]; then
     rm -f "$pid_file"
     rm -f "$target_file"
     echo "未运行"
     return
   fi
 
-  kill "$existing_pid"
+  for pid in "${existing_pids[@]}"; do
+    mapfile -t child_pids < <(pgrep -P "$pid" || true)
+    for child_pid in "${child_pids[@]}"; do
+      kill "$child_pid" >/dev/null 2>&1 || true
+    done
+    kill "$pid"
+  done
+
+  sleep 1
+  for pid in "${existing_pids[@]}"; do
+    if is_process_running "$pid"; then
+      mapfile -t child_pids < <(pgrep -P "$pid" || true)
+      for child_pid in "${child_pids[@]}"; do
+        kill -9 "$child_pid" >/dev/null 2>&1 || true
+      done
+      kill -9 "$pid" >/dev/null 2>&1 || true
+    fi
+  done
+
   rm -f "$pid_file"
   rm -f "$target_file"
-  printf '已停止，pid=%s\n' "$existing_pid"
+  printf '已停止，共 %s 个实例\n' "${#existing_pids[@]}"
 }
 
 action="${1:-start}"
