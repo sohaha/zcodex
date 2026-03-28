@@ -9,12 +9,12 @@ RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
 description = "Watch tldr usage in codex-tui.log"
 run = '''
 RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
-| RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'ToolCall: tldr|native-tldr'
+| RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'ToolCall: tldr '
 '''
 
 [tasks.codex-watch-rtk]
 description = "Watch embedded RTK routing in codex-tui.log"
 run = '''
 RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
-| RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'shell_command routed via embedded RTK|rewritten: .*codex rtk|embedded RTK allowlist|embedded RTK rewriter'
+| RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'shell_command routed via embedded RTK|rewritten: .*codex rtk|command is not in the embedded RTK allowlist|embedded RTK rewriter'
 '''
