@@ -9,6 +9,7 @@ pub(crate) mod network_approval;
 pub mod orchestrator;
 pub mod parallel;
 pub mod registry;
+pub(crate) mod rewrite;
 pub mod router;
 pub mod runtimes;
 pub mod sandboxing;

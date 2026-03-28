@@ -24,6 +24,7 @@ pub struct TldrDaemonConfigFile {
 #[derive(Debug, Default, Deserialize)]
 pub struct TldrSemanticConfigFile {
     pub enabled: Option<bool>,
+    pub model: Option<String>,
     pub auto_reindex_threshold: Option<usize>,
     pub ignore: Option<Vec<String>>,
     pub embedding: Option<TldrSemanticEmbeddingConfigFile>,
@@ -78,6 +79,9 @@ fn apply_daemon_config(config: &mut DaemonConfig, file: TldrDaemonConfigFile) {
 fn apply_semantic_config(config: &mut SemanticConfig, file: TldrSemanticConfigFile) {
     if let Some(enabled) = file.enabled {
         config.enabled = enabled;
+    }
+    if let Some(model) = file.model {
+        config.model = model;
     }
     if let Some(auto_reindex_threshold) = file.auto_reindex_threshold {
         config.auto_reindex_threshold = auto_reindex_threshold;
@@ -139,6 +143,7 @@ socket_mode = "manual"
 
 [semantic]
 enabled = true
+model = "jina-code"
 auto_reindex_threshold = 3
 ignore = ["generated.rs"]
 
@@ -157,6 +162,7 @@ idle_timeout_secs = 42
         assert!(!config.daemon.auto_start);
         assert_eq!(config.daemon.socket_mode, "manual");
         assert!(config.semantic.enabled);
+        assert_eq!(config.semantic.model, "jina-code");
         assert_eq!(config.semantic.auto_reindex_threshold, 3);
         assert_eq!(config.semantic.ignore, vec!["generated.rs".to_string()]);
         assert!(config.semantic.embedding.enabled);

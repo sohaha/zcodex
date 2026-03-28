@@ -30,8 +30,8 @@
     "4": {
       "status": "blocked",
       "startTime": "2026-03-26T10:00:11Z",
-      "endTime": "2026-03-26T18:58:00Z",
-      "note": "Stage 4 switched to cargo nextest per user request; codex-native-tldr and codex-mcp-server passed, but codex-cli and release build are blocked by unrelated codex-app-server compile errors in app-server/src/openai_compat/translator.rs"
+      "endTime": "2026-03-28T15:40:00Z",
+      "note": "2026-03-28 selective sync landed search/calls/dead/arch/diagnostics/doctor plus semantic phase-2 cache reuse. codex-native-tldr full tests passed; codex-cli and codex-mcp-server cargo check passed. Remaining Stage 4 blockers are environment-side: cli/mcp full test-profile compilation timed out on shared Cargo locks, bazel-lock-update lacks bazel, and bazel-lock-check references a missing script."
     },
     "1": {
       "startTime": "2026-03-25T09:00:16Z",
@@ -222,6 +222,10 @@
       "note": "documented semantic source/status lifecycle outputs so downstream clients see cache hits and lock states"
     },
     {
+      "at": "2026-03-28T07:41:42Z",
+      "note": "completed the latest llm-tldr selective sync round: native-tldr/CLI/MCP now expose search/calls/dead/arch/diagnostics/doctor, daemon start/stop wiring, expanded language coverage, and semantic phase-2 local cache persistence; native-tldr tests passed and cli/mcp cargo check passed"
+    },
+    {
       "note": "landed MCP semantic daemon cache reuse black-box regression, revalidated codex-mcp-server targeted tests plus full 30-test crate suite, and cleaned the new test's clippy expect_used warning",
       "at": "2026-03-26T01:20:00Z"
     },
@@ -260,6 +264,10 @@
     {
       "at": "2026-03-27T18:26:24Z",
       "note": "completed selective sync for llm-tldr imports/importers surfaces plus targeted regressions across native-tldr, CLI, MCP, and core"
+    },
+    {
+      "at": "2026-03-28T15:40:00Z",
+      "note": "completed selective sync round for llm-tldr parity: CLI/MCP/native-tldr now expose search/calls/dead/arch/diagnostics/doctor, impact switched to reverse call graph semantics, and semantic phase-2 persists/reuses local indexes via fastembed-backed vectors."
     }
   ],
   "feature": "codex-cli-native-tldr",

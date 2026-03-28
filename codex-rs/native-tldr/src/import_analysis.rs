@@ -16,7 +16,7 @@ pub(crate) fn collect_imports(
     request: ImportsRequest,
 ) -> Result<ImportsResponse> {
     let index = SemanticIndexer::new(config.semantic.clone())
-        .build_index(project_root, request.language)?;
+        .load_or_build_index(project_root, request.language)?;
     let normalized_path = normalize_request_path(project_root, &request.path)?;
     let imports = index
         .units
@@ -40,12 +40,15 @@ pub(crate) fn collect_importers(
     request: ImportersRequest,
 ) -> Result<ImportersResponse> {
     let index = SemanticIndexer::new(config.semantic.clone())
-        .build_index(project_root, request.language)?;
+        .load_or_build_index(project_root, request.language)?;
     let matches = index
         .units
         .iter()
         .flat_map(|unit| {
-            unit.imports.iter().filter(|&import| import.contains(&request.module)).map(|import| ImporterMatch {
+            unit.imports
+                .iter()
+                .filter(|&import| import.contains(&request.module))
+                .map(|import| ImporterMatch {
                     path: unit.path.display().to_string(),
                     line: unit.line,
                     symbol: unit.symbol.clone(),

@@ -5941,6 +5941,27 @@ allow_login_shell = false
 }
 
 #[test]
+fn config_loads_auto_tldr_routing_from_toml() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+model = "gpt-5.1"
+auto_tldr_routing = "off"
+"#,
+    )
+    .expect("TOML deserialization should succeed for auto_tldr_routing");
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.auto_tldr_routing, AutoTldrRoutingMode::Off);
+    Ok(())
+}
+
+#[test]
 fn config_loads_mcp_oauth_callback_url_from_toml() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let toml = r#"

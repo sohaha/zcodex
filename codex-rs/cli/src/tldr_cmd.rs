@@ -8,6 +8,10 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::api::AnalysisResponse;
+use codex_native_tldr::api::DiagnosticsRequest;
+use codex_native_tldr::api::DiagnosticsResponse;
+use codex_native_tldr::api::DoctorResponse;
+use codex_native_tldr::api::SearchRequest;
 use codex_native_tldr::daemon::TldrDaemon;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
@@ -15,6 +19,7 @@ use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
+use codex_native_tldr::daemon::read_live_pid;
 use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
@@ -85,6 +90,27 @@ pub enum TldrSubcommand {
     /// 运行语义检索。
     Semantic(TldrSemanticCommand),
 
+    /// 预热最靠近 daemon 的索引缓存。
+    Warm(TldrWarmCommand),
+
+    /// 在索引中搜索匹配。
+    Search(TldrSearchCommand),
+
+    /// 列出调用图中的所有调用边。
+    Calls(TldrAnalyzeCommand),
+
+    /// 找出死代码候选项。
+    Dead(TldrAnalyzeCommand),
+
+    /// 展示调用拓扑结构统计。
+    Arch(TldrAnalyzeCommand),
+
+    /// 运行语言诊断工具集合。
+    Diagnostics(TldrDiagnosticsCommand),
+
+    /// 运行诊断工具侦测可用项。
+    Doctor(TldrDoctorCommand),
+
     /// 与 native-tldr daemon 直接交互。
     Daemon(TldrDaemonCli),
 
@@ -95,24 +121,44 @@ pub enum TldrSubcommand {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum CliLanguage {
+    C,
+    Cpp,
+    Csharp,
+    Elixir,
+    Java,
     Rust,
     Typescript,
     Javascript,
+    Lua,
+    Luau,
     Python,
     Go,
     Php,
+    Ruby,
+    Scala,
+    Swift,
     Zig,
 }
 
 impl From<CliLanguage> for SupportedLanguage {
     fn from(value: CliLanguage) -> Self {
         match value {
+            CliLanguage::C => SupportedLanguage::C,
+            CliLanguage::Cpp => SupportedLanguage::Cpp,
+            CliLanguage::Csharp => SupportedLanguage::CSharp,
+            CliLanguage::Elixir => SupportedLanguage::Elixir,
+            CliLanguage::Java => SupportedLanguage::Java,
             CliLanguage::Rust => SupportedLanguage::Rust,
             CliLanguage::Typescript => SupportedLanguage::TypeScript,
             CliLanguage::Javascript => SupportedLanguage::JavaScript,
+            CliLanguage::Lua => SupportedLanguage::Lua,
+            CliLanguage::Luau => SupportedLanguage::Luau,
             CliLanguage::Python => SupportedLanguage::Python,
             CliLanguage::Go => SupportedLanguage::Go,
             CliLanguage::Php => SupportedLanguage::Php,
+            CliLanguage::Ruby => SupportedLanguage::Ruby,
+            CliLanguage::Scala => SupportedLanguage::Scala,
+            CliLanguage::Swift => SupportedLanguage::Swift,
             CliLanguage::Zig => SupportedLanguage::Zig,
         }
     }
@@ -241,6 +287,70 @@ pub struct TldrSemanticCommand {
 }
 
 #[derive(Debug, Parser)]
+pub struct TldrWarmCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct TldrSearchCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 目标语言。
+    #[arg(long, value_enum)]
+    pub lang: Option<CliLanguage>,
+
+    /// 匹配模式。
+    #[arg(value_name = "PATTERN")]
+    pub pattern: String,
+
+    /// 最多返回多少条结果。
+    #[arg(long, default_value_t = 100)]
+    pub max_results: usize,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct TldrDiagnosticsCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 目标文件路径。
+    #[arg(value_name = "PATH")]
+    pub path: PathBuf,
+
+    /// 目标语言；未指定时按文件扩展名推断。
+    #[arg(long, value_enum)]
+    pub lang: Option<CliLanguage>,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct TldrDoctorCommand {
+    /// 项目根目录。
+    #[arg(long, default_value = ".")]
+    pub project: PathBuf,
+
+    /// 以 JSON 输出。
+    #[arg(long, default_value_t = false)]
+    pub json: bool,
+}
+
+#[derive(Debug, Parser)]
 pub struct TldrDaemonCli {
     /// 项目根目录。
     #[arg(long, default_value = ".")]
@@ -263,6 +373,12 @@ pub struct TldrInternalDaemonCli {
 
 #[derive(Debug, Subcommand)]
 pub enum TldrDaemonSubcommand {
+    /// 启动 daemon。
+    Start,
+
+    /// 停止 daemon。
+    Stop,
+
     /// 检查 daemon 是否在线。
     Ping,
 
@@ -285,15 +401,8 @@ pub enum TldrDaemonSubcommand {
 pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
     match cli.subcommand {
         TldrSubcommand::Languages => {
-            for language in [
-                SupportedLanguage::Rust,
-                SupportedLanguage::TypeScript,
-                SupportedLanguage::JavaScript,
-                SupportedLanguage::Python,
-                SupportedLanguage::Go,
-                SupportedLanguage::Php,
-                SupportedLanguage::Zig,
-            ] {
+            let registry = LanguageRegistry;
+            for language in registry.supported_languages() {
                 println!("{}", language.as_str());
             }
         }
@@ -316,7 +425,7 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
             run_analysis_command(cmd, AnalysisKind::CallGraph).await?;
         }
         TldrSubcommand::Impact(cmd) => {
-            run_analysis_command(cmd, AnalysisKind::Pdg).await?;
+            run_analysis_command(cmd, AnalysisKind::Impact).await?;
         }
         TldrSubcommand::ChangeImpact(cmd) => {
             run_change_impact_command(cmd).await?;
@@ -332,6 +441,27 @@ pub async fn run_tldr_command(cli: TldrCli) -> Result<()> {
         }
         TldrSubcommand::Daemon(cmd) => {
             run_daemon_command(cmd).await?;
+        }
+        TldrSubcommand::Warm(cmd) => {
+            run_warm_command(cmd).await?;
+        }
+        TldrSubcommand::Search(cmd) => {
+            run_search_command(cmd).await?;
+        }
+        TldrSubcommand::Calls(cmd) => {
+            run_analysis_command(cmd, AnalysisKind::Calls).await?;
+        }
+        TldrSubcommand::Dead(cmd) => {
+            run_analysis_command(cmd, AnalysisKind::Dead).await?;
+        }
+        TldrSubcommand::Arch(cmd) => {
+            run_analysis_command(cmd, AnalysisKind::Arch).await?;
+        }
+        TldrSubcommand::Diagnostics(cmd) => {
+            run_diagnostics_command(cmd).await?;
+        }
+        TldrSubcommand::Doctor(cmd) => {
+            run_doctor_command(cmd).await?;
         }
         TldrSubcommand::InternalDaemon(cmd) => {
             run_internal_daemon_command(cmd).await?;
@@ -652,6 +782,171 @@ async fn run_importers_command(cmd: TldrImportersCommand) -> Result<()> {
     Ok(())
 }
 
+async fn run_warm_command(cmd: TldrWarmCommand) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let Some(response) =
+        query_daemon_with_autostart(&project_root, &TldrDaemonCommand::Warm).await?
+    else {
+        bail!(
+            "native-tldr daemon is unavailable for {}",
+            project_root.display()
+        );
+    };
+
+    if cmd.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&daemon_response_payload(
+                "warm",
+                &project_root,
+                &response
+            ))?
+        );
+    } else {
+        for line in render_daemon_response_text("warm", &response) {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let language = cmd.lang.map(Into::into);
+    let request = SearchRequest {
+        pattern: cmd.pattern.clone(),
+        language,
+        max_results: cmd.max_results.max(1),
+    };
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Search {
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let search = response
+            .search
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing search payload"))?;
+        ("daemon", Some(response.message), search)
+    } else {
+        let engine = TldrEngine::builder(project_root.clone())
+            .with_config(config)
+            .build();
+        let response = engine.search(request)?;
+        (
+            "local",
+            Some("daemon unavailable; used local engine".to_string()),
+            response,
+        )
+    };
+    let payload = json!({
+        "action": "search",
+        "project": project_root,
+        "language": language.map(SupportedLanguage::as_str),
+        "source": source,
+        "message": message,
+        "pattern": cmd.pattern,
+        "search": response,
+    });
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_search_response_text(
+            source,
+            payload.get("message").and_then(serde_json::Value::as_str),
+            payload["pattern"].as_str().unwrap_or_default(),
+            payload["search"]["indexed_files"]
+                .as_u64()
+                .unwrap_or_default() as usize,
+            payload["search"]["matches"].as_array().map_or(0, Vec::len),
+        ) {
+            println!("{line}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_diagnostics_command(cmd: TldrDiagnosticsCommand) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let requested_path = cmd.path.display().to_string();
+    let language = cmd
+        .lang
+        .map(Into::into)
+        .or_else(|| SupportedLanguage::from_path(&cmd.path))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "`--lang` is required when file extension is unsupported for {}",
+                cmd.path.display()
+            )
+        })?;
+    let request = DiagnosticsRequest {
+        language,
+        path: requested_path.clone(),
+    };
+    let daemon_response = query_daemon_with_autostart(
+        &project_root,
+        &TldrDaemonCommand::Diagnostics {
+            request: request.clone(),
+        },
+    )
+    .await?;
+    let (source, response) = if let Some(response) = daemon_response {
+        let diagnostics = response
+            .diagnostics
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing diagnostics payload"))?;
+        ("daemon", diagnostics)
+    } else {
+        let engine = TldrEngine::builder(project_root.clone())
+            .with_config(config)
+            .build();
+        let response = engine.diagnostics(request)?;
+        ("local", response)
+    };
+    let payload = json!({
+        "action": "diagnostics",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "path": requested_path,
+        "diagnostics": response,
+    });
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_diagnostics_response_text(language, source, &response) {
+            println!("{line}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_doctor_command(cmd: TldrDoctorCommand) -> Result<()> {
+    let project_root = cmd.project.canonicalize()?;
+    let config = load_tldr_config(&project_root)?;
+    let engine = TldrEngine::builder(project_root.clone())
+        .with_config(config)
+        .build();
+    let response = engine.doctor();
+    let payload = json!({
+        "action": "doctor",
+        "project": project_root,
+        "doctor": response,
+    });
+    if cmd.json {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        for line in render_doctor_response_text(&response) {
+            println!("{line}");
+        }
+    }
+    Ok(())
+}
+
 async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
     let project_root = cmd.project.canonicalize()?;
     let requested_path = cmd.path.display().to_string();
@@ -833,7 +1128,11 @@ fn analysis_action_name(kind: AnalysisKind) -> &'static str {
         AnalysisKind::Ast => "tree",
         AnalysisKind::Extract => "extract",
         AnalysisKind::CallGraph => "context",
-        AnalysisKind::Pdg => "impact",
+        AnalysisKind::Impact => "impact",
+        AnalysisKind::Pdg => "pdg",
+        AnalysisKind::Calls => "calls",
+        AnalysisKind::Dead => "dead",
+        AnalysisKind::Arch => "arch",
         AnalysisKind::ChangeImpact => "change-impact",
         AnalysisKind::Cfg => "cfg",
         AnalysisKind::Dfg => "dfg",
@@ -1016,6 +1315,38 @@ fn render_importers_response_text(
     lines
 }
 
+fn render_doctor_response_text(response: &DoctorResponse) -> Vec<String> {
+    let available_tools = response.tools.iter().filter(|tool| tool.available).count();
+    let mut lines = vec![
+        format!("tools checked: {}", response.tools.len()),
+        format!("tools available: {available_tools}"),
+        format!("message: {}", response.message),
+    ];
+    for tool in &response.tools {
+        lines.push(format!("tool {}: {}", tool.tool, tool.available));
+    }
+    lines
+}
+
+fn render_search_response_text(
+    source: &str,
+    message: Option<&str>,
+    pattern: &str,
+    indexed_files: usize,
+    match_count: usize,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("source: {source}"),
+        format!("pattern: {pattern}"),
+        format!("indexed files: {indexed_files}"),
+        format!("matches: {match_count}"),
+    ];
+    if let Some(message) = message {
+        lines.push(format!("message: {message}"));
+    }
+    lines
+}
+
 fn render_semantic_response_text(
     language: SupportedLanguage,
     source: &str,
@@ -1050,29 +1381,40 @@ fn render_semantic_response_text(
     lines
 }
 
+fn render_diagnostics_response_text(
+    language: SupportedLanguage,
+    source: &str,
+    response: &DiagnosticsResponse,
+) -> Vec<String> {
+    let mut lines = vec![
+        format!("language: {}", language.as_str()),
+        format!("source: {source}"),
+        format!("path: {}", response.path),
+        format!("tools: {}", response.tools.len()),
+        format!("diagnostics: {}", response.diagnostics.len()),
+        format!("message: {}", response.message),
+    ];
+    for diagnostic in &response.diagnostics {
+        lines.push(format!(
+            "{}:{}:{} {} {}",
+            diagnostic.path,
+            diagnostic.line,
+            diagnostic.column,
+            diagnostic.source,
+            diagnostic.message.replace('\n', "\\n")
+        ));
+    }
+    lines
+}
+
 async fn run_daemon_command(cmd: TldrDaemonCli) -> Result<()> {
     let project_root = cmd.project.canonicalize()?;
-    let (action, command) = daemon_action_and_command(&cmd.subcommand);
-
-    let Some(response) = query_daemon_with_autostart(&project_root, &command).await? else {
-        bail!(
-            "native-tldr daemon is unavailable for {}",
-            project_root.display()
-        );
-    };
-
-    if cmd.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&daemon_response_payload(
-                action,
-                &project_root,
-                &response
-            ))?
-        );
-    } else {
-        for line in render_daemon_response_text(action, &response) {
-            println!("{line}");
+    match cmd.subcommand {
+        TldrDaemonSubcommand::Start => run_daemon_start_command(&project_root, cmd.json).await?,
+        TldrDaemonSubcommand::Stop => run_daemon_stop_command(&project_root, cmd.json).await?,
+        subcommand => {
+            let (action, command) = daemon_action_and_command(&subcommand);
+            run_daemon_action(&project_root, cmd.json, action, command).await?;
         }
     }
 
@@ -1083,6 +1425,9 @@ fn daemon_action_and_command(
     subcommand: &TldrDaemonSubcommand,
 ) -> (&'static str, TldrDaemonCommand) {
     match subcommand {
+        TldrDaemonSubcommand::Start | TldrDaemonSubcommand::Stop => {
+            unreachable!("start/stop are handled before daemon command mapping")
+        }
         TldrDaemonSubcommand::Ping => ("ping", TldrDaemonCommand::Ping),
         TldrDaemonSubcommand::Warm => ("warm", TldrDaemonCommand::Warm),
         TldrDaemonSubcommand::Snapshot => ("snapshot", TldrDaemonCommand::Snapshot),
@@ -1167,6 +1512,118 @@ fn render_daemon_response_text(
     }
 
     lines
+}
+
+async fn run_daemon_action(
+    project_root: &Path,
+    json_output: bool,
+    action: &str,
+    command: TldrDaemonCommand,
+) -> Result<()> {
+    let Some(response) = query_daemon_with_autostart(project_root, &command).await? else {
+        bail!(
+            "native-tldr daemon is unavailable for {}",
+            project_root.display()
+        );
+    };
+
+    if json_output {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&daemon_response_payload(
+                action,
+                project_root,
+                &response
+            ))?
+        );
+    } else {
+        for line in render_daemon_response_text(action, &response) {
+            println!("{line}");
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_daemon_start_command(project_root: &Path, json_output: bool) -> Result<()> {
+    let started = ensure_daemon_running(project_root).await?;
+    let status = query_daemon(project_root, &TldrDaemonCommand::Status).await?;
+    let Some(response) = status else {
+        bail!(
+            "native-tldr daemon did not become ready for {}",
+            project_root.display()
+        );
+    };
+    let mut payload = daemon_response_payload("start", project_root, &response);
+    if let Some(object) = payload.as_object_mut() {
+        object.insert("started".to_string(), json!(started));
+    }
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("started: {started}");
+        for line in render_daemon_response_text("start", &response) {
+            println!("{line}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_daemon_stop_command(project_root: &Path, json_output: bool) -> Result<()> {
+    let (stopped, message) = stop_native_tldr_daemon(project_root).await?;
+    let payload = json!({
+        "action": "stop",
+        "project": project_root,
+        "stopped": stopped,
+        "message": message,
+    });
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("stopped: {stopped}");
+        println!("message: {message}");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn stop_native_tldr_daemon(project_root: &Path) -> Result<(bool, String)> {
+    let pid_path = pid_path_for_project(project_root);
+    let pid = std::fs::read_to_string(&pid_path)
+        .ok()
+        .and_then(|value| value.trim().parse::<i32>().ok());
+    let Some(pid) = pid else {
+        cleanup_stale_daemon_artifacts(project_root);
+        return Ok((false, "daemon pid file is missing".to_string()));
+    };
+    if !read_live_pid(&pid_path).unwrap_or(false) {
+        cleanup_stale_daemon_artifacts(project_root);
+        return Ok((false, "stale daemon artifacts cleaned".to_string()));
+    }
+
+    let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    if result != 0 {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error.into());
+        }
+    }
+
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(3) {
+        if !read_live_pid(&pid_path).unwrap_or(false) {
+            cleanup_stale_daemon_artifacts(project_root);
+            return Ok((true, format!("stopped daemon pid {pid}")));
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    bail!("daemon pid {pid} did not exit within timeout");
+}
+
+#[cfg(not(unix))]
+async fn stop_native_tldr_daemon(_project_root: &Path) -> Result<(bool, String)> {
+    bail!("daemon stop is only supported on unix in this build")
 }
 
 async fn query_daemon_with_autostart(
@@ -1592,7 +2049,7 @@ mod output_tests {
                 line: None,
             },
             &AnalysisResponse {
-                kind: AnalysisKind::Pdg,
+                kind: AnalysisKind::Impact,
                 summary:
                     "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1"
                         .to_string(),
@@ -1624,7 +2081,7 @@ mod output_tests {
             payload["summary"],
             "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1"
         );
-        assert_eq!(payload["analysis"]["kind"], "pdg");
+        assert_eq!(payload["analysis"]["kind"], "impact");
         assert_eq!(
             payload["analysis"]["summary"],
             "impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1"
@@ -2176,6 +2633,8 @@ mod lifecycle_tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 3,
@@ -2226,6 +2685,8 @@ mod lifecycle_tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -2250,6 +2711,8 @@ mod lifecycle_tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 2,
@@ -2280,6 +2743,8 @@ mod lifecycle_tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 3,
@@ -2311,6 +2776,8 @@ mod lifecycle_tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                 cached_entries: 1,
@@ -2380,6 +2847,8 @@ mod lifecycle_tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -3374,6 +3843,8 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Notify { .. } => "notify",
                         TldrDaemonCommand::Imports { .. } => "imports",
                         TldrDaemonCommand::Importers { .. } => "importers",
+                        TldrDaemonCommand::Search { .. } => "search",
+                        TldrDaemonCommand::Diagnostics { .. } => "diagnostics",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),
@@ -3381,6 +3852,8 @@ mod lifecycle_tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -3473,6 +3946,8 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Notify { .. } => "notify",
                         TldrDaemonCommand::Imports { .. } => "imports",
                         TldrDaemonCommand::Importers { .. } => "importers",
+                        TldrDaemonCommand::Search { .. } => "search",
+                        TldrDaemonCommand::Diagnostics { .. } => "diagnostics",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),
@@ -3480,6 +3955,8 @@ mod lifecycle_tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,

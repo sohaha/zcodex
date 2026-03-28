@@ -258,6 +258,29 @@ pub struct Permissions {
     pub macos_seatbelt_profile_extensions: Option<MacOsSeatbeltProfileExtensions>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AutoTldrRoutingMode {
+    Off,
+    #[default]
+    Safe,
+    Aggressive,
+}
+
+impl AutoTldrRoutingMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Safe => "safe",
+            Self::Aggressive => "aggressive",
+        }
+    }
+
+    pub const fn is_off(self) -> bool {
+        matches!(self, Self::Off)
+    }
+}
+
 /// Application configuration loaded from disk and merged with overrides.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -307,6 +330,10 @@ pub struct Config {
 
     /// Effective permission configuration for shell tool execution.
     pub permissions: Permissions,
+
+    /// Runtime policy for automatically rewriting code-search tool calls to
+    /// native tldr.
+    pub auto_tldr_routing: AutoTldrRoutingMode,
 
     /// Configures who approval requests are routed to for review once they have
     /// been escalated. This does not disable separate safety checks such as
@@ -1283,6 +1310,10 @@ pub struct ConfigToml {
     /// requests are rejected, and omitting `login` defaults to a non-login
     /// shell.
     pub allow_login_shell: Option<bool>,
+
+    /// Runtime policy for automatically rewriting code-search tool calls to
+    /// native tldr.
+    pub auto_tldr_routing: Option<AutoTldrRoutingMode>,
 
     /// Sandbox mode to use.
     pub sandbox_mode: Option<SandboxMode>,
@@ -2511,6 +2542,7 @@ impl Config {
 
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
+        let auto_tldr_routing = cfg.auto_tldr_routing.unwrap_or_default();
 
         let history = cfg.history.unwrap_or_default();
 
@@ -2809,6 +2841,7 @@ impl Config {
                 windows_sandbox_private_desktop,
                 macos_seatbelt_profile_extensions: None,
             },
+            auto_tldr_routing,
             approvals_reviewer,
             enforce_residency: enforce_residency.value,
             notify: cfg.notify,

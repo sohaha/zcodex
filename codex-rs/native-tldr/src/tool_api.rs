@@ -1,8 +1,10 @@
 use crate::TldrEngine;
 use crate::api::AnalysisKind;
 use crate::api::AnalysisRequest;
+use crate::api::DiagnosticsRequest;
 use crate::api::ImportersRequest;
 use crate::api::ImportsRequest;
+use crate::api::SearchRequest;
 use crate::daemon::TldrDaemonCommand;
 use crate::daemon::TldrDaemonResponse;
 use crate::daemon::daemon_health;
@@ -31,16 +33,22 @@ use tokio::time::sleep;
 #[serde(rename_all = "kebab-case")]
 pub enum TldrToolAction {
     Tree,
+    Search,
     Extract,
     Imports,
     Importers,
     Context,
     Impact,
+    Calls,
+    Dead,
+    Arch,
     ChangeImpact,
     Cfg,
     Dfg,
     Slice,
     Semantic,
+    Diagnostics,
+    Doctor,
     Ping,
     Warm,
     Snapshot,
@@ -52,11 +60,21 @@ pub enum TldrToolAction {
 #[serde(rename_all = "kebab-case")]
 pub enum TldrToolLanguage {
     Rust,
+    C,
+    Cpp,
+    Csharp,
+    Elixir,
+    Java,
     Typescript,
     Javascript,
+    Lua,
+    Luau,
     Python,
     Go,
     Php,
+    Ruby,
+    Scala,
+    Swift,
     Zig,
 }
 
@@ -64,11 +82,21 @@ impl From<TldrToolLanguage> for SupportedLanguage {
     fn from(value: TldrToolLanguage) -> Self {
         match value {
             TldrToolLanguage::Rust => SupportedLanguage::Rust,
+            TldrToolLanguage::C => SupportedLanguage::C,
+            TldrToolLanguage::Cpp => SupportedLanguage::Cpp,
+            TldrToolLanguage::Csharp => SupportedLanguage::CSharp,
+            TldrToolLanguage::Elixir => SupportedLanguage::Elixir,
+            TldrToolLanguage::Java => SupportedLanguage::Java,
             TldrToolLanguage::Typescript => SupportedLanguage::TypeScript,
             TldrToolLanguage::Javascript => SupportedLanguage::JavaScript,
+            TldrToolLanguage::Lua => SupportedLanguage::Lua,
+            TldrToolLanguage::Luau => SupportedLanguage::Luau,
             TldrToolLanguage::Python => SupportedLanguage::Python,
             TldrToolLanguage::Go => SupportedLanguage::Go,
             TldrToolLanguage::Php => SupportedLanguage::Php,
+            TldrToolLanguage::Ruby => SupportedLanguage::Ruby,
+            TldrToolLanguage::Scala => SupportedLanguage::Scala,
+            TldrToolLanguage::Swift => SupportedLanguage::Swift,
             TldrToolLanguage::Zig => SupportedLanguage::Zig,
         }
     }
@@ -134,6 +162,14 @@ where
             )
             .await
         }
+        TldrToolAction::Search => {
+            let pattern = args
+                .query
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("`query` is required for action=search"))?;
+            let language = args.language.map(Into::into);
+            run_search_tool(&project_root, language, pattern, &query, &ensure_running).await
+        }
         TldrToolAction::Extract => {
             let path = args
                 .path
@@ -187,6 +223,48 @@ where
             run_analysis_tool(
                 &project_root,
                 TldrToolAction::Impact,
+                language,
+                args.symbol,
+                None,
+                None,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Calls => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Calls,
+                language,
+                args.symbol,
+                None,
+                None,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Dead => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Dead,
+                language,
+                args.symbol,
+                None,
+                None,
+                &query,
+                &ensure_running,
+            )
+            .await
+        }
+        TldrToolAction::Arch => {
+            let language = required_language(&args)?;
+            run_analysis_tool(
+                &project_root,
+                TldrToolAction::Arch,
                 language,
                 args.symbol,
                 None,
@@ -257,6 +335,15 @@ where
         TldrToolAction::Semantic => {
             run_semantic_tool(&project_root, args, &query, &ensure_running).await
         }
+        TldrToolAction::Diagnostics => {
+            let path = args
+                .path
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("`path` is required for action=diagnostics"))?;
+            let language = required_or_inferred_language(&args, Some(path.as_str()))?;
+            run_diagnostics_tool(&project_root, language, path, &query, &ensure_running).await
+        }
+        TldrToolAction::Doctor => run_doctor_tool(&project_root),
         TldrToolAction::Ping => {
             run_daemon_tool(
                 &project_root,
@@ -332,7 +419,10 @@ where
         TldrToolAction::Tree => AnalysisKind::Ast,
         TldrToolAction::Extract => AnalysisKind::Extract,
         TldrToolAction::Context => AnalysisKind::CallGraph,
-        TldrToolAction::Impact => AnalysisKind::Pdg,
+        TldrToolAction::Impact => AnalysisKind::Impact,
+        TldrToolAction::Calls => AnalysisKind::Calls,
+        TldrToolAction::Dead => AnalysisKind::Dead,
+        TldrToolAction::Arch => AnalysisKind::Arch,
         TldrToolAction::Cfg => AnalysisKind::Cfg,
         TldrToolAction::Dfg => AnalysisKind::Dfg,
         TldrToolAction::Slice => AnalysisKind::Slice,
@@ -509,6 +599,64 @@ where
     })
 }
 
+async fn run_search_tool<Q, E>(
+    project_root: &Path,
+    language: Option<SupportedLanguage>,
+    pattern: String,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let request = SearchRequest {
+        pattern: pattern.clone(),
+        language,
+        max_results: 100,
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Search {
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let search = response
+            .search
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing search payload"))?;
+        ("daemon", response.message, search)
+    } else {
+        let config = load_tldr_config(project_root)?;
+        let engine = TldrEngine::builder(project_root.to_path_buf())
+            .with_config(config)
+            .build();
+        let response = engine.search(request)?;
+        (
+            "local",
+            "daemon unavailable; used local engine".to_string(),
+            response,
+        )
+    };
+    let structured_content = json!({
+        "action": "search",
+        "project": project_root,
+        "language": language.map(SupportedLanguage::as_str),
+        "source": source,
+        "message": message,
+        "pattern": pattern,
+        "search": response,
+    });
+    let text = format!("search via {source}: {} matches", response.matches.len());
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
 pub async fn query_daemon_with_hooks<Q, E>(
     project_root: &Path,
     command: &TldrDaemonCommand,
@@ -550,16 +698,22 @@ pub fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
 pub fn action_name(action: &TldrToolAction) -> &'static str {
     match action {
         TldrToolAction::Tree => "tree",
+        TldrToolAction::Search => "search",
         TldrToolAction::Extract => "extract",
         TldrToolAction::Imports => "imports",
         TldrToolAction::Importers => "importers",
         TldrToolAction::Context => "context",
         TldrToolAction::Impact => "impact",
+        TldrToolAction::Calls => "calls",
+        TldrToolAction::Dead => "dead",
+        TldrToolAction::Arch => "arch",
         TldrToolAction::ChangeImpact => "change-impact",
         TldrToolAction::Cfg => "cfg",
         TldrToolAction::Dfg => "dfg",
         TldrToolAction::Slice => "slice",
         TldrToolAction::Semantic => "semantic",
+        TldrToolAction::Diagnostics => "diagnostics",
+        TldrToolAction::Doctor => "doctor",
         TldrToolAction::Ping => "ping",
         TldrToolAction::Warm => "warm",
         TldrToolAction::Snapshot => "snapshot",
@@ -692,6 +846,88 @@ where
         "imports {} via {source}: {import_count} imports",
         language.as_str()
     );
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
+async fn run_diagnostics_tool<Q, E>(
+    project_root: &Path,
+    language: SupportedLanguage,
+    path: String,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
+{
+    let request = DiagnosticsRequest {
+        language,
+        path: path.clone(),
+    };
+    let daemon_response = query_daemon_with_hooks(
+        project_root,
+        &TldrDaemonCommand::Diagnostics {
+            request: request.clone(),
+        },
+        query,
+        ensure_running,
+    )
+    .await?;
+    let (source, message, response) = if let Some(response) = daemon_response {
+        let diagnostics = response
+            .diagnostics
+            .ok_or_else(|| anyhow::anyhow!("daemon response missing diagnostics payload"))?;
+        ("daemon", response.message, diagnostics)
+    } else {
+        let config = load_tldr_config(project_root)?;
+        let engine = TldrEngine::builder(project_root.to_path_buf())
+            .with_config(config)
+            .build();
+        let response = engine.diagnostics(request)?;
+        (
+            "local",
+            "daemon unavailable; used local engine".to_string(),
+            response,
+        )
+    };
+    let structured_content = json!({
+        "action": "diagnostics",
+        "project": project_root,
+        "language": language.as_str(),
+        "source": source,
+        "message": message,
+        "path": path,
+        "diagnostics": response,
+    });
+    let text = format!(
+        "diagnostics {} via {source}: {} issues",
+        language.as_str(),
+        response.diagnostics.len()
+    );
+    Ok(TldrToolResult {
+        text,
+        structured_content,
+    })
+}
+
+fn run_doctor_tool(project_root: &Path) -> Result<TldrToolResult> {
+    let config = load_tldr_config(project_root)?;
+    let engine = TldrEngine::builder(project_root.to_path_buf())
+        .with_config(config)
+        .build();
+    let response = engine.doctor();
+    let structured_content = json!({
+        "action": "doctor",
+        "project": project_root,
+        "message": response.message,
+        "tools": response.tools,
+    });
+    let text = structured_content["message"]
+        .as_str()
+        .map_or_else(|| "doctor".to_string(), str::to_string);
     Ok(TldrToolResult {
         text,
         structured_content,
@@ -1034,7 +1270,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
               "type": "object",
               "properties": {
                 "action": {
-                  "enum": ["tree", "extract", "context", "impact", "change-impact", "cfg", "dfg", "slice"]
+                  "enum": ["tree", "extract", "context", "impact", "calls", "dead", "arch", "change-impact", "cfg", "dfg", "slice"]
                 },
                 "project": { "type": "string" },
                 "language": { "type": "string" },
@@ -1174,6 +1410,122 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "importers"
               ]
             },
+            "searchResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "search" },
+                "project": { "type": "string" },
+                "language": { "type": ["string", "null"] },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "pattern": { "type": "string" },
+                "search": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": { "type": "string" },
+                    "indexed_files": { "type": "integer" },
+                    "truncated": { "type": "boolean" },
+                    "matches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": { "type": "string" },
+                          "line": { "type": "integer" },
+                          "content": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "pattern",
+                "search"
+              ]
+            },
+            "diagnosticsResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "diagnostics" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "path": { "type": "string" },
+                "diagnostics": {
+                  "type": "object",
+                  "properties": {
+                    "language": { "type": "string" },
+                    "path": { "type": "string" },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tool": { "type": "string" },
+                          "available": { "type": "boolean" }
+                        }
+                      }
+                    },
+                    "diagnostics": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": { "type": "string" },
+                          "line": { "type": "integer" },
+                          "column": { "type": "integer" },
+                          "severity": { "type": "string" },
+                          "message": { "type": "string" },
+                          "code": { "type": ["string", "null"] },
+                          "source": { "type": "string" }
+                        }
+                      }
+                    },
+                    "message": { "type": "string" }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "path",
+                "diagnostics"
+              ]
+            },
+            "doctorResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "doctor" },
+                "project": { "type": "string" },
+                "message": { "type": "string" },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "tool": { "type": "string" },
+                      "available": { "type": "boolean" }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "message",
+                "tools"
+              ]
+            },
             "daemonResult": {
               "type": "object",
               "properties": {
@@ -1231,9 +1583,12 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
           },
           "oneOf": [
             { "$ref": "#/$defs/analysisResult" },
+            { "$ref": "#/$defs/searchResult" },
             { "$ref": "#/$defs/importsResult" },
             { "$ref": "#/$defs/importersResult" },
             { "$ref": "#/$defs/semanticResult" },
+            { "$ref": "#/$defs/diagnosticsResult" },
+            { "$ref": "#/$defs/doctorResult" },
             { "$ref": "#/$defs/daemonResult" }
           ]
         }"##,
@@ -1262,15 +1617,22 @@ mod tests {
     #[test]
     fn action_name_covers_analysis_actions() {
         assert_eq!(action_name(&TldrToolAction::Tree), "tree");
+        assert_eq!(action_name(&TldrToolAction::Search), "search");
         assert_eq!(action_name(&TldrToolAction::Extract), "extract");
         assert_eq!(action_name(&TldrToolAction::Imports), "imports");
         assert_eq!(action_name(&TldrToolAction::Importers), "importers");
         assert_eq!(action_name(&TldrToolAction::Context), "context");
         assert_eq!(action_name(&TldrToolAction::Impact), "impact");
+        assert_eq!(action_name(&TldrToolAction::Calls), "calls");
+        assert_eq!(action_name(&TldrToolAction::Dead), "dead");
+        assert_eq!(action_name(&TldrToolAction::Arch), "arch");
         assert_eq!(action_name(&TldrToolAction::ChangeImpact), "change-impact");
         assert_eq!(action_name(&TldrToolAction::Cfg), "cfg");
         assert_eq!(action_name(&TldrToolAction::Dfg), "dfg");
         assert_eq!(action_name(&TldrToolAction::Slice), "slice");
+        assert_eq!(action_name(&TldrToolAction::Semantic), "semantic");
+        assert_eq!(action_name(&TldrToolAction::Diagnostics), "diagnostics");
+        assert_eq!(action_name(&TldrToolAction::Doctor), "doctor");
     }
 
     #[test]
@@ -1306,6 +1668,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1348,6 +1712,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1390,6 +1756,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(crate::session::SessionSnapshot {
                             cached_entries: 0,
@@ -1439,6 +1807,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(crate::session::SessionSnapshot {
                             cached_entries: 2,
@@ -1743,6 +2113,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1785,6 +2157,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1842,6 +2216,8 @@ mod tests {
                         analysis: None,
                         imports: None,
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(crate::session::SessionSnapshot {
                             cached_entries: 1,

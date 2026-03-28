@@ -2,6 +2,7 @@ use super::parse_arguments;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
+use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
@@ -56,12 +57,20 @@ impl ToolHandler for TldrHandler {
             args.project = Some(turn.cwd.display().to_string());
         }
 
-        run_tldr_handler_with_hooks(
+        let saved_args = args.clone();
+        let output = run_tldr_handler_with_hooks(
             args,
             &|project_root, command| Box::pin(query_daemon(project_root, command)),
             &|project_root| Box::pin(ensure_daemon_running(project_root)),
         )
-        .await
+        .await?;
+        if output.success_for_logging() {
+            turn.auto_tldr_context
+                .write()
+                .await
+                .record_success(&saved_args);
+        }
+        Ok(output)
     }
 }
 

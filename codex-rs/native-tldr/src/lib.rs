@@ -4,12 +4,16 @@ pub mod analysis;
 pub mod api;
 pub mod config;
 pub mod daemon;
+mod diagnostics;
 mod import_analysis;
 pub mod lang_support;
 pub mod lifecycle;
 pub mod mcp;
+mod project_analysis;
 mod rust_analysis;
+mod search;
 pub mod semantic;
+mod semantic_cache;
 pub mod session;
 pub mod tool_api;
 pub mod wire;
@@ -17,18 +21,26 @@ pub mod wire;
 use crate::analysis::analyze_project;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+use crate::api::DiagnosticsRequest;
+use crate::api::DiagnosticsResponse;
+use crate::api::DoctorResponse;
 use crate::api::ImportersRequest;
 use crate::api::ImportersResponse;
 use crate::api::ImportsRequest;
 use crate::api::ImportsResponse;
+use crate::api::SearchRequest;
+use crate::api::SearchResponse;
 pub use crate::config::load_tldr_config;
 use crate::daemon::DaemonConfig;
 use crate::daemon::TldrDaemonConfigSummary;
+use crate::diagnostics::collect_diagnostics;
+use crate::diagnostics::doctor_tools;
 use crate::import_analysis::collect_importers;
 use crate::import_analysis::collect_imports;
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
 use crate::mcp::TldrToolDescriptor;
+use crate::search::search_project;
 use crate::semantic::SemanticConfig;
 use crate::semantic::SemanticIndex;
 use crate::semantic::SemanticIndexer;
@@ -130,7 +142,7 @@ impl TldrEngine {
         let index = if let Some(index) = cached {
             index
         } else {
-            let index = indexer.build_index(&self.config.project_root, language)?;
+            let index = indexer.load_or_build_index(&self.config.project_root, language)?;
             self.semantic_indexes
                 .write()
                 .expect("semantic index cache lock should not be poisoned")
@@ -138,7 +150,7 @@ impl TldrEngine {
             index
         };
 
-        Ok(indexer.search_index(&index, request.query))
+        indexer.search_index(&index, request.query)
     }
 
     pub fn semantic_reindex(&self) -> Result<SemanticReindexReport> {
@@ -166,6 +178,18 @@ impl TldrEngine {
 
     pub fn importers(&self, request: ImportersRequest) -> Result<ImportersResponse> {
         collect_importers(&self.config.project_root, &self.config, request)
+    }
+
+    pub fn search(&self, request: SearchRequest) -> Result<SearchResponse> {
+        search_project(&self.config.project_root, request)
+    }
+
+    pub fn diagnostics(&self, request: DiagnosticsRequest) -> Result<DiagnosticsResponse> {
+        collect_diagnostics(&self.config.project_root, request)
+    }
+
+    pub fn doctor(&self) -> DoctorResponse {
+        doctor_tools()
     }
 }
 
@@ -238,11 +262,21 @@ mod tests {
         assert_eq!(
             engine.registry().supported_languages(),
             vec![
+                SupportedLanguage::C,
+                SupportedLanguage::Cpp,
+                SupportedLanguage::CSharp,
+                SupportedLanguage::Elixir,
                 SupportedLanguage::Go,
+                SupportedLanguage::Java,
                 SupportedLanguage::JavaScript,
+                SupportedLanguage::Lua,
+                SupportedLanguage::Luau,
                 SupportedLanguage::Php,
                 SupportedLanguage::Python,
+                SupportedLanguage::Ruby,
                 SupportedLanguage::Rust,
+                SupportedLanguage::Scala,
+                SupportedLanguage::Swift,
                 SupportedLanguage::TypeScript,
                 SupportedLanguage::Zig,
             ],

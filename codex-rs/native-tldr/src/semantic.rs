@@ -1,8 +1,12 @@
+mod embedder;
+
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
 use crate::rust_analysis;
+use crate::semantic_cache;
 use anyhow::Context;
 use anyhow::Result;
+use embedder::SemanticEmbedder;
 use ignore::gitignore::Gitignore;
 use ignore::gitignore::GitignoreBuilder;
 use serde::Deserialize;
@@ -141,7 +145,7 @@ impl SemanticReindexReport {
             started_at,
             finished_at,
             message: format!(
-                "semantic phase-1 reindex completed: {indexed_units} units across {indexed_files} files"
+                "semantic phase-2 reindex completed: {indexed_units} units across {indexed_files} files"
             ),
             embedding_enabled,
             embedding_dimensions,
@@ -162,7 +166,7 @@ impl SemanticReindexReport {
             truncated: false,
             started_at: now,
             finished_at: now,
-            message: format!("semantic phase-1 reindex failed: {}", error.into()),
+            message: format!("semantic phase-2 reindex failed: {}", error.into()),
             embedding_enabled,
             embedding_dimensions,
         }
@@ -267,16 +271,17 @@ pub struct SemanticIndex {
     pub embedding_dimensions: usize,
 }
 
-/// Minimal semantic indexer that ports the upstream embedding-unit shape and
-/// five-layer text assembly without introducing heavyweight embedding deps yet.
+/// Semantic indexer with persisted local cache for embedding units and vectors.
 #[derive(Debug, Clone)]
 pub struct SemanticIndexer {
     config: SemanticConfig,
+    embedder: SemanticEmbedder,
 }
 
 impl SemanticIndexer {
     pub fn new(config: SemanticConfig) -> Self {
-        Self { config }
+        let embedder = SemanticEmbedder::new(config.model.clone());
+        Self { config, embedder }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -345,20 +350,52 @@ impl SemanticIndexer {
         }
     }
 
+    pub fn load_or_build_index(
+        &self,
+        project_root: &Path,
+        language: SupportedLanguage,
+    ) -> Result<SemanticIndex> {
+        let matcher = self.build_ignore_matcher(project_root)?;
+        let mut files = Vec::new();
+        collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+        let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
+        if let Some(index) =
+            semantic_cache::load_index(project_root, &self.config, language, &source_fingerprint)?
+        {
+            return Ok(index);
+        }
+
+        let index = self.build_index_from_files(project_root, language, files)?;
+        semantic_cache::persist_index(project_root, &self.config, &index, &source_fingerprint)?;
+        Ok(index)
+    }
+
     pub fn build_index(
         &self,
         project_root: &Path,
         language: SupportedLanguage,
     ) -> Result<SemanticIndex> {
         let matcher = self.build_ignore_matcher(project_root)?;
+        let mut files = Vec::new();
+        collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+        self.build_index_from_files(project_root, language, files)
+    }
+
+    fn build_index_from_files(
+        &self,
+        project_root: &Path,
+        language: SupportedLanguage,
+        files: Vec<PathBuf>,
+    ) -> Result<SemanticIndex> {
         let embedding_enabled = self.config.embedding_enabled();
         let embedding_dimensions = self.config.embedding_dimensions();
-        let (units, indexed_files) = collect_embedding_units(
+        let units = collect_embedding_units(
             project_root,
             language,
-            &matcher,
+            &files,
             embedding_enabled,
             embedding_dimensions,
+            &self.embedder,
         )?;
 
         #[cfg(test)]
@@ -368,7 +405,7 @@ impl SemanticIndexer {
 
         Ok(SemanticIndex {
             language,
-            indexed_files,
+            indexed_files: files.len(),
             units,
             embedding_enabled,
             embedding_dimensions,
@@ -396,7 +433,12 @@ impl SemanticIndexer {
         let mut indexed_files = 0;
         let mut indexed_units = 0;
         for language in &languages {
-            let index = self.build_index(project_root, *language)?;
+            let matcher = self.build_ignore_matcher(project_root)?;
+            let mut files = Vec::new();
+            collect_source_files(project_root, extension_for(*language), &mut files, &matcher)?;
+            let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
+            let index = self.build_index_from_files(project_root, *language, files)?;
+            semantic_cache::persist_index(project_root, &self.config, &index, &source_fingerprint)?;
             indexed_files += index.indexed_files;
             indexed_units += index.units.len();
             indexes.push(index);
@@ -420,9 +462,17 @@ impl SemanticIndexer {
         self.reindex_all(project_root).map(|(_, report)| report)
     }
 
-    pub fn search_index(&self, index: &SemanticIndex, query: String) -> SemanticSearchResponse {
+    pub fn search_index(
+        &self,
+        index: &SemanticIndex,
+        query: String,
+    ) -> Result<SemanticSearchResponse> {
         let query_vector = if index.embedding_enabled {
-            Some(build_embedding_vector(&query, index.embedding_dimensions))
+            Some(
+                self.embedder
+                    .embed_query(&query, index.embedding_dimensions)
+                    .context("embed semantic search query")?,
+            )
         } else {
             None
         };
@@ -430,19 +480,16 @@ impl SemanticIndexer {
             .units
             .iter()
             .cloned()
-            .filter_map(|unit| {
+            .map(|unit| {
                 let embedding_text = unit.build_embedding_text();
                 let score = score_match(&query, &unit, &embedding_text);
-                if score == 0 {
-                    return None;
-                }
                 let (line, snippet) = best_matching_line(&query, &unit);
                 let embedding_score = query_vector.as_ref().and_then(|query_vec| {
                     unit.embedding_vector
                         .as_deref()
                         .map(|unit_vec| dot_product(query_vec, unit_vec))
                 });
-                Some(SemanticMatch {
+                SemanticMatch {
                     score,
                     path: unit.path.clone(),
                     line,
@@ -450,19 +497,18 @@ impl SemanticIndexer {
                     unit,
                     embedding_text,
                     embedding_score,
-                })
+                }
+            })
+            .filter(|semantic_match| {
+                semantic_match.score > 0 || semantic_match.embedding_score.unwrap_or_default() > 0.0
             })
             .collect();
         matches.sort_by(|left, right| {
             right
-                .score
-                .cmp(&left.score)
-                .then_with(|| {
-                    right
-                        .embedding_score
-                        .unwrap_or_default()
-                        .total_cmp(&left.embedding_score.unwrap_or_default())
-                })
+                .embedding_score
+                .unwrap_or_default()
+                .total_cmp(&left.embedding_score.unwrap_or_default())
+                .then_with(|| right.score.cmp(&left.score))
                 .then_with(|| left.path.cmp(&right.path))
                 .then_with(|| left.line.cmp(&right.line))
         });
@@ -470,7 +516,7 @@ impl SemanticIndexer {
         matches.truncate(5);
         let result_count = matches.len();
 
-        SemanticSearchResponse {
+        Ok(SemanticSearchResponse {
             enabled: true,
             query,
             indexed_files: index.indexed_files,
@@ -478,7 +524,7 @@ impl SemanticIndexer {
             matches,
             embedding_used: index.embedding_enabled,
             message: format!("semantic search returned {result_count} matches"),
-        }
+        })
     }
 
     pub fn search(
@@ -490,8 +536,8 @@ impl SemanticIndexer {
             return Ok(self.disabled_response(request.query));
         }
 
-        let index = self.build_index(project_root, request.language)?;
-        Ok(self.search_index(&index, request.query))
+        let index = self.load_or_build_index(project_root, request.language)?;
+        self.search_index(&index, request.query)
     }
 }
 
@@ -511,17 +557,14 @@ pub(crate) fn semantic_index_build_count() -> usize {
 fn collect_embedding_units(
     project_root: &Path,
     language: SupportedLanguage,
-    matcher: &Gitignore,
+    files: &[PathBuf],
     embedding_enabled: bool,
     embedding_dims: usize,
-) -> Result<(Vec<EmbeddingUnit>, usize)> {
-    let mut files = Vec::new();
-    collect_source_files(project_root, extension_for(language), &mut files, matcher)?;
-    let indexed_files = files.len();
-
+    embedder: &SemanticEmbedder,
+) -> Result<Vec<EmbeddingUnit>> {
     let mut units = Vec::new();
     for path in files {
-        let Ok(contents) = fs::read_to_string(&path) else {
+        let Ok(contents) = fs::read_to_string(path) else {
             continue;
         };
         let relative_path = path
@@ -538,31 +581,29 @@ fn collect_embedding_units(
     }
 
     let symbol_index = build_called_by_index(&units);
-    Ok((
-        units
-            .into_iter()
-            .map(|mut unit| {
-                let mut called_by = Vec::new();
-                for key in symbol_lookup_keys(&unit) {
-                    if let Some(callers) = symbol_index.get(key.as_str()) {
-                        for caller in callers {
-                            if !called_by.iter().any(|existing| existing == caller) {
-                                called_by.push(caller.clone());
-                            }
+    Ok(units
+        .into_iter()
+        .map(|mut unit| {
+            let mut called_by = Vec::new();
+            for key in symbol_lookup_keys(&unit) {
+                if let Some(callers) = symbol_index.get(key.as_str()) {
+                    for caller in callers {
+                        if !called_by.iter().any(|existing| existing == caller) {
+                            called_by.push(caller.clone());
                         }
                     }
                 }
-                unit.called_by = called_by;
-                unit.embedding_vector = embedding_vector_for_text(
-                    &unit.build_embedding_text(),
-                    embedding_enabled,
-                    embedding_dims,
-                );
-                unit
-            })
-            .collect(),
-        indexed_files,
-    ))
+            }
+            unit.called_by = called_by;
+            unit.embedding_vector = embedding_vector_for_text(
+                unit.build_embedding_text(),
+                embedding_enabled,
+                embedding_dims,
+                embedder,
+            );
+            unit
+        })
+        .collect())
 }
 
 fn collect_source_files(
@@ -808,6 +849,27 @@ fn symbol_lookup_keys(unit: &EmbeddingUnit) -> Vec<String> {
 fn definition_for_line(language: SupportedLanguage, line: &str) -> Option<(String, &'static str)> {
     let trimmed = line.trim();
     let candidates: &[(&str, &str)] = match language {
+        SupportedLanguage::C | SupportedLanguage::Cpp => &[
+            ("static inline ", "function"),
+            ("inline ", "function"),
+            ("class ", "class"),
+            ("struct ", "struct"),
+        ],
+        SupportedLanguage::CSharp => &[
+            ("public class ", "class"),
+            ("class ", "class"),
+            ("public interface ", "interface"),
+            ("interface ", "interface"),
+            ("public void ", "method"),
+            ("void ", "method"),
+        ],
+        SupportedLanguage::Elixir => &[("defmodule ", "module"), ("def ", "function")],
+        SupportedLanguage::Java => &[
+            ("public class ", "class"),
+            ("class ", "class"),
+            ("public interface ", "interface"),
+            ("interface ", "interface"),
+        ],
         SupportedLanguage::Rust => &[
             ("pub async fn ", "function"),
             ("async fn ", "function"),
@@ -832,11 +894,17 @@ fn definition_for_line(language: SupportedLanguage, line: &str) -> Option<(Strin
         ],
         SupportedLanguage::Python => &[("def ", "function"), ("class ", "class")],
         SupportedLanguage::Go => &[("func ", "function"), ("type ", "type")],
+        SupportedLanguage::Lua | SupportedLanguage::Luau => {
+            &[("local function ", "function"), ("function ", "function")]
+        }
         SupportedLanguage::Php => &[
             ("function ", "function"),
             ("class ", "class"),
             ("interface ", "interface"),
         ],
+        SupportedLanguage::Ruby => &[("def ", "function"), ("class ", "class")],
+        SupportedLanguage::Scala => &[("def ", "function"), ("class ", "class")],
+        SupportedLanguage::Swift => &[("func ", "function"), ("class ", "class")],
         SupportedLanguage::Zig => &[("pub fn ", "function"), ("fn ", "function")],
     };
 
@@ -1027,11 +1095,16 @@ fn tokenize(query: &str) -> Vec<String> {
         .collect()
 }
 
-fn embedding_vector_for_text(text: &str, enabled: bool, dims: usize) -> Option<Vec<f32>> {
+fn embedding_vector_for_text(
+    text: String,
+    enabled: bool,
+    dims: usize,
+    embedder: &SemanticEmbedder,
+) -> Option<Vec<f32>> {
     if !enabled || dims == 0 {
         return None;
     }
-    let vector = build_embedding_vector(text, dims);
+    let vector = embedder.embed_documents(&[text], dims).ok()?.pop()?;
     if vector.iter().all(|&value| value == 0.0) {
         None
     } else {
@@ -1039,33 +1112,28 @@ fn embedding_vector_for_text(text: &str, enabled: bool, dims: usize) -> Option<V
     }
 }
 
-fn build_embedding_vector(text: &str, dims: usize) -> Vec<f32> {
-    let mut vector = vec![0.0; dims.max(1)];
-    for token in tokenize(text) {
-        let idx = (hash_token(&token) % dims.max(1) as u64) as usize;
-        vector[idx] += 1.0;
-    }
-    vector
-}
-
 fn dot_product(left: &[f32], right: &[f32]) -> f32 {
     left.iter().zip(right.iter()).map(|(a, b)| a * b).sum()
 }
 
-fn hash_token(token: &str) -> u64 {
-    token
-        .bytes()
-        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64))
-}
-
 fn extension_for(language: SupportedLanguage) -> &'static str {
     match language {
+        SupportedLanguage::C => "c",
+        SupportedLanguage::Cpp => "cpp",
+        SupportedLanguage::CSharp => "cs",
+        SupportedLanguage::Elixir => "ex",
+        SupportedLanguage::Java => "java",
         SupportedLanguage::Rust => "rs",
         SupportedLanguage::TypeScript => "ts",
         SupportedLanguage::JavaScript => "js",
+        SupportedLanguage::Lua => "lua",
+        SupportedLanguage::Luau => "luau",
         SupportedLanguage::Python => "py",
         SupportedLanguage::Go => "go",
         SupportedLanguage::Php => "php",
+        SupportedLanguage::Ruby => "rb",
+        SupportedLanguage::Scala => "scala",
+        SupportedLanguage::Swift => "swift",
         SupportedLanguage::Zig => "zig",
     }
 }
@@ -1085,8 +1153,11 @@ mod tests {
     use super::SemanticEmbeddingConfig;
     use super::SemanticIndexer;
     use super::SemanticSearchRequest;
+    use super::reset_semantic_index_build_count;
+    use super::semantic_index_build_count;
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
+    use serial_test::serial;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -1376,5 +1447,73 @@ fn login() {
             .find(|item| item.unit.qualified_symbol.as_deref() == Some("audit::validate"))
             .expect("audit::validate should be indexed");
         assert_eq!(audit_validate.unit.called_by, Vec::<String>::new());
+    }
+
+    #[test]
+    #[serial]
+    fn load_or_build_index_persists_and_reuses_disk_cache() {
+        reset_semantic_index_build_count();
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(src.join("lib.rs"), "fn login() {}\n").expect("fixture should write");
+
+        let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
+        let first = indexer
+            .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)
+            .expect("initial index build should succeed");
+        assert_eq!(first.units[0].symbol.as_deref(), Some("login"));
+        assert_eq!(semantic_index_build_count(), 1);
+        assert!(
+            tempdir
+                .path()
+                .join(".tldr/cache/semantic/rust/manifest.json")
+                .exists()
+        );
+        assert!(
+            tempdir
+                .path()
+                .join(".tldr/cache/semantic/rust/units.jsonl")
+                .exists()
+        );
+        assert!(
+            tempdir
+                .path()
+                .join(".tldr/cache/semantic/rust/vectors.f32")
+                .exists()
+        );
+
+        std::fs::write(src.join("lib.rs"), "fn logout() {}\n").expect("fixture should update");
+        let cached = indexer
+            .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)
+            .expect("cached index should load");
+        assert_eq!(cached.units[0].symbol.as_deref(), Some("login"));
+        assert_eq!(semantic_index_build_count(), 1);
+    }
+
+    #[test]
+    fn reindex_refreshes_disk_cache() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(src.join("lib.rs"), "fn login() {}\n").expect("fixture should write");
+
+        let indexer = SemanticIndexer::new(SemanticConfig::default().with_enabled(true));
+        let first = indexer
+            .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)
+            .expect("initial index should build");
+        assert_eq!(first.units[0].symbol.as_deref(), Some("login"));
+
+        std::fs::write(src.join("lib.rs"), "fn logout() {}\n").expect("fixture should update");
+        let report = indexer
+            .reindex(tempdir.path())
+            .expect("reindex should succeed");
+        assert!(report.is_completed());
+        assert!(report.message.contains("phase-2"));
+
+        let refreshed = indexer
+            .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)
+            .expect("refreshed index should load");
+        assert_eq!(refreshed.units[0].symbol.as_deref(), Some("logout"));
     }
 }
