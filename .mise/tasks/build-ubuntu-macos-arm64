@@ -100,7 +100,7 @@ has_clang() {
 }
 
 has_rust_target() {
-  rustup target list --installed | grep -Fxq "$target"
+  has_usable_rust_target "$target"
 }
 
 bootstrap_cross_deps() {

@@ -88,9 +88,7 @@ if ! cargo zigbuild --help >/dev/null 2>&1; then
   cargo install --locked cargo-zigbuild
 fi
 
-if ! rustup target list --installed | grep -Fxq 'aarch64-apple-darwin'; then
-  rustup target add aarch64-apple-darwin
-fi
+ensure_usable_rust_target 'aarch64-apple-darwin'
 
 if [ -n "$sdk_archive" ] && [ -z "$sdk_path" ]; then
   [ -f "$sdk_archive" ] || die "[mise] MACOS_SDK_TARBALL 不存在: $sdk_archive"

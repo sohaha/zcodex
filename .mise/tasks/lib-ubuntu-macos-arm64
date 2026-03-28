@@ -17,6 +17,83 @@ die() {
   exit 1
 }
 
+active_rustup_toolchain_name() {
+  rustup show active-toolchain 2>/dev/null | awk 'NR == 1 { print $1 }'
+}
+
+active_rustup_toolchain_dir() {
+  local toolchain_name
+  local rustup_home
+
+  toolchain_name="$(active_rustup_toolchain_name)"
+  if [ -z "$toolchain_name" ]; then
+    return 1
+  fi
+
+  rustup_home="${RUSTUP_HOME:-$HOME/.rustup}"
+  if [ ! -d "$rustup_home/toolchains/$toolchain_name" ]; then
+    return 1
+  fi
+
+  printf '%s\n' "$rustup_home/toolchains/$toolchain_name"
+}
+
+rust_target_manifest_path() {
+  local target="$1"
+  local toolchain_dir
+
+  toolchain_dir="$(active_rustup_toolchain_dir)" || return 1
+  printf '%s/lib/rustlib/manifest-rust-std-%s\n' "$toolchain_dir" "$target"
+}
+
+rust_target_lib_dir() {
+  local target="$1"
+  local toolchain_dir
+
+  toolchain_dir="$(active_rustup_toolchain_dir)" || return 1
+  printf '%s/lib/rustlib/%s/lib\n' "$toolchain_dir" "$target"
+}
+
+rustup_reports_target_installed() {
+  local target="$1"
+
+  rustup target list --installed | grep -Fxq "$target"
+}
+
+has_rust_target_artifacts() {
+  local target="$1"
+  local target_lib_dir
+  local target_manifest_path
+
+  target_lib_dir="$(rust_target_lib_dir "$target")" || return 1
+  target_manifest_path="$(rust_target_manifest_path "$target")" || return 1
+
+  [ -f "$target_manifest_path" ] \
+    && compgen -G "$target_lib_dir/libcore-*.rlib" >/dev/null \
+    && compgen -G "$target_lib_dir/libstd-*.rlib" >/dev/null
+}
+
+has_usable_rust_target() {
+  local target="$1"
+
+  rustup_reports_target_installed "$target" || has_rust_target_artifacts "$target"
+}
+
+ensure_usable_rust_target() {
+  local target="$1"
+
+  if rustup_reports_target_installed "$target"; then
+    return
+  fi
+
+  if has_rust_target_artifacts "$target"; then
+    echo "[mise] 检测到 Rust target $target 的标准库文件已存在，但 rustup 未登记；继续使用现有标准库。" >&2
+    return
+  fi
+
+  rustup target add "$target"
+}
+
 curl_github_auth_args() {
   local url="${1:-}"
 
