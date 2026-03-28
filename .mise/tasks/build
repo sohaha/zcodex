@@ -16,6 +16,8 @@ if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   mise run build [cargo build args...]
   mise run build cli [cargo build args...]
   mise run build codex [cargo build args...]
+  mise run build local-release [cargo build args...]
+  mise run build release [cargo build args...]
   mise run build ubuntu-linux-amd64 [args...]
   mise run build ubuntu-macos-arm64 [args...]
   mise run build ubuntu-win-amd64 [args...]
@@ -37,6 +39,21 @@ fi
 case "${1:-}" in
   cli|codex|codex-cli)
     shift
+    ;;
+  local-release|release)
+    shift
+    if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+      cat >&2 <<'EOF'
+[mise] 用法:
+  mise run build local-release [cargo build args...]
+  mise run build release [cargo build args...]
+
+[mise] 该目标等价于：
+  mise run build --release
+EOF
+      exit 0
+    fi
+    exec "$script_dir/build" --release "$@"
     ;;
   ubuntu-linux-amd64|ubuntu-macos-arm64|ubuntu-win-amd64|ubuntu-win-arm64)
     target_task="$1"
