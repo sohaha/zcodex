@@ -1,20 +1,23 @@
 [tasks.codex-watch-tools]
 description = "监控 codex-tui.log 中的工具调用"
 run = '''
-RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
+log_file="${CODEX_WATCH_LOG_FILE:-$HOME/.codex/log/codex-tui.log}"
+RIPGREP_CONFIG_PATH=/dev/null tail -F "$log_file" \
 | RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'ToolCall: (shell_command|tldr|web|apply_patch)|embedded RTK|native-tldr|tldr begin|tldr end'
 '''
 
 [tasks.codex-watch-tldr]
 description = "监控 codex-tui.log 中的 tldr 调用"
 run = '''
-RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
+log_file="${CODEX_WATCH_LOG_FILE:-$HOME/.codex/log/codex-tui.log}"
+RIPGREP_CONFIG_PATH=/dev/null tail -F "$log_file" \
 | RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'ToolCall: tldr |tldr begin|tldr end'
 '''
 
 [tasks.codex-watch-rtk]
 description = "监控 codex-tui.log 中的嵌入式 RTK 路由"
 run = '''
-RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
+log_file="${CODEX_WATCH_LOG_FILE:-$HOME/.codex/log/codex-tui.log}"
+RIPGREP_CONFIG_PATH=/dev/null tail -F "$log_file" \
 | RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'shell_command routed via embedded RTK|rewritten: .*codex rtk|command is not in the embedded RTK allowlist|embedded RTK rewriter'
 '''
