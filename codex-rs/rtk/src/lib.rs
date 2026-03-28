@@ -79,9 +79,11 @@ pub fn is_alias_invocation(argv0: &OsString) -> bool {
 #[command(
     name = "rtk",
     version,
-    about = "Rust Token Killer - 最小化 LLM token 消耗",
+    propagate_version = true,
+    about = "Token Killer - 最小化 LLM token 消耗",
     long_about = "高性能 CLI 代理，在输出进入 LLM 上下文前进行过滤与摘要。",
     disable_help_flag = true,
+    disable_version_flag = true,
     disable_help_subcommand = true,
     subcommand_help_heading = "命令",
     help_template = "\
@@ -110,21 +112,25 @@ struct Cli {
     #[arg(long = "skip-env", global = true)]
     skip_env: bool,
 
-    /// 显示帮助信息（可使用 '-h' 查看摘要）
+    /// 显示帮助信息
     #[arg(short = 'h', long = "help", action = clap::ArgAction::Help, global = true)]
     help: Option<bool>,
+
+    /// 显示版本
+    #[arg(short = 'V', long = "version", action = clap::ArgAction::Version, global = true)]
+    version: Option<bool>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// 列出目录内容，输出更省 token（代理原生 ls）
+    /// 列出目录内容，输出更省 token
     Ls {
         /// 传给 ls 的参数（支持原生 ls 的 -l、-a、-h、-R 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
 
-    /// 目录树，输出更省 token（代理原生 tree）
+    /// 目录树，输出更省 token
     Tree {
         /// 传给 tree 的参数（支持原生 tree 的 -L、-d、-a 等）
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -199,7 +205,7 @@ enum Commands {
         command: GitCommands,
     },
 
-    /// GitHub CLI (gh) 命令，输出更省 token
+    /// GitHub CLI (gh) 命令
     Gh {
         /// 子命令：pr、issue、run、repo
         subcommand: String,
@@ -1739,6 +1745,12 @@ mod tests {
     }
 
     #[test]
+    fn test_try_parse_valid_cargo_build() {
+        let result = Cli::try_parse_from(["rtk", "cargo", "build", "-p", "codex-cli"]);
+        assert!(result.is_ok(), "cargo build should parse successfully");
+    }
+
+    #[test]
     fn test_try_parse_help_is_display_help() {
         match Cli::try_parse_from(["rtk", "--help"]) {
             Err(e) => assert_eq!(e.kind(), ErrorKind::DisplayHelp),
@@ -1754,6 +1766,8 @@ mod tests {
         assert!(help.contains("命令:\n"));
         assert!(help.contains("选项:\n"));
         assert!(help.contains("显示帮助信息"));
+        assert!(help.contains("显示版本"));
+        assert!(!help.contains("Print version"));
     }
 
     #[test]

@@ -1,10 +1,23 @@
 use std::sync::Arc;
 
+use crate::client_common::tools::ResponsesApiTool;
+use crate::client_common::tools::ToolSpec;
 use crate::codex::make_session_and_context;
 use crate::function_tool::FunctionCallError;
+use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolPayload;
+use crate::tools::parallel::ToolCallRuntime;
+use crate::tools::registry::ConfiguredToolSpec;
+use crate::tools::registry::ToolHandler;
+use crate::tools::registry::ToolKind;
+use crate::tools::registry::ToolRegistryBuilder;
+use crate::tools::rewrite::ToolRoutingDirectives;
+use crate::tools::spec::JsonSchema;
 use crate::turn_diff_tracker::TurnDiffTracker;
+use async_trait::async_trait;
+use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
+use tokio_util::sync::CancellationToken;
 
 use super::ToolCall;
 use super::ToolCallSource;
@@ -197,4 +210,156 @@ async fn shell_aliases_inherit_parallel_support() -> anyhow::Result<()> {
     assert!(router.tool_supports_parallel("shell_command"));
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct FakeFunctionHandler {
+    label: &'static str,
+}
+
+#[async_trait]
+impl ToolHandler for FakeFunctionHandler {
+    type Output = FunctionToolOutput;
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Function
+    }
+
+    async fn handle(
+        &self,
+        invocation: crate::tools::context::ToolInvocation,
+    ) -> Result<Self::Output, FunctionCallError> {
+        let ToolPayload::Function { arguments } = invocation.payload else {
+            return Err(FunctionCallError::Fatal(
+                "fake handler expected function payload".to_string(),
+            ));
+        };
+        Ok(FunctionToolOutput::from_text(
+            format!("{}:{arguments}", self.label),
+            Some(true),
+        ))
+    }
+}
+
+fn fake_responses_tool(name: &str) -> ToolSpec {
+    ToolSpec::Function(ResponsesApiTool {
+        name: name.to_string(),
+        description: format!("fake {name}"),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties: Default::default(),
+            required: None,
+            additional_properties: Some(false.into()),
+        },
+        output_schema: None,
+    })
+}
+
+fn fake_router() -> Arc<ToolRouter> {
+    let mut builder = ToolRegistryBuilder::new();
+    builder.push_spec_with_parallel_support(fake_responses_tool("grep_files"), true);
+    builder.push_spec_with_parallel_support(fake_responses_tool("tldr"), true);
+    builder.register_handler(
+        "grep_files",
+        Arc::new(FakeFunctionHandler { label: "grep" }),
+    );
+    builder.register_handler("tldr", Arc::new(FakeFunctionHandler { label: "tldr" }));
+
+    let (specs, registry) = builder.build();
+    let model_visible_specs = specs.iter().map(|spec| spec.spec.clone()).collect();
+    Arc::new(ToolRouter {
+        registry,
+        specs,
+        model_visible_specs,
+    })
+}
+
+fn output_text(response: ResponseInputItem) -> String {
+    match response {
+        ResponseInputItem::FunctionCallOutput { output, .. } => {
+            output.body.to_text().unwrap_or_default()
+        }
+        other => panic!("expected FunctionCallOutput, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn runtime_dispatch_routes_rewritten_grep_files_to_tldr_handler() {
+    let (session, turn) = make_session_and_context().await;
+    *turn.tool_routing_directives.write().await = ToolRoutingDirectives {
+        prefer_context_search: true,
+        ..Default::default()
+    };
+
+    let runtime = ToolCallRuntime::new(
+        fake_router(),
+        Arc::new(session),
+        Arc::new(turn),
+        Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
+    );
+
+    let result = runtime
+        .handle_tool_call_with_source(
+            ToolCall {
+                tool_name: "grep_files".to_string(),
+                tool_namespace: None,
+                call_id: "call-runtime-dispatch".to_string(),
+                payload: ToolPayload::Function {
+                    arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
+                },
+            },
+            ToolCallSource::Direct,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("rewrite+dispatch should succeed")
+        .into_response();
+
+    let text = output_text(result);
+    assert!(text.starts_with("tldr:"), "unexpected response: {text}");
+    assert!(
+        text.contains(r#""action":"context""#),
+        "unexpected rewritten args: {text}"
+    );
+}
+
+#[tokio::test]
+async fn runtime_dispatch_keeps_force_raw_grep_on_original_handler() {
+    let (session, turn) = make_session_and_context().await;
+    *turn.tool_routing_directives.write().await = ToolRoutingDirectives {
+        force_raw_grep: true,
+        ..Default::default()
+    };
+
+    let runtime = ToolCallRuntime::new(
+        fake_router(),
+        Arc::new(session),
+        Arc::new(turn),
+        Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new())),
+    );
+
+    let result = runtime
+        .handle_tool_call_with_source(
+            ToolCall {
+                tool_name: "grep_files".to_string(),
+                tool_namespace: None,
+                call_id: "call-runtime-raw".to_string(),
+                payload: ToolPayload::Function {
+                    arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
+                },
+            },
+            ToolCallSource::Direct,
+            CancellationToken::new(),
+        )
+        .await
+        .expect("raw grep dispatch should succeed")
+        .into_response();
+
+    let text = output_text(result);
+    assert!(text.starts_with("grep:"), "unexpected response: {text}");
+    assert!(
+        text.contains(r#""pattern":"create_tldr_tool""#),
+        "unexpected original args: {text}"
+    );
 }

@@ -11,6 +11,7 @@ use crate::api::AnalysisResponse;
 use crate::api::AnalysisSliceTarget;
 use crate::api::AnalysisSymbolIndexEntry;
 use crate::api::AnalysisUnitDetail;
+use crate::project_analysis::analyze_project_graph;
 use crate::semantic::EmbeddingUnit;
 use crate::semantic::SemanticIndexer;
 use anyhow::Result;
@@ -24,8 +25,14 @@ pub(crate) fn analyze_project(
     config: &TldrConfig,
     request: AnalysisRequest,
 ) -> Result<AnalysisResponse> {
+    if matches!(
+        request.kind,
+        AnalysisKind::Impact | AnalysisKind::Calls | AnalysisKind::Dead | AnalysisKind::Arch
+    ) {
+        return analyze_project_graph(project_root, config, request);
+    }
     let index = SemanticIndexer::new(config.semantic.clone())
-        .build_index(project_root, request.language)?;
+        .load_or_build_index(project_root, request.language)?;
     let path = request
         .path
         .as_deref()
@@ -53,6 +60,9 @@ pub(crate) fn analyze_project(
         }
         AnalysisKind::CallGraph => {
             summarize_context(index.indexed_files, &units, request.symbol.as_deref())
+        }
+        AnalysisKind::Impact | AnalysisKind::Calls | AnalysisKind::Dead | AnalysisKind::Arch => {
+            unreachable!("graph project analysis is delegated above")
         }
         AnalysisKind::Cfg => summarize_cfg(index.indexed_files, &units, request.symbol.as_deref()),
         AnalysisKind::Dfg => summarize_dfg(index.indexed_files, &units, request.symbol.as_deref()),

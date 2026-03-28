@@ -3,6 +3,7 @@ use crate::client_common::tools::FreeformToolFormat;
 use crate::client_common::tools::ResponsesApiTool;
 use crate::client_common::tools::ToolSpec;
 use crate::config::AgentRoleConfig;
+use crate::config::AutoTldrRoutingMode;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp_connection_manager::ToolInfo;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -317,6 +318,7 @@ pub(crate) struct ToolsConfig {
     shell_command_backend: ShellCommandBackendConfig,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
     pub allow_login_shell: bool,
+    pub auto_tldr_routing: AutoTldrRoutingMode,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
     pub web_search_mode: Option<WebSearchMode>,
     pub web_search_config: Option<WebSearchConfig>,
@@ -455,6 +457,7 @@ impl ToolsConfig {
             shell_command_backend,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,
             allow_login_shell: true,
+            auto_tldr_routing: AutoTldrRoutingMode::default(),
             apply_patch_tool_type,
             web_search_mode: *web_search_mode,
             web_search_config: None,
@@ -488,6 +491,11 @@ impl ToolsConfig {
 
     pub fn with_allow_login_shell(mut self, allow_login_shell: bool) -> Self {
         self.allow_login_shell = allow_login_shell;
+        self
+    }
+
+    pub fn with_auto_tldr_routing(mut self, auto_tldr_routing: AutoTldrRoutingMode) -> Self {
+        self.auto_tldr_routing = auto_tldr_routing;
         self
     }
 
@@ -1800,7 +1808,7 @@ fn create_tldr_tool() -> ToolSpec {
 
     ToolSpec::Function(ResponsesApiTool {
         name: "tldr".to_string(),
-        description: "Structured code context analysis via native-tldr with daemon-first execution. Prefer this tool for symbol discovery, code context, impact analysis, and behavior-oriented code search before broad manual file reading."
+        description: "Structured code context analysis via native-tldr with daemon-first execution. Prefer this tool for symbol discovery, code context, impact analysis, and behavior-oriented code search before broad manual file reading. Runtime may auto-route some grep_files code-understanding queries here when auto_tldr_routing is enabled, but explicit raw grep/read requests still use the raw tools."
             .to_string(),
         strict: false,
         defer_loading: None,

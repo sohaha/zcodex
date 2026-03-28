@@ -2,10 +2,14 @@ use crate::TldrConfig;
 use crate::TldrEngine;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
+use crate::api::DiagnosticsRequest;
+use crate::api::DiagnosticsResponse;
 use crate::api::ImportersRequest;
 use crate::api::ImportersResponse;
 use crate::api::ImportsRequest;
 use crate::api::ImportsResponse;
+use crate::api::SearchRequest;
+use crate::api::SearchResponse;
 use crate::semantic::SemanticReindexReport;
 use crate::semantic::SemanticSearchRequest;
 use crate::semantic::SemanticSearchResponse;
@@ -65,6 +69,12 @@ pub enum TldrDaemonCommand {
     Importers {
         request: ImportersRequest,
     },
+    Search {
+        request: SearchRequest,
+    },
+    Diagnostics {
+        request: DiagnosticsRequest,
+    },
     Semantic {
         request: SemanticSearchRequest,
     },
@@ -82,6 +92,8 @@ pub struct TldrDaemonResponse {
     pub analysis: Option<AnalysisResponse>,
     pub imports: Option<ImportsResponse>,
     pub importers: Option<ImportersResponse>,
+    pub search: Option<SearchResponse>,
+    pub diagnostics: Option<DiagnosticsResponse>,
     pub semantic: Option<SemanticSearchResponse>,
     pub snapshot: Option<crate::session::SessionSnapshot>,
     pub daemon_status: Option<TldrDaemonStatus>,
@@ -96,6 +108,8 @@ impl TldrDaemonResponse {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,
@@ -192,6 +206,8 @@ impl TldrDaemon {
                     analysis: None,
                     imports: None,
                     importers: None,
+                    search: None,
+                    diagnostics: None,
                     semantic: None,
                     snapshot: Some(snapshot.clone()),
                     daemon_status: Some(build_daemon_status(
@@ -214,6 +230,8 @@ impl TldrDaemon {
                     analysis: None,
                     imports: Some(response),
                     importers: None,
+                    search: None,
+                    diagnostics: None,
                     semantic: None,
                     snapshot: None,
                     daemon_status: None,
@@ -228,6 +246,40 @@ impl TldrDaemon {
                     analysis: None,
                     imports: None,
                     importers: Some(response),
+                    search: None,
+                    diagnostics: None,
+                    semantic: None,
+                    snapshot: None,
+                    daemon_status: None,
+                    reindex_report: None,
+                })
+            }
+            TldrDaemonCommand::Search { request } => {
+                let response = self.engine.search(request)?;
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: format!("search returned {} matches", response.matches.len()),
+                    analysis: None,
+                    imports: None,
+                    importers: None,
+                    search: Some(response),
+                    diagnostics: None,
+                    semantic: None,
+                    snapshot: None,
+                    daemon_status: None,
+                    reindex_report: None,
+                })
+            }
+            TldrDaemonCommand::Diagnostics { request } => {
+                let response = self.engine.diagnostics(request)?;
+                Ok(TldrDaemonResponse {
+                    status: "ok".to_string(),
+                    message: response.message.clone(),
+                    analysis: None,
+                    imports: None,
+                    importers: None,
+                    search: None,
+                    diagnostics: Some(response),
                     semantic: None,
                     snapshot: None,
                     daemon_status: None,
@@ -243,6 +295,8 @@ impl TldrDaemon {
                     analysis: None,
                     imports: None,
                     importers: None,
+                    search: None,
+                    diagnostics: None,
                     semantic: None,
                     snapshot: Some(session.snapshot()),
                     daemon_status: None,
@@ -255,6 +309,8 @@ impl TldrDaemon {
                     analysis: None,
                     imports: None,
                     importers: None,
+                    search: None,
+                    diagnostics: None,
                     snapshot: Some(session.snapshot()),
                     ..TldrDaemonResponse::ok("snapshot")
                 })
@@ -266,6 +322,8 @@ impl TldrDaemon {
                     analysis: None,
                     imports: None,
                     importers: None,
+                    search: None,
+                    diagnostics: None,
                     snapshot: Some(snapshot.clone()),
                     reindex_report: session.last_reindex_attempt_report(),
                     daemon_status: Some(build_daemon_status(
@@ -284,6 +342,8 @@ impl TldrDaemon {
                     analysis: None,
                     imports: None,
                     importers: None,
+                    search: None,
+                    diagnostics: None,
                     semantic: Some(response),
                     snapshot: None,
                     daemon_status: None,
@@ -395,6 +455,8 @@ async fn handle_with_session(
                 analysis: None,
                 imports: None,
                 importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(snapshot.clone()),
                 daemon_status: Some(build_daemon_status(
@@ -417,6 +479,8 @@ async fn handle_with_session(
                 analysis: None,
                 imports: Some(response),
                 importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: None,
                 daemon_status: None,
@@ -431,6 +495,40 @@ async fn handle_with_session(
                 analysis: None,
                 imports: None,
                 importers: Some(response),
+                search: None,
+                diagnostics: None,
+                semantic: None,
+                snapshot: None,
+                daemon_status: None,
+                reindex_report: None,
+            })
+        }
+        TldrDaemonCommand::Search { request } => {
+            let response = engine.search(request)?;
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: format!("search returned {} matches", response.matches.len()),
+                analysis: None,
+                imports: None,
+                importers: None,
+                search: Some(response),
+                diagnostics: None,
+                semantic: None,
+                snapshot: None,
+                daemon_status: None,
+                reindex_report: None,
+            })
+        }
+        TldrDaemonCommand::Diagnostics { request } => {
+            let response = engine.diagnostics(request)?;
+            Ok(TldrDaemonResponse {
+                status: "ok".to_string(),
+                message: response.message.clone(),
+                analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: Some(response),
                 semantic: None,
                 snapshot: None,
                 daemon_status: None,
@@ -446,6 +544,8 @@ async fn handle_with_session(
                 analysis: None,
                 imports: None,
                 importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(guard.snapshot()),
                 daemon_status: None,
@@ -455,6 +555,11 @@ async fn handle_with_session(
         TldrDaemonCommand::Snapshot => {
             let guard = session.lock().await;
             Ok(TldrDaemonResponse {
+                analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 snapshot: Some(guard.snapshot()),
                 ..TldrDaemonResponse::ok("snapshot")
             })
@@ -463,6 +568,11 @@ async fn handle_with_session(
             let guard = session.lock().await;
             let snapshot = guard.snapshot();
             Ok(TldrDaemonResponse {
+                analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 snapshot: Some(snapshot.clone()),
                 reindex_report: guard.last_reindex_attempt_report(),
                 daemon_status: Some(build_daemon_status(
@@ -481,6 +591,8 @@ async fn handle_with_session(
                 analysis: None,
                 imports: None,
                 importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: Some(response),
                 snapshot: None,
                 daemon_status: None,
@@ -505,6 +617,8 @@ fn analyze_with_session(
             analysis: Some(cached),
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: Some(session.snapshot()),
             daemon_status: None,
@@ -525,6 +639,8 @@ fn analyze_with_session(
         analysis: Some(analysis),
         imports: None,
         importers: None,
+        search: None,
+        diagnostics: None,
         semantic: None,
         snapshot: Some(session.snapshot()),
         daemon_status: None,
@@ -542,7 +658,7 @@ fn notify_session_message(session: &mut Session, path: PathBuf) -> String {
     }
     if dirty_state.reindex_pending {
         return format!(
-            "marked dirty ({})；phase-1 reindex pending",
+            "marked dirty ({}); phase-2 reindex pending",
             dirty_state.dirty_files
         );
     }
@@ -986,6 +1102,8 @@ mod tests {
                 analysis: None,
                 imports: None,
                 importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: None,
                 daemon_status: None,
@@ -1013,6 +1131,8 @@ mod tests {
                 analysis: None,
                 imports: None,
                 importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: None,
                 daemon_status: None,

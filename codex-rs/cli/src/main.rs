@@ -1930,16 +1930,7 @@ mod tests {
             panic!("expected rtk subcommand");
         };
 
-        assert_eq!(
-            rtk_cli.args,
-            vec![
-                "--",
-                "env",
-                "FOO=1",
-                "git",
-                "status",
-            ]
-        );
+        assert_eq!(rtk_cli.args, vec!["--", "env", "FOO=1", "git", "status",]);
     }
 
     #[test]

@@ -4920,6 +4920,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
                 windows_sandbox_private_desktop: true,
                 macos_seatbelt_profile_extensions: None,
             },
+            auto_tldr_routing: AutoTldrRoutingMode::Safe,
             approvals_reviewer: ApprovalsReviewer::User,
             enforce_residency: Constrained::allow_any(None),
             user_instructions: None,
@@ -5069,6 +5070,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
             windows_sandbox_private_desktop: true,
             macos_seatbelt_profile_extensions: None,
         },
+        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
@@ -5216,6 +5218,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
             windows_sandbox_private_desktop: true,
             macos_seatbelt_profile_extensions: None,
         },
+        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
@@ -5349,6 +5352,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
             windows_sandbox_private_desktop: true,
             macos_seatbelt_profile_extensions: None,
         },
+        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         approvals_reviewer: ApprovalsReviewer::User,
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
@@ -5938,6 +5942,89 @@ allow_login_shell = false
 
     assert!(!config.permissions.allow_login_shell);
     Ok(())
+}
+
+#[test]
+fn config_loads_auto_tldr_routing_from_toml() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+model = "gpt-5.1"
+auto_tldr_routing = "off"
+"#,
+    )
+    .expect("TOML deserialization should succeed for auto_tldr_routing");
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.auto_tldr_routing, AutoTldrRoutingMode::Off);
+    Ok(())
+}
+
+#[test]
+fn config_defaults_auto_tldr_routing_to_safe() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+model = "gpt-5.1"
+"#,
+    )
+    .expect("TOML deserialization should succeed without auto_tldr_routing");
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.auto_tldr_routing, AutoTldrRoutingMode::Safe);
+    Ok(())
+}
+
+#[test]
+fn config_loads_all_auto_tldr_routing_modes_from_toml() {
+    let parse = |value: &str| {
+        let toml = format!(
+            r#"
+model = "gpt-5.1"
+auto_tldr_routing = "{value}"
+"#
+        );
+        toml::from_str::<ConfigToml>(&toml).expect("TOML deserialization should succeed")
+    };
+
+    assert_eq!(
+        parse("off").auto_tldr_routing,
+        Some(AutoTldrRoutingMode::Off)
+    );
+    assert_eq!(
+        parse("safe").auto_tldr_routing,
+        Some(AutoTldrRoutingMode::Safe)
+    );
+    assert_eq!(
+        parse("aggressive").auto_tldr_routing,
+        Some(AutoTldrRoutingMode::Aggressive)
+    );
+}
+
+#[test]
+fn config_rejects_invalid_auto_tldr_routing_value() {
+    let err = toml::from_str::<ConfigToml>(
+        r#"
+model = "gpt-5.1"
+auto_tldr_routing = "maybe"
+"#,
+    )
+    .expect_err("invalid auto_tldr_routing should fail");
+
+    assert!(
+        err.to_string().contains("auto_tldr_routing"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]

@@ -8,6 +8,10 @@ use crate::lang_support::SupportedLanguage;
 pub enum AnalysisKind {
     Ast,
     CallGraph,
+    Impact,
+    Calls,
+    Dead,
+    Arch,
     Cfg,
     Dfg,
     Pdg,
@@ -169,4 +173,75 @@ pub struct ImportersResponse {
     pub indexed_files: usize,
     #[serde(default)]
     pub matches: Vec<ImporterMatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SearchRequest {
+    pub pattern: String,
+    pub language: Option<SupportedLanguage>,
+    pub max_results: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SearchMatch {
+    pub path: String,
+    pub line: usize,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SearchResponse {
+    pub pattern: String,
+    pub indexed_files: usize,
+    pub truncated: bool,
+    #[serde(default)]
+    pub matches: Vec<SearchMatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiagnosticToolStatus {
+    pub tool: String,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiagnosticItem {
+    pub path: String,
+    pub line: usize,
+    pub column: usize,
+    pub severity: DiagnosticSeverity,
+    pub message: String,
+    pub code: Option<String>,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiagnosticsRequest {
+    pub language: SupportedLanguage,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiagnosticsResponse {
+    pub language: SupportedLanguage,
+    pub path: String,
+    #[serde(default)]
+    pub tools: Vec<DiagnosticToolStatus>,
+    #[serde(default)]
+    pub diagnostics: Vec<DiagnosticItem>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DoctorResponse {
+    #[serde(default)]
+    pub tools: Vec<DiagnosticToolStatus>,
+    pub message: String,
 }

@@ -339,6 +339,9 @@ use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
 use crate::tools::parallel::ToolCallRuntime;
+use crate::tools::rewrite::AutoTldrContext;
+use crate::tools::rewrite::ToolRoutingDirectives;
+use crate::tools::rewrite::extract_tool_routing_directives;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::tools::spec::ToolsConfig;
@@ -870,6 +873,8 @@ pub(crate) struct TurnContext {
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
     pub(crate) turn_skills: TurnSkillsContext,
     pub(crate) turn_timing_state: Arc<TurnTimingState>,
+    pub(crate) tool_routing_directives: Arc<RwLock<ToolRoutingDirectives>>,
+    pub(crate) auto_tldr_context: Arc<RwLock<AutoTldrContext>>,
 }
 impl TurnContext {
     pub(crate) fn model_context_window(&self) -> Option<i64> {
@@ -931,6 +936,7 @@ impl TurnContext {
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
+        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
         .with_agent_roles(config.agent_roles.clone());
 
         Self {
@@ -977,6 +983,8 @@ impl TurnContext {
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
+            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
+            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
         }
     }
 
@@ -1035,6 +1043,7 @@ impl TurnContext {
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
+        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
         .with_agent_roles(config.agent_roles.clone());
 
         Self {
@@ -1081,6 +1090,8 @@ impl TurnContext {
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
+            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
+            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
         }
     }
 
@@ -1496,6 +1507,7 @@ impl Session {
         )
         .with_web_search_config(per_turn_config.web_search_config.clone())
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
+        .with_auto_tldr_routing(per_turn_config.auto_tldr_routing)
         .with_agent_roles(per_turn_config.agent_roles.clone());
 
         let cwd = session_configuration.cwd.clone();
@@ -1548,6 +1560,8 @@ impl Session {
             turn_metadata_state,
             turn_skills: TurnSkillsContext::new(skills_outcome),
             turn_timing_state: Arc::new(TurnTimingState::default()),
+            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
+            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
         }
     }
 
@@ -3991,6 +4005,8 @@ impl Session {
         input: &[UserInput],
         response_item: ResponseItem,
     ) {
+        *turn_context.tool_routing_directives.write().await =
+            extract_tool_routing_directives(input);
         // Persist the user message to history, but emit the turn item from `UserInput` so
         // UI-only `text_elements` are preserved. `ResponseItem::Message` does not carry
         // those spans, and `record_response_item_and_emit_turn_item` would drop them.
@@ -5522,6 +5538,7 @@ async fn spawn_review_thread(
     )
     .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
+    .with_auto_tldr_routing(config.auto_tldr_routing)
     .with_agent_roles(config.agent_roles.clone());
 
     let review_prompt = resolved.prompt.clone();
@@ -5607,6 +5624,8 @@ async fn spawn_review_thread(
         turn_metadata_state,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
+        tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
+        auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
     };
 
     // Seed the child task with the review prompt as the initial user message.

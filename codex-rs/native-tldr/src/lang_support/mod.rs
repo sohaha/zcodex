@@ -1,8 +1,18 @@
+mod c;
+mod cpp;
+mod csharp;
+mod elixir;
 mod go;
+mod java;
 mod javascript;
+mod lua;
+mod luau;
 mod php;
 mod python;
+mod ruby;
 mod rust;
+mod scala;
+mod swift;
 mod typescript;
 mod zig;
 
@@ -17,36 +27,68 @@ use tree_sitter::Parser;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum SupportedLanguage {
-    Rust,
-    TypeScript,
-    JavaScript,
-    Python,
+    C,
+    Cpp,
+    CSharp,
+    Elixir,
     Go,
+    Java,
+    JavaScript,
+    Lua,
+    Luau,
     Php,
+    Python,
+    Ruby,
+    Rust,
+    Scala,
+    Swift,
+    TypeScript,
     Zig,
 }
 
 impl SupportedLanguage {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Rust => "rust",
-            Self::TypeScript => "typescript",
-            Self::JavaScript => "javascript",
-            Self::Python => "python",
+            Self::C => "c",
+            Self::Cpp => "cpp",
+            Self::CSharp => "csharp",
+            Self::Elixir => "elixir",
             Self::Go => "go",
+            Self::Java => "java",
+            Self::JavaScript => "javascript",
+            Self::Lua => "lua",
+            Self::Luau => "luau",
             Self::Php => "php",
+            Self::Python => "python",
+            Self::Ruby => "ruby",
+            Self::Rust => "rust",
+            Self::Scala => "scala",
+            Self::Swift => "swift",
+            Self::TypeScript => "typescript",
             Self::Zig => "zig",
         }
     }
 
     pub fn from_path(path: &Path) -> Option<Self> {
         match path.extension().and_then(|value| value.to_str()) {
+            Some("c") | Some("h") => Some(Self::C),
+            Some("cpp") | Some("cc") | Some("cxx") | Some("hpp") | Some("hh") | Some("hxx") => {
+                Some(Self::Cpp)
+            }
+            Some("cs") => Some(Self::CSharp),
+            Some("ex") | Some("exs") => Some(Self::Elixir),
             Some("rs") => Some(Self::Rust),
             Some("ts" | "tsx") => Some(Self::TypeScript),
             Some("js" | "jsx" | "mjs" | "cjs") => Some(Self::JavaScript),
             Some("py") => Some(Self::Python),
             Some("go") => Some(Self::Go),
             Some("php") => Some(Self::Php),
+            Some("scala") => Some(Self::Scala),
+            Some("swift") => Some(Self::Swift),
+            Some("lua") => Some(Self::Lua),
+            Some("luau") => Some(Self::Luau),
+            Some("java") => Some(Self::Java),
+            Some("rb") => Some(Self::Ruby),
             Some("zig") => Some(Self::Zig),
             _ => None,
         }
@@ -70,12 +112,32 @@ pub struct LanguageSupport {
 static LANGUAGE_SUPPORT: Lazy<BTreeMap<&'static str, LanguageSupport>> = Lazy::new(|| {
     [
         LanguageSupport {
-            language: SupportedLanguage::Rust,
-            support_level: SupportLevel::DataFlow,
-            fallback_strategy: "structure + search",
+            language: SupportedLanguage::C,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + imports",
         },
         LanguageSupport {
-            language: SupportedLanguage::TypeScript,
+            language: SupportedLanguage::Cpp,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + imports",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::CSharp,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + imports",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Elixir,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + imports + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Go,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + imports",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Java,
             support_level: SupportLevel::DataFlow,
             fallback_strategy: "structure + imports + search",
         },
@@ -85,19 +147,49 @@ static LANGUAGE_SUPPORT: Lazy<BTreeMap<&'static str, LanguageSupport>> = Lazy::n
             fallback_strategy: "structure + imports + search",
         },
         LanguageSupport {
-            language: SupportedLanguage::Python,
-            support_level: SupportLevel::DataFlow,
+            language: SupportedLanguage::Lua,
+            support_level: SupportLevel::StructureOnly,
             fallback_strategy: "structure + search",
         },
         LanguageSupport {
-            language: SupportedLanguage::Go,
-            support_level: SupportLevel::ControlFlow,
-            fallback_strategy: "structure + imports",
+            language: SupportedLanguage::Luau,
+            support_level: SupportLevel::StructureOnly,
+            fallback_strategy: "structure + search",
         },
         LanguageSupport {
             language: SupportedLanguage::Php,
             support_level: SupportLevel::ControlFlow,
             fallback_strategy: "structure + imports",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Python,
+            support_level: SupportLevel::DataFlow,
+            fallback_strategy: "structure + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Ruby,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Rust,
+            support_level: SupportLevel::DataFlow,
+            fallback_strategy: "structure + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Scala,
+            support_level: SupportLevel::ControlFlow,
+            fallback_strategy: "structure + imports + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Swift,
+            support_level: SupportLevel::DataFlow,
+            fallback_strategy: "structure + imports + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::TypeScript,
+            support_level: SupportLevel::DataFlow,
+            fallback_strategy: "structure + imports + search",
         },
         LanguageSupport {
             language: SupportedLanguage::Zig,
@@ -130,12 +222,22 @@ impl LanguageRegistry {
 
     pub fn parser_for(&self, language: SupportedLanguage) -> Result<Parser, ParserInitError> {
         match language {
+            SupportedLanguage::C => c::parser(),
+            SupportedLanguage::Cpp => cpp::parser(),
+            SupportedLanguage::CSharp => csharp::parser(),
+            SupportedLanguage::Elixir => elixir::parser(),
             SupportedLanguage::Rust => rust::parser(),
             SupportedLanguage::TypeScript => typescript::parser(),
             SupportedLanguage::JavaScript => javascript::parser(),
             SupportedLanguage::Python => python::parser(),
             SupportedLanguage::Go => go::parser(),
+            SupportedLanguage::Java => java::parser(),
+            SupportedLanguage::Lua => lua::parser(),
+            SupportedLanguage::Luau => luau::parser(),
+            SupportedLanguage::Ruby => ruby::parser(),
             SupportedLanguage::Php => php::parser(),
+            SupportedLanguage::Scala => scala::parser(),
+            SupportedLanguage::Swift => swift::parser(),
             SupportedLanguage::Zig => zig::parser(),
         }
     }
@@ -149,12 +251,22 @@ impl LanguageRegistry {
 
     pub fn sample_for(&self, language: SupportedLanguage) -> &'static str {
         match language {
+            SupportedLanguage::C => c::sample(),
+            SupportedLanguage::Cpp => cpp::sample(),
+            SupportedLanguage::CSharp => csharp::sample(),
+            SupportedLanguage::Elixir => elixir::sample(),
             SupportedLanguage::Rust => rust::sample(),
             SupportedLanguage::TypeScript => typescript::sample(),
             SupportedLanguage::JavaScript => javascript::sample(),
             SupportedLanguage::Python => python::sample(),
             SupportedLanguage::Go => go::sample(),
+            SupportedLanguage::Java => java::sample(),
+            SupportedLanguage::Lua => lua::sample(),
+            SupportedLanguage::Luau => luau::sample(),
+            SupportedLanguage::Ruby => ruby::sample(),
             SupportedLanguage::Php => php::sample(),
+            SupportedLanguage::Scala => scala::sample(),
+            SupportedLanguage::Swift => swift::sample(),
             SupportedLanguage::Zig => zig::sample(),
         }
     }

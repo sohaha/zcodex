@@ -377,6 +377,11 @@ fn shell_command_handler_records_original_command_when_rewritten() {
         "FOO=1 rtk git status",
         "FOO=1 codex rtk git status",
     );
+    assert_rewritten(
+        "rg -n needle src/main.rs",
+        "rtk grep needle src/main.rs -n",
+        "codex rtk grep needle src/main.rs -n",
+    );
 }
 
 #[test]

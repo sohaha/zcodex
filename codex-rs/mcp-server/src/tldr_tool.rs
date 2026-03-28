@@ -149,16 +149,22 @@ mod tests {
             tool_json["inputSchema"]["properties"]["action"]["enum"],
             serde_json::json!([
                 "tree",
+                "search",
                 "extract",
                 "imports",
                 "importers",
                 "context",
                 "impact",
+                "calls",
+                "dead",
+                "arch",
                 "change-impact",
                 "cfg",
                 "dfg",
                 "slice",
                 "semantic",
+                "diagnostics",
+                "doctor",
                 "ping",
                 "warm",
                 "snapshot",
@@ -169,7 +175,7 @@ mod tests {
         assert_eq!(tool_json["outputSchema"], tldr_tool_output_schema());
         assert_eq!(
             tool_json["outputSchema"]["oneOf"].as_array().map(Vec::len),
-            Some(5)
+            Some(8)
         );
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
@@ -178,6 +184,9 @@ mod tests {
                 "extract",
                 "context",
                 "impact",
+                "calls",
+                "dead",
+                "arch",
                 "change-impact",
                 "cfg",
                 "dfg",
@@ -243,7 +252,7 @@ mod tests {
                         status: "ok".to_string(),
                         message: "impact ready".to_string(),
                         analysis: Some(codex_native_tldr::api::AnalysisResponse {
-                            kind: codex_native_tldr::api::AnalysisKind::Pdg,
+                            kind: codex_native_tldr::api::AnalysisKind::Impact,
                             summary: summary.to_string(),
                             details: Some(codex_native_tldr::api::AnalysisDetail {
                                 indexed_files: 1,
@@ -291,11 +300,224 @@ mod tests {
         assert_eq!(structured["action"], "impact");
         assert_eq!(structured["summary"], summary);
         assert_eq!(structured["analysis"]["summary"], summary);
-        assert_eq!(structured["analysis"]["kind"], "pdg");
+        assert_eq!(structured["analysis"]["kind"], "impact");
         assert_eq!(
             structured["analysis"]["details"]["symbol_query"],
             "AuthService"
         );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_calls_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary = "calls summary: 1 call edge across 1 file";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Calls,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "calls ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Calls,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: None,
+                                truncated: false,
+                                change_paths: Vec::new(),
+                                slice_target: None,
+                                slice_lines: Vec::new(),
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("calls rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "calls");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "calls");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_dead_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary = "dead summary: 0 callers detected";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Dead,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "dead ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Dead,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 1,
+                                symbol_query: None,
+                                truncated: false,
+                                change_paths: Vec::new(),
+                                slice_target: None,
+                                slice_lines: Vec::new(),
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("dead rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "dead");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "dead");
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_arch_summary_text_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let summary = "arch summary: entry=1 middle=1 leaf=1";
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Arch,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "arch ready".to_string(),
+                        analysis: Some(codex_native_tldr::api::AnalysisResponse {
+                            kind: codex_native_tldr::api::AnalysisKind::Arch,
+                            summary: summary.to_string(),
+                            details: Some(codex_native_tldr::api::AnalysisDetail {
+                                indexed_files: 1,
+                                total_symbols: 3,
+                                symbol_query: None,
+                                truncated: false,
+                                change_paths: Vec::new(),
+                                slice_target: None,
+                                slice_lines: Vec::new(),
+                                overview: codex_native_tldr::api::AnalysisOverviewDetail::default(),
+                                files: Vec::new(),
+                                nodes: Vec::new(),
+                                edges: Vec::new(),
+                                symbol_index: Vec::new(),
+                                units: Vec::new(),
+                            }),
+                        }),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            format!("arch rust via daemon: {summary}")
+        );
+        assert_eq!(structured["action"], "arch");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "arch");
     }
 
     #[tokio::test]
@@ -683,6 +905,145 @@ mod tests {
         assert_eq!(
             structured["analysis"]["details"]["slice_lines"],
             serde_json::json!([1, 3, 4])
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_search_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let pattern = "auth".to_string();
+        let response = codex_native_tldr::api::SearchResponse {
+            pattern: pattern.clone(),
+            indexed_files: 1,
+            truncated: false,
+            matches: vec![codex_native_tldr::api::SearchMatch {
+                path: "src/main.rs".to_string(),
+                line: 1,
+                content: "found auth".to_string(),
+            }],
+        };
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Search,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some(pattern.clone()),
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+            },
+            {
+                let response = response.clone();
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "search ready".to_string(),
+                        analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: Some(response),
+                        diagnostics: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            "search via daemon: 1 matches"
+        );
+        assert_eq!(structured["action"], "search");
+        assert_eq!(structured["search"]["pattern"], pattern);
+        assert_eq!(structured["search"]["matches"][0]["path"], "src/main.rs");
+        assert_eq!(structured["search"]["matches"][0]["line"], 1);
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_mcp_hooks_preserves_diagnostics_payload_contract() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let diagnostics = codex_native_tldr::api::DiagnosticsResponse {
+            language: codex_native_tldr::lang_support::SupportedLanguage::Rust,
+            path: "src/main.rs".to_string(),
+            tools: vec![codex_native_tldr::api::DiagnosticToolStatus {
+                tool: "cargo-check".to_string(),
+                available: true,
+            }],
+            diagnostics: vec![codex_native_tldr::api::DiagnosticItem {
+                path: "src/main.rs".to_string(),
+                line: 1,
+                column: 1,
+                severity: codex_native_tldr::api::DiagnosticSeverity::Error,
+                message: "failed".to_string(),
+                code: Some("E001".to_string()),
+                source: "cargo-check".to_string(),
+            }],
+            message: "diagnostics reported 1 issue".to_string(),
+        };
+        let result = run_tldr_tool_with_mcp_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Diagnostics,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(TldrToolLanguage::Rust),
+                symbol: None,
+                query: None,
+                module: None,
+                path: Some("src/main.rs".to_string()),
+                line: None,
+                paths: None,
+            },
+            {
+                let diagnostics = diagnostics.clone();
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "diagnostics ready".to_string(),
+                        analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: Some(diagnostics),
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: None,
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+
+        let result_json = serde_json::to_value(&result).expect("call tool result should serialize");
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("structured content should be present");
+
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(
+            result_json["content"][0]["text"],
+            "diagnostics rust via daemon: 1 issues"
+        );
+        assert_eq!(structured["action"], "diagnostics");
+        assert_eq!(structured["diagnostics"]["path"], "src/main.rs");
+        assert_eq!(
+            structured["diagnostics"]["diagnostics"][0]["message"],
+            "failed"
         );
     }
 

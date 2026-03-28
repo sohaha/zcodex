@@ -3,7 +3,7 @@
 ## 报告信息
 - **功能名称**：codex-cli-native-tldr
 - **创建日期**：2026-03-25
-- **状态**：Stage 4 / pending（Stage 1/2/3 已完成；默认并行 `cargo test` 套件已稳定通过）
+- **状态**：Stage 4 / partial（本轮 selective sync 功能已落地；native-tldr 验证完成，CLI/MCP 已过 `cargo check`，但完整 test-profile 编译仍受环境锁竞争影响）
 
 ## 中间验证进度（实时）
 
@@ -11,6 +11,16 @@
 - **最新代码提交**：`a4175dee8`（补齐 native-tldr artifact 测试隔离；Stage 3 文档元数据已同步）
 
 ### 已完成验证
+- `cargo check -p codex-native-tldr`：通过（引入 fastembed + semantic phase-2 磁盘缓存后复验通过）
+- `cargo test -p codex-native-tldr`：通过（99 个测试；含 project-analysis reverse impact 与 semantic disk cache reuse 回归）
+- `cargo check -p codex-cli`：通过（新增 CLI `warm/search/calls/dead/arch/diagnostics/doctor` surface 与 impact 契约修正后复验通过）
+- `cargo check -p codex-mcp-server`：通过（MCP schema / impact 契约修正后复验通过）
+- `just fmt`：通过
+- `just fix -p codex-native-tldr`：通过（仍有 `too_many_arguments` 警告未自动修复）
+- `just bazel-lock-update`：失败（环境缺少 `bazel` 可执行文件）
+- `just bazel-lock-check`：失败（仓库当前缺少 `./scripts/check-module-bazel-lock.sh`）
+- `cargo test -p codex-cli --no-run --locked`：未完成，命中共享 Cargo 锁 / artifact 锁超时，未观察到新增编译错误
+- `cargo test -p codex-mcp-server --no-run --locked`：未完成，命中共享 Cargo 锁 / artifact 锁超时，未观察到新增编译错误
 - `cargo check -p codex-native-tldr -p codex-cli -p codex-mcp-server -p codex-core`：通过（imports/importers selective sync）
 - `cargo test -p codex-native-tldr import_analysis::tests::collect_imports_returns_unique_file_imports -- --exact`：通过
 - `cargo test -p codex-native-tldr import_analysis::tests::collect_importers_returns_matching_units -- --exact`：通过
@@ -229,6 +239,11 @@
 - daemon auto-start 目前只在 Unix 路径启用，Windows 仍回退本地 engine
 - shared lifecycle manager 已覆盖 CLI + MCP，但跨独立进程场景仍未做到严格“全局唯一启动”保证
 - `just argument-comment-lint` 仍因仓库缺脚本无法验证
+
+### 仍需对齐事项
+- Kotlin 语言支持因 `tree-sitter` 版本冲突尚未纳入，需在后续 sync 评估 `tree-sitter-kotlin` 依赖协调策略。
+- `codex-cli` / `codex-mcp-server` 目前只确认 `cargo check` 通过；两者 `cargo test --no-run` 在当前环境多次被共享 Cargo 锁竞争拖到超时，没有拿到完整 test-profile 编译结论。
+- Bazel 锁文件维护仍缺环境：`just bazel-lock-update` 缺 `bazel`，`just bazel-lock-check` 缺 `./scripts/check-module-bazel-lock.sh`。
 
 ### 已知环境问题
 - `just argument-comment-lint` 失败：缺少 `./tools/argument-comment-lint/run-prebuilt-linter.sh`

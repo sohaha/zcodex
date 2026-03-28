@@ -184,6 +184,8 @@ mod tests {
             analysis: None,
             imports: None,
             importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,

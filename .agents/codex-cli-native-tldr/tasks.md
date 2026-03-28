@@ -27,7 +27,7 @@ dependencies: [prd, tech-review]
 
 ## 0. 当前执行进度（已对齐真实状态）
 
-- **当前阶段**：Stage 4 / pending（Stage 1/2/3 已完成；默认并行 `cargo test` 套件已稳定通过）
+- **当前阶段**：Stage 4 / partial（本轮 selective sync 实现已完成；`codex-native-tldr` 全量测试通过，`codex-cli` / `codex-mcp-server` `cargo check` 通过，但两者完整 test-profile 编译仍受共享 Cargo 锁与环境缺项影响，尚未拿到最终绿灯）
 - **已完成任务**：
   - `T-001` crate 骨架完成，提交 `4c9b8d870`
   - `T-002` 首批 7 语言注册与 parser 接入完成，提交 `99120d35c`
@@ -53,6 +53,11 @@ dependencies: [prd, tech-review]
 - **后续结论**：
   - Stage 3 当前无执行中的 native-tldr 子任务；剩余事项属于下一轮 phase-2 hardening 或 Stage 4 部署决策
   - 当前已知非功能阻塞主要是仓库级脚本缺失，而非 native-tldr 逻辑回归
+- **2026-03-28 selective sync 收口**：
+  - 已补齐 `search` / `calls` / `dead` / `arch` / `diagnostics` / `doctor` 的 native-tldr、CLI、MCP surface
+  - `impact` 已改为 reverse call graph 语义，不再复用旧 `pdg` 契约
+  - `semantic` 已升级到 phase-2：真实 embedding provider 已接入，索引落盘到 `.tldr/cache/semantic/<lang>/` 并在显式 `reindex` 前复用磁盘缓存
+  - Kotlin 仍未纳入本轮范围：当前 workspace `tree-sitter` 依赖图与 `tree-sitter-kotlin` 存在 `links = "tree-sitter"` 冲突
 - daemon health/status 继续补强，现已额外返回 `health_reason` 与 `recovery_hint`，CLI／MCP 现可打印这些诊断提示并在新单测中覆盖
 - 新增 native-tldr 专用同步技能 `sync-native-tldr-reference`，并要求每次同步后回写 upstream hash 到 `STATE.md`
   - native-tldr phase-1 已开始暴露 `status`：daemon 侧新增 `Status` 命令，CLI/MCP 已接入状态面
@@ -89,8 +94,21 @@ dependencies: [prd, tech-review]
   - daemon 生命周期、跨平台 auto-start 与 MCP 协同策略补齐
   - CLI 侧对 stale socket/失效 daemon 的重拉起路径补更显式覆盖
 - **已知阻塞**：
-  - `just argument-comment-lint` 依赖脚本 `./tools/argument-comment-lint/run-prebuilt-linter.sh` 缺失
-  - `just bazel-lock-check` 依赖脚本 `./scripts/check-module-bazel-lock.sh` 缺失
+- `just argument-comment-lint` 依赖脚本 `./tools/argument-comment-lint/run-prebuilt-linter.sh` 缺失
+- `just bazel-lock-check` 依赖脚本 `./scripts/check-module-bazel-lock.sh` 缺失
+
+## 0.1 仍需对齐事项
+
+- Kotlin 语言支持因当前 `tree-sitter` 版本约束未纳入，需在未来 sync 评估 `tree-sitter-kotlin` 依赖冲突的解法。
+- `codex-cli` / `codex-mcp-server` 的完整 test-profile 编译仍未拿到最终绿灯；当前只确认两者 `cargo check` 通过，`cargo test --no-run` 多次被共享 Cargo 锁竞争拖到超时。
+- Bazel 锁文件维护未完成：`just bazel-lock-update` 依赖 `bazel`，`just bazel-lock-check` 依赖缺失的 `./scripts/check-module-bazel-lock.sh`。
+
+## 0.2 本轮 selective sync 结果（2026-03-28）
+
+- `codex-native-tldr` 已接入 `search`、`calls`、`dead`、`arch`、`diagnostics`、`doctor`、顶层 `warm` 与 daemon `start/stop` 所需接口。
+- `codex-cli` / `codex-mcp-server` 已同步接线新 action，并把 `impact` 契约统一到 `AnalysisKind::Impact` / `"impact"`。
+- semantic 已进入 phase-2：当前实现包含 fastembed provider、本地向量落盘（`manifest.json` / `units.jsonl` / `vectors.f32`）以及基于缓存的 brute-force 检索与显式 `reindex` 刷新。
+- 已验证：`cargo check -p codex-native-tldr`、`cargo check -p codex-cli`、`cargo check -p codex-mcp-server`、`cargo test -p codex-native-tldr`。
 
 ## 1. 任务概览
 

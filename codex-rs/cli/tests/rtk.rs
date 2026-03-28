@@ -309,7 +309,15 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
     let cases = [
         (
             vec!["rtk", "--help"],
-            vec!["gh", "env", "wget", "golangci-lint", "cargo", "summary"],
+            vec![
+                "gh",
+                "env",
+                "wget",
+                "golangci-lint",
+                "cargo",
+                "summary",
+                "显示版本",
+            ],
             vec![
                 "  init ",
                 "  gain ",
@@ -321,6 +329,7 @@ fn rtk_help_exposes_codex_curated_command_surface() -> Result<()> {
                 "cc-economics",
                 "rewrite",
                 "verify",
+                "Print version",
             ],
         ),
         (

@@ -18,6 +18,7 @@ use crate::tools::context::AbortedToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::AnyToolResult;
+use crate::tools::rewrite::rewrite_tool_call;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
 use crate::tools::router::ToolRouter;
@@ -78,7 +79,6 @@ impl ToolCallRuntime {
         source: ToolCallSource,
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Result<AnyToolResult, FunctionCallError>> {
-        let supports_parallel = self.router.tool_supports_parallel(&call.tool_name);
         let router = Arc::clone(&self.router);
         let session = Arc::clone(&self.session);
         let turn = Arc::clone(&self.turn_context);
@@ -86,16 +86,17 @@ impl ToolCallRuntime {
         let lock = Arc::clone(&self.parallel_execution);
         let started = Instant::now();
 
-        let dispatch_span = trace_span!(
-            "dispatch_tool_call_with_code_mode_result",
-            otel.name = call.tool_name.as_str(),
-            tool_name = call.tool_name.as_str(),
-            call_id = call.call_id.as_str(),
-            aborted = false,
-        );
-
         let handle: AbortOnDropHandle<Result<AnyToolResult, FunctionCallError>> =
             AbortOnDropHandle::new(tokio::spawn(async move {
+                let call = Self::rewrite_call_for_dispatch(turn.as_ref(), call, source).await;
+                let supports_parallel = router.tool_supports_parallel(&call.tool_name);
+                let dispatch_span = trace_span!(
+                    "dispatch_tool_call_with_code_mode_result",
+                    otel.name = call.tool_name.as_str(),
+                    tool_name = call.tool_name.as_str(),
+                    call_id = call.call_id.as_str(),
+                    aborted = false,
+                );
                 tokio::select! {
                     _ = cancellation_token.cancelled() => {
                         let secs = started.elapsed().as_secs_f32().max(0.1);
@@ -133,6 +134,14 @@ impl ToolCallRuntime {
 }
 
 impl ToolCallRuntime {
+    async fn rewrite_call_for_dispatch(
+        turn: &TurnContext,
+        call: ToolCall,
+        source: ToolCallSource,
+    ) -> ToolCall {
+        rewrite_tool_call(turn, call, source).await.into_call()
+    }
+
     fn failure_response(call: ToolCall, err: FunctionCallError) -> ResponseInputItem {
         let message = err.to_string();
         match call.payload {
@@ -179,3 +188,7 @@ impl ToolCallRuntime {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "parallel_tests.rs"]
+mod tests;
