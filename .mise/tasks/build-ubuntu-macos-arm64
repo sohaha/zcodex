@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
 source "$script_dir/lib-artifact-size"
+source "$script_dir/lib-speed-first-build"
 source "$script_dir/lib-ubuntu-macos-arm64"
 target="aarch64-apple-darwin"
 sdk_path="${SDKROOT:-${MACOS_SDK_PATH:-$repo_root/.cache/macos-sdk/MacOSX.sdk}}"
@@ -498,10 +499,12 @@ export SDKROOT="$sdk_path"
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 shared_target_dir="$repo_root/.cargo-target"
-if [ -z "${CARGO_TARGET_DIR:-}" ] || [ "$CARGO_TARGET_DIR" = "$shared_target_dir" ]; then
-  export CARGO_TARGET_DIR="$repo_root/.cargo-target-cross-macos-arm64"
+default_cross_target_dir="${CARGO_TARGET_DIR:-$shared_target_dir}"
+if [ "$default_cross_target_dir" = "$shared_target_dir" ]; then
+  default_cross_target_dir="$repo_root/.cargo-target-cross-macos-arm64"
 fi
-mkdir -p "$CARGO_TARGET_DIR"
+configure_speed_first_build_defaults "$repo_root" "$default_cross_target_dir"
+print_speed_first_build_summary
 # On Linux host, libz-sys may pick host pkg-config paths like x86_64-linux-gnu.
 # Force vendored/probed build path for Apple target to avoid invalid linker search dirs.
 export ZLIB_NO_PKG_CONFIG="${ZLIB_NO_PKG_CONFIG:-1}"

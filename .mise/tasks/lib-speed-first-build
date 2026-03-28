@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+configure_speed_first_build_defaults() {
+  local repo_root="$1"
+  local default_target_dir="$2"
+
+  if [ "${CODEX_BUILD_SPEED_FIRST:-1}" = "0" ]; then
+    return
+  fi
+
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$default_target_dir}"
+  export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-1}"
+  export SCCACHE_DIR="${SCCACHE_DIR:-$repo_root/.cache/sccache}"
+  export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-50G}"
+  export TMPDIR="${TMPDIR:-$repo_root/.tmp/mise-build}"
+
+  mkdir -p "$CARGO_TARGET_DIR" "$SCCACHE_DIR" "$TMPDIR"
+}
+
+print_speed_first_build_summary() {
+  if [ "${CODEX_BUILD_SPEED_FIRST:-1}" = "0" ]; then
+    return
+  fi
+
+  if [ "${CODEX_BUILD_SPEED_FIRST_SUMMARY_PRINTED:-0}" = "1" ]; then
+    return
+  fi
+  export CODEX_BUILD_SPEED_FIRST_SUMMARY_PRINTED=1
+
+  echo "[build] speed-first cache: target=$CARGO_TARGET_DIR sccache=$SCCACHE_DIR cache-size=$SCCACHE_CACHE_SIZE tmp=$TMPDIR" >&2
+}

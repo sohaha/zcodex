@@ -8,6 +8,7 @@ codex_rs_dir="$repo_root/codex-rs"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 source "$script_dir/lib-artifact-size"
+source "$script_dir/lib-speed-first-build"
 
 if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   cat >&2 <<'EOF'
@@ -19,6 +20,13 @@ if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
   mise run build ubuntu-macos-arm64 [args...]
   mise run build ubuntu-win-amd64 [args...]
   mise run build ubuntu-win-arm64 [args...]
+
+[mise] 默认会启用 speed-first 本地构建缓存：
+  CODEX_BUILD_SPEED_FIRST=0              关闭 speed-first 默认值
+  CARGO_TARGET_DIR=/path/to/target       覆盖 target 目录
+  SCCACHE_DIR=/path/to/sccache           覆盖 sccache 缓存目录
+  SCCACHE_CACHE_SIZE=100G                覆盖 sccache 缓存上限
+  TMPDIR=/path/to/tmp                    覆盖临时目录
 EOF
   exit 0
 fi
@@ -243,6 +251,8 @@ run_build() {
 }
 
 ensure_linux_build_deps "$@"
+configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target"
+print_speed_first_build_summary
 
 if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
   export RUSTC_WRAPPER="$(command -v sccache)"

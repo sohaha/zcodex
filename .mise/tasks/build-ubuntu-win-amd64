@@ -6,6 +6,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
 source "$script_dir/lib-artifact-size"
+source "$script_dir/lib-speed-first-build"
 target="x86_64-pc-windows-msvc"
 target_label="Windows amd64"
 build_task_name="build-ubuntu-win-amd64"
@@ -15,6 +16,8 @@ bootstrap_guard_var="CODEX_UBUNTU_WIN_AMD64_DEPS_BOOTSTRAPPED"
 source "$script_dir/lib-ubuntu-win"
 jobs="${CARGO_BUILD_JOBS:-$(nproc)}"
 
+configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target"
+print_speed_first_build_summary
 ensure_cross_deps
 mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
 profile_dir="$(resolve_build_profile_dir "${build_args[@]}")"
