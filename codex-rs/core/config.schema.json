@@ -176,6 +176,14 @@
       ],
       "type": "string"
     },
+    "AutoTldrRoutingMode": {
+      "enum": [
+        "off",
+        "safe",
+        "aggressive"
+      ],
+      "type": "string"
+    },
     "AppsConfigToml": {
       "additionalProperties": {
         "$ref": "#/definitions/AppConfig"
@@ -1932,6 +1940,14 @@
       ],
       "default": null,
       "description": "Machine-local realtime audio device preferences used by realtime voice."
+    },
+    "auto_tldr_routing": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/AutoTldrRoutingMode"
+        }
+      ],
+      "description": "Runtime policy for automatically rewriting code-search tool calls to native tldr."
     },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",

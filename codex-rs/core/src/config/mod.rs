@@ -279,6 +279,10 @@ impl AutoTldrRoutingMode {
     pub const fn is_off(self) -> bool {
         matches!(self, Self::Off)
     }
+
+    pub const fn uses_last_tldr_context(self) -> bool {
+        matches!(self, Self::Aggressive)
+    }
 }
 
 /// Application configuration loaded from disk and merged with overrides.
