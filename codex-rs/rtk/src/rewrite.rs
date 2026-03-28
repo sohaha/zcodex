@@ -232,22 +232,61 @@ fn rewrite_tail(rest: &[String]) -> Option<String> {
 }
 
 fn rewrite_rg(rest: &[String]) -> Option<String> {
-    let (leading_flags, remaining) = split_supported_rg_leading_flags(rest)?;
-    let [pattern, rest @ ..] = remaining else {
-        return None;
-    };
+    let mut pattern = None;
+    let mut path = None;
+    let mut extra_args = Vec::new();
+    let mut index = 0;
+    let mut positional_only = false;
 
-    let (path, extra_args): (Cow<'_, str>, &[String]) = match rest {
-        [] => (Cow::Borrowed("."), rest),
-        [arg, tail @ ..] if arg != "--" && !arg.starts_with('-') => (Cow::Borrowed(arg), tail),
-        _ => (Cow::Borrowed("."), rest),
-    };
+    while let Some(arg) = rest.get(index) {
+        if arg == "--" && !positional_only {
+            positional_only = true;
+            index += 1;
+            continue;
+        }
 
-    let mut rewritten = vec![RTK_PREFIX.to_string(), "grep".to_string()];
-    rewritten.extend(leading_flags);
-    rewritten.push(pattern.clone());
-    rewritten.push(path.into_owned());
-    rewritten.extend(extra_args.iter().cloned());
+        if !positional_only && arg != "-" && arg.starts_with('-') {
+            if is_unsupported_rg_flag(arg) {
+                return None;
+            }
+            if matches_rg_short_flag_cluster(arg) || is_supported_rg_flag(arg) {
+                extra_args.push(arg.clone());
+                index += 1;
+                continue;
+            }
+            if matches!(arg.as_str(), "-g" | "--glob") {
+                let value = rest.get(index + 1)?;
+                extra_args.push(arg.clone());
+                extra_args.push(value.clone());
+                index += 2;
+                continue;
+            }
+            if arg.starts_with("--glob=")
+                || arg
+                    .strip_prefix("-g")
+                    .is_some_and(|value| !value.is_empty())
+            {
+                extra_args.push(arg.clone());
+                index += 1;
+                continue;
+            }
+            return None;
+        }
+
+        if pattern.is_none() {
+            pattern = Some(arg.clone());
+        } else if path.is_none() {
+            path = Some(arg.clone());
+        } else {
+            return None;
+        }
+        index += 1;
+    }
+
+    let pattern = pattern?;
+    let path = path.unwrap_or_else(|| ".".to_string());
+    let mut rewritten = vec![RTK_PREFIX.to_string(), "grep".to_string(), pattern, path];
+    rewritten.extend(extra_args);
     Some(join_shell_words(&rewritten))
 }
 
@@ -279,25 +318,7 @@ fn parse_read_window_count(value: &str) -> Option<&str> {
         .or_else(|| parse_numeric_short_flag(value, "-n"))
 }
 
-fn split_supported_rg_leading_flags(args: &[String]) -> Option<(Vec<String>, &[String])> {
-    let mut flags = Vec::new();
-    let mut index = 0;
-
-    while let Some(arg) = args.get(index) {
-        if arg == "--" || arg == "-" || !arg.starts_with('-') {
-            break;
-        }
-        if !is_supported_rg_leading_flag(arg) {
-            return None;
-        }
-        flags.push(arg.clone());
-        index += 1;
-    }
-
-    Some((flags, &args[index..]))
-}
-
-fn is_supported_rg_leading_flag(arg: &str) -> bool {
+fn is_supported_rg_flag(arg: &str) -> bool {
     matches!(
         arg,
         "-a" | "-F"
@@ -326,7 +347,11 @@ fn is_supported_rg_leading_flag(arg: &str) -> bool {
             | "--text"
             | "--trim"
             | "--word-regexp"
-    ) || matches_rg_short_flag_cluster(arg)
+    )
+}
+
+fn is_unsupported_rg_flag(arg: &str) -> bool {
+    arg == "-r" || arg.starts_with("-r") || arg == "--replace" || arg.starts_with("--replace=")
 }
 
 fn matches_rg_short_flag_cluster(arg: &str) -> bool {
@@ -960,21 +985,34 @@ mod tests {
         assert_rewrite_cases(&[
             (
                 "rg -n needle src/main.rs",
-                Some("rtk grep -n needle src/main.rs"),
+                Some("rtk grep needle src/main.rs -n"),
             ),
             (
                 "rg -ni \"a|b\" src/main.rs",
-                Some("rtk grep -ni 'a|b' src/main.rs"),
+                Some("rtk grep 'a|b' src/main.rs -ni"),
             ),
             (
                 "env FOO=1 rg -n \"render_long_help|print_help|render_help|help_flag|version_flag|try_parse_from\\(\" /workspace/codex-rs/cli/src/main.rs",
                 Some(
-                    "env FOO=1 rtk grep -n 'render_long_help|print_help|render_help|help_flag|version_flag|try_parse_from\\(' /workspace/codex-rs/cli/src/main.rs",
+                    "env FOO=1 rtk grep 'render_long_help|print_help|render_help|help_flag|version_flag|try_parse_from\\(' /workspace/codex-rs/cli/src/main.rs -n",
                 ),
             ),
             (
                 "rg -n needle --glob '*.rs'",
-                Some("rtk grep -n needle . --glob '*.rs'"),
+                Some("rtk grep needle . -n --glob '*.rs'"),
+            ),
+            (
+                "rg needle --glob '*.txt' src",
+                Some("rtk grep needle src --glob '*.txt'"),
+            ),
+            (
+                "rg needle -- ./-dash.txt",
+                Some("rtk grep needle ./-dash.txt"),
+            ),
+            ("rg needle -", Some("rtk grep needle -")),
+            (
+                "rg --glob='*.rs' needle src/main.rs",
+                Some("rtk grep needle src/main.rs '--glob=*.rs'"),
             ),
         ]);
     }
@@ -1311,8 +1349,9 @@ mod tests {
             "head -n 3 src/main.rs src/lib.rs",
             "tail -f src/main.rs",
             "env FOO=1 command tail -f src/main.rs",
-            "rg --glob '*.rs' needle src/main.rs",
             "rg -r '$1' needle src/main.rs",
+            "rg --replace '$1' needle src/main.rs",
+            "rg needle src/main.rs nested.rs",
         ] {
             let analysis = analyze_shell_command(command);
             assert_eq!(analysis.command, command);

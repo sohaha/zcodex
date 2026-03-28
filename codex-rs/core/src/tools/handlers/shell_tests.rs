@@ -379,8 +379,8 @@ fn shell_command_handler_records_original_command_when_rewritten() {
     );
     assert_rewritten(
         "rg -n needle src/main.rs",
-        "rtk grep -n needle src/main.rs",
-        "codex rtk grep -n needle src/main.rs",
+        "rtk grep needle src/main.rs -n",
+        "codex rtk grep needle src/main.rs -n",
     );
 }
 
