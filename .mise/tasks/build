@@ -149,6 +149,13 @@ resolve_codex_bin() {
   printf '%s\n' "$target_dir/$profile_dir/codex"
 }
 
+can_use_built_codex_for_rtk_build() {
+  local built_codex_bin="$1"
+
+  [ -x "$built_codex_bin" ] || return 1
+  "$built_codex_bin" rtk cargo build --help >/dev/null 2>&1
+}
+
 overwrite_installed_codex_if_present() {
   local built_codex_bin="$1"
   local installed_codex
@@ -218,7 +225,7 @@ run_build() {
   local built_codex_bin="$1"
   shift
 
-  if [ -x "$built_codex_bin" ]; then
+  if can_use_built_codex_for_rtk_build "$built_codex_bin"; then
     set +e
     "$script_dir/rs-ext" "$built_codex_bin" rtk cargo build -p codex-cli --bin codex -j "$jobs" "$@"
     local status=$?
@@ -227,6 +234,9 @@ run_build() {
       overwrite_installed_codex_if_present "$built_codex_bin"
       return 0
     fi
+    echo "[build] 内置 RTK 构建快捷路径失败，回退到 cargo build" >&2
+  elif [ -x "$built_codex_bin" ]; then
+    echo "[build] 已跳过不可用的已构建 codex 二进制，直接使用 cargo build" >&2
   fi
 
   "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"

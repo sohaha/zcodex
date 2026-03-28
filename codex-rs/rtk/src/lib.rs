@@ -79,6 +79,7 @@ pub fn is_alias_invocation(argv0: &OsString) -> bool {
 #[command(
     name = "rtk",
     version,
+    propagate_version = true,
     about = "Token Killer - 最小化 LLM token 消耗",
     long_about = "高性能 CLI 代理，在输出进入 LLM 上下文前进行过滤与摘要。",
     disable_help_flag = true,
@@ -1741,6 +1742,12 @@ mod tests {
     fn test_try_parse_valid_git_status() {
         let result = Cli::try_parse_from(["rtk", "git", "status"]);
         assert!(result.is_ok(), "git status should parse successfully");
+    }
+
+    #[test]
+    fn test_try_parse_valid_cargo_build() {
+        let result = Cli::try_parse_from(["rtk", "cargo", "build", "-p", "codex-cli"]);
+        assert!(result.is_ok(), "cargo build should parse successfully");
     }
 
     #[test]
