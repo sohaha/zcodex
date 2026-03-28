@@ -31,6 +31,7 @@ pub struct TldrHandler;
 
 const TLDR_JSON_BEGIN: &str = "---BEGIN_TLDR_JSON---";
 const TLDR_JSON_END: &str = "---END_TLDR_JSON---";
+const TLDR_TRACE_TARGET: &str = "codex_core::tldr";
 
 #[async_trait]
 impl ToolHandler for TldrHandler {
@@ -76,8 +77,45 @@ where
     ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
     E: for<'a> Fn(&'a Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
 {
+    let action = args.action.clone();
+    let project = args.project.clone();
+    let language = args.language;
+    let symbol = args.symbol.clone();
+    let query_text = args.query.clone();
+    let module = args.module.clone();
+    let path = args.path.clone();
+    let line = args.line;
+    let path_count = args.paths.as_ref().map(Vec::len).unwrap_or(0);
+    tracing::info!(
+        target: TLDR_TRACE_TARGET,
+        action = ?action,
+        project = project.as_deref().unwrap_or_default(),
+        language = ?language,
+        symbol = symbol.as_deref().unwrap_or_default(),
+        query = query_text.as_deref().unwrap_or_default(),
+        module = module.as_deref().unwrap_or_default(),
+        path = path.as_deref().unwrap_or_default(),
+        line = ?line,
+        path_count,
+        "tldr begin"
+    );
+    let started_at = Instant::now();
+
     match run_tldr_tool_with_hooks(args, query, ensure_running).await {
         Ok(result) => {
+            let duration_ms = started_at
+                .elapsed()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX);
+            tracing::info!(
+                target: TLDR_TRACE_TARGET,
+                action = ?action,
+                project = project.as_deref().unwrap_or_default(),
+                success = true,
+                duration_ms,
+                "tldr end"
+            );
             let json = serde_json::to_string_pretty(&result.structured_content)
                 .map_err(|err| FunctionCallError::Fatal(format!("serialize tldr output: {err}")))?;
             let summary = render_tldr_summary(&result.structured_content);
@@ -87,7 +125,23 @@ where
                 Some(true),
             ))
         }
-        Err(err) => Ok(FunctionToolOutput::from_text(err.to_string(), Some(false))),
+        Err(err) => {
+            let duration_ms = started_at
+                .elapsed()
+                .as_millis()
+                .try_into()
+                .unwrap_or(u64::MAX);
+            tracing::info!(
+                target: TLDR_TRACE_TARGET,
+                action = ?action,
+                project = project.as_deref().unwrap_or_default(),
+                success = false,
+                duration_ms,
+                error = %err,
+                "tldr end"
+            );
+            Ok(FunctionToolOutput::from_text(err.to_string(), Some(false)))
+        }
     }
 }
 
@@ -411,9 +465,83 @@ mod tests {
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use pretty_assertions::assert_eq;
     use serde_json::json;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
+    use std::sync::Mutex as StdMutex;
     use tempfile::tempdir;
     use tokio::sync::Mutex;
+    use tracing::Event;
+    use tracing::Subscriber;
+    use tracing::field::Visit;
+    use tracing_subscriber::Layer;
+    use tracing_subscriber::layer::Context;
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::registry::LookupSpan;
+    use tracing_subscriber::util::SubscriberInitExt;
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct LogEvent {
+        message: String,
+        fields: BTreeMap<String, String>,
+    }
+
+    #[derive(Default)]
+    struct LogEventVisitor {
+        message: String,
+        fields: BTreeMap<String, String>,
+    }
+
+    impl Visit for LogEventVisitor {
+        fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
+        }
+
+        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+            if field.name() == "message" {
+                self.message = value.to_string();
+            } else {
+                self.fields
+                    .insert(field.name().to_string(), value.to_string());
+            }
+        }
+
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                self.message = format!("{value:?}").trim_matches('"').to_string();
+            } else {
+                self.fields
+                    .insert(field.name().to_string(), format!("{value:?}"));
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct LogCollectorLayer {
+        events: Arc<StdMutex<Vec<LogEvent>>>,
+    }
+
+    impl<S> Layer<S> for LogCollectorLayer
+    where
+        S: Subscriber + for<'a> LookupSpan<'a>,
+    {
+        fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+            if event.metadata().target() != TLDR_TRACE_TARGET {
+                return;
+            }
+            let mut visitor = LogEventVisitor::default();
+            event.record(&mut visitor);
+            self.events.lock().unwrap().push(LogEvent {
+                message: visitor.message,
+                fields: visitor.fields,
+            });
+        }
+    }
 
     fn invocation(
         session: Arc<crate::codex::Session>,
@@ -605,6 +733,63 @@ mod tests {
                 .into_text()
                 .contains("`query` is required for action=semantic")
         );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_handler_with_hooks_emits_begin_and_end_logs() {
+        let events = Arc::new(StdMutex::new(Vec::new()));
+        let _guard = tracing_subscriber::registry()
+            .with(LogCollectorLayer {
+                events: events.clone(),
+            })
+            .set_default();
+        let tempdir = tempdir().expect("tempdir should exist");
+
+        let output = run_tldr_handler_with_hooks(
+            TldrToolCallParam {
+                action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
+                project: Some(tempdir.path().display().to_string()),
+                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                symbol: None,
+                query: Some("auth login".to_string()),
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+            },
+            &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("semantic"))) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("handler helper should succeed");
+
+        assert_eq!(output.success, Some(true));
+
+        let events = events.lock().unwrap().clone();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].message, "tldr begin");
+        assert_eq!(
+            events[0].fields.get("action").map(String::as_str),
+            Some("Semantic")
+        );
+        assert_eq!(
+            events[0].fields.get("query").map(String::as_str),
+            Some("auth login")
+        );
+        assert_eq!(
+            events[0].fields.get("project").map(String::as_str),
+            Some(tempdir.path().to_string_lossy().as_ref())
+        );
+        assert_eq!(events[1].message, "tldr end");
+        assert_eq!(
+            events[1].fields.get("action").map(String::as_str),
+            Some("Semantic")
+        );
+        assert_eq!(
+            events[1].fields.get("success").map(String::as_str),
+            Some("true")
+        );
+        assert!(events[1].fields.contains_key("duration_ms"));
     }
 
     #[tokio::test]
