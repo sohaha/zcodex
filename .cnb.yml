@@ -52,6 +52,7 @@
 include:
   - https://cnb.cool/zls-tools/vm/-/blob/main/tools/sync-github-sohaha.yml
   - https://cnb.cool/zls-tools/vm/-/blob/main/rust-ide.yml
+  - https://cnb.cool/zls-tools/vm/-/blob/main/tools/install-tools.yml
 
 v*.*.*:
   tag_push:
