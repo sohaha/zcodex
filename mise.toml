@@ -1,0 +1,13 @@
+[tasks.codex-watch-tools]
+description = "Watch codex tool usage in codex-tui.log"
+run = '''
+RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
+| RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'ToolCall: (shell_command|tldr|web|apply_patch)|embedded RTK|native-tldr'
+'''
+
+[tasks.codex-watch-tldr]
+description = "Watch tldr usage in codex-tui.log"
+run = '''
+RIPGREP_CONFIG_PATH=/dev/null tail -F ./.codex-log/codex-tui.log \
+| RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'ToolCall: tldr|native-tldr'
+'''
