@@ -1,19 +1,77 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ram_build_root_is_usable() {
+  local ram_root="${CODEX_BUILD_RAM_ROOT:-/dev/shm}"
+  local min_free_kib="${CODEX_BUILD_RAM_TARGET_MIN_FREE_KIB:-12582912}"
+  local free_kib
+
+  [ -d "$ram_root" ] || return 1
+  [ -w "$ram_root" ] || return 1
+
+  free_kib="$(df -Pk "$ram_root" 2>/dev/null | awk 'NR==2 {print $4}')"
+  [ -n "$free_kib" ] || return 1
+  [ "$free_kib" -ge "$min_free_kib" ]
+}
+
+resolve_speed_first_tmpdir() {
+  local repo_root="$1"
+  local ram_root="${CODEX_BUILD_RAM_ROOT:-/dev/shm}"
+
+  if [ -z "${TMPDIR:-}" ] && [ -d "$ram_root" ] && [ -w "$ram_root" ]; then
+    printf '%s\n' "$ram_root/zcodex-mise-build/tmp"
+    return
+  fi
+
+  printf '%s\n' "${TMPDIR:-$repo_root/.tmp/mise-build}"
+}
+
+resolve_speed_first_target_dir() {
+  local repo_root="$1"
+  local default_target_dir="$2"
+  local target_mode="${3:-prefer-disk}"
+  local ram_root="${CODEX_BUILD_RAM_ROOT:-/dev/shm}"
+  local ram_target_policy="${CODEX_BUILD_RAM_TARGET:-auto}"
+
+  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    printf '%s\n' "$CARGO_TARGET_DIR"
+    return
+  fi
+
+  case "$ram_target_policy:$target_mode" in
+    0:*|false:*|off:*|*:prefer-disk)
+      printf '%s\n' "$default_target_dir"
+      return
+      ;;
+    1:*|true:*|on:*)
+      printf '%s\n' "$ram_root/zcodex-cargo-target"
+      return
+      ;;
+    auto:prefer-ram)
+      if ram_build_root_is_usable; then
+        printf '%s\n' "$ram_root/zcodex-cargo-target"
+        return
+      fi
+      ;;
+  esac
+
+  printf '%s\n' "$default_target_dir"
+}
+
 configure_speed_first_build_defaults() {
   local repo_root="$1"
   local default_target_dir="$2"
+  local target_mode="${3:-prefer-disk}"
 
   if [ "${CODEX_BUILD_SPEED_FIRST:-1}" = "0" ]; then
     return
   fi
 
-  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$default_target_dir}"
+  export CARGO_TARGET_DIR="$(resolve_speed_first_target_dir "$repo_root" "$default_target_dir" "$target_mode")"
   export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-1}"
   export SCCACHE_DIR="${SCCACHE_DIR:-$repo_root/.cache/sccache}"
   export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-50G}"
-  export TMPDIR="${TMPDIR:-$repo_root/.tmp/mise-build}"
+  export TMPDIR="$(resolve_speed_first_tmpdir "$repo_root")"
 
   mkdir -p "$CARGO_TARGET_DIR" "$SCCACHE_DIR" "$TMPDIR"
 }

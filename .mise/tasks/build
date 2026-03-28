@@ -23,6 +23,9 @@ if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 
 [mise] 默认会启用 speed-first 本地构建缓存：
   CODEX_BUILD_SPEED_FIRST=0              关闭 speed-first 默认值
+  CODEX_BUILD_RAM_TARGET=0               强制本地 build 使用磁盘 target
+  CODEX_BUILD_RAM_TARGET=1               强制本地 build 使用 /dev/shm target
+  CODEX_BUILD_RAM_TARGET=auto            共享内存足够时自动切到 /dev/shm target
   CARGO_TARGET_DIR=/path/to/target       覆盖 target 目录
   SCCACHE_DIR=/path/to/sccache           覆盖 sccache 缓存目录
   SCCACHE_CACHE_SIZE=100G                覆盖 sccache 缓存上限
@@ -251,7 +254,7 @@ run_build() {
 }
 
 ensure_linux_build_deps "$@"
-configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target"
+configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target" "prefer-ram"
 print_speed_first_build_summary
 
 if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then

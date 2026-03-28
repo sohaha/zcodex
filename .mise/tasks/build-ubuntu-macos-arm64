@@ -503,7 +503,7 @@ default_cross_target_dir="${CARGO_TARGET_DIR:-$shared_target_dir}"
 if [ "$default_cross_target_dir" = "$shared_target_dir" ]; then
   default_cross_target_dir="$repo_root/.cargo-target-cross-macos-arm64"
 fi
-configure_speed_first_build_defaults "$repo_root" "$default_cross_target_dir"
+configure_speed_first_build_defaults "$repo_root" "$default_cross_target_dir" "prefer-disk"
 print_speed_first_build_summary
 # On Linux host, libz-sys may pick host pkg-config paths like x86_64-linux-gnu.
 # Force vendored/probed build path for Apple target to avoid invalid linker search dirs.
