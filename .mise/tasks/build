@@ -235,8 +235,6 @@ run_build() {
       return 0
     fi
     echo "[build] 内置 RTK 构建快捷路径失败，回退到 cargo build" >&2
-  elif [ -x "$built_codex_bin" ]; then
-    echo "[build] 已跳过不可用的已构建 codex 二进制，直接使用 cargo build" >&2
   fi
 
   "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" "$@"
