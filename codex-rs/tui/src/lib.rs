@@ -488,9 +488,16 @@ pub async fn run_main(
     let (non_blocking, _guard) = non_blocking(log_file);
 
     // use RUST_LOG env var, default to info for codex crates.
+    // Release builds keep the RTK rewrite diagnostics off by default so
+    // packaged binaries do not emit those troubleshooting logs unless asked.
     let env_filter = || {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("codex_core=info,codex_tui=info,codex_rmcp_client=info")
+            let default_filter = if cfg!(debug_assertions) {
+                "codex_core=info,codex_tui=info,codex_rmcp_client=info"
+            } else {
+                "codex_core=info,codex_tui=info,codex_rmcp_client=info,codex_core::shell_rtk=off"
+            };
+            EnvFilter::new(default_filter)
         })
     };
 
