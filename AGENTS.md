@@ -245,3 +245,33 @@ These guidelines apply to app-server protocol work in `codex-rs`, especially:
 
 11. 当用户明确说“使用vbm记住这个 bug”、“使用 vbm 记住这个 bug”、“使用vbm记录这次决策”或“使用 vbm 记录这次决策”时，优先写入正式记忆。
 <!-- vbm:end -->
+
+<!-- vbm-global:start -->
+## Vibe Memory 全局引导
+
+- 如果已安装的 `vbm`（Vibe Memory）skill 位于 `/workspace/.codex/skills/vbm`，应把它作为项目记忆引导的唯一来源。
+- 对项目级开发任务，在进入实质性实现前先执行项目记忆引导。
+- 只有当前工作目录是项目根目录，或可以可靠解析到项目根目录时，才允许自动引导。
+- 项目根目录解析优先级：
+  1. 优先使用 `git rev-parse --show-toplevel`
+  2. 如果 git 不可用，仅当当前目录包含 `.git`、`package.json`、`pnpm-workspace.yaml`、`pom.xml`、`build.gradle`、`settings.gradle`、`pyproject.toml`、`requirements.txt`、`Cargo.toml`、`go.mod`、`composer.json`、`Gemfile`、`Makefile` 等项目标记时，才把它视为项目根目录
+  3. 禁止在用户主目录、桌面、下载目录等明显非项目目录下自动创建 `.ai`
+- 如果项目根目录存在且 `.ai/index/manifest.json` 缺失，应执行：
+  `node "/workspace/.codex/skills/vbm/scripts/install.mjs" --project "<project-root>"`
+- 自动引导可以向 `AGENTS.md` 或 `CLAUDE.md` 追加受控项目规则块，但绝不能覆盖受控区块之外的用户规则。
+- 如果项目中已经存在 `.ai`，改动代码前先读取这些基础记忆：
+  - `.ai/project/overview.md`
+  - `.ai/project/config-map.md`
+  - `.ai/memory/handoff.md`
+  - `.ai/memory/known-risks.md`
+- 修改项目代码前，优先执行：
+  `node "/workspace/.codex/skills/vbm/scripts/recall.mjs" --project "<project-root>" --query "<task summary>"`
+- 每轮任务或对话结束时，优先执行：
+  `node "/workspace/.codex/skills/vbm/scripts/session-close.mjs" --project "<project-root>" --summary "<confirmed summary>"`
+- 如果有代码变更，优先使用 `auto-capture.mjs` 或 `capture-from-diff.mjs` 生成候选记忆；只有显式确认已验证时，才正式写入问题记录或决策记录。
+- 默认不需要点名 `vbm`；只要处于项目开发对话，就应自动读取基础记忆，并在收尾时自动整理交接记忆。
+- 当用户明确说“使用vbm记下来刚刚的事情”、“使用 vbm 记下来刚刚的事情”或相近表达时，优先触发 `session-close.mjs` 更新交接记忆。
+- 当用户明确说“使用vbm记住这个 bug”、“使用 vbm 记住这个 bug”、“使用vbm记录这次决策”或“使用 vbm 记录这次决策”时，优先触发正式记忆写入流程。
+- 严禁把密码、令牌、私钥或完整连接串写入 `.ai`。
+- 这个区块现已迁移到项目级 `AGENTS.md`，不再依赖 `~/.codex/AGENTS.md` 中的全局引导。
+<!-- vbm-global:end -->
