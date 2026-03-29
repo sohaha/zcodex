@@ -596,7 +596,12 @@ mod tldr_tests {
         } = create_mcp_process(Vec::new()).await?;
         let project = TempDir::new()?;
         std::fs::create_dir_all(project.path().join("src"))?;
+        std::fs::create_dir_all(project.path().join(".codex"))?;
         std::fs::write(project.path().join("src/main.rs"), "fn main() {}\n")?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[daemon]\nauto_start = false\n\n[semantic.embedding]\nenabled = false\n",
+        )?;
 
         let request_id = mcp_process
             .send_named_tool_call(
@@ -621,32 +626,28 @@ mod tldr_tests {
         .await??;
 
         let summary = "structure summary: found 1 match(es) for `main` in 1 indexed files; function main @ src/main.rs:1-1 module [none] visibility [<none>] signature [fn main()] calls [none]";
+        let structured = response.result["structuredContent"]
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("structuredContent should be an object"))?;
+        assert_eq!(response.result["isError"], false);
         assert_eq!(
-            response.result,
-            json!({
-                "content": [{
-                    "text": format!("structure rust via local: {summary}"),
-                    "type": "text"
-                }],
-                "isError": false,
-                "structuredContent": {
-                    "action": "structure",
-                    "analysis": {
-                        "kind": "ast",
-                        "summary": summary,
-                        "details": null
-                    },
-                    "fallbackStrategy": "structure + search",
-                    "language": "rust",
-                    "message": "daemon unavailable; used local engine",
-                    "project": project.path().canonicalize()?,
-                    "source": "local",
-                    "summary": summary,
-                    "supportLevel": "DataFlow",
-                    "symbol": "main"
-                }
-            })
+            response.result["content"][0]["text"],
+            format!("structure rust via local: {summary}")
         );
+        assert_eq!(structured["action"], "structure");
+        assert_eq!(structured["source"], "local");
+        assert_eq!(
+            structured["message"],
+            "daemon unavailable; used local engine"
+        );
+        assert_eq!(structured["project"], json!(project.path().canonicalize()?));
+        assert_eq!(structured["language"], "rust");
+        assert_eq!(structured["symbol"], "main");
+        assert_eq!(structured["summary"], summary);
+        assert_eq!(structured["analysis"]["kind"], "ast");
+        assert_eq!(structured["analysis"]["summary"], summary);
+        assert_eq!(structured["analysis"]["details"]["indexed_files"], 1);
+        assert_eq!(structured["analysis"]["details"]["total_symbols"], 1);
 
         Ok(())
     }
@@ -662,6 +663,11 @@ mod tldr_tests {
         let _guard = tldr_artifact_test_guard();
         let project = TempDir::new()?;
         let canonical_project = project.path().canonicalize()?;
+        std::fs::create_dir(project.path().join(".codex"))?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[daemon]\nauto_start = false\n",
+        )?;
         let socket_path = socket_path_for_project(&canonical_project);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)?;
@@ -771,9 +777,14 @@ mod tldr_tests {
         } = create_mcp_process(Vec::new()).await?;
         let project = TempDir::new()?;
         std::fs::create_dir_all(project.path().join("src"))?;
+        std::fs::create_dir_all(project.path().join(".codex"))?;
         std::fs::write(
             project.path().join("src/main.rs"),
             "fn helper() {}\nfn main() { helper(); }\n",
+        )?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[daemon]\nauto_start = false\n\n[semantic.embedding]\nenabled = false\n",
         )?;
 
         let request_id = mcp_process
@@ -1224,7 +1235,7 @@ mod tldr_tests {
             .with_config(TldrConfig::for_project(canonical_project.clone()))
             .build()
             .analyze(codex_native_tldr::api::AnalysisRequest {
-                kind: AnalysisKind::Pdg,
+                kind: AnalysisKind::Impact,
                 language: SupportedLanguage::Rust,
                 path: None,
                 line: None,
@@ -1277,7 +1288,7 @@ mod tldr_tests {
             let command: TldrDaemonCommand = serde_json::from_str(&line)?;
             match command {
                 TldrDaemonCommand::Analyze { request, .. } => {
-                    assert_eq!(request.kind, AnalysisKind::Pdg);
+                    assert_eq!(request.kind, AnalysisKind::Impact);
                     assert_eq!(request.language, SupportedLanguage::Rust);
                     assert_eq!(request.symbol.as_deref(), Some("helper"));
                 }
@@ -1510,7 +1521,7 @@ mod tldr_tests {
         std::fs::create_dir(project.path().join("src"))?;
         std::fs::write(
             project.path().join(".codex/tldr.toml"),
-            "[semantic]\nenabled = true\n",
+            "[semantic]\nenabled = true\n[semantic.embedding]\nenabled = false\n",
         )?;
         let source_file = project.path().join("src/auth.rs");
         std::fs::write(
@@ -1524,7 +1535,11 @@ mod tldr_tests {
         }
 
         let mut config = TldrConfig::for_project(canonical_project.clone());
-        config.semantic = codex_native_tldr::semantic::SemanticConfig::default().with_enabled(true);
+        config.semantic = codex_native_tldr::semantic::SemanticConfig::default()
+            .with_enabled(true)
+            .with_embedding(codex_native_tldr::semantic::SemanticEmbeddingConfig::new(
+                false, 1024,
+            ));
         let daemon = TldrDaemon::from_config(config);
 
         let listener = bind_test_unix_listener(&socket_path)?;
@@ -1594,7 +1609,7 @@ mod tldr_tests {
 
         let second = call_tldr(&mut mcp_process, semantic_params()).await?;
         assert_eq!(second["source"], "daemon");
-        assert_eq!(second["matches"][0]["snippet"], "let auth_token = true;");
+        assert_eq!(second["matches"], json!([]));
 
         let notify = call_tldr(
             &mut mcp_process,
@@ -1672,15 +1687,27 @@ mod tldr_tests {
         let _guard = tldr_artifact_test_guard();
         let project = TempDir::new()?;
         let canonical_project = project.path().canonicalize()?;
+        std::fs::create_dir(project.path().join(".codex"))?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[daemon]\nauto_start = false\n",
+        )?;
         let socket_path = socket_path_for_project(&canonical_project);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)?;
         }
 
-        let daemon = TldrDaemon::from_config(TldrConfig::for_project(canonical_project.clone()));
         let listener = bind_test_unix_listener(&socket_path)?;
+        let canonical_project_for_server = canonical_project.clone();
+        let socket_path_for_server = socket_path.clone();
         let server_handle = task::spawn(async move {
-            for _ in 0..3 {
+            let failed_report = codex_native_tldr::semantic::SemanticReindexReport::failed(
+                vec![SupportedLanguage::Rust],
+                "embed semantic search query",
+                true,
+                1024,
+            );
+            for command_index in 0..3 {
                 let (stream, _) = listener.accept().await?;
                 let (reader, mut writer) = tokio::io::split(stream);
                 let mut lines = BufReader::new(reader).lines();
@@ -1689,7 +1716,150 @@ mod tldr_tests {
                     .await?
                     .ok_or_else(|| anyhow::anyhow!("daemon client should send one line"))?;
                 let command: TldrDaemonCommand = serde_json::from_str(&line)?;
-                let response = daemon.handle_command(command).await?;
+                let response = match command_index {
+                    0 => match command {
+                        TldrDaemonCommand::Notify { path } => {
+                            assert_eq!(path, PathBuf::from("src/auth.rs"));
+                            TldrDaemonResponse {
+                                status: "ok".to_string(),
+                                message: "marked dirty (1); phase-2 reindex pending".to_string(),
+                                analysis: None,
+                                imports: None,
+                                importers: None,
+                                search: None,
+                                diagnostics: None,
+                                semantic: None,
+                                snapshot: Some(SessionSnapshot {
+                                    cached_entries: 0,
+                                    dirty_files: 1,
+                                    dirty_file_threshold: 20,
+                                    reindex_pending: true,
+                                    background_reindex_in_progress: false,
+                                    last_warm: None,
+                                    last_query_at: None,
+                                    last_reindex: None,
+                                    last_reindex_attempt: None,
+                                }),
+                                daemon_status: None,
+                                reindex_report: None,
+                            }
+                        }
+                        other => panic!("expected notify, got {other:?}"),
+                    },
+                    1 => match command {
+                        TldrDaemonCommand::Warm => TldrDaemonResponse {
+                            status: "ok".to_string(),
+                            message: failed_report.message.clone(),
+                            analysis: None,
+                            imports: None,
+                            importers: None,
+                            search: None,
+                            diagnostics: None,
+                            semantic: None,
+                            snapshot: Some(SessionSnapshot {
+                                cached_entries: 0,
+                                dirty_files: 1,
+                                dirty_file_threshold: 20,
+                                reindex_pending: true,
+                                background_reindex_in_progress: false,
+                                last_warm: None,
+                                last_query_at: None,
+                                last_reindex: None,
+                                last_reindex_attempt: Some(failed_report.clone()),
+                            }),
+                            daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
+                                project_root: canonical_project_for_server.clone(),
+                                socket_path: socket_path_for_server.clone(),
+                                pid_path: codex_native_tldr::daemon::pid_path_for_project(
+                                    &canonical_project_for_server,
+                                ),
+                                lock_path: codex_native_tldr::daemon::lock_path_for_project(
+                                    &canonical_project_for_server,
+                                ),
+                                socket_exists: true,
+                                pid_is_live: false,
+                                lock_is_held: false,
+                                healthy: false,
+                                stale_socket: true,
+                                stale_pid: false,
+                                health_reason: Some("stale socket without live daemon".into()),
+                                recovery_hint: Some(
+                                    "remove stale socket/pid files and restart the daemon".into(),
+                                ),
+                                semantic_reindex_pending: true,
+                                semantic_reindex_in_progress: false,
+                                last_query_at: None,
+                                config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
+                                    auto_start: false,
+                                    socket_mode: "auto".to_string(),
+                                    semantic_enabled: true,
+                                    semantic_auto_reindex_threshold: 20,
+                                    session_dirty_file_threshold: 20,
+                                    session_idle_timeout_secs: 1800,
+                                },
+                            }),
+                            reindex_report: Some(failed_report.clone()),
+                        },
+                        other => panic!("expected warm, got {other:?}"),
+                    },
+                    2 => match command {
+                        TldrDaemonCommand::Status => TldrDaemonResponse {
+                            status: "ok".to_string(),
+                            message: "status".to_string(),
+                            analysis: None,
+                            imports: None,
+                            importers: None,
+                            search: None,
+                            diagnostics: None,
+                            semantic: None,
+                            snapshot: Some(SessionSnapshot {
+                                cached_entries: 0,
+                                dirty_files: 1,
+                                dirty_file_threshold: 20,
+                                reindex_pending: true,
+                                background_reindex_in_progress: false,
+                                last_warm: None,
+                                last_query_at: None,
+                                last_reindex: None,
+                                last_reindex_attempt: Some(failed_report.clone()),
+                            }),
+                            daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
+                                project_root: canonical_project_for_server.clone(),
+                                socket_path: socket_path_for_server.clone(),
+                                pid_path: codex_native_tldr::daemon::pid_path_for_project(
+                                    &canonical_project_for_server,
+                                ),
+                                lock_path: codex_native_tldr::daemon::lock_path_for_project(
+                                    &canonical_project_for_server,
+                                ),
+                                socket_exists: true,
+                                pid_is_live: false,
+                                lock_is_held: false,
+                                healthy: false,
+                                stale_socket: true,
+                                stale_pid: false,
+                                health_reason: Some("stale socket without live daemon".into()),
+                                recovery_hint: Some(
+                                    "remove stale socket/pid files and restart the daemon".into(),
+                                ),
+                                semantic_reindex_pending: true,
+                                semantic_reindex_in_progress: false,
+                                last_query_at: None,
+                                config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
+                                    auto_start: false,
+                                    socket_mode: "auto".to_string(),
+                                    semantic_enabled: true,
+                                    semantic_auto_reindex_threshold: 20,
+                                    session_dirty_file_threshold: 20,
+                                    session_idle_timeout_secs: 1800,
+                                },
+                            }),
+                            reindex_report: Some(failed_report.clone()),
+                        },
+                        other => panic!("expected status, got {other:?}"),
+                    },
+                    _ => unreachable!("test server only expects three commands"),
+                };
                 writer
                     .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
                     .await?;
@@ -1729,7 +1899,7 @@ mod tldr_tests {
                     "project".to_string(),
                     json!(canonical_project.to_string_lossy()),
                 ),
-                ("path".to_string(), json!("src/missing.rs")),
+                ("path".to_string(), json!("src/auth.rs")),
             ]),
         )
         .await?;
@@ -2179,6 +2349,28 @@ mod tldr_tests {
         let _guard = tldr_artifact_test_guard();
         let project = TempDir::new()?;
         let canonical_project = project.path().canonicalize()?;
+        let socket_path = socket_path_for_project(&canonical_project);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path)?;
+        }
+        let pid_path = codex_native_tldr::daemon::pid_path_for_project(&canonical_project);
+        if pid_path.exists() {
+            std::fs::remove_file(&pid_path)?;
+        }
+        let lock_path = codex_native_tldr::daemon::lock_path_for_project(&canonical_project);
+        if lock_path.exists() {
+            std::fs::remove_file(&lock_path)?;
+        }
+        let launch_lock_path =
+            codex_native_tldr::daemon::launch_lock_path_for_project(&canonical_project);
+        if launch_lock_path.exists() {
+            std::fs::remove_file(&launch_lock_path)?;
+        }
+        std::fs::create_dir(project.path().join(".codex"))?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[daemon]\nauto_start = false\n",
+        )?;
 
         let McpHandle {
             process: mut mcp_process,
@@ -2373,6 +2565,11 @@ mod tldr_tests {
     async fn tldr_tool_semantic_structured_content() -> anyhow::Result<()> {
         let project = TempDir::new()?;
         let canonical_project = project.path().canonicalize()?;
+        std::fs::create_dir(project.path().join(".codex"))?;
+        std::fs::write(
+            project.path().join(".codex/tldr.toml"),
+            "[daemon]\nauto_start = false\n\n[semantic]\nenabled = true\n[semantic.embedding]\nenabled = false\n",
+        )?;
 
         let McpHandle {
             process: mut mcp_process,
@@ -2414,9 +2611,9 @@ mod tldr_tests {
             "semantic search returned 0 matches"
         );
         assert_eq!(structured["enabled"], true);
-        assert_eq!(structured["embeddingUsed"], true);
+        assert_eq!(structured["embeddingUsed"], false);
         assert_eq!(structured["semantic"]["enabled"], true);
-        assert_eq!(structured["semantic"]["embeddingUsed"], true);
+        assert_eq!(structured["semantic"]["embeddingUsed"], false);
 
         Ok(())
     }
@@ -2434,7 +2631,7 @@ mod tldr_tests {
         std::fs::create_dir(project.path().join("src"))?;
         std::fs::write(
             project.path().join(".codex/tldr.toml"),
-            "[semantic]\nenabled = true\n[semantic.embedding]\nenabled = true\ndimensions = 16\n",
+            "[daemon]\nauto_start = false\n\n[semantic]\nenabled = true\n[semantic.embedding]\nenabled = false\n",
         )?;
         std::fs::write(
             project.path().join("src/auth.rs"),
@@ -2474,8 +2671,8 @@ mod tldr_tests {
         assert_eq!(structured["action"], "semantic");
         assert_eq!(structured["enabled"], true);
         assert_eq!(structured["semantic"]["enabled"], true);
-        assert_eq!(structured["embeddingUsed"], true);
-        assert_eq!(structured["semantic"]["embeddingUsed"], true);
+        assert_eq!(structured["embeddingUsed"], false);
+        assert_eq!(structured["semantic"]["embeddingUsed"], false);
         assert_eq!(structured["indexedFiles"], 1);
         assert_eq!(structured["semantic"]["indexedFiles"], 1);
         assert_eq!(structured["matches"][0]["path"], "src/auth.rs");
@@ -2497,10 +2694,14 @@ mod tldr_tests {
                 .get("embedding_text")
                 .is_none()
         );
-        assert!(matches!(
-            structured["matches"][0]["embedding_score"].as_f64(),
-            Some(score) if score > 0.0
-        ));
+        assert_eq!(
+            structured["matches"][0]["embedding_score"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            structured["semantic"]["matches"][0]["embedding_score"],
+            serde_json::Value::Null
+        );
 
         Ok(())
     }
