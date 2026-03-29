@@ -73,10 +73,6 @@ $:
     sync_github:
       env:
           BRANCHS: main
-    - services:
-      stages:
-        - <<: *knowledge-base
-
   vscode:
       clouddev:
           imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
