@@ -98,10 +98,12 @@ codex zmemory doctor --json
 
 - `aliasNodeCount` / `triggerNodeCount` / `aliasNodesMissingTriggers`
 - `coveragePercent`：已填 trigger 的 alias 节点比例
-- `recommendations`：最多 3 条缺 trigger alias，直接给出 `nodeUri`、`reviewPriority`、`priorityScore`、建议动作和可复制的命令
-- `entries`：按治理优先级排序，包含 `aliasCount`、`triggerCount`、`missingTriggers`、`reviewPriority` 与 `priorityScore`
+- `recommendations`：最多 3 条缺 trigger alias，直接给出 `nodeUri`、`reviewPriority`、`priorityScore`、`priorityReason`、`suggestedKeywords`、建议动作和可复制的命令
+- `entries`：按治理优先级排序，包含 `aliasCount`、`triggerCount`、`missingTriggers`、`reviewPriority`、`priorityScore`、`priorityReason` 与 `suggestedKeywords`
 
 推荐在 review 流程中：先看 `stats`/`doctor` 找出是否有 alias 覆盖不足，再用 `system://alias` 看到具体有哪些 alias 节点缺 trigger，最后执行 `manage-triggers` 或 `add-alias` 补强。
+
+其中 `suggestedKeywords` 会根据该 node 的现有 path / alias path 提取一组可直接尝试的关键词，`priorityReason` 则解释为什么该节点被排在当前治理优先级。
 
 ### alias/trigger 治理输出
 

@@ -52,7 +52,7 @@ description: 在当前仓库中编排 zmemory 的 recall、capture、refine、li
 2. `doctor` 看结构与 review 告警
 3. `export recent` 看最近变化
 4. `export glossary` 看 trigger 覆盖
-5. `read system://alias [--limit N]` 看 alias coverage、trigger count、缺 trigger 列表、治理优先级和推荐命令
+5. `read system://alias [--limit N]` 看 alias coverage、trigger count、缺 trigger 列表、治理优先级、优先级原因、建议关键词和推荐命令
 6. 再决定是否 `update`、`delete-path`、`add-alias`、`manage-triggers`
 
 ### handoff

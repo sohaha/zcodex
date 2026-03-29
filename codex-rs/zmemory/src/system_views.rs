@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 pub fn read_system_view(conn: &Connection, view: &str, limit: usize) -> Result<Value> {
     match parse_system_view(view, limit)? {
@@ -274,9 +275,11 @@ fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
                 "missingTriggers": entry["missingTriggers"],
                 "priorityScore": entry["priorityScore"],
                 "reviewPriority": entry["reviewPriority"],
+                "priorityReason": entry["priorityReason"],
+                "suggestedKeywords": entry["suggestedKeywords"],
                 "action": "manage-triggers",
                 "advice": "add specific trigger keywords to this alias node",
-                "command": format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json")
+                "command": suggestion_command(node_uri, &entry["suggestedKeywords"]),
             })
         })
         .collect();
@@ -319,18 +322,33 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
          ) trigger_counts ON trigger_counts.node_uuid = alias.node_uuid",
     )?;
 
-    let entries = stmt
+    let rows = stmt
         .query_map([limit as i64], |row| {
-            let trigger_count: i64 = row.get(4)?;
-            let domain: String = row.get(1)?;
-            let path: String = row.get(2)?;
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut entries = rows
+        .into_iter()
+        .map(|(node_uuid, domain, path, alias_count, trigger_count)| {
             let node_uri = format!("{domain}://{path}");
-            let alias_count = row.get::<_, i64>(3)?;
             let missing_triggers = trigger_count == 0;
             let (review_priority, priority_score) =
                 alias_review_priority(alias_count, missing_triggers);
+            let priority_reason = alias_priority_reason(alias_count, missing_triggers);
+            let suggested_keywords = if missing_triggers {
+                infer_alias_keywords(conn, &node_uuid)?
+            } else {
+                Vec::new()
+            };
             Ok(json!({
-                "nodeUuid": row.get::<_, String>(0)?,
+                "nodeUuid": node_uuid,
                 "domain": domain,
                 "path": path,
                 "aliasCount": alias_count,
@@ -338,12 +356,13 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
                 "missingTriggers": missing_triggers,
                 "reviewPriority": review_priority,
                 "priorityScore": priority_score,
+                "priorityReason": priority_reason,
+                "suggestedKeywords": suggested_keywords,
                 "nodeUri": node_uri,
             }))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    let mut entries = entries;
     entries.sort_by(|left, right| {
         let right_score = right["priorityScore"].as_i64().unwrap_or(0);
         let left_score = left["priorityScore"].as_i64().unwrap_or(0);
@@ -373,6 +392,58 @@ fn alias_review_priority(alias_count: i64, missing_triggers: bool) -> (&'static 
         let priority = if alias_count >= 4 { "medium" } else { "low" };
         (priority, alias_count)
     }
+}
+
+fn alias_priority_reason(alias_count: i64, missing_triggers: bool) -> String {
+    if missing_triggers {
+        format!("missing triggers across {alias_count} alias paths")
+    } else {
+        format!("covered by triggers across {alias_count} alias paths")
+    }
+}
+
+fn infer_alias_keywords(conn: &Connection, node_uuid: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.path
+         FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.child_uuid = ?1
+         ORDER BY p.domain ASC, p.path ASC",
+    )?;
+    let paths = stmt
+        .query_map([node_uuid], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut keywords = BTreeSet::new();
+    for path in paths {
+        for segment in path.split('/') {
+            for token in segment.split(['-', '_']) {
+                let candidate = token.trim().to_lowercase();
+                if candidate.len() >= 2 && candidate.chars().any(|ch| ch.is_ascii_alphabetic()) {
+                    keywords.insert(candidate);
+                }
+            }
+        }
+    }
+
+    Ok(keywords.into_iter().take(3).collect())
+}
+
+fn suggestion_command(node_uri: &str, suggested_keywords: &Value) -> String {
+    let Some(suggested_keywords) = suggested_keywords.as_array() else {
+        return format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json");
+    };
+    if suggested_keywords.is_empty() {
+        return format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json");
+    }
+
+    let args = suggested_keywords
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|keyword| format!("--add {keyword}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("codex zmemory manage-triggers {node_uri} {args} --json")
 }
 
 fn alias_node_count(conn: &Connection) -> Result<i64> {

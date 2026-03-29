@@ -839,6 +839,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rusqlite::Connection;
     use rusqlite::params;
+    use serde_json::json;
     use tempfile::TempDir;
 
     fn config() -> (TempDir, ZmemoryConfig) {
@@ -1405,6 +1406,105 @@ mod tests {
             issues
                 .iter()
                 .any(|issue| issue["code"] == "orphaned_memories")
+        );
+    }
+
+    #[test]
+    fn alias_view_includes_priority_reasons_and_suggested_keywords() {
+        let (_dir, config) = config();
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://hub".to_string()),
+                content: Some("Hub".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("hub create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://zone".to_string()),
+                content: Some("Zone".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("zone create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://project-alpha".to_string()),
+                content: Some("Project note".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                new_uri: Some("core://hub/launch-plan".to_string()),
+                target_uri: Some("core://project-alpha".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("first alias should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                new_uri: Some("core://zone/release_plan".to_string()),
+                target_uri: Some("core://project-alpha".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("second alias should succeed");
+
+        let alias_view = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://alias".to_string()),
+                limit: Some(10),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("alias view should succeed");
+
+        let view = &alias_view["result"]["view"];
+        let recommendations = view["recommendations"]
+            .as_array()
+            .expect("recommendations should be an array");
+        assert_eq!(recommendations.len(), 1);
+        assert_eq!(recommendations[0]["reviewPriority"], "high");
+        assert_eq!(
+            recommendations[0]["priorityReason"],
+            "missing triggers across 3 alias paths"
+        );
+        assert_eq!(
+            recommendations[0]["suggestedKeywords"],
+            json!(["alpha", "hub", "launch"])
+        );
+        assert_eq!(
+            recommendations[0]["command"],
+            "codex zmemory manage-triggers core://hub/launch-plan --add alpha --add hub --add launch --json"
+        );
+
+        let entries = view["entries"]
+            .as_array()
+            .expect("entries should be an array");
+        assert_eq!(entries[0]["nodeUri"], "core://hub/launch-plan");
+        assert_eq!(entries[0]["reviewPriority"], "high");
+        assert_eq!(
+            entries[0]["priorityReason"],
+            "missing triggers across 3 alias paths"
+        );
+        assert_eq!(
+            entries[0]["suggestedKeywords"],
+            json!(["alpha", "hub", "launch"])
         );
     }
 
