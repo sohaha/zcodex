@@ -567,6 +567,13 @@ async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
         .expect("recommendations should be an array");
     assert!(!recommendations.is_empty());
     assert!(coverage_percent < 100);
+    assert_eq!(recommendations[0]["action"], "manage-triggers");
+    assert!(
+        recommendations[0]["command"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("codex zmemory manage-triggers core://base")
+    );
     let entries = alias_payload["result"]["view"]["entries"]
         .as_array()
         .unwrap();

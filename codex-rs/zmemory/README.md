@@ -98,7 +98,7 @@ codex zmemory doctor --json
 
 - `aliasNodeCount` / `triggerNodeCount` / `aliasNodesMissingTriggers`
 - `coveragePercent`：已填 trigger 的 alias 节点比例
-- `recommendations`：最多 3 条缺 trigger alias，直接给出 `nodeUri` 与 `advice`
+- `recommendations`：最多 3 条缺 trigger alias，直接给出 `nodeUri`、建议动作和可复制的命令
 - `entries`：按 aliasCount 排序，包含 triggerCount 与 `missingTriggers`
 
 推荐在 review 流程中：先看 `stats`/`doctor` 找出是否有 alias 覆盖不足，再用 `system://alias` 看到具体有哪些 alias 节点缺 trigger，最后执行 `manage-triggers` 或 `add-alias` 补强。

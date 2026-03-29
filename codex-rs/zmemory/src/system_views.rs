@@ -268,10 +268,13 @@ fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
         .filter(|entry| entry["missingTriggers"].as_bool().unwrap_or(false))
         .take(3)
         .map(|entry| {
+            let node_uri = entry["nodeUri"].as_str().unwrap_or_default();
             json!({
-                "nodeUri": entry["nodeUri"].as_str().unwrap_or_default(),
+                "nodeUri": node_uri,
                 "missingTriggers": entry["missingTriggers"],
-                "advice": "add trigger keywords to this alias node"
+                "action": "manage-triggers",
+                "advice": "add specific trigger keywords to this alias node",
+                "command": format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json")
             })
         })
         .collect();
