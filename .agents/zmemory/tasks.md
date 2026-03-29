@@ -319,7 +319,8 @@ dependencies: [prd, tech-review]
 - [x] 后续若需要真正启用 memory skill，优先在仓库根级 skill/agent 编排层实现，而不是扩张 `codex-zmemory` crate。
 - [x] alias/trigger parity 新增：`stats`、`doctor` 现在能报告 alias node/trigger counts 与 alias-without-triggers 警告，CLI tests/QA 文档同步验证。
 - [x] 进一步做 alias/trigger 治理输出：新增 `system://alias` 视图以汇总 alias/trigger coverage，与 `stats`/`doctor`/`export` 一起形成 review 清单。
-- [x] repo-root memory skill references 补齐 project-init/review/recall recipes，skill 继续用现有 `codex zmemory` 命令即可。
+- [x] 进一步做 alias/trigger 治理输出：`system://alias` 视图现在也提供 coveragePercent 与 recommendations，可快速定位缺 trigger alias 节点。
+- [x] repo-root memory skill references 补齐 project-init/review/recall/alias review recipes，skill 继续用现有 `codex zmemory` 命令即可。
 - [x] 下一轮 parity audit 已选定 review/admin 信号缺口：优先补 `stats` / `doctor` 的 orphaned/deprecated 治理信号，而不是新增 review 服务。
 
 ---

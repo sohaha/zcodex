@@ -559,6 +559,14 @@ async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
             .unwrap_or(0)
             >= 1
     );
+    let coverage_percent = alias_payload["result"]["view"]["coveragePercent"]
+        .as_i64()
+        .unwrap_or(100);
+    let recommendations = alias_payload["result"]["view"]["recommendations"]
+        .as_array()
+        .expect("recommendations should be an array");
+    assert!(!recommendations.is_empty());
+    assert!(coverage_percent < 100);
     let entries = alias_payload["result"]["view"]["entries"]
         .as_array()
         .unwrap();

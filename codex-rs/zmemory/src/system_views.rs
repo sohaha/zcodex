@@ -258,12 +258,32 @@ fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
     let alias_nodes_missing = alias_nodes_missing_triggers(conn)?;
     let entries = alias_entries(conn, limit)?;
 
+    let coverage_percent = if alias_nodes == 0 {
+        100
+    } else {
+        (((alias_nodes - alias_nodes_missing) * 100) / alias_nodes).clamp(0, 100)
+    };
+    let recommendations: Vec<Value> = entries
+        .iter()
+        .filter(|entry| entry["missingTriggers"].as_bool().unwrap_or(false))
+        .take(3)
+        .map(|entry| {
+            json!({
+                "nodeUri": entry["nodeUri"].as_str().unwrap_or_default(),
+                "missingTriggers": entry["missingTriggers"],
+                "advice": "add trigger keywords to this alias node"
+            })
+        })
+        .collect();
+
     Ok(json!({
         "view": "alias",
         "entryCount": entries.len(),
         "aliasNodeCount": alias_nodes,
         "triggerNodeCount": trigger_nodes,
         "aliasNodesMissingTriggers": alias_nodes_missing,
+        "coveragePercent": coverage_percent,
+        "recommendations": recommendations,
         "entries": entries,
     }))
 }
@@ -297,13 +317,17 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
     let entries = stmt
         .query_map([limit as i64], |row| {
             let trigger_count: i64 = row.get(4)?;
+            let domain: String = row.get(1)?;
+            let path: String = row.get(2)?;
+            let node_uri = format!("{domain}://{path}");
             Ok(json!({
                 "nodeUuid": row.get::<_, String>(0)?,
-                "domain": row.get::<_, String>(1)?,
-                "path": row.get::<_, String>(2)?,
+                "domain": domain,
+                "path": path,
                 "aliasCount": row.get::<_, i64>(3)?,
                 "triggerCount": trigger_count,
                 "missingTriggers": trigger_count == 0,
+                "nodeUri": node_uri,
             }))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;

@@ -6,6 +6,10 @@
 2. `codex zmemory doctor --json`：查看 `issues` 里是否有 `orphaned_memories`、`deprecated_memories_awaiting_review`、`alias_nodes_missing_triggers`，确认 FTS / keyword / alias 兼容状态。
 3. `codex zmemory export recent --json`：确认最近写入的内容已经被系统视图收录，便于决定是否需要 `update`、`delete-path` 或 `rebuild-search`。
 4. `codex zmemory export glossary --json`：确认 trigger / keyword 覆盖，判断是否需要 `manage-triggers` 或 `add-alias`。
+5. `codex zmemory read system://alias --json`：确认 alias scope，查明哪些 alias node 还没 trigger，可按 `missingTriggers` 过滤并决定是否 `manage-triggers`。
+6. 若 alias coverage 低于 trigger，优先补 trigger：
+   - `codex zmemory manage-triggers core://legacy --add review --json`
+   - `codex zmemory add-alias alias://legacy core://legacy --json`
 5. 若发现 alias 覆盖少于 trigger，依次运行：
    - `codex zmemory add-alias alias://legacy core://legacy --json`
    - `codex zmemory manage-triggers core://legacy --add review --json`
@@ -22,4 +26,3 @@
 3. `codex zmemory add-alias alias://project-alpha core://project-alpha --json`
 4. `codex zmemory manage-triggers core://project-alpha --add launch --json`
 5. 之后执行上面的 review 检查清单，保证 trigger/alias 覆盖已到位。
-
