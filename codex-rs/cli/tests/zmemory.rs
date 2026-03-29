@@ -46,6 +46,8 @@ async fn zmemory_stats_json_works_on_empty_db() -> Result<()> {
     let payload: serde_json::Value = serde_json::from_slice(&output)?;
     assert_eq!(payload["action"], "stats");
     assert_eq!(payload["result"]["nodeCount"], 1);
+    assert_eq!(payload["result"]["orphanedMemoryCount"], 0);
+    assert_eq!(payload["result"]["deprecatedMemoryCount"], 0);
     Ok(())
 }
 
@@ -378,6 +380,70 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
     let doctor_payload = run_json(codex_home.path(), &["zmemory", "doctor", "--json"])?;
     assert_eq!(doctor_payload["action"], "doctor");
     assert_eq!(doctor_payload["result"]["healthy"], true);
+    assert_eq!(doctor_payload["result"]["orphanedMemoryCount"], 0);
+    assert_eq!(doctor_payload["result"]["deprecatedMemoryCount"], 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://legacy",
+            "--content",
+            "Original profile memory",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "update",
+            "core://legacy",
+            "--append",
+            " with fresh note",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://orphan",
+            "--content",
+            "Orphaned review source",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args(["zmemory", "delete-path", "core://orphan"])
+        .assert()
+        .success();
+
+    let stats_payload = run_json(codex_home.path(), &["zmemory", "stats", "--json"])?;
+    assert_eq!(stats_payload["result"]["deprecatedMemoryCount"], 1);
+    assert_eq!(stats_payload["result"]["orphanedMemoryCount"], 1);
+
+    let doctor_payload = run_json(codex_home.path(), &["zmemory", "doctor", "--json"])?;
+    assert_eq!(doctor_payload["result"]["healthy"], false);
+    let issues = doctor_payload["result"]["issues"]
+        .as_array()
+        .expect("issues should be an array");
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "orphaned_memories")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "deprecated_memories_awaiting_review")
+    );
 
     Ok(())
 }

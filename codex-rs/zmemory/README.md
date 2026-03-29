@@ -78,6 +78,21 @@ codex zmemory doctor --json
 - `export recent --limit 5` -> `system://recent/5`
 - `export glossary` -> `system://glossary`
 
+## review 治理入口
+
+当前本地 review 不额外引入独立服务，而是复用现有动作层：
+
+- `codex zmemory stats --json`：查看 `orphanedMemoryCount` 与 `deprecatedMemoryCount`
+- `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 review 相关告警
+- `codex zmemory export recent --json`：查看最近变更节点
+- `codex zmemory export glossary --json`：查看当前 trigger 网络
+
+建议的最小 review 顺序：
+
+1. 先看 `stats` 判断 orphan / deprecated 压力。
+2. 再看 `doctor` 判断是否存在需要优先修复的告警。
+3. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
+
 ## 创建语义
 
 `zmemory` 支持两种路径创建模式：

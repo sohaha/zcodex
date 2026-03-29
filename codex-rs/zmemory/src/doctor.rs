@@ -56,11 +56,37 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
         }));
     }
 
+    let orphaned_memories: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if orphaned_memories > 0 {
+        issues.push(json!({
+            "code": "orphaned_memories",
+            "message": format!("orphaned memories: {orphaned_memories}"),
+        }));
+    }
+
+    let deprecated_memories: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    if deprecated_memories > 0 {
+        issues.push(json!({
+            "code": "deprecated_memories_awaiting_review",
+            "message": format!("deprecated memories awaiting review: {deprecated_memories}"),
+        }));
+    }
+
     Ok(json!({
         "healthy": issues.is_empty(),
         "dbPath": db_path,
         "searchDocumentCount": search_count,
         "ftsDocumentCount": fts_count,
+        "orphanedMemoryCount": orphaned_memories,
+        "deprecatedMemoryCount": deprecated_memories,
         "issues": issues,
     }))
 }

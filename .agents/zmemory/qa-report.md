@@ -42,6 +42,14 @@ dependencies: [tech-review, tasks]
 - 结论是：`codex-zmemory` 继续做动作层，memory skill 留在仓库根级 skill / agent 编排层；因此本轮无需新增 crate/CLI/core 测试。
 - 本轮验证口径为文档一致性检查：README、tasks、tech-review、qa-report 结论保持一致，且不宣称 upstream baseline 再次前进。
 
+## review/admin parity 收口
+- 下一轮 parity audit 选中的主缺口是 review/admin 信号：本地此前缺少 upstream 风格的 `orphaned` / `deprecated` 治理压力暴露。
+- 本轮实现后，`stats` 新增 `orphanedMemoryCount` / `deprecatedMemoryCount`，`doctor` 新增对应告警，同时保留本地已有的 FTS / active-memory / dangling-keyword 检查。
+- 仓库根级新增最小 `.codex/skills/memory/SKILL.md`，把 bootstrap/recall/capture/refine/linking/review/handoff 映射到现有 `zmemory` 动作。
+- 验证结果：
+  - `bash /workspace/.mise/tasks/rs-ext cargo test -p codex-zmemory --quiet` ✅（11 passed）
+  - `bash /workspace/.mise/tasks/rs-ext cargo test -p codex-cli --test zmemory --quiet` ✅（16 passed）
+
 ## 下一轮回归建议
 1. 若继续改 `codex-rs/zmemory` 核心语义，先跑 `cargo test -p codex-zmemory --quiet`。
 2. 若改 spec/schema 文案，再跑 `cargo test -p codex-core zmemory_tool_ --quiet`。

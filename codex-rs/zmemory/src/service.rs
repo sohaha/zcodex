@@ -395,6 +395,16 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         conn.query_row("SELECT COUNT(*) FROM glossary_keywords", [], |row| {
             row.get(0)
         })?;
+    let orphaned_memory_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    let deprecated_memory_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
     let search_document_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
             row.get(0)
@@ -410,6 +420,8 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         "memoryCount": memory_count,
         "pathCount": path_count,
         "glossaryKeywordCount": glossary_count,
+        "orphanedMemoryCount": orphaned_memory_count,
+        "deprecatedMemoryCount": deprecated_memory_count,
         "searchDocumentCount": search_document_count,
         "ftsDocumentCount": fts_document_count,
     }))
@@ -420,6 +432,8 @@ fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let stats = stats_action(conn, config)?;
     Ok(json!({
         "healthy": doctor.get("healthy").and_then(serde_json::Value::as_bool).unwrap_or(false),
+        "orphanedMemoryCount": doctor.get("orphanedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
+        "deprecatedMemoryCount": doctor.get("deprecatedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
         "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
         "stats": stats,
         "dbPath": config.db_path().display().to_string(),
@@ -1290,6 +1304,84 @@ mod tests {
         .expect("path-limited recent view should succeed");
         assert_eq!(recent_with_path_limit["result"]["view"]["view"], "recent");
         assert_eq!(recent_with_path_limit["result"]["view"]["entryCount"], 1);
+    }
+
+    #[test]
+    fn stats_and_doctor_surface_review_pressure() {
+        let (_dir, config) = config();
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://legacy".to_string()),
+                content: Some("Original profile memory".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Update,
+                uri: Some("core://legacy".to_string()),
+                append: Some(" with fresh note".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("update should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://orphan".to_string()),
+                content: Some("Orphaned review source".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::DeletePath,
+                uri: Some("core://orphan".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("delete-path should succeed");
+
+        let stats = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Stats,
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("stats should succeed");
+        assert_eq!(stats["result"]["deprecatedMemoryCount"], 1);
+        assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
+
+        let doctor = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Doctor,
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("doctor should succeed");
+        assert_eq!(doctor["result"]["healthy"], false);
+        let issues = doctor["result"]["issues"]
+            .as_array()
+            .expect("issues should be an array");
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "deprecated_memories_awaiting_review")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "orphaned_memories")
+        );
     }
 
     #[test]

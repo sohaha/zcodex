@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-03-29T05:32:20.710Z
-- 本轮摘要：继续 zmemory 同步：完成 T-006 文档收口，明确 upstream memory skill 仅做动作映射，不整包迁入 codex-rs，也不扩成新 handoff/admin service。
+- 更新时间：2026-03-29T06:30:38.417Z
+- 本轮摘要：继续 zmemory 同步：通过 parity audit 选定 review/admin 信号为下一条高价值缺口；为 stats/doctor 补齐 orphaned/deprecated 治理信号，并新增仓库根级 memory skill 映射 read/search/create/update/add-alias/manage-triggers/stats/doctor/export。
 
 ## 待确认问题
 
