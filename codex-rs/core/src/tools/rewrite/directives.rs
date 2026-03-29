@@ -1,11 +1,22 @@
 use codex_protocol::user_input::UserInput;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ToolRoutingDirectives {
     pub(crate) disable_auto_tldr_once: bool,
     pub(crate) force_raw_read: bool,
     pub(crate) force_raw_grep: bool,
     pub(crate) prefer_context_search: bool,
+}
+
+impl Default for ToolRoutingDirectives {
+    fn default() -> Self {
+        Self {
+            disable_auto_tldr_once: false,
+            force_raw_read: false,
+            force_raw_grep: false,
+            prefer_context_search: true,
+        }
+    }
 }
 
 pub(crate) fn extract_tool_routing_directives(input: &[UserInput]) -> ToolRoutingDirectives {
@@ -37,44 +48,31 @@ pub(crate) fn extract_tool_routing_directives(input: &[UserInput]) -> ToolRoutin
             ],
         );
 
+    let force_raw_read = contains_any(
+        &normalized,
+        &[
+            "原文", "逐字", "verbatim", "literal", "raw read", "raw file",
+        ],
+    );
+    let force_raw_grep = contains_any(
+        &normalized,
+        &[
+            "ripgrep",
+            "regex",
+            "regexp",
+            "正则",
+            "精确 grep",
+            "精确grep",
+            "原始 grep",
+            "原始grep",
+        ],
+    );
+
     ToolRoutingDirectives {
         disable_auto_tldr_once: explicit_raw_tldr,
-        force_raw_read: contains_any(
-            &normalized,
-            &[
-                "原文", "逐字", "verbatim", "literal", "raw read", "raw file",
-            ],
-        ),
-        force_raw_grep: contains_any(
-            &normalized,
-            &[
-                "ripgrep",
-                "regex",
-                "regexp",
-                "正则",
-                "精确 grep",
-                "精确grep",
-                "原始 grep",
-                "原始grep",
-            ],
-        ),
-        prefer_context_search: mentions_tldr
-            && contains_any(
-                &normalized,
-                &[
-                    "先用",
-                    "优先",
-                    "first",
-                    "prefer",
-                    "上下文",
-                    "context",
-                    "调用关系",
-                    "调用链",
-                    "call graph",
-                    "impact",
-                    "影响范围",
-                ],
-            ),
+        force_raw_read,
+        force_raw_grep,
+        prefer_context_search: !explicit_raw_tldr,
     }
 }
 
@@ -88,6 +86,37 @@ mod tests {
     use super::extract_tool_routing_directives;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn directives_default_to_preferring_context_search() {
+        assert_eq!(
+            ToolRoutingDirectives::default(),
+            ToolRoutingDirectives {
+                disable_auto_tldr_once: false,
+                force_raw_read: false,
+                force_raw_grep: false,
+                prefer_context_search: true,
+            }
+        );
+    }
+
+    #[test]
+    fn extracts_default_context_preference_from_plain_user_prompt() {
+        let directives = extract_tool_routing_directives(&[UserInput::Text {
+            text: "分析 create_tldr_tool 的实现。".to_string(),
+            text_elements: Vec::new(),
+        }]);
+
+        assert_eq!(
+            directives,
+            ToolRoutingDirectives {
+                disable_auto_tldr_once: false,
+                force_raw_read: false,
+                force_raw_grep: false,
+                prefer_context_search: true,
+            }
+        );
+    }
 
     #[test]
     fn extracts_tldr_first_context_directives_from_user_prompt() {

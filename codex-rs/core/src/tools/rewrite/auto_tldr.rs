@@ -275,7 +275,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
-    async fn routes_symbol_searches_to_tldr_context_when_prompt_prefers_context() {
+    async fn routes_symbol_searches_to_tldr_context_by_default() {
         let (_, turn) = make_session_and_context().await;
         let call = ToolCall {
             tool_name: "grep_files".to_string(),
@@ -289,10 +289,7 @@ mod tests {
         let decision = rewrite_grep_files_to_tldr(
             &turn,
             call,
-            ToolRoutingDirectives {
-                prefer_context_search: true,
-                ..Default::default()
-            },
+            ToolRoutingDirectives::default(),
             AutoTldrRoutingMode::Safe,
         )
         .await;
@@ -380,7 +377,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn aggressive_mode_reuses_last_tldr_language_when_grep_has_no_extension_hint() {
+    async fn aggressive_mode_reuses_last_tldr_language_for_default_context_queries() {
         let (_, turn) = make_session_and_context().await;
         *turn.auto_tldr_context.write().await = AutoTldrContext {
             last_language: Some(TldrToolLanguage::Rust),
@@ -406,14 +403,15 @@ mod tests {
         let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
             panic!("expected rewrite");
         };
-        assert_eq!(reason, "code_search_query");
+        assert_eq!(reason, "symbol_query");
         let ToolPayload::Function { arguments } = call.payload else {
             panic!("expected function payload");
         };
         let args: TldrToolCallParam =
             serde_json::from_str(&arguments).expect("parse rewritten tldr args");
-        assert_eq!(args.action, TldrToolAction::Semantic);
+        assert_eq!(args.action, TldrToolAction::Context);
         assert_eq!(args.language, Some(TldrToolLanguage::Rust));
-        assert_eq!(args.query.as_deref(), Some("ToolCallRuntime"));
+        assert_eq!(args.symbol.as_deref(), Some("ToolCallRuntime"));
+        assert_eq!(args.query, None);
     }
 }

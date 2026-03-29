@@ -18,10 +18,6 @@ async fn make_turn_context() -> crate::codex::TurnContext {
 #[tokio::test]
 async fn runtime_seam_rewrites_grep_files_to_tldr_before_dispatch() {
     let turn = make_turn_context().await;
-    *turn.tool_routing_directives.write().await = ToolRoutingDirectives {
-        prefer_context_search: true,
-        ..Default::default()
-    };
 
     let rewritten = ToolCallRuntime::rewrite_call_for_dispatch(
         &turn,

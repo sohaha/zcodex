@@ -286,10 +286,6 @@ fn output_text(response: ResponseInputItem) -> String {
 #[tokio::test]
 async fn runtime_dispatch_routes_rewritten_grep_files_to_tldr_handler() {
     let (session, turn) = make_session_and_context().await;
-    *turn.tool_routing_directives.write().await = ToolRoutingDirectives {
-        prefer_context_search: true,
-        ..Default::default()
-    };
 
     let runtime = ToolCallRuntime::new(
         fake_router(),
