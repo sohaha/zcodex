@@ -1,0 +1,21 @@
+---
+source: tui_app_server/src/bottom_pane/title_setup.rs
+expression: "render_lines(&view, 84)"
+---
+                                                                                    
+  配 置 终 端 标 题                                                                       
+  选 择 要 在 终 端 标 题 中 显 示 的 内 容 。                                                     
+                                                                                    
+  输 入 以 搜 索                                                                         
+  >                                                                                 
+› [x] project        项 目 名 （ 不 可 用 时 降 级 为 当 前 目 录 名 称 ）                            
+  [x] spinner        任 务 旋 转 动 画 （ 空 闲 或 关 闭 动 画 时 隐 藏 ）                            
+  [x] status         紧 凑 会 话 状 态 文 本 （ 就 绪 、 处 理 中 、 思 考 中 ）                        
+  [x] thread         当 前 线 程 标 题 （ 未 可 用 前 隐 藏 ）                                    
+  [ ] app-name       Codex 应 用 名 称                                                  
+  [ ] git-branch     当 前  Git 分 支 （ 不 可 用 时 隐 藏 ）                                   
+  [ ] model          当 前 模 型 名 称                                                    
+  [ ] task-progress  update_plan 最 新 任 务 进 度 （ 未 可 用 前 隐 藏 ）                        
+                                                                                    
+  my-project ⠋ 运 行 中  | 调 查 偶 发 失 败 的 测 试                                           
+  使 用  ↑↓ 浏 览 ， ←→ 移 动 ， 空 格  选 择 ， 回 车  确 认 ， Esc 取 消 。

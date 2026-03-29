@@ -67,6 +67,8 @@ use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputQuestion;
 use codex_protocol::user_input::TextElement;
+#[cfg(test)]
+use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::format_env_display::format_env_display;
 use image::DynamicImage;
 use image::ImageReader;
@@ -1139,7 +1141,7 @@ pub(crate) fn new_session_info(
         model.clone(),
         reasoning_effort,
         show_fast_status,
-        config.cwd.clone(),
+        config.cwd.to_path_buf(),
         CODEX_CLI_VERSION,
     );
     let mut parts: Vec<Box<dyn HistoryCell>> = vec![Box::new(header)];
@@ -2992,7 +2994,8 @@ mod tests {
     #[tokio::test]
     async fn session_info_availability_nux_tooltip_snapshot() {
         let mut config = test_config().await;
-        config.cwd = PathBuf::from("/tmp/project");
+        config.cwd =
+            AbsolutePathBuf::try_from(PathBuf::from("/tmp/project")).expect("absolute test path");
         let cell = new_session_info(
             &config,
             "gpt-5",
@@ -3129,6 +3132,7 @@ mod tests {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         };
         let mut servers = config.mcp_servers.get().clone();
         servers.insert("docs".to_string(), stdio_config);
@@ -3153,6 +3157,7 @@ mod tests {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         };
         servers.insert("http".to_string(), http_config);
         config
@@ -3223,6 +3228,7 @@ mod tests {
                 disabled_tools: None,
                 scopes: None,
                 oauth_resource: None,
+                tools: HashMap::new(),
             },
         )]);
         config

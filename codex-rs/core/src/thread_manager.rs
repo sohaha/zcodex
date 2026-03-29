@@ -1,6 +1,8 @@
 use crate::AuthManager;
 use crate::CodexAuth;
 use crate::ModelProviderInfo;
+use crate::OPENAI_PROVIDER_ID;
+use crate::SkillsManager;
 use crate::agent::AgentControl;
 use crate::codex::Codex;
 use crate::codex::CodexSpawnArgs;
@@ -21,12 +23,12 @@ use crate::protocol::SessionConfiguredEvent;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::truncation;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillsManager;
 use crate::skills_watcher::SkillsWatcher;
 use crate::skills_watcher::SkillsWatcherEvent;
 use crate::tasks::interrupted_turn_history_marker;
 use codex_app_server_protocol::ThreadHistoryBuilder;
 use codex_app_server_protocol::TurnStatus;
+use codex_exec_server::EnvironmentManager;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationModeMask;
 #[cfg(test)]
@@ -199,6 +201,7 @@ pub(crate) struct ThreadManagerState {
     thread_created_tx: broadcast::Sender<ThreadId>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
+    environment_manager: Arc<EnvironmentManager>,
     skills_manager: Arc<SkillsManager>,
     plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
@@ -214,14 +217,15 @@ impl ThreadManager {
         auth_manager: Arc<AuthManager>,
         session_source: SessionSource,
         collaboration_modes_config: CollaborationModesConfig,
+        environment_manager: Arc<EnvironmentManager>,
     ) -> Self {
         let codex_home = config.codex_home.clone();
         let restriction_product = session_source.restriction_product();
-        let models_provider = config
+        let openai_models_provider = config
             .model_providers
-            .get(&config.model_provider_id)
+            .get(OPENAI_PROVIDER_ID)
             .cloned()
-            .unwrap_or_else(|| config.model_provider.clone());
+            .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
             codex_home.clone(),
@@ -230,7 +234,6 @@ impl ThreadManager {
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new_with_restriction_product(
             codex_home.clone(),
-            Arc::clone(&plugins_manager),
             config.bundled_skills_enabled(),
             restriction_product,
         ));
@@ -245,8 +248,9 @@ impl ThreadManager {
                     config.model_catalog.clone(),
                     config.model_catalog_merge.clone(),
                     collaboration_modes_config,
-                    models_provider,
+                    openai_models_provider,
                 )),
+                environment_manager,
                 skills_manager,
                 plugins_manager,
                 mcp_manager,
@@ -273,8 +277,12 @@ impl ThreadManager {
         ));
         std::fs::create_dir_all(&codex_home)
             .unwrap_or_else(|err| panic!("temp codex home dir create failed: {err}"));
-        let mut manager =
-            Self::with_models_provider_and_home_for_tests(auth, provider, codex_home.clone());
+        let mut manager = Self::with_models_provider_and_home_for_tests(
+            auth,
+            provider,
+            codex_home.clone(),
+            Arc::new(EnvironmentManager::new(/*exec_server_url*/ None)),
+        );
         manager._test_codex_home_guard = Some(TempCodexHomeGuard { path: codex_home });
         manager
     }
@@ -285,6 +293,7 @@ impl ThreadManager {
         auth: CodexAuth,
         provider: ModelProviderInfo,
         codex_home: PathBuf,
+        environment_manager: Arc<EnvironmentManager>,
     ) -> Self {
         set_thread_manager_test_mode_for_tests(/*enabled*/ true);
         let auth_manager = AuthManager::from_auth_for_testing(auth);
@@ -297,7 +306,6 @@ impl ThreadManager {
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
         let skills_manager = Arc::new(SkillsManager::new_with_restriction_product(
             codex_home.clone(),
-            Arc::clone(&plugins_manager),
             /*bundled_skills_enabled*/ true,
             restriction_product,
         ));
@@ -311,6 +319,7 @@ impl ThreadManager {
                     auth_manager.clone(),
                     provider,
                 )),
+                environment_manager,
                 skills_manager,
                 plugins_manager,
                 mcp_manager,
@@ -835,15 +844,18 @@ impl ThreadManagerState {
         parent_trace: Option<W3cTraceContext>,
         user_shell_override: Option<crate::shell::Shell>,
     ) -> CodexResult<NewThread> {
-        let watch_registration = self
-            .skills_watcher
-            .register_config(&config, self.skills_manager.as_ref());
+        let watch_registration = self.skills_watcher.register_config(
+            &config,
+            self.skills_manager.as_ref(),
+            self.plugins_manager.as_ref(),
+        );
         let CodexSpawnOk {
             codex, thread_id, ..
         } = Codex::spawn(CodexSpawnArgs {
             config,
             auth_manager,
             models_manager: Arc::clone(&self.models_manager),
+            environment_manager: Arc::clone(&self.environment_manager),
             skills_manager: Arc::clone(&self.skills_manager),
             plugins_manager: Arc::clone(&self.plugins_manager),
             mcp_manager: Arc::clone(&self.mcp_manager),

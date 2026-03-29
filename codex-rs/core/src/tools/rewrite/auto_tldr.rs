@@ -220,7 +220,7 @@ fn resolve_project_root(turn: &TurnContext, path: Option<&str>) -> PathBuf {
         resolved
             .parent()
             .map(PathBuf::from)
-            .unwrap_or_else(|| turn.cwd.clone())
+            .unwrap_or_else(|| turn.cwd.to_path_buf())
     } else {
         resolved
     }

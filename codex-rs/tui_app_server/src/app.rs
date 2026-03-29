@@ -917,6 +917,8 @@ pub(crate) struct App {
     pub(crate) commit_anim_running: Arc<AtomicBool>,
     // Shared across ChatWidget instances so invalid status-line config warnings only emit once.
     status_line_invalid_items_warned: Arc<AtomicBool>,
+    // Shared across ChatWidget instances so invalid terminal-title config warnings only emit once.
+    terminal_title_invalid_items_warned: Arc<AtomicBool>,
 
     // Esc-backtracking state grouped
     pub(crate) backtrack: crate::app_backtrack::BacktrackState,
@@ -1020,6 +1022,7 @@ impl App {
             model: Some(self.chat_widget.current_model().to_string()),
             startup_tooltip_override: None,
             status_line_invalid_items_warned: self.status_line_invalid_items_warned.clone(),
+            terminal_title_invalid_items_warned: self.terminal_title_invalid_items_warned.clone(),
             session_telemetry: self.session_telemetry.clone(),
         }
     }
@@ -1039,7 +1042,7 @@ impl App {
 
     async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
         let mut config = self
-            .rebuild_config_for_cwd(self.chat_widget.config_ref().cwd.clone())
+            .rebuild_config_for_cwd(self.chat_widget.config_ref().cwd.clone().to_path_buf())
             .await?;
         self.apply_runtime_policy_overrides(&mut config);
         self.config = config;
@@ -1401,7 +1404,7 @@ impl App {
                 self.chat_widget.current_model(),
                 self.chat_widget.current_service_tier(),
             ),
-            self.config.cwd.clone(),
+            self.config.cwd.to_path_buf(),
             version,
         )
         .display_lines(width)
@@ -1697,7 +1700,7 @@ impl App {
                     cwd: self
                         .thread_cwd(thread_id)
                         .await
-                        .unwrap_or_else(|| self.config.cwd.clone()),
+                        .unwrap_or_else(|| self.config.cwd.clone().to_path_buf()),
                     changes: HashMap::new(),
                 }),
             ),
@@ -2957,6 +2960,7 @@ impl App {
         }
 
         let status_line_invalid_items_warned = Arc::new(AtomicBool::new(false));
+        let terminal_title_invalid_items_warned = Arc::new(AtomicBool::new(false));
 
         let enhanced_keys_supported = tui.enhanced_keys_supported();
         let wait_for_initial_session_configured =
@@ -2988,6 +2992,8 @@ impl App {
                     model: Some(model.clone()),
                     startup_tooltip_override,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
+                    terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
+                        .clone(),
                     session_telemetry: session_telemetry.clone(),
                 };
                 (ChatWidget::new_with_app_event(init), Some(started))
@@ -3021,6 +3027,8 @@ impl App {
                     model: config.model.clone(),
                     startup_tooltip_override: None,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
+                    terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
+                        .clone(),
                     session_telemetry: session_telemetry.clone(),
                 };
                 (ChatWidget::new_with_app_event(init), Some(resumed))
@@ -3059,6 +3067,8 @@ impl App {
                     model: config.model.clone(),
                     startup_tooltip_override: None,
                     status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
+                    terminal_title_invalid_items_warned: terminal_title_invalid_items_warned
+                        .clone(),
                     session_telemetry: session_telemetry.clone(),
                 };
                 (ChatWidget::new_with_app_event(init), Some(forked))
@@ -3071,7 +3081,8 @@ impl App {
         chat_widget
             .maybe_prompt_windows_sandbox_enable(should_prompt_windows_sandbox_nux_at_startup);
 
-        let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
+        let file_search =
+            FileSearchManager::new(config.cwd.clone().to_path_buf(), app_event_tx.clone());
         #[cfg(not(debug_assertions))]
         let upgrade_version = crate::updates::get_upgrade_version(&config);
 
@@ -3094,6 +3105,7 @@ impl App {
             has_emitted_history_lines: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             status_line_invalid_items_warned: status_line_invalid_items_warned.clone(),
+            terminal_title_invalid_items_warned: terminal_title_invalid_items_warned.clone(),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
             feedback: feedback.clone(),
@@ -3340,7 +3352,10 @@ impl App {
                 let picker_app_server = match crate::start_app_server_for_picker(
                     &self.config,
                     &match self.remote_app_server_url.clone() {
-                        Some(websocket_url) => crate::AppServerTarget::Remote(websocket_url),
+                        Some(websocket_url) => crate::AppServerTarget::Remote {
+                            websocket_url,
+                            auth_token: None,
+                        },
                         None => crate::AppServerTarget::Embedded,
                     },
                 )
@@ -3358,12 +3373,13 @@ impl App {
                     tui,
                     &self.config,
                     /*show_all*/ false,
+                    /*include_non_interactive*/ false,
                     picker_app_server,
                 )
                 .await?
                 {
                     SessionSelection::Resume(target_session) => {
-                        let current_cwd = self.config.cwd.clone();
+                        let current_cwd = self.config.cwd.to_path_buf();
                         let resume_cwd = if self.remote_app_server_url.is_some() {
                             current_cwd.clone()
                         } else {
@@ -3410,7 +3426,8 @@ impl App {
                                 self.shutdown_current_thread(app_server).await;
                                 self.config = resume_config;
                                 tui.set_notification_method(self.config.tui_notification_method);
-                                self.file_search.update_search_dir(self.config.cwd.clone());
+                                self.file_search
+                                    .update_search_dir(self.config.cwd.to_path_buf());
                                 match self
                                     .replace_chat_widget_with_app_server_thread(tui, resumed)
                                     .await
@@ -3706,7 +3723,8 @@ impl App {
                     plugin_display_name,
                     result,
                 );
-                if install_succeeded && self.chat_widget.config_ref().cwd == cwd {
+                if install_succeeded && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
+                {
                     self.fetch_plugins_list(app_server, cwd.clone());
                     if should_refresh_plugin_detail {
                         self.fetch_plugin_detail(
@@ -4181,7 +4199,9 @@ impl App {
                     plugin_display_name,
                     result,
                 );
-                if uninstall_succeeded && self.chat_widget.config_ref().cwd == cwd {
+                if uninstall_succeeded
+                    && self.chat_widget.config_ref().cwd.as_path() == cwd.as_path()
+                {
                     self.fetch_plugins_list(app_server, cwd);
                 }
             }
@@ -4739,6 +4759,32 @@ impl App {
             }
             AppEvent::StatusLineSetupCancelled => {
                 self.chat_widget.cancel_status_line_setup();
+            }
+            AppEvent::TerminalTitleSetup { items } => {
+                let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
+                let edit = codex_core::config::edit::terminal_title_items_edit(&ids);
+                let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
+                    .with_edits([edit])
+                    .apply()
+                    .await;
+                match apply_result {
+                    Ok(()) => {
+                        self.config.tui_terminal_title = Some(ids.clone());
+                        self.chat_widget.setup_terminal_title(items);
+                    }
+                    Err(err) => {
+                        tracing::error!(error = %err, "failed to persist terminal title items; keeping previous selection");
+                        self.chat_widget.revert_terminal_title_setup_preview();
+                        self.chat_widget
+                            .add_error_message(format!("保存终端标题项目失败：{err}"));
+                    }
+                }
+            }
+            AppEvent::TerminalTitleSetupPreview { items } => {
+                self.chat_widget.preview_terminal_title(items);
+            }
+            AppEvent::TerminalTitleSetupCancelled => {
+                self.chat_widget.cancel_terminal_title_setup();
             }
             AppEvent::SyntaxThemeSelected { name } => {
                 let edit = codex_core::config::edit::syntax_theme_edit(&name);
@@ -5705,6 +5751,7 @@ mod tests {
             model: Some(model),
             startup_tooltip_override: None,
             status_line_invalid_items_warned: app.status_line_invalid_items_warned.clone(),
+            terminal_title_invalid_items_warned: app.terminal_title_invalid_items_warned.clone(),
             session_telemetry: app.session_telemetry.clone(),
         });
 
@@ -7240,7 +7287,6 @@ guardian_approval = true
                 enabled: Some(true),
             }),
             file_system: None,
-            macos: None,
         });
         params.proposed_network_policy_amendments = Some(vec![AppServerNetworkPolicyAmendment {
             host: "example.com".to_string(),
@@ -7273,7 +7319,6 @@ guardian_approval = true
                     enabled: Some(true),
                 }),
                 file_system: None,
-                macos: None,
             })
         );
         assert_eq!(
@@ -7633,7 +7678,8 @@ guardian_approval = true
 
     async fn render_clear_ui_header_after_long_transcript_for_snapshot() -> String {
         let mut app = make_test_app().await;
-        app.config.cwd = PathBuf::from("/tmp/project");
+        app.config.cwd =
+            AbsolutePathBuf::try_from(PathBuf::from("/tmp/project")).expect("absolute test cwd");
         app.chat_widget.set_model("gpt-test");
         app.chat_widget
             .set_reasoning_effort(Some(ReasoningEffortConfig::High));
@@ -7758,7 +7804,8 @@ guardian_approval = true
     #[tokio::test]
     async fn clear_ui_header_shows_fast_status_only_for_gpt54() {
         let mut app = make_test_app().await;
-        app.config.cwd = PathBuf::from("/tmp/project");
+        app.config.cwd =
+            AbsolutePathBuf::try_from(PathBuf::from("/tmp/project")).expect("absolute test cwd");
         app.chat_widget.set_model("gpt-5.4");
         app.chat_widget
             .set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
@@ -7784,7 +7831,7 @@ guardian_approval = true
     async fn make_test_app() -> App {
         let (chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
         let config = chat_widget.config_ref().clone();
-        let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
+        let file_search = FileSearchManager::new(config.cwd.to_path_buf(), app_event_tx.clone());
         let model = codex_core::test_support::get_model_offline(config.model.as_deref());
         let session_telemetry = test_session_telemetry(&config, model.as_str());
 
@@ -7807,6 +7854,7 @@ guardian_approval = true
             enhanced_keys_supported: false,
             commit_anim_running: Arc::new(AtomicBool::new(false)),
             status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+            terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
             backtrack: BacktrackState::default(),
             backtrack_render_pending: false,
             feedback: codex_feedback::CodexFeedback::new(),
@@ -7834,7 +7882,7 @@ guardian_approval = true
     ) {
         let (chat_widget, app_event_tx, rx, op_rx) = make_chatwidget_manual_with_sender().await;
         let config = chat_widget.config_ref().clone();
-        let file_search = FileSearchManager::new(config.cwd.clone(), app_event_tx.clone());
+        let file_search = FileSearchManager::new(config.cwd.to_path_buf(), app_event_tx.clone());
         let model = codex_core::test_support::get_model_offline(config.model.as_deref());
         let session_telemetry = test_session_telemetry(&config, model.as_str());
 
@@ -7858,6 +7906,7 @@ guardian_approval = true
                 enhanced_keys_supported: false,
                 commit_anim_running: Arc::new(AtomicBool::new(false)),
                 status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+                terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
                 backtrack: BacktrackState::default(),
                 backtrack_render_pending: false,
                 feedback: codex_feedback::CodexFeedback::new(),
@@ -7995,7 +8044,6 @@ guardian_approval = true
                 cwd: Some(PathBuf::from("/tmp/project")),
                 command_actions: None,
                 additional_permissions: None,
-                skill_metadata: None,
                 proposed_execpolicy_amendment: None,
                 proposed_network_policy_amendments: None,
                 available_decisions: None,
@@ -8579,7 +8627,10 @@ guardian_approval = true
             }),
         });
 
-        assert_eq!(app.chat_widget.config_ref().cwd, next_cwd);
+        assert_eq!(
+            app.chat_widget.config_ref().cwd.as_path(),
+            next_cwd.as_path()
+        );
         assert_eq!(app.config.cwd, original_cwd);
 
         app.refresh_in_memory_config_from_disk().await?;
@@ -8599,7 +8650,7 @@ guardian_approval = true
         let current_cwd = current_config.cwd.clone();
 
         let resume_config = app
-            .rebuild_config_for_resume_or_fallback(&current_cwd, current_cwd.clone())
+            .rebuild_config_for_resume_or_fallback(&current_cwd, current_cwd.clone().to_path_buf())
             .await?;
 
         assert_eq!(resume_config, current_config);

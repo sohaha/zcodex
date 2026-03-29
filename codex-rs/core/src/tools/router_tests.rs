@@ -7,7 +7,6 @@ use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::parallel::ToolCallRuntime;
-use crate::tools::registry::ConfiguredToolSpec;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::registry::ToolRegistryBuilder;

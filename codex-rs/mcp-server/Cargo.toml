@@ -23,6 +23,7 @@ tldr = ["dep:codex-native-tldr"]
 anyhow = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-core = { workspace = true }
+codex-exec-server = { workspace = true }
 codex-features = { workspace = true }
 codex-native-tldr = { workspace = true, optional = true }
 codex-protocol = { workspace = true }
