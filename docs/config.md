@@ -36,6 +36,28 @@ Codex can run a notification hook when the agent finishes a turn. See the config
 
 When Codex knows which client started the turn, the legacy notify JSON payload also includes a top-level `client` field. The TUI reports `codex-tui`, and the app server reports the `clientInfo.name` value from `initialize`.
 
+## Memories / zmemory
+
+Rust Codex CLI now enables the `memories` feature by default, so `zmemory`
+capabilities are available on a default startup without manually turning the
+feature on first.
+
+To explicitly disable the default behavior for the current run:
+
+```shell
+codex --disable memories
+```
+
+To disable it persistently in `~/.codex/config.toml`:
+
+```toml
+[features]
+memories = false
+```
+
+The legacy alias `memory_tool = false` remains supported for backward
+compatibility, but `memories` is the recommended canonical key.
+
 ## JSON Schema
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.

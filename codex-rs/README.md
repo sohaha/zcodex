@@ -26,6 +26,26 @@ Rust 实现已成为 Codex CLI 的主线版本与默认体验，提供旧版 Typ
 
 Codex 支持更完整的配置能力。注意 Rust CLI 使用 `config.toml` 而不是 `config.json`。详情见 [`docs/config.md`](../docs/config.md)。
 
+### zmemory 默认行为
+
+Rust CLI 现在默认启用长期记忆 feature（`memories`），因此默认启动时会暴露
+`zmemory` 相关能力。
+
+如果你想显式关闭，可使用：
+
+```shell
+codex --disable memories
+```
+
+或在 `~/.codex/config.toml` 中写入：
+
+```toml
+[features]
+memories = false
+```
+
+旧配置键 `memory_tool = false` 仍兼容，但推荐优先使用 canonical key `memories`。
+
 ### Model Context Protocol 支持
 
 #### MCP 客户端
