@@ -6,6 +6,8 @@
 - `codex zmemory read system://boot --json`
 - `codex zmemory read core://agent --json`
 - `codex zmemory search "GraphService" --json`
+- `codex zmemory search "review and handoff" --json`（separator-normalized query）
+- `codex zmemory search "量子比特" --json`（精确 trigger / token 命中）
 
 ## project-init / contextual bootstrap
 - `codex zmemory create core://project-alpha --content "Project constraints" --priority 2 --json`
@@ -38,8 +40,6 @@
 - `codex zmemory rebuild-search --json`
 - `codex zmemory export alias --json`（alias coverage + missing triggers）
 - `codex zmemory export alias --limit 5 --json`（查看 alias 覆盖排名前 5 的节点）
-
-## recall helpers
-- `codex zmemory search "review pressure" --uri core://project-alpha --limit 10 --json`
+- `codex zmemory read system://index/core --json`（按 domain 复核 index 视图）
 
 每个命令都直接映射到 `codex-rs/zmemory` 的 `run_zmemory_tool`；缺省的 `--json` 能保持结构化输出，便于 skill 评估与自动化。

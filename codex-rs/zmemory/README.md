@@ -35,6 +35,7 @@
 - `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core`
 - `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent,core://my_user,core://agent/my_user`
 - `system` 是保留只读域，不需要写进 `VALID_DOMAINS`
+- 当读写到未知 domain 时，会返回 `unknown domain 'X'. valid domains: ...` 这种显式错误，便于 CLI / tool 调用方直接修正输入。
 
 ## 路径与视图
 
@@ -42,6 +43,14 @@
 
 - `core://agent-profile`
 - `core://team/salem`
+
+搜索行为补充：
+
+- 查询会做 separator-normalization，像 `foo/bar`、`foo and bar`、`foo，bar` 这类 alias/trigger 变体可以互相召回。
+- alias 命中会按 `node_uuid` 去重，避免同一节点因为多个 alias 重复出现在结果里。
+- 排序优先级为：`priority` 升序，其次更短路径，再其次 URI 字典序。
+- snippet 优先展示 literal 命中，其次 token 命中，再退回内容前缀；对 disclosure / URI 命中则回退到正文片段。
+- CJK 搜索遵循 token boundary 规则：精确 trigger 可命中，任意内部裸子串不会误命中。
 
 系统视图：
 
@@ -78,6 +87,8 @@ codex zmemory doctor --json
 - `codex zmemory export recent [--limit N]`
 - `codex zmemory export glossary [--limit N]`
 - `codex zmemory export alias [--limit N]`
+
+这些 `export` 入口只是为了 discoverability；底层 contract 仍以 `read system://...` 为准。
 
 底层仍复用 `read system://...`：
 

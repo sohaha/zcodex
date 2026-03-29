@@ -28,6 +28,7 @@ description: 在当前仓库中编排 zmemory 的 recall、capture、refine、li
 
 - 已知 URI：优先 `read`
 - 不知 URI：优先 `search`
+- 如果 query 含多个别名/分隔符变体，直接用原始 query 即可；当前 search 会做 separator-normalization 与 alias 去重。
 
 ### capture
 
@@ -54,7 +55,8 @@ description: 在当前仓库中编排 zmemory 的 recall、capture、refine、li
 4. `export glossary` 看 trigger 覆盖
 5. 同时检查 disclosure 治理：`pathsMissingDisclosure` / `disclosuresNeedingReview`
 6. `export alias [--limit N]` 看 alias coverage、trigger count、缺 trigger 列表、治理优先级、优先级原因、建议关键词和推荐命令
-7. 再决定是否 `update`、`delete-path`、`add-alias`、`manage-triggers`
+7. 若 search 行为异常，再检查 query 是否命中了 domain 校验、token boundary 或 snippet 回退语义
+8. 再决定是否 `update`、`delete-path`、`add-alias`、`manage-triggers`
 
 ### handoff
 

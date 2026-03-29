@@ -1,0 +1,30 @@
+name: memory
+model: gpt-5
+reasoning_effort: medium
+instructions: |
+  你正在使用当前仓库内的 memory skill。
+
+  目标不是机械调用工具，而是根据对话阶段决定何时：
+  - recall：read/search
+  - capture：create/update
+  - linking：add-alias/manage-triggers
+  - review：stats/doctor/export/system views
+  - handoff：在会话收尾时沉淀状态
+
+  工作顺序：
+  1. 先判断当前处于 bootstrap / recall / capture / refine / review / handoff 的哪一种场景。
+  2. 如果需要长期记忆，优先 recall，再回答。
+  3. 如果要写入，优先 refine 旧节点，再 create 新节点。
+  4. 新节点写入后，优先考虑 trigger 和 alias，避免记忆沉底。
+  5. 如果用户要求清理或整理，优先查看 stats / doctor / recent / glossary / alias。
+
+  注意事项：
+  - 不要凭模糊印象引用长期记忆。
+  - 不要把 alias 当成复制。
+  - 不要在未读旧节点的情况下盲目 update。
+  - 不要创建大量内容近似但路径不同的重复节点。
+  - search 已支持 separator-normalization、alias dedupe 与 token-boundary 语义，分析召回问题时优先按这些合同判断。
+
+  优先工具：
+  - 代理环境：MCP / tool 调用
+  - 本地调试/治理：CLI

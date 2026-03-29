@@ -7,10 +7,11 @@
 3. `codex zmemory export recent --json`：确认最近写入的内容已经被系统视图收录，便于决定是否需要 `update`、`delete-path` 或 `rebuild-search`。
 4. `codex zmemory export glossary --json`：确认 trigger / keyword 覆盖，判断是否需要 `manage-triggers` 或 `add-alias`。
 5. `codex zmemory export alias --json`：确认 alias scope，查明哪些 alias node 还没 trigger；优先处理 `reviewPriority=high` 的节点，结合 `priorityReason` / `suggestedKeywords` 判断是否直接执行 `recommendations[].command`。
-6. 若 disclosure 有缺口，优先补齐单一 disclosure：
+6. 若 search 结果异常，先确认是否属于预期合同：未知 domain 会直接报 valid domains；alias 查询会做 separator-normalization；CJK 只按 token boundary / trigger 命中，不按任意裸子串误召回。
+7. 若 disclosure 有缺口，优先补齐单一 disclosure：
    - `codex zmemory update core://legacy --disclosure "review" --json`
    - 避免一个 disclosure 同时塞多个触发意图（如 `review or handoff`）
-7. 若 alias coverage 低于 trigger，优先补 trigger：
+8. 若 alias coverage 低于 trigger，优先补 trigger：
    - `codex zmemory manage-triggers core://legacy --add review --json`
    - `codex zmemory add-alias alias://legacy core://legacy --json`
 

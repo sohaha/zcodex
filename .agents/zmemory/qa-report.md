@@ -94,3 +94,19 @@ dependencies: [tech-review, tasks]
   - `cargo test -p codex-cli --test zmemory --no-run --quiet` ✅
 - 仍未宣称完成：
   - `cargo test -p codex-cli --test zmemory --quiet` 仍受当前环境里的 `codex` 二进制解析限制影响；本轮继续只保留编译级 CLI 验证，不把运行期失败伪装成本轮回归失败。
+
+## 2026-03-29 search parity + skill closure follow-up
+- 本轮继续收口 search parity 与文档/skill 资产，不扩架构：
+  - `codex-rs/zmemory/src/service.rs` 已对齐显式 domain 错误、separator-normalized alias 查询、node 级去重、priority/path/uri 排序、自定义 snippet 回退、glossary trigger 刷新，以及 CJK token-boundary 语义。
+  - `codex-rs/zmemory/README.md` 现已同步这些 search 合同与 review 入口。
+  - `.codex/skills/memory/` 补齐最小 `agents/openai.yaml`、`admin-workflows.md`、`path-conventions.md`、`usage-modes.md`、`skills-outline.md`，并把 search parity 约束写入 skill/reference。
+- 已验证：
+  - `cargo test -p codex-zmemory search_matches_alias_via_separator_normalized_query --quiet` ✅
+  - `cargo test -p codex-zmemory search_dedupes_aliases_and_orders_by_priority_then_path_length --quiet` ✅
+  - `cargo test -p codex-zmemory search_snippet_prefers_literal_then_token_then_fallback --quiet` ✅
+  - `cargo test -p codex-zmemory search_snippet_falls_back_to_content_for_disclosure_and_uri_hits --quiet` ✅
+  - `cargo test -p codex-zmemory search_snippet_preserves_multibyte_boundaries --quiet` ✅
+  - `cargo test -p codex-zmemory glossary_add_and_remove_refresh_search_contract --quiet` ✅
+  - `cargo test -p codex-zmemory search_uses_token_boundaries_instead_of_raw_cjk_substrings --quiet` ✅
+- 说明：
+  - 本轮 docs/skill 变更未新增 Rust 行为，因此未重复扩跑更大矩阵；CLI 端到端仍建议在干净环境里复核，以避免当前工作区无关构建噪音。
