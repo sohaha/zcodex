@@ -313,6 +313,11 @@ dependencies: [prd, tech-review]
 
 **依赖**：T-005
 
+**当前结论**：
+- [x] `admin export` 已以本地 CLI-only 形态落地，不再扩成独立 admin service。
+- [x] upstream `memory skill` 暂不整包迁入；当前只在 README/tech-review 中固化动作映射与边界。
+- [x] 后续若需要真正启用 memory skill，优先在仓库根级 skill/agent 编排层实现，而不是扩张 `codex-zmemory` crate。
+
 ---
 
 ## 3. 实现前检查清单

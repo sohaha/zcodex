@@ -37,6 +37,11 @@ dependencies: [tech-review, tasks]
 - `just fix -p codex-zmemory -p codex-cli -p codex-core` 在本轮 export 收尾时尝试执行两次，但因工作区构建体量与锁等待超时，未拿到完整结束结果；已看到相关 crate 编译推进至 `codex-zmemory` / `codex-core` / `codex-cli`，但不能宣称 fix 完成。
 - 未来如需引入 `admin export` / memory skill 或进一步改变 create 行为边界，需要新增对应 targeted validation。
 
+## T-006 评估结论
+- 本轮继续对齐 upstream `memory skill`，但仅落到“动作映射与边界说明”，没有新增 Rust 接口或 CLI 子命令。
+- 结论是：`codex-zmemory` 继续做动作层，memory skill 留在仓库根级 skill / agent 编排层；因此本轮无需新增 crate/CLI/core 测试。
+- 本轮验证口径为文档一致性检查：README、tasks、tech-review、qa-report 结论保持一致，且不宣称 upstream baseline 再次前进。
+
 ## 下一轮回归建议
 1. 若继续改 `codex-rs/zmemory` 核心语义，先跑 `cargo test -p codex-zmemory --quiet`。
 2. 若改 spec/schema 文案，再跑 `cargo test -p codex-core zmemory_tool_ --quiet`。
