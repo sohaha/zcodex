@@ -809,7 +809,7 @@ fn tldr_tool_description_mentions_soft_auto_routing_without_promising_forced_rew
 }
 
 #[test]
-fn zmemory_tool_requires_feature_flag() {
+fn zmemory_tool_is_available_by_default() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let features = Features::with_defaults();
@@ -825,16 +825,16 @@ fn zmemory_tool_requires_feature_flag() {
     });
 
     let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
-    assert_lacks_tool_name(&tools, "zmemory");
-    assert!(!registry.has_handler("zmemory", None));
+    assert_contains_tool_names(&tools, &["zmemory"]);
+    assert!(registry.has_handler("zmemory", None));
 }
 
 #[test]
-fn zmemory_tool_is_available_when_enabled() {
+fn zmemory_tool_requires_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.enable(Feature::MemoryTool);
+    features.disable(Feature::MemoryTool);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -847,8 +847,8 @@ fn zmemory_tool_is_available_when_enabled() {
     });
 
     let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
-    assert_contains_tool_names(&tools, &["zmemory"]);
-    assert!(registry.has_handler("zmemory", None));
+    assert_lacks_tool_name(&tools, "zmemory");
+    assert!(!registry.has_handler("zmemory", None));
 }
 
 #[test]

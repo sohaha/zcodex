@@ -121,6 +121,12 @@ fn tool_suggest_is_stable_and_enabled_by_default() {
 }
 
 #[test]
+fn memory_tool_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::MemoryTool.stage(), Stage::Stable);
+    assert_eq!(Feature::MemoryTool.default_enabled(), true);
+}
+
+#[test]
 fn tool_search_is_under_development_and_disabled_by_default() {
     assert_eq!(Feature::ToolSearch.stage(), Stage::UnderDevelopment);
     assert_eq!(Feature::ToolSearch.default_enabled(), false);
