@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-03-29T07:24:22.000Z
-- 本轮摘要：修复 web-merge-back 中 native-tldr 合并后的编译错误：补回 analysis/api/diagnostics/session 漂移，并恢复 semantic/source_fingerprint 与 warm/reindex 相关接口对齐；cargo check -p codex-native-tldr 和 cargo test -p codex-native-tldr --lib 均通过。注意 worktree 里仍有未处理的 core/tldr 相关改动，不在本次修改范围。
+- 更新时间：2026-03-29T07:28:37.753Z
+- 本轮摘要：Merged upstream-sync back into web via independent worktree, repaired native-tldr/core tldr API drift on merge-back, validated with cargo check -p codex-native-tldr and cargo check -p codex-core --tests, then merged latest origin/web and pushed web-merge-back to origin/web without touching main /workspace worktree.
 
 ## 待确认问题
 
