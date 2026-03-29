@@ -48,6 +48,8 @@ async fn zmemory_stats_json_works_on_empty_db() -> Result<()> {
     assert_eq!(payload["result"]["nodeCount"], 1);
     assert_eq!(payload["result"]["orphanedMemoryCount"], 0);
     assert_eq!(payload["result"]["deprecatedMemoryCount"], 0);
+    assert_eq!(payload["result"]["aliasNodeCount"], 0);
+    assert_eq!(payload["result"]["triggerNodeCount"], 0);
     Ok(())
 }
 
@@ -382,6 +384,18 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
     assert_eq!(doctor_payload["result"]["healthy"], true);
     assert_eq!(doctor_payload["result"]["orphanedMemoryCount"], 0);
     assert_eq!(doctor_payload["result"]["deprecatedMemoryCount"], 0);
+    assert!(
+        doctor_payload["result"]["aliasNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 0
+    );
+    assert!(
+        doctor_payload["result"]["triggerNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 0
+    );
 
     Ok(())
 }
@@ -425,9 +439,52 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
         .assert()
         .success();
 
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "core://legacy/alias",
+            "core://legacy",
+        ])
+        .assert()
+        .success();
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://triggered",
+            "--content",
+            "Trigger node",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "manage-triggers",
+            "core://triggered",
+            "--add",
+            "GraphService",
+        ])
+        .assert()
+        .success();
+
     let stats_payload = run_json(codex_home.path(), &["zmemory", "stats", "--json"])?;
     assert_eq!(stats_payload["result"]["deprecatedMemoryCount"], 1);
     assert_eq!(stats_payload["result"]["orphanedMemoryCount"], 1);
+    assert!(
+        stats_payload["result"]["aliasNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
+    );
+    assert!(
+        stats_payload["result"]["triggerNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
+    );
 
     let doctor_payload = run_json(codex_home.path(), &["zmemory", "doctor", "--json"])?;
     assert_eq!(doctor_payload["result"]["healthy"], false);
@@ -443,6 +500,29 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
         issues
             .iter()
             .any(|issue| issue["code"] == "deprecated_memories_awaiting_review")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "alias_nodes_missing_triggers")
+    );
+    assert!(
+        doctor_payload["result"]["aliasNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
+    );
+    assert!(
+        doctor_payload["result"]["triggerNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
+    );
+    assert!(
+        doctor_payload["result"]["aliasNodesMissingTriggers"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
     );
 
     Ok(())

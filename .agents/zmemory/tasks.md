@@ -317,6 +317,7 @@ dependencies: [prd, tech-review]
 - [x] `admin export` 已以本地 CLI-only 形态落地，不再扩成独立 admin service。
 - [x] upstream `memory skill` 暂不整包迁入；当前只在 README/tech-review 中固化动作映射与边界。
 - [x] 后续若需要真正启用 memory skill，优先在仓库根级 skill/agent 编排层实现，而不是扩张 `codex-zmemory` crate。
+- [x] alias/trigger parity 新增：`stats`、`doctor` 现在能报告 alias node/trigger counts 与 alias-without-triggers 警告，CLI tests/QA 文档同步验证。
 - [x] 下一轮 parity audit 已选定 review/admin 信号缺口：优先补 `stats` / `doctor` 的 orphaned/deprecated 治理信号，而不是新增 review 服务。
 
 ---

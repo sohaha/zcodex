@@ -395,6 +395,22 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         conn.query_row("SELECT COUNT(*) FROM glossary_keywords", [], |row| {
             row.get(0)
         })?;
+    let alias_node_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT e.child_uuid
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    let trigger_node_count: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords",
+        [],
+        |row| row.get(0),
+    )?;
     let orphaned_memory_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL",
         [],
@@ -422,6 +438,8 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         "glossaryKeywordCount": glossary_count,
         "orphanedMemoryCount": orphaned_memory_count,
         "deprecatedMemoryCount": deprecated_memory_count,
+        "aliasNodeCount": alias_node_count,
+        "triggerNodeCount": trigger_node_count,
         "searchDocumentCount": search_document_count,
         "ftsDocumentCount": fts_document_count,
     }))
@@ -434,6 +452,12 @@ fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         "healthy": doctor.get("healthy").and_then(serde_json::Value::as_bool).unwrap_or(false),
         "orphanedMemoryCount": doctor.get("orphanedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
         "deprecatedMemoryCount": doctor.get("deprecatedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
+        "aliasNodeCount": doctor.get("aliasNodeCount").cloned().unwrap_or_else(|| json!(0)),
+        "triggerNodeCount": doctor.get("triggerNodeCount").cloned().unwrap_or_else(|| json!(0)),
+        "aliasNodesMissingTriggers": doctor
+            .get("aliasNodesMissingTriggers")
+            .cloned()
+            .unwrap_or_else(|| json!(0)),
         "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
         "stats": stats,
         "dbPath": config.db_path().display().to_string(),

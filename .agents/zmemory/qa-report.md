@@ -49,6 +49,10 @@ dependencies: [tech-review, tasks]
 - 验证结果：
   - `bash /workspace/.mise/tasks/rs-ext cargo test -p codex-zmemory --quiet` ✅（11 passed）
   - `bash /workspace/.mise/tasks/rs-ext cargo test -p codex-cli --test zmemory --quiet` ✅（16 passed）
+- alias/trigger parity补充：
+  - `stats` 现在也返回 `aliasNodeCount` / `triggerNodeCount`，方便判断 alias/trigger coverage。
+  - `doctor` 增加 `aliasNodesMissingTriggers` 告警，帮助 review 识别需要补 trigger 的 alias 目标。
+  - CLI 测试 `zmemory_stats_and_doctor_surface_review_pressure` 覆盖 alias/trigger metrics 与 doctor issue。
 - 技能资产：新增 `references/cli-recipes.md` 与 `references/review-playbook.md`，让 skill 在当前 CLI 命令基础上可直接调度 recall/capture/refine/linking/review。
 
 ## 下一轮回归建议

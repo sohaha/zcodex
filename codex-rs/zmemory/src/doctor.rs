@@ -3,6 +3,45 @@ use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
 
+fn alias_node_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT e.child_uuid
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+         )",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?)
+}
+
+fn trigger_node_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?)
+}
+
+fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT e.child_uuid
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+         ) AS alias_nodes
+         WHERE alias_nodes.child_uuid NOT IN (
+             SELECT DISTINCT node_uuid FROM glossary_keywords
+         )",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?)
+}
+
 pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
     let search_count: i64 = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
         row.get(0)
@@ -80,6 +119,16 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
         }));
     }
 
+    let alias_nodes = alias_node_count(conn)?;
+    let trigger_nodes = trigger_node_count(conn)?;
+    let alias_nodes_missing = alias_nodes_missing_triggers(conn)?;
+    if alias_nodes_missing > 0 {
+        issues.push(json!({
+            "code": "alias_nodes_missing_triggers",
+            "message": format!("{alias_nodes_missing} alias nodes have no keywords"),
+        }));
+    }
+
     Ok(json!({
         "healthy": issues.is_empty(),
         "dbPath": db_path,
@@ -87,6 +136,9 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
         "ftsDocumentCount": fts_count,
         "orphanedMemoryCount": orphaned_memories,
         "deprecatedMemoryCount": deprecated_memories,
+        "aliasNodeCount": alias_nodes,
+        "triggerNodeCount": trigger_nodes,
+        "aliasNodesMissingTriggers": alias_nodes_missing,
         "issues": issues,
     }))
 }
