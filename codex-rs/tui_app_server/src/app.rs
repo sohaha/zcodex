@@ -3395,9 +3395,7 @@ impl App {
                             .await?
                             {
                                 crate::ResolveCwdOutcome::Continue(Some(cwd)) => cwd,
-                                crate::ResolveCwdOutcome::Continue(None) => {
-                                    current_cwd.clone()
-                                }
+                                crate::ResolveCwdOutcome::Continue(None) => current_cwd.clone(),
                                 crate::ResolveCwdOutcome::Exit => {
                                     return Ok(AppRunControl::Exit(ExitReason::UserRequested));
                                 }

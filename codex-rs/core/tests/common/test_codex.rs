@@ -116,8 +116,8 @@ impl TestEnv {
         &self.environment
     }
 
-    pub fn experimental_exec_server_url(&self) -> Option<&str> {
-        self.environment.experimental_exec_server_url()
+    pub fn exec_server_url(&self) -> Option<&str> {
+        self.environment.exec_server_url()
     }
 }
 
@@ -388,11 +388,8 @@ impl TestCodexBuilder {
         server: &wiremock::MockServer,
     ) -> anyhow::Result<TestCodex> {
         let test_env = test_env().await?;
-        let experimental_exec_server_url =
-            test_env.experimental_exec_server_url().map(str::to_owned);
-        let cwd = test_env.cwd.to_path_buf();
+        let cwd = absolute_path(&test_env.cwd)?;
         self.config_mutators.push(Box::new(move |config| {
-            config.experimental_exec_server_url = experimental_exec_server_url;
             config.cwd = cwd;
         }));
 
@@ -477,6 +474,9 @@ impl TestCodexBuilder {
         test_env: TestEnv,
     ) -> anyhow::Result<TestCodex> {
         let auth = self.auth.clone();
+        let environment_manager = Arc::new(codex_exec_server::EnvironmentManager::new(
+            test_env.exec_server_url().map(str::to_owned),
+        ));
         let thread_manager =
             if config.model_catalog.is_some() || config.model_catalog_merge.is_some() {
                 ThreadManager::new(
@@ -484,12 +484,14 @@ impl TestCodexBuilder {
                     codex_core::test_support::auth_manager_from_auth(auth.clone()),
                     SessionSource::Exec,
                     CollaborationModesConfig::default(),
+                    Arc::clone(&environment_manager),
                 )
             } else {
                 codex_core::test_support::thread_manager_with_models_provider_and_home(
                     auth.clone(),
                     config.model_provider.clone(),
                     config.codex_home.clone(),
+                    Arc::clone(&environment_manager),
                 )
             };
         let thread_manager = Arc::new(thread_manager);
@@ -557,7 +559,7 @@ impl TestCodexBuilder {
         };
         let cwd = Arc::new(TempDir::new()?);
         let mut config = load_default_config_for_test(home).await;
-        config.cwd = cwd.path().to_path_buf();
+        config.cwd = absolute_path(cwd.path())?;
         config.model_provider = model_provider;
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
@@ -736,7 +738,7 @@ impl TestCodex {
                     text_elements: Vec::new(),
                 }],
                 final_output_json_schema: None,
-                cwd: self.config.cwd.clone(),
+                cwd: self.config.cwd.to_path_buf(),
                 approval_policy,
                 approvals_reviewer: None,
                 sandbox_policy,
