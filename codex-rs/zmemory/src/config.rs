@@ -63,6 +63,18 @@ impl ZmemoryConfig {
     pub fn core_memory_uris(&self) -> &[String] {
         &self.settings.core_memory_uris
     }
+
+    pub fn valid_domains(&self) -> &[String] {
+        &self.settings.valid_domains
+    }
+
+    pub fn valid_domains_for_display(&self) -> Vec<String> {
+        let mut values = self.settings.valid_domains.clone();
+        if !values.iter().any(|value| value == "system") {
+            values.push("system".to_string());
+        }
+        values
+    }
 }
 
 impl ZmemorySettings {

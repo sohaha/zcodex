@@ -159,7 +159,8 @@ fn read_index_view(
     if let Some(domain) = domain {
         anyhow::ensure!(
             config.is_valid_domain(domain),
-            "unsupported domain: {domain}"
+            "unknown domain '{domain}'. valid domains: {}",
+            config.valid_domains_for_display().join(", ")
         );
     }
     let (total, entries) = if let Some(domain) = domain {

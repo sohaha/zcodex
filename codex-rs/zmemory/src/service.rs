@@ -16,6 +16,7 @@ use rusqlite::OptionalExtension;
 use rusqlite::params;
 use serde_json::Value;
 use serde_json::json;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam) -> Result<Value> {
@@ -103,18 +104,19 @@ fn search_action(
     if let Some(scope) = scope.as_ref() {
         ensure_readable_domain(config, conn, &scope.domain)?;
     }
+    let normalized_query = normalize_search_query(query);
 
     let mut sql = String::from(
-        "SELECT f.domain, f.path, f.uri, snippet(search_documents_fts, 3, '[', ']', '...', 12) AS snippet,
-                sd.priority, sd.disclosure
+        "SELECT f.domain, f.path, f.uri, sd.content,
+                sd.priority, sd.disclosure, sd.node_uuid
          FROM search_documents_fts f
          JOIN search_documents sd
            ON sd.domain = f.domain AND sd.path = f.path
          WHERE search_documents_fts MATCH ?1",
     );
 
-    let matches = if let Some(scope) = scope {
-        sql.push_str(" AND f.domain = ?2 AND (f.path = ?3 OR f.path LIKE ?4) ORDER BY sd.priority DESC, bm25(search_documents_fts) ASC, f.uri ASC LIMIT ?5");
+    let raw_matches = if let Some(scope) = scope {
+        sql.push_str(" AND f.domain = ?2 AND (f.path = ?3 OR f.path LIKE ?4) ORDER BY bm25(search_documents_fts) ASC, f.uri ASC");
         let prefix = if scope.path.is_empty() {
             "%".to_string()
         } else {
@@ -122,42 +124,85 @@ fn search_action(
         };
         let mut stmt = conn.prepare(&sql)?;
         stmt.query_map(
-            params![query, scope.domain, scope.path, prefix, limit as i64],
+            params![normalized_query, scope.domain, scope.path, prefix],
             |row| {
-                Ok(json!({
-                    "domain": row.get::<_, String>(0)?,
-                    "path": row.get::<_, String>(1)?,
-                    "uri": row.get::<_, String>(2)?,
-                    "snippet": row.get::<_, String>(3)?,
-                    "priority": row.get::<_, i64>(4)?,
-                    "disclosure": row.get::<_, Option<String>>(5)?,
-                }))
+                Ok(SearchMatch {
+                    domain: row.get(0)?,
+                    path: row.get(1)?,
+                    uri: row.get(2)?,
+                    content: row.get(3)?,
+                    priority: row.get(4)?,
+                    disclosure: row.get(5)?,
+                    node_uuid: row.get(6)?,
+                })
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?
     } else {
-        sql.push_str(
-            " ORDER BY sd.priority DESC, bm25(search_documents_fts) ASC, f.uri ASC LIMIT ?2",
-        );
+        sql.push_str(" ORDER BY bm25(search_documents_fts) ASC, f.uri ASC");
         let mut stmt = conn.prepare(&sql)?;
-        stmt.query_map(params![query, limit as i64], |row| {
-            Ok(json!({
-                "domain": row.get::<_, String>(0)?,
-                "path": row.get::<_, String>(1)?,
-                "uri": row.get::<_, String>(2)?,
-                "snippet": row.get::<_, String>(3)?,
-                "priority": row.get::<_, i64>(4)?,
-                "disclosure": row.get::<_, Option<String>>(5)?,
-            }))
+        stmt.query_map(params![normalized_query], |row| {
+            Ok(SearchMatch {
+                domain: row.get(0)?,
+                path: row.get(1)?,
+                uri: row.get(2)?,
+                content: row.get(3)?,
+                priority: row.get(4)?,
+                disclosure: row.get(5)?,
+                node_uuid: row.get(6)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?
     };
+    let matches = dedupe_and_sort_search_matches(raw_matches, query, limit);
 
     Ok(json!({
         "query": query,
         "matchCount": matches.len(),
         "matches": matches,
     }))
+}
+
+#[derive(Debug)]
+struct SearchMatch {
+    domain: String,
+    path: String,
+    uri: String,
+    content: String,
+    priority: i64,
+    disclosure: Option<String>,
+    node_uuid: String,
+}
+
+fn dedupe_and_sort_search_matches(
+    matches: Vec<SearchMatch>,
+    query: &str,
+    limit: usize,
+) -> Vec<Value> {
+    let mut matches = matches;
+    matches.sort_by(|left, right| {
+        left.priority
+            .cmp(&right.priority)
+            .then_with(|| left.path.len().cmp(&right.path.len()))
+            .then_with(|| left.uri.cmp(&right.uri))
+    });
+
+    let mut seen = HashSet::new();
+    matches
+        .into_iter()
+        .filter(|item| seen.insert(item.node_uuid.clone()))
+        .take(limit)
+        .map(|item| {
+            json!({
+                "domain": item.domain,
+                "path": item.path,
+                "uri": item.uri,
+                "snippet": make_search_snippet(&item.content, query),
+                "priority": item.priority,
+                "disclosure": item.disclosure,
+            })
+        })
+        .collect()
 }
 
 fn create_action(
@@ -602,7 +647,7 @@ fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
 
     for (domain, path, node_uuid, memory_id, content, disclosure, priority, keywords) in rows {
         let uri = format!("{domain}://{path}");
-        let search_terms = build_search_terms(&domain, &path, &keywords);
+        let search_terms = build_search_terms(&domain, &path, &content, &keywords);
         tx.execute(
             "INSERT INTO search_documents(
                 domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority
@@ -633,12 +678,206 @@ fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
     .map_err(Into::into)
 }
 
-fn build_search_terms(domain: &str, path: &str, keywords: &str) -> String {
-    let mut terms = vec![domain.to_string(), path.replace('/', " ")];
+fn build_search_terms(domain: &str, path: &str, content: &str, keywords: &str) -> String {
+    let mut terms = vec![
+        domain.to_string(),
+        normalize_search_field(domain),
+        normalize_search_field(path),
+        normalize_search_field(&format!("{domain}://{path}")),
+        normalize_search_field(content),
+        ascii_search_tokens(content).join(" "),
+    ];
     if !keywords.trim().is_empty() {
-        terms.push(keywords.trim().to_string());
+        terms.push(normalize_search_field(keywords.trim()));
     }
     terms.join(" ")
+}
+
+fn normalize_search_field(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| match ch {
+            ':' | '/' | '.' | '-' => ' ',
+            _ => ch.to_ascii_lowercase(),
+        })
+        .collect::<String>()
+}
+
+fn normalize_search_query(query: &str) -> String {
+    if query.chars().any(is_cjk_rune) {
+        normalize_search_field(query)
+    } else {
+        let tokens = snippet_query_tokens(query);
+        if tokens.is_empty() {
+            normalize_search_field(query)
+        } else {
+            tokens.join(" ")
+        }
+    }
+}
+
+fn ascii_search_tokens(value: &str) -> Vec<String> {
+    snippet_query_tokens(value)
+        .into_iter()
+        .filter(|token| {
+            token
+                .chars()
+                .any(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        })
+        .collect()
+}
+
+fn make_search_snippet(content: &str, query: &str) -> String {
+    if content.is_empty() {
+        return String::new();
+    }
+    let lower_content = content.to_lowercase();
+    let lower_query = query.trim().to_lowercase();
+    let mut match_len = lower_query.chars().count();
+    if lower_query.is_empty() {
+        return snippet(content, 80);
+    }
+
+    if let Some(pos) = lower_content.find(&lower_query) {
+        let start = lower_content[..pos].chars().count();
+        let end = usize::min(content.chars().count(), start + match_len + 30);
+        let prefix = if start > 0 { "..." } else { "" };
+        let suffix = if end < content.chars().count() {
+            "..."
+        } else {
+            ""
+        };
+        return format!("{prefix}{}{suffix}", slice_chars(content, start, end));
+    }
+
+    for token in snippet_query_tokens(query) {
+        if let Some(pos) = lower_content.find(&token) {
+            if content.chars().count() <= 80 {
+                return content.to_string();
+            }
+            match_len = token.chars().count();
+            let rune_pos = lower_content[..pos].chars().count();
+            let start = rune_pos.saturating_sub(30);
+            let end = usize::min(content.chars().count(), rune_pos + match_len + 30);
+            let prefix = if start > 0 { "..." } else { "" };
+            let suffix = if end < content.chars().count() {
+                "..."
+            } else {
+                ""
+            };
+            return format!("{prefix}{}{suffix}", slice_chars(content, start, end));
+        }
+    }
+
+    snippet(content, 80)
+}
+
+fn snippet(content: &str, limit: usize) -> String {
+    if content.chars().count() <= limit {
+        return content.to_string();
+    }
+    format!("{}...", content.chars().take(limit).collect::<String>())
+}
+
+fn slice_chars(content: &str, start: usize, end: usize) -> String {
+    content
+        .chars()
+        .skip(start)
+        .take(end.saturating_sub(start))
+        .collect()
+}
+
+fn snippet_query_tokens(query: &str) -> Vec<String> {
+    let normalized: String = query
+        .chars()
+        .map(|ch| match ch {
+            ':' | '/' | '.' | '-' => ' ',
+            _ => ch,
+        })
+        .collect();
+    let mut tokens = Vec::new();
+    let mut ascii_run = String::new();
+    let mut cjk_run = String::new();
+
+    let flush_ascii = |tokens: &mut Vec<String>, ascii_run: &mut String| {
+        if ascii_run.is_empty() {
+            return;
+        }
+        tokens.push(ascii_run.to_lowercase());
+        ascii_run.clear();
+    };
+    let flush_cjk = |tokens: &mut Vec<String>, cjk_run: &mut String| {
+        if cjk_run.is_empty() {
+            return;
+        }
+        tokens.extend(split_cjk_run(cjk_run));
+        cjk_run.clear();
+    };
+
+    for ch in normalized.chars() {
+        if ch == '_' || ch.is_ascii_alphanumeric() {
+            flush_cjk(&mut tokens, &mut cjk_run);
+            if should_split_ascii_snippet_run(&ascii_run, ch) {
+                flush_ascii(&mut tokens, &mut ascii_run);
+            }
+            ascii_run.push(ch);
+        } else if is_cjk_rune(ch) {
+            flush_ascii(&mut tokens, &mut ascii_run);
+            cjk_run.push(ch);
+        } else {
+            flush_ascii(&mut tokens, &mut ascii_run);
+            flush_cjk(&mut tokens, &mut cjk_run);
+        }
+    }
+    flush_ascii(&mut tokens, &mut ascii_run);
+    flush_cjk(&mut tokens, &mut cjk_run);
+
+    let mut seen = std::collections::BTreeSet::new();
+    tokens
+        .into_iter()
+        .filter(|token| !token.is_empty() && seen.insert(token.clone()))
+        .collect()
+}
+
+fn should_split_ascii_snippet_run(current: &str, next: char) -> bool {
+    if current.is_empty() || !next.is_ascii_uppercase() {
+        return false;
+    }
+    current
+        .chars()
+        .last()
+        .is_some_and(|last| last.is_ascii_lowercase() || last.is_ascii_digit())
+}
+
+fn split_cjk_run(run: &str) -> Vec<String> {
+    let chars = run.chars().collect::<Vec<_>>();
+    if chars.len() <= 1 {
+        return vec![run.to_string()];
+    }
+    let mut tokens = Vec::new();
+    for width in [3_usize, 2, 1] {
+        if chars.len() < width {
+            continue;
+        }
+        for start in 0..=chars.len() - width {
+            tokens.push(chars[start..start + width].iter().collect::<String>());
+        }
+    }
+    tokens
+}
+
+fn is_cjk_rune(ch: char) -> bool {
+    matches!(
+        ch as u32,
+        0x4E00..=0x9FFF
+            | 0x3400..=0x4DBF
+            | 0x20000..=0x2A6DF
+            | 0x2A700..=0x2B73F
+            | 0x2B740..=0x2B81F
+            | 0x2B820..=0x2CEAF
+            | 0xF900..=0xFAFF
+            | 0x2F800..=0x2FA1F
+    )
 }
 
 fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
@@ -856,7 +1095,8 @@ fn find_path_row(conn: &Connection, uri: &ZmemoryUri) -> Result<Option<PathRow>>
 fn ensure_readable_domain(config: &ZmemoryConfig, conn: &Connection, domain: &str) -> Result<()> {
     anyhow::ensure!(
         config.is_valid_domain(domain),
-        "unsupported domain: {domain}"
+        "unknown domain '{domain}'. valid domains: {}",
+        config.valid_domains_for_display().join(", ")
     );
     if domain != "system" {
         ensure_domain_root(conn, domain)?;
@@ -1458,7 +1698,10 @@ mod tests {
             },
         )
         .expect_err("invalid domain should fail");
-        assert_eq!(invalid_domain.to_string(), "unsupported domain: writer");
+        assert_eq!(
+            invalid_domain.to_string(),
+            "unknown domain 'writer'. valid domains: core, notes, system"
+        );
 
         let invalid_index = execute_action(
             &config,
@@ -1469,7 +1712,10 @@ mod tests {
             },
         )
         .expect_err("invalid index domain should fail");
-        assert_eq!(invalid_index.to_string(), "unsupported domain: writer");
+        assert_eq!(
+            invalid_index.to_string(),
+            "unknown domain 'writer'. valid domains: core, notes, system"
+        );
 
         let system_write = execute_action(
             &config,
@@ -1583,6 +1829,493 @@ mod tests {
                 .iter()
                 .any(|issue| issue["code"] == "disclosures_need_review")
         );
+    }
+
+    #[test]
+    fn search_matches_alias_via_separator_normalized_query() {
+        let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+            Some("core,writer".to_string()),
+            None,
+        ));
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://alias-seed".to_string()),
+                content: Some("Alias path search seed".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("writer://folder".to_string()),
+                content: Some("Writer folder".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("writer folder should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                new_uri: Some("writer://folder/mirror-note".to_string()),
+                target_uri: Some("core://alias-seed".to_string()),
+                priority: Some(4),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("alias should succeed");
+
+        let exact = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                uri: Some("writer://".to_string()),
+                query: Some("writer://folder/mirror-note".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("exact search should succeed");
+        assert_eq!(exact["result"]["matchCount"], 1);
+        assert_eq!(
+            exact["result"]["matches"][0]["uri"],
+            "writer://folder/mirror-note"
+        );
+
+        let normalized = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                uri: Some("writer://".to_string()),
+                query: Some("writer/folder/mirror-note".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("normalized search should succeed");
+        assert_eq!(normalized["result"]["matchCount"], 1);
+        assert_eq!(
+            normalized["result"]["matches"][0]["uri"],
+            "writer://folder/mirror-note"
+        );
+    }
+
+    #[test]
+    fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
+        let (_dir, config) = config();
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://ranking_primary".to_string()),
+                content: Some("omega delta".to_string()),
+                priority: Some(3),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("primary create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://aliases".to_string()),
+                content: Some("Aliases root".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("aliases root create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                new_uri: Some("core://aliases/ranking_primary_alias".to_string()),
+                target_uri: Some("core://ranking_primary".to_string()),
+                priority: Some(3),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("alias create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://a".to_string()),
+                content: Some("omega delta".to_string()),
+                priority: Some(1),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("short path create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://longer_path".to_string()),
+                content: Some("omega delta".to_string()),
+                priority: Some(1),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("long path create should succeed");
+
+        let search = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("omega delta".to_string()),
+                limit: Some(3),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("search should succeed");
+
+        let matches = search["result"]["matches"]
+            .as_array()
+            .expect("matches should be an array");
+        assert_eq!(matches.len(), 3);
+        assert_eq!(matches[0]["uri"], "core://a");
+        assert_eq!(matches[1]["uri"], "core://longer_path");
+        assert_eq!(matches[2]["uri"], "core://ranking_primary");
+    }
+
+    #[test]
+    fn search_snippet_prefers_literal_then_token_then_fallback() {
+        let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+            Some("core,writer".to_string()),
+            None,
+        ));
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://snippet_literal".to_string()),
+                content: Some(format!(
+                    "prefix {} GraphService exact phrase keeps literal hits focused {}",
+                    "x".repeat(40),
+                    "y".repeat(40)
+                )),
+                priority: Some(1),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("literal create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://snippet_token".to_string()),
+                content: Some("mirror token keeps hits focused".to_string()),
+                priority: Some(2),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("token create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("writer://folder".to_string()),
+                content: Some("Writer folder".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("writer folder create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                new_uri: Some("writer://folder/mirror-note".to_string()),
+                target_uri: Some("core://snippet_token".to_string()),
+                priority: Some(2),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("token alias should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://snippet_fallback".to_string()),
+                content: Some("z".repeat(120)),
+                priority: Some(3),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("fallback create should succeed");
+
+        let literal = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("GraphService exact phrase".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("literal search should succeed");
+        let literal_snippet = literal["result"]["matches"][0]["snippet"]
+            .as_str()
+            .expect("literal snippet should exist");
+        assert!(literal_snippet.contains("GraphService exact phrase"));
+        assert!(literal_snippet.contains("..."));
+
+        let token = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                uri: Some("writer://".to_string()),
+                query: Some("writer://folder/mirror-note".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("token search should succeed");
+        assert_eq!(
+            token["result"]["matches"][0]["snippet"],
+            "mirror token keeps hits focused"
+        );
+
+        let fallback = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("snippet_fallback".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("fallback search should succeed");
+        assert_eq!(
+            fallback["result"]["matches"][0]["snippet"],
+            format!("{}...", "z".repeat(80))
+        );
+    }
+
+    #[test]
+    fn search_snippet_falls_back_to_content_for_disclosure_and_uri_hits() {
+        let (_dir, config) = config();
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://snippet_field_contract".to_string()),
+                content: Some(
+                    "content snippet fallback keeps search previews rooted in content".to_string(),
+                ),
+                disclosure: Some("edge recall notice".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+
+        let disclosure = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("edge recall".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("disclosure search should succeed");
+        assert_eq!(
+            disclosure["result"]["matches"][0]["snippet"],
+            "content snippet fallback keeps search previews rooted in content"
+        );
+
+        let uri = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("core://snippet_field_contract".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("uri search should succeed");
+        assert_eq!(
+            uri["result"]["matches"][0]["snippet"],
+            "content snippet fallback keeps search previews rooted in content"
+        );
+    }
+
+    #[test]
+    fn search_snippet_preserves_multibyte_boundaries() {
+        let (_dir, config) = config();
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://snippet_multibyte_fallback".to_string()),
+                content: Some("量".repeat(90)),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("fallback create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://snippet_multibyte_literal".to_string()),
+                content: Some(format!("前缀{}GraphService后缀", "量".repeat(40))),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("literal create should succeed");
+
+        let fallback = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("snippet_multibyte_fallback".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("fallback search should succeed");
+        assert_eq!(
+            fallback["result"]["matches"][0]["snippet"],
+            format!("{}...", "量".repeat(80))
+        );
+
+        let literal = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("GraphService".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("literal search should succeed");
+        let literal_snippet = literal["result"]["matches"][0]["snippet"]
+            .as_str()
+            .expect("literal snippet should exist");
+        assert!(literal_snippet.contains("GraphService后缀"));
+    }
+
+    #[test]
+    fn glossary_add_and_remove_refresh_search_contract() {
+        let (_dir, config) = config();
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://anchor_refresh_contract".to_string()),
+                content: Some("超导量子系统比特控制与协作".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+
+        let before_add = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("子系统比".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("search should succeed");
+        assert_eq!(before_add["result"]["matchCount"], 0);
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::ManageTriggers,
+                uri: Some("core://anchor_refresh_contract".to_string()),
+                add: Some(vec!["子系统比".to_string()]),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("add trigger should succeed");
+
+        let after_add = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("子系统比".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("search should succeed");
+        assert_eq!(after_add["result"]["matchCount"], 1);
+        assert_eq!(
+            after_add["result"]["matches"][0]["uri"],
+            "core://anchor_refresh_contract"
+        );
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::ManageTriggers,
+                uri: Some("core://anchor_refresh_contract".to_string()),
+                remove: Some(vec!["子系统比".to_string()]),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("remove trigger should succeed");
+
+        let after_remove = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("子系统比".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("search should succeed");
+        assert_eq!(after_remove["result"]["matchCount"], 0);
+    }
+
+    #[test]
+    fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
+        let (_dir, config) = config();
+
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://cjk_search".to_string()),
+                content: Some("超导量子系统比特控制与量子比特协作".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::ManageTriggers,
+                uri: Some("core://cjk_search".to_string()),
+                add: Some(vec!["量子比特".to_string()]),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("manage triggers should succeed");
+
+        let hit = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("量子比特".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("hit search should succeed");
+        assert_eq!(hit["result"]["matchCount"], 1);
+        assert_eq!(hit["result"]["matches"][0]["uri"], "core://cjk_search");
+
+        let miss = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("子系统比".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("miss search should succeed");
+        assert_eq!(miss["result"]["matchCount"], 0);
     }
 
     #[test]

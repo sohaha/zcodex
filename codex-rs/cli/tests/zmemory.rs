@@ -92,6 +92,79 @@ async fn zmemory_create_then_read_then_search_round_trip() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_search_reports_valid_domains_and_normalizes_alias_queries() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .env("VALID_DOMAINS", "core,writer")
+        .args([
+            "zmemory",
+            "create",
+            "core://alias-seed",
+            "--content",
+            "Alias path search seed",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .env("VALID_DOMAINS", "core,writer")
+        .args([
+            "zmemory",
+            "create",
+            "writer://folder",
+            "--content",
+            "Writer folder",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .env("VALID_DOMAINS", "core,writer")
+        .args([
+            "zmemory",
+            "add-alias",
+            "writer://folder/mirror-note",
+            "core://alias-seed",
+            "--priority",
+            "4",
+        ])
+        .assert()
+        .success();
+
+    let normalized = codex_command(codex_home.path())?
+        .env("VALID_DOMAINS", "core,writer")
+        .args([
+            "zmemory",
+            "search",
+            "writer/folder/mirror-note",
+            "--uri",
+            "writer://",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let normalized_payload: serde_json::Value = serde_json::from_slice(&normalized)?;
+    assert_eq!(normalized_payload["result"]["matchCount"], 1);
+    assert_eq!(
+        normalized_payload["result"]["matches"][0]["uri"],
+        "writer://folder/mirror-note"
+    );
+
+    codex_command(codex_home.path())?
+        .env("VALID_DOMAINS", "core,writer")
+        .args(["zmemory", "search", "seed", "--uri", "unknown://"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "unknown domain 'unknown'. valid domains: core, writer, system",
+        ));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_create_supports_parent_uri_and_title() -> Result<()> {
     let codex_home = TempDir::new()?;
 
