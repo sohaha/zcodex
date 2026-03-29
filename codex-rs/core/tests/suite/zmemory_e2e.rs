@@ -40,7 +40,7 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::ZmemoryTool)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -111,7 +111,7 @@ async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::ZmemoryTool)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -184,7 +184,7 @@ async fn zmemory_function_search_returns_bounded_json_for_existing_memory() -> R
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::ZmemoryTool)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -255,7 +255,7 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::ZmemoryTool)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -321,7 +321,7 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::ZmemoryTool)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;
@@ -372,8 +372,14 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     assert_eq!(payload["action"], "read");
     assert_eq!(payload["result"]["view"]["view"], "boot");
     assert_eq!(payload["result"]["view"]["entryCount"], 1);
-    assert_eq!(payload["result"]["view"]["entries"][0]["uri"], "core://agent");
-    assert_eq!(payload["result"]["view"]["missingUris"][0], "core://my_user");
+    assert_eq!(
+        payload["result"]["view"]["entries"][0]["uri"],
+        "core://agent"
+    );
+    assert_eq!(
+        payload["result"]["view"]["missingUris"][0],
+        "core://my_user"
+    );
 
     Ok(())
 }
@@ -386,7 +392,7 @@ async fn zmemory_function_error_returns_failure_without_json_block() -> Result<(
     let mut builder = test_codex().with_config(|config| {
         config
             .features
-            .enable(Feature::ZmemoryTool)
+            .enable(Feature::MemoryTool)
             .expect("test config should allow feature update");
     });
     let test = builder.build(&server).await?;

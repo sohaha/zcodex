@@ -416,7 +416,7 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
             "--content",
             "Original profile memory",
             "--disclosure",
-            "review or handoff",
+            "review/handoff",
         ])
         .assert()
         .success();

@@ -159,3 +159,4 @@ mod user_notification;
 mod user_shell_cmd;
 mod view_image;
 mod web_search;
+mod zmemory_e2e;

@@ -472,6 +472,12 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
              OR INSTR(e.disclosure, ',') > 0
              OR INSTR(e.disclosure, '，') > 0
              OR INSTR(e.disclosure, '、') > 0
+             OR INSTR(e.disclosure, ';') > 0
+             OR INSTR(e.disclosure, '；') > 0
+             OR INSTR(e.disclosure, '/') > 0
+             OR INSTR(e.disclosure, '&') > 0
+             OR INSTR(e.disclosure, '+') > 0
+             OR INSTR(e.disclosure, '|') > 0
              OR INSTR(e.disclosure, '或') > 0
            )",
         [],
@@ -1487,7 +1493,7 @@ mod tests {
                 action: ZmemoryToolAction::Create,
                 uri: Some("core://legacy".to_string()),
                 content: Some("Original profile memory".to_string()),
-                disclosure: Some("review or handoff".to_string()),
+                disclosure: Some("review/handoff".to_string()),
                 ..ZmemoryToolCallParam::default()
             },
         )

@@ -64,6 +64,12 @@ fn disclosures_needing_review(conn: &Connection) -> Result<i64> {
              OR INSTR(e.disclosure, ',') > 0
              OR INSTR(e.disclosure, '，') > 0
              OR INSTR(e.disclosure, '、') > 0
+             OR INSTR(e.disclosure, ';') > 0
+             OR INSTR(e.disclosure, '；') > 0
+             OR INSTR(e.disclosure, '/') > 0
+             OR INSTR(e.disclosure, '&') > 0
+             OR INSTR(e.disclosure, '+') > 0
+             OR INSTR(e.disclosure, '|') > 0
              OR INSTR(e.disclosure, '或') > 0
            )",
         [],
