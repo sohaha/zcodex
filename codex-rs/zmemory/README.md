@@ -98,8 +98,8 @@ codex zmemory doctor --json
 
 - `aliasNodeCount` / `triggerNodeCount` / `aliasNodesMissingTriggers`
 - `coveragePercent`：已填 trigger 的 alias 节点比例
-- `recommendations`：最多 3 条缺 trigger alias，直接给出 `nodeUri`、建议动作和可复制的命令
-- `entries`：按 aliasCount 排序，包含 triggerCount 与 `missingTriggers`
+- `recommendations`：最多 3 条缺 trigger alias，直接给出 `nodeUri`、`reviewPriority`、`priorityScore`、建议动作和可复制的命令
+- `entries`：按治理优先级排序，包含 `aliasCount`、`triggerCount`、`missingTriggers`、`reviewPriority` 与 `priorityScore`
 
 推荐在 review 流程中：先看 `stats`/`doctor` 找出是否有 alias 覆盖不足，再用 `system://alias` 看到具体有哪些 alias 节点缺 trigger，最后执行 `manage-triggers` 或 `add-alias` 补强。
 
@@ -108,7 +108,7 @@ codex zmemory doctor --json
 为了进一步支持 alias/trigger 审核，可直接 `read system://alias [limit]`，该视图汇总 alias nodes、trigger 覆盖与 alias-without-trigger 的列表：
 
 - `codex zmemory read system://alias --json`：查看 alias/trigger 总量与缺失概况。
-- `codex zmemory read system://alias/5 --json`：按 alias 数量排序，列出最多 alias 的前 5 个 alias node 及其 trigger 情况。
+- `codex zmemory read system://alias/5 --json`：按治理优先级排序，优先列出缺 trigger 且 alias 扇出更高的节点。
 
 这些信息配合 `stats`/`doctor` 能形成“alias coverage + trigger wiring”评估，为 alias review 清单提供输入。
 

@@ -541,6 +541,40 @@ async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
         .args(["zmemory", "add-alias", "core://base/alias", "core://base"])
         .assert()
         .success();
+    codex_command(codex_home.path())?
+        .args(["zmemory", "add-alias", "core://base/alias-2", "core://base"])
+        .assert()
+        .success();
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://healthy",
+            "--content",
+            "Healthy node",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "core://healthy/alias",
+            "core://healthy",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "manage-triggers",
+            "core://healthy",
+            "--add",
+            "healthy",
+        ])
+        .assert()
+        .success();
 
     let alias_payload = run_json(
         codex_home.path(),
@@ -568,6 +602,8 @@ async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
     assert!(!recommendations.is_empty());
     assert!(coverage_percent < 100);
     assert_eq!(recommendations[0]["action"], "manage-triggers");
+    assert_eq!(recommendations[0]["reviewPriority"], "high");
+    assert_eq!(recommendations[0]["priorityScore"], 103);
     assert!(
         recommendations[0]["command"]
             .as_str()
@@ -577,10 +613,20 @@ async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
     let entries = alias_payload["result"]["view"]["entries"]
         .as_array()
         .unwrap();
+    assert_eq!(entries[0]["nodeUri"], "core://base");
+    assert_eq!(entries[0]["reviewPriority"], "high");
+    assert_eq!(entries[0]["priorityScore"], 103);
     assert!(
         entries
             .iter()
             .any(|entry| entry["missingTriggers"].as_bool().unwrap_or(false))
+    );
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["nodeUri"] == "core://healthy"
+                && entry["reviewPriority"] == "low"
+                && entry["priorityScore"] == 2)
     );
 
     Ok(())

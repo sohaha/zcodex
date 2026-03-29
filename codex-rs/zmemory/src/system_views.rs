@@ -272,6 +272,8 @@ fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
             json!({
                 "nodeUri": node_uri,
                 "missingTriggers": entry["missingTriggers"],
+                "priorityScore": entry["priorityScore"],
+                "reviewPriority": entry["reviewPriority"],
                 "action": "manage-triggers",
                 "advice": "add specific trigger keywords to this alias node",
                 "command": format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json")
@@ -323,18 +325,54 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
             let domain: String = row.get(1)?;
             let path: String = row.get(2)?;
             let node_uri = format!("{domain}://{path}");
+            let alias_count = row.get::<_, i64>(3)?;
+            let missing_triggers = trigger_count == 0;
+            let (review_priority, priority_score) =
+                alias_review_priority(alias_count, missing_triggers);
             Ok(json!({
                 "nodeUuid": row.get::<_, String>(0)?,
                 "domain": domain,
                 "path": path,
-                "aliasCount": row.get::<_, i64>(3)?,
+                "aliasCount": alias_count,
                 "triggerCount": trigger_count,
-                "missingTriggers": trigger_count == 0,
+                "missingTriggers": missing_triggers,
+                "reviewPriority": review_priority,
+                "priorityScore": priority_score,
                 "nodeUri": node_uri,
             }))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut entries = entries;
+    entries.sort_by(|left, right| {
+        let right_score = right["priorityScore"].as_i64().unwrap_or(0);
+        let left_score = left["priorityScore"].as_i64().unwrap_or(0);
+        right_score
+            .cmp(&left_score)
+            .then_with(|| {
+                let right_aliases = right["aliasCount"].as_i64().unwrap_or(0);
+                let left_aliases = left["aliasCount"].as_i64().unwrap_or(0);
+                right_aliases.cmp(&left_aliases)
+            })
+            .then_with(|| {
+                let left_uri = left["nodeUri"].as_str().unwrap_or_default();
+                let right_uri = right["nodeUri"].as_str().unwrap_or_default();
+                left_uri.cmp(right_uri)
+            })
+    });
+
     Ok(entries)
+}
+
+fn alias_review_priority(alias_count: i64, missing_triggers: bool) -> (&'static str, i64) {
+    if missing_triggers {
+        let priority = if alias_count >= 3 { "high" } else { "medium" };
+        let score = 100 + alias_count;
+        (priority, score)
+    } else {
+        let priority = if alias_count >= 4 { "medium" } else { "low" };
+        (priority, alias_count)
+    }
 }
 
 fn alias_node_count(conn: &Connection) -> Result<i64> {

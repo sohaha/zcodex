@@ -55,6 +55,7 @@ dependencies: [tech-review, tasks]
 - CLI 测试 `zmemory_stats_and_doctor_surface_review_pressure` 覆盖 alias/trigger metrics 与 doctor issue。
 - `system://alias` 视图新增 `coveragePercent` 与 `recommendations`，可直接看到 alias coverage 及缺 trigger 的推荐节点。
 - `system://alias` 的 `recommendations` 现在直接带可复制的 `manage-triggers` 命令，skill 与人工 review 都能直接落动作。
+- `system://alias` 的 `entries` / `recommendations` 现在还带 `reviewPriority` 与 `priorityScore`，能先治理缺 trigger 且 alias 扇出更高的节点。
 - 技能资产：新增 `references/cli-recipes.md` 与 `references/review-playbook.md`，让 skill 在当前 CLI 命令基础上可直接调度 recall/capture/refine/linking/review。
 - 技能资产进一步完善：`cli-recipes` 新增 project-init / recall helper 片段，`review-playbook` 补全 alias/trigger review checklist 与 project init checklist，将 `system://alias` 视图编入可执行流程。
 
