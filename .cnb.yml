@@ -64,7 +64,10 @@ v*.*.*:
 .npc: &npc
   - stages:
       - name: run npc
-        image: docker.cnb.cool/zls-tools/vm/rust:latest
+        image: 
+          name: docker.cnb.cool/zls-tools/vm/rust:latest
+          dockerUser: $CNB_TOKEN_USER_NAME
+          dockerPassword: $CNB_TOKEN
         env:
           CUSTOM_PROMPT: |
             你是一位资深工程师，擅长并发模型和性能优化。
