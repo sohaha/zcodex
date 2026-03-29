@@ -7982,7 +7982,7 @@ async fn plugin_detail_popup_snapshot_shows_install_actions_and_capability_summa
         summary.clone(),
     ])]);
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd.clone().to_path_buf(), Ok(response));
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(response));
     chat.add_plugins_output();
     chat.on_plugin_detail_loaded(
         cwd.to_path_buf(),
@@ -8022,7 +8022,7 @@ async fn plugin_detail_popup_hides_disclosure_for_installed_plugins() {
         summary.clone(),
     ])]);
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd.clone().to_path_buf(), Ok(response));
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(response));
     chat.add_plugins_output();
     chat.on_plugin_detail_loaded(
         cwd.to_path_buf(),

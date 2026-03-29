@@ -2,6 +2,7 @@ use super::parse_arguments;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
+use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
@@ -9,37 +10,29 @@ use anyhow::Result;
 use async_trait::async_trait;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_lock_is_held;
-use codex_native_tldr::daemon::launch_lock_path_for_project as native_launch_lock_path_for_project;
+use codex_native_tldr::daemon::lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
-use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::tool_api::TldrToolCallParam;
+use codex_native_tldr::tool_api::daemon_metadata_looks_alive;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
-use once_cell::sync::Lazy;
 use std::ffi::OsString;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::Duration;
 use std::time::Instant;
-use std::time::SystemTime;
 use tokio::process::Command;
+use tokio::time::sleep;
 
 pub struct TldrHandler;
 
 const TLDR_JSON_BEGIN: &str = "---BEGIN_TLDR_JSON---";
 const TLDR_JSON_END: &str = "---END_TLDR_JSON---";
 const TLDR_TRACE_TARGET: &str = "codex_core::tldr";
-
-static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
-    Lazy::new(DaemonLifecycleManager::default);
-
-struct TldrHandlerRun {
-    output: FunctionToolOutput,
-    hit_paths: Option<Vec<PathBuf>>,
-}
 
 #[async_trait]
 impl ToolHandler for TldrHandler {
@@ -65,46 +58,27 @@ impl ToolHandler for TldrHandler {
         }
 
         let saved_args = args.clone();
-        let run = run_tldr_handler_run(
+        let output = run_tldr_handler_with_hooks(
             args,
             &|project_root, command| Box::pin(query_daemon(project_root, command)),
             &|project_root| Box::pin(ensure_daemon_running(project_root)),
         )
         .await?;
-        if let Some(hit_paths) = run.hit_paths.as_ref() {
-            turn.auto_tldr_context.write().await.record_success(
-                &saved_args,
-                hit_paths,
-                SystemTime::now(),
-            );
+        if output.success_for_logging() {
+            turn.auto_tldr_context
+                .write()
+                .await
+                .record_success(&saved_args);
         }
-        Ok(run.output)
+        Ok(output)
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 async fn run_tldr_handler_with_hooks<Q, E>(
     args: TldrToolCallParam,
     query: &Q,
     ensure_running: &E,
 ) -> Result<FunctionToolOutput, FunctionCallError>
-where
-    Q: for<'a> Fn(
-        &'a Path,
-        &'a TldrDaemonCommand,
-    ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
-    E: for<'a> Fn(&'a Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
-{
-    Ok(run_tldr_handler_run(args, query, ensure_running)
-        .await?
-        .output)
-}
-
-async fn run_tldr_handler_run<Q, E>(
-    args: TldrToolCallParam,
-    query: &Q,
-    ensure_running: &E,
-) -> Result<TldrHandlerRun, FunctionCallError>
 where
     Q: for<'a> Fn(
         &'a Path,
@@ -155,15 +129,10 @@ where
                 .map_err(|err| FunctionCallError::Fatal(format!("serialize tldr output: {err}")))?;
             let summary = render_tldr_summary(&result.structured_content);
             let rendered_text = sanitize_tldr_text(&result.text);
-            Ok(TldrHandlerRun {
-                output: FunctionToolOutput::from_text(
-                    format!(
-                        "{rendered_text}\n{summary}\n{TLDR_JSON_BEGIN}\n{json}\n{TLDR_JSON_END}"
-                    ),
-                    Some(true),
-                ),
-                hit_paths: Some(extract_hit_paths(&result.structured_content)),
-            })
+            Ok(FunctionToolOutput::from_text(
+                format!("{rendered_text}\n{summary}\n{TLDR_JSON_BEGIN}\n{json}\n{TLDR_JSON_END}"),
+                Some(true),
+            ))
         }
         Err(err) => {
             let duration_ms = started_at
@@ -180,84 +149,9 @@ where
                 error = %err,
                 "tldr end"
             );
-            Ok(TldrHandlerRun {
-                output: FunctionToolOutput::from_text(err.to_string(), Some(false)),
-                hit_paths: None,
-            })
+            Ok(FunctionToolOutput::from_text(err.to_string(), Some(false)))
         }
     }
-}
-
-fn extract_hit_paths(payload: &serde_json::Value) -> Vec<PathBuf> {
-    let mut hit_paths = Vec::new();
-
-    extend_hit_paths(
-        &mut hit_paths,
-        payload
-            .get("semantic")
-            .and_then(|semantic| semantic.get("matches"))
-            .and_then(serde_json::Value::as_array),
-    );
-    extend_hit_paths(
-        &mut hit_paths,
-        payload
-            .get("analysis")
-            .and_then(|analysis| analysis.get("details"))
-            .and_then(|details| details.get("units"))
-            .and_then(serde_json::Value::as_array),
-    );
-    extend_hit_paths(
-        &mut hit_paths,
-        payload
-            .get("analysis")
-            .and_then(|analysis| analysis.get("details"))
-            .and_then(|details| details.get("files"))
-            .and_then(serde_json::Value::as_array),
-    );
-    extend_hit_paths(
-        &mut hit_paths,
-        payload
-            .get("importers")
-            .and_then(|importers| importers.get("matches"))
-            .and_then(serde_json::Value::as_array),
-    );
-    extend_hit_paths(
-        &mut hit_paths,
-        payload
-            .get("search")
-            .and_then(|search| search.get("matches"))
-            .and_then(serde_json::Value::as_array),
-    );
-    extend_hit_paths(
-        &mut hit_paths,
-        payload
-            .get("diagnostics")
-            .and_then(|diagnostics| diagnostics.get("diagnostics"))
-            .and_then(serde_json::Value::as_array),
-    );
-
-    if let Some(imports_path) = payload
-        .get("path")
-        .and_then(serde_json::Value::as_str)
-        .filter(|_| payload.get("imports").is_some())
-    {
-        hit_paths.push(PathBuf::from(imports_path));
-    }
-
-    hit_paths
-}
-
-fn extend_hit_paths(hit_paths: &mut Vec<PathBuf>, entries: Option<&Vec<serde_json::Value>>) {
-    let Some(entries) = entries else {
-        return;
-    };
-
-    hit_paths.extend(entries.iter().filter_map(|entry| {
-        entry
-            .get("path")
-            .and_then(serde_json::Value::as_str)
-            .map(PathBuf::from)
-    }));
 }
 
 fn sanitize_tldr_text(text: &str) -> String {
@@ -347,89 +241,6 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
         }
     }
 
-    if parts.is_empty() && payload.get("search").is_some() {
-        if let Some(pattern) = payload.get("pattern").and_then(serde_json::Value::as_str) {
-            parts.push(format!("search pattern: {pattern}"));
-        }
-        if let Some(match_count) = payload
-            .get("search")
-            .and_then(|search| search.get("matches"))
-            .and_then(serde_json::Value::as_array)
-            .map(Vec::len)
-        {
-            parts.push(format!("matches: {match_count}"));
-        }
-        if let Some(truncated) = payload
-            .get("search")
-            .and_then(|search| search.get("truncated"))
-            .and_then(serde_json::Value::as_bool)
-        {
-            parts.push(format!("truncated: {truncated}"));
-        }
-    }
-
-    if parts.is_empty() && payload.get("diagnostics").is_some() {
-        if let Some(path) = payload.get("path").and_then(serde_json::Value::as_str) {
-            parts.push(format!("diagnostics path: {path}"));
-        }
-        if let Some(tool_count) = payload
-            .get("diagnostics")
-            .and_then(|diagnostics| diagnostics.get("tools"))
-            .and_then(serde_json::Value::as_array)
-            .map(Vec::len)
-        {
-            parts.push(format!("tools: {tool_count}"));
-        }
-        if let Some(issue_count) = payload
-            .get("diagnostics")
-            .and_then(|diagnostics| diagnostics.get("diagnostics"))
-            .and_then(serde_json::Value::as_array)
-            .map(Vec::len)
-        {
-            parts.push(format!("issues: {issue_count}"));
-        }
-        if let Some(truncated) = payload
-            .get("diagnostics")
-            .and_then(|diagnostics| diagnostics.get("truncated"))
-            .and_then(serde_json::Value::as_bool)
-        {
-            parts.push(format!("truncated: {truncated}"));
-        }
-    }
-
-    if parts.is_empty() && (payload.get("doctor").is_some() || payload.get("tools").is_some()) {
-        if let Some(language) = payload.get("language").and_then(serde_json::Value::as_str) {
-            parts.push(format!("doctor language: {language}"));
-        }
-        let tools = payload
-            .get("doctor")
-            .and_then(|doctor| doctor.get("tools"))
-            .or_else(|| payload.get("tools"))
-            .and_then(serde_json::Value::as_array);
-        if let Some(tools) = tools {
-            parts.push(format!("tools: {}", tools.len()));
-            parts.push(format!(
-                "available: {}",
-                tools
-                    .iter()
-                    .filter(|tool| {
-                        tool.get("available")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false)
-                    })
-                    .count()
-            ));
-        }
-        if let Some(message) = payload
-            .get("doctor")
-            .and_then(|doctor| doctor.get("message"))
-            .or_else(|| payload.get("message"))
-            .and_then(serde_json::Value::as_str)
-        {
-            parts.push(format!("message: {message}"));
-        }
-    }
-
     if parts.is_empty()
         && (payload.get("status").is_some()
             || payload.get("snapshot").is_some()
@@ -459,17 +270,39 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
         return Ok(false);
     }
 
-    DAEMON_LIFECYCLE_MANAGER
-        .ensure_running_with_launcher_lock(
-            project_root,
-            daemon_metadata_looks_alive_with_launcher_lock,
-            cleanup_stale_artifacts,
-            daemon_lock_is_held,
-            try_open_launcher_lock,
-            |_project_root| {},
-            |project_root| Box::pin(spawn_native_tldr_daemon(project_root)),
-        )
-        .await
+    if daemon_metadata_looks_alive(project_root) {
+        return Ok(true);
+    }
+    if daemon_lock_is_held(project_root)? {
+        return wait_for_daemon_startup(project_root).await;
+    }
+
+    let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
+        return wait_for_daemon_startup(project_root).await;
+    };
+
+    if daemon_metadata_looks_alive(project_root) {
+        return Ok(true);
+    }
+    if daemon_lock_is_held(project_root)? {
+        return wait_for_daemon_startup_during_launch(project_root).await;
+    }
+
+    cleanup_stale_artifacts(project_root);
+
+    let mut child = daemon_launcher_command(project_root)?
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+
+    let started = wait_for_daemon_startup_during_launch(project_root).await;
+    drop(launcher_lock);
+    started
 }
 
 fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
@@ -486,6 +319,29 @@ fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
         OsString::from("--project"),
         project_root.as_os_str().to_os_string(),
     ]
+}
+
+async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
+    wait_for_daemon_startup_with_launcher_lock(project_root, false).await
+}
+
+async fn wait_for_daemon_startup_during_launch(project_root: &Path) -> Result<bool> {
+    wait_for_daemon_startup_with_launcher_lock(project_root, true).await
+}
+
+async fn wait_for_daemon_startup_with_launcher_lock(
+    project_root: &Path,
+    ignore_launcher_lock: bool,
+) -> Result<bool> {
+    let start = Instant::now();
+    let timeout = Duration::from_secs(3);
+    while start.elapsed() < timeout {
+        if daemon_metadata_looks_alive_with_launcher_lock(project_root, ignore_launcher_lock) {
+            return Ok(true);
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+    Ok(false)
 }
 
 fn daemon_metadata_looks_alive_with_launcher_lock(
@@ -509,20 +365,6 @@ fn daemon_metadata_looks_alive_with_launcher_lock(
     }
 }
 
-async fn spawn_native_tldr_daemon(project_root: &Path) -> Result<bool> {
-    let mut child = daemon_launcher_command(project_root)?
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
-
-    Ok(true)
-}
-
 fn cleanup_stale_artifacts(project_root: &Path) {
     if launcher_lock_is_held(project_root).unwrap_or(false) {
         return;
@@ -539,7 +381,7 @@ fn cleanup_stale_artifacts(project_root: &Path) {
 }
 
 fn launcher_lock_path_for_project(project_root: &Path) -> PathBuf {
-    native_launch_lock_path_for_project(project_root)
+    lock_path_for_project(project_root).with_extension("launch.lock")
 }
 
 fn try_open_launcher_lock(project_root: &Path) -> Result<Option<File>> {
@@ -628,7 +470,6 @@ mod helper_tests {
 mod tests {
     use super::*;
     use crate::codex::make_session_and_context;
-    use crate::tools::rewrite::AutoTldrContext;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use pretty_assertions::assert_eq;
@@ -778,7 +619,7 @@ mod tests {
                 Arc::new(session),
                 Arc::new(turn),
                 json!({
-                    "action": "structure",
+                    "action": "tree",
                     "language": "rust",
                     "symbol": "AuthService"
                 }),
@@ -787,112 +628,10 @@ mod tests {
             .expect("handler should succeed");
         let text = output.into_text();
 
-        assert!(text.contains("structure rust via local"));
+        assert!(text.contains("tree rust via local"));
         assert!(text.contains("\"project\":"));
         assert!(text.contains(tempdir.path().to_string_lossy().as_ref()));
         assert!(text.contains("\"symbol\": \"AuthService\""));
-    }
-
-    #[tokio::test]
-    async fn handler_updates_auto_tldr_context_on_success() {
-        let tempdir = tempdir().expect("tempdir should exist");
-        let src_dir = tempdir.path().join("src");
-        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
-        std::fs::write(
-            src_dir.join("lib.rs"),
-            "pub struct AuthService;\nimpl AuthService { pub fn login(&self) {} }\n",
-        )
-        .expect("source should write");
-
-        let (session, mut turn) = make_session_and_context().await;
-        turn.cwd = tempdir.path().to_path_buf();
-        let turn = Arc::new(turn);
-
-        let output = TldrHandler
-            .handle(invocation(
-                Arc::new(session),
-                Arc::clone(&turn),
-                json!({
-                    "action": "structure",
-                    "language": "rust",
-                    "symbol": "AuthService"
-                }),
-            ))
-            .await
-            .expect("handler should succeed");
-
-        assert_eq!(output.success, Some(true));
-
-        let context = turn.auto_tldr_context.read().await.clone();
-        assert_eq!(
-            context.last_project_root,
-            Some(tempdir.path().to_path_buf())
-        );
-        assert_eq!(
-            context.last_language,
-            Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust)
-        );
-        assert_eq!(context.last_symbol.as_deref(), Some("AuthService"));
-        assert_eq!(context.last_query, None);
-        assert_eq!(context.last_hits, vec![PathBuf::from("src/lib.rs")]);
-        assert_eq!(context.last_updated_at.is_some(), true);
-    }
-
-    #[tokio::test]
-    async fn handler_does_not_update_auto_tldr_context_on_failure() {
-        let tempdir = tempdir().expect("tempdir should exist");
-        let (session, mut turn) = make_session_and_context().await;
-        turn.cwd = tempdir.path().to_path_buf();
-        let turn = Arc::new(turn);
-
-        let output = TldrHandler
-            .handle(invocation(
-                Arc::new(session),
-                Arc::clone(&turn),
-                json!({
-                    "action": "semantic",
-                    "language": "rust"
-                }),
-            ))
-            .await
-            .expect("handler should return tool output");
-
-        assert_eq!(output.success, Some(false));
-        assert_eq!(
-            *turn.auto_tldr_context.read().await,
-            AutoTldrContext::default()
-        );
-    }
-
-    #[tokio::test]
-    async fn auto_tldr_context_does_not_leak_between_turns() {
-        let (_, first_turn) = make_session_and_context().await;
-        first_turn.auto_tldr_context.write().await.record_success(
-            &TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
-                project: Some("/tmp/project".to_string()),
-                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
-                symbol: None,
-                query: Some("auth login".to_string()),
-                module: None,
-                path: None,
-                line: None,
-                paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
-            },
-            &[PathBuf::from("src/lib.rs")],
-            SystemTime::UNIX_EPOCH,
-        );
-
-        let (_, second_turn) = make_session_and_context().await;
-        assert_eq!(
-            *second_turn.auto_tldr_context.read().await,
-            AutoTldrContext::default()
-        );
     }
 
     #[tokio::test]
@@ -911,11 +650,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -983,39 +717,6 @@ mod tests {
         assert_eq!(payload["semantic"]["query"], "auth login");
     }
 
-    #[test]
-    fn extract_hit_paths_collects_common_payload_shapes() {
-        let payload = json!({
-            "analysis": {
-                "details": {
-                    "files": [{"path": "src/lib.rs"}],
-                    "units": [{"path": "src/main.rs"}]
-                }
-            },
-            "semantic": {
-                "matches": [{"path": "src/auth.rs"}]
-            },
-            "search": {
-                "matches": [{"path": "src/search.rs"}]
-            },
-            "imports": {
-                "imports": ["std::fmt"]
-            },
-            "path": "src/imports.rs"
-        });
-
-        assert_eq!(
-            extract_hit_paths(&payload),
-            vec![
-                PathBuf::from("src/auth.rs"),
-                PathBuf::from("src/main.rs"),
-                PathBuf::from("src/lib.rs"),
-                PathBuf::from("src/search.rs"),
-                PathBuf::from("src/imports.rs"),
-            ]
-        );
-    }
-
     #[tokio::test]
     async fn run_tldr_handler_with_hooks_returns_error_text_for_invalid_semantic_request() {
         let tempdir = tempdir().expect("tempdir should exist");
@@ -1030,11 +731,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1071,11 +767,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("semantic"))) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1117,7 +808,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
             TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Structure,
+                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
                 project: Some(tempdir.path().display().to_string()),
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
@@ -1126,11 +817,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1219,7 +905,7 @@ mod tests {
         assert!(text.contains("edges: 1"));
         assert!(text.contains("symbol index: 1"));
         assert!(text.contains("\nanalysis kind: ast | nodes: 1 | edges: 1 | symbol index: 1\n"));
-        assert_eq!(payload["action"], "structure");
+        assert_eq!(payload["action"], "tree");
         assert_eq!(payload["analysis"]["summary"], "structure summary");
         assert_eq!(
             payload["analysis"]["details"]["symbol_query"],
@@ -1250,11 +936,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1329,11 +1010,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: Some(vec!["src/lib.rs".to_string()]),
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1439,11 +1115,6 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1525,11 +1196,6 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: Some(4),
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1643,52 +1309,6 @@ mod tests {
     }
 
     #[test]
-    fn render_tldr_summary_surfaces_diagnostics_payload_fields() {
-        let payload = serde_json::json!({
-            "action": "diagnostics",
-            "path": "src/main.rs",
-            "diagnostics": {
-                "tools": [{"tool": "cargo-check", "available": true, "kind": "typecheck"}],
-                "diagnostics": [{
-                    "path": "src/main.rs",
-                    "line": 3,
-                    "column": 7,
-                    "severity": "error",
-                    "message": "failed",
-                    "code": "E001",
-                    "source": "cargo-check"
-                }],
-                "truncated": false
-            }
-        });
-
-        assert_eq!(
-            render_tldr_summary(&payload),
-            "diagnostics path: src/main.rs | tools: 1 | issues: 1 | truncated: false"
-        );
-    }
-
-    #[test]
-    fn render_tldr_summary_surfaces_doctor_payload_fields() {
-        let payload = serde_json::json!({
-            "action": "doctor",
-            "language": "rust",
-            "doctor": {
-                "tools": [
-                    {"tool": "cargo-check", "available": true},
-                    {"tool": "cargo-clippy", "available": false}
-                ],
-                "message": "doctor found 1 available tools across 2 configured checks"
-            }
-        });
-
-        assert_eq!(
-            render_tldr_summary(&payload),
-            "doctor language: rust | tools: 2 | available: 1 | message: doctor found 1 available tools across 2 configured checks"
-        );
-    }
-
-    #[test]
     fn render_tldr_summary_surfaces_daemon_payload_fields() {
         let payload = serde_json::json!({
             "action": "status",
@@ -1716,11 +1336,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("pong"))) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1749,11 +1364,6 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1771,9 +1381,7 @@ mod tests {
                             dirty_files: 1,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
-                            background_reindex_in_progress: false,
                             last_query_at: None,
-                            last_warm: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
                         }),
@@ -1808,11 +1416,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1830,9 +1433,7 @@ mod tests {
                             dirty_files: 1,
                             dirty_file_threshold: 20,
                             reindex_pending: true,
-                            background_reindex_in_progress: false,
                             last_query_at: None,
-                            last_warm: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
                         }),
@@ -1880,11 +1481,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 let report = report.clone();
@@ -1903,9 +1499,7 @@ mod tests {
                             dirty_files: 0,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
-                            background_reindex_in_progress: false,
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
-                            last_warm: None,
                             last_reindex: Some(report.clone()),
                             last_reindex_attempt: Some(report.clone()),
                         }),
@@ -1923,7 +1517,6 @@ mod tests {
                             health_reason: None,
                             recovery_hint: None,
                             semantic_reindex_pending: false,
-                            semantic_reindex_in_progress: false,
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                             config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
                                 auto_start: true,
@@ -1931,7 +1524,6 @@ mod tests {
                                 semantic_enabled: true,
                                 semantic_auto_reindex_threshold: 20,
                                 session_dirty_file_threshold: 20,
-                                session_idle_timeout_secs: 1800,
                             },
                         }),
                         reindex_report: Some(report),
@@ -1956,7 +1548,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
             TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Structure,
+                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
                 project: Some(tempdir.path().display().to_string()),
                 language: None,
                 symbol: None,
@@ -1965,11 +1557,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1978,10 +1565,7 @@ mod tests {
         .expect("handler helper should return tool output");
 
         assert_eq!(output.success, Some(false));
-        assert_eq!(
-            output.into_text(),
-            "`language` is required for action=structure"
-        );
+        assert_eq!(output.into_text(), "`language` is required for action=tree");
     }
 
     #[tokio::test]
@@ -1998,11 +1582,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -2023,7 +1602,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
             TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Structure,
+                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
                 project: Some(tempdir.path().display().to_string()),
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
@@ -2032,11 +1611,6 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
-                only_tools: None,
-                run_lint: None,
-                run_typecheck: None,
-                max_issues: None,
-                include_install_hints: None,
             },
             &|_project_root, _command| {
                 Box::pin(async move {

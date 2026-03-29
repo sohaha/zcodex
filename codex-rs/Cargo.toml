@@ -153,9 +153,11 @@ codex-shell-escalation = { path = "shell-escalation" }
 codex-skills = { path = "skills" }
 codex-state = { path = "state" }
 codex-stdio-to-uds = { path = "stdio-to-uds" }
+codex-test-macros = { path = "test-macros" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-tools = { path = "tools" }
 codex-tui = { path = "tui_app_server" }
+codex-tui-app-server = { package = "codex-tui", path = "tui_app_server" }
 codex-v8-poc = { path = "v8-poc" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }
 codex-utils-approval-presets = { path = "utils/approval-presets" }
@@ -271,6 +273,7 @@ regex = "1.12.3"
 regex-lite = "0.1.8"
 reqwest = "0.12"
 rmcp = { version = "0.15.0", default-features = false }
+rusqlite = "0.32"
 runfiles = { git = "https://github.com/dzbarsky/rules_rust", rev = "b56cbaa8465e74127f1ea216f813cd377295ad81" }
 v8 = "=146.4.0"
 rustls = { version = "0.23", default-features = false, features = [

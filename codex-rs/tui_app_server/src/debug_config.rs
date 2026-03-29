@@ -359,7 +359,7 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
     }
     if let Some(allowed_domains) = domains
         .as_ref()
-        .and_then(|domains| domains.allowed_domains())
+        .and_then(codex_core::config_loader::NetworkDomainPermissionsToml::allowed_domains)
     {
         parts.push(format!("allowed_domains=[{}]", allowed_domains.join(", ")));
     }
@@ -370,13 +370,13 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
     }
     if let Some(denied_domains) = domains
         .as_ref()
-        .and_then(|domains| domains.denied_domains())
+        .and_then(codex_core::config_loader::NetworkDomainPermissionsToml::denied_domains)
     {
         parts.push(format!("denied_domains=[{}]", denied_domains.join(", ")));
     }
     if let Some(allow_unix_sockets) = unix_sockets
         .as_ref()
-        .map(|unix_sockets| unix_sockets.allow_unix_sockets())
+        .map(codex_core::config_loader::NetworkUnixSocketPermissionsToml::allow_unix_sockets)
         .filter(|allow_unix_sockets| !allow_unix_sockets.is_empty())
     {
         parts.push(format!(

@@ -834,7 +834,7 @@ fn zmemory_tool_is_available_when_enabled() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.enable(Feature::ZmemoryTool);
+    features.enable(Feature::MemoryTool);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,

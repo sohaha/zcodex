@@ -1965,6 +1965,7 @@ dependencies = [
  "codex-secrets",
  "codex-shell-command",
  "codex-shell-escalation",
+ "codex-skills",
  "codex-state",
  "codex-terminal-detection",
  "codex-tools",
@@ -3135,7 +3136,7 @@ dependencies = [
 
 [[package]]
 name = "codex-zmemory"
-version = "1.0.0"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "pretty_assertions",
@@ -9937,7 +9938,7 @@ dependencies = [
  "futures-io",
  "futures-util",
  "hashbrown 0.15.5",
- "hashlink",
+ "hashlink 0.10.0",
  "indexmap 2.13.0",
  "log",
  "memchr",
