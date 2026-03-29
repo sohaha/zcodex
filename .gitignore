@@ -45,6 +45,8 @@ AGENTS.override.md
 *.tsbuildinfo
 .measure-default/
 .xwin-cache/
+.fastembed_cache/
+codex-rs/.fastembed_cache/
 
 # logs
 *.log
