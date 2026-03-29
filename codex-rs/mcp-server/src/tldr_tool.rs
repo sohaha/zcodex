@@ -7,10 +7,15 @@ use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use codex_native_tldr::lifecycle::DaemonReadyResult;
+use codex_native_tldr::lifecycle::QueryHooksResult;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::tool_api::TldrToolCallParam;
+use codex_native_tldr::tool_api::TldrToolResult;
+use codex_native_tldr::tool_api::query_daemon_with_hooks_detailed;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
 use codex_native_tldr::tool_api::tldr_tool_output_schema;
+use codex_native_tldr::wire::daemon_response_payload;
 use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
@@ -67,7 +72,7 @@ pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResu
     run_tldr_tool_with_mcp_hooks(
         args,
         |project_root, command| Box::pin(query_daemon(project_root, command)),
-        |project_root| Box::pin(ensure_daemon_running(project_root)),
+        |project_root| Box::pin(ensure_daemon_running_detailed(project_root)),
     )
     .await
 }
@@ -82,14 +87,40 @@ where
         &'a std::path::Path,
         &'a TldrDaemonCommand,
     ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
-    E: for<'a> Fn(&'a std::path::Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
+    E: for<'a> Fn(
+            &'a std::path::Path,
+        ) -> codex_native_tldr::tool_api::EnsureDaemonDetailedFuture<'a>
+        + Send
+        + Sync
+        + 'static,
 {
+    let ensure_running = Arc::new(ensure_running);
     let project_root = args
         .project
         .as_deref()
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok());
-    match run_tldr_tool_with_hooks(args, query, ensure_running).await {
+    let result = if let Some(project_root) = project_root.as_deref() {
+        if let Some((action, command)) = daemon_action_spec(&args) {
+            run_mcp_daemon_tool(project_root, action, command, &query, &*ensure_running).await
+        } else {
+            let ensure_running = Arc::clone(&ensure_running);
+            run_tldr_tool_with_hooks(args, query, |project_root| {
+                let ensure_running = Arc::clone(&ensure_running);
+                Box::pin(async move { Ok(ensure_running(project_root).await?.ready) })
+            })
+            .await
+        }
+    } else {
+        let ensure_running = Arc::clone(&ensure_running);
+        run_tldr_tool_with_hooks(args, query, |project_root| {
+            let ensure_running = Arc::clone(&ensure_running);
+            Box::pin(async move { Ok(ensure_running(project_root).await?.ready) })
+        })
+        .await
+    };
+
+    match result {
         Ok(result) => success_result(result.text, result.structured_content),
         Err(err) => {
             let text = format!("tldr tool failed: {err}");
@@ -103,6 +134,109 @@ where
                 meta: None,
             }
         }
+    }
+}
+
+async fn run_mcp_daemon_tool<Q, E>(
+    project_root: &Path,
+    action: &'static str,
+    command: TldrDaemonCommand,
+    query: &Q,
+    ensure_running: &E,
+) -> Result<TldrToolResult>
+where
+    Q: for<'a> Fn(
+        &'a std::path::Path,
+        &'a TldrDaemonCommand,
+    ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
+    E: for<'a> Fn(
+            &'a std::path::Path,
+        ) -> codex_native_tldr::tool_api::EnsureDaemonDetailedFuture<'a>
+        + Sync,
+{
+    let QueryHooksResult {
+        response,
+        ready_result,
+    } = query_daemon_with_hooks_detailed(project_root, &command, query, ensure_running).await?;
+    let Some(response) = response else {
+        return Err(daemon_unavailable_error_from_ready_result(
+            project_root,
+            ready_result.as_ref(),
+        ));
+    };
+    let structured_content = daemon_response_payload(action, project_root, &response);
+    let message = structured_content
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("ok");
+    Ok(TldrToolResult {
+        text: format!("{action}: {message}"),
+        structured_content,
+    })
+}
+
+fn daemon_action_spec(args: &TldrToolCallParam) -> Option<(&'static str, TldrDaemonCommand)> {
+    match args.action {
+        codex_native_tldr::tool_api::TldrToolAction::Ping => {
+            Some(("ping", TldrDaemonCommand::Ping))
+        }
+        codex_native_tldr::tool_api::TldrToolAction::Warm => {
+            Some(("warm", TldrDaemonCommand::Warm))
+        }
+        codex_native_tldr::tool_api::TldrToolAction::Snapshot => {
+            Some(("snapshot", TldrDaemonCommand::Snapshot))
+        }
+        codex_native_tldr::tool_api::TldrToolAction::Status => {
+            Some(("status", TldrDaemonCommand::Status))
+        }
+        codex_native_tldr::tool_api::TldrToolAction::Notify => args.path.as_ref().map(|path| {
+            (
+                "notify",
+                TldrDaemonCommand::Notify {
+                    path: PathBuf::from(path),
+                },
+            )
+        }),
+        _ => None,
+    }
+}
+
+fn daemon_unavailable_error_from_ready_result(
+    project_root: &Path,
+    ready_result: Option<&DaemonReadyResult>,
+) -> anyhow::Error {
+    let project = project_root.display();
+    if let Some(failure) = ready_result.and_then(|value| value.structured_failure.as_ref()) {
+        if let Some(hint) = &failure.retry_hint {
+            return anyhow::anyhow!(
+                "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
+                failure.reason
+            );
+        }
+        return anyhow::anyhow!(
+            "native-tldr daemon is unavailable for {project}: {}",
+            failure.reason
+        );
+    }
+    match daemon_health(project_root) {
+        Ok(health) => {
+            if let Some(failure) = health.structured_failure {
+                if let Some(hint) = failure.retry_hint {
+                    anyhow::anyhow!(
+                        "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
+                        failure.reason
+                    )
+                } else {
+                    anyhow::anyhow!(
+                        "native-tldr daemon is unavailable for {project}: {}",
+                        failure.reason
+                    )
+                }
+            } else {
+                anyhow::anyhow!("native-tldr daemon is unavailable for {project}")
+            }
+        }
+        Err(_) => anyhow::anyhow!("native-tldr daemon is unavailable for {project}"),
     }
 }
 
@@ -204,15 +338,27 @@ static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
+    Ok(ensure_daemon_running_detailed(project_root).await?.ready)
+}
+
+async fn ensure_daemon_running_detailed(project_root: &Path) -> Result<DaemonReadyResult> {
     if !cfg!(unix) {
-        return Ok(false);
+        return Ok(DaemonReadyResult {
+            ready: false,
+            structured_failure: None,
+            degraded_mode: None,
+        });
     }
     if !load_tldr_config(project_root)?.daemon.auto_start {
-        return Ok(false);
+        return Ok(DaemonReadyResult {
+            ready: false,
+            structured_failure: None,
+            degraded_mode: None,
+        });
     }
 
     DAEMON_LIFECYCLE_MANAGER
-        .ensure_running_with_launcher_lock(
+        .ensure_running_with_launcher_lock_detailed(
             project_root,
             daemon_metadata_looks_alive_with_launcher_lock,
             cleanup_stale_artifacts,
@@ -401,6 +547,7 @@ mod tests {
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::daemon::pid_path_for_project;
     use codex_native_tldr::daemon::socket_path_for_project;
+    use codex_native_tldr::lifecycle::DaemonReadyResult;
     use codex_native_tldr::tool_api::TldrToolAction;
     use codex_native_tldr::tool_api::TldrToolCallParam;
     use codex_native_tldr::tool_api::TldrToolLanguage;
@@ -412,6 +559,14 @@ mod tests {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
     use tempfile::tempdir;
+
+    fn test_daemon_ready_result(ready: bool) -> DaemonReadyResult {
+        DaemonReadyResult {
+            ready,
+            structured_failure: None,
+            degraded_mode: None,
+        }
+    }
 
     #[test]
     fn verify_tldr_tool_json_schema() {
@@ -572,7 +727,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -651,7 +806,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -724,7 +879,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -797,7 +952,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -915,7 +1070,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -994,7 +1149,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1074,7 +1229,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1132,7 +1287,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1211,7 +1366,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1279,7 +1434,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1353,7 +1508,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1410,7 +1565,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1463,7 +1618,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1526,7 +1681,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1588,7 +1743,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1651,7 +1806,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1765,7 +1920,7 @@ mod tests {
                     }))
                 })
             },
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1803,7 +1958,7 @@ mod tests {
                 ..Default::default()
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
@@ -1833,7 +1988,7 @@ mod tests {
                 ..Default::default()
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
-            |_project_root| Box::pin(async move { Ok(false) }),
+            |_project_root| Box::pin(async move { Ok(test_daemon_ready_result(false)) }),
         )
         .await;
 
