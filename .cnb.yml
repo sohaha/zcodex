@@ -1,3 +1,12 @@
+.knowledge-base: &knowledge-base
+  name: build knowledge base
+  image: cnbcool/knowledge-base
+  settings:
+    include:
+      - docs/*.md
+      - docs/*.txt
+
+
 .tag-release-codex: &tag-release-codex
   docker:
     image: docker.cnb.cool/zls-tools/vm/rust:latest
@@ -51,6 +60,7 @@
 
 include:
   - https://cnb.cool/zls-tools/vm/-/blob/main/tools/sync-github-sohaha.yml
+  - https://cnb.cool/zls-tools/vm/-/blob/main/tools/knowledge.yml
   - https://cnb.cool/zls-tools/vm/-/blob/main/rust-ide.yml
   - https://cnb.cool/zls-tools/vm/-/blob/main/tools/install-tools.yml
 
@@ -63,6 +73,10 @@ $:
     sync_github:
       env:
           BRANCHS: main
+    - services:
+      stages:
+        - <<: *knowledge-base
+
   vscode:
       clouddev:
           imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
