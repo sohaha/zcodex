@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use crate::api::AnalysisResponse;
+use crate::lang_support::SupportedLanguage;
 use crate::semantic::SemanticReindexReport;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub struct DirtyState {
     pub reindex_pending: bool,
     pub cache_invalidated: bool,
     pub invalidated_entries: usize,
+    pub background_reindex_claimed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -38,9 +40,29 @@ pub struct SessionSnapshot {
     pub dirty_files: usize,
     pub dirty_file_threshold: usize,
     pub reindex_pending: bool,
+    pub background_reindex_in_progress: bool,
     pub last_query_at: Option<SystemTime>,
     pub last_reindex: Option<SemanticReindexReport>,
     pub last_reindex_attempt: Option<SemanticReindexReport>,
+    pub last_warm: Option<WarmReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum WarmStatus {
+    Busy,
+    Failed,
+    Loaded,
+    Reindexed,
+    Skipped,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WarmReport {
+    pub status: WarmStatus,
+    pub languages: Vec<SupportedLanguage>,
+    pub started_at: SystemTime,
+    pub finished_at: SystemTime,
+    pub message: String,
 }
 
 #[derive(Debug)]
@@ -48,9 +70,13 @@ pub struct Session {
     config: SessionConfig,
     cache: HashMap<String, AnalysisResponse>,
     dirty_files: BTreeSet<PathBuf>,
+    dirty_languages: BTreeSet<SupportedLanguage>,
+    has_unmapped_dirty_paths: bool,
+    background_reindex_in_progress: bool,
     last_query_at: Option<SystemTime>,
     last_reindex: Option<SemanticReindexReport>,
     last_reindex_attempt: Option<SemanticReindexReport>,
+    last_warm: Option<WarmReport>,
 }
 
 impl Session {
@@ -59,14 +85,22 @@ impl Session {
             config,
             cache: HashMap::new(),
             dirty_files: BTreeSet::new(),
+            dirty_languages: BTreeSet::new(),
+            has_unmapped_dirty_paths: false,
+            background_reindex_in_progress: false,
             last_query_at: None,
             last_reindex: None,
             last_reindex_attempt: None,
+            last_warm: None,
         }
     }
 
     pub fn cached_analysis(&self, key: &str) -> Option<&AnalysisResponse> {
-        self.cache.get(key)
+        if self.reindex_pending() {
+            None
+        } else {
+            self.cache.get(key)
+        }
     }
 
     pub fn reindex_pending(&self) -> bool {
@@ -79,6 +113,11 @@ impl Session {
     }
 
     pub fn mark_dirty(&mut self, path: PathBuf) -> DirtyState {
+        if let Some(language) = SupportedLanguage::from_path(&path) {
+            self.dirty_languages.insert(language);
+        } else {
+            self.has_unmapped_dirty_paths = true;
+        }
         self.dirty_files.insert(path);
         let reindex_pending = self.reindex_pending();
         let invalidated_entries = if self.should_invalidate_cache() {
@@ -95,6 +134,7 @@ impl Session {
             reindex_pending,
             cache_invalidated,
             invalidated_entries,
+            background_reindex_claimed: false,
         }
     }
 
@@ -105,6 +145,9 @@ impl Session {
     pub fn clear_dirty_files(&mut self) -> bool {
         let had_dirty_files = !self.dirty_files.is_empty();
         self.dirty_files.clear();
+        self.dirty_languages.clear();
+        self.has_unmapped_dirty_paths = false;
+        self.background_reindex_in_progress = false;
         had_dirty_files
     }
 
@@ -114,15 +157,20 @@ impl Session {
             dirty_files: self.dirty_files.len(),
             dirty_file_threshold: self.config.dirty_file_threshold,
             reindex_pending: self.reindex_pending(),
+            background_reindex_in_progress: self.background_reindex_in_progress,
             last_query_at: self.last_query_at,
             last_reindex: self.last_reindex.clone(),
             last_reindex_attempt: self.last_reindex_attempt.clone(),
+            last_warm: self.last_warm.clone(),
         }
     }
 
     pub fn complete_reindex(&mut self, report: SemanticReindexReport) {
         self.cache.clear();
         self.dirty_files.clear();
+        self.dirty_languages.clear();
+        self.has_unmapped_dirty_paths = false;
+        self.background_reindex_in_progress = false;
         self.last_reindex = Some(report.clone());
         self.last_reindex_attempt = Some(report);
         self.last_query_at = Some(SystemTime::now());
@@ -133,11 +181,40 @@ impl Session {
     }
 
     pub fn record_reindex_attempt(&mut self, report: SemanticReindexReport) {
+        self.background_reindex_in_progress = false;
         self.last_reindex_attempt = Some(report);
     }
 
     pub fn last_reindex_attempt_report(&self) -> Option<SemanticReindexReport> {
         self.last_reindex_attempt.clone()
+    }
+
+    pub fn background_reindex_in_progress(&self) -> bool {
+        self.background_reindex_in_progress
+    }
+
+    pub fn claim_background_reindex(&mut self) -> Option<Vec<SupportedLanguage>> {
+        if self.background_reindex_in_progress {
+            return None;
+        }
+        let languages = self.dirty_languages();
+        if languages.is_empty() {
+            return None;
+        }
+        self.background_reindex_in_progress = true;
+        Some(languages)
+    }
+
+    pub fn dirty_languages(&self) -> Vec<SupportedLanguage> {
+        self.dirty_languages.iter().copied().collect()
+    }
+
+    pub fn has_unmapped_dirty_paths(&self) -> bool {
+        self.has_unmapped_dirty_paths
+    }
+
+    pub fn record_warm(&mut self, report: WarmReport) {
+        self.last_warm = Some(report);
     }
 }
 
@@ -227,7 +304,8 @@ mod tests {
             false,
             64,
         );
-        let failed = SemanticReindexReport::failed("failed".to_string(), false, 64);
+        let failed =
+            SemanticReindexReport::failed(vec![SupportedLanguage::Rust], "failed", false, 64);
 
         session.complete_reindex(completed.clone());
         session.record_reindex_attempt(failed.clone());

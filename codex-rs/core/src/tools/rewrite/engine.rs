@@ -93,7 +93,7 @@ fn log_tool_route(
 
 fn tldr_action_name(action: &TldrToolAction) -> &'static str {
     match action {
-        TldrToolAction::Tree => "tree",
+        TldrToolAction::Structure => "structure",
         TldrToolAction::Search => "search",
         TldrToolAction::Extract => "extract",
         TldrToolAction::Imports => "imports",

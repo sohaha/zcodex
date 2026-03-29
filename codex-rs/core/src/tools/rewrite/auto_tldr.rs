@@ -118,6 +118,11 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         path: None,
         line: None,
         paths: None,
+        only_tools: None,
+        run_lint: None,
+        run_typecheck: None,
+        max_issues: None,
+        include_install_hints: None,
     };
 
     let arguments = match serde_json::to_string(&rewritten_args) {

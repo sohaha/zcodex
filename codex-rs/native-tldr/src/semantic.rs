@@ -153,6 +153,7 @@ impl SemanticReindexReport {
     }
 
     pub fn failed(
+        languages: Vec<SupportedLanguage>,
         error: impl Into<String>,
         embedding_enabled: bool,
         embedding_dimensions: usize,
@@ -160,13 +161,34 @@ impl SemanticReindexReport {
         let now = SystemTime::now();
         Self {
             status: SemanticReindexStatus::Failed,
-            languages: LanguageRegistry.supported_languages(),
+            languages,
             indexed_files: 0,
             indexed_units: 0,
             truncated: false,
             started_at: now,
             finished_at: now,
             message: format!("semantic phase-2 reindex failed: {}", error.into()),
+            embedding_enabled,
+            embedding_dimensions,
+        }
+    }
+
+    pub fn skipped(
+        languages: Vec<SupportedLanguage>,
+        message: impl Into<String>,
+        embedding_enabled: bool,
+        embedding_dimensions: usize,
+    ) -> Self {
+        let now = SystemTime::now();
+        Self {
+            status: SemanticReindexStatus::Skipped,
+            languages,
+            indexed_files: 0,
+            indexed_units: 0,
+            truncated: false,
+            started_at: now,
+            finished_at: now,
+            message: message.into(),
             embedding_enabled,
             embedding_dimensions,
         }
@@ -269,6 +291,7 @@ pub struct SemanticIndex {
     pub units: Vec<EmbeddingUnit>,
     pub embedding_enabled: bool,
     pub embedding_dimensions: usize,
+    pub source_fingerprint: String,
 }
 
 /// Semantic indexer with persisted local cache for embedding units and vectors.
@@ -365,7 +388,8 @@ impl SemanticIndexer {
             return Ok(index);
         }
 
-        let index = self.build_index_from_files(project_root, language, files)?;
+        let index =
+            self.build_index_from_files(project_root, language, files, source_fingerprint.clone())?;
         semantic_cache::persist_index(project_root, &self.config, &index, &source_fingerprint)?;
         Ok(index)
     }
@@ -378,7 +402,19 @@ impl SemanticIndexer {
         let matcher = self.build_ignore_matcher(project_root)?;
         let mut files = Vec::new();
         collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
-        self.build_index_from_files(project_root, language, files)
+        let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
+        self.build_index_from_files(project_root, language, files, source_fingerprint)
+    }
+
+    pub(crate) fn current_source_fingerprint(
+        &self,
+        project_root: &Path,
+        language: SupportedLanguage,
+    ) -> Result<String> {
+        let matcher = self.build_ignore_matcher(project_root)?;
+        let mut files = Vec::new();
+        collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+        semantic_cache::source_fingerprint(project_root, &files)
     }
 
     fn build_index_from_files(
@@ -386,6 +422,7 @@ impl SemanticIndexer {
         project_root: &Path,
         language: SupportedLanguage,
         files: Vec<PathBuf>,
+        source_fingerprint: String,
     ) -> Result<SemanticIndex> {
         let embedding_enabled = self.config.embedding_enabled();
         let embedding_dimensions = self.config.embedding_dimensions();
@@ -409,6 +446,7 @@ impl SemanticIndexer {
             units,
             embedding_enabled,
             embedding_dimensions,
+            source_fingerprint,
         })
     }
 
@@ -416,10 +454,13 @@ impl SemanticIndexer {
         &self,
         project_root: &Path,
     ) -> Result<(Vec<SemanticIndex>, SemanticReindexReport)> {
+        let registry = LanguageRegistry;
+        let languages = registry.supported_languages();
         if !self.is_enabled() {
             return Ok((
                 Vec::new(),
                 SemanticReindexReport::failed(
+                    languages,
                     "semantic reindexing is disabled in config",
                     self.config.embedding_enabled(),
                     self.config.embedding_dimensions(),
@@ -427,8 +468,6 @@ impl SemanticIndexer {
             ));
         }
         let started_at = SystemTime::now();
-        let registry = LanguageRegistry;
-        let languages = registry.supported_languages();
         let mut indexes = Vec::with_capacity(languages.len());
         let mut indexed_files = 0;
         let mut indexed_units = 0;
@@ -437,7 +476,12 @@ impl SemanticIndexer {
             let mut files = Vec::new();
             collect_source_files(project_root, extension_for(*language), &mut files, &matcher)?;
             let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
-            let index = self.build_index_from_files(project_root, *language, files)?;
+            let index = self.build_index_from_files(
+                project_root,
+                *language,
+                files,
+                source_fingerprint.clone(),
+            )?;
             semantic_cache::persist_index(project_root, &self.config, &index, &source_fingerprint)?;
             indexed_files += index.indexed_files;
             indexed_units += index.units.len();
@@ -460,6 +504,82 @@ impl SemanticIndexer {
 
     pub fn reindex(&self, project_root: &Path) -> Result<SemanticReindexReport> {
         self.reindex_all(project_root).map(|(_, report)| report)
+    }
+
+    pub fn project_languages(&self, project_root: &Path) -> Result<Vec<SupportedLanguage>> {
+        let matcher = self.build_ignore_matcher(project_root)?;
+        let registry = LanguageRegistry;
+        let mut languages = Vec::new();
+        for language in registry.supported_languages() {
+            let mut files = Vec::new();
+            collect_source_files(project_root, extension_for(language), &mut files, &matcher)?;
+            if !files.is_empty() {
+                languages.push(language);
+            }
+        }
+        Ok(languages)
+    }
+
+    pub fn reindex_languages(
+        &self,
+        project_root: &Path,
+        languages: &[SupportedLanguage],
+    ) -> Result<(Vec<SemanticIndex>, SemanticReindexReport)> {
+        if !self.is_enabled() {
+            return Ok((
+                Vec::new(),
+                SemanticReindexReport::failed(
+                    languages.to_vec(),
+                    "semantic reindexing is disabled in config",
+                    self.config.embedding_enabled(),
+                    self.config.embedding_dimensions(),
+                ),
+            ));
+        }
+        if languages.is_empty() {
+            return Ok((
+                Vec::new(),
+                SemanticReindexReport::skipped(
+                    Vec::new(),
+                    "no semantic sources were marked dirty",
+                    self.config.embedding_enabled(),
+                    self.config.embedding_dimensions(),
+                ),
+            ));
+        }
+        let matcher = self.build_ignore_matcher(project_root)?;
+        let started_at = SystemTime::now();
+        let mut indexes = Vec::with_capacity(languages.len());
+        let mut indexed_files = 0;
+        let mut indexed_units = 0;
+        for language in languages {
+            let mut files = Vec::new();
+            collect_source_files(project_root, extension_for(*language), &mut files, &matcher)?;
+            let source_fingerprint = semantic_cache::source_fingerprint(project_root, &files)?;
+            let index = self.build_index_from_files(
+                project_root,
+                *language,
+                files,
+                source_fingerprint.clone(),
+            )?;
+            semantic_cache::persist_index(project_root, &self.config, &index, &source_fingerprint)?;
+            indexed_files += index.indexed_files;
+            indexed_units += index.units.len();
+            indexes.push(index);
+        }
+        let finished_at = SystemTime::now();
+        Ok((
+            indexes,
+            SemanticReindexReport::completed(
+                languages.to_vec(),
+                indexed_files,
+                indexed_units,
+                started_at,
+                finished_at,
+                self.config.embedding_enabled(),
+                self.config.embedding_dimensions(),
+            ),
+        ))
     }
 
     pub fn search_index(
@@ -1483,12 +1603,18 @@ fn login() {
                 .exists()
         );
 
-        std::fs::write(src.join("lib.rs"), "fn logout() {}\n").expect("fixture should update");
-        let cached = indexer
+        let reused = SemanticIndexer::new(SemanticConfig::default().with_enabled(true))
             .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)
-            .expect("cached index should load");
-        assert_eq!(cached.units[0].symbol.as_deref(), Some("login"));
+            .expect("disk-backed index should load");
+        assert_eq!(reused.units[0].symbol.as_deref(), Some("login"));
         assert_eq!(semantic_index_build_count(), 1);
+
+        std::fs::write(src.join("lib.rs"), "fn logout() {}\n").expect("fixture should update");
+        let refreshed = indexer
+            .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)
+            .expect("changed source should rebuild");
+        assert_eq!(refreshed.units[0].symbol.as_deref(), Some("logout"));
+        assert_eq!(semantic_index_build_count(), 2);
     }
 
     #[test]

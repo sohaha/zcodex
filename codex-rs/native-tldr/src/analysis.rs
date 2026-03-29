@@ -13,6 +13,7 @@ use crate::api::AnalysisSymbolIndexEntry;
 use crate::api::AnalysisUnitDetail;
 use crate::project_analysis::analyze_project_graph;
 use crate::semantic::EmbeddingUnit;
+use crate::semantic::SemanticIndex;
 use crate::semantic::SemanticIndexer;
 use anyhow::Result;
 use std::collections::BTreeMap;
@@ -33,6 +34,14 @@ pub(crate) fn analyze_project(
     }
     let index = SemanticIndexer::new(config.semantic.clone())
         .load_or_build_index(project_root, request.language)?;
+    analyze_project_with_index(project_root, request, index)
+}
+
+pub(crate) fn analyze_project_with_index(
+    project_root: &Path,
+    request: AnalysisRequest,
+    index: SemanticIndex,
+) -> Result<AnalysisResponse> {
     let path = request
         .path
         .as_deref()

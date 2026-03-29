@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-03-29T06:30:38.417Z
-- 本轮摘要：继续 zmemory 同步：通过 parity audit 选定 review/admin 信号为下一条高价值缺口；为 stats/doctor 补齐 orphaned/deprecated 治理信号，并新增仓库根级 memory skill 映射 read/search/create/update/add-alias/manage-triggers/stats/doctor/export。
+- 更新时间：2026-03-29T07:24:22.000Z
+- 本轮摘要：修复 web-merge-back 中 native-tldr 合并后的编译错误：补回 analysis/api/diagnostics/session 漂移，并恢复 semantic/source_fingerprint 与 warm/reindex 相关接口对齐；cargo check -p codex-native-tldr 和 cargo test -p codex-native-tldr --lib 均通过。注意 worktree 里仍有未处理的 core/tldr 相关改动，不在本次修改范围。
 
 ## 待确认问题
 

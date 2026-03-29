@@ -652,6 +652,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -733,6 +734,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -769,6 +771,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("semantic"))) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -810,7 +813,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
             TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
+                action: codex_native_tldr::tool_api::TldrToolAction::Structure,
                 project: Some(tempdir.path().display().to_string()),
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
@@ -819,6 +822,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -938,6 +942,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1012,6 +1017,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: Some(vec!["src/lib.rs".to_string()]),
+            ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1117,6 +1123,7 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
+            ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1198,6 +1205,7 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: Some(4),
                 paths: None,
+            ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1338,6 +1346,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("pong"))) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1366,6 +1375,7 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1386,6 +1396,8 @@ mod tests {
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            background_reindex_in_progress: false,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1418,6 +1430,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
@@ -1438,6 +1451,8 @@ mod tests {
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            background_reindex_in_progress: false,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1483,6 +1498,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 let report = report.clone();
@@ -1504,6 +1520,8 @@ mod tests {
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                             last_reindex: Some(report.clone()),
                             last_reindex_attempt: Some(report.clone()),
+                            background_reindex_in_progress: false,
+                            last_warm: None,
                         }),
                         daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                             project_root: std::path::PathBuf::from("/tmp/project"),
@@ -1519,6 +1537,7 @@ mod tests {
                             health_reason: None,
                             recovery_hint: None,
                             semantic_reindex_pending: false,
+                            semantic_reindex_in_progress: false,
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                             config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
                                 auto_start: true,
@@ -1526,6 +1545,7 @@ mod tests {
                                 semantic_enabled: true,
                                 semantic_auto_reindex_threshold: 20,
                                 session_dirty_file_threshold: 20,
+                                session_idle_timeout_secs: 1800,
                             },
                         }),
                         reindex_report: Some(report),
@@ -1550,7 +1570,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
             TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
+                action: codex_native_tldr::tool_api::TldrToolAction::Structure,
                 project: Some(tempdir.path().display().to_string()),
                 language: None,
                 symbol: None,
@@ -1559,6 +1579,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1584,6 +1605,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| Box::pin(async move { Ok(None) }),
             &|_project_root| Box::pin(async move { Ok(false) }),
@@ -1604,7 +1626,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let output = run_tldr_handler_with_hooks(
             TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Tree,
+                action: codex_native_tldr::tool_api::TldrToolAction::Structure,
                 project: Some(tempdir.path().display().to_string()),
                 language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
                 symbol: Some("AuthService".to_string()),
@@ -1613,6 +1635,7 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             &|_project_root, _command| {
                 Box::pin(async move {
