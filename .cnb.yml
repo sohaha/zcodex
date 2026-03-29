@@ -61,11 +61,12 @@ v*.*.*:
   tag_push:
     - <<: *tag-release-codex
 
+
 .npc: &npc
   - services:
       - docker
     stages:
-      - name: npc
+      - name: run with npc
         # imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
         image:
               name: docker.cnb.cool/zls-tools/vm/rust:latest
