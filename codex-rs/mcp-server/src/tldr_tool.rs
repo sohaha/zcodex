@@ -100,12 +100,34 @@ fn success_result(text: String, structured_content: serde_json::Value) -> CallTo
 }
 
 fn error_result(text: String) -> CallToolResult {
+    let structured_content = tldr_error_structured_content(&text);
     CallToolResult {
         content: vec![Content::text(text)],
-        structured_content: None,
+        structured_content,
         is_error: Some(true),
         meta: None,
     }
+}
+
+fn tldr_error_structured_content(text: &str) -> Option<serde_json::Value> {
+    if text.contains("native-tldr daemon is unavailable for") {
+        return Some(serde_json::json!({
+            "structuredFailure": {
+                "error_type": "daemon_unavailable",
+                "reason": text,
+                "retryable": true,
+                "retry_hint": "start the daemon or retry once it becomes healthy"
+            },
+            "degradedMode": {
+                "is_degraded": true,
+                "mode": "unavailable",
+                "fallback_path": "none",
+                "reason": "daemon-only action requires a live daemon"
+            }
+        }));
+    }
+
+    None
 }
 
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
@@ -1332,6 +1354,8 @@ mod tests {
         assert_eq!(structured["action"], "status");
         assert_eq!(structured["status"], "ok");
         assert_eq!(structured["message"], "status");
+        assert_eq!(structured["structuredFailure"], serde_json::Value::Null);
+        assert_eq!(structured["degradedMode"], serde_json::Value::Null);
     }
 
     #[tokio::test]
@@ -1670,6 +1694,8 @@ mod tests {
             .expect("structured content should be present");
 
         assert_eq!(structured["daemonStatus"]["healthy"], true);
+        assert_eq!(structured["structuredFailure"], serde_json::Value::Null);
+        assert_eq!(structured["degradedMode"], serde_json::Value::Null);
         assert_eq!(structured["reindexReport"]["status"], "Completed");
         assert_eq!(structured["snapshot"]["last_warm"]["status"], "Loaded");
         assert_eq!(
@@ -1735,6 +1761,14 @@ mod tests {
         assert!(text["content"][0]["text"].as_str().is_some_and(|value| {
             value.contains("tldr tool failed: native-tldr daemon is unavailable for")
         }));
+        assert_eq!(
+            text["structuredContent"]["structuredFailure"]["error_type"],
+            "daemon_unavailable"
+        );
+        assert_eq!(
+            text["structuredContent"]["degradedMode"]["mode"],
+            "unavailable"
+        );
     }
 
     #[cfg(unix)]
