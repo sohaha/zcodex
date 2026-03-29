@@ -81,3 +81,16 @@ dependencies: [tech-review, tasks]
   - `cargo test -p codex-core zmemory_tool_uri_parameter_documents_system_views --quiet` ✅
 - 未完成：
   - `cargo test -p codex-cli --test zmemory --quiet` 在当前环境里会跑到不带 `zmemory` 子命令的 `codex` 可执行文件，无法把失败归因到本轮改动，因此本轮只保留编译验证，不宣称完整 CLI 运行验证通过。
+
+## 2026-03-29 boot/domain/disclosure parity follow-up
+- 本轮继续按 parity audit 顺序推进，收口 `boot / VALID_DOMAINS / CORE_MEMORY_URIS` 与 disclosure 治理：
+  - `codex-rs/zmemory/src/config.rs` 新增 `VALID_DOMAINS` / `CORE_MEMORY_URIS` 配置读取与默认值。
+  - `codex-rs/zmemory/src/service.rs` 对非 system 域做 allowlist 校验，并禁止写入 `system` 保留域。
+  - `codex-rs/zmemory/src/system_views.rs` 将 `system://boot` 改为按 `CORE_MEMORY_URIS` 锚点导出，并显式返回 `missingUris`。
+  - `codex-rs/zmemory/src/doctor.rs`、`service.rs` 为 disclosure 治理补齐 `pathsMissingDisclosure` / `disclosuresNeedingReview` 指标与告警。
+  - `.codex/skills/memory/` 与 `codex-rs/zmemory/README.md` 同步把 disclosure review 纳入 `stats` / `doctor` / skill flow。
+- 已验证：
+  - `cargo test -p codex-zmemory --quiet` ✅
+  - `cargo test -p codex-cli --test zmemory --no-run --quiet` ✅
+- 仍未宣称完成：
+  - `cargo test -p codex-cli --test zmemory --quiet` 仍受当前环境里的 `codex` 二进制解析限制影响；本轮继续只保留编译级 CLI 验证，不把运行期失败伪装成本轮回归失败。

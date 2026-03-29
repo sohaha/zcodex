@@ -42,6 +42,35 @@ fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
     )?)
 }
 
+fn paths_missing_disclosure(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NULL OR TRIM(e.disclosure) = ''",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?)
+}
+
+fn disclosures_needing_review(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NOT NULL
+           AND TRIM(e.disclosure) != ''
+           AND (
+             INSTR(LOWER(e.disclosure), ' or ') > 0
+             OR INSTR(LOWER(e.disclosure), ' and ') > 0
+             OR INSTR(e.disclosure, ',') > 0
+             OR INSTR(e.disclosure, '，') > 0
+             OR INSTR(e.disclosure, '、') > 0
+             OR INSTR(e.disclosure, '或') > 0
+           )",
+        [],
+        |row| row.get::<_, i64>(0),
+    )?)
+}
+
 pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
     let search_count: i64 = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
         row.get(0)
@@ -122,10 +151,24 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
     let alias_nodes = alias_node_count(conn)?;
     let trigger_nodes = trigger_node_count(conn)?;
     let alias_nodes_missing = alias_nodes_missing_triggers(conn)?;
+    let paths_missing_disclosure = paths_missing_disclosure(conn)?;
+    let disclosures_needing_review = disclosures_needing_review(conn)?;
     if alias_nodes_missing > 0 {
         issues.push(json!({
             "code": "alias_nodes_missing_triggers",
             "message": format!("{alias_nodes_missing} alias nodes have no keywords"),
+        }));
+    }
+    if paths_missing_disclosure > 0 {
+        issues.push(json!({
+            "code": "paths_missing_disclosure",
+            "message": format!("{paths_missing_disclosure} live paths have no disclosure"),
+        }));
+    }
+    if disclosures_needing_review > 0 {
+        issues.push(json!({
+            "code": "disclosures_need_review",
+            "message": format!("{disclosures_needing_review} disclosures look multi-trigger or ambiguous"),
         }));
     }
 
@@ -139,6 +182,8 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
         "aliasNodeCount": alias_nodes,
         "triggerNodeCount": trigger_nodes,
         "aliasNodesMissingTriggers": alias_nodes_missing,
+        "pathsMissingDisclosure": paths_missing_disclosure,
+        "disclosuresNeedingReview": disclosures_needing_review,
         "issues": issues,
     }))
 }

@@ -1,16 +1,23 @@
+use crate::config::ZmemoryConfig;
 use anyhow::Result;
 use anyhow::anyhow;
 use rusqlite::Connection;
+use rusqlite::OptionalExtension;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-pub fn read_system_view(conn: &Connection, view: &str, limit: usize) -> Result<Value> {
+pub fn read_system_view(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    view: &str,
+    limit: usize,
+) -> Result<Value> {
     match parse_system_view(view, limit)? {
-        ParsedSystemView::Boot { limit } => read_boot_view(conn, limit),
+        ParsedSystemView::Boot { limit } => read_boot_view(conn, config, limit),
         ParsedSystemView::Index { domain, limit } => {
-            read_index_view(conn, domain.as_deref(), limit)
+            read_index_view(conn, config, domain.as_deref(), limit)
         }
         ParsedSystemView::Recent { limit } => read_recent_view(conn, limit),
         ParsedSystemView::Glossary { limit } => read_glossary_view(conn, limit),
@@ -105,31 +112,56 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
     }
 }
 
-fn read_boot_view(conn: &Connection, limit: usize) -> Result<Value> {
-    let mut stmt = conn.prepare(
-        "SELECT uri, priority, updated_at
-         FROM search_documents
-         ORDER BY priority DESC, updated_at DESC, uri ASC
-         LIMIT ?1",
-    )?;
-    let entries = stmt
-        .query_map([limit as i64], |row| {
-            Ok(json!({
-                "uri": row.get::<_, String>(0)?,
-                "priority": row.get::<_, i64>(1)?,
-                "updatedAt": row.get::<_, String>(2)?,
-            }))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Result<Value> {
+    let configured_uris = config.core_memory_uris();
+    let mut entries = Vec::new();
+    let mut missing_uris = Vec::new();
+
+    for uri in configured_uris.iter().take(limit) {
+        let row = conn
+            .query_row(
+                "SELECT uri, priority, updated_at
+                 FROM search_documents
+                 WHERE uri = ?1",
+                [uri],
+                |row| {
+                    Ok(json!({
+                        "uri": row.get::<_, String>(0)?,
+                        "priority": row.get::<_, i64>(1)?,
+                        "updatedAt": row.get::<_, String>(2)?,
+                    }))
+                },
+            )
+            .optional()?;
+        if let Some(entry) = row {
+            entries.push(entry);
+        } else {
+            missing_uris.push(uri.clone());
+        }
+    }
 
     Ok(json!({
         "view": "boot",
+        "configuredUriCount": configured_uris.len(),
+        "configuredUris": configured_uris,
+        "missingUris": missing_uris,
         "entryCount": entries.len(),
         "entries": entries,
     }))
 }
 
-fn read_index_view(conn: &Connection, domain: Option<&str>, limit: usize) -> Result<Value> {
+fn read_index_view(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    domain: Option<&str>,
+    limit: usize,
+) -> Result<Value> {
+    if let Some(domain) = domain {
+        anyhow::ensure!(
+            config.is_valid_domain(domain),
+            "unsupported domain: {domain}"
+        );
+    }
     let (total, entries) = if let Some(domain) = domain {
         let total: i64 = conn.query_row(
             "SELECT COUNT(*) FROM search_documents WHERE domain = ?1",

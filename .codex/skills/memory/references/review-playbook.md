@@ -2,12 +2,15 @@
 
 ## 最小 review 检查清单
 
-1. `codex zmemory stats --json`：读取 `orphanedMemoryCount`、`deprecatedMemoryCount`、`aliasNodeCount`、`triggerNodeCount`，判断是否有 review 压力和 alias/trigger 覆盖盲点。
-2. `codex zmemory doctor --json`：查看 `issues` 里是否有 `orphaned_memories`、`deprecated_memories_awaiting_review`、`alias_nodes_missing_triggers`，确认 FTS / keyword / alias 兼容状态。
+1. `codex zmemory stats --json`：读取 `orphanedMemoryCount`、`deprecatedMemoryCount`、`aliasNodeCount`、`triggerNodeCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`，判断是否有 review 压力和 alias/trigger/disclosure 覆盖盲点。
+2. `codex zmemory doctor --json`：查看 `issues` 里是否有 `orphaned_memories`、`deprecated_memories_awaiting_review`、`alias_nodes_missing_triggers`、`paths_missing_disclosure`、`disclosures_need_review`，确认 FTS / keyword / alias / disclosure 兼容状态。
 3. `codex zmemory export recent --json`：确认最近写入的内容已经被系统视图收录，便于决定是否需要 `update`、`delete-path` 或 `rebuild-search`。
 4. `codex zmemory export glossary --json`：确认 trigger / keyword 覆盖，判断是否需要 `manage-triggers` 或 `add-alias`。
 5. `codex zmemory export alias --json`：确认 alias scope，查明哪些 alias node 还没 trigger；优先处理 `reviewPriority=high` 的节点，结合 `priorityReason` / `suggestedKeywords` 判断是否直接执行 `recommendations[].command`。
-6. 若 alias coverage 低于 trigger，优先补 trigger：
+6. 若 disclosure 有缺口，优先补齐单一 disclosure：
+   - `codex zmemory update core://legacy --disclosure "review" --json`
+   - 避免一个 disclosure 同时塞多个触发意图（如 `review or handoff`）
+7. 若 alias coverage 低于 trigger，优先补 trigger：
    - `codex zmemory manage-triggers core://legacy --add review --json`
    - `codex zmemory add-alias alias://legacy core://legacy --json`
 

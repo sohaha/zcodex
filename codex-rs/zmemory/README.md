@@ -30,6 +30,12 @@
 - 存储引擎：`SQLite + FTS5`
 - 为了降低环境依赖，当前使用 `rusqlite` 的 `bundled` sqlite
 
+## 域与 boot 基线
+
+- `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core`
+- `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent,core://my_user,core://agent/my_user`
+- `system` 是保留只读域，不需要写进 `VALID_DOMAINS`
+
 ## 路径与视图
 
 普通记忆路径：
@@ -81,21 +87,23 @@ codex zmemory doctor --json
 - `export glossary` -> `system://glossary`
 - `export alias --limit 5` -> `system://alias/5`
 
+`system://boot` 现在优先返回 `CORE_MEMORY_URIS` 中已存在的锚点节点，并显式给出缺失锚点列表；不再按全库 priority 直接截取前 N 条。
+
 ## review 治理入口
 
 当前本地 review 不额外引入独立服务，而是复用现有动作层：
 
-- `codex zmemory stats --json`：查看 `orphanedMemoryCount` 与 `deprecatedMemoryCount`
-- `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 review 相关告警
+- `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
+- `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
 - `codex zmemory export recent --json`：查看最近变更节点
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
 
 建议的最小 review 顺序：
 
-1. 先看 `stats` 判断 orphan / deprecated 压力。
+1. 先看 `stats` 判断 orphan / deprecated / disclosure 压力。
 2. 再看 `doctor` 判断是否存在需要优先修复的告警。
 3. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
-4. 视 `stats` 中 alias/trigger 覆盖后，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
+4. 视 `stats` 中 alias/trigger/disclosure 覆盖后，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
 
 `system://alias` 视图返回结构：
 

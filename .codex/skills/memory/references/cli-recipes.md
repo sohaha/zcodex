@@ -32,6 +32,7 @@
 ## review / admin
 - `codex zmemory stats --json`
 - `codex zmemory doctor --json`
+- `codex zmemory update core://project-alpha --disclosure "review" --json`
 - `codex zmemory export recent --limit 5 --json`
 - `codex zmemory export glossary --json`
 - `codex zmemory rebuild-search --json`

@@ -339,9 +339,9 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
         .args([
             "zmemory",
             "create",
-            "core://salem",
+            "core://agent",
             "--content",
-            "Profile for Salem",
+            "Profile for agent",
         ])
         .assert()
         .success();
@@ -349,7 +349,7 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
         .args([
             "zmemory",
             "manage-triggers",
-            "core://salem",
+            "core://agent",
             "--add",
             "profile",
             "--add",
@@ -364,6 +364,10 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
     )?;
     assert_eq!(boot_payload["result"]["view"]["view"], "boot");
     assert_eq!(boot_payload["result"]["view"]["entryCount"], 1);
+    assert_eq!(
+        boot_payload["result"]["view"]["entries"][0]["uri"],
+        "core://agent"
+    );
 
     let glossary_payload = run_json(
         codex_home.path(),
@@ -411,6 +415,8 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
             "core://legacy",
             "--content",
             "Original profile memory",
+            "--disclosure",
+            "review or handoff",
         ])
         .assert()
         .success();
@@ -436,6 +442,16 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
         .success();
     codex_command(codex_home.path())?
         .args(["zmemory", "delete-path", "core://orphan"])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://undisclosed",
+            "--content",
+            "Missing disclosure",
+        ])
         .assert()
         .success();
 
@@ -485,6 +501,8 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
             .unwrap_or(0)
             >= 1
     );
+    assert_eq!(stats_payload["result"]["pathsMissingDisclosure"], 3);
+    assert_eq!(stats_payload["result"]["disclosuresNeedingReview"], 1);
 
     let doctor_payload = run_json(codex_home.path(), &["zmemory", "doctor", "--json"])?;
     assert_eq!(doctor_payload["result"]["healthy"], false);
@@ -505,6 +523,16 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
         issues
             .iter()
             .any(|issue| issue["code"] == "alias_nodes_missing_triggers")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "paths_missing_disclosure")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "disclosures_need_review")
     );
     assert!(
         doctor_payload["result"]["aliasNodeCount"]

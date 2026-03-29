@@ -22,13 +22,13 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
     let repository = ZmemoryRepository::new(config.clone());
     let mut conn = repository.connect()?;
     let result = match args.action {
-        ZmemoryToolAction::Read => read_action(&conn, args)?,
-        ZmemoryToolAction::Search => search_action(&conn, args)?,
-        ZmemoryToolAction::Create => create_action(&mut conn, args)?,
-        ZmemoryToolAction::Update => update_action(&mut conn, args)?,
-        ZmemoryToolAction::DeletePath => delete_path_action(&mut conn, args)?,
-        ZmemoryToolAction::AddAlias => add_alias_action(&mut conn, args)?,
-        ZmemoryToolAction::ManageTriggers => manage_triggers_action(&mut conn, args)?,
+        ZmemoryToolAction::Read => read_action(config, &conn, args)?,
+        ZmemoryToolAction::Search => search_action(config, &conn, args)?,
+        ZmemoryToolAction::Create => create_action(config, &mut conn, args)?,
+        ZmemoryToolAction::Update => update_action(config, &mut conn, args)?,
+        ZmemoryToolAction::DeletePath => delete_path_action(config, &mut conn, args)?,
+        ZmemoryToolAction::AddAlias => add_alias_action(config, &mut conn, args)?,
+        ZmemoryToolAction::ManageTriggers => manage_triggers_action(config, &mut conn, args)?,
         ZmemoryToolAction::Stats => stats_action(&conn, config)?,
         ZmemoryToolAction::Doctor => doctor_action(&conn, config)?,
         ZmemoryToolAction::RebuildSearch => rebuild_search_action(&mut conn)?,
@@ -54,13 +54,17 @@ fn action_name(action: ZmemoryToolAction) -> &'static str {
     }
 }
 
-fn read_action(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn read_action(
+    config: &ZmemoryConfig,
+    conn: &Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let uri = parse_required_uri(args.uri.as_deref())?;
-    ensure_domain_root(conn, &uri.domain)?;
     if uri.domain == "system" {
-        return read_system_view(conn, &uri.path, args.limit.unwrap_or(20))
+        return read_system_view(conn, config, &uri.path, args.limit.unwrap_or(20))
             .map(|view| json!({ "uri": uri.to_string(), "view": view }));
     }
+    ensure_readable_domain(config, conn, &uri.domain)?;
 
     let row =
         find_path_row(conn, &uri)?.ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
@@ -83,7 +87,11 @@ fn read_action(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<Value> 
     }))
 }
 
-fn search_action(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn search_action(
+    config: &ZmemoryConfig,
+    conn: &Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let query = args
         .query
         .as_deref()
@@ -92,6 +100,9 @@ fn search_action(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<Value
         .ok_or_else(|| anyhow::anyhow!("`query` is required for action=search"))?;
     let limit = args.limit.unwrap_or(10);
     let scope = args.uri.as_deref().map(ZmemoryUri::parse).transpose()?;
+    if let Some(scope) = scope.as_ref() {
+        ensure_readable_domain(config, conn, &scope.domain)?;
+    }
 
     let mut sql = String::from(
         "SELECT f.domain, f.path, f.uri, snippet(search_documents_fts, 3, '[', ']', '...', 12) AS snippet,
@@ -149,10 +160,14 @@ fn search_action(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<Value
     }))
 }
 
-fn create_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn create_action(
+    config: &ZmemoryConfig,
+    conn: &mut Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let uri = resolve_create_uri(conn, args)?;
     let content = required_content(args.content.as_deref())?;
-    ensure_domain_root(conn, &uri.domain)?;
+    ensure_writable_domain(config, conn, &uri.domain)?;
     anyhow::ensure!(
         find_path_row(conn, &uri)?.is_none(),
         "memory already exists at {uri}"
@@ -198,9 +213,14 @@ fn create_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<V
     }))
 }
 
-fn update_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn update_action(
+    config: &ZmemoryConfig,
+    conn: &mut Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let uri = parse_required_uri(args.uri.as_deref())?;
     anyhow::ensure!(!uri.is_root(), "cannot update root path");
+    ensure_writable_domain(config, conn, &uri.domain)?;
     let row =
         find_path_row(conn, &uri)?.ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let current_memory = read_active_memory(conn, &row.node_uuid)?
@@ -260,9 +280,14 @@ fn update_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<V
     }))
 }
 
-fn delete_path_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn delete_path_action(
+    config: &ZmemoryConfig,
+    conn: &mut Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let uri = parse_required_uri(args.uri.as_deref())?;
     anyhow::ensure!(!uri.is_root(), "cannot delete root path");
+    ensure_writable_domain(config, conn, &uri.domain)?;
     let row =
         find_path_row(conn, &uri)?.ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
 
@@ -298,11 +323,17 @@ fn delete_path_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Res
     }))
 }
 
-fn add_alias_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn add_alias_action(
+    config: &ZmemoryConfig,
+    conn: &mut Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let new_uri = parse_required_uri(args.new_uri.as_deref())?;
     let target_uri = parse_required_uri(args.target_uri.as_deref())?;
     anyhow::ensure!(!new_uri.is_root(), "cannot alias root path");
     anyhow::ensure!(!target_uri.is_root(), "cannot alias the root node");
+    ensure_writable_domain(config, conn, &new_uri.domain)?;
+    ensure_readable_domain(config, conn, &target_uri.domain)?;
     anyhow::ensure!(
         find_path_row(conn, &new_uri)?.is_none(),
         "alias path already exists: {new_uri}"
@@ -312,7 +343,6 @@ fn add_alias_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Resul
         .ok_or_else(|| anyhow::anyhow!("target path does not exist: {target_uri}"))?;
     let parent_uri = new_uri.parent();
     let parent = if parent_uri.is_root() {
-        ensure_domain_root(conn, &new_uri.domain)?;
         PathRow::root(new_uri.domain.clone())
     } else {
         find_path_row(conn, &parent_uri)?
@@ -345,8 +375,14 @@ fn add_alias_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Resul
     }))
 }
 
-fn manage_triggers_action(conn: &mut Connection, args: &ZmemoryToolCallParam) -> Result<Value> {
+fn manage_triggers_action(
+    config: &ZmemoryConfig,
+    conn: &mut Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
     let uri = parse_required_uri(args.uri.as_deref())?;
+    anyhow::ensure!(!uri.is_root(), "cannot manage triggers for root path");
+    ensure_writable_domain(config, conn, &uri.domain)?;
     let row =
         find_path_row(conn, &uri)?.ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let add = normalize_keywords(args.add.clone().unwrap_or_default());
@@ -411,6 +447,36 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         [],
         |row| row.get(0),
     )?;
+    let disclosure_path_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NOT NULL AND TRIM(e.disclosure) != ''",
+        [],
+        |row| row.get(0),
+    )?;
+    let paths_missing_disclosure: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NULL OR TRIM(e.disclosure) = ''",
+        [],
+        |row| row.get(0),
+    )?;
+    let disclosures_needing_review: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NOT NULL
+           AND TRIM(e.disclosure) != ''
+           AND (
+             INSTR(LOWER(e.disclosure), ' or ') > 0
+             OR INSTR(LOWER(e.disclosure), ' and ') > 0
+             OR INSTR(e.disclosure, ',') > 0
+             OR INSTR(e.disclosure, '，') > 0
+             OR INSTR(e.disclosure, '、') > 0
+             OR INSTR(e.disclosure, '或') > 0
+           )",
+        [],
+        |row| row.get(0),
+    )?;
     let orphaned_memory_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL",
         [],
@@ -440,6 +506,9 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         "deprecatedMemoryCount": deprecated_memory_count,
         "aliasNodeCount": alias_node_count,
         "triggerNodeCount": trigger_node_count,
+        "disclosurePathCount": disclosure_path_count,
+        "pathsMissingDisclosure": paths_missing_disclosure,
+        "disclosuresNeedingReview": disclosures_needing_review,
         "searchDocumentCount": search_document_count,
         "ftsDocumentCount": fts_document_count,
     }))
@@ -456,6 +525,14 @@ fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         "triggerNodeCount": doctor.get("triggerNodeCount").cloned().unwrap_or_else(|| json!(0)),
         "aliasNodesMissingTriggers": doctor
             .get("aliasNodesMissingTriggers")
+            .cloned()
+            .unwrap_or_else(|| json!(0)),
+        "pathsMissingDisclosure": doctor
+            .get("pathsMissingDisclosure")
+            .cloned()
+            .unwrap_or_else(|| json!(0)),
+        "disclosuresNeedingReview": doctor
+            .get("disclosuresNeedingReview")
             .cloned()
             .unwrap_or_else(|| json!(0)),
         "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
@@ -619,7 +696,6 @@ fn validate_title(title: &str) -> Result<()> {
 }
 
 fn next_auto_child_name(conn: &Connection, parent_uri: &ZmemoryUri) -> Result<String> {
-    ensure_domain_root(conn, &parent_uri.domain)?;
     if !parent_uri.is_root() {
         find_path_row(conn, parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?;
@@ -749,7 +825,6 @@ struct MemoryRow {
 }
 
 fn find_path_row(conn: &Connection, uri: &ZmemoryUri) -> Result<Option<PathRow>> {
-    ensure_domain_root(conn, &uri.domain)?;
     if uri.is_root() {
         return Ok(Some(PathRow::root(uri.domain.clone())));
     }
@@ -770,6 +845,22 @@ fn find_path_row(conn: &Connection, uri: &ZmemoryUri) -> Result<Option<PathRow>>
     )
     .optional()
     .map_err(Into::into)
+}
+
+fn ensure_readable_domain(config: &ZmemoryConfig, conn: &Connection, domain: &str) -> Result<()> {
+    anyhow::ensure!(
+        config.is_valid_domain(domain),
+        "unsupported domain: {domain}"
+    );
+    if domain != "system" {
+        ensure_domain_root(conn, domain)?;
+    }
+    Ok(())
+}
+
+fn ensure_writable_domain(config: &ZmemoryConfig, conn: &Connection, domain: &str) -> Result<()> {
+    anyhow::ensure!(domain != "system", "system domain is read-only");
+    ensure_readable_domain(config, conn, domain)
 }
 
 fn read_active_memory(conn: &Connection, node_uuid: &str) -> Result<Option<MemoryRow>> {
@@ -834,6 +925,7 @@ fn count_aliases(conn: &Connection, node_uuid: &str) -> Result<i64> {
 mod tests {
     use super::execute_action;
     use crate::config::ZmemoryConfig;
+    use crate::config::ZmemorySettings;
     use crate::tool_api::ZmemoryToolAction;
     use crate::tool_api::ZmemoryToolCallParam;
     use pretty_assertions::assert_eq;
@@ -845,6 +937,12 @@ mod tests {
     fn config() -> (TempDir, ZmemoryConfig) {
         let dir = TempDir::new().expect("tempdir");
         let config = ZmemoryConfig::new(dir.path().to_path_buf());
+        (dir, config)
+    }
+
+    fn config_with_settings(settings: ZmemorySettings) -> (TempDir, ZmemoryConfig) {
+        let dir = TempDir::new().expect("tempdir");
+        let config = ZmemoryConfig::new_with_settings(dir.path().to_path_buf(), settings);
         (dir, config)
     }
 
@@ -1237,8 +1335,8 @@ mod tests {
             &config,
             &ZmemoryToolCallParam {
                 action: ZmemoryToolAction::Create,
-                uri: Some("core://salem".to_string()),
-                content: Some("Profile for Salem".to_string()),
+                uri: Some("core://agent".to_string()),
+                content: Some("Profile for agent".to_string()),
                 priority: Some(7),
                 ..ZmemoryToolCallParam::default()
             },
@@ -1248,7 +1346,7 @@ mod tests {
             &config,
             &ZmemoryToolCallParam {
                 action: ZmemoryToolAction::ManageTriggers,
-                uri: Some("core://salem".to_string()),
+                uri: Some("core://agent".to_string()),
                 add: Some(vec!["profile".to_string(), "agent".to_string()]),
                 ..ZmemoryToolCallParam::default()
             },
@@ -1267,6 +1365,12 @@ mod tests {
         .expect("boot view should succeed");
         assert_eq!(boot["result"]["view"]["view"], "boot");
         assert_eq!(boot["result"]["view"]["entryCount"], 1);
+        assert_eq!(boot["result"]["view"]["entries"][0]["uri"], "core://agent");
+        assert_eq!(boot["result"]["view"]["missingUris"][0], "core://my_user");
+        assert_eq!(
+            boot["result"]["view"]["missingUris"][1],
+            "core://agent/my_user"
+        );
 
         let index = execute_action(
             &config,
@@ -1332,6 +1436,49 @@ mod tests {
     }
 
     #[test]
+    fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
+        let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+            Some("core,notes".to_string()),
+            None,
+        ));
+
+        let invalid_domain = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("writer://draft".to_string()),
+                content: Some("unsupported".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect_err("invalid domain should fail");
+        assert_eq!(invalid_domain.to_string(), "unsupported domain: writer");
+
+        let invalid_index = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://index/writer".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect_err("invalid index domain should fail");
+        assert_eq!(invalid_index.to_string(), "unsupported domain: writer");
+
+        let system_write = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("system://boot-note".to_string()),
+                content: Some("forbidden".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect_err("system writes should fail");
+        assert_eq!(system_write.to_string(), "system domain is read-only");
+    }
+
+    #[test]
     fn stats_and_doctor_surface_review_pressure() {
         let (_dir, config) = config();
         execute_action(
@@ -1340,6 +1487,7 @@ mod tests {
                 action: ZmemoryToolAction::Create,
                 uri: Some("core://legacy".to_string()),
                 content: Some("Original profile memory".to_string()),
+                disclosure: Some("review or handoff".to_string()),
                 ..ZmemoryToolCallParam::default()
             },
         )
@@ -1373,6 +1521,16 @@ mod tests {
             },
         )
         .expect("delete-path should succeed");
+        execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some("core://undisclosed".to_string()),
+                content: Some("Missing disclosure".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("undisclosed create should succeed");
 
         let stats = execute_action(
             &config,
@@ -1384,6 +1542,8 @@ mod tests {
         .expect("stats should succeed");
         assert_eq!(stats["result"]["deprecatedMemoryCount"], 1);
         assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
+        assert_eq!(stats["result"]["pathsMissingDisclosure"], 1);
+        assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
 
         let doctor = execute_action(
             &config,
@@ -1406,6 +1566,16 @@ mod tests {
             issues
                 .iter()
                 .any(|issue| issue["code"] == "orphaned_memories")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "paths_missing_disclosure")
+        );
+        assert!(
+            issues
+                .iter()
+                .any(|issue| issue["code"] == "disclosures_need_review")
         );
     }
 
