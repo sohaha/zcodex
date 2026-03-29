@@ -9,6 +9,7 @@ In the codex-rs folder where the rust code lives:
 - Installing `cargo-nextest` does not change how `cargo test` works; `cargo test` still uses Cargo's default test runner unless you explicitly run `cargo nextest run` or a repo wrapper that invokes nextest.
 - Prefer repo-scoped Cargo config in `codex-rs/.cargo/config.toml` over `~/.cargo/config.toml` when the setting should apply only to this repository.
 - For faster repeated local Rust builds, prefer a persistent target dir plus `sccache`; in CNB/clouddev, keep `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL`, `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`, and any linker-specific Rust flags exported from `.cnb.yml`.
+- Avoid running multiple `cargo` commands at the same time. Use one cargo process per workspace to prevent global lock contention (registry/index, target dir, and build cache). Prefer Cargo’s own parallelism (`-j`) within a single command instead of launching multiple commands concurrently.
 - For faster local `codex-core` loops, prefer `just core-test-fast` (cache-first, uses `nextest` when available).
 - For faster local `codex-app-server` loops, prefer `just app-server-test-fast`.
 - For faster local `codex-native-tldr` loops, prefer `just native-tldr-test-fast`.
