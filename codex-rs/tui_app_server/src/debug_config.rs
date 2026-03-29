@@ -329,10 +329,9 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
         allow_upstream_proxy,
         dangerously_allow_non_loopback_proxy,
         dangerously_allow_all_unix_sockets,
-        allowed_domains,
+        domains,
         managed_allowed_domains_only,
-        denied_domains,
-        allow_unix_sockets,
+        unix_sockets,
         allow_local_binding,
     } = network;
 
@@ -358,7 +357,10 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
             "dangerously_allow_all_unix_sockets={dangerously_allow_all_unix_sockets}"
         ));
     }
-    if let Some(allowed_domains) = allowed_domains {
+    if let Some(allowed_domains) = domains
+        .as_ref()
+        .and_then(codex_core::config_loader::NetworkDomainPermissionsToml::allowed_domains)
+    {
         parts.push(format!("allowed_domains=[{}]", allowed_domains.join(", ")));
     }
     if let Some(managed_allowed_domains_only) = managed_allowed_domains_only {
@@ -366,10 +368,17 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
             "managed_allowed_domains_only={managed_allowed_domains_only}"
         ));
     }
-    if let Some(denied_domains) = denied_domains {
+    if let Some(denied_domains) = domains
+        .as_ref()
+        .and_then(codex_core::config_loader::NetworkDomainPermissionsToml::denied_domains)
+    {
         parts.push(format!("denied_domains=[{}]", denied_domains.join(", ")));
     }
-    if let Some(allow_unix_sockets) = allow_unix_sockets {
+    if let Some(allow_unix_sockets) = unix_sockets
+        .as_ref()
+        .map(codex_core::config_loader::NetworkUnixSocketPermissionsToml::allow_unix_sockets)
+        .filter(|allow_unix_sockets| !allow_unix_sockets.is_empty())
+    {
         parts.push(format!(
             "allow_unix_sockets=[{}]",
             allow_unix_sockets.join(", ")
@@ -396,6 +405,8 @@ mod tests {
     use codex_core::config_loader::McpServerIdentity;
     use codex_core::config_loader::McpServerRequirement;
     use codex_core::config_loader::NetworkConstraints;
+    use codex_core::config_loader::NetworkDomainPermissionToml;
+    use codex_core::config_loader::NetworkDomainPermissionsToml;
     use codex_core::config_loader::RequirementSource;
     use codex_core::config_loader::ResidencyRequirement;
     use codex_core::config_loader::SandboxModeRequirement;
@@ -512,7 +523,12 @@ mod tests {
             network: Some(Sourced::new(
                 NetworkConstraints {
                     enabled: Some(true),
-                    allowed_domains: Some(vec!["example.com".to_string()]),
+                    domains: Some(NetworkDomainPermissionsToml {
+                        entries: BTreeMap::from([(
+                            "example.com".to_string(),
+                            NetworkDomainPermissionToml::Allow,
+                        )]),
+                    }),
                     ..Default::default()
                 },
                 RequirementSource::CloudRequirements,

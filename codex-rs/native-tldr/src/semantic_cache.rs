@@ -81,6 +81,7 @@ pub(crate) fn load_index(
         units,
         embedding_enabled: manifest.embedding_enabled,
         embedding_dimensions: manifest.embedding_dimensions,
+        source_fingerprint: manifest.source_fingerprint,
     }))
 }
 

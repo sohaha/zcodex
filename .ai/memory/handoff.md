@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-03-29T06:30:38.417Z
-- 本轮摘要：继续 zmemory 同步：通过 parity audit 选定 review/admin 信号为下一条高价值缺口；为 stats/doctor 补齐 orphaned/deprecated 治理信号，并新增仓库根级 memory skill 映射 read/search/create/update/add-alias/manage-triggers/stats/doctor/export。
+- 更新时间：2026-03-29T07:28:37.753Z
+- 本轮摘要：Merged upstream-sync back into web via independent worktree, repaired native-tldr/core tldr API drift on merge-back, validated with cargo check -p codex-native-tldr and cargo check -p codex-core --tests, then merged latest origin/web and pushed web-merge-back to origin/web without touching main /workspace worktree.
 
 ## 待确认问题
 

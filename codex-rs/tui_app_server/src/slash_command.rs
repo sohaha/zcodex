@@ -38,6 +38,7 @@ pub enum SlashCommand {
     Mention,
     Status,
     DebugConfig,
+    Title,
     Statusline,
     Theme,
     Mcp,
@@ -86,6 +87,7 @@ impl SlashCommand {
             SlashCommand::Skills => "使用技能提升 Codex 处理特定任务的效果",
             SlashCommand::Status => "显示当前会话配置和 Token 用量",
             SlashCommand::DebugConfig => "显示配置层与来源，便于调试",
+            SlashCommand::Title => "配置终端标题显示项",
             SlashCommand::Statusline => "配置状态栏显示项",
             SlashCommand::Theme => "选择语法高亮主题",
             SlashCommand::Ps => "列出后台终端",
@@ -176,6 +178,7 @@ impl SlashCommand {
             SlashCommand::Settings => true,
             SlashCommand::Collab => true,
             SlashCommand::Agent | SlashCommand::MultiAgents => true,
+            SlashCommand::Title => false,
             SlashCommand::Statusline => false,
             SlashCommand::Theme => false,
         }

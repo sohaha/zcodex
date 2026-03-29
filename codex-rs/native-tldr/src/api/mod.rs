@@ -226,6 +226,14 @@ pub struct DiagnosticItem {
 pub struct DiagnosticsRequest {
     pub language: SupportedLanguage,
     pub path: String,
+    #[serde(default)]
+    pub only_tools: Vec<String>,
+    #[serde(default = "default_true")]
+    pub run_lint: bool,
+    #[serde(default = "default_true")]
+    pub run_typecheck: bool,
+    #[serde(default = "default_max_issues")]
+    pub max_issues: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -240,8 +248,25 @@ pub struct DiagnosticsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DoctorRequest {
+    pub language: Option<SupportedLanguage>,
+    #[serde(default)]
+    pub only_tools: Vec<String>,
+    #[serde(default = "default_true")]
+    pub include_install_hints: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DoctorResponse {
     #[serde(default)]
     pub tools: Vec<DiagnosticToolStatus>,
     pub message: String,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+const fn default_max_issues() -> usize {
+    50
 }
