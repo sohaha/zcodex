@@ -2402,9 +2402,13 @@ mod tldr_tests {
             serde_json::Value::Bool(true),
             "expected error flag"
         );
-        assert!(
-            result.get("structuredContent").is_none(),
-            "structuredContent should be absent when ping fails"
+        assert_eq!(
+            result["structuredContent"]["structuredFailure"]["error_type"],
+            "daemon_unavailable"
+        );
+        assert_eq!(
+            result["structuredContent"]["degradedMode"]["mode"],
+            "unavailable"
         );
         let expected_message = format!(
             "tldr tool failed: native-tldr daemon is unavailable for {}",
