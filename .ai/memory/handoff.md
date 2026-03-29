@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-03-29T11:50:00Z
-- 本轮摘要：native-tldr P0 第二轮继续补 daemon.rs 回归：覆盖 unavailable daemon 时 stale socket 与 stale pid 联动清理、launch lock 持有时 query 链路不误清理 stale artifacts，以及 artifact parent 被文件阻塞时的错误路径；验证通过 `just fmt` 与 `cargo nextest run -p codex-native-tldr`。
+- 更新时间：2026-03-29T12:05:00Z
+- 本轮摘要：native-tldr P0 继续推进到 MCP 侧：为 `mcp-server/src/tldr_tool.rs` 补了 stale artifacts 清理、launch lock 持有保护、metadata cleanup 触发、launch lock 文件删除恢复等回归测试；同时修正了一个已过时的 diagnostics mock 以匹配当前 native-tldr API。验证通过 `just fmt` 与 `cargo nextest run -p codex-mcp-server --features tldr`。
 
 ## 待确认问题
 

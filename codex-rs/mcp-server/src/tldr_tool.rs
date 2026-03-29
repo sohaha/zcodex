@@ -298,17 +298,23 @@ fn create_tool_input_schema(
 
 #[cfg(test)]
 mod tests {
+    use super::cleanup_stale_artifacts;
     use super::create_tool_for_tldr_tool_call_param;
+    use super::daemon_metadata_looks_alive_with_launcher_lock;
     use super::ensure_daemon_running;
+    use super::launcher_lock_is_held;
     use super::run_tldr_tool_with_mcp_hooks;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
+    use codex_native_tldr::daemon::pid_path_for_project;
+    use codex_native_tldr::daemon::socket_path_for_project;
     use codex_native_tldr::tool_api::TldrToolAction;
     use codex_native_tldr::tool_api::TldrToolCallParam;
     use codex_native_tldr::tool_api::TldrToolLanguage;
     use codex_native_tldr::tool_api::query_daemon_with_hooks;
     use codex_native_tldr::tool_api::tldr_tool_output_schema;
     use pretty_assertions::assert_eq;
+    use std::fs::OpenOptions;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
@@ -1210,7 +1216,6 @@ mod tests {
             tools: vec![codex_native_tldr::api::DiagnosticToolStatus {
                 tool: "cargo-check".to_string(),
                 available: true,
-                kind: codex_native_tldr::api::DiagnosticToolKind::Typecheck,
             }],
             diagnostics: vec![codex_native_tldr::api::DiagnosticItem {
                 path: "src/main.rs".to_string(),
@@ -1221,7 +1226,6 @@ mod tests {
                 code: Some("E001".to_string()),
                 source: "cargo-check".to_string(),
             }],
-            truncated: false,
             message: "diagnostics reported 1 issue".to_string(),
         };
         let result = run_tldr_tool_with_mcp_hooks(
@@ -1750,6 +1754,93 @@ mod tests {
             .expect("ensure daemon should succeed");
 
         assert!(!started);
+    }
+
+    fn create_artifact_parent(path: &std::path::Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("artifact parent should be created");
+        }
+    }
+
+    #[test]
+    fn cleanup_stale_artifacts_removes_socket_and_pid_when_no_lock_is_held() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        std::fs::write(&socket_path, "").expect("socket path should be writable");
+        std::fs::write(&pid_path, "999999").expect("pid path should be writable");
+
+        cleanup_stale_artifacts(project_root);
+
+        assert!(!socket_path.exists());
+        assert!(!pid_path.exists());
+    }
+
+    #[test]
+    fn cleanup_stale_artifacts_keeps_files_while_launcher_lock_is_held() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        let lock_path = codex_native_tldr::daemon::launch_lock_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&socket_path, "").expect("socket path should be writable");
+        std::fs::write(&pid_path, "999999").expect("pid path should be writable");
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("launch lock file should open");
+        lock_file
+            .try_lock()
+            .expect("launch lock should be acquired");
+
+        cleanup_stale_artifacts(project_root);
+
+        assert!(socket_path.exists());
+        assert!(pid_path.exists());
+    }
+
+    #[test]
+    fn daemon_metadata_looks_alive_with_launcher_lock_cleans_up_stale_files() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        std::fs::write(&socket_path, "").expect("socket path should be writable");
+        std::fs::write(&pid_path, "999999").expect("pid path should be writable");
+
+        let alive = daemon_metadata_looks_alive_with_launcher_lock(project_root, false);
+
+        assert!(!alive);
+        assert!(!socket_path.exists());
+        assert!(!pid_path.exists());
+    }
+
+    #[test]
+    fn try_open_launcher_lock_recovers_after_lock_file_is_deleted() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("deleted-launch-lock-project");
+        let lock_path = codex_native_tldr::daemon::launch_lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&lock_path, "").expect("launch lock should exist before deletion");
+        std::fs::remove_file(&lock_path).expect("launch lock should be removed");
+        assert!(!lock_path.exists());
+
+        let lock_is_held =
+            launcher_lock_is_held(&project_root).expect("launcher lock query should succeed");
+
+        assert!(!lock_is_held);
+        assert!(lock_path.exists());
     }
 
     #[tokio::test]
