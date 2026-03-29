@@ -1547,8 +1547,16 @@ fn render_daemon_response_text(
             daemon_status.config.session_idle_timeout_secs
         ));
         lines.push(format!(
+            "session dirty file threshold: {}",
+            daemon_status.config.session_dirty_file_threshold
+        ));
+        lines.push(format!(
             "semantic enabled: {}",
             daemon_status.config.semantic_enabled
+        ));
+        lines.push(format!(
+            "semantic auto reindex threshold: {}",
+            daemon_status.config.semantic_auto_reindex_threshold
         ));
     }
     if let Some(snapshot) = snapshot {
@@ -1786,10 +1794,13 @@ async fn ensure_daemon_running(project_root: &Path, auto_start_enabled: bool) ->
     }
 
     DAEMON_LIFECYCLE_MANAGER
-        .ensure_running(
+        .ensure_running_with_launcher_lock(
             project_root,
-            daemon_metadata_looks_alive,
+            daemon_metadata_looks_alive_with_launcher_lock,
             cleanup_stale_daemon_artifacts,
+            daemon_lock_is_held,
+            try_open_launcher_lock,
+            record_test_launcher_wait,
             |project_root| Box::pin(spawn_native_tldr_daemon(project_root)),
         )
         .await
@@ -3005,7 +3016,9 @@ mod lifecycle_tests {
         assert!(output.contains("pid is live: true"));
         assert!(output.contains("lock is held: true"));
         assert!(output.contains("dirty file threshold: 20"));
+        assert!(output.contains("session dirty file threshold: 20"));
         assert!(output.contains("session idle timeout secs: 1800"));
+        assert!(output.contains("semantic auto reindex threshold: 20"));
         assert!(output.contains("session reindex in progress: false"));
         assert!(output.contains("semantic reindex in progress: false"));
         assert!(output.contains("last warm status: Loaded"));

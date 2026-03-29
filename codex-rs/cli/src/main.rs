@@ -500,7 +500,7 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
             let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
             let normalized_args: Vec<String> = args
                 .iter()
-                .map(|arg| crate::wsl_paths::normalize_for_wsl(arg))
+                .map(crate::wsl_paths::normalize_for_wsl)
                 .collect();
             std::process::Command::new(&command_path)
                 .args(&normalized_args)
@@ -1883,7 +1883,17 @@ mod tests {
 
     #[test]
     fn rtk_parse_restores_explicit_double_dash_for_raw_wrapper_commands() {
-        let cli = parse_multitool_cli(["codex", "rtk", "--", "env", "FOO=1", "git", "status"]);
+        let raw_args = vec![
+            std::ffi::OsString::from("codex"),
+            std::ffi::OsString::from("rtk"),
+            std::ffi::OsString::from("--"),
+            std::ffi::OsString::from("env"),
+            std::ffi::OsString::from("FOO=1"),
+            std::ffi::OsString::from("git"),
+            std::ffi::OsString::from("status"),
+        ];
+        let mut cli = parse_multitool_cli(raw_args.clone());
+        restore_rtk_explicit_double_dash(&raw_args, &mut cli);
 
         let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand else {
             panic!("expected rtk subcommand");
