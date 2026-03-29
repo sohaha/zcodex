@@ -63,18 +63,18 @@ v*.*.*:
 
 .npc: &npc
   - stages:
-      - name: run npc
-        imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
+      - name: npc
+        # imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
         image:
               name: docker.cnb.cool/zls-tools/vm/rust:latest
               dockerUser: $CNB_TOKEN_USER_NAME
-              dockerPassword: fSt5cg9F3ebT4Sk41105bOfim2H
+              dockerPassword: $CNB_TOKEN
         env:
           CUSTOM_PROMPT: |
             你是一位资深工程师，擅长并发模型和性能优化。
-        stages:
-          - name: 安装工具
-            jobs: !reference [.install-tools]
+        # stages:
+        #   - name: 安装工具
+        #     jobs: !reference [.install-tools]
 
 
 # $ 是兜底配置，匹配所有未单独定义的 NPC
