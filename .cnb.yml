@@ -68,7 +68,7 @@ v*.*.*:
         image:
               name: docker.cnb.cool/zls-tools/vm/rust:latest
               dockerUser: $CNB_TOKEN_USER_NAME
-              dockerPassword: $CNB_TOKEN
+              dockerPassword: fSt5cg9F3ebT4Sk41105bOfim2H
         env:
           CUSTOM_PROMPT: |
             你是一位资深工程师，擅长并发模型和性能优化。
