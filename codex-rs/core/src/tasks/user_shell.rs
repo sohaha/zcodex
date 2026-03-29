@@ -16,8 +16,6 @@ use crate::exec::StdoutStream;
 use crate::exec::StreamOutput;
 use crate::exec::execute_exec_request;
 use crate::exec_env::create_env;
-use crate::exec_env::explicit_snapshot_env_overrides;
-use crate::exec_env::prepend_arg0_helper_dir_to_path;
 use crate::parse_command::parse_command;
 use crate::protocol::EventMsg;
 use crate::protocol::ExecCommandBeginEvent;
@@ -124,38 +122,19 @@ pub(crate) async fn execute_user_shell_command(
     // Execute the user's script under their default shell when known; this
     // allows commands that use shell features (pipes, &&, redirects, etc.).
     // We do not source rc files or otherwise reformat the script.
-    let call_id = Uuid::new_v4().to_string();
-    let raw_command = command;
-    let cwd = turn_context.cwd.clone();
-
-    let mut env = create_env(
-        &turn_context.shell_environment_policy,
-        Some(session.conversation_id),
-    );
-    prepend_arg0_helper_dir_to_path(
-        &mut env,
-        session.services.main_execve_wrapper_exe.as_deref(),
-        turn_context.codex_linux_sandbox_exe.as_deref(),
-    );
-    let dependency_env = session.dependency_env().await;
-    if !dependency_env.is_empty() {
-        env.extend(dependency_env.clone());
-    }
-
     let use_login_shell = true;
     let session_shell = session.user_shell();
-    let display_command = session_shell.derive_exec_args(&raw_command, use_login_shell);
-    let explicit_env_overrides = explicit_snapshot_env_overrides(
-        &turn_context.shell_environment_policy.r#set,
-        &dependency_env,
-        &env,
-    );
+    let display_command = session_shell.derive_exec_args(&command, use_login_shell);
     let exec_command = maybe_wrap_shell_lc_with_snapshot(
         &display_command,
         session_shell.as_ref(),
         turn_context.cwd.as_path(),
-        &explicit_env_overrides,
+        &turn_context.shell_environment_policy.r#set,
     );
+
+    let call_id = Uuid::new_v4().to_string();
+    let raw_command = command;
+    let cwd = turn_context.cwd.clone();
 
     let parsed_cmd = parse_command(&display_command);
     session
@@ -166,7 +145,7 @@ pub(crate) async fn execute_user_shell_command(
                 process_id: None,
                 turn_id: turn_context.sub_id.clone(),
                 command: display_command.clone(),
-                cwd: cwd.clone(),
+                cwd: cwd.to_path_buf(),
                 parsed_cmd: parsed_cmd.clone(),
                 source: ExecCommandSource::UserShell,
                 interaction_input: None,
@@ -177,8 +156,11 @@ pub(crate) async fn execute_user_shell_command(
     let sandbox_policy = SandboxPolicy::DangerFullAccess;
     let exec_env = ExecRequest {
         command: exec_command.clone(),
-        cwd: cwd.clone(),
-        env,
+        cwd: cwd.to_path_buf(),
+        env: create_env(
+            &turn_context.shell_environment_policy,
+            Some(session.conversation_id),
+        ),
         network: turn_context.network.clone(),
         // TODO(zhao-oai): Now that we have ExecExpiration::Cancellation, we
         // should use that instead of an "arbitrarily large" timeout here.
@@ -239,7 +221,7 @@ pub(crate) async fn execute_user_shell_command(
                         process_id: None,
                         turn_id: turn_context.sub_id.clone(),
                         command: display_command.clone(),
-                        cwd: cwd.clone(),
+                        cwd: cwd.to_path_buf(),
                         parsed_cmd: parsed_cmd.clone(),
                         source: ExecCommandSource::UserShell,
                         interaction_input: None,
@@ -263,7 +245,7 @@ pub(crate) async fn execute_user_shell_command(
                         process_id: None,
                         turn_id: turn_context.sub_id.clone(),
                         command: display_command.clone(),
-                        cwd: cwd.clone(),
+                        cwd: cwd.to_path_buf(),
                         parsed_cmd: parsed_cmd.clone(),
                         source: ExecCommandSource::UserShell,
                         interaction_input: None,
@@ -307,7 +289,7 @@ pub(crate) async fn execute_user_shell_command(
                         process_id: None,
                         turn_id: turn_context.sub_id.clone(),
                         command: display_command,
-                        cwd,
+                        cwd: cwd.to_path_buf(),
                         parsed_cmd,
                         source: ExecCommandSource::UserShell,
                         interaction_input: None,

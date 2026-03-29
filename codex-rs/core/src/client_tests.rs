@@ -30,14 +30,14 @@ fn test_model_client_with_wire_api(
         wire_api,
     );
     ModelClient::new(
-        None,
+        /*auth_manager*/ None,
         ThreadId::new(),
         provider,
         session_source,
-        None,
-        false,
-        false,
-        None,
+        /*model_verbosity*/ None,
+        /*enable_request_compression*/ false,
+        /*include_timing_metrics*/ false,
+        /*beta_features_header*/ None,
     )
 }
 
@@ -92,11 +92,11 @@ fn test_session_telemetry() -> SessionTelemetry {
         ThreadId::new(),
         "gpt-test",
         "gpt-test",
-        None,
-        None,
-        None,
+        /*account_id*/ None,
+        /*account_email*/ None,
+        /*auth_mode*/ None,
         "test-originator".to_string(),
-        false,
+        /*log_user_prompts*/ false,
         "test-terminal".to_string(),
         SessionSource::Cli,
     )
@@ -142,7 +142,12 @@ async fn summarize_memories_returns_empty_for_empty_input() {
     let session_telemetry = test_session_telemetry();
 
     let output = client
-        .summarize_memories(Vec::new(), &model_info, None, &session_telemetry)
+        .summarize_memories(
+            Vec::new(),
+            &model_info,
+            /*effort*/ None,
+            &session_telemetry,
+        )
         .await
         .expect("empty summarize request should succeed");
     assert_eq!(output.len(), 0);

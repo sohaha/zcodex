@@ -440,7 +440,7 @@ impl ToolHandler for ShellCommandHandler {
             session.as_ref(),
             turn.as_ref(),
             &params.command,
-            params.workdir.as_deref(),
+            cwd.as_path(),
         )
         .await;
         let mut params = params;
