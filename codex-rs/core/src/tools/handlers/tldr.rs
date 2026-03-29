@@ -9,30 +9,34 @@ use crate::tools::registry::ToolKind;
 use anyhow::Result;
 use async_trait::async_trait;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
 use codex_native_tldr::daemon::lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::socket_path_for_project;
+use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::tool_api::TldrToolCallParam;
-use codex_native_tldr::tool_api::daemon_metadata_looks_alive;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
+use once_cell::sync::Lazy;
 use std::ffi::OsString;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::time::Duration;
 use std::time::Instant;
 use tokio::process::Command;
-use tokio::time::sleep;
 
 pub struct TldrHandler;
 
 const TLDR_JSON_BEGIN: &str = "---BEGIN_TLDR_JSON---";
 const TLDR_JSON_END: &str = "---END_TLDR_JSON---";
 const TLDR_TRACE_TARGET: &str = "codex_core::tldr";
+
+static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
+    Lazy::new(DaemonLifecycleManager::default);
 
 #[cfg(test)]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -110,10 +114,26 @@ impl ToolHandler for TldrHandler {
         }
 
         let saved_args = args.clone();
+        let auto_start_enabled = matches!(
+            saved_args.action,
+            codex_native_tldr::tool_api::TldrToolAction::Ping
+                | codex_native_tldr::tool_api::TldrToolAction::Warm
+                | codex_native_tldr::tool_api::TldrToolAction::Snapshot
+                | codex_native_tldr::tool_api::TldrToolAction::Status
+                | codex_native_tldr::tool_api::TldrToolAction::Notify
+        );
         let output = run_tldr_handler_with_hooks(
             args,
             &|project_root, command| Box::pin(query_daemon(project_root, command)),
-            &|project_root| Box::pin(ensure_daemon_running(project_root)),
+            &|project_root| {
+                Box::pin(async move {
+                    if auto_start_enabled {
+                        ensure_daemon_running(project_root).await
+                    } else {
+                        Ok(false)
+                    }
+                })
+            },
         )
         .await?;
         if output.success_for_logging() {
@@ -366,43 +386,29 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
 }
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
+    Ok(ensure_daemon_running_detailed(project_root).await?.ready)
+}
+
+async fn ensure_daemon_running_detailed(project_root: &Path) -> Result<DaemonReadyResult> {
     if !cfg!(unix) {
-        return Ok(false);
+        return Ok(DaemonReadyResult {
+            ready: false,
+            structured_failure: None,
+            degraded_mode: None,
+        });
     }
 
-    if daemon_metadata_looks_alive(project_root) {
-        return Ok(true);
-    }
-    if daemon_lock_is_held(project_root)? {
-        return wait_for_daemon_startup(project_root).await;
-    }
-
-    let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
-        return wait_for_daemon_startup(project_root).await;
-    };
-
-    if daemon_metadata_looks_alive(project_root) {
-        return Ok(true);
-    }
-    if daemon_lock_is_held(project_root)? {
-        return wait_for_daemon_startup_during_launch(project_root).await;
-    }
-
-    cleanup_stale_artifacts(project_root);
-
-    let mut child = daemon_launcher_command(project_root)?
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()?;
-
-    tokio::spawn(async move {
-        let _ = child.wait().await;
-    });
-
-    let started = wait_for_daemon_startup_during_launch(project_root).await;
-    drop(launcher_lock);
-    started
+    DAEMON_LIFECYCLE_MANAGER
+        .ensure_running_with_launcher_lock_detailed(
+            project_root,
+            daemon_metadata_looks_alive_with_launcher_lock,
+            cleanup_stale_artifacts,
+            daemon_lock_is_held,
+            try_open_launcher_lock,
+            record_test_launcher_wait,
+            |project_root| Box::pin(spawn_native_tldr_daemon(project_root)),
+        )
+        .await
 }
 
 fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
@@ -481,34 +487,11 @@ fn find_binary_in_path(path_env: Option<&std::ffi::OsStr>, names: &[&str]) -> Op
     None
 }
 
-async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
-    wait_for_daemon_startup_with_launcher_lock(project_root, false).await
-}
-
-async fn wait_for_daemon_startup_during_launch(project_root: &Path) -> Result<bool> {
-    wait_for_daemon_startup_with_launcher_lock(project_root, true).await
-}
-
-async fn wait_for_daemon_startup_with_launcher_lock(
-    project_root: &Path,
-    ignore_launcher_lock: bool,
-) -> Result<bool> {
-    let start = Instant::now();
-    let timeout = Duration::from_secs(3);
-    while start.elapsed() < timeout {
-        if daemon_metadata_looks_alive_with_launcher_lock(project_root, ignore_launcher_lock) {
-            return Ok(true);
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-    Ok(false)
-}
-
 fn daemon_metadata_looks_alive_with_launcher_lock(
     project_root: &Path,
     ignore_launcher_lock: bool,
 ) -> bool {
-    match codex_native_tldr::daemon::daemon_health(project_root) {
+    match daemon_health(project_root) {
         Ok(health) => {
             if health.healthy {
                 return true;
@@ -523,6 +506,22 @@ fn daemon_metadata_looks_alive_with_launcher_lock(
         }
         Err(_) => false,
     }
+}
+
+fn record_test_launcher_wait(_project_root: &Path) {}
+
+async fn spawn_native_tldr_daemon(project_root: &Path) -> Result<bool> {
+    let mut child = daemon_launcher_command(project_root)?
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+
+    Ok(true)
 }
 
 fn cleanup_stale_artifacts(project_root: &Path) {
@@ -750,7 +749,7 @@ mod tests {
             .expect("handler should succeed");
         let text = output.into_text();
 
-        assert!(text.contains("structure rust via "));
+        assert!(text.contains("structure rust via "), "{text}");
         assert!(text.contains("\"project\":"));
         assert!(text.contains(tempdir.path().to_string_lossy().as_ref()));
         assert!(text.contains("\"symbol\": \"AuthService\""));
@@ -1742,11 +1741,10 @@ mod tests {
         .expect("handler helper should return tool output");
 
         assert_eq!(output.success, Some(false));
-        assert!(
-            output
-                .into_text()
-                .contains("native-tldr daemon is unavailable for")
-        );
+        let text = output.into_text();
+        assert!(text.contains("native-tldr daemon is unavailable for"));
+        assert!(text.contains("daemon unavailable (missing socket and pid)"));
+        assert!(text.contains("hint: run `codex tldr ...`"));
     }
 
     #[tokio::test]

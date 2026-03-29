@@ -20,6 +20,14 @@ use tokio::time::sleep;
 pub type QueryFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<TldrDaemonResponse>>> + Send + 'a>>;
 pub type LaunchFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+pub type LaunchDetailedFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<DaemonReadyResult>> + Send + 'a>>;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueryHooksResult {
+    pub response: Option<TldrDaemonResponse>,
+    pub ready_result: Option<DaemonReadyResult>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaemonReadyResult {
@@ -68,6 +76,40 @@ impl DaemonLifecycleManager {
             daemon_response = query(project_root, command).await?;
         }
         Ok(daemon_response)
+    }
+
+    pub async fn query_or_spawn_with_hooks_detailed<Q, E>(
+        &self,
+        project_root: &Path,
+        command: &TldrDaemonCommand,
+        query: Q,
+        ensure_running_detailed: E,
+    ) -> Result<QueryHooksResult>
+    where
+        Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryFuture<'a>,
+        E: for<'a> Fn(&'a Path) -> LaunchDetailedFuture<'a>,
+    {
+        let mut daemon_response = query(project_root, command).await?;
+        if daemon_response.is_some() {
+            return Ok(QueryHooksResult {
+                response: daemon_response,
+                ready_result: None,
+            });
+        }
+
+        let ready_result = ensure_running_detailed(project_root).await?;
+        if ready_result.ready {
+            daemon_response = query(project_root, command).await?;
+            return Ok(QueryHooksResult {
+                response: daemon_response,
+                ready_result: None,
+            });
+        }
+
+        Ok(QueryHooksResult {
+            response: None,
+            ready_result: Some(ready_result),
+        })
     }
 
     pub async fn ensure_running<L, A, C>(
@@ -381,7 +423,10 @@ fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::DaemonLifecycleManager;
+    use super::DaemonReadyResult;
+    use crate::daemon::DegradedMode;
     use crate::daemon::DegradedModeKind;
+    use crate::daemon::StructuredFailure;
     use crate::daemon::StructuredFailureKind;
     use crate::daemon::TldrDaemonCommand;
     use crate::daemon::TldrDaemonResponse;
@@ -495,6 +540,55 @@ mod tests {
         assert_eq!(response, None);
         assert_eq!(query_calls.load(Ordering::SeqCst), 1);
         assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn query_or_spawn_with_hooks_detailed_reports_structured_failure_when_launch_fails() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let manager = DaemonLifecycleManager::default();
+        let command = TldrDaemonCommand::Ping;
+
+        let result = manager
+            .query_or_spawn_with_hooks_detailed(
+                tempdir.path(),
+                &command,
+                |_project_root, _command| Box::pin(async move { Ok(None) }),
+                |_project_root| {
+                    Box::pin(async move {
+                        Ok(DaemonReadyResult {
+                            ready: false,
+                            structured_failure: Some(StructuredFailure {
+                                kind: StructuredFailureKind::DaemonUnavailable,
+                                reason: "missing daemon".to_string(),
+                                retryable: true,
+                                retry_hint: Some("start the daemon".to_string()),
+                            }),
+                            degraded_mode: Some(DegradedMode {
+                                kind: DegradedModeKind::DiagnosticOnly,
+                                fallback_path: "status_only".to_string(),
+                                reason: Some("health stale".to_string()),
+                            }),
+                        })
+                    })
+                },
+            )
+            .await
+            .expect("query_or_spawn_with_hooks_detailed should succeed");
+
+        assert!(result.response.is_none());
+        let ready = result.ready_result.expect("ready result should exist");
+        assert!(!ready.ready);
+        assert_eq!(
+            ready
+                .structured_failure
+                .as_ref()
+                .map(|failure| failure.kind.clone()),
+            Some(StructuredFailureKind::DaemonUnavailable)
+        );
+        assert_eq!(
+            ready.degraded_mode.as_ref().map(|mode| mode.kind.clone()),
+            Some(DegradedModeKind::DiagnosticOnly)
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

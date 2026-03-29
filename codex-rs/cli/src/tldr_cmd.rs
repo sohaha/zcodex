@@ -25,6 +25,8 @@ use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lang_support::LanguageRegistry;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use codex_native_tldr::lifecycle::DaemonReadyResult;
+use codex_native_tldr::lifecycle::QueryHooksResult;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::semantic::SemanticSearchRequest;
 use codex_native_tldr::semantic::SemanticSearchResponse;
@@ -816,10 +818,7 @@ async fn run_warm_command(cmd: TldrWarmCommand) -> Result<()> {
     let Some(response) =
         query_daemon_with_autostart(&project_root, &TldrDaemonCommand::Warm).await?
     else {
-        bail!(
-            "native-tldr daemon is unavailable for {}",
-            project_root.display()
-        );
+        return Err(daemon_unavailable_error(&project_root));
     };
 
     if cmd.json {
@@ -1625,11 +1624,15 @@ async fn run_daemon_action(
     action: &str,
     command: TldrDaemonCommand,
 ) -> Result<()> {
-    let Some(response) = query_daemon_with_autostart(project_root, &command).await? else {
-        bail!(
-            "native-tldr daemon is unavailable for {}",
-            project_root.display()
-        );
+    let QueryHooksResult {
+        response,
+        ready_result,
+    } = query_daemon_with_autostart_detailed(project_root, &command).await?;
+    let Some(response) = response else {
+        return Err(daemon_unavailable_error_with_ready_result(
+            project_root,
+            ready_result.as_ref(),
+        ));
     };
 
     if json_output {
@@ -1650,23 +1653,66 @@ async fn run_daemon_action(
     Ok(())
 }
 
+fn daemon_unavailable_error(project_root: &Path) -> anyhow::Error {
+    daemon_unavailable_error_with_ready_result(project_root, None)
+}
+
+fn daemon_unavailable_error_with_ready_result(
+    project_root: &Path,
+    ready_result: Option<&DaemonReadyResult>,
+) -> anyhow::Error {
+    let project = project_root.display();
+    if let Some(failure) = ready_result.and_then(|value| value.structured_failure.as_ref()) {
+        if let Some(hint) = &failure.retry_hint {
+            return anyhow::anyhow!(
+                "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
+                failure.reason
+            );
+        }
+        return anyhow::anyhow!(
+            "native-tldr daemon is unavailable for {project}: {}",
+            failure.reason
+        );
+    }
+    match daemon_health(project_root) {
+        Ok(health) => {
+            if let Some(failure) = health.structured_failure {
+                if let Some(hint) = failure.retry_hint {
+                    anyhow::anyhow!(
+                        "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
+                        failure.reason
+                    )
+                } else {
+                    anyhow::anyhow!(
+                        "native-tldr daemon is unavailable for {project}: {}",
+                        failure.reason
+                    )
+                }
+            } else {
+                anyhow::anyhow!("native-tldr daemon is unavailable for {project}")
+            }
+        }
+        Err(_) => anyhow::anyhow!("native-tldr daemon is unavailable for {project}"),
+    }
+}
+
 async fn run_daemon_start_command(project_root: &Path, json_output: bool) -> Result<()> {
-    let started = ensure_daemon_running(project_root, true).await?;
+    let started = ensure_daemon_running_detailed(project_root, true).await?;
     let status = query_daemon(project_root, &TldrDaemonCommand::Status).await?;
     let Some(response) = status else {
-        bail!(
-            "native-tldr daemon did not become ready for {}",
-            project_root.display()
-        );
+        return Err(daemon_unavailable_error_with_ready_result(
+            project_root,
+            Some(&started),
+        ));
     };
     let mut payload = daemon_response_payload("start", project_root, &response);
     if let Some(object) = payload.as_object_mut() {
-        object.insert("started".to_string(), json!(started));
+        object.insert("started".to_string(), json!(started.ready));
     }
     if json_output {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("started: {started}");
+        println!("started: {}", started.ready);
         for line in render_daemon_response_text("start", &response) {
             println!("{line}");
         }
@@ -1735,12 +1781,26 @@ async fn query_daemon_with_autostart(
     project_root: &Path,
     command: &TldrDaemonCommand,
 ) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
+    Ok(query_daemon_with_autostart_detailed(project_root, command)
+        .await?
+        .response)
+}
+
+async fn query_daemon_with_autostart_detailed(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+) -> Result<QueryHooksResult> {
     let auto_start_enabled = load_tldr_config(project_root)?.daemon.auto_start;
-    query_daemon_with_hooks(
+    query_daemon_with_hooks_detailed(
         project_root,
         command,
         |project_root, command| Box::pin(query_daemon(project_root, command)),
-        move |project_root| Box::pin(ensure_daemon_running(project_root, auto_start_enabled)),
+        move |project_root| {
+            Box::pin(ensure_daemon_running_detailed(
+                project_root,
+                auto_start_enabled,
+            ))
+        },
     )
     .await
 }
@@ -1753,6 +1813,8 @@ type QueryDaemonFuture<'a> = Pin<
     >,
 >;
 type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+type EnsureDaemonDetailedFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<DaemonReadyResult>> + Send + 'a>>;
 
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
@@ -1772,6 +1834,21 @@ where
         .await
 }
 
+async fn query_daemon_with_hooks_detailed<Q, E>(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+    query: Q,
+    ensure_running: E,
+) -> Result<QueryHooksResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonDetailedFuture<'a>,
+{
+    DAEMON_LIFECYCLE_MANAGER
+        .query_or_spawn_with_hooks_detailed(project_root, command, query, ensure_running)
+        .await
+}
+
 fn analysis_cache_key(
     kind: AnalysisKind,
     language: SupportedLanguage,
@@ -1786,15 +1863,34 @@ fn analysis_cache_key(
 }
 
 async fn ensure_daemon_running(project_root: &Path, auto_start_enabled: bool) -> Result<bool> {
+    Ok(
+        ensure_daemon_running_detailed(project_root, auto_start_enabled)
+            .await?
+            .ready,
+    )
+}
+
+async fn ensure_daemon_running_detailed(
+    project_root: &Path,
+    auto_start_enabled: bool,
+) -> Result<DaemonReadyResult> {
     if !cfg!(unix) {
-        return Ok(false);
+        return Ok(DaemonReadyResult {
+            ready: false,
+            structured_failure: None,
+            degraded_mode: None,
+        });
     }
     if !auto_start_enabled {
-        return Ok(false);
+        return Ok(DaemonReadyResult {
+            ready: false,
+            structured_failure: None,
+            degraded_mode: None,
+        });
     }
 
     DAEMON_LIFECYCLE_MANAGER
-        .ensure_running_with_launcher_lock(
+        .ensure_running_with_launcher_lock_detailed(
             project_root,
             daemon_metadata_looks_alive_with_launcher_lock,
             cleanup_stale_daemon_artifacts,
@@ -2687,15 +2783,22 @@ mod lifecycle_tests {
     use super::launcher_lock_path_for_project;
     use super::query_daemon_with_autostart;
     use super::query_daemon_with_hooks;
+    use super::query_daemon_with_hooks_detailed;
     use super::render_daemon_response_text;
     use super::spawn_native_tldr_daemon;
     use crate::tldr_cmd::CODEX_TLDR_TEST_DAEMON_BIN_ENV;
     use anyhow::Result;
+    use codex_native_tldr::daemon::DegradedMode;
+    use codex_native_tldr::daemon::DegradedModeKind;
+    use codex_native_tldr::daemon::StructuredFailure;
+    use codex_native_tldr::daemon::StructuredFailureKind;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::daemon::pid_path_for_project;
     use codex_native_tldr::daemon::socket_path_for_project;
     use codex_native_tldr::lang_support::SupportedLanguage;
+    use codex_native_tldr::lifecycle::DaemonReadyResult;
+    use codex_native_tldr::lifecycle::QueryHooksResult;
     use std::path::Path;
     use std::path::PathBuf;
     use std::process::Stdio;
@@ -2977,6 +3080,8 @@ mod lifecycle_tests {
                     finished_at: started_at,
                     message: "warm loaded 1 language indexes into daemon cache".to_string(),
                 }),
+                last_structured_failure: None,
+                degraded_mode_active: false,
             }),
             daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                 project_root: PathBuf::from("/tmp/project"),
@@ -3129,6 +3234,77 @@ mod lifecycle_tests {
         .unwrap();
 
         assert_eq!(response, None);
+        assert_eq!(query_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn query_daemon_with_hooks_detailed_returns_ready_result_when_autostart_fails() {
+        let tempdir = tempdir().unwrap();
+        let command = TldrDaemonCommand::Ping;
+        let query_calls = Arc::new(AtomicUsize::new(0));
+        let ensure_calls = Arc::new(AtomicUsize::new(0));
+
+        let response = query_daemon_with_hooks_detailed(
+            tempdir.path(),
+            &command,
+            {
+                let query_calls = Arc::clone(&query_calls);
+                move |_project_root, _command| {
+                    let query_calls = Arc::clone(&query_calls);
+                    Box::pin(async move {
+                        query_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(None)
+                    })
+                }
+            },
+            {
+                let ensure_calls = Arc::clone(&ensure_calls);
+                move |_project_root| {
+                    let ensure_calls = Arc::clone(&ensure_calls);
+                    Box::pin(async move {
+                        ensure_calls.fetch_add(1, Ordering::SeqCst);
+                        Ok(DaemonReadyResult {
+                            ready: false,
+                            structured_failure: Some(StructuredFailure {
+                                kind: StructuredFailureKind::DaemonUnavailable,
+                                reason: "daemon failed to start".to_string(),
+                                retryable: true,
+                                retry_hint: Some("run `codex tldr daemon start`".to_string()),
+                            }),
+                            degraded_mode: Some(DegradedMode {
+                                kind: DegradedModeKind::DiagnosticOnly,
+                                fallback_path: "none".to_string(),
+                                reason: Some("daemon-only command".to_string()),
+                            }),
+                        })
+                    })
+                }
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            response,
+            QueryHooksResult {
+                response: None,
+                ready_result: Some(DaemonReadyResult {
+                    ready: false,
+                    structured_failure: Some(StructuredFailure {
+                        kind: StructuredFailureKind::DaemonUnavailable,
+                        reason: "daemon failed to start".to_string(),
+                        retryable: true,
+                        retry_hint: Some("run `codex tldr daemon start`".to_string()),
+                    }),
+                    degraded_mode: Some(DegradedMode {
+                        kind: DegradedModeKind::DiagnosticOnly,
+                        fallback_path: "none".to_string(),
+                        reason: Some("daemon-only command".to_string()),
+                    }),
+                }),
+            }
+        );
         assert_eq!(query_calls.load(Ordering::SeqCst), 1);
         assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
     }

@@ -13,6 +13,8 @@ use crate::daemon::launch_lock_is_held;
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
 use crate::lifecycle::DaemonLifecycleManager;
+use crate::lifecycle::DaemonReadyResult;
+use crate::lifecycle::QueryHooksResult;
 use crate::load_tldr_config;
 use crate::semantic::SemanticSearchRequest;
 use crate::wire::daemon_response_payload;
@@ -166,6 +168,8 @@ pub struct TldrToolResult {
 pub type QueryDaemonFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<TldrDaemonResponse>>> + Send + 'a>>;
 pub type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+pub type EnsureDaemonDetailedFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<DaemonReadyResult>> + Send + 'a>>;
 
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
@@ -623,10 +627,7 @@ where
     let Some(response) =
         query_daemon_with_hooks(project_root, &command, query, ensure_running).await?
     else {
-        return Err(anyhow::anyhow!(
-            "native-tldr daemon is unavailable for {}",
-            project_root.display()
-        ));
+        return Err(daemon_unavailable_error(project_root));
     };
     let structured_content = daemon_response_payload(action, project_root, &response);
     let message = structured_content
@@ -638,6 +639,49 @@ where
         text,
         structured_content,
     })
+}
+
+fn daemon_unavailable_error(project_root: &Path) -> anyhow::Error {
+    daemon_unavailable_error_with_ready_result(project_root, None)
+}
+
+fn daemon_unavailable_error_with_ready_result(
+    project_root: &Path,
+    ready_result: Option<&DaemonReadyResult>,
+) -> anyhow::Error {
+    let project = project_root.display();
+    if let Some(failure) = ready_result.and_then(|value| value.structured_failure.as_ref()) {
+        if let Some(hint) = &failure.retry_hint {
+            return anyhow::anyhow!(
+                "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
+                failure.reason
+            );
+        }
+        return anyhow::anyhow!(
+            "native-tldr daemon is unavailable for {project}: {}",
+            failure.reason
+        );
+    }
+    match daemon_health(project_root) {
+        Ok(health) => {
+            if let Some(failure) = health.structured_failure {
+                if let Some(hint) = failure.retry_hint {
+                    anyhow::anyhow!(
+                        "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
+                        failure.reason
+                    )
+                } else {
+                    anyhow::anyhow!(
+                        "native-tldr daemon is unavailable for {project}: {}",
+                        failure.reason
+                    )
+                }
+            } else {
+                anyhow::anyhow!("native-tldr daemon is unavailable for {project}")
+            }
+        }
+        Err(_) => anyhow::anyhow!("native-tldr daemon is unavailable for {project}"),
+    }
 }
 
 async fn run_search_tool<Q, E>(
@@ -710,6 +754,21 @@ where
 {
     DAEMON_LIFECYCLE_MANAGER
         .query_or_spawn_with_hooks(project_root, command, query, ensure_running)
+        .await
+}
+
+pub async fn query_daemon_with_hooks_detailed<Q, E>(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+    query: &Q,
+    ensure_running: E,
+) -> Result<QueryHooksResult>
+where
+    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> EnsureDaemonDetailedFuture<'a>,
+{
+    DAEMON_LIFECYCLE_MANAGER
+        .query_or_spawn_with_hooks_detailed(project_root, command, query, ensure_running)
         .await
 }
 
@@ -1728,6 +1787,7 @@ mod tests {
     use super::TldrToolCallParam;
     use super::TldrToolLanguage;
     use super::action_name;
+    use super::query_daemon_with_hooks_detailed;
     use super::run_tldr_tool_with_hooks;
     use crate::daemon::DegradedMode;
     use crate::daemon::DegradedModeKind;
@@ -1737,6 +1797,7 @@ mod tests {
     use crate::daemon::TldrDaemonResponse;
     use crate::daemon::TldrDaemonStatus;
     use crate::lang_support::SupportedLanguage;
+    use crate::lifecycle::DaemonReadyResult;
     use crate::semantic::SemanticReindexReport;
     use crate::semantic::SemanticReindexStatus;
     use pretty_assertions::assert_eq;
@@ -2255,6 +2316,61 @@ mod tests {
             error
                 .to_string()
                 .contains("native-tldr daemon is unavailable for"),
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("daemon unavailable (missing socket and pid)"),
+        );
+        assert!(error.to_string().contains("hint: run `codex tldr ...`"));
+    }
+
+    #[tokio::test]
+    async fn query_daemon_with_hooks_detailed_preserves_ready_result_failure_metadata() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = query_daemon_with_hooks_detailed(
+            tempdir.path(),
+            &crate::daemon::TldrDaemonCommand::Status,
+            &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            |_project_root| {
+                Box::pin(async move {
+                    Ok(DaemonReadyResult {
+                        ready: false,
+                        structured_failure: Some(StructuredFailure {
+                            kind: StructuredFailureKind::DaemonUnavailable,
+                            reason: "daemon boot timed out".to_string(),
+                            retryable: true,
+                            retry_hint: Some("start the daemon once".to_string()),
+                        }),
+                        degraded_mode: Some(DegradedMode {
+                            kind: DegradedModeKind::DiagnosticOnly,
+                            fallback_path: "status_only".to_string(),
+                            reason: Some("daemon-only action".to_string()),
+                        }),
+                    })
+                })
+            },
+        )
+        .await
+        .expect("detailed query should succeed");
+
+        assert_eq!(result.response, None);
+        assert_eq!(
+            result.ready_result,
+            Some(DaemonReadyResult {
+                ready: false,
+                structured_failure: Some(StructuredFailure {
+                    kind: StructuredFailureKind::DaemonUnavailable,
+                    reason: "daemon boot timed out".to_string(),
+                    retryable: true,
+                    retry_hint: Some("start the daemon once".to_string()),
+                }),
+                degraded_mode: Some(DegradedMode {
+                    kind: DegradedModeKind::DiagnosticOnly,
+                    fallback_path: "status_only".to_string(),
+                    reason: Some("daemon-only action".to_string()),
+                }),
+            })
         );
     }
 
