@@ -209,6 +209,30 @@ fn should_use_remote_compact_task_for_anthropic_provider() {
     assert!(should_use_remote_compact_task(&provider));
 }
 
+#[test]
+fn should_not_use_remote_compact_task_for_chat_providers() {
+    let provider = crate::model_provider_info::ModelProviderInfo {
+        name: "OpenAI".to_string(),
+        model: None,
+        base_url: Some(crate::model_provider_info::DEFAULT_OPENAI_BASE_URL.to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: crate::model_provider_info::WireApi::Chat,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    assert!(!should_use_remote_compact_task(&provider));
+}
+
 #[tokio::test]
 async fn process_compacted_history_replaces_developer_messages() {
     let compacted_history = vec![

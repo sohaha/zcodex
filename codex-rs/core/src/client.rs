@@ -991,7 +991,11 @@ impl ModelClientSession {
     fn responses_request_compression(&self, api_auth: &CoreAuthProvider) -> Compression {
         if self.client.state.enable_request_compression
             && api_auth.is_chatgpt_auth()
-            && self.client.state.provider.is_openai()
+            && self
+                .client
+                .state
+                .provider
+                .uses_official_openai_responses_api()
         {
             Compression::Zstd
         } else {

@@ -195,6 +195,36 @@ wire_api = "chat"
 }
 
 #[test]
+fn official_openai_api_detection_uses_wire_api_and_base_url() {
+    let chat_provider = ModelProviderInfo {
+        name: "OpenAI Chat".into(),
+        model: None,
+        base_url: Some(DEFAULT_OPENAI_BASE_URL.into()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: WireApi::Chat,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+    assert!(chat_provider.uses_official_openai_api());
+    assert!(!chat_provider.uses_official_openai_responses_api());
+
+    let custom_provider = ModelProviderInfo {
+        base_url: Some("https://example.com/v1".into()),
+        ..chat_provider
+    };
+    assert!(!custom_provider.uses_official_openai_api());
+}
+
+#[test]
 fn anthropic_provider_defaults_to_official_base_url() {
     let provider = ModelProviderInfo {
         name: "Anthropic".into(),

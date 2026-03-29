@@ -643,7 +643,7 @@ fn realtime_api_key(
 
     // TODO(aibrahim): Remove this temporary fallback once realtime auth no longer
     // requires API key auth for ChatGPT/SIWC sessions.
-    if provider.is_openai()
+    if provider.uses_official_openai_api()
         && let Some(api_key) = read_openai_api_key_from_env()
     {
         return Ok(api_key);

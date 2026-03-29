@@ -275,13 +275,15 @@ fn build_request_rejects_non_user_images() {
             err,
             ApiError::InvalidRequest { message }
                 if message
-                    == format!("chat completions does not support images in {role} messages")
+                    == format!(
+                        "chat completions only supports images in user messages; {role} messages must be text-only"
+                    )
         ));
     }
 }
 
 #[test]
-fn build_request_rejects_unsupported_tool_choice() {
+fn build_request_supports_named_required_tool_choice() {
     let mut request = request_with_tools(
         vec![json!({
             "type": "function",
@@ -293,13 +295,28 @@ fn build_request_rejects_unsupported_tool_choice() {
     );
     request.tool_choice = "required:read_file".to_string();
 
+    let chat = build_request_with_stream(&request, /*stream*/ false).expect("tool_choice maps");
+    assert_eq!(
+        chat.body["tool_choice"],
+        json!({
+            "type": "function",
+            "function": { "name": "read_file" },
+        })
+    );
+}
+
+#[test]
+fn build_request_rejects_unknown_required_tool_choice() {
+    let mut request = request_with_tools(Vec::new(), Vec::new());
+    request.tool_choice = "required:read_file".to_string();
+
     let Err(err) = build_request_with_stream(&request, /*stream*/ false) else {
-        panic!("tool_choice rejected");
+        panic!("unknown tool_choice should be rejected");
     };
     assert!(matches!(
         err,
         ApiError::InvalidRequest { message }
-            if message == "chat completions does not support tool_choice required:read_file"
+            if message == "chat completions tool_choice requires unknown tool read_file"
     ));
 }
 
@@ -314,7 +331,10 @@ fn build_request_rejects_hosted_tools() {
         assert!(matches!(
             err,
             ApiError::InvalidRequest { message }
-                if message == format!("chat completions does not support tool type {tool_type}")
+                if message
+                    == format!(
+                        "chat completions does not support tool type {tool_type}; use wire_api = \"responses\" for hosted tools"
+                    )
         ));
     }
 }

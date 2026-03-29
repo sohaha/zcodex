@@ -38,6 +38,7 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
+pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
@@ -257,7 +258,7 @@ impl ModelProviderInfo {
             WireApi::Responses if matches!(auth_mode, Some(AuthMode::Chatgpt)) => {
                 "https://chatgpt.com/backend-api/codex"
             }
-            WireApi::Responses | WireApi::Chat => "https://api.openai.com/v1",
+            WireApi::Responses | WireApi::Chat => DEFAULT_OPENAI_BASE_URL,
             WireApi::Anthropic => "https://api.anthropic.com/v1",
         };
         let base_url = self
@@ -437,6 +438,22 @@ impl ModelProviderInfo {
 
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
+    }
+
+    pub fn uses_official_openai_api(&self) -> bool {
+        if matches!(self.wire_api, WireApi::Anthropic) {
+            return false;
+        }
+
+        self.base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|base_url| !base_url.is_empty())
+            .is_none_or(|base_url| base_url.trim_end_matches('/') == DEFAULT_OPENAI_BASE_URL)
+    }
+
+    pub fn uses_official_openai_responses_api(&self) -> bool {
+        self.wire_api == WireApi::Responses && self.uses_official_openai_api()
     }
 }
 

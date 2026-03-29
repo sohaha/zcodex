@@ -381,7 +381,6 @@ use strum::IntoEnumIterator;
 
 const USER_SHELL_COMMAND_HELP_TITLE: &str = "在命令前加 ! 即可在本地执行";
 const USER_SHELL_COMMAND_HELP_HINT: &str = "示例：!ls";
-const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const FAST_STATUS_MODEL: &str = "gpt-5.4";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
     ["model-with-reasoning", "context-remaining", "current-dir"];
@@ -7793,7 +7792,7 @@ impl ChatWidget {
     }
 
     fn custom_openai_base_url(&self) -> Option<String> {
-        if !self.config.model_provider.is_openai() {
+        if self.config.model_provider_id != codex_core::OPENAI_PROVIDER_ID {
             return None;
         }
 
@@ -7804,7 +7803,7 @@ impl ChatWidget {
         }
 
         let normalized = trimmed.trim_end_matches('/');
-        if normalized == DEFAULT_OPENAI_BASE_URL {
+        if normalized == codex_core::DEFAULT_OPENAI_BASE_URL {
             return None;
         }
 

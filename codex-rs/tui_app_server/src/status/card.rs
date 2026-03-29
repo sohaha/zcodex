@@ -553,7 +553,9 @@ fn format_model_provider(config: &Config) -> Option<String> {
         name
     };
     let base_url = provider.base_url.as_deref().and_then(sanitize_base_url);
-    let is_default_openai = provider.is_openai() && base_url.is_none();
+    let is_default_openai = config.model_provider_id == codex_core::OPENAI_PROVIDER_ID
+        && provider.uses_official_openai_api()
+        && base_url.is_none();
     if is_default_openai {
         return None;
     }

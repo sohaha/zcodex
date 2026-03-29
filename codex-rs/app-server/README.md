@@ -90,6 +90,7 @@ Notes:
 - Remote `/v1/models` refresh also works for `wire_api = "chat"` providers that authenticate via provider-supplied API keys, bearer tokens, or auth headers, not just ChatGPT login state.
 - The translated streaming envelopes also carry Responses-style metadata such as monotonically increasing `sequence_number` values plus `background`, `user`, and `metadata` fields on terminal `response.*` payloads so downstream consumers can treat the stream more like a native Responses SSE session.
 - Tool-call translation for `wire_api = "chat"` recognizes typed Responses items for `custom`, `tool_search`, and `local_shell`. The compatibility layer also accepts a few common upstream argument shapes when reconstructing those items, including wrapped `input` payloads, `tool_search.execution`, and `local_shell.action` objects with `type: "exec"` plus either `working_directory`/`workdir` and `timeout`/`timeout_ms`.
+- Hosted tools such as `web_search` and `image_generation` remain Responses-only upstream capabilities, and Chat Completions only allows image inputs on `user` messages.
 - For translated streaming `/v1/responses` requests, upstream non-2xx HTTP failures are forwarded as HTTP errors. If an upstream chat SSE chunk cannot be translated locally, the proxy terminates the translated stream with `response.failed`.
 
 ## Core Primitives

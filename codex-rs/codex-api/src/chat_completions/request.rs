@@ -191,20 +191,20 @@ pub fn build_request_with_stream(
     let mut custom_tool_names = HashSet::new();
     let mut tool_search_tool_names = HashSet::new();
     let mut local_shell_tool_names = HashSet::new();
+    let mut tool_names = HashSet::new();
     let tools = chat_tools(
         &request.tools,
+        &mut tool_names,
         &mut custom_tool_names,
         &mut tool_search_tool_names,
         &mut local_shell_tool_names,
     )?;
+    let tool_choice = chat_tool_choice(&request.tool_choice, &tool_names)?;
 
     if let Some(object) = body.as_object_mut() {
         if !tools.is_empty() {
             object.insert("tools".to_string(), Value::Array(tools));
-            object.insert(
-                "tool_choice".to_string(),
-                chat_tool_choice(&request.tool_choice)?,
-            );
+            object.insert("tool_choice".to_string(), tool_choice);
             object.insert(
                 "parallel_tool_calls".to_string(),
                 Value::Bool(request.parallel_tool_calls),
@@ -259,7 +259,9 @@ fn ensure_no_images(role: &str, content: &[ContentItem]) -> Result<(), ApiError>
         .any(|item| matches!(item, ContentItem::InputImage { .. }))
     {
         return Err(ApiError::InvalidRequest {
-            message: format!("chat completions does not support images in {role} messages"),
+            message: format!(
+                "chat completions only supports images in user messages; {role} messages must be text-only"
+            ),
         });
     }
     Ok(())
@@ -356,12 +358,29 @@ fn chat_text_message(role: &str, content: String) -> Value {
     })
 }
 
-fn chat_tool_choice(tool_choice: &str) -> Result<Value, ApiError> {
+fn chat_tool_choice(tool_choice: &str, tool_names: &HashSet<String>) -> Result<Value, ApiError> {
     match tool_choice {
         "auto" | "none" | "required" => Ok(Value::String(tool_choice.to_string())),
-        unsupported => Err(ApiError::InvalidRequest {
-            message: format!("chat completions does not support tool_choice {unsupported}"),
-        }),
+        _ => {
+            let Some(tool_name) = tool_choice.strip_prefix("required:") else {
+                return Err(ApiError::InvalidRequest {
+                    message: format!("chat completions does not support tool_choice {tool_choice}"),
+                });
+            };
+            if !tool_names.contains(tool_name) {
+                return Err(ApiError::InvalidRequest {
+                    message: format!(
+                        "chat completions tool_choice requires unknown tool {tool_name}"
+                    ),
+                });
+            }
+            Ok(json!({
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                },
+            }))
+        }
     }
 }
 
@@ -388,23 +407,29 @@ fn chat_response_format(format: &TextFormat) -> Result<Value, ApiError> {
 
 fn chat_tools(
     tools: &[Value],
+    tool_names: &mut HashSet<String>,
     custom_tool_names: &mut HashSet<String>,
     tool_search_tool_names: &mut HashSet<String>,
     local_shell_tool_names: &mut HashSet<String>,
 ) -> Result<Vec<Value>, ApiError> {
     tools.iter()
         .map(|tool| match tool.get("type").and_then(Value::as_str) {
-            Some("function") => Ok(json!({
-                "type": "function",
-                "function": {
-                    "name": required_string(tool, "name")?,
-                    "description": required_string(tool, "description")?,
-                    "parameters": tool.get("parameters").cloned().unwrap_or_else(|| json!({"type":"object","properties":{}})),
-                    "strict": tool.get("strict").and_then(Value::as_bool).unwrap_or(false),
-                }
-            })),
+            Some("function") => {
+                let name = required_string(tool, "name")?;
+                tool_names.insert(name.clone());
+                Ok(json!({
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": required_string(tool, "description")?,
+                        "parameters": tool.get("parameters").cloned().unwrap_or_else(|| json!({"type":"object","properties":{}})),
+                        "strict": tool.get("strict").and_then(Value::as_bool).unwrap_or(false),
+                    }
+                }))
+            }
             Some("custom") => {
                 let name = required_string(tool, "name")?;
+                tool_names.insert(name.clone());
                 custom_tool_names.insert(name.clone());
                 let description = required_string(tool, "description")?;
                 let definition = tool
@@ -435,6 +460,7 @@ fn chat_tools(
             }
             Some("tool_search") => {
                 let name = "tool_search".to_string();
+                tool_names.insert(name.clone());
                 tool_search_tool_names.insert(name.clone());
                 Ok(json!({
                     "type": "function",
@@ -448,6 +474,7 @@ fn chat_tools(
             }
             Some("local_shell") => {
                 let name = "local_shell".to_string();
+                tool_names.insert(name.clone());
                 local_shell_tool_names.insert(name.clone());
                 Ok(json!({
                     "type": "function",
@@ -478,7 +505,7 @@ fn chat_tools(
             }
             Some("image_generation") | Some("web_search") => Err(ApiError::InvalidRequest {
                 message: format!(
-                    "chat completions does not support tool type {}",
+                    "chat completions does not support tool type {}; use wire_api = \"responses\" for hosted tools",
                     tool.get("type").and_then(Value::as_str).unwrap_or("unknown")
                 ),
             }),

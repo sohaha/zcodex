@@ -69,6 +69,8 @@ wire_api = "chat"
 When `wire_api = "chat"` is selected, Codex uses `/v1/chat/completions`.
 This path does not support hosted-only tools such as `web_search` or
 `image_generation`, and only `user` messages may include image inputs.
+Those are Chat Completions API limits, not Codex-only restrictions. Use
+`wire_api = "responses"` when you need hosted tools.
 
 To retry a failed primary request against another provider, set
 `fallback_provider` to a provider ID from `model_providers` (or a built-in
