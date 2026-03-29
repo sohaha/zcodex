@@ -4,6 +4,9 @@ set positional-arguments
 target-dir slot:
     bash ./scripts/resolve-cargo-target-dir.sh "{{slot}}"
 
+cargo-home slot:
+    bash ./scripts/resolve-cargo-home-dir.sh "{{slot}}"
+
 # Display help
 help:
     just -l
@@ -37,10 +40,12 @@ fmt:
 # 为不同 cargo 流程分配独立 target 子目录，减少多会话并发时的 build lock。
 # 如需把同一条命令再拆到独立 lane，可额外设置 `CODEX_CARGO_LANE=<name>`。
 fix *args:
+    export CARGO_HOME="$(just cargo-home fix)"; \
     export CARGO_TARGET_DIR="$(just target-dir fix)"; \
     cargo clippy --fix --tests --allow-dirty "$@"
 
 clippy *args:
+    export CARGO_HOME="$(just cargo-home clippy)"; \
     export CARGO_TARGET_DIR="$(just target-dir clippy)"; \
     cargo clippy --tests "$@"
 
@@ -60,6 +65,8 @@ test:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home nextest-workspace)"; \
     export CARGO_TARGET_DIR="$(just target-dir nextest-workspace)"; \
     cargo nextest run --no-fail-fast
 
@@ -70,6 +77,8 @@ core-test-fast *args:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home nextest-core)"; \
     export CARGO_TARGET_DIR="$(just target-dir nextest-core)"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-core --no-fail-fast --test all "$@"; \
@@ -84,11 +93,71 @@ app-server-test-fast *args:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home nextest-app-server)"; \
     export CARGO_TARGET_DIR="$(just target-dir nextest-app-server)"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-app-server --no-fail-fast --test all "$@"; \
     else \
       cargo test -p codex-app-server --test all "$@"; \
+    fi
+
+# Fast local loop for codex-mcp-server. Uses its own cargo cache/target slot to
+# reduce contention with other test runs.
+mcp-server-test-fast *args:
+    if command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
+    fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home nextest-mcp-server)"; \
+    export CARGO_TARGET_DIR="$(just target-dir nextest-mcp-server)"; \
+    if cargo nextest --version >/dev/null 2>&1; then \
+      cargo nextest run -p codex-mcp-server --features tldr --no-fail-fast --test all "$@"; \
+    else \
+      cargo test -p codex-mcp-server --features tldr --test all "$@"; \
+    fi
+
+# Fast local loop for codex-mcp-server tests with the `tldr` feature enabled.
+mcp-server-tldr-test-fast *args:
+    just mcp-server-test-fast "$@"
+
+# Fast local loop for the full tldr chain: native-tldr first, then
+# codex-mcp-server with `--features tldr`, each using its own cache slot.
+tldr-test-fast *args:
+    just native-tldr-test-fast "$@"
+    just mcp-server-tldr-test-fast "$@"
+
+# Focused loop for daemon/status lifecycle coverage across native-tldr and the
+# MCP bridge. Runs the smaller daemon-oriented subsets sequentially.
+tldr-daemon-test-fast *args:
+    just native-tldr-test-fast daemon "$@"
+    just mcp-server-tldr-test-fast ping "$@"
+    just mcp-server-tldr-test-fast warm "$@"
+    just mcp-server-tldr-test-fast snapshot "$@"
+    just mcp-server-tldr-test-fast status "$@"
+    just mcp-server-tldr-test-fast notify "$@"
+
+# Focused loop for semantic indexing/query coverage across native-tldr and the
+# MCP bridge.
+tldr-semantic-test-fast *args:
+    just native-tldr-test-fast semantic "$@"
+    just mcp-server-tldr-test-fast semantic "$@"
+
+# Fast local loop for codex-mcp-server tests without extra features. Useful when
+# tldr coverage is not needed and you want to avoid building that feature set.
+mcp-server-core-test-fast *args:
+    if command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
+    fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home nextest-mcp-server-core)"; \
+    export CARGO_TARGET_DIR="$(just target-dir nextest-mcp-server-core)"; \
+    if cargo nextest --version >/dev/null 2>&1; then \
+      cargo nextest run -p codex-mcp-server --no-fail-fast --test all "$@"; \
+    else \
+      cargo test -p codex-mcp-server --test all "$@"; \
     fi
 
 # Fast local loop for codex-native-tldr. Uses more disk for build caches to
@@ -98,6 +167,8 @@ native-tldr-test-fast *args:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home nextest-native-tldr)"; \
     export CARGO_TARGET_DIR="$(just target-dir nextest-native-tldr)"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-native-tldr --no-fail-fast "$@"; \

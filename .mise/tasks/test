@@ -4,19 +4,105 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-if [ "$#" -eq 0 ]; then
+print_usage() {
   cat >&2 <<'EOF'
 [mise] 用法:
+  mise run test --slot <name> core [cargo test args...]
   mise run test core [cargo test args...]
   mise run test cli [cargo test args...]
   mise run test tui [cargo test args...]
+  mise run test tldr [cargo test args...]
+  mise run test tldr-daemon [cargo test args...]
+  mise run test tldr-semantic [cargo test args...]
+  mise run test native-tldr [cargo test args...]
+  mise run test mcp-server [cargo test args...]
+  mise run test mcp-server-tldr [cargo test args...]
+  mise run test mcp-server-core [cargo test args...]
+  mise run test app-server [cargo test args...]
   mise run test app-server-protocol [cargo test args...]
   mise run test -p <cargo-package> [cargo test args...]
 EOF
+}
+
+is_help_flag() {
+  case "${1:-}" in
+    help|--help|-h)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if [ "${1:-}" = "--slot" ]; then
+  if [ "$#" -lt 2 ]; then
+    echo "[mise] --slot 需要一个名称" >&2
+    exit 1
+  fi
+  export CODEX_CARGO_SLOT="$2"
+  shift 2
+fi
+
+if [ "$#" -eq 0 ]; then
+  print_usage
   exit 1
 fi
 
 case "${1:-}" in
+  tldr)
+    if [ "$#" -eq 2 ] && is_help_flag "${2:-}"; then
+      cat >&2 <<'EOF'
+[mise] `tldr` 会顺序执行：
+  - native-tldr
+  - mcp-server-tldr
+EOF
+      exit 0
+    fi
+    shift
+    base_slot="${CODEX_CARGO_SLOT:-tldr}"
+    CODEX_CARGO_SLOT="${base_slot}-native" "$0" native-tldr "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr "$@"
+    exit 0
+    ;;
+  tldr-daemon)
+    if [ "$#" -eq 2 ] && is_help_flag "${2:-}"; then
+      cat >&2 <<'EOF'
+[mise] `tldr-daemon` 会顺序执行：
+  - native-tldr daemon
+  - mcp-server-tldr ping
+  - mcp-server-tldr warm
+  - mcp-server-tldr snapshot
+  - mcp-server-tldr status
+  - mcp-server-tldr notify
+EOF
+      exit 0
+    fi
+    shift
+    base_slot="${CODEX_CARGO_SLOT:-tldr-daemon}"
+    CODEX_CARGO_SLOT="${base_slot}-native" "$0" native-tldr daemon "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr ping "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr warm "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr snapshot "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr status "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr notify "$@"
+    exit 0
+    ;;
+  tldr-semantic)
+    if [ "$#" -eq 2 ] && is_help_flag "${2:-}"; then
+      cat >&2 <<'EOF'
+[mise] `tldr-semantic` 会顺序执行：
+  - native-tldr semantic
+  - mcp-server-tldr semantic
+EOF
+      exit 0
+    fi
+    shift
+    base_slot="${CODEX_CARGO_SLOT:-tldr-semantic}"
+    CODEX_CARGO_SLOT="${base_slot}-native" "$0" native-tldr semantic "$@"
+    CODEX_CARGO_SLOT="${base_slot}-mcp" "$0" mcp-server-tldr semantic "$@"
+    exit 0
+    ;;
   core|codex-core)
     shift
     set -- -p codex-core "$@"
@@ -29,11 +115,36 @@ case "${1:-}" in
     shift
     set -- -p codex-tui "$@"
     ;;
+  native-tldr|codex-native-tldr)
+    shift
+    set -- -p codex-native-tldr "$@"
+    ;;
+  mcp-server|codex-mcp-server)
+    shift
+    set -- -p codex-mcp-server "$@"
+    ;;
+  mcp-server-tldr)
+    shift
+    set -- -p codex-mcp-server --features tldr "$@"
+    ;;
+  mcp-server-core)
+    shift
+    set -- -p codex-mcp-server "$@"
+    ;;
+  app-server|codex-app-server)
+    shift
+    set -- -p codex-app-server "$@"
+    ;;
   app-server-protocol|codex-app-server-protocol)
     shift
     set -- -p codex-app-server-protocol "$@"
     ;;
 esac
+
+if [ "$#" -eq 0 ]; then
+  echo "[mise] 缺少测试目标或 cargo 参数" >&2
+  exit 1
+fi
 
 needs_workspace_bins=0
 previous_was_package=0
@@ -41,7 +152,7 @@ previous_was_package=0
 for arg in "$@"; do
   if [ "$previous_was_package" -eq 1 ]; then
     case "$arg" in
-      codex-core|codex-cli|codex-tui)
+      codex-core|codex-cli|codex-tui|codex-mcp-server)
         needs_workspace_bins=1
         ;;
     esac
@@ -53,7 +164,7 @@ for arg in "$@"; do
     -p|--package)
       previous_was_package=1
       ;;
-    -p=codex-core|-p=codex-cli|-p=codex-tui|--package=codex-core|--package=codex-cli|--package=codex-tui)
+    -p=codex-core|-p=codex-cli|-p=codex-tui|-p=codex-mcp-server|--package=codex-core|--package=codex-cli|--package=codex-tui|--package=codex-mcp-server)
       needs_workspace_bins=1
       ;;
   esac

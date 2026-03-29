@@ -8,6 +8,7 @@ fi
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 codex_rs_dir="$repo_root/codex-rs"
+slot="$(bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" "$@")"
 external_volume="${EXTERNAL_VOLUME:-/Volumes/V2}"
 external_tmp_root="${EXTERNAL_TMP_ROOT:-$external_volume/tmp}"
 external_target_dir="${EXTERNAL_TARGET_DIR:-$external_tmp_root/zcodex-cargo-target}"
@@ -33,6 +34,20 @@ elif [ -w "$external_volume" ]; then
 else
   echo "[mise] external build root is not writable: $external_volume" >&2
 fi
+
+if [ "${CODEX_CARGO_HOME_DISABLE:-0}" != "1" ]; then
+  export CARGO_HOME="$(bash "$codex_rs_dir/scripts/resolve-cargo-home-dir.sh" "$slot")"
+  mkdir -p "$CARGO_HOME"
+fi
+
+if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" != "1" ]; then
+  export CARGO_TARGET_DIR="$(bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot")"
+  mkdir -p "$CARGO_TARGET_DIR"
+fi
+
+# sccache rejects incremental compilation in this environment; keep the rust
+# entrypoint deterministic so wrappers and direct cargo runs behave the same.
+export CARGO_INCREMENTAL=0
 
 cd "$codex_rs_dir"
 exec "$@"

@@ -5,9 +5,9 @@
 当前已落地能力：
 
 - 统一引擎入口 `TldrEngine`
-- 7 种首批语言注册：Rust、TypeScript、JavaScript、Python、Go、PHP、Zig
-- `tree` / `extract` / `context` / `impact` / `cfg` / `dfg` / `slice` 分析入口
-- phase-1 semantic 本地检索、按语言缓存索引、`warm` 触发 reindex
+- 17 种语言注册：C、C++、C#、Elixir、Go、Java、JavaScript、Lua、Luau、PHP、Python、Ruby、Rust、Scala、Swift、TypeScript、Zig
+- `structure` / `search` / `extract` / `imports` / `importers` / `context` / `impact` / `calls` / `dead` / `arch` / `change-impact` / `cfg` / `dfg` / `slice` / `diagnostics` / `doctor` 分析入口
+- semantic phase-2：真实 dense embedding、`.tldr/cache/semantic/<language>/` 本地持久化、brute-force 向量检索、`warm` 触发 reindex
 - daemon / session / health / status 生命周期闭环
 - CLI `codex tldr ...` 接入
 - MCP `tldr` tool 接入
@@ -26,14 +26,36 @@
 cargo build --release -p codex-cli -p codex-mcp-server
 ./target/release/codex tldr languages
 ./target/release/codex tldr daemon --project /path/to/project --json status
+
+# repo 根目录下的快速回归
+just tldr-test-fast
+just tldr-daemon-test-fast
+just tldr-semantic-test-fast
+
+# 或用 mise 聚合入口自动拆分独立 slot
+mise run test --slot tldr tldr
+mise run test --slot tldr-daemon tldr-daemon
+mise run test --slot tldr-semantic tldr-semantic
 ```
 
 说明：
 
 - `codex tldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起内部 daemon 模式
-- CLI 分析命令目前对应为：`structure -> tree`、`extract -> extract`、`context -> context`、`impact -> impact`、`cfg -> cfg`、`dfg -> dfg`、`slice -> slice`
-- `codex-mcp-server` 是 stdio MCP server；它复用 native-tldr 的 query/retry 生命周期逻辑，但不负责 auto-start daemon
+- daemon 在空闲超出 `session.idle_timeout_secs` 后会自动退出，默认 1800 秒；`status` 会返回当前阈值
+- 上面的 `just` / `mise` 入口会给 tldr 链路拆分独立的 `CARGO_HOME` / `CARGO_TARGET_DIR`，并固定 `CARGO_INCREMENTAL=0`，减少多会话并发时的 Cargo 锁与 `sccache` 冲突
+- CLI 分析命令目前对应为：`structure -> structure`、`search -> search`、`extract -> extract`、`imports -> imports`、`importers -> importers`、`context -> context`、`impact -> impact`、`calls -> calls`、`dead -> dead`、`arch -> arch`、`diagnostics -> diagnostics`、`doctor -> doctor`
+- `codex-mcp-server` 是 stdio MCP server；它会在可定位 `codex` 二进制时沿用同一套 daemon-first auto-start 策略
 - 这是本地 CLI/MCP 交付，不提供 HTTP 端口或 Web UI
+
+示例项目配置：
+
+```toml
+[daemon]
+auto_start = true
+
+[session]
+idle_timeout_secs = 1800
+```
 
 ## daemon artifacts
 
@@ -60,12 +82,15 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 ## 当前边界
 
 - daemon-first 是 Unix 主路径；分析类与 semantic 在 daemon 不可用时可回退本地引擎，但 daemon action（`ping/warm/snapshot/status/notify`）仍要求 daemon 可用
-- MCP 复用 query/retry 生命周期逻辑，但**不负责 auto-start**
-- semantic 默认开启，并在首次查询时按语言 lazy 建索引；`.codex/tldr.toml` 可用于覆盖默认行为
+- `status` 的配置摘要会暴露 `session_idle_timeout_secs`，便于观察当前空闲自退阈值
+- `structure` 当前对应代码结构分析；`tree` 仍保留给未来的真实 file-tree contract，当前不会再作为 AST 别名
+- semantic 默认开启，并在首次查询时按语言 lazy 建索引；首次 fresh build 会把 units/vector/manifest 落到 `.tldr/cache/semantic/<language>/`
 - semantic / status 对外 schema 已收口到稳定 view；更激进的 payload 控制仍可继续增强
+- semantic embedding 的 ONNX Runtime 现改为运行时动态加载；构建时不再静态链接预编译 ORT，但执行 semantic embedding 前需要让 `libonnxruntime.so` 可被动态加载器找到，或设置 `ORT_DYLIB_PATH=/path/to/libonnxruntime.so`
 
 ## 后续方向
 
 - 继续补 daemon 崩溃/残留 artifact/权限异常的压力回归
 - 继续收紧 semantic payload 上限与截断策略
+- 评估 Kotlin 支持（当前受 `tree-sitter-kotlin` 与 workspace `tree-sitter` 版本冲突阻塞）
 - 按职责拆分 `daemon.rs` / `semantic.rs` / `tldr_cmd.rs`
