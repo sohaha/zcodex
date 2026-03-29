@@ -153,7 +153,7 @@ impl DaemonLifecycleManager {
             return Ok(true);
         }
 
-        let launcher_lock = if let Some(launcher_lock) = try_open_launcher_lock(project_root)? {
+        let _launcher_lock = if let Some(launcher_lock) = try_open_launcher_lock(project_root)? {
             launcher_lock
         } else {
             on_launcher_wait(project_root);

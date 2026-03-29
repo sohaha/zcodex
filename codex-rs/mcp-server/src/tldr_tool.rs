@@ -1827,6 +1827,36 @@ mod tests {
     }
 
     #[test]
+    fn daemon_metadata_looks_alive_with_launcher_lock_keeps_stale_files_while_locked() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path();
+        let socket_path = socket_path_for_project(project_root);
+        let pid_path = pid_path_for_project(project_root);
+        let lock_path = codex_native_tldr::daemon::launch_lock_path_for_project(project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&socket_path, "").expect("socket path should be writable");
+        std::fs::write(&pid_path, "999999").expect("pid path should be writable");
+        let lock_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("launch lock file should open");
+        lock_file
+            .try_lock()
+            .expect("launch lock should be acquired");
+
+        let alive = daemon_metadata_looks_alive_with_launcher_lock(project_root, false);
+
+        assert!(!alive);
+        assert!(socket_path.exists());
+        assert!(pid_path.exists());
+    }
+
+    #[test]
     fn try_open_launcher_lock_recovers_after_lock_file_is_deleted() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("deleted-launch-lock-project");
