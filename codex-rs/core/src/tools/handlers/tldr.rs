@@ -472,6 +472,7 @@ mod tests {
     use crate::codex::make_session_and_context;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_native_tldr::daemon::TldrDaemonResponse;
+    use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::collections::BTreeMap;
@@ -613,7 +614,8 @@ mod tests {
         .expect("source should write");
 
         let (session, mut turn) = make_session_and_context().await;
-        turn.cwd = tempdir.path().to_path_buf();
+        turn.cwd =
+            AbsolutePathBuf::try_from(tempdir.path()).expect("tempdir path should be absolute");
         let output = TldrHandler
             .handle(invocation(
                 Arc::new(session),

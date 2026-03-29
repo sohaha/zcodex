@@ -54,6 +54,7 @@ fn stdio_mcp(command: &str) -> McpServerConfig {
         disabled_tools: None,
         scopes: None,
         oauth_resource: None,
+        tools: HashMap::new(),
     }
 }
 
@@ -74,6 +75,7 @@ fn http_mcp(url: &str) -> McpServerConfig {
         disabled_tools: None,
         scopes: None,
         oauth_resource: None,
+        tools: HashMap::new(),
     }
 }
 
@@ -319,9 +321,13 @@ allowed_domains = ["openai.com"]
                         dangerously_allow_non_loopback_proxy: None,
                         dangerously_allow_all_unix_sockets: None,
                         mode: None,
-                        allowed_domains: Some(vec!["openai.com".to_string()]),
-                        denied_domains: None,
-                        allow_unix_sockets: None,
+                        domains: Some(NetworkDomainPermissionsToml {
+                            entries: BTreeMap::from([(
+                                "openai.com".to_string(),
+                                NetworkDomainPermissionToml::Allow,
+                            )]),
+                        }),
+                        unix_sockets: None,
                         allow_local_binding: None,
                     }),
                 },
@@ -397,7 +403,12 @@ fn permissions_profiles_network_disabled_by_default_does_not_start_proxy() -> st
                             )]),
                         }),
                         network: Some(NetworkToml {
-                            allowed_domains: Some(vec!["openai.com".to_string()]),
+                            domains: Some(NetworkDomainPermissionsToml {
+                                entries: BTreeMap::from([(
+                                    "openai.com".to_string(),
+                                    NetworkDomainPermissionToml::Allow,
+                                )]),
+                            }),
                             ..Default::default()
                         }),
                     },
@@ -1894,208 +1905,6 @@ fn profile_model_overrides_provider_model() -> std::io::Result<()> {
 }
 
 #[test]
-fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    let cfg = ConfigToml {
-        fallback_provider: Some("fallback".to_string()),
-        fallback_model: Some("fallback-model".to_string()),
-        model_providers: HashMap::from([(
-            "fallback".to_string(),
-            ModelProviderInfo {
-                name: "Fallback Provider".to_string(),
-                model: None,
-                base_url: Some("https://fallback.example/v1".to_string()),
-                env_key: Some("FALLBACK_API_KEY".to_string()),
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                wire_api: crate::WireApi::Responses,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: Some(0),
-                stream_max_retries: Some(0),
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-            },
-        )]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.fallback_provider_id.as_deref(), Some("fallback"));
-    assert_eq!(
-        config
-            .fallback_provider
-            .as_ref()
-            .map(|provider| provider.name.as_str()),
-        Some("Fallback Provider")
-    );
-    assert_eq!(config.fallback_model.as_deref(), Some("fallback-model"));
-    assert_eq!(config.fallback_providers.len(), 1);
-    assert_eq!(config.fallback_providers[0].provider_id, "fallback");
-    assert_eq!(
-        config.fallback_providers[0].model.as_deref(),
-        Some("fallback-model")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn resolves_fallback_provider_chain() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    let cfg = ConfigToml {
-        fallback_providers: vec![
-            FallbackProviderToml {
-                provider: "fallback-a".to_string(),
-                model: Some("model-a".to_string()),
-            },
-            FallbackProviderToml {
-                provider: "fallback-b".to_string(),
-                model: Some("model-b".to_string()),
-            },
-        ],
-        model_providers: HashMap::from([
-            (
-                "fallback-a".to_string(),
-                ModelProviderInfo {
-                    name: "Fallback A".to_string(),
-                    model: None,
-                    base_url: Some("https://fallback-a.example/v1".to_string()),
-                    env_key: Some("FALLBACK_A_API_KEY".to_string()),
-                    env_key_instructions: None,
-                    experimental_bearer_token: None,
-                    wire_api: crate::WireApi::Responses,
-                    query_params: None,
-                    http_headers: None,
-                    env_http_headers: None,
-                    request_max_retries: Some(0),
-                    stream_max_retries: Some(0),
-                    stream_idle_timeout_ms: None,
-                    websocket_connect_timeout_ms: None,
-                    requires_openai_auth: false,
-                    supports_websockets: false,
-                },
-            ),
-            (
-                "fallback-b".to_string(),
-                ModelProviderInfo {
-                    name: "Fallback B".to_string(),
-                    model: None,
-                    base_url: Some("https://fallback-b.example/v1".to_string()),
-                    env_key: Some("FALLBACK_B_API_KEY".to_string()),
-                    env_key_instructions: None,
-                    experimental_bearer_token: None,
-                    wire_api: crate::WireApi::Responses,
-                    query_params: None,
-                    http_headers: None,
-                    env_http_headers: None,
-                    request_max_retries: Some(0),
-                    stream_max_retries: Some(0),
-                    stream_idle_timeout_ms: None,
-                    websocket_connect_timeout_ms: None,
-                    requires_openai_auth: false,
-                    supports_websockets: false,
-                },
-            ),
-        ]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.fallback_providers.len(), 2);
-    assert_eq!(config.fallback_providers[0].provider_id, "fallback-a");
-    assert_eq!(
-        config.fallback_providers[0].model.as_deref(),
-        Some("model-a")
-    );
-    assert_eq!(config.fallback_providers[1].provider_id, "fallback-b");
-    assert_eq!(
-        config.fallback_providers[1].model.as_deref(),
-        Some("model-b")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn preserves_legacy_fallback_when_same_provider_has_different_models() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    let provider = ModelProviderInfo {
-        name: "Shared Fallback".to_string(),
-        model: None,
-        base_url: Some("https://fallback.example/v1".to_string()),
-        env_key: Some("FALLBACK_API_KEY".to_string()),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        wire_api: crate::WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: Some(0),
-        stream_max_retries: Some(0),
-        stream_idle_timeout_ms: None,
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
-    let cfg = ConfigToml {
-        fallback_provider: Some("fallback".to_string()),
-        fallback_model: Some("legacy-model".to_string()),
-        fallback_providers: vec![FallbackProviderToml {
-            provider: "fallback".to_string(),
-            model: Some("chain-model".to_string()),
-        }],
-        model_providers: HashMap::from([("fallback".to_string(), provider)]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.fallback_providers.len(), 2);
-    assert_eq!(config.fallback_providers[0].provider_id, "fallback");
-    assert_eq!(
-        config.fallback_providers[0].model.as_deref(),
-        Some("legacy-model")
-    );
-    assert_eq!(config.fallback_providers[1].provider_id, "fallback");
-    assert_eq!(
-        config.fallback_providers[1].model.as_deref(),
-        Some("chain-model")
-    );
-
-    Ok(())
-}
-
-#[test]
 fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
@@ -2200,6 +2009,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     );
 
@@ -2356,6 +2166,7 @@ async fn replace_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2428,6 +2239,7 @@ async fn replace_mcp_servers_serializes_env_vars() -> anyhow::Result<()> {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2480,6 +2292,7 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2530,6 +2343,7 @@ async fn replace_mcp_servers_streamable_http_serializes_bearer_token() -> anyhow
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2596,6 +2410,7 @@ async fn replace_mcp_servers_streamable_http_serializes_custom_headers() -> anyh
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
     apply_blocking(
@@ -2674,6 +2489,7 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2705,6 +2521,7 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     );
     apply_blocking(
@@ -2771,6 +2588,7 @@ async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() 
                 disabled_tools: None,
                 scopes: None,
                 oauth_resource: None,
+                tools: HashMap::new(),
             },
         ),
         (
@@ -2792,6 +2610,7 @@ async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() 
                 disabled_tools: None,
                 scopes: None,
                 oauth_resource: None,
+                tools: HashMap::new(),
             },
         ),
     ]);
@@ -2876,6 +2695,7 @@ async fn replace_mcp_servers_serializes_disabled_flag() -> anyhow::Result<()> {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2922,6 +2742,7 @@ async fn replace_mcp_servers_serializes_required_flag() -> anyhow::Result<()> {
             disabled_tools: None,
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -2968,6 +2789,7 @@ async fn replace_mcp_servers_serializes_tool_filters() -> anyhow::Result<()> {
             disabled_tools: Some(vec!["blocked".to_string()]),
             scopes: None,
             oauth_resource: None,
+            tools: HashMap::new(),
         },
     )]);
 
@@ -3018,6 +2840,7 @@ async fn replace_mcp_servers_streamable_http_serializes_oauth_resource() -> anyh
             disabled_tools: None,
             scopes: None,
             oauth_resource: Some("https://resource.example.com".to_string()),
+            tools: HashMap::new(),
         },
     )]);
 
@@ -4450,58 +4273,6 @@ fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io::Resul
 }
 
 #[test]
-fn model_catalog_loads_from_string_path() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let catalog_path = codex_home.path().join("catalog.json");
-    let mut catalog: ModelsResponse =
-        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
-    catalog.models = catalog.models.into_iter().take(1).collect();
-    std::fs::write(
-        &catalog_path,
-        serde_json::to_string(&catalog).expect("serialize catalog"),
-    )?;
-
-    let cfg = ConfigToml {
-        model_catalog: Some(ModelCatalogToml::JsonPath(
-            AbsolutePathBuf::from_absolute_path(catalog_path)?,
-        )),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model_catalog, Some(catalog));
-    assert_eq!(config.model_catalog_merge, None);
-    Ok(())
-}
-
-#[test]
-fn model_catalog_deserializes_from_toml_string_or_array() {
-    let path_cfg: ConfigToml =
-        toml::from_str(r#"model_catalog = "/tmp/catalog.json""#).expect("string path should parse");
-    assert_eq!(
-        path_cfg.model_catalog,
-        Some(ModelCatalogToml::JsonPath(
-            AbsolutePathBuf::from_absolute_path(Path::new("/tmp/catalog.json"))
-                .expect("absolute path should be valid"),
-        ))
-    );
-
-    let inline_cfg: ConfigToml = toml::from_str(r#"model_catalog = ["MiniMax-M2.5-higspeed"]"#)
-        .expect("inline array should parse");
-    assert_eq!(
-        inline_cfg.model_catalog,
-        Some(ModelCatalogToml::Inline(vec![
-            "MiniMax-M2.5-higspeed".to_string()
-        ]))
-    );
-}
-
-#[test]
 fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let catalog_path = codex_home.path().join("catalog.json");
@@ -4529,67 +4300,6 @@ fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     Ok(())
 }
 
-fn anthropic_catalog() -> ModelsResponse {
-    ModelsResponse {
-        models: crate::models_manager::model_info::anthropic_model_catalog(),
-    }
-}
-
-fn anthropic_test_model(
-    slug: &str,
-    display_name: &str,
-) -> codex_protocol::openai_models::ModelInfo {
-    let mut model = crate::models_manager::model_info::anthropic_model_catalog()
-        .into_iter()
-        .next()
-        .expect("anthropic catalog should contain at least one model");
-    model.slug = slug.to_string();
-    model.display_name = display_name.to_string();
-    model
-}
-
-fn write_catalog(path: &std::path::Path, catalog: &ModelsResponse) -> std::io::Result<()> {
-    std::fs::write(
-        path,
-        serde_json::to_string(catalog).expect("serialize catalog"),
-    )
-}
-
-#[test]
-fn model_catalog_loads_from_inline_slug_array() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        model_provider: Some("anthropic".to_string()),
-        model_catalog: Some(ModelCatalogToml::Inline(vec![
-            "claude-sonnet-4-20250514".to_string(),
-            "MiniMax-M2.5-higspeed".to_string(),
-        ])),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    let catalog = config.model_catalog.expect("inline catalog should load");
-    assert_eq!(catalog.models.len(), 2);
-    assert_eq!(catalog.models[0].slug, "claude-sonnet-4-20250514");
-    assert_eq!(catalog.models[0].display_name, "Claude Sonnet 4");
-    assert_eq!(catalog.models[0].priority, 0);
-    assert_eq!(catalog.models[1].slug, "MiniMax-M2.5-higspeed");
-    assert_eq!(catalog.models[1].display_name, "MiniMax-M2.5-higspeed");
-    assert_eq!(catalog.models[1].priority, 1);
-    assert_eq!(
-        catalog.models[1].visibility,
-        codex_protocol::openai_models::ModelVisibility::List
-    );
-    assert!(catalog.models[1].used_fallback_model_metadata);
-    Ok(())
-}
-
-#[test]
 fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let catalog_path = codex_home.path().join("catalog.json");
@@ -4611,157 +4321,6 @@ fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     assert!(
         err.to_string().contains("must contain at least one model"),
         "unexpected error: {err}"
-    );
-    Ok(())
-}
-
-#[test]
-fn model_catalog_rejects_empty_inline_array() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg = ConfigToml {
-        model_catalog: Some(ModelCatalogToml::Inline(Vec::new())),
-        ..Default::default()
-    };
-
-    let err = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )
-    .expect_err("empty inline catalog should fail config load");
-
-    assert_eq!(err.kind(), ErrorKind::InvalidData);
-    assert!(
-        err.to_string()
-            .contains("model_catalog array must contain at least one model"),
-        "unexpected error: {err}"
-    );
-    Ok(())
-}
-
-#[test]
-fn model_catalog_merge_json_merges_with_bundled_catalog() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let catalog_path = codex_home.path().join("catalog-merge.json");
-    let custom_model = anthropic_test_model("claude-proxy-custom", "Claude Proxy Custom");
-    let merge_catalog = ModelsResponse {
-        models: vec![custom_model.clone()],
-    };
-    write_catalog(&catalog_path, &merge_catalog)?;
-
-    let cfg = ConfigToml {
-        model_provider: Some("anthropic".to_string()),
-        model_catalog_merge_json: Some(AbsolutePathBuf::from_absolute_path(catalog_path)?),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model_catalog, None);
-    let merged_catalog = config
-        .model_catalog_merge
-        .expect("merged catalog should load");
-    let bundled_catalog = anthropic_catalog();
-    assert_eq!(merged_catalog.models, vec![custom_model.clone()]);
-    assert!(
-        bundled_catalog
-            .models
-            .iter()
-            .all(|model| model.slug != custom_model.slug)
-    );
-    Ok(())
-}
-
-#[test]
-fn model_catalog_merge_json_overrides_matching_bundled_slug() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let catalog_path = codex_home.path().join("catalog-merge.json");
-    let mut override_model = crate::models_manager::model_info::anthropic_model_catalog()
-        .into_iter()
-        .next()
-        .expect("anthropic catalog should contain at least one model");
-    override_model.display_name = "Claude Sonnet 4 via Proxy".to_string();
-    override_model.description = Some("proxy override".to_string());
-    let merge_catalog = ModelsResponse {
-        models: vec![override_model.clone()],
-    };
-    write_catalog(&catalog_path, &merge_catalog)?;
-
-    let cfg = ConfigToml {
-        model_provider: Some("anthropic".to_string()),
-        model_catalog_merge_json: Some(AbsolutePathBuf::from_absolute_path(catalog_path)?),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model_catalog, None);
-    let merged_catalog = config
-        .model_catalog_merge
-        .expect("merged catalog should load");
-    assert_eq!(merged_catalog.models.len(), 1);
-    let merged_model = merged_catalog
-        .models
-        .iter()
-        .find(|model| model.slug == override_model.slug)
-        .expect("matching slug should exist");
-    assert_eq!(merged_model.display_name, override_model.display_name);
-    assert_eq!(merged_model.description, override_model.description);
-    Ok(())
-}
-
-#[test]
-fn model_catalog_merge_json_uses_custom_catalog_as_base_when_present() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let base_catalog_path = codex_home.path().join("catalog-base.json");
-    let merge_catalog_path = codex_home.path().join("catalog-merge.json");
-    let base_model = anthropic_test_model("claude-base-only", "Claude Base Only");
-    let merge_model = anthropic_test_model("claude-merge-only", "Claude Merge Only");
-    write_catalog(
-        &base_catalog_path,
-        &ModelsResponse {
-            models: vec![base_model.clone()],
-        },
-    )?;
-    write_catalog(
-        &merge_catalog_path,
-        &ModelsResponse {
-            models: vec![merge_model.clone()],
-        },
-    )?;
-
-    let cfg = ConfigToml {
-        model_provider: Some("anthropic".to_string()),
-        model_catalog_json: Some(AbsolutePathBuf::from_absolute_path(base_catalog_path)?),
-        model_catalog_merge_json: Some(AbsolutePathBuf::from_absolute_path(merge_catalog_path)?),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.model_catalog,
-        Some(ModelsResponse {
-            models: vec![base_model]
-        })
-    );
-    assert_eq!(
-        config.model_catalog_merge,
-        Some(ModelsResponse {
-            models: vec![merge_model],
-        })
     );
     Ok(())
 }
@@ -4902,10 +4461,6 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             service_tier: None,
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
-            fallback_provider_id: None,
-            fallback_provider: None,
-            fallback_model: None,
-            fallback_providers: Vec::new(),
             permissions: Permissions {
                 approval_policy: Constrained::allow_any(AskForApproval::Never),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4924,7 +4479,8 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             enforce_residency: Constrained::allow_any(None),
             user_instructions: None,
             notify: None,
-            cwd: fixture.cwd(),
+            cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
+                .expect("fixture cwd should be absolute"),
             cli_auth_credentials_store_mode: Default::default(),
             mcp_servers: Constrained::allow_any(HashMap::new()),
             mcp_oauth_credentials_store_mode: Default::default(),
@@ -4947,6 +4503,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             history: History::default(),
             ephemeral: false,
             file_opener: UriBasedFileOpener::VsCode,
+            codex_self_exe: None,
             codex_linux_sandbox_exe: None,
             main_execve_wrapper_exe: None,
             js_repl_node_path: None,
@@ -4964,7 +4521,6 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             model_verbosity: None,
             personality: Some(Personality::Pragmatic),
             chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
-            experimental_exec_server_url: None,
             realtime_audio: RealtimeAudioConfig::default(),
             experimental_realtime_start_instructions: None,
             experimental_realtime_ws_base_url: None,
@@ -5051,10 +4607,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
-        fallback_provider_id: None,
-        fallback_provider: None,
-        fallback_model: None,
-        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5073,7 +4625,8 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
         notify: None,
-        cwd: fixture.cwd(),
+        cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
+            .expect("fixture cwd should be absolute"),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: Default::default(),
@@ -5096,6 +4649,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         history: History::default(),
         ephemeral: false,
         file_opener: UriBasedFileOpener::VsCode,
+        codex_self_exe: None,
         codex_linux_sandbox_exe: None,
         main_execve_wrapper_exe: None,
         js_repl_node_path: None,
@@ -5113,7 +4667,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
-        experimental_exec_server_url: None,
         realtime_audio: RealtimeAudioConfig::default(),
         experimental_realtime_start_instructions: None,
         experimental_realtime_ws_base_url: None,
@@ -5198,10 +4751,6 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
-        fallback_provider_id: None,
-        fallback_provider: None,
-        fallback_model: None,
-        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5220,7 +4769,8 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
         notify: None,
-        cwd: fixture.cwd(),
+        cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
+            .expect("fixture cwd should be absolute"),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: Default::default(),
@@ -5243,6 +4793,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         history: History::default(),
         ephemeral: false,
         file_opener: UriBasedFileOpener::VsCode,
+        codex_self_exe: None,
         codex_linux_sandbox_exe: None,
         main_execve_wrapper_exe: None,
         js_repl_node_path: None,
@@ -5260,7 +4811,6 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
-        experimental_exec_server_url: None,
         realtime_audio: RealtimeAudioConfig::default(),
         experimental_realtime_start_instructions: None,
         experimental_realtime_ws_base_url: None,
@@ -5331,10 +4881,6 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
-        fallback_provider_id: None,
-        fallback_provider: None,
-        fallback_model: None,
-        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -5353,7 +4899,8 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         enforce_residency: Constrained::allow_any(None),
         user_instructions: None,
         notify: None,
-        cwd: fixture.cwd(),
+        cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
+            .expect("fixture cwd should be absolute"),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: Default::default(),
@@ -5376,6 +4923,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         history: History::default(),
         ephemeral: false,
         file_opener: UriBasedFileOpener::VsCode,
+        codex_self_exe: None,
         codex_linux_sandbox_exe: None,
         main_execve_wrapper_exe: None,
         js_repl_node_path: None,
@@ -5393,7 +4941,6 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         model_verbosity: Some(Verbosity::High),
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
-        experimental_exec_server_url: None,
         realtime_audio: RealtimeAudioConfig::default(),
         experimental_realtime_start_instructions: None,
         experimental_realtime_ws_base_url: None,
@@ -6334,76 +5881,10 @@ shell_tool = true
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
-#[test]
-fn system_bwrap_warning_reports_missing_system_bwrap() {
-    let warning = system_bwrap_warning_for_path(Path::new("/definitely/not/a/bwrap"))
-        .expect("missing system bwrap should emit a warning");
-
-    assert!(warning.contains("未找到系统 bubblewrap"));
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn system_bwrap_warning_reports_too_old_system_bwrap() {
-    let fake_bwrap = write_fake_bwrap(
-        r#"#!/bin/sh
-if [ "$1" = "--help" ]; then
-  echo 'usage: bwrap [OPTION...] COMMAND'
-  exit 0
-fi
-exit 1
-"#,
-    );
-    let fake_bwrap_path: &Path = fake_bwrap.as_ref();
-    let warning = system_bwrap_warning_for_path(fake_bwrap_path)
-        .expect("old system bwrap should emit a warning");
-
-    assert!(warning.contains("版本过旧"));
-}
-
-#[cfg(target_os = "linux")]
-#[test]
-fn system_bwrap_warning_skips_supported_system_bwrap() {
-    let fake_bwrap = write_fake_bwrap(
-        r#"#!/bin/sh
-if [ "$1" = "--help" ]; then
-  echo '  --argv0 PROGRAM'
-  exit 0
-fi
-exit 1
-"#,
-    );
-    let fake_bwrap_path: &Path = fake_bwrap.as_ref();
-
-    assert_eq!(system_bwrap_warning_for_path(fake_bwrap_path), None);
-}
-
 #[cfg(not(target_os = "linux"))]
 #[test]
 fn system_bwrap_warning_is_disabled_off_linux() {
     assert!(system_bwrap_warning().is_none());
-}
-
-#[cfg(target_os = "linux")]
-fn write_fake_bwrap(contents: &str) -> tempfile::TempPath {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-    use tempfile::NamedTempFile;
-
-    // Bazel can mount the OS temp directory `noexec`, so prefer the current
-    // working directory for fake executables and fall back to the default temp
-    // dir outside that environment.
-    let temp_file = std::env::current_dir()
-        .ok()
-        .and_then(|dir| NamedTempFile::new_in(dir).ok())
-        .unwrap_or_else(|| NamedTempFile::new().expect("temp file"));
-    // Linux rejects exec-ing a file that is still open for writing.
-    let path = temp_file.into_temp_path();
-    fs::write(&path, contents).expect("write fake bwrap");
-    let permissions = fs::Permissions::from_mode(0o755);
-    fs::set_permissions(&path, permissions).expect("chmod fake bwrap");
-    path
 }
 
 #[tokio::test]
@@ -6690,34 +6171,6 @@ experimental_realtime_start_instructions = "start instructions from config"
     assert_eq!(
         config.experimental_realtime_start_instructions.as_deref(),
         Some("start instructions from config")
-    );
-    Ok(())
-}
-
-#[test]
-fn experimental_exec_server_url_loads_from_config_toml() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-experimental_exec_server_url = "http://127.0.0.1:8080"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.experimental_exec_server_url.as_deref(),
-        Some("http://127.0.0.1:8080")
-    );
-
-    let codex_home = TempDir::new()?;
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(
-        config.experimental_exec_server_url.as_deref(),
-        Some("http://127.0.0.1:8080")
     );
     Ok(())
 }

@@ -60,7 +60,6 @@ fn guardian_review_request_includes_patch_context() {
         additional_permissions: None,
         permissions_preapproved: false,
         timeout_ms: None,
-        codex_exe: None,
     };
 
     let guardian_request = ApplyPatchRuntime::build_guardian_review_request(&request, "call-1");
@@ -93,10 +92,10 @@ fn build_command_spec_keeps_linux_sandbox_separator_before_apply_patch_flag() {
         additional_permissions: None,
         permissions_preapproved: true,
         timeout_ms: None,
-        codex_exe: Some(PathBuf::from("/tmp/codex")),
     };
 
-    let spec = ApplyPatchRuntime::build_sandbox_command(&request, Path::new("/tmp"))
+    let codex_self_exe = PathBuf::from("/tmp/codex");
+    let spec = ApplyPatchRuntime::build_sandbox_command(&request, Some(&codex_self_exe))
         .expect("build command spec");
     let manager = SandboxManager::new();
     let sandbox_policy = SandboxPolicy::new_read_only_policy();

@@ -43,6 +43,7 @@ use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::user_input::UserInput;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::responses::mount_models_once;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
@@ -320,6 +321,9 @@ async fn spawn_agent_accepts_overlay_model() {
         AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
         SessionSource::Exec,
         CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
     );
     session.services.agent_control = manager.agent_control();
     session.services.models_manager = manager.get_models_manager();
@@ -471,6 +475,9 @@ async fn spawn_agent_falls_back_to_parent_model_when_requested_reasoning_is_unsu
         AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
         SessionSource::Exec,
         CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
     );
     session.services.agent_control = manager.agent_control();
     session.services.models_manager = manager.get_models_manager();
@@ -746,10 +753,23 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
         .agent_control
         .spawn_agent_with_metadata(
             config.clone(),
-            vec![UserInput::Text {
-                text: "research".to_string(),
-                text_elements: Vec::new(),
-            }],
+            Op::UserTurn {
+                items: vec![UserInput::Text {
+                    text: "research".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: config.cwd.to_path_buf(),
+                approval_policy: config.permissions.approval_policy.value(),
+                approvals_reviewer: None,
+                sandbox_policy: config.permissions.sandbox_policy.get().clone(),
+                model: turn.model_info.slug.clone(),
+                effort: config.model_reasoning_effort,
+                summary: config.model_reasoning_summary,
+                service_tier: None,
+                final_output_json_schema: None,
+                collaboration_mode: None,
+                personality: config.personality,
+            },
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 1,
@@ -766,11 +786,24 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
         .services
         .agent_control
         .spawn_agent_with_metadata(
-            config,
-            vec![UserInput::Text {
-                text: "build".to_string(),
-                text_elements: Vec::new(),
-            }],
+            config.clone(),
+            Op::UserTurn {
+                items: vec![UserInput::Text {
+                    text: "build".to_string(),
+                    text_elements: Vec::new(),
+                }],
+                cwd: config.cwd.to_path_buf(),
+                approval_policy: turn.approval_policy.value(),
+                approvals_reviewer: None,
+                sandbox_policy: turn.sandbox_policy.get().clone(),
+                model: turn.model_info.slug.clone(),
+                effort: turn.config.model_reasoning_effort,
+                summary: turn.config.model_reasoning_summary,
+                service_tier: None,
+                final_output_json_schema: None,
+                collaboration_mode: None,
+                personality: turn.config.personality,
+            },
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 2,
@@ -2463,7 +2496,8 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         ..ShellEnvironmentPolicy::default()
     };
     let temp_dir = tempfile::tempdir().expect("temp dir");
-    turn.cwd = temp_dir.path().to_path_buf();
+    turn.cwd =
+        AbsolutePathBuf::try_from(temp_dir.path()).expect("temp dir path should be absolute");
     turn.codex_linux_sandbox_exe = Some(PathBuf::from("/bin/echo"));
     let sandbox_policy = pick_allowed_sandbox_policy(
         &turn.config.permissions.sandbox_policy,

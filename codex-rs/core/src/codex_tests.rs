@@ -7,7 +7,6 @@ use crate::config_loader::ConfigLayerStackOrdering;
 use crate::config_loader::NetworkConstraints;
 use crate::config_loader::RequirementSource;
 use crate::config_loader::Sourced;
-use crate::error::UnexpectedResponseError;
 use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecToolCallOutput;
 use crate::function_tool::FunctionCallError;
@@ -30,10 +29,8 @@ use codex_protocol::protocol::ReadOnlyAccess;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::request_permissions::PermissionGrantScope;
 use codex_protocol::request_permissions::RequestPermissionProfile;
-use http::StatusCode;
 use tracing::Span;
 
-use crate::ThreadManager;
 use crate::protocol::CompactedItem;
 use crate::protocol::CreditsSnapshot;
 use crate::protocol::InitialHistory;
@@ -78,13 +75,12 @@ use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
-use codex_protocol::openai_models::ReasoningEffort;
-use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::RealtimeAudioFrame;
 use codex_protocol::protocol::Submission;
 use codex_protocol::protocol::W3cTraceContext;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::context_snapshot::ContextSnapshotRenderMode;
@@ -98,6 +94,7 @@ use core_test_support::tracing::install_test_tracing;
 use core_test_support::wait_for_event;
 use opentelemetry::trace::TraceContextExt;
 use opentelemetry::trace::TraceId;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -475,8 +472,8 @@ async fn start_managed_network_proxy_applies_execpolicy_network_rules() -> anyho
 
     let current_cfg = started_proxy.proxy().current_cfg().await?;
     assert_eq!(
-        current_cfg.network.allowed_domains,
-        vec!["example.com".to_string()]
+        current_cfg.network.allowed_domains(),
+        Some(vec!["example.com".to_string()])
     );
     Ok(())
 }
@@ -487,7 +484,12 @@ async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() 
     let spec = crate::config::NetworkProxySpec::from_config_and_constraints(
         NetworkProxyConfig::default(),
         Some(NetworkConstraints {
-            allowed_domains: Some(vec!["managed.example.com".to_string()]),
+            domains: Some(codex_config::NetworkDomainPermissionsToml {
+                entries: BTreeMap::from([(
+                    "managed.example.com".to_string(),
+                    codex_config::NetworkDomainPermissionToml::Allow,
+                )]),
+            }),
             managed_allowed_domains_only: Some(true),
             ..Default::default()
         }),
@@ -514,8 +516,8 @@ async fn start_managed_network_proxy_ignores_invalid_execpolicy_network_rules() 
 
     let current_cfg = started_proxy.proxy().current_cfg().await?;
     assert_eq!(
-        current_cfg.network.allowed_domains,
-        vec!["managed.example.com".to_string()]
+        current_cfg.network.allowed_domains(),
+        Some(vec!["managed.example.com".to_string()])
     );
     Ok(())
 }
@@ -1271,7 +1273,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
     let previous_context_item = TurnContextItem {
         turn_id: Some(turn_context.sub_id.clone()),
         trace_id: turn_context.trace_id.clone(),
-        cwd: turn_context.cwd.clone(),
+        cwd: turn_context.cwd.to_path_buf(),
         current_date: turn_context.current_date.clone(),
         timezone: turn_context.timezone.clone(),
         approval_policy: turn_context.approval_policy.value(),
@@ -2073,227 +2075,22 @@ async fn turn_context_with_model_updates_model_fields() {
 }
 
 #[tokio::test]
-async fn turn_context_with_model_and_reasoning_effort_preserves_requested_effort() {
+async fn turn_context_with_model_preserves_requested_effort() {
     let (session, turn_context) = make_session_and_context().await;
     let updated = turn_context
-        .with_model_and_reasoning_effort(
-            "gpt-5.1".to_string(),
-            Some(ReasoningEffortConfig::High),
-            &session.services.models_manager,
-        )
+        .with_model("gpt-5.1".to_string(), &session.services.models_manager)
         .await;
 
     assert_eq!(updated.config.model.as_deref(), Some("gpt-5.1"));
-    assert_eq!(updated.reasoning_effort, Some(ReasoningEffortConfig::High));
+    assert_eq!(updated.reasoning_effort, turn_context.reasoning_effort);
     assert_eq!(
         updated.collaboration_mode.reasoning_effort(),
-        Some(ReasoningEffortConfig::High)
+        turn_context.reasoning_effort
     );
     assert_eq!(
         updated.config.model_reasoning_effort,
-        Some(ReasoningEffortConfig::High)
+        turn_context.reasoning_effort
     );
-}
-
-#[tokio::test]
-async fn maybe_retry_subagent_with_saved_parent_model_recomputes_reasoning_without_parent_snapshot()
-{
-    let (mut session, mut turn_context) = make_session_and_context().await;
-    let mut config = (*turn_context.config).clone();
-    let mut overlay_model = turn_context.model_info.clone();
-    overlay_model.slug = "gpt-overlay-low-only".to_string();
-    overlay_model.display_name = "GPT Overlay Low Only".to_string();
-    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
-    overlay_model.supported_reasoning_levels = vec![ReasoningEffortPreset {
-        effort: ReasoningEffort::Low,
-        description: "Quick scan".to_string(),
-    }];
-    config.model_catalog = None;
-    config.model_catalog_merge = Some(ModelsResponse {
-        models: vec![overlay_model.clone()],
-    });
-    let manager = ThreadManager::new(
-        &config,
-        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-    );
-    session.services.agent_control = manager.agent_control();
-    session.services.models_manager = manager.get_models_manager();
-    turn_context.provider = config.model_provider.clone();
-    turn_context.config = Arc::new(config);
-    turn_context.reasoning_effort = Some(ReasoningEffortConfig::High);
-    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: ThreadId::new(),
-        depth: 1,
-        parent_model: Some(overlay_model.slug.clone()),
-        agent_path: None,
-        agent_nickname: None,
-        agent_role: None,
-    });
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let err = CodexErr::InvalidRequest("Model `gpt-5.1` is not available.".to_string());
-    let retried = maybe_retry_subagent_with_parent_model(&session, &turn_context, &err)
-        .await
-        .expect("saved parent model should allow a retry");
-
-    assert_eq!(retried.model_info.slug, overlay_model.slug);
-    assert_eq!(retried.reasoning_effort, Some(ReasoningEffortConfig::Low));
-    assert_eq!(
-        retried.config.model_reasoning_effort,
-        Some(ReasoningEffortConfig::Low)
-    );
-}
-
-#[tokio::test]
-async fn maybe_retry_subagent_with_saved_parent_model_ignores_mismatched_parent_snapshot() {
-    let (mut session, mut turn_context) = make_session_and_context().await;
-    let mut config = (*turn_context.config).clone();
-    let mut overlay_model = turn_context.model_info.clone();
-    overlay_model.slug = "gpt-overlay-low-only".to_string();
-    overlay_model.display_name = "GPT Overlay Low Only".to_string();
-    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
-    overlay_model.supported_reasoning_levels = vec![ReasoningEffortPreset {
-        effort: ReasoningEffort::Low,
-        description: "Quick scan".to_string(),
-    }];
-    config.model_catalog = None;
-    config.model_catalog_merge = Some(ModelsResponse {
-        models: vec![overlay_model.clone()],
-    });
-    let manager = ThreadManager::new(
-        &config,
-        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-    );
-    let parent_thread = manager
-        .start_thread(config.clone())
-        .await
-        .expect("parent thread should spawn");
-    session.services.agent_control = manager.agent_control();
-    session.services.models_manager = manager.get_models_manager();
-    turn_context.provider = config.model_provider.clone();
-    turn_context.config = Arc::new(config);
-    turn_context.reasoning_effort = Some(ReasoningEffortConfig::High);
-    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: parent_thread.thread_id,
-        depth: 1,
-        parent_model: Some(overlay_model.slug.clone()),
-        agent_path: None,
-        agent_nickname: None,
-        agent_role: None,
-    });
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let err = CodexErr::InvalidRequest("Model `gpt-5.1` is not available.".to_string());
-    let retried = maybe_retry_subagent_with_parent_model(&session, &turn_context, &err)
-        .await
-        .expect("saved parent model should allow a retry");
-
-    assert_eq!(retried.model_info.slug, overlay_model.slug);
-    assert_eq!(retried.reasoning_effort, Some(ReasoningEffortConfig::Low));
-    assert_eq!(
-        retried.config.model_reasoning_effort,
-        Some(ReasoningEffortConfig::Low)
-    );
-}
-
-#[tokio::test]
-async fn maybe_retry_subagent_with_saved_parent_model_uses_matching_parent_snapshot_reasoning() {
-    let (mut session, mut turn_context) = make_session_and_context().await;
-    let mut config = (*turn_context.config).clone();
-    let mut overlay_model = turn_context.model_info.clone();
-    overlay_model.slug = "gpt-overlay-low-high".to_string();
-    overlay_model.display_name = "GPT Overlay Low High".to_string();
-    overlay_model.default_reasoning_level = Some(ReasoningEffort::Low);
-    overlay_model.supported_reasoning_levels = vec![
-        ReasoningEffortPreset {
-            effort: ReasoningEffort::Low,
-            description: "Quick scan".to_string(),
-        },
-        ReasoningEffortPreset {
-            effort: ReasoningEffort::High,
-            description: "Deep dive".to_string(),
-        },
-    ];
-    config.model_catalog = None;
-    config.model_catalog_merge = Some(ModelsResponse {
-        models: vec![overlay_model.clone()],
-    });
-    let manager = ThreadManager::new(
-        &config,
-        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
-        SessionSource::Exec,
-        CollaborationModesConfig::default(),
-    );
-    let mut parent_config = config.clone();
-    parent_config.model = Some(overlay_model.slug.clone());
-    parent_config.model_reasoning_effort = Some(ReasoningEffortConfig::High);
-    let parent_thread = manager
-        .start_thread(parent_config)
-        .await
-        .expect("parent thread should spawn");
-    session.services.agent_control = manager.agent_control();
-    session.services.models_manager = manager.get_models_manager();
-    turn_context.provider = config.model_provider.clone();
-    turn_context.config = Arc::new(config);
-    turn_context.reasoning_effort = Some(ReasoningEffortConfig::Low);
-    turn_context.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: parent_thread.thread_id,
-        depth: 1,
-        parent_model: Some(overlay_model.slug.clone()),
-        agent_path: None,
-        agent_nickname: None,
-        agent_role: None,
-    });
-
-    let session = Arc::new(session);
-    let turn_context = Arc::new(turn_context);
-    let err = CodexErr::InvalidRequest("Model `gpt-5.1` is not available.".to_string());
-    let retried = maybe_retry_subagent_with_parent_model(&session, &turn_context, &err)
-        .await
-        .expect("matching parent snapshot should preserve its reasoning effort");
-
-    assert_eq!(retried.model_info.slug, overlay_model.slug);
-    assert_eq!(retried.reasoning_effort, Some(ReasoningEffortConfig::High));
-    assert_eq!(
-        retried.config.model_reasoning_effort,
-        Some(ReasoningEffortConfig::High)
-    );
-}
-
-#[test]
-fn should_retry_subagent_with_parent_model_on_model_access_denied_403() {
-    let err = CodexErr::UnexpectedStatus(UnexpectedResponseError {
-        status: StatusCode::FORBIDDEN,
-        body: "Model `gpt-5.1` is unavailable because you do not have access.".to_string(),
-        url: None,
-        cf_ray: None,
-        request_id: None,
-        identity_authorization_error: None,
-        identity_error_code: None,
-    });
-
-    assert!(should_retry_subagent_with_parent_model(&err));
-}
-
-#[test]
-fn should_not_retry_subagent_with_parent_model_on_unrelated_403() {
-    let err = CodexErr::UnexpectedStatus(UnexpectedResponseError {
-        status: StatusCode::FORBIDDEN,
-        body: "Permission denied while reading rollout file.".to_string(),
-        url: None,
-        cf_ray: None,
-        request_id: None,
-        identity_authorization_error: None,
-        identity_error_code: None,
-    });
-
-    assert!(!should_retry_subagent_with_parent_model(&err));
 }
 
 #[test]
@@ -2516,7 +2313,8 @@ async fn session_configuration_apply_preserves_split_file_system_policy_on_cwd_o
     let docs_dir =
         codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
-    session_configuration.cwd = original_cwd;
+    session_configuration.cwd = AbsolutePathBuf::from_absolute_path(&original_cwd)
+        .expect("original cwd should be absolute");
     session_configuration.sandbox_policy =
         codex_config::Constrained::allow_any(SandboxPolicy::WorkspaceWrite {
             writable_roots: Vec::new(),
@@ -2572,7 +2370,17 @@ async fn new_default_turn_uses_config_aware_skills_for_role_overrides() {
     let parent_outcome = session
         .services
         .skills_manager
-        .skills_for_cwd(&parent_config.cwd, &parent_config, true)
+        .skills_for_cwd(
+            &crate::skills::skills_load_input_from_config(
+                &parent_config,
+                session
+                    .services
+                    .plugins_manager
+                    .plugins_for_config(&parent_config)
+                    .effective_skill_roots(),
+            ),
+            true,
+        )
         .await;
     let parent_skill = parent_outcome
         .skills
@@ -2641,7 +2449,8 @@ async fn session_configuration_apply_rederives_legacy_file_system_policy_on_cwd_
     let docs_dir =
         codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(&docs_dir).expect("docs");
 
-    session_configuration.cwd = original_cwd;
+    session_configuration.cwd = AbsolutePathBuf::from_absolute_path(&original_cwd)
+        .expect("original cwd should be absolute");
     session_configuration.sandbox_policy =
         codex_config::Constrained::allow_any(SandboxPolicy::WorkspaceWrite {
             writable_roots: Vec::new(),
@@ -2742,8 +2551,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_manager = Arc::new(SkillsManager::new(
         config.codex_home.clone(),
-        Arc::clone(&plugins_manager),
-        true,
+        config.bundled_skills_enabled(),
     ));
     let result = Session::new(
         session_configuration,
@@ -2755,6 +2563,9 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
         agent_status_tx,
         InitialHistory::New,
         SessionSource::Exec,
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
         skills_manager,
         plugins_manager,
         mcp_manager,
@@ -2848,8 +2659,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_manager = Arc::new(SkillsManager::new(
         config.codex_home.clone(),
-        Arc::clone(&plugins_manager),
-        true,
+        config.bundled_skills_enabled(),
     ));
     let network_approval = Arc::new(NetworkApprovalService::default());
     let environment = Arc::new(
@@ -2872,8 +2682,9 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         shell_zsh_path: None,
         main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
         analytics_events_client: AnalyticsEventsClient::new(
-            Arc::clone(&config),
             Arc::clone(&auth_manager),
+            config.chatgpt_base_url.trim_end_matches('/').to_string(),
+            config.analytics_enabled,
         ),
         hooks: Hooks::new(HooksConfig {
             legacy_notify_argv: config.notify.clone(),
@@ -2888,7 +2699,6 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         tool_approvals: Mutex::new(ApprovalStore::default()),
-        execve_session_approvals: RwLock::new(HashMap::new()),
         skills_manager,
         plugins_manager,
         mcp_manager,
@@ -2917,7 +2727,12 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         config.js_repl_node_module_dirs.clone(),
     ));
 
-    let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
+    let plugin_outcome = services.plugins_manager.plugins_for_config(config.as_ref());
+    let skills_input = crate::skills::skills_load_input_from_config(
+        config.as_ref(),
+        plugin_outcome.effective_skill_roots(),
+    );
+    let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&skills_input));
     let turn_context = Session::make_turn_context(
         conversation_id,
         Some(Arc::clone(&auth_manager)),
@@ -2978,24 +2793,6 @@ async fn notify_request_permissions_response_ignores_unmatched_call_id() {
         .await;
 
     assert_eq!(session.granted_turn_permissions().await, None);
-}
-
-#[tokio::test]
-async fn auto_compact_failure_continues_for_anthropic_provider_even_with_custom_model_slug() {
-    let (_session, mut turn_context) = make_session_and_context().await;
-    turn_context.provider =
-        crate::model_provider_info::ModelProviderInfo::create_anthropic_provider();
-    turn_context.model_info.slug = "proxy/custom-anthropic".to_string();
-
-    assert!(should_continue_after_auto_compact_failure(&turn_context));
-}
-
-#[tokio::test]
-async fn auto_compact_failure_does_not_continue_for_responses_provider_with_claude_like_slug() {
-    let (_session, mut turn_context) = make_session_and_context().await;
-    turn_context.model_info.slug = "claude-proxy-custom".to_string();
-
-    assert!(!should_continue_after_auto_compact_failure(&turn_context));
 }
 
 #[tokio::test]
@@ -3309,7 +3106,7 @@ async fn user_turn_updates_approvals_reviewer() {
                 text: "hello".to_string(),
                 text_elements: Vec::new(),
             }],
-            cwd: config.cwd.clone(),
+            cwd: config.cwd.to_path_buf(),
             approval_policy: config.permissions.approval_policy.value(),
             approvals_reviewer: Some(crate::config::types::ApprovalsReviewer::GuardianSubagent),
             sandbox_policy: config.permissions.sandbox_policy.get().clone(),
@@ -3702,8 +3499,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_manager = Arc::new(SkillsManager::new(
         config.codex_home.clone(),
-        Arc::clone(&plugins_manager),
-        true,
+        config.bundled_skills_enabled(),
     ));
     let network_approval = Arc::new(NetworkApprovalService::default());
     let environment = Arc::new(
@@ -3726,8 +3522,9 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         shell_zsh_path: None,
         main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
         analytics_events_client: AnalyticsEventsClient::new(
-            Arc::clone(&config),
             Arc::clone(&auth_manager),
+            config.chatgpt_base_url.trim_end_matches('/').to_string(),
+            config.analytics_enabled,
         ),
         hooks: Hooks::new(HooksConfig {
             legacy_notify_argv: config.notify.clone(),
@@ -3742,7 +3539,6 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         tool_approvals: Mutex::new(ApprovalStore::default()),
-        execve_session_approvals: RwLock::new(HashMap::new()),
         skills_manager,
         plugins_manager,
         mcp_manager,
@@ -3771,7 +3567,12 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         config.js_repl_node_module_dirs.clone(),
     ));
 
-    let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&per_turn_config));
+    let plugin_outcome = services.plugins_manager.plugins_for_config(config.as_ref());
+    let skills_input = crate::skills::skills_load_input_from_config(
+        config.as_ref(),
+        plugin_outcome.effective_skill_roots(),
+    );
+    let skills_outcome = Arc::new(services.skills_manager.skills_for_config(&skills_input));
     let turn_context = Arc::new(Session::make_turn_context(
         conversation_id,
         Some(Arc::clone(&auth_manager)),
@@ -3929,8 +3730,18 @@ async fn build_settings_update_items_emits_environment_item_for_network_changes(
     let mut requirements = config.config_layer_stack.requirements().clone();
     requirements.network = Some(Sourced::new(
         NetworkConstraints {
-            allowed_domains: Some(vec!["api.example.com".to_string()]),
-            denied_domains: Some(vec!["blocked.example.com".to_string()]),
+            domains: Some(codex_config::NetworkDomainPermissionsToml {
+                entries: BTreeMap::from([
+                    (
+                        "api.example.com".to_string(),
+                        codex_config::NetworkDomainPermissionToml::Allow,
+                    ),
+                    (
+                        "blocked.example.com".to_string(),
+                        codex_config::NetworkDomainPermissionToml::Deny,
+                    ),
+                ]),
+            }),
             ..Default::default()
         },
         RequirementSource::CloudRequirements,
@@ -5490,7 +5301,7 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
                 "echo hi".to_string(),
             ]
         },
-        cwd: turn_context.cwd.clone(),
+        cwd: turn_context.cwd.to_path_buf(),
         expiration: timeout_ms.into(),
         capture_policy: ExecCapturePolicy::ShellTool,
         env: HashMap::new(),

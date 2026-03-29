@@ -123,7 +123,7 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
                 "echo hi".to_string(),
             ]
         },
-        cwd: turn_context.cwd.clone(),
+        cwd: turn_context.cwd.to_path_buf(),
         expiration: expiration_ms.into(),
         capture_policy: ExecCapturePolicy::ShellTool,
         env: HashMap::new(),
@@ -158,7 +158,6 @@ async fn guardian_allows_shell_additional_permissions_requests_past_policy_valid
                             enabled: Some(true),
                         }),
                         file_system: None,
-                        macos: None,
                     },
                     "justification": params.justification.clone(),
                 })
@@ -388,7 +387,8 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
     .expect("write policy file");
 
     let mut config = build_test_config(codex_home.path()).await;
-    config.cwd = project_dir.path().to_path_buf();
+    config.cwd =
+        AbsolutePathBuf::try_from(project_dir.path()).expect("project dir path should be absolute");
     config.config_layer_stack = ConfigLayerStack::new(
         vec![ConfigLayerEntry::new(
             ConfigLayerSource::Project {
@@ -432,8 +432,7 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
     let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.clone()));
     let skills_manager = Arc::new(SkillsManager::new(
         config.codex_home.clone(),
-        Arc::clone(&plugins_manager),
-        true,
+        config.bundled_skills_enabled(),
     ));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_watcher = Arc::new(SkillsWatcher::noop());
@@ -442,6 +441,9 @@ async fn guardian_subagent_does_not_inherit_parent_exec_policy_rules() {
         config,
         auth_manager,
         models_manager,
+        environment_manager: Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
         skills_manager,
         plugins_manager,
         mcp_manager,
