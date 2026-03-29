@@ -529,6 +529,49 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_alias_view_reports_missing_trigger_nodes() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args(["zmemory", "create", "core://base", "--content", "Base node"])
+        .assert()
+        .success();
+
+    codex_command(codex_home.path())?
+        .args(["zmemory", "add-alias", "core://base/alias", "core://base"])
+        .assert()
+        .success();
+
+    let alias_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "read", "system://alias", "--json"],
+    )?;
+    assert_eq!(alias_payload["result"]["view"]["view"], "alias");
+    assert!(
+        alias_payload["result"]["view"]["aliasNodeCount"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
+    );
+    assert!(
+        alias_payload["result"]["view"]["aliasNodesMissingTriggers"]
+            .as_i64()
+            .unwrap_or(0)
+            >= 1
+    );
+    let entries = alias_payload["result"]["view"]["entries"]
+        .as_array()
+        .unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|entry| entry["missingTriggers"].as_bool().unwrap_or(false))
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_read_missing_memory_fails() -> Result<()> {
     let codex_home = TempDir::new()?;
 
