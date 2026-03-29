@@ -98,6 +98,7 @@ codex zmemory doctor --json
 - 根级 skill `memory` 里详细记录了 recall/capture/refine/linking/review/handoff 的最小编排（见 `.codex/skills/memory/SKILL.md`）。
 - 任何时候想直接复用 CLI 示例，可参考 `.codex/skills/memory/references/cli-recipes.md`，按已实现的 `codex zmemory` 命令顺序排列。
 - 需要一个 review 复核清单时，可参阅 `.codex/skills/memory/references/review-playbook.md` 中列出的 `stats`/`doctor`/`export` 流程。
+- 需要启动一个新项目时，可以参考 review-playbook 里的 project init checklist，它直接用 `create`/`add-alias`/`manage-triggers` 等命令搭建骨架。
 
 ## 创建语义
 

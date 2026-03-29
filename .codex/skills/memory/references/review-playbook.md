@@ -2,17 +2,24 @@
 
 ## 最小 review 检查清单
 
-1. `codex zmemory stats --json`：读取 `orphanedMemoryCount`、`deprecatedMemoryCount`，判断是否有 review 压力。
-2. `codex zmemory doctor --json`：查看 `issues` 里是否有 `orphaned_memories`、`deprecated_memories_awaiting_review`，确认 FTS / keyword / search index 状态。
-3. `codex zmemory export recent --json`：确认最近写入的内容已经被系统视图收录，便于决定是否需要 `update`。
+1. `codex zmemory stats --json`：读取 `orphanedMemoryCount`、`deprecatedMemoryCount`、`aliasNodeCount`、`triggerNodeCount`，判断是否有 review 压力和 alias/trigger 覆盖盲点。
+2. `codex zmemory doctor --json`：查看 `issues` 里是否有 `orphaned_memories`、`deprecated_memories_awaiting_review`、`alias_nodes_missing_triggers`，确认 FTS / keyword / alias 兼容状态。
+3. `codex zmemory export recent --json`：确认最近写入的内容已经被系统视图收录，便于决定是否需要 `update`、`delete-path` 或 `rebuild-search`。
 4. `codex zmemory export glossary --json`：确认 trigger / keyword 覆盖，判断是否需要 `manage-triggers` 或 `add-alias`。
-5. 如需清理：
-   - `codex zmemory update <uri>`： patch/append/metadata 收敛
-   - `codex zmemory delete-path <uri>`：废弃过时路径
-   - `codex zmemory add-alias <alias> <target>`：弥补多语境入口
-   - `codex zmemory manage-triggers <uri> --add <keyword>`：强化触发
+5. 若发现 alias 覆盖少于 trigger，依次运行：
+   - `codex zmemory add-alias alias://legacy core://legacy --json`
+   - `codex zmemory manage-triggers core://legacy --add review --json`
 
 ## 交接指引
 
-- review 完成后，把新的关键结论写入项目主节点。
-- 若有长周期治理安排，更新 `.ai/memory/handoff.md` 并邀请 vbm 继续 follow-up。
+- review 完成后，把新的关键结论写入项目主节点，记录 `stats`/`doctor` 的变化。
+- 若有长周期治理安排，更新 `.ai/memory/handoff.md` 并让 vbm 跟进。
+
+## project init checklist
+
+1. `codex zmemory create core://project-alpha --content "Project constraints" --priority 2 --json`
+2. `codex zmemory create core://project-alpha/architecture --content "Architecture notes" --json`
+3. `codex zmemory add-alias alias://project-alpha core://project-alpha --json`
+4. `codex zmemory manage-triggers core://project-alpha --add launch --json`
+5. 之后执行上面的 review 检查清单，保证 trigger/alias 覆盖已到位。
+
