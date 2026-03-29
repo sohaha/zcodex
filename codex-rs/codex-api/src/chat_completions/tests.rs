@@ -306,6 +306,22 @@ fn build_request_supports_named_required_tool_choice() {
 }
 
 #[test]
+fn build_request_supports_named_required_tool_choice_for_local_shell() {
+    let mut request = request_with_tools(vec![json!({ "type": "local_shell" })], Vec::new());
+    request.tool_choice = "required:local_shell".to_string();
+
+    let chat =
+        build_request_with_stream(&request, /*stream*/ false).expect("local_shell tool_choice");
+    assert_eq!(
+        chat.body["tool_choice"],
+        json!({
+            "type": "function",
+            "function": { "name": "local_shell" },
+        })
+    );
+}
+
+#[test]
 fn build_request_rejects_unknown_required_tool_choice() {
     let mut request = request_with_tools(Vec::new(), Vec::new());
     request.tool_choice = "required:read_file".to_string();
