@@ -108,8 +108,51 @@ impl ShellHandler {
 }
 
 impl ShellCommandHandler {
-    fn codex_executable_path() -> Option<PathBuf> {
-        std::env::current_exe().ok()
+    fn codex_executable_path(path_env: Option<&str>, workdir: &std::path::Path) -> Option<PathBuf> {
+        Self::resolve_codex_executable_path(
+            std::env::current_exe().ok().as_deref(),
+            path_env,
+            workdir,
+        )
+    }
+
+    fn resolve_codex_executable_path(
+        current_exe: Option<&std::path::Path>,
+        path_env: Option<&str>,
+        workdir: &std::path::Path,
+    ) -> Option<PathBuf> {
+        if let Some(current_exe) = current_exe
+            && current_exe.is_file()
+        {
+            return Some(current_exe.to_path_buf());
+        }
+
+        let path_env =
+            path_env.and_then(|path_env| Self::normalize_path_env_for_lookup(path_env, workdir));
+
+        if let Some(path_env) = path_env.as_deref()
+            && let Ok(codex_exe) = which::which_in("codex", Some(path_env), workdir)
+        {
+            return Some(codex_exe);
+        }
+
+        which::which("codex").ok()
+    }
+
+    fn normalize_path_env_for_lookup(path_env: &str, workdir: &std::path::Path) -> Option<String> {
+        let normalized = std::env::split_paths(path_env)
+            .map(|path| {
+                if path.is_relative() {
+                    workdir.join(path)
+                } else {
+                    path
+                }
+            })
+            .collect::<Vec<_>>();
+        std::env::join_paths(normalized)
+            .ok()
+            .and_then(|path| path.into_string().ok())
+            .or_else(|| Some(path_env.to_string()))
     }
 
     fn shell_runtime_backend(&self) -> ShellRuntimeBackend {
@@ -445,7 +488,22 @@ impl ToolHandler for ShellCommandHandler {
         .await;
         let mut params = params;
         let mut routed_command = Self::route_command(&params.command);
-        let rtk_exe = Self::codex_executable_path();
+        let mut routing_env = create_env(
+            &turn.shell_environment_policy,
+            Some(session.conversation_id),
+        );
+        prepend_arg0_helper_dir_to_path(
+            &mut routing_env,
+            session.services.main_execve_wrapper_exe.as_deref(),
+            turn.codex_linux_sandbox_exe.as_deref(),
+        );
+        let rtk_exe = Self::codex_executable_path(
+            routing_env
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case("PATH"))
+                .map(|(_, value)| value.as_str()),
+            cwd.as_path(),
+        );
         routed_command.command =
             resolve_rtk_physical_command(&routed_command.command, rtk_exe.as_deref());
         let display_command = routed_command

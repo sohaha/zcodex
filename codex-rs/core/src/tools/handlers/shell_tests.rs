@@ -177,6 +177,57 @@ fn shell_command_handler_leaves_non_rtk_commands_unchanged_when_resolving_physic
     assert_eq!(resolved, "git status");
 }
 
+#[cfg(unix)]
+#[test]
+fn shell_command_handler_falls_back_to_path_codex_when_current_exe_is_gone() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let fake_codex = temp_dir.path().join("codex");
+    fs::write(&fake_codex, "#!/bin/sh\nexit 0\n").expect("write fake codex");
+    let mut permissions = fs::metadata(&fake_codex)
+        .expect("stat fake codex")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&fake_codex, permissions).expect("chmod fake codex");
+
+    let resolved = ShellCommandHandler::resolve_codex_executable_path(
+        Some(std::path::Path::new(
+            "/root/.local/share/mise/installs/node/25.8.2/lib/node_modules/@openai/codex/bin/codex.js (deleted)",
+        )),
+        Some(temp_dir.path().to_string_lossy().as_ref()),
+        temp_dir.path(),
+    );
+
+    assert_eq!(resolved, Some(fake_codex));
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_command_handler_resolves_relative_path_entries_from_workdir() {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = tempfile::tempdir().expect("create tempdir");
+    let workdir = temp_dir.path().join("project");
+    let bin_dir = workdir.join("bin");
+    fs::create_dir_all(&bin_dir).expect("create bin dir");
+
+    let fake_codex = bin_dir.join("codex");
+    fs::write(&fake_codex, "#!/bin/sh\nexit 0\n").expect("write fake codex");
+    let mut permissions = fs::metadata(&fake_codex)
+        .expect("stat fake codex")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&fake_codex, permissions).expect("chmod fake codex");
+
+    let resolved =
+        ShellCommandHandler::resolve_codex_executable_path(None, Some("./bin"), workdir.as_path());
+
+    assert_eq!(resolved, Some(fake_codex));
+}
+
 #[test]
 fn shell_command_handler_respects_explicit_login_flag() {
     let (_tx, shell_snapshot) = watch::channel(Some(Arc::new(ShellSnapshot {
