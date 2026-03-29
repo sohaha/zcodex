@@ -91,6 +91,7 @@ wire_api = "chat"
 When `wire_api = "chat"` is selected, Codex uses `/v1/chat/completions`.
 This path does not support hosted-only tools such as `web_search` or
 `image_generation`, and only `user` messages may include image inputs.
+Named tool choice is supported via `tool_choice = "required:<tool_name>"`.
 Those are Chat Completions API limits, not Codex-only restrictions. Use
 `wire_api = "responses"` when you need hosted tools.
 
