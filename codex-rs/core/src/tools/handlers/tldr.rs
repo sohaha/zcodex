@@ -18,8 +18,10 @@ use codex_native_tldr::daemon::socket_path_for_project;
 use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::tool_api::TldrToolCallParam;
+use codex_native_tldr::tool_api::action_name;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
 use once_cell::sync::Lazy;
+use serde_json::json;
 use std::ffi::OsString;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -269,7 +271,16 @@ where
                     ("error", err.to_string()),
                 ],
             );
-            Ok(FunctionToolOutput::from_text(err.to_string(), Some(false)))
+            let payload = tldr_error_payload(&action, project.as_deref(), &err.to_string());
+            let json = serde_json::to_string_pretty(&payload).map_err(|serialize_err| {
+                FunctionCallError::Fatal(format!("serialize tldr error output: {serialize_err}"))
+            })?;
+            let rendered_text = sanitize_tldr_text(&err.to_string());
+            let summary = render_tldr_error_summary(&payload);
+            Ok(FunctionToolOutput::from_text(
+                format!("{rendered_text}\n{summary}\n{TLDR_JSON_BEGIN}\n{json}\n{TLDR_JSON_END}"),
+                Some(false),
+            ))
         }
     }
 }
@@ -382,6 +393,85 @@ fn render_tldr_summary(payload: &serde_json::Value) -> String {
         "structured payload attached".to_string()
     } else {
         parts.join(" | ")
+    }
+}
+
+fn tldr_error_payload(
+    action: &codex_native_tldr::tool_api::TldrToolAction,
+    project: Option<&str>,
+    error: &str,
+) -> serde_json::Value {
+    let project_root = project.map(PathBuf::from);
+    let health = project_root
+        .as_deref()
+        .filter(|_| error.contains("native-tldr daemon is unavailable for"))
+        .and_then(|path| daemon_health(path).ok());
+    let structured_failure = health
+        .as_ref()
+        .and_then(|value| value.structured_failure.as_ref())
+        .map(|failure| {
+            json!({
+                "error_type": structured_failure_error_type(&failure.kind),
+                "reason": failure.reason,
+                "retryable": failure.retryable,
+                "retry_hint": failure.retry_hint,
+            })
+        })
+        .unwrap_or_else(|| {
+            json!({
+                "error_type": "tool_error",
+                "reason": error,
+                "retryable": false,
+                "retry_hint": serde_json::Value::Null,
+            })
+        });
+    let degraded_mode = health
+        .and_then(|value| value.degraded_mode)
+        .map(|mode| {
+            json!({
+                "is_degraded": true,
+                "mode": degraded_mode_name(&mode.kind),
+                "fallback_path": mode.fallback_path,
+                "reason": mode.reason,
+            })
+        })
+        .unwrap_or(serde_json::Value::Null);
+
+    json!({
+        "action": action_name(action),
+        "project": project,
+        "error": error,
+        "structuredFailure": structured_failure,
+        "degradedMode": degraded_mode,
+    })
+}
+
+fn render_tldr_error_summary(payload: &serde_json::Value) -> String {
+    if let Some(error_type) = payload
+        .get("structuredFailure")
+        .and_then(|value| value.get("error_type"))
+        .and_then(serde_json::Value::as_str)
+    {
+        return format!("structured failure: {error_type}");
+    }
+    "tldr failed".to_string()
+}
+
+fn structured_failure_error_type(
+    kind: &codex_native_tldr::daemon::StructuredFailureKind,
+) -> &'static str {
+    match kind {
+        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnavailable => "daemon_unavailable",
+        codex_native_tldr::daemon::StructuredFailureKind::DaemonStarting => "daemon_starting",
+        codex_native_tldr::daemon::StructuredFailureKind::StaleSocket => "stale_socket",
+        codex_native_tldr::daemon::StructuredFailureKind::StalePid => "stale_pid",
+        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnhealthy => "daemon_unhealthy",
+    }
+}
+
+fn degraded_mode_name(kind: &codex_native_tldr::daemon::DegradedModeKind) -> &'static str {
+    match kind {
+        codex_native_tldr::daemon::DegradedModeKind::DiagnosticOnly => "diagnostic_only",
     }
 }
 
@@ -1712,8 +1802,14 @@ mod tests {
         .expect("handler helper should return tool output");
 
         assert_eq!(output.success, Some(false));
+        let text = output.into_text();
+        let payload = extract_json_block(&text);
+        assert!(text.contains("`language` is required for action=structure"));
+        assert!(text.contains("structured failure: tool_error"));
+        assert_eq!(payload["action"], "structure");
+        assert_eq!(payload["structuredFailure"]["error_type"], "tool_error");
         assert_eq!(
-            output.into_text(),
+            payload["structuredFailure"]["reason"],
             "`language` is required for action=structure"
         );
     }
@@ -1742,9 +1838,17 @@ mod tests {
 
         assert_eq!(output.success, Some(false));
         let text = output.into_text();
+        let payload = extract_json_block(&text);
         assert!(text.contains("native-tldr daemon is unavailable for"));
         assert!(text.contains("daemon unavailable (missing socket and pid)"));
         assert!(text.contains("hint: run `codex tldr ...`"));
+        assert!(text.contains("structured failure: daemon_unavailable"));
+        assert_eq!(payload["action"], "status");
+        assert_eq!(
+            payload["structuredFailure"]["error_type"],
+            "daemon_unavailable"
+        );
+        assert_eq!(payload["degradedMode"]["mode"], "diagnostic_only");
     }
 
     #[tokio::test]
