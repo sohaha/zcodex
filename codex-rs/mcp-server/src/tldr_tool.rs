@@ -84,9 +84,25 @@ where
     ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
     E: for<'a> Fn(&'a std::path::Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
 {
+    let project_root = args
+        .project
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok());
     match run_tldr_tool_with_hooks(args, query, ensure_running).await {
         Ok(result) => success_result(result.text, result.structured_content),
-        Err(err) => error_result(format!("tldr tool failed: {err}")),
+        Err(err) => {
+            let text = format!("tldr tool failed: {err}");
+            CallToolResult {
+                content: vec![Content::text(text.clone())],
+                structured_content: tldr_error_structured_content_for_project(
+                    &text,
+                    project_root.as_deref(),
+                ),
+                is_error: Some(true),
+                meta: None,
+            }
+        }
     }
 }
 
@@ -128,6 +144,60 @@ fn tldr_error_structured_content(text: &str) -> Option<serde_json::Value> {
     }
 
     None
+}
+
+fn tldr_error_structured_content_for_project(
+    text: &str,
+    project_root: Option<&Path>,
+) -> Option<serde_json::Value> {
+    if let Some(project_root) = project_root
+        && text.contains("native-tldr daemon is unavailable for")
+        && let Ok(health) = daemon_health(project_root)
+        && let Some(failure) = health.structured_failure
+    {
+        return Some(serde_json::json!({
+            "structuredFailure": {
+                "error_type": structured_failure_error_type(&failure.kind),
+                "reason": failure.reason,
+                "retryable": failure.retryable,
+                "retry_hint": failure.retry_hint
+            },
+            "degradedMode": {
+                "is_degraded": true,
+                "mode": health
+                    .degraded_mode
+                    .as_ref()
+                    .map(|value| degraded_mode_name(&value.kind))
+                    .unwrap_or("unavailable"),
+                "fallback_path": health
+                    .degraded_mode
+                    .as_ref()
+                    .map(|value| value.fallback_path.clone())
+                    .unwrap_or_else(|| "none".to_string()),
+                "reason": health.degraded_mode.and_then(|value| value.reason)
+            }
+        }));
+    }
+
+    tldr_error_structured_content(text)
+}
+
+fn structured_failure_error_type(
+    kind: &codex_native_tldr::daemon::StructuredFailureKind,
+) -> &'static str {
+    match kind {
+        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnavailable => "daemon_unavailable",
+        codex_native_tldr::daemon::StructuredFailureKind::DaemonStarting => "daemon_starting",
+        codex_native_tldr::daemon::StructuredFailureKind::StaleSocket => "stale_socket",
+        codex_native_tldr::daemon::StructuredFailureKind::StalePid => "stale_pid",
+        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnhealthy => "daemon_unhealthy",
+    }
+}
+
+fn degraded_mode_name(kind: &codex_native_tldr::daemon::DegradedModeKind) -> &'static str {
+    match kind {
+        codex_native_tldr::daemon::DegradedModeKind::DiagnosticOnly => "diagnostic_only",
+    }
 }
 
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
@@ -1777,8 +1847,17 @@ mod tests {
             "daemon_unavailable"
         );
         assert_eq!(
+            text["structuredContent"]["structuredFailure"]["reason"],
+            "daemon unavailable (missing socket and pid)"
+        );
+        assert!(
+            text["structuredContent"]["structuredFailure"]["retry_hint"]
+                .as_str()
+                .is_some_and(|value| value.contains("run `codex tldr ...`"))
+        );
+        assert_eq!(
             text["structuredContent"]["degradedMode"]["mode"],
-            "unavailable"
+            "diagnostic_only"
         );
     }
 

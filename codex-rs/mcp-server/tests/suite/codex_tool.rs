@@ -1156,6 +1156,7 @@ mod tldr_tests {
             response.result["structuredContent"].clone()
         };
 
+        let socket_path = socket_path_for_project(&canonical_project);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)?;
         }
@@ -2458,10 +2459,10 @@ mod tldr_tests {
         );
         assert_eq!(
             result["structuredContent"]["degradedMode"]["mode"],
-            "unavailable"
+            "diagnostic_only"
         );
         let expected_message = format!(
-            "tldr tool failed: native-tldr daemon is unavailable for {}",
+            "tldr tool failed: native-tldr daemon is unavailable for {}: daemon unavailable (missing socket and pid) (hint: run `codex tldr ...` to auto-start the internal daemon or inspect logs)",
             canonical_project.display()
         );
         let actual_text = result["content"][0]["text"]
