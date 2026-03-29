@@ -19,9 +19,8 @@ use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::action_name;
-use codex_native_tldr::tool_api::degraded_mode_name;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
-use codex_native_tldr::tool_api::structured_failure_error_type;
+use codex_native_tldr::wire::daemon_failure_payload_for_project;
 use once_cell::sync::Lazy;
 use serde_json::json;
 use std::ffi::OsString;
@@ -403,49 +402,36 @@ fn tldr_error_payload(
     project: Option<&str>,
     error: &str,
 ) -> serde_json::Value {
-    let project_root = project.map(PathBuf::from);
-    let health = project_root
-        .as_deref()
+    let mut payload = json!({
+        "action": action_name(action),
+        "project": project,
+        "error": error,
+    });
+    if let Some(project_root) = project
+        .map(PathBuf::from)
         .filter(|_| error.contains("native-tldr daemon is unavailable for"))
-        .and_then(|path| daemon_health(path).ok());
-    let structured_failure = health
-        .as_ref()
-        .and_then(|value| value.structured_failure.as_ref())
-        .map(|failure| {
-            json!({
-                "error_type": structured_failure_error_type(&failure.kind),
-                "reason": failure.reason,
-                "retryable": failure.retryable,
-                "retry_hint": failure.retry_hint,
-            })
-        })
-        .unwrap_or_else(|| {
+    {
+        let failure_payload = daemon_failure_payload_for_project(&project_root, None);
+        if let (Some(payload_object), Some(failure_object)) =
+            (payload.as_object_mut(), failure_payload.as_object())
+        {
+            payload_object.extend(failure_object.clone());
+            return payload;
+        }
+    }
+    if let Some(payload_object) = payload.as_object_mut() {
+        payload_object.insert(
+            "structuredFailure".to_string(),
             json!({
                 "error_type": "tool_error",
                 "reason": error,
                 "retryable": false,
                 "retry_hint": serde_json::Value::Null,
-            })
-        });
-    let degraded_mode = health
-        .and_then(|value| value.degraded_mode)
-        .map(|mode| {
-            json!({
-                "is_degraded": true,
-                "mode": degraded_mode_name(&mode.kind),
-                "fallback_path": mode.fallback_path,
-                "reason": mode.reason,
-            })
-        })
-        .unwrap_or(serde_json::Value::Null);
-
-    json!({
-        "action": action_name(action),
-        "project": project,
-        "error": error,
-        "structuredFailure": structured_failure,
-        "degradedMode": degraded_mode,
-    })
+            }),
+        );
+        payload_object.insert("degradedMode".to_string(), serde_json::Value::Null);
+    }
+    payload
 }
 
 fn render_tldr_error_summary(payload: &serde_json::Value) -> String {

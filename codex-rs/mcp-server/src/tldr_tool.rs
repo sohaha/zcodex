@@ -13,11 +13,10 @@ use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolResult;
 use codex_native_tldr::tool_api::daemon_unavailable_error_for_project;
-use codex_native_tldr::tool_api::degraded_mode_name;
 use codex_native_tldr::tool_api::query_daemon_with_hooks_detailed;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
-use codex_native_tldr::tool_api::structured_failure_error_type;
 use codex_native_tldr::tool_api::tldr_tool_output_schema;
+use codex_native_tldr::wire::daemon_failure_payload_for_project;
 use codex_native_tldr::wire::daemon_response_payload;
 use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
@@ -257,31 +256,8 @@ fn tldr_error_structured_content_for_project(
 ) -> Option<serde_json::Value> {
     if let Some(project_root) = project_root
         && text.contains("native-tldr daemon is unavailable for")
-        && let Ok(health) = daemon_health(project_root)
-        && let Some(failure) = health.structured_failure
     {
-        return Some(serde_json::json!({
-            "structuredFailure": {
-                "error_type": structured_failure_error_type(&failure.kind),
-                "reason": failure.reason,
-                "retryable": failure.retryable,
-                "retry_hint": failure.retry_hint
-            },
-            "degradedMode": {
-                "is_degraded": true,
-                "mode": health
-                    .degraded_mode
-                    .as_ref()
-                    .map(|value| degraded_mode_name(&value.kind))
-                    .unwrap_or("unavailable"),
-                "fallback_path": health
-                    .degraded_mode
-                    .as_ref()
-                    .map(|value| value.fallback_path.clone())
-                    .unwrap_or_else(|| "none".to_string()),
-                "reason": health.degraded_mode.and_then(|value| value.reason)
-            }
-        }));
+        return Some(daemon_failure_payload_for_project(project_root, None));
     }
 
     tldr_error_structured_content(text)

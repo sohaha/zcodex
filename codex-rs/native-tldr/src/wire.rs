@@ -5,7 +5,9 @@ use crate::daemon::StructuredFailureKind;
 use crate::daemon::TldrDaemonConfigSummary;
 use crate::daemon::TldrDaemonResponse;
 use crate::daemon::TldrDaemonStatus;
+use crate::daemon::daemon_health;
 use crate::lang_support::SupportedLanguage;
+use crate::lifecycle::DaemonReadyResult;
 use crate::semantic::SemanticMatch;
 use crate::semantic::SemanticReindexReport;
 use crate::semantic::SemanticSearchResponse;
@@ -435,13 +437,47 @@ pub fn daemon_response_payload(
     ))
 }
 
+pub fn daemon_failure_payload_for_project(
+    project_root: &Path,
+    ready_result: Option<&DaemonReadyResult>,
+) -> Value {
+    let health = daemon_health(project_root).ok();
+    let structured_failure = ready_result
+        .and_then(|value| value.structured_failure.as_ref())
+        .or_else(|| {
+            health
+                .as_ref()
+                .and_then(|value| value.structured_failure.as_ref())
+        })
+        .map(TldrStructuredFailureView::from);
+    let degraded_mode = ready_result
+        .and_then(|value| value.degraded_mode.as_ref())
+        .or_else(|| {
+            health
+                .as_ref()
+                .and_then(|value| value.degraded_mode.as_ref())
+        })
+        .map(TldrDegradedModeView::from);
+
+    json!({
+        "structuredFailure": structured_failure,
+        "degradedMode": degraded_mode,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS;
+    use super::daemon_failure_payload_for_project;
     use super::daemon_response_payload;
     use super::semantic_payload;
+    use crate::daemon::DegradedMode;
+    use crate::daemon::DegradedModeKind;
+    use crate::daemon::StructuredFailure;
+    use crate::daemon::StructuredFailureKind;
     use crate::daemon::TldrDaemonResponse;
     use crate::lang_support::SupportedLanguage;
+    use crate::lifecycle::DaemonReadyResult;
     use crate::semantic::EmbeddingUnit;
     use crate::semantic::SemanticMatch;
     use crate::semantic::SemanticSearchResponse;
@@ -908,5 +944,34 @@ mod tests {
         );
         assert_eq!(payload["degradedMode"]["is_degraded"], true);
         assert_eq!(payload["degradedMode"]["mode"], "diagnostic_only");
+    }
+
+    #[test]
+    fn daemon_failure_payload_prefers_ready_result_metadata() {
+        let payload = daemon_failure_payload_for_project(
+            Path::new("/tmp/project"),
+            Some(&DaemonReadyResult {
+                ready: false,
+                structured_failure: Some(StructuredFailure {
+                    kind: StructuredFailureKind::DaemonUnavailable,
+                    reason: "daemon boot timed out".to_string(),
+                    retryable: true,
+                    retry_hint: Some("retry once".to_string()),
+                }),
+                degraded_mode: Some(DegradedMode {
+                    kind: DegradedModeKind::DiagnosticOnly,
+                    fallback_path: "status_only".to_string(),
+                    reason: Some("daemon-only action".to_string()),
+                }),
+            }),
+        );
+
+        assert_eq!(
+            payload["structuredFailure"]["reason"],
+            "daemon boot timed out"
+        );
+        assert_eq!(payload["structuredFailure"]["retry_hint"], "retry once");
+        assert_eq!(payload["degradedMode"]["mode"], "diagnostic_only");
+        assert_eq!(payload["degradedMode"]["fallback_path"], "status_only");
     }
 }
