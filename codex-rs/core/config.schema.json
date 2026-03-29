@@ -176,14 +176,6 @@
       ],
       "type": "string"
     },
-    "AutoTldrRoutingMode": {
-      "enum": [
-        "off",
-        "safe",
-        "aggressive"
-      ],
-      "type": "string"
-    },
     "AppsConfigToml": {
       "additionalProperties": {
         "$ref": "#/definitions/AppConfig"
@@ -299,6 +291,14 @@
           "type": "string"
         }
       ]
+    },
+    "AutoTldrRoutingMode": {
+      "enum": [
+        "off",
+        "safe",
+        "aggressive"
+      ],
+      "type": "string"
     },
     "BundledSkillsConfig": {
       "additionalProperties": false,
@@ -542,29 +542,13 @@
         "model": {
           "type": "string"
         },
-        "model_catalog": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ModelCatalogToml"
-            }
-          ],
-          "description": "Optional model catalog (applied on startup only). String values are treated as absolute JSON file paths; arrays are treated as inline model slug lists."
-        },
         "model_catalog_json": {
           "allOf": [
             {
               "$ref": "#/definitions/AbsolutePathBuf"
             }
           ],
-          "description": "Legacy alias for a JSON model catalog path (applied on startup only)."
-        },
-        "model_catalog_merge_json": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            }
-          ],
-          "description": "Optional path to a JSON model catalog overlay (applied on startup only)."
+          "description": "Optional path to a JSON model catalog (applied on startup only)."
         },
         "model_instructions_file": {
           "allOf": [
@@ -628,23 +612,6 @@
           "description": "Optional absolute path to patched zsh used by zsh-exec-bridge-backed shell execution."
         }
       },
-      "type": "object"
-    },
-    "FallbackProviderToml": {
-      "additionalProperties": false,
-      "properties": {
-        "model": {
-          "description": "Optional model slug to use with this fallback provider.",
-          "type": "string"
-        },
-        "provider": {
-          "description": "Provider to use from the model_providers map.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "provider"
-      ],
       "type": "object"
     },
     "FeedbackConfigToml": {
@@ -859,19 +826,6 @@
         "type": "integer"
       },
       "type": "object"
-    },
-    "ModelCatalogToml": {
-      "anyOf": [
-        {
-          "$ref": "#/definitions/AbsolutePathBuf"
-        },
-        {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      ]
     },
     "ModelProviderInfo": {
       "additionalProperties": false,
@@ -1908,6 +1862,13 @@
           "type": "string"
         },
         {
+          "description": "The Chat Completions API exposed by OpenAI at `/v1/chat/completions`.",
+          "enum": [
+            "chat"
+          ],
+          "type": "string"
+        },
+        {
           "description": "The Anthropic Messages API exposed at `/v1/messages`.",
           "enum": [
             "anthropic"
@@ -2053,22 +2014,6 @@
     },
     "experimental_use_unified_exec_tool": {
       "type": "boolean"
-    },
-    "fallback_model": {
-      "description": "Optional model slug to use with the fallback provider.",
-      "type": "string"
-    },
-    "fallback_provider": {
-      "description": "Optional provider to use when the primary provider request fails.",
-      "type": "string"
-    },
-    "fallback_providers": {
-      "default": [],
-      "description": "Ordered list of fallback providers to try for the current request.",
-      "items": {
-        "$ref": "#/definitions/FallbackProviderToml"
-      },
-      "type": "array"
     },
     "features": {
       "additionalProperties": false,
@@ -2384,29 +2329,13 @@
       "format": "int64",
       "type": "integer"
     },
-    "model_catalog": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/ModelCatalogToml"
-        }
-      ],
-      "description": "Optional model catalog (applied on startup only). String values are treated as absolute JSON file paths; arrays are treated as inline model slug lists. Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
-    },
     "model_catalog_json": {
       "allOf": [
         {
           "$ref": "#/definitions/AbsolutePathBuf"
         }
       ],
-      "description": "Legacy alias for a JSON model catalog path (applied on startup only). Prefer `model_catalog = \"/abs/path/catalog.json\"`."
-    },
-    "model_catalog_merge_json": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AbsolutePathBuf"
-        }
-      ],
-      "description": "Optional path to a JSON model catalog overlay (applied on startup only). Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
+      "description": "Optional path to a JSON model catalog (applied on startup only). Per-thread `config` overrides are accepted but do not reapply this (no-ops)."
     },
     "model_context_window": {
       "description": "Size of the context window for the model, in tokens.",
@@ -2430,7 +2359,7 @@
         "$ref": "#/definitions/ModelProviderInfo"
       },
       "default": {},
-      "description": "User-defined provider entries that extend the built-in list. Built-in IDs cannot be overridden.",
+      "description": "User-defined provider entries that extend or override the built-in list.",
       "type": "object"
     },
     "model_reasoning_effort": {
@@ -2560,7 +2489,12 @@
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
     },
     "resume_model_source": {
-      "$ref": "#/definitions/ResumeModelSource"
+      "allOf": [
+        {
+          "$ref": "#/definitions/ResumeModelSource"
+        }
+      ],
+      "description": "Controls whether resume uses the persisted model or the current config."
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",

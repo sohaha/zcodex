@@ -4569,6 +4569,51 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
 }
 
 #[test]
+fn user_model_provider_can_override_builtin_openai() -> std::io::Result<()> {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+model = "gpt-5"
+model_provider = "openai"
+
+[model_providers.openai]
+name = "OpenAI Chat"
+base_url = "https://api.openai.com/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "chat"
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+
+    let cwd_temp_dir = TempDir::new().unwrap();
+    let cwd = cwd_temp_dir.path().to_path_buf();
+    std::fs::write(cwd.join(".git"), "gitdir: nowhere")?;
+    let codex_home_temp_dir = TempDir::new().unwrap();
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd),
+            ..Default::default()
+        },
+        codex_home_temp_dir.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.model_provider_id, "openai");
+    assert_eq!(config.model_provider.name, "OpenAI Chat");
+    assert_eq!(config.model_provider.wire_api, crate::WireApi::Chat);
+    assert_eq!(
+        config.model_provider.base_url.as_deref(),
+        Some("https://api.openai.com/v1")
+    );
+    assert_eq!(
+        config.model_providers["openai"].wire_api,
+        crate::WireApi::Chat
+    );
+
+    Ok(())
+}
+
+#[test]
 fn metrics_exporter_defaults_to_statsig_when_missing() -> std::io::Result<()> {
     let fixture = create_test_fixture()?;
 

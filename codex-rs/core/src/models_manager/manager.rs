@@ -422,7 +422,9 @@ impl ModelsManager {
             };
         }
 
-        if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt) {
+        let can_refresh_remotely = self.auth_manager.auth_mode() == Some(AuthMode::Chatgpt)
+            || self.provider.uses_provider_supplied_auth();
+        if !can_refresh_remotely {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached

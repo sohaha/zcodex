@@ -252,6 +252,73 @@ fn build_request_keeps_mixed_history_items_without_error() {
     );
 }
 
+#[test]
+fn build_request_rejects_non_user_images() {
+    for role in ["system", "developer", "assistant"] {
+        let request = request_with_tools(
+            Vec::new(),
+            vec![ResponseItem::Message {
+                id: None,
+                role: role.to_string(),
+                content: vec![ContentItem::InputImage {
+                    image_url: "https://example.com/image.png".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            }],
+        );
+
+        let Err(err) = build_request_with_stream(&request, /*stream*/ false) else {
+            panic!("non-user images should be rejected");
+        };
+        assert!(matches!(
+            err,
+            ApiError::InvalidRequest { message }
+                if message
+                    == format!("chat completions does not support images in {role} messages")
+        ));
+    }
+}
+
+#[test]
+fn build_request_rejects_unsupported_tool_choice() {
+    let mut request = request_with_tools(
+        vec![json!({
+            "type": "function",
+            "name": "read_file",
+            "description": "Read a file",
+            "parameters": { "type": "object", "properties": {} },
+        })],
+        Vec::new(),
+    );
+    request.tool_choice = "required:read_file".to_string();
+
+    let Err(err) = build_request_with_stream(&request, /*stream*/ false) else {
+        panic!("tool_choice rejected");
+    };
+    assert!(matches!(
+        err,
+        ApiError::InvalidRequest { message }
+            if message == "chat completions does not support tool_choice required:read_file"
+    ));
+}
+
+#[test]
+fn build_request_rejects_hosted_tools() {
+    for tool_type in ["web_search", "image_generation"] {
+        let request = request_with_tools(vec![json!({ "type": tool_type })], Vec::new());
+
+        let Err(err) = build_request_with_stream(&request, /*stream*/ false) else {
+            panic!("hosted-only tool should be rejected");
+        };
+        assert!(matches!(
+            err,
+            ApiError::InvalidRequest { message }
+                if message == format!("chat completions does not support tool type {tool_type}")
+        ));
+    }
+}
+
 #[tokio::test]
 async fn chat_stream_emits_text_and_usage() {
     let chunks = vec![

@@ -53,3 +53,20 @@ Run `just write-config-schema` to overwrite with your changes.\n\n{diff}"
         "fixture should match exactly with generated schema"
     );
 }
+
+#[test]
+fn config_schema_lists_chat_wire_api() {
+    let schema_json = config_schema_json().expect("serialize config schema");
+    let schema_value: serde_json::Value =
+        serde_json::from_slice(&schema_json).expect("decode schema json");
+    let wire_api = &schema_value["definitions"]["WireApi"]["oneOf"];
+    let variants = wire_api
+        .as_array()
+        .expect("WireApi variants should be an array")
+        .iter()
+        .flat_map(|variant| variant["enum"].as_array().into_iter().flatten())
+        .filter_map(serde_json::Value::as_str)
+        .collect::<Vec<_>>();
+
+    assert_eq!(variants, vec!["responses", "chat", "anthropic"]);
+}

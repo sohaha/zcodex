@@ -2,6 +2,27 @@
 
 This crate implements the business logic for Codex. It is designed to be used by the various Codex UIs written in Rust.
 
+## Provider configuration notes
+
+`config.toml` can define `model_providers` entries that either add new
+providers or override built-in IDs such as `openai`.
+
+Example:
+
+```toml
+model_provider = "openai"
+
+[model_providers.openai]
+name = "OpenAI Chat"
+base_url = "https://api.openai.com/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "chat"
+```
+
+When `wire_api = "chat"` is selected, Codex uses `/v1/chat/completions`.
+This path does not support hosted-only tools such as `web_search` or
+`image_generation`, and only `user` messages may include image inputs.
+
 ## Dependencies
 
 Note that `codex-core` makes some assumptions about certain helper utilities being available in the environment. Currently, this support matrix is:

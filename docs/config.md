@@ -48,9 +48,27 @@ model provider entries. For Anthropic-compatible setups, use
 unless you override the provider config. The built-in `anthropic` provider
 defaults to `https://api.anthropic.com/v1`, and you can override that with
 `ANTHROPIC_BASE_URL` or a custom `model_providers.<id>.base_url` entry.
+User-defined `model_providers` entries may also override built-in IDs such as
+`openai` when you want to change the default provider wiring.
 You can also set `model_providers.<id>.model` to give that provider its own
 default model; when present, it takes precedence over the global `model`
 setting for requests sent through that provider.
+
+Example overriding the built-in OpenAI provider to use Chat Completions:
+
+```toml
+model_provider = "openai"
+
+[model_providers.openai]
+name = "OpenAI Chat"
+base_url = "https://api.openai.com/v1"
+env_key = "OPENAI_API_KEY"
+wire_api = "chat"
+```
+
+When `wire_api = "chat"` is selected, Codex uses `/v1/chat/completions`.
+This path does not support hosted-only tools such as `web_search` or
+`image_generation`, and only `user` messages may include image inputs.
 
 To retry a failed primary request against another provider, set
 `fallback_provider` to a provider ID from `model_providers` (or a built-in

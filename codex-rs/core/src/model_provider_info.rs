@@ -14,6 +14,12 @@ use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;
 use schemars::JsonSchema;
+use schemars::r#gen::SchemaGenerator;
+use schemars::schema::InstanceType;
+use schemars::schema::Metadata;
+use schemars::schema::Schema;
+use schemars::schema::SchemaObject;
+use schemars::schema::SubschemaValidation;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -38,7 +44,7 @@ pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub(crate) const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
 
 /// Wire protocol that the provider speaks.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
@@ -48,6 +54,62 @@ pub enum WireApi {
     Chat,
     /// The Anthropic Messages API exposed at `/v1/messages`.
     Anthropic,
+}
+
+impl JsonSchema for WireApi {
+    fn schema_name() -> String {
+        "WireApi".to_string()
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        let string_instance_type = Some(InstanceType::String.into());
+        let responses = Schema::Object(SchemaObject {
+            instance_type: string_instance_type.clone(),
+            metadata: Some(Box::new(Metadata {
+                description: Some(
+                    "The Responses API exposed by OpenAI at `/v1/responses`.".to_string(),
+                ),
+                ..Default::default()
+            })),
+            enum_values: Some(vec!["responses".into()]),
+            ..Default::default()
+        });
+        let chat = Schema::Object(SchemaObject {
+            instance_type: string_instance_type.clone(),
+            metadata: Some(Box::new(Metadata {
+                description: Some(
+                    "The Chat Completions API exposed by OpenAI at `/v1/chat/completions`."
+                        .to_string(),
+                ),
+                ..Default::default()
+            })),
+            enum_values: Some(vec!["chat".into()]),
+            ..Default::default()
+        });
+        let anthropic = Schema::Object(SchemaObject {
+            instance_type: string_instance_type,
+            metadata: Some(Box::new(Metadata {
+                description: Some(
+                    "The Anthropic Messages API exposed at `/v1/messages`.".to_string(),
+                ),
+                ..Default::default()
+            })),
+            enum_values: Some(vec!["anthropic".into()]),
+            ..Default::default()
+        });
+
+        Schema::Object(SchemaObject {
+            metadata: Some(Box::new(Metadata {
+                description: Some("Wire protocol that the provider speaks.".to_string()),
+                ..Default::default()
+            })),
+            subschemas: Some(Box::new(SubschemaValidation {
+                one_of: Some(vec![responses, chat, anthropic]),
+                ..Default::default()
+            })),
+            ..Default::default()
+        })
+    }
 }
 
 impl fmt::Display for WireApi {

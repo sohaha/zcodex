@@ -93,6 +93,13 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
     }
 }
 
+fn provider_with_bearer_for(base_url: String) -> ModelProviderInfo {
+    ModelProviderInfo {
+        experimental_bearer_token: Some("test-token".into()),
+        ..provider_for(base_url)
+    }
+}
+
 fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "mock-anthropic".into(),
@@ -609,6 +616,49 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
         models_mock.requests().len(),
         0,
         "no auth should avoid /models requests"
+    );
+}
+
+#[tokio::test]
+async fn refresh_available_models_uses_provider_supplied_auth() {
+    let server = MockServer::start().await;
+    let dynamic_slug = "dynamic-model-only-for-provider-auth";
+    let models_mock = mount_models_once(
+        &server,
+        ModelsResponse {
+            models: vec![remote_model(dynamic_slug, "Provider Auth", 1)],
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = Arc::new(AuthManager::new(
+        codex_home.path().to_path_buf(),
+        false,
+        AuthCredentialsStoreMode::File,
+    ));
+    let provider = provider_with_bearer_for(server.uri());
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect("refresh should use provider-supplied auth");
+    let cached_remote = manager.get_remote_models().await;
+    assert!(
+        cached_remote
+            .iter()
+            .any(|candidate| candidate.slug == dynamic_slug),
+        "provider-supplied auth should allow /models refresh"
+    );
+    assert_eq!(
+        models_mock.requests().len(),
+        1,
+        "provider-supplied auth should trigger one /models request"
     );
 }
 

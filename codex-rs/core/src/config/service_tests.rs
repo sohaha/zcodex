@@ -435,12 +435,12 @@ async fn invalid_user_value_rejected_even_if_overridden_by_managed() {
 }
 
 #[tokio::test]
-async fn reserved_builtin_provider_override_rejected() {
+async fn write_value_allows_builtin_provider_override() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"user\"\n").unwrap();
 
     let service = ConfigService::new_with_defaults(tmp.path().to_path_buf());
-    let error = service
+    let result = service
         .write_value(ConfigValueWriteParams {
             file_path: Some(tmp.path().join(CONFIG_TOML_FILE).display().to_string()),
             key_path: "model_providers.openai.name".to_string(),
@@ -449,17 +449,13 @@ async fn reserved_builtin_provider_override_rejected() {
             expected_version: None,
         })
         .await
-        .expect_err("should reject reserved provider override");
-
-    assert_eq!(
-        error.write_error_code(),
-        Some(ConfigWriteErrorCode::ConfigValidationError)
-    );
-    assert!(error.to_string().contains("reserved built-in provider IDs"));
-    assert!(error.to_string().contains("`openai`"));
+        .expect("should allow overriding built-in provider");
 
     let contents = std::fs::read_to_string(tmp.path().join(CONFIG_TOML_FILE)).expect("read config");
-    assert_eq!(contents, "model = \"user\"\n");
+    assert!(!result.version.is_empty());
+    assert!(contents.contains("model = \"user\""));
+    assert!(contents.contains("[model_providers.openai]"));
+    assert!(contents.contains("name = \"OpenAI Override\""));
 }
 
 #[tokio::test]
