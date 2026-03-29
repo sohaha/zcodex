@@ -315,6 +315,125 @@ async fn chat_wire_api_translates_responses_endpoint_to_chat_upstream() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_preserves_named_required_tool_choice_when_translating_responses() {
+    let (request_tx, request_rx) = oneshot::channel::<Value>();
+    let request_tx = Arc::new(Mutex::new(Some(request_tx)));
+    let upstream_router = Router::new().route(
+        "/v1/chat/completions",
+        post({
+            let request_tx = request_tx.clone();
+            move |body: String| {
+                let request_tx = request_tx.clone();
+                async move {
+                    if let Some(tx) = request_tx.lock().await.take() {
+                        let parsed = serde_json::from_str::<Value>(&body).expect("body json");
+                        let _ = tx.send(parsed);
+                    }
+                    axum::Json(json!({
+                        "id": "chatcmpl-1",
+                        "object": "chat.completion",
+                        "created": 123,
+                        "model": "gpt-chat",
+                        "choices": [{
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": "hello from chat"
+                            },
+                            "finish_reason": "stop"
+                        }]
+                    }))
+                }
+            }
+        }),
+    );
+    let (upstream_addr, _upstream_handle) = spawn_router(upstream_router).await;
+
+    let response = proxy_request(
+        chat_state(format!("http://{upstream_addr}/v1")),
+        Method::POST,
+        CompatEndpoint::Responses,
+        None,
+        HeaderMap::new(),
+        Some(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [{
+                    "type": "function",
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "parameters": { "type": "object", "properties": {} }
+                }],
+                "tool_choice": "required:read_file",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": false,
+                "include": []
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let upstream_request = request_rx.await.expect("upstream request");
+    assert_eq!(
+        upstream_request["tool_choice"],
+        json!({
+            "type": "function",
+            "function": { "name": "read_file" }
+        })
+    );
+}
+
+#[tokio::test]
+async fn chat_wire_api_rejects_unknown_named_required_tool_choice() {
+    let response = proxy_request(
+        chat_state("http://127.0.0.1:1/v1".to_string()),
+        Method::POST,
+        CompatEndpoint::Responses,
+        None,
+        HeaderMap::new(),
+        Some(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [],
+                "tool_choice": "required:read_file",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": false,
+                "include": []
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let body: Value = serde_json::from_slice(&body).expect("json body");
+    assert_eq!(
+        body["error"]["message"],
+        "failed to translate /v1/responses request into /v1/chat/completions: invalid_request: chat completions tool_choice requires unknown tool read_file"
+    );
+}
+
+#[tokio::test]
 async fn chat_wire_api_proxy_forwards_chat_completions_via_running_server() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
