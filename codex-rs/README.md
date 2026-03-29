@@ -131,7 +131,8 @@ codex --sandbox danger-full-access
 
 - [`core/`](./core) 包含 Codex 的业务逻辑。我们希望它最终成为可复用的库 crate，供其他 Rust/原生应用使用。
 - [`exec/`](./exec) 适用于自动化场景的“无界面”CLI。
-- [`tui/`](./tui) 全屏 TUI（使用 [Ratatui](https://ratatui.rs/)）。
+- [`tui_app_server/`](./tui_app_server) 当前主实现的全屏 TUI（使用 [Ratatui](https://ratatui.rs/)）。
+- [`tui/`](./tui) 兼容层 crate，保留给仍引用旧路径的本地工作流。
 - [`cli/`](./cli) CLI 多功能入口，通过子命令提供上述功能。
 
 如果你要贡献或深入排查行为，建议先阅读各 crate 下的 `README.md`，并从顶层 `codex-rs` 目录运行 workspace，以保证共享配置、特性与构建脚本对齐。
