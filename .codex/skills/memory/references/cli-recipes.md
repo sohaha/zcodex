@@ -35,8 +35,8 @@
 - `codex zmemory export recent --limit 5 --json`
 - `codex zmemory export glossary --json`
 - `codex zmemory rebuild-search --json`
-- `codex zmemory read system://alias --json`（alias coverage + missing triggers）
-- `codex zmemory read system://alias/5 --json`（查看 alias 覆盖排名前 5 的节点）
+- `codex zmemory export alias --json`（alias coverage + missing triggers）
+- `codex zmemory export alias --limit 5 --json`（查看 alias 覆盖排名前 5 的节点）
 
 ## recall helpers
 - `codex zmemory search "review pressure" --uri core://project-alpha --limit 10 --json`

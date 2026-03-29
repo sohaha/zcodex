@@ -1873,7 +1873,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "uri".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|index|index/<domain>|recent|recent/<n>|glossary for built-in views."
+                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n> for built-in views."
                         .to_string(),
                 ),
             },

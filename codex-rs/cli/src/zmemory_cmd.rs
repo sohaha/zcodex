@@ -150,6 +150,7 @@ pub enum ZmemoryExportTarget {
     Index,
     Recent,
     Glossary,
+    Alias,
 }
 
 #[derive(Debug, Parser)]
@@ -297,5 +298,9 @@ fn export_uri(command: &ZmemoryExportCommand) -> String {
             None => "system://recent".to_string(),
         },
         ZmemoryExportTarget::Glossary => "system://glossary".to_string(),
+        ZmemoryExportTarget::Alias => match command.limit {
+            Some(limit) => format!("system://alias/{limit}"),
+            None => "system://alias".to_string(),
+        },
     }
 }

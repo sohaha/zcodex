@@ -43,6 +43,7 @@
 - `system://index`
 - `system://recent`
 - `system://glossary`
+- `system://alias`
 
 ## 设计边界
 
@@ -70,6 +71,7 @@ codex zmemory doctor --json
 - `codex zmemory export index [--domain core] [--limit N]`
 - `codex zmemory export recent [--limit N]`
 - `codex zmemory export glossary [--limit N]`
+- `codex zmemory export alias [--limit N]`
 
 底层仍复用 `read system://...`：
 
@@ -77,6 +79,7 @@ codex zmemory doctor --json
 - `export index --domain core` -> `system://index/core`
 - `export recent --limit 5` -> `system://recent/5`
 - `export glossary` -> `system://glossary`
+- `export alias --limit 5` -> `system://alias/5`
 
 ## review 治理入口
 
@@ -92,7 +95,7 @@ codex zmemory doctor --json
 1. 先看 `stats` 判断 orphan / deprecated 压力。
 2. 再看 `doctor` 判断是否存在需要优先修复的告警。
 3. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
-4. 视 `stats` 中 alias/trigger 覆盖后，再用 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
+4. 视 `stats` 中 alias/trigger 覆盖后，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
 
 `system://alias` 视图返回结构：
 
@@ -109,8 +112,9 @@ codex zmemory doctor --json
 
 为了进一步支持 alias/trigger 审核，可直接 `read system://alias [limit]`，该视图汇总 alias nodes、trigger 覆盖与 alias-without-trigger 的列表：
 
-- `codex zmemory read system://alias --json`：查看 alias/trigger 总量与缺失概况。
-- `codex zmemory read system://alias/5 --json`：按治理优先级排序，优先列出缺 trigger 且 alias 扇出更高的节点。
+- `codex zmemory export alias --json`：查看 alias/trigger 总量与缺失概况。
+- `codex zmemory export alias --limit 5 --json`：按治理优先级排序，优先列出缺 trigger 且 alias 扇出更高的节点。
+- `codex zmemory read system://alias --json` / `read system://alias/5 --json`：仍保留为底层等价入口。
 
 这些信息配合 `stats`/`doctor` 能形成“alias coverage + trigger wiring”评估，为 alias review 清单提供输入。
 

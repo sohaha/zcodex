@@ -927,7 +927,9 @@ fn zmemory_tool_uri_parameter_documents_system_views() {
 
     assert!(uri_description.contains("core://..."));
     assert!(
-        uri_description.contains("system://boot|index|index/<domain>|recent|recent/<n>|glossary")
+        uri_description.contains(
+            "system://boot|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n>"
+        )
     );
     assert!(uri_description.contains("optional search scope"));
 }

@@ -735,5 +735,24 @@ async fn zmemory_export_supports_domain_and_recent_limit() -> Result<()> {
     assert_eq!(recent_payload["result"]["uri"], "system://recent/1");
     assert_eq!(recent_payload["result"]["view"]["entryCount"], 1);
 
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "alias://agent-profile",
+            "core://agent-profile",
+            "--json",
+        ])
+        .assert()
+        .success();
+
+    let alias_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "export", "alias", "--limit", "1", "--json"],
+    )?;
+    assert_eq!(alias_payload["result"]["uri"], "system://alias/1");
+    assert_eq!(alias_payload["result"]["view"]["view"], "alias");
+    assert_eq!(alias_payload["result"]["view"]["entryCount"], 1);
+
     Ok(())
 }

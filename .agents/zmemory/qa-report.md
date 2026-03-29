@@ -70,3 +70,14 @@ dependencies: [tech-review, tasks]
    - `RUSTC_WRAPPER= cargo test -p codex-cli --test zmemory --quiet` ✅（14 passed）
    - `RUSTC_WRAPPER= cargo test -p codex-core --test all zmemory_function_ --quiet` ✅（4 passed）
    - `cargo run -p codex-cli -- zmemory create/read ...` 手工链路 ✅
+
+## 2026-03-29 discoverability follow-up
+- 本轮不改 `zmemory` 核心语义，只做 discoverability 收口：
+  - `codex-rs/core/src/tools/spec.rs` 补齐 `system://alias|alias/<n>` 文档合同。
+  - `codex-rs/cli/src/zmemory_cmd.rs` 新增 `zmemory export alias [--limit N]`，与现有 `system://alias` 视图等价。
+  - `.codex/skills/memory/` 与 `codex-rs/zmemory/README.md` 改为优先使用 `export alias` 作为 alias review 入口。
+- 已验证：
+  - `cargo test -p codex-cli --test zmemory --no-run --quiet` ✅（确认 CLI 代码和新增测试可编译）
+  - `cargo test -p codex-core zmemory_tool_uri_parameter_documents_system_views --quiet` ✅
+- 未完成：
+  - `cargo test -p codex-cli --test zmemory --quiet` 在当前环境里会跑到不带 `zmemory` 子命令的 `codex` 可执行文件，无法把失败归因到本轮改动，因此本轮只保留编译验证，不宣称完整 CLI 运行验证通过。
