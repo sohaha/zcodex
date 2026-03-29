@@ -12,10 +12,6 @@ use crate::SandboxState;
 use crate::agent::AgentControl;
 use crate::agent::AgentStatus;
 use crate::agent::agent_status_from_event;
-use crate::analytics_client::AnalyticsEventsClient;
-use crate::analytics_client::AppInvocation;
-use crate::analytics_client::InvocationType;
-use crate::analytics_client::build_track_events_context;
 use crate::apps::render_apps_section;
 use crate::auth_env_telemetry::collect_auth_env_telemetry;
 use crate::commit_attribution::commit_message_trailer_instruction;
@@ -24,24 +20,24 @@ use crate::compact::InitialContextInjection;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
-use crate::config::FallbackProviderConfig;
 use crate::config::ManagedFeatures;
 use crate::connectors;
 use crate::exec_policy::ExecPolicyManager;
-use crate::model_provider_info::ModelProviderInfo;
 #[cfg(test)]
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::parse_command::parse_command;
 use crate::parse_turn_item;
+use crate::path_utils::normalize_for_native_workdir;
 use crate::realtime_conversation::RealtimeConversationManager;
 use crate::realtime_conversation::handle_audio as handle_realtime_conversation_audio;
 use crate::realtime_conversation::handle_close as handle_realtime_conversation_close;
 use crate::realtime_conversation::handle_start as handle_realtime_conversation_start;
 use crate::realtime_conversation::handle_text as handle_realtime_conversation_text;
+use crate::render_skills_section;
 use crate::rollout::session_index;
-use crate::skills::render_skills_section;
+use crate::skills_load_input_from_config;
 use crate::stream_events_utils::HandleOutputCtx;
 use crate::stream_events_utils::handle_non_tool_response_item;
 use crate::stream_events_utils::handle_output_item_done;
@@ -54,9 +50,14 @@ use async_channel::Receiver;
 use async_channel::Sender;
 use chrono::Local;
 use chrono::Utc;
+use codex_analytics::AnalyticsEventsClient;
+use codex_analytics::AppInvocation;
+use codex_analytics::InvocationType;
+use codex_analytics::build_track_events_context;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_exec_server::Environment;
+use codex_exec_server::EnvironmentManager;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_features::unstable_features_warning_event;
@@ -74,7 +75,6 @@ use codex_otel::current_span_w3c_trace_context;
 use codex_otel::set_parent_from_w3c_trace_context;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ElicitationRequestEvent;
-use codex_protocol::approvals::ExecApprovalRequestSkillMetadata;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
@@ -128,7 +128,6 @@ use futures::future::BoxFuture;
 use futures::future::Shared;
 use futures::prelude::*;
 use futures::stream::FuturesOrdered;
-use http::StatusCode;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::PaginatedRequestParams;
@@ -157,6 +156,7 @@ use tracing::trace_span;
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::ModelProviderInfo;
 use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
@@ -235,6 +235,14 @@ pub(crate) struct PreviousTurnSettings {
     pub(crate) realtime_active: Option<bool>,
 }
 
+use crate::SkillError;
+use crate::SkillInjections;
+use crate::SkillLoadOutcome;
+use crate::SkillMetadata;
+use crate::SkillsManager;
+use crate::build_skill_injections;
+use crate::collect_env_var_dependencies;
+use crate::collect_explicit_skill_mentions;
 use crate::exec_policy::ExecPolicyUpdateError;
 use crate::feedback_tags;
 use crate::guardian::GuardianReviewSessionManager;
@@ -244,6 +252,9 @@ use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
 use crate::hook_runtime::run_pending_session_start_hooks;
 use crate::hook_runtime::run_user_prompt_submit_hooks;
+use crate::injection::ToolMentionKind;
+use crate::injection::app_id_from_path;
+use crate::injection::tool_kind_for_path;
 use crate::instructions::UserInstructions;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp::McpManager;
@@ -301,6 +312,7 @@ use crate::protocol::TokenUsage;
 use crate::protocol::TokenUsageInfo;
 use crate::protocol::TurnDiffEvent;
 use crate::protocol::WarningEvent;
+use crate::resolve_skill_dependencies_for_turn;
 use crate::rollout::RolloutRecorder;
 use crate::rollout::RolloutRecorderParams;
 use crate::rollout::map_session_init_error;
@@ -309,18 +321,6 @@ use crate::rollout::policy::EventPersistenceMode;
 use crate::session_startup_prewarm::SessionStartupPrewarmHandle;
 use crate::shell;
 use crate::shell_snapshot::ShellSnapshot;
-use crate::skills::SkillError;
-use crate::skills::SkillInjections;
-use crate::skills::SkillLoadOutcome;
-use crate::skills::SkillMetadata;
-use crate::skills::SkillsManager;
-use crate::skills::build_skill_injections;
-use crate::skills::collect_env_var_dependencies;
-use crate::skills::collect_explicit_skill_mentions;
-use crate::skills::injection::ToolMentionKind;
-use crate::skills::injection::app_id_from_path;
-use crate::skills::injection::tool_kind_for_path;
-use crate::skills::resolve_skill_dependencies_for_turn;
 use crate::skills_watcher::SkillsWatcher;
 use crate::skills_watcher::SkillsWatcherEvent;
 use crate::state::ActiveTurn;
@@ -405,6 +405,7 @@ pub(crate) struct CodexSpawnArgs {
     pub(crate) config: Config,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) models_manager: Arc<ModelsManager>,
+    pub(crate) environment_manager: Arc<EnvironmentManager>,
     pub(crate) skills_manager: Arc<SkillsManager>,
     pub(crate) plugins_manager: Arc<PluginsManager>,
     pub(crate) mcp_manager: Arc<McpManager>,
@@ -425,8 +426,6 @@ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
-const OPENAI_CYBER_SAFETY_REQUESTED_MODEL: &str = "gpt-5.3-codex";
-const OPENAI_CYBER_SAFETY_FALLBACK_MODEL: &str = "gpt-5.2";
 const DIRECT_APP_TOOL_EXPOSURE_THRESHOLD: usize = 100;
 
 impl Codex {
@@ -460,6 +459,7 @@ impl Codex {
             mut config,
             auth_manager,
             models_manager,
+            environment_manager,
             skills_manager,
             plugins_manager,
             mcp_manager,
@@ -478,7 +478,10 @@ impl Codex {
         let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
         let (tx_event, rx_event) = async_channel::unbounded();
 
-        let loaded_skills = skills_manager.skills_for_config(&config);
+        let plugin_outcome = plugins_manager.plugins_for_config(&config);
+        let effective_skill_roots = plugin_outcome.effective_skill_roots();
+        let skills_input = skills_load_input_from_config(&config, effective_skill_roots);
+        let loaded_skills = skills_manager.skills_for_config(&skills_input);
 
         for err in &loaded_skills.errors {
             error!(
@@ -648,6 +651,7 @@ impl Codex {
             agent_status_tx.clone(),
             conversation_history,
             session_source_clone,
+            environment_manager,
             skills_manager,
             plugins_manager,
             mcp_manager.clone(),
@@ -842,10 +846,10 @@ pub(crate) struct TurnContext {
     pub(crate) reasoning_summary: ReasoningSummaryConfig,
     pub(crate) session_source: SessionSource,
     pub(crate) environment: Arc<Environment>,
-    /// The session's current working directory. All relative paths provided by
-    /// the model as well as sandbox policies are resolved against this path
+    /// The session's absolute working directory. All relative paths provided
+    /// by the model as well as sandbox policies are resolved against this path
     /// instead of `std::env::current_dir()`.
-    pub(crate) cwd: PathBuf,
+    pub(crate) cwd: AbsolutePathBuf,
     pub(crate) current_date: Option<String>,
     pub(crate) timezone: Option<String>,
     pub(crate) app_server_client_name: Option<String>,
@@ -865,16 +869,17 @@ pub(crate) struct TurnContext {
     pub(crate) features: ManagedFeatures,
     pub(crate) ghost_snapshot: GhostSnapshotConfig,
     pub(crate) final_output_json_schema: Option<Value>,
+    pub(crate) codex_self_exe: Option<PathBuf>,
     pub(crate) codex_linux_sandbox_exe: Option<PathBuf>,
     pub(crate) tool_call_gate: Arc<ReadinessFlag>,
     pub(crate) truncation_policy: TruncationPolicy,
     pub(crate) js_repl: Arc<JsReplHandle>,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
+    pub(crate) tool_routing_directives: Arc<RwLock<ToolRoutingDirectives>>,
+    pub(crate) auto_tldr_context: Arc<RwLock<AutoTldrContext>>,
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
     pub(crate) turn_skills: TurnSkillsContext,
     pub(crate) turn_timing_state: Arc<TurnTimingState>,
-    pub(crate) tool_routing_directives: Arc<RwLock<ToolRoutingDirectives>>,
-    pub(crate) auto_tldr_context: Arc<RwLock<AutoTldrContext>>,
 }
 impl TurnContext {
     pub(crate) fn model_context_window(&self) -> Option<i64> {
@@ -936,7 +941,6 @@ impl TurnContext {
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
-        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
         .with_agent_roles(config.agent_roles.clone());
 
         Self {
@@ -975,149 +979,24 @@ impl TurnContext {
             features,
             ghost_snapshot: self.ghost_snapshot.clone(),
             final_output_json_schema: self.final_output_json_schema.clone(),
+            codex_self_exe: self.codex_self_exe.clone(),
             codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.clone(),
             tool_call_gate: Arc::new(ReadinessFlag::new()),
             truncation_policy,
             js_repl: Arc::clone(&self.js_repl),
             dynamic_tools: self.dynamic_tools.clone(),
+            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
+            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
-            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
-            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
         }
-    }
-
-    pub(crate) async fn with_model_provider(
-        &self,
-        model: String,
-        model_provider_id: String,
-        model_provider: ModelProviderInfo,
-        models_manager: &ModelsManager,
-    ) -> Self {
-        let mut config = (*self.config).clone();
-        config.model = Some(model.clone());
-        config.model_provider_id = model_provider_id;
-        config.model_provider = model_provider.clone();
-        let model_info = models_manager.get_model_info(model.as_str(), &config).await;
-        let truncation_policy = model_info.truncation_policy.into();
-        let supported_reasoning_levels = model_info
-            .supported_reasoning_levels
-            .iter()
-            .map(|preset| preset.effort)
-            .collect::<Vec<_>>();
-        let reasoning_effort = if let Some(current_reasoning_effort) = self.reasoning_effort {
-            if supported_reasoning_levels.contains(&current_reasoning_effort) {
-                Some(current_reasoning_effort)
-            } else {
-                supported_reasoning_levels
-                    .get(supported_reasoning_levels.len().saturating_sub(1) / 2)
-                    .copied()
-                    .or(model_info.default_reasoning_level)
-            }
-        } else {
-            supported_reasoning_levels
-                .get(supported_reasoning_levels.len().saturating_sub(1) / 2)
-                .copied()
-                .or(model_info.default_reasoning_level)
-        };
-        config.model_reasoning_effort = reasoning_effort;
-
-        let collaboration_mode = self.collaboration_mode.with_updates(
-            Some(model.clone()),
-            Some(reasoning_effort),
-            /*developer_instructions*/ None,
-        );
-        let features = self.features.clone();
-        let tools_config = ToolsConfig::new(&ToolsConfigParams {
-            model_info: &model_info,
-            available_models: &models_manager
-                .list_models(RefreshStrategy::OnlineIfUncached)
-                .await,
-            features: &features,
-            web_search_mode: self.tools_config.web_search_mode,
-            session_source: self.session_source.clone(),
-            sandbox_policy: self.sandbox_policy.get(),
-            windows_sandbox_level: self.windows_sandbox_level,
-        })
-        .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
-        .with_web_search_config(self.tools_config.web_search_config.clone())
-        .with_allow_login_shell(self.tools_config.allow_login_shell)
-        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
-        .with_agent_roles(config.agent_roles.clone());
-
-        Self {
-            sub_id: self.sub_id.clone(),
-            trace_id: self.trace_id.clone(),
-            realtime_active: self.realtime_active,
-            config: Arc::new(config),
-            auth_manager: self.auth_manager.clone(),
-            model_info: model_info.clone(),
-            session_telemetry: self
-                .session_telemetry
-                .clone()
-                .with_model(model.as_str(), model_info.slug.as_str()),
-            provider: model_provider,
-            reasoning_effort,
-            reasoning_summary: self.reasoning_summary,
-            session_source: self.session_source.clone(),
-            environment: Arc::clone(&self.environment),
-            cwd: self.cwd.clone(),
-            current_date: self.current_date.clone(),
-            timezone: self.timezone.clone(),
-            app_server_client_name: self.app_server_client_name.clone(),
-            developer_instructions: self.developer_instructions.clone(),
-            compact_prompt: self.compact_prompt.clone(),
-            user_instructions: self.user_instructions.clone(),
-            collaboration_mode,
-            personality: self.personality,
-            approval_policy: self.approval_policy.clone(),
-            sandbox_policy: self.sandbox_policy.clone(),
-            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
-            network_sandbox_policy: self.network_sandbox_policy,
-            network: self.network.clone(),
-            windows_sandbox_level: self.windows_sandbox_level,
-            shell_environment_policy: self.shell_environment_policy.clone(),
-            tools_config,
-            features,
-            ghost_snapshot: self.ghost_snapshot.clone(),
-            final_output_json_schema: self.final_output_json_schema.clone(),
-            codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.clone(),
-            tool_call_gate: Arc::new(ReadinessFlag::new()),
-            truncation_policy,
-            js_repl: Arc::clone(&self.js_repl),
-            dynamic_tools: self.dynamic_tools.clone(),
-            turn_metadata_state: self.turn_metadata_state.clone(),
-            turn_skills: self.turn_skills.clone(),
-            turn_timing_state: Arc::clone(&self.turn_timing_state),
-            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
-            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
-        }
-    }
-
-    pub(crate) async fn with_model_and_reasoning_effort(
-        &self,
-        model: String,
-        reasoning_effort: Option<ReasoningEffortConfig>,
-        models_manager: &ModelsManager,
-    ) -> Self {
-        let mut updated = self.with_model(model, models_manager).await;
-        let mut config = (*updated.config).clone();
-        config.model_reasoning_effort = reasoning_effort;
-        updated.config = Arc::new(config);
-        updated.reasoning_effort = reasoning_effort;
-        updated.collaboration_mode = updated.collaboration_mode.with_updates(
-            /*model*/ None,
-            Some(reasoning_effort),
-            /*developer_instructions*/ None,
-        );
-        updated
     }
 
     pub(crate) fn resolve_path(&self, path: Option<String>) -> PathBuf {
         path.as_ref()
             .map(PathBuf::from)
-            .map_or_else(|| self.cwd.clone(), |p| self.cwd.join(p))
+            .map_or_else(|| self.cwd.to_path_buf(), |p| self.cwd.as_path().join(p))
     }
 
     pub(crate) fn compact_prompt(&self) -> &str {
@@ -1130,7 +1009,7 @@ impl TurnContext {
         TurnContextItem {
             turn_id: Some(self.sub_id.clone()),
             trace_id: self.trace_id.clone(),
-            cwd: self.cwd.clone(),
+            cwd: self.cwd.to_path_buf(),
             current_date: self.current_date.clone(),
             timezone: self.timezone.clone(),
             approval_policy: self.approval_policy.value(),
@@ -1157,8 +1036,16 @@ impl TurnContext {
             .network
             .as_ref()?;
         Some(TurnContextNetworkItem {
-            allowed_domains: network.allowed_domains.clone().unwrap_or_default(),
-            denied_domains: network.denied_domains.clone().unwrap_or_default(),
+            allowed_domains: network
+                .domains
+                .as_ref()
+                .and_then(codex_config::NetworkDomainPermissionsToml::allowed_domains)
+                .unwrap_or_default(),
+            denied_domains: network
+                .domains
+                .as_ref()
+                .and_then(codex_config::NetworkDomainPermissionsToml::denied_domains)
+                .unwrap_or_default(),
         })
     }
 }
@@ -1206,14 +1093,11 @@ pub(crate) struct SessionConfiguration {
     network_sandbox_policy: NetworkSandboxPolicy,
     windows_sandbox_level: WindowsSandboxLevel,
 
-    /// Working directory that should be treated as the *root* of the
+    /// Absolute working directory that should be treated as the *root* of the
     /// session. All relative paths supplied by the model as well as the
-    /// execution sandbox are resolved against this directory **instead**
-    /// of the process-wide current working directory. CLI front-ends are
-    /// expected to expand this to an absolute path before sending the
-    /// `ConfigureSession` operation so that the business-logic layer can
-    /// operate deterministically.
-    cwd: PathBuf,
+    /// execution sandbox are resolved against this directory **instead** of
+    /// the process-wide current working directory.
+    cwd: AbsolutePathBuf,
     /// Directory containing all Codex state for this session.
     codex_home: PathBuf,
     /// Optional user-facing name for the thread, updated during the session.
@@ -1245,7 +1129,7 @@ impl SessionConfiguration {
             approval_policy: self.approval_policy.value(),
             approvals_reviewer: self.approvals_reviewer,
             sandbox_policy: self.sandbox_policy.get().clone(),
-            cwd: self.cwd.clone(),
+            cwd: self.cwd.to_path_buf(),
             ephemeral: self.original_config_do_not_use.ephemeral,
             reasoning_effort: self.collaboration_mode.reasoning_effort(),
             personality: self.personality,
@@ -1288,11 +1172,23 @@ impl SessionConfiguration {
         if let Some(windows_sandbox_level) = updates.windows_sandbox_level {
             next_configuration.windows_sandbox_level = windows_sandbox_level;
         }
-        let mut cwd_changed = false;
-        if let Some(cwd) = updates.cwd.clone() {
-            next_configuration.cwd = cwd;
-            cwd_changed = true;
-        }
+
+        let absolute_cwd = updates
+            .cwd
+            .as_ref()
+            .map(|cwd| {
+                AbsolutePathBuf::relative_to_current_dir(normalize_for_native_workdir(
+                    cwd.as_path(),
+                ))
+                .unwrap_or_else(|e| {
+                    warn!("failed to normalize update cwd: {cwd:?}: {e}");
+                    self.cwd.clone()
+                })
+            })
+            .unwrap_or_else(|| self.cwd.clone());
+
+        let cwd_changed = absolute_cwd.as_path() != self.cwd.as_path();
+        next_configuration.cwd = absolute_cwd;
         if sandbox_policy_changed || (cwd_changed && file_system_policy_matches_legacy) {
             // Preserve richer split policies across cwd-only updates; only
             // rederive when the session is already using the legacy bridge.
@@ -1489,8 +1385,6 @@ impl Session {
         let auth_manager_for_context = auth_manager;
         let provider_for_context = provider;
         let session_telemetry_for_context = session_telemetry;
-        let per_turn_config = Arc::new(per_turn_config);
-
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
             available_models: &models_manager.try_list_models().unwrap_or_default(),
@@ -1507,14 +1401,15 @@ impl Session {
         )
         .with_web_search_config(per_turn_config.web_search_config.clone())
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
-        .with_auto_tldr_routing(per_turn_config.auto_tldr_routing)
         .with_agent_roles(per_turn_config.agent_roles.clone());
 
         let cwd = session_configuration.cwd.clone();
+
+        let per_turn_config = Arc::new(per_turn_config);
         let turn_metadata_state = Arc::new(TurnMetadataState::new(
             conversation_id.to_string(),
             sub_id.clone(),
-            cwd.clone(),
+            cwd.to_path_buf(),
             session_configuration.sandbox_policy.get(),
             session_configuration.windows_sandbox_level,
         ));
@@ -1552,16 +1447,17 @@ impl Session {
             features: per_turn_config.features.clone(),
             ghost_snapshot: per_turn_config.ghost_snapshot.clone(),
             final_output_json_schema: None,
+            codex_self_exe: per_turn_config.codex_self_exe.clone(),
             codex_linux_sandbox_exe: per_turn_config.codex_linux_sandbox_exe.clone(),
             tool_call_gate: Arc::new(ReadinessFlag::new()),
             truncation_policy: model_info.truncation_policy.into(),
             js_repl,
             dynamic_tools: session_configuration.dynamic_tools.clone(),
+            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
+            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
             turn_metadata_state,
             turn_skills: TurnSkillsContext::new(skills_outcome),
             turn_timing_state: Arc::new(TurnTimingState::default()),
-            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
-            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
         }
     }
 
@@ -1577,6 +1473,7 @@ impl Session {
         agent_status: watch::Sender<AgentStatus>,
         initial_history: InitialHistory,
         session_source: SessionSource,
+        environment_manager: Arc<EnvironmentManager>,
         skills_manager: Arc<SkillsManager>,
         plugins_manager: Arc<PluginsManager>,
         mcp_manager: Arc<McpManager>,
@@ -1588,13 +1485,6 @@ impl Session {
             session_configuration.collaboration_mode.model(),
             session_configuration.provider
         );
-        if !session_configuration.cwd.is_absolute() {
-            return Err(anyhow::anyhow!(
-                "cwd is not absolute: {:?}",
-                session_configuration.cwd
-            ));
-        }
-
         let forked_from_id = initial_history.forked_from_id();
 
         let (conversation_id, rollout_params) = match &initial_history {
@@ -1864,7 +1754,7 @@ impl Session {
                 ShellSnapshot::start_snapshotting(
                     config.codex_home.clone(),
                     conversation_id,
-                    session_configuration.cwd.clone(),
+                    session_configuration.cwd.to_path_buf(),
                     &mut default_shell,
                     session_telemetry.clone(),
                 )
@@ -1982,8 +1872,9 @@ impl Session {
             shell_zsh_path: config.zsh_path.clone(),
             main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
             analytics_events_client: AnalyticsEventsClient::new(
-                Arc::clone(&config),
                 Arc::clone(&auth_manager),
+                config.chatgpt_base_url.trim_end_matches('/').to_string(),
+                config.analytics_enabled,
             ),
             hooks,
             rollout: Mutex::new(rollout_recorder),
@@ -1995,7 +1886,6 @@ impl Session {
             session_telemetry,
             models_manager: Arc::clone(&models_manager),
             tool_approvals: Mutex::new(ApprovalStore::default()),
-            execve_session_approvals: RwLock::new(HashMap::new()),
             skills_manager,
             plugins_manager: Arc::clone(&plugins_manager),
             mcp_manager: Arc::clone(&mcp_manager),
@@ -2017,9 +1907,7 @@ impl Session {
             code_mode_service: crate::tools::code_mode::CodeModeService::new(
                 config.js_repl_node_path.clone(),
             ),
-            environment: Arc::new(
-                Environment::create(config.experimental_exec_server_url.clone()).await?,
-            ),
+            environment: environment_manager.current().await?,
         };
         let js_repl = Arc::new(JsReplHandle::with_node_path(
             config.js_repl_node_path.clone(),
@@ -2063,7 +1951,7 @@ impl Session {
                 approval_policy: session_configuration.approval_policy.value(),
                 approvals_reviewer: session_configuration.approvals_reviewer,
                 sandbox_policy: session_configuration.sandbox_policy.get().clone(),
-                cwd: session_configuration.cwd.clone(),
+                cwd: session_configuration.cwd.to_path_buf(),
                 reasoning_effort: session_configuration.collaboration_mode.reasoning_effort(),
                 history_log_id,
                 history_entry_count,
@@ -2084,7 +1972,7 @@ impl Session {
         let sandbox_state = SandboxState {
             sandbox_policy: session_configuration.sandbox_policy.get().clone(),
             codex_linux_sandbox_exe: config.codex_linux_sandbox_exe.clone(),
-            sandbox_cwd: session_configuration.cwd.clone(),
+            sandbox_cwd: session_configuration.cwd.to_path_buf(),
             use_legacy_landlock: config.features.use_legacy_landlock(),
         };
         let mut required_mcp_servers: Vec<String> = mcp_servers
@@ -2149,7 +2037,9 @@ impl Session {
                     .map(|failure| format!("{}: {}", failure.server, failure.error))
                     .collect::<Vec<_>>()
                     .join("; ");
-                return Err(anyhow::anyhow!("必需的 MCP 服务器初始化失败：{details}"));
+                return Err(anyhow::anyhow!(
+                    "required MCP servers failed to initialize: {details}"
+                ));
             }
         }
         sess.schedule_startup_prewarm(session_configuration.base_instructions.clone())
@@ -2302,11 +2192,7 @@ impl Session {
             InitialHistory::Resumed(resumed_history) => {
                 let rollout_items = resumed_history.history;
                 let previous_turn_settings = self
-                    .apply_rollout_reconstruction(
-                        &turn_context,
-                        &rollout_items,
-                        /*clear_missing_reference_context*/ false,
-                    )
+                    .apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
 
                 // If resuming, warn when the last recorded model differs from the current one.
@@ -2343,12 +2229,8 @@ impl Session {
                 }
             }
             InitialHistory::Forked(rollout_items) => {
-                self.apply_rollout_reconstruction(
-                    &turn_context,
-                    &rollout_items,
-                    /*clear_missing_reference_context*/ false,
-                )
-                .await;
+                self.apply_rollout_reconstruction(&turn_context, &rollout_items)
+                    .await;
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
@@ -2377,25 +2259,16 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
-        clear_missing_reference_context: bool,
     ) -> Option<PreviousTurnSettings> {
         let reconstructed_rollout = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
         let previous_turn_settings = reconstructed_rollout.previous_turn_settings.clone();
-        if clear_missing_reference_context {
-            self.replace_history(
-                reconstructed_rollout.history,
-                reconstructed_rollout.reference_context_item,
-            )
-            .await;
-        } else {
-            let mut state = self.state.lock().await;
-            state.replace_history(
-                reconstructed_rollout.history,
-                reconstructed_rollout.reference_context_item,
-            );
-        }
+        self.replace_history(
+            reconstructed_rollout.history,
+            reconstructed_rollout.reference_context_item,
+        )
+        .await;
         self.set_previous_turn_settings(previous_turn_settings.clone())
             .await;
         previous_turn_settings
@@ -2563,7 +2436,7 @@ impl Session {
             let sandbox_state = SandboxState {
                 sandbox_policy: per_turn_config.permissions.sandbox_policy.get().clone(),
                 codex_linux_sandbox_exe: per_turn_config.codex_linux_sandbox_exe.clone(),
-                sandbox_cwd: per_turn_config.cwd.clone(),
+                sandbox_cwd: per_turn_config.cwd.to_path_buf(),
                 use_legacy_landlock: per_turn_config.features.use_legacy_landlock(),
             };
             if let Err(e) = self
@@ -2586,10 +2459,16 @@ impl Session {
                 &per_turn_config,
             )
             .await;
+        let plugin_outcome = self
+            .services
+            .plugins_manager
+            .plugins_for_config(&per_turn_config);
+        let effective_skill_roots = plugin_outcome.effective_skill_roots();
+        let skills_input = skills_load_input_from_config(&per_turn_config, effective_skill_roots);
         let skills_outcome = Arc::new(
             self.services
                 .skills_manager
-                .skills_for_config(&per_turn_config),
+                .skills_for_config(&skills_input),
         );
         let mut turn_context: TurnContext = Self::make_turn_context(
             self.conversation_id,
@@ -3034,7 +2913,6 @@ impl Session {
         network_approval_context: Option<NetworkApprovalContext>,
         proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
         additional_permissions: Option<PermissionProfile>,
-        skill_metadata: Option<ExecApprovalRequestSkillMetadata>,
         available_decisions: Option<Vec<ReviewDecision>>,
     ) -> ReviewDecision {
         //  command-level approvals use `call_id`.
@@ -3088,7 +2966,6 @@ impl Session {
             proposed_execpolicy_amendment,
             proposed_network_policy_amendments,
             additional_permissions,
-            skill_metadata,
             available_decisions: Some(available_decisions),
             parsed_cmd,
         });
@@ -3501,17 +3378,6 @@ impl Session {
             return false;
         }
 
-        let is_openai_cyber_safety_downgrade = turn_context.provider.requires_openai_auth
-            && requested_model_normalized == OPENAI_CYBER_SAFETY_REQUESTED_MODEL
-            && server_model_normalized == OPENAI_CYBER_SAFETY_FALLBACK_MODEL;
-        if !is_openai_cyber_safety_downgrade {
-            info!(
-                "server reported model {server_model} while requested model was {requested_model}; skipping OpenAI cyber-safety warning for provider {}",
-                turn_context.provider.name
-            );
-            return false;
-        }
-
         warn!("server reported model {server_model} while requested model was {requested_model}");
 
         let warning_message = format!(
@@ -3540,49 +3406,11 @@ impl Session {
         true
     }
 
-    fn filter_reference_context_item_for_history(
-        items: &[ResponseItem],
-        reference_context_item: Option<TurnContextItem>,
-    ) -> Option<TurnContextItem> {
-        let Some(reference_context_item) = reference_context_item else {
-            return None;
-        };
-        let mut has_contextual_developer_message = false;
-        let mut has_contextual_user_message = false;
-
-        for item in items {
-            let ResponseItem::Message { role, content, .. } = item else {
-                continue;
-            };
-            if !has_contextual_developer_message
-                && role == "developer"
-                && crate::event_mapping::is_contextual_dev_message_content(content)
-            {
-                has_contextual_developer_message = true;
-            }
-            if !has_contextual_user_message
-                && role == "user"
-                && crate::event_mapping::is_contextual_user_message_content(content)
-            {
-                has_contextual_user_message = true;
-            }
-            if has_contextual_developer_message && has_contextual_user_message {
-                return Some(reference_context_item);
-            }
-        }
-
-        None
-    }
-
     pub(crate) async fn replace_history(
         &self,
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
     ) {
-        // Replacement histories that omit the canonical reference context must also clear the
-        // diff baseline so the next real turn fully reinjects stable initial context.
-        let reference_context_item =
-            Self::filter_reference_context_item_for_history(&items, reference_context_item);
         let mut state = self.state.lock().await;
         state.replace_history(items, reference_context_item);
     }
@@ -3593,8 +3421,6 @@ impl Session {
         reference_context_item: Option<TurnContextItem>,
         compacted_item: CompactedItem,
     ) {
-        let reference_context_item =
-            Self::filter_reference_context_item_for_history(&items, reference_context_item);
         self.replace_history(items, reference_context_item.clone())
             .await;
 
@@ -3642,7 +3468,7 @@ impl Session {
         &self,
         turn_context: &TurnContext,
     ) -> Vec<ResponseItem> {
-        let mut developer_sections = Vec::<String>::with_capacity(9);
+        let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let shell = self.user_shell();
         let (
@@ -3858,7 +3684,6 @@ impl Session {
         };
         let should_inject_full_context = reference_context_item.is_none();
         let context_items = if should_inject_full_context {
-            // Rebuild the canonical initial prefix only when the durable baseline is missing.
             self.build_initial_context(turn_context).await
         } else {
             // Steady-state path: append only context diffs to minimize token overhead.
@@ -4166,17 +3991,6 @@ impl Session {
         }
     }
 
-    pub(crate) async fn pending_input_snapshot(&self) -> Vec<ResponseInputItem> {
-        let active = self.active_turn.lock().await;
-        match active.as_ref() {
-            Some(at) => {
-                let ts = at.turn_state.lock().await;
-                ts.pending_input_snapshot()
-            }
-            None => Vec::with_capacity(0),
-        }
-    }
-
     /// Queue response items to be injected into the next active turn created for this session.
     pub(crate) async fn queue_response_items_for_next_turn(&self, items: Vec<ResponseInputItem>) {
         if items.is_empty() {
@@ -4189,12 +4003,6 @@ impl Session {
 
     pub(crate) async fn take_queued_response_items_for_next_turn(&self) -> Vec<ResponseInputItem> {
         std::mem::take(&mut *self.idle_pending_input.lock().await)
-    }
-
-    pub(crate) async fn queued_response_items_for_next_turn_snapshot(
-        &self,
-    ) -> Vec<ResponseInputItem> {
-        self.idle_pending_input.lock().await.clone()
     }
 
     pub(crate) async fn has_queued_response_items_for_next_turn(&self) -> bool {
@@ -4348,7 +4156,7 @@ impl Session {
         let sandbox_state = SandboxState {
             sandbox_policy: turn_context.sandbox_policy.get().clone(),
             codex_linux_sandbox_exe: turn_context.codex_linux_sandbox_exe.clone(),
-            sandbox_cwd: turn_context.cwd.clone(),
+            sandbox_cwd: turn_context.cwd.to_path_buf(),
             use_legacy_landlock: turn_context.features.use_legacy_landlock(),
         };
         {
@@ -4698,8 +4506,14 @@ mod handlers {
     use crate::codex::SessionSettingsUpdate;
     use crate::codex::SteerInputError;
 
+    use crate::SkillError;
     use crate::codex::spawn_review_thread;
     use crate::config::Config;
+    use crate::config_loader::CloudRequirementsLoader;
+    use crate::config_loader::LoaderOverrides;
+    use crate::config_loader::load_config_layers_state;
+    use codex_features::Feature;
+    use codex_utils_absolute_path::AbsolutePathBuf;
 
     use crate::mcp::auth::compute_auth_statuses;
     use crate::mcp::collect_mcp_snapshot_from_manager;
@@ -5129,17 +4943,70 @@ mod handlers {
     ) {
         let cwds = if cwds.is_empty() {
             let state = sess.state.lock().await;
-            vec![state.session_configuration.cwd.clone()]
+            vec![state.session_configuration.cwd.to_path_buf()]
         } else {
             cwds
         };
 
         let skills_manager = &sess.services.skills_manager;
+        let plugins_manager = &sess.services.plugins_manager;
         let config = sess.get_config().await;
+        let codex_home = sess.codex_home().await;
         let mut skills = Vec::new();
+        let empty_cli_overrides: &[(String, toml::Value)] = &[];
         for cwd in cwds {
+            let cwd_abs = match AbsolutePathBuf::try_from(cwd.as_path()) {
+                Ok(path) => path,
+                Err(err) => {
+                    let message = err.to_string();
+                    let cwd_for_entry = cwd.clone();
+                    skills.push(SkillsListEntry {
+                        cwd: cwd_for_entry.clone(),
+                        skills: Vec::new(),
+                        errors: super::errors_to_info(&[SkillError {
+                            path: cwd_for_entry,
+                            message,
+                        }]),
+                    });
+                    continue;
+                }
+            };
+            let config_layer_stack = match load_config_layers_state(
+                &codex_home,
+                Some(cwd_abs),
+                empty_cli_overrides,
+                LoaderOverrides::default(),
+                CloudRequirementsLoader::default(),
+            )
+            .await
+            {
+                Ok(config_layer_stack) => config_layer_stack,
+                Err(err) => {
+                    let message = err.to_string();
+                    let cwd_for_entry = cwd.clone();
+                    skills.push(SkillsListEntry {
+                        cwd: cwd_for_entry.clone(),
+                        skills: Vec::new(),
+                        errors: super::errors_to_info(&[SkillError {
+                            path: cwd_for_entry,
+                            message,
+                        }]),
+                    });
+                    continue;
+                }
+            };
+            let effective_skill_roots = plugins_manager.effective_skill_roots_for_layer_stack(
+                &config_layer_stack,
+                config.features.enabled(Feature::Plugins),
+            );
+            let skills_input = crate::SkillsLoadInput::new(
+                cwd.clone(),
+                effective_skill_roots,
+                config_layer_stack,
+                config.bundled_skills_enabled(),
+            );
             let outcome = skills_manager
-                .skills_for_cwd(&cwd, config.as_ref(), force_reload)
+                .skills_for_cwd(&skills_input, force_reload)
                 .await;
             let errors = super::errors_to_info(&outcome.errors);
             let skills_metadata = super::skills_to_info(&outcome.skills, &outcome.disabled_paths);
@@ -5331,12 +5198,8 @@ mod handlers {
         sess.persist_rollout_items(&[RolloutItem::EventMsg(rollback_msg.clone())])
             .await;
         sess.flush_rollout().await;
-        sess.apply_rollout_reconstruction(
-            turn_context.as_ref(),
-            replay_items.as_slice(),
-            /*clear_missing_reference_context*/ true,
-        )
-        .await;
+        sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
+            .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;
 
         sess.deliver_event_raw(Event {
@@ -5538,7 +5401,6 @@ async fn spawn_review_thread(
     )
     .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
-    .with_auto_tldr_routing(config.auto_tldr_routing)
     .with_agent_roles(config.agent_roles.clone());
 
     let review_prompt = resolved.prompt.clone();
@@ -5578,7 +5440,7 @@ async fn spawn_review_thread(
     let turn_metadata_state = Arc::new(TurnMetadataState::new(
         sess.conversation_id.to_string(),
         review_turn_id.clone(),
-        parent_turn_context.cwd.clone(),
+        parent_turn_context.cwd.to_path_buf(),
         parent_turn_context.sandbox_policy.get(),
         parent_turn_context.windows_sandbox_level,
     ));
@@ -5616,16 +5478,17 @@ async fn spawn_review_thread(
         shell_environment_policy: parent_turn_context.shell_environment_policy.clone(),
         cwd: parent_turn_context.cwd.clone(),
         final_output_json_schema: None,
+        codex_self_exe: parent_turn_context.codex_self_exe.clone(),
         codex_linux_sandbox_exe: parent_turn_context.codex_linux_sandbox_exe.clone(),
         tool_call_gate: Arc::new(ReadinessFlag::new()),
         js_repl: Arc::clone(&sess.js_repl),
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
+        tool_routing_directives: Arc::clone(&parent_turn_context.tool_routing_directives),
+        auto_tldr_context: Arc::clone(&parent_turn_context.auto_tldr_context),
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
-        tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
-        auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
     };
 
     // Seed the child task with the review prompt as the initial user message.
@@ -5991,74 +5854,36 @@ pub(crate) async fn run_turn(
         }
 
         // Construct the input that we will send to the model.
-        let sampling_result = {
-            let mut sampling_turn_context = Arc::clone(&turn_context);
-            let mut attempted_parent_model_fallback = false;
-            loop {
-                let sampling_request_input: Vec<ResponseItem> = {
-                    sess.clone_history()
-                        .await
-                        .for_prompt(&sampling_turn_context.model_info.input_modalities)
-                };
-
-                let sampling_request_input_messages = sampling_request_input
-                    .iter()
-                    .filter_map(|item| match parse_turn_item(item) {
-                        Some(TurnItem::UserMessage(user_message)) => Some(user_message),
-                        _ => None,
-                    })
-                    .map(|user_message| user_message.message())
-                    .collect::<Vec<String>>();
-                let turn_metadata_header = sampling_turn_context
-                    .turn_metadata_state
-                    .current_header_value();
-                match run_sampling_request(
-                    Arc::clone(&sess),
-                    Arc::clone(&sampling_turn_context),
-                    Arc::clone(&turn_diff_tracker),
-                    &mut client_session,
-                    turn_metadata_header.as_deref(),
-                    sampling_request_input,
-                    &explicitly_enabled_connectors,
-                    skills_outcome,
-                    &mut server_model_warning_emitted_for_turn,
-                    cancellation_token.child_token(),
-                )
+        let sampling_request_input: Vec<ResponseItem> = {
+            sess.clone_history()
                 .await
-                {
-                    Ok(output) => {
-                        break Ok((
-                            output,
-                            sampling_request_input_messages,
-                            Arc::clone(&sampling_turn_context),
-                        ));
-                    }
-                    Err(err) => {
-                        if !attempted_parent_model_fallback
-                            && let Some(fallback_turn_context) =
-                                maybe_retry_subagent_with_parent_model(
-                                    &sess,
-                                    &sampling_turn_context,
-                                    &err,
-                                )
-                                .await
-                        {
-                            attempted_parent_model_fallback = true;
-                            sampling_turn_context = fallback_turn_context;
-                            continue;
-                        }
-                        break Err((err, sampling_turn_context));
-                    }
-                }
-            }
+                .for_prompt(&turn_context.model_info.input_modalities)
         };
 
-        match sampling_result {
-            Ok((
-                sampling_request_output,
-                sampling_request_input_messages,
-                sampling_turn_context,
-            )) => {
+        let sampling_request_input_messages = sampling_request_input
+            .iter()
+            .filter_map(|item| match parse_turn_item(item) {
+                Some(TurnItem::UserMessage(user_message)) => Some(user_message),
+                _ => None,
+            })
+            .map(|user_message| user_message.message())
+            .collect::<Vec<String>>();
+        let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
+        match run_sampling_request(
+            Arc::clone(&sess),
+            Arc::clone(&turn_context),
+            Arc::clone(&turn_diff_tracker),
+            &mut client_session,
+            turn_metadata_header.as_deref(),
+            sampling_request_input,
+            &explicitly_enabled_connectors,
+            skills_outcome,
+            &mut server_model_warning_emitted_for_turn,
+            cancellation_token.child_token(),
+        )
+        .await
+        {
+            Ok(sampling_request_output) => {
                 let SamplingRequestResult {
                     needs_follow_up,
                     last_agent_message: sampling_request_last_agent_message,
@@ -6066,9 +5891,8 @@ pub(crate) async fn run_turn(
                 let total_usage_tokens = sess.get_total_token_usage().await;
                 let token_limit_reached = total_usage_tokens >= auto_compact_limit;
 
-                let estimated_token_count = sess
-                    .get_estimated_token_count(sampling_turn_context.as_ref())
-                    .await;
+                let estimated_token_count =
+                    sess.get_estimated_token_count(turn_context.as_ref()).await;
 
                 trace!(
                     turn_id = %turn_context.sub_id,
@@ -6082,45 +5906,44 @@ pub(crate) async fn run_turn(
 
                 // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
                 if token_limit_reached && needs_follow_up {
-                    match try_run_auto_compact(
+                    if run_auto_compact(
                         &sess,
-                        &sampling_turn_context,
+                        &turn_context,
                         InitialContextInjection::BeforeLastUserMessage,
                     )
                     .await
+                    .is_err()
                     {
-                        Ok(true) => continue,
-                        Ok(false) => {}
-                        Err(_) => return None,
+                        return None;
                     }
+                    continue;
                 }
 
                 if !needs_follow_up {
                     last_agent_message = sampling_request_last_agent_message;
-                    let stop_hook_permission_mode =
-                        match sampling_turn_context.approval_policy.value() {
-                            AskForApproval::Never => "bypassPermissions",
-                            AskForApproval::UnlessTrusted
-                            | AskForApproval::OnFailure
-                            | AskForApproval::OnRequest
-                            | AskForApproval::Granular(_) => "default",
-                        }
-                        .to_string();
+                    let stop_hook_permission_mode = match turn_context.approval_policy.value() {
+                        AskForApproval::Never => "bypassPermissions",
+                        AskForApproval::UnlessTrusted
+                        | AskForApproval::OnFailure
+                        | AskForApproval::OnRequest
+                        | AskForApproval::Granular(_) => "default",
+                    }
+                    .to_string();
                     let stop_request = codex_hooks::StopRequest {
                         session_id: sess.conversation_id,
-                        turn_id: sampling_turn_context.sub_id.clone(),
-                        cwd: sampling_turn_context.cwd.clone(),
+                        turn_id: turn_context.sub_id.clone(),
+                        cwd: turn_context.cwd.to_path_buf(),
                         transcript_path: sess.hook_transcript_path().await,
-                        model: sampling_turn_context.model_info.slug.clone(),
+                        model: turn_context.model_info.slug.clone(),
                         permission_mode: stop_hook_permission_mode,
                         stop_hook_active,
                         last_assistant_message: last_agent_message.clone(),
                     };
                     for run in sess.hooks().preview_stop(&stop_request) {
                         sess.send_event(
-                            &sampling_turn_context,
+                            &turn_context,
                             EventMsg::HookStarted(crate::protocol::HookStartedEvent {
-                                turn_id: Some(sampling_turn_context.sub_id.clone()),
+                                turn_id: Some(turn_context.sub_id.clone()),
                                 run,
                             }),
                         )
@@ -6128,7 +5951,7 @@ pub(crate) async fn run_turn(
                     }
                     let stop_outcome = sess.hooks().run_stop(stop_request).await;
                     for completed in stop_outcome.hook_events {
-                        sess.send_event(&sampling_turn_context, EventMsg::HookCompleted(completed))
+                        sess.send_event(&turn_context, EventMsg::HookCompleted(completed))
                             .await;
                     }
                     if stop_outcome.should_block {
@@ -6136,7 +5959,7 @@ pub(crate) async fn run_turn(
                             build_hook_prompt_message(&stop_outcome.continuation_fragments)
                         {
                             sess.record_conversation_items(
-                                &sampling_turn_context,
+                                &turn_context,
                                 std::slice::from_ref(&hook_prompt_message),
                             )
                             .await;
@@ -6144,7 +5967,7 @@ pub(crate) async fn run_turn(
                             continue;
                         } else {
                             sess.send_event(
-                                &sampling_turn_context,
+                                &turn_context,
                                 EventMsg::Warning(WarningEvent {
                                     message: "Stop hook requested continuation without a prompt; ignoring the block.".to_string(),
                                 }),
@@ -6159,13 +5982,13 @@ pub(crate) async fn run_turn(
                         .hooks()
                         .dispatch(HookPayload {
                             session_id: sess.conversation_id,
-                            cwd: sampling_turn_context.cwd.clone(),
-                            client: sampling_turn_context.app_server_client_name.clone(),
+                            cwd: turn_context.cwd.to_path_buf(),
+                            client: turn_context.app_server_client_name.clone(),
                             triggered_at: chrono::Utc::now(),
                             hook_event: HookEvent::AfterAgent {
                                 event: HookEventAfterAgent {
                                     thread_id: sess.conversation_id,
-                                    turn_id: sampling_turn_context.sub_id.clone(),
+                                    turn_id: turn_context.sub_id.clone(),
                                     input_messages: sampling_request_input_messages,
                                     last_assistant_message: last_agent_message.clone(),
                                 },
@@ -6180,7 +6003,7 @@ pub(crate) async fn run_turn(
                             HookResult::Success => {}
                             HookResult::FailedContinue(error) => {
                                 warn!(
-                                    turn_id = %sampling_turn_context.sub_id,
+                                    turn_id = %turn_context.sub_id,
                                     hook_name = %hook_name,
                                     error = %error,
                                     "after_agent hook failed; continuing"
@@ -6191,7 +6014,7 @@ pub(crate) async fn run_turn(
                                     "after_agent hook '{hook_name}' failed and aborted turn completion: {error}"
                                 );
                                 warn!(
-                                    turn_id = %sampling_turn_context.sub_id,
+                                    turn_id = %turn_context.sub_id,
                                     hook_name = %hook_name,
                                     error = %error,
                                     "after_agent hook failed; aborting operation"
@@ -6204,7 +6027,7 @@ pub(crate) async fn run_turn(
                     }
                     if let Some(message) = abort_message {
                         sess.send_event(
-                            &sampling_turn_context,
+                            &turn_context,
                             EventMsg::Error(ErrorEvent {
                                 message,
                                 codex_error_info: None,
@@ -6217,11 +6040,11 @@ pub(crate) async fn run_turn(
                 }
                 continue;
             }
-            Err((CodexErr::TurnAborted, _)) => {
+            Err(CodexErr::TurnAborted) => {
                 // Aborted turn is reported via a different event.
                 break;
             }
-            Err((CodexErr::InvalidImageRequest(), failed_turn_context)) => {
+            Err(CodexErr::InvalidImageRequest()) => {
                 let mut state = sess.state.lock().await;
                 error_or_panic(
                     "Invalid image detected; sanitizing tool output to prevent poisoning",
@@ -6234,13 +6057,13 @@ pub(crate) async fn run_turn(
                         .to_string(),
                     codex_error_info: Some(CodexErrorInfo::BadRequest),
                 });
-                sess.send_event(&failed_turn_context, event).await;
+                sess.send_event(&turn_context, event).await;
                 break;
             }
-            Err((e, failed_turn_context)) => {
+            Err(e) => {
                 info!("Turn error: {e:#}");
                 let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
-                sess.send_event(&failed_turn_context, event).await;
+                sess.send_event(&turn_context, event).await;
                 // let the user continue the conversation
                 break;
             }
@@ -6255,7 +6078,7 @@ async fn run_pre_sampling_compact(
     turn_context: &Arc<TurnContext>,
 ) -> CodexResult<()> {
     let total_usage_tokens_before_compaction = sess.get_total_token_usage().await;
-    let _ = maybe_run_previous_model_inline_compact(
+    maybe_run_previous_model_inline_compact(
         sess,
         turn_context,
         total_usage_tokens_before_compaction,
@@ -6268,8 +6091,7 @@ async fn run_pre_sampling_compact(
         .unwrap_or(i64::MAX);
     // Compact if the total usage tokens are greater than the auto compact limit
     if total_usage_tokens >= auto_compact_limit {
-        let _ =
-            try_run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
+        run_auto_compact(sess, turn_context, InitialContextInjection::DoNotInject).await?;
     }
     Ok(())
 }
@@ -6308,44 +6130,15 @@ async fn maybe_run_previous_model_inline_compact(
         && previous_model_turn_context.model_info.slug != turn_context.model_info.slug
         && old_context_window > new_context_window;
     if should_run {
-        return try_run_auto_compact(
+        run_auto_compact(
             sess,
             &previous_model_turn_context,
             InitialContextInjection::DoNotInject,
         )
-        .await;
+        .await?;
+        return Ok(true);
     }
     Ok(false)
-}
-
-async fn try_run_auto_compact(
-    sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
-    initial_context_injection: InitialContextInjection,
-) -> CodexResult<bool> {
-    match run_auto_compact(sess, turn_context, initial_context_injection).await {
-        Ok(()) => Ok(true),
-        Err(err) if should_continue_after_auto_compact_failure(turn_context) => {
-            warn!(
-                turn_id = %turn_context.sub_id,
-                error = %err,
-                "automatic claude compaction failed; continuing without compaction"
-            );
-            sess.send_event(
-                turn_context,
-                EventMsg::Warning(WarningEvent {
-                    message: "Automatic history compaction failed; continuing without compaction. The next request may still fail if the thread is too large.".to_string(),
-                }),
-            )
-            .await;
-            Ok(false)
-        }
-        Err(err) => Err(err),
-    }
-}
-
-fn should_continue_after_auto_compact_failure(turn_context: &TurnContext) -> bool {
-    turn_context.provider.wire_api == crate::model_provider_info::WireApi::Anthropic
 }
 
 async fn run_auto_compact(
@@ -6614,113 +6407,51 @@ async fn run_sampling_request(
         )
         .await;
     let mut retries = 0;
-    let mut sampling_turn_context = Arc::clone(&turn_context);
-    let mut next_fallback_index = 0usize;
-    let mut fallback_client_session: Option<ModelClientSession> = None;
-    let primary_requested_model = sampling_turn_context.model_info.slug.clone();
     loop {
-        let request_result = if let Some(fallback_client_session) = fallback_client_session.as_mut()
+        let err = match try_run_sampling_request(
+            tool_runtime.clone(),
+            Arc::clone(&sess),
+            Arc::clone(&turn_context),
+            client_session,
+            turn_metadata_header,
+            Arc::clone(&turn_diff_tracker),
+            server_model_warning_emitted_for_turn,
+            &prompt,
+            cancellation_token.child_token(),
+        )
+        .await
         {
-            try_run_sampling_request(
-                tool_runtime.clone(),
-                Arc::clone(&sess),
-                Arc::clone(&sampling_turn_context),
-                fallback_client_session,
-                turn_metadata_header,
-                Arc::clone(&turn_diff_tracker),
-                server_model_warning_emitted_for_turn,
-                &prompt,
-                cancellation_token.child_token(),
-            )
-            .await
-        } else {
-            try_run_sampling_request(
-                tool_runtime.clone(),
-                Arc::clone(&sess),
-                Arc::clone(&sampling_turn_context),
-                client_session,
-                turn_metadata_header,
-                Arc::clone(&turn_diff_tracker),
-                server_model_warning_emitted_for_turn,
-                &prompt,
-                cancellation_token.child_token(),
-            )
-            .await
-        };
-        let err = match request_result {
             Ok(output) => {
                 return Ok(output);
             }
             Err(CodexErr::ContextWindowExceeded) => {
-                sess.set_total_tokens_full(&sampling_turn_context).await;
+                sess.set_total_tokens_full(&turn_context).await;
                 return Err(CodexErr::ContextWindowExceeded);
             }
             Err(CodexErr::UsageLimitReached(e)) => {
                 let rate_limits = e.rate_limits.clone();
                 if let Some(rate_limits) = rate_limits {
-                    sess.update_rate_limits(&sampling_turn_context, *rate_limits)
-                        .await;
+                    sess.update_rate_limits(&turn_context, *rate_limits).await;
                 }
-                CodexErr::UsageLimitReached(e)
+                return Err(CodexErr::UsageLimitReached(e));
             }
             Err(err) => err,
         };
-
-        if should_retry_with_fallback_provider(&err)
-            && let Some((fallback_turn_context, used_fallback_index)) = next_fallback_turn_context(
-                &sess,
-                &sampling_turn_context,
-                &primary_requested_model,
-                next_fallback_index,
-            )
-            .await
-        {
-            next_fallback_index = used_fallback_index + 1;
-            let fallback_provider = fallback_turn_context.provider.name.clone();
-            let fallback_model = fallback_turn_context.model_info.slug.clone();
-            fallback_client_session =
-                Some(build_model_client_for_turn(&sess, &fallback_turn_context).new_session());
-            sampling_turn_context = fallback_turn_context;
-            retries = 0;
-            sess.send_event(
-                &sampling_turn_context,
-                EventMsg::Warning(WarningEvent {
-                    message: format!(
-                        "Provider request failed; retrying with fallback provider `{fallback_provider}` and model `{fallback_model}`. {err:#}"
-                    ),
-                }),
-            )
-            .await;
-            continue;
-        }
-
-        if should_short_circuit_to_parent_model(&sampling_turn_context, &err) {
-            return Err(err);
-        }
 
         if !err.is_retryable() {
             return Err(err);
         }
 
         // Use the configured provider-specific stream retry budget.
-        let max_retries = sampling_turn_context.provider.stream_max_retries();
-        let activated_transport_fallback =
-            if let Some(fallback_client_session) = fallback_client_session.as_mut() {
-                retries >= max_retries
-                    && fallback_client_session.try_switch_fallback_transport(
-                        &sampling_turn_context.session_telemetry,
-                        &sampling_turn_context.model_info,
-                    )
-            } else {
-                retries >= max_retries
-                    && client_session.try_switch_fallback_transport(
-                        &sampling_turn_context.session_telemetry,
-                        &sampling_turn_context.model_info,
-                    )
-            };
-        if activated_transport_fallback {
+        let max_retries = turn_context.provider.stream_max_retries();
+        if retries >= max_retries
+            && client_session.try_switch_fallback_transport(
+                &turn_context.session_telemetry,
+                &turn_context.model_info,
+            )
+        {
             sess.send_event(
-                &sampling_turn_context,
+                &turn_context,
                 EventMsg::Warning(WarningEvent {
                     message: format!("Falling back from WebSockets to HTTPS transport. {err:#}"),
                 }),
@@ -6745,17 +6476,13 @@ async fn run_sampling_request(
             // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
             let report_error = retries > 1
                 || cfg!(debug_assertions)
-                || if let Some(fallback_client_session) = fallback_client_session.as_ref() {
-                    !fallback_client_session.responses_websocket_enabled()
-                } else {
-                    !sess.services.model_client.responses_websocket_enabled()
-                };
+                || !sess.services.model_client.responses_websocket_enabled();
             if report_error {
                 // Surface retry information to any UI/front‑end so the
                 // user understands what is happening instead of staring
                 // at a seemingly frozen screen.
                 sess.notify_stream_error(
-                    &sampling_turn_context,
+                    &turn_context,
                     format!("Reconnecting... {retries}/{max_retries}"),
                     err,
                 )
@@ -6766,225 +6493,6 @@ async fn run_sampling_request(
             return Err(err);
         }
     }
-}
-
-fn build_model_client_for_turn(sess: &Session, turn_context: &TurnContext) -> ModelClient {
-    ModelClient::new(
-        turn_context.auth_manager.clone(),
-        sess.conversation_id,
-        turn_context.provider.clone(),
-        turn_context.session_source.clone(),
-        turn_context.config.model_verbosity,
-        turn_context
-            .config
-            .features
-            .enabled(Feature::EnableRequestCompression),
-        turn_context
-            .config
-            .features
-            .enabled(Feature::RuntimeMetrics),
-        Session::build_model_client_beta_features_header(turn_context.config.as_ref()),
-    )
-}
-
-async fn next_fallback_turn_context(
-    sess: &Session,
-    turn_context: &Arc<TurnContext>,
-    primary_requested_model: &str,
-    start_index: usize,
-) -> Option<(Arc<TurnContext>, usize)> {
-    let fallback_candidates = if turn_context.config.fallback_providers.is_empty() {
-        turn_context
-            .config
-            .fallback_provider_id
-            .as_ref()
-            .zip(turn_context.config.fallback_provider.as_ref())
-            .map(|(provider_id, provider)| {
-                vec![FallbackProviderConfig {
-                    provider_id: provider_id.clone(),
-                    provider: provider.clone(),
-                    model: turn_context.config.fallback_model.clone(),
-                }]
-            })
-            .unwrap_or_default()
-    } else {
-        turn_context.config.fallback_providers.clone()
-    };
-
-    for (index, fallback) in fallback_candidates.iter().enumerate().skip(start_index) {
-        let fallback_model = fallback
-            .model
-            .clone()
-            .or_else(|| fallback.provider.model.clone())
-            .unwrap_or_else(|| primary_requested_model.to_string());
-        if fallback.provider_id == turn_context.config.model_provider_id
-            && fallback_model == turn_context.model_info.slug
-        {
-            continue;
-        }
-
-        let fallback_turn_context = turn_context
-            .with_model_provider(
-                fallback_model,
-                fallback.provider_id.clone(),
-                fallback.provider.clone(),
-                &sess.services.models_manager,
-            )
-            .await;
-        return Some((Arc::new(fallback_turn_context), index));
-    }
-
-    None
-}
-
-fn should_retry_with_fallback_provider(err: &CodexErr) -> bool {
-    matches!(
-        err,
-        CodexErr::Stream(_, _)
-            | CodexErr::UnexpectedStatus(_)
-            | CodexErr::InvalidRequest(_)
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::QuotaExceeded
-            | CodexErr::UsageNotIncluded
-            | CodexErr::ServerOverloaded
-            | CodexErr::ResponseStreamFailed(_)
-            | CodexErr::ConnectionFailed(_)
-            | CodexErr::InternalServerError
-            | CodexErr::Timeout
-    )
-}
-
-fn is_model_request_failure_message(message: &str) -> bool {
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("model")
-        && (normalized.contains("not found")
-            || normalized.contains("does not exist")
-            || normalized.contains("unsupported")
-            || normalized.contains("not supported")
-            || normalized.contains("not available")
-            || normalized.contains("unavailable")
-            || normalized.contains("invalid")
-            || normalized.contains("no access")
-            || normalized.contains("not have access"))
-}
-
-fn should_retry_subagent_with_parent_model(err: &CodexErr) -> bool {
-    match err {
-        CodexErr::Stream(message, _) => is_model_request_failure_message(message),
-        CodexErr::InvalidRequest(message) => is_model_request_failure_message(message),
-        CodexErr::UnexpectedStatus(response) => {
-            matches!(
-                response.status,
-                StatusCode::BAD_REQUEST | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
-            ) && is_model_request_failure_message(&response.body)
-        }
-        _ => false,
-    }
-}
-
-fn subagent_parent_model(turn_context: &TurnContext) -> Option<&str> {
-    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_model: Some(parent_model),
-        ..
-    }) = &turn_context.session_source
-    else {
-        return None;
-    };
-    Some(parent_model.as_str())
-}
-
-fn should_short_circuit_to_parent_model(turn_context: &TurnContext, err: &CodexErr) -> bool {
-    should_retry_subagent_with_parent_model(err)
-        && subagent_parent_model(turn_context)
-            .is_some_and(|parent_model| parent_model != turn_context.model_info.slug)
-}
-
-async fn maybe_retry_subagent_with_parent_model(
-    sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
-    err: &CodexErr,
-) -> Option<Arc<TurnContext>> {
-    if !should_retry_subagent_with_parent_model(err) {
-        return None;
-    }
-
-    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id,
-        parent_model,
-        ..
-    }) = &turn_context.session_source
-    else {
-        return None;
-    };
-
-    let parent_snapshot = sess
-        .services
-        .agent_control
-        .get_thread_config_snapshot(*parent_thread_id)
-        .await;
-    let fallback_turn_context = if let Some(parent_model) = parent_model.as_ref() {
-        if let Some(parent_snapshot) = parent_snapshot
-            .as_ref()
-            .filter(|snapshot| snapshot.model == *parent_model)
-        {
-            turn_context
-                .with_model_and_reasoning_effort(
-                    parent_model.clone(),
-                    parent_snapshot.reasoning_effort,
-                    &sess.services.models_manager,
-                )
-                .await
-        } else {
-            turn_context
-                .with_model(parent_model.clone(), &sess.services.models_manager)
-                .await
-        }
-    } else {
-        let parent_snapshot = parent_snapshot?;
-        turn_context
-            .with_model_and_reasoning_effort(
-                parent_snapshot.model,
-                parent_snapshot.reasoning_effort,
-                &sess.services.models_manager,
-            )
-            .await
-    };
-    if fallback_turn_context.model_info.slug == turn_context.model_info.slug {
-        return None;
-    }
-
-    let parent_model = fallback_turn_context.model_info.slug.clone();
-    let parent_reasoning_effort = fallback_turn_context.reasoning_effort;
-    let fallback_turn_context = Arc::new(fallback_turn_context);
-
-    if let Some(parent_reasoning_effort) = parent_reasoning_effort {
-        warn!(
-            child_model = %turn_context.model_info.slug,
-            parent_model = %parent_model,
-            parent_reasoning_effort = %parent_reasoning_effort,
-            error = %err,
-            "subagent request failed with configured model; retrying once with parent model"
-        );
-    } else {
-        warn!(
-            child_model = %turn_context.model_info.slug,
-            parent_model = %parent_model,
-            error = %err,
-            "subagent request failed with configured model; retrying once with parent model"
-        );
-    };
-    sess.send_event(
-        turn_context,
-        EventMsg::Warning(WarningEvent {
-            message: format!(
-                "Spawned agent request with model `{}` failed. Retrying once with parent model `{}`.",
-                turn_context.model_info.slug, parent_model
-            ),
-        }),
-    )
-    .await;
-
-    Some(fallback_turn_context)
 }
 
 pub(crate) async fn built_tools(
@@ -7030,10 +6538,7 @@ pub(crate) async fn built_tools(
         None
     };
     let auth = sess.services.auth_manager.auth().await;
-    let discoverable_tools = if apps_enabled
-        && turn_context.tools_config.search_tool
-        && turn_context.tools_config.tool_suggest
-    {
+    let discoverable_tools = if apps_enabled && turn_context.tools_config.tool_suggest {
         if let Some(accessible_connectors) = accessible_connectors_with_enabled_state.as_ref() {
             match connectors::list_tool_suggest_discoverable_tools_with_auth(
                 &turn_context.config,

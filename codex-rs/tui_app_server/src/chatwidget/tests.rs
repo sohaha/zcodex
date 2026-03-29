@@ -458,7 +458,8 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         .sandbox_policy
         .set(SandboxPolicy::new_workspace_write_policy())
         .expect("set sandbox policy");
-    chat.config.cwd = PathBuf::from("/home/user/main");
+    chat.config.cwd =
+        AbsolutePathBuf::try_from(PathBuf::from("/home/user/main")).expect("absolute test path");
 
     let expected_sandbox = SandboxPolicy::new_read_only_policy();
     let expected_cwd = PathBuf::from("/home/user/sub-agent");
@@ -494,7 +495,7 @@ async fn session_configured_syncs_widget_config_permissions_and_cwd() {
         chat.config_ref().permissions.sandbox_policy.get(),
         &expected_sandbox
     );
-    assert_eq!(&chat.config_ref().cwd, &expected_cwd);
+    assert_eq!(chat.config_ref().cwd.as_path(), expected_cwd.as_path());
 }
 
 #[tokio::test]
@@ -1071,8 +1072,6 @@ async fn submission_prefers_selected_duplicate_skill_path() {
             interface: None,
             dependencies: None,
             policy: None,
-            permission_profile: None,
-            managed_network_override: None,
             path_to_skills_md: repo_skill_path,
             scope: SkillScope::Repo,
         },
@@ -1083,8 +1082,6 @@ async fn submission_prefers_selected_duplicate_skill_path() {
             interface: None,
             dependencies: None,
             policy: None,
-            permission_profile: None,
-            managed_network_override: None,
             path_to_skills_md: user_skill_path.clone(),
             scope: SkillScope::User,
         },
@@ -1939,6 +1936,7 @@ async fn helpers_are_available_and_do_not_panic() {
         model: Some(resolved_model),
         startup_tooltip_override: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
     };
     let mut w = ChatWidget::new_with_app_event(init);
@@ -2102,6 +2100,13 @@ async fn make_chatwidget_manual(
         current_cwd: None,
         session_network_proxy: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        last_terminal_title: None,
+        terminal_title_setup_original_items: None,
+        terminal_title_animation_origin: Instant::now(),
+        status_line_project_root_name_cache: None,
+        last_plan_progress: None,
+        terminal_title_status_kind: TerminalTitleStatusKind::Working,
         status_line_branch: None,
         status_line_branch_cwd: None,
         status_line_branch_pending: false,
@@ -3463,7 +3468,6 @@ async fn exec_approval_emits_proposed_command_and_decision_history() {
         proposed_execpolicy_amendment: None,
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -3514,7 +3518,6 @@ async fn exec_approval_uses_approval_id_when_present() {
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
             additional_permissions: None,
-            skill_metadata: None,
             available_decisions: None,
             parsed_cmd: vec![],
         }),
@@ -3556,7 +3559,6 @@ async fn exec_approval_decision_truncates_multiline_and_long_commands() {
         proposed_execpolicy_amendment: None,
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -3612,7 +3614,6 @@ async fn exec_approval_decision_truncates_multiline_and_long_commands() {
         proposed_execpolicy_amendment: None,
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -6413,7 +6414,8 @@ async fn slash_init_skips_when_project_doc_exists() {
     let tempdir = tempdir().unwrap();
     let existing_path = tempdir.path().join(DEFAULT_PROJECT_DOC_FILENAME);
     std::fs::write(&existing_path, "existing instructions").unwrap();
-    chat.config.cwd = tempdir.path().to_path_buf();
+    chat.config.cwd =
+        AbsolutePathBuf::try_from(tempdir.path().to_path_buf()).expect("absolute test path");
 
     chat.dispatch_command(SlashCommand::Init);
 
@@ -6670,6 +6672,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         model: Some(resolved_model.clone()),
         startup_tooltip_override: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
     };
 
@@ -6714,6 +6717,7 @@ async fn experimental_mode_plan_is_ignored_on_startup() {
         model: Some(resolved_model.clone()),
         startup_tooltip_override: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         session_telemetry,
     };
 
@@ -7105,23 +7109,25 @@ async fn slash_clear_is_disabled_while_task_running() {
 }
 
 #[tokio::test]
-async fn slash_memory_drop_reports_stubbed_feature() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+async fn slash_title_opens_terminal_title_setup() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
+
+    chat.dispatch_command(SlashCommand::Title);
+
+    assert!(
+        chat.has_active_view(),
+        "expected /title to open a setup view"
+    );
+    assert!(op_rx.try_recv().is_err(), "expected no core op for /title");
+}
+
+#[tokio::test]
+async fn slash_memory_drop_submits_drop_memories_op() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     chat.dispatch_command(SlashCommand::MemoryDrop);
 
-    let event = rx.try_recv().expect("expected unsupported-feature error");
-    match event {
-        AppEvent::InsertHistoryCell(cell) => {
-            let rendered = lines_to_single_string(&cell.display_lines(80));
-            assert!(rendered.contains("记忆维护: app-server TUI 暂不支持。"));
-        }
-        other => panic!("expected InsertHistoryCell error, got {other:?}"),
-    }
-    assert!(
-        op_rx.try_recv().is_err(),
-        "expected no memory op to be sent"
-    );
+    assert_matches!(op_rx.try_recv(), Ok(Op::DropMemories));
 }
 
 #[tokio::test]
@@ -7136,23 +7142,12 @@ async fn slash_mcp_requests_inventory_via_app_server() {
 }
 
 #[tokio::test]
-async fn slash_memory_update_reports_stubbed_feature() {
-    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+async fn slash_memory_update_submits_update_memories_op() {
+    let (mut chat, _rx, mut op_rx) = make_chatwidget_manual(None).await;
 
     chat.dispatch_command(SlashCommand::MemoryUpdate);
 
-    let event = rx.try_recv().expect("expected unsupported-feature error");
-    match event {
-        AppEvent::InsertHistoryCell(cell) => {
-            let rendered = lines_to_single_string(&cell.display_lines(80));
-            assert!(rendered.contains("记忆维护: app-server TUI 暂不支持。"));
-        }
-        other => panic!("expected InsertHistoryCell error, got {other:?}"),
-    }
-    assert!(
-        op_rx.try_recv().is_err(),
-        "expected no memory op to be sent"
-    );
+    assert_matches!(op_rx.try_recv(), Ok(Op::UpdateMemories));
 }
 
 #[tokio::test]
@@ -7162,6 +7157,48 @@ async fn slash_resume_opens_picker() {
     chat.dispatch_command(SlashCommand::Resume);
 
     assert_matches!(rx.try_recv(), Ok(AppEvent::OpenResumePicker));
+}
+
+#[tokio::test]
+async fn session_configured_requests_custom_prompts() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(None).await;
+    let configured = SessionConfiguredEvent {
+        session_id: ThreadId::new(),
+        forked_from_id: None,
+        thread_name: None,
+        model: "test-model".to_string(),
+        model_provider_id: "test-provider".to_string(),
+        service_tier: None,
+        approval_policy: AskForApproval::Never,
+        approvals_reviewer: ApprovalsReviewer::User,
+        sandbox_policy: SandboxPolicy::new_read_only_policy(),
+        cwd: PathBuf::from("/tmp/project"),
+        reasoning_effort: Some(ReasoningEffortConfig::default()),
+        history_log_id: 0,
+        history_entry_count: 0,
+        initial_messages: None,
+        network_proxy: None,
+        rollout_path: None,
+    };
+
+    chat.handle_codex_event(Event {
+        id: "initial".into(),
+        msg: EventMsg::SessionConfigured(configured),
+    });
+    drain_insert_history(&mut rx);
+
+    let mut saw_custom_prompts = false;
+    while let Ok(op) = op_rx.try_recv() {
+        if matches!(op, Op::ListCustomPrompts) {
+            saw_custom_prompts = true;
+            break;
+        }
+    }
+
+    assert!(
+        saw_custom_prompts,
+        "expected SessionConfigured to request custom prompts"
+    );
 }
 
 #[tokio::test]
@@ -7406,7 +7443,12 @@ async fn custom_prompt_enter_empty_does_not_send() {
 #[tokio::test]
 async fn view_image_tool_call_adds_history_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    let image_path = chat.config.cwd.join("example.png");
+    let image_path = chat
+        .config
+        .cwd
+        .join("example.png")
+        .expect("test image path")
+        .to_path_buf();
 
     chat.handle_codex_event(Event {
         id: "sub-image".into(),
@@ -7789,7 +7831,7 @@ fn plugins_test_response(marketplaces: Vec<PluginMarketplaceEntry>) -> PluginLis
 
 fn render_loaded_plugins_popup(chat: &mut ChatWidget, response: PluginListResponse) -> String {
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd, Ok(response));
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(response));
     chat.add_plugins_output();
     render_bottom_popup(chat, 100)
 }
@@ -7940,10 +7982,10 @@ async fn plugin_detail_popup_snapshot_shows_install_actions_and_capability_summa
         summary.clone(),
     ])]);
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd.clone(), Ok(response));
+    chat.on_plugins_loaded(cwd.clone().to_path_buf(), Ok(response));
     chat.add_plugins_output();
     chat.on_plugin_detail_loaded(
-        cwd,
+        cwd.to_path_buf(),
         Ok(PluginReadResponse {
             plugin: plugins_test_detail(
                 summary,
@@ -7980,10 +8022,10 @@ async fn plugin_detail_popup_hides_disclosure_for_installed_plugins() {
         summary.clone(),
     ])]);
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd.clone(), Ok(response));
+    chat.on_plugins_loaded(cwd.clone().to_path_buf(), Ok(response));
     chat.add_plugins_output();
     chat.on_plugin_detail_loaded(
-        cwd,
+        cwd.to_path_buf(),
         Ok(PluginReadResponse {
             plugin: plugins_test_detail(
                 summary,
@@ -8070,7 +8112,7 @@ async fn plugins_popup_refresh_replaces_selection_with_first_row() {
         ),
     ])]);
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd, Ok(refreshed));
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(refreshed));
 
     let after = render_bottom_popup(&chat, 100);
     assert!(
@@ -8139,7 +8181,7 @@ async fn plugins_popup_refreshes_installed_counts_after_install() {
         ),
     ])]);
     let cwd = chat.config.cwd.clone();
-    chat.on_plugins_loaded(cwd, Ok(refreshed));
+    chat.on_plugins_loaded(cwd.to_path_buf(), Ok(refreshed));
 
     let after = normalize_ui_text(&render_bottom_popup(&chat, 100));
     assert!(
@@ -10601,7 +10643,6 @@ async fn approval_modal_exec_snapshot() -> anyhow::Result<()> {
         ])),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -10663,7 +10704,6 @@ async fn approval_modal_exec_without_reason_snapshot() -> anyhow::Result<()> {
         ])),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -10712,7 +10752,6 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
         proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -11096,7 +11135,6 @@ async fn status_widget_and_approval_modal_snapshot() {
         ])),
         proposed_network_policy_amendments: None,
         additional_permissions: None,
-        skill_metadata: None,
         available_decisions: None,
         parsed_cmd: vec![],
     };
@@ -12370,7 +12408,8 @@ async fn status_line_fast_mode_footer_snapshot() {
 #[tokio::test]
 async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
-    chat.config.cwd = PathBuf::from("/tmp/project");
+    chat.config.cwd =
+        AbsolutePathBuf::try_from(PathBuf::from("/tmp/project")).expect("absolute test path");
     chat.config.tui_status_line = Some(vec![
         "model-with-reasoning".to_string(),
         "context-remaining".to_string(),
@@ -12402,7 +12441,8 @@ async fn status_line_model_with_reasoning_fast_footer_snapshot() {
 
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
     chat.show_welcome_banner = false;
-    chat.config.cwd = PathBuf::from("/tmp/project");
+    chat.config.cwd =
+        AbsolutePathBuf::try_from(PathBuf::from("/tmp/project")).expect("absolute test path");
     chat.config.tui_status_line = Some(vec![
         "model-with-reasoning".to_string(),
         "context-remaining".to_string(),

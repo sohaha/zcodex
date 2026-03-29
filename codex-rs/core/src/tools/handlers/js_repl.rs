@@ -61,12 +61,12 @@ async fn emit_js_repl_exec_begin(
 ) {
     let emitter = ToolEmitter::shell(
         vec!["js_repl".to_string()],
-        None,
-        turn.cwd.clone(),
+        /*display_command*/ None,
+        turn.cwd.to_path_buf(),
         ExecCommandSource::Agent,
         /*freeform*/ false,
-        None,
-        None,
+        /*interaction_input*/ None,
+        /*model_output_prefix*/ None,
     );
     let ctx = ToolEventCtx::new(session, turn, call_id, /*turn_diff_tracker*/ None);
     emitter.emit(ctx, ToolEventStage::Begin).await;
@@ -83,12 +83,12 @@ async fn emit_js_repl_exec_end(
     let exec_output = build_js_repl_exec_output(output, error, duration);
     let emitter = ToolEmitter::shell(
         vec!["js_repl".to_string()],
-        None,
-        turn.cwd.clone(),
+        /*display_command*/ None,
+        turn.cwd.to_path_buf(),
         ExecCommandSource::Agent,
         /*freeform*/ false,
-        None,
-        None,
+        /*interaction_input*/ None,
+        /*model_output_prefix*/ None,
     );
     let ctx = ToolEventCtx::new(session, turn, call_id, /*turn_diff_tracker*/ None);
     let stage = if error.is_some() {

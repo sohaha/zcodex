@@ -167,6 +167,7 @@ pub async fn run_resume_picker_with_app_server(
     tui: &mut Tui,
     config: &Config,
     show_all: bool,
+    include_non_interactive: bool,
     app_server: AppServerSession,
 ) -> Result<SessionSelection> {
     let (bg_tx, bg_rx) = mpsc::unbounded_channel();
@@ -177,7 +178,7 @@ pub async fn run_resume_picker_with_app_server(
         show_all,
         SessionPickerAction::Resume,
         is_remote,
-        spawn_app_server_page_loader(app_server, bg_tx),
+        spawn_app_server_page_loader(app_server, include_non_interactive, bg_tx),
         bg_rx,
     )
     .await
@@ -197,7 +198,7 @@ pub async fn run_fork_picker_with_app_server(
         show_all,
         SessionPickerAction::Fork,
         is_remote,
-        spawn_app_server_page_loader(app_server, bg_tx),
+        spawn_app_server_page_loader(app_server, /*include_non_interactive*/ false, bg_tx),
         bg_rx,
     )
     .await
@@ -340,6 +341,7 @@ fn spawn_rollout_page_loader(
 
 fn spawn_app_server_page_loader(
     app_server: AppServerSession,
+    include_non_interactive: bool,
     bg_tx: mpsc::UnboundedSender<BackgroundEvent>,
 ) -> PageLoader {
     let (request_tx, mut request_rx) = mpsc::unbounded_channel::<PageLoadRequest>();
@@ -357,6 +359,7 @@ fn spawn_app_server_page_loader(
                 cursor,
                 request.provider_filter,
                 request.sort_key,
+                include_non_interactive,
             )
             .await;
             let _ = bg_tx.send(BackgroundEvent::PageLoaded {
@@ -466,9 +469,15 @@ async fn load_app_server_page(
     cursor: Option<String>,
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
+    include_non_interactive: bool,
 ) -> std::io::Result<PickerPage> {
     let response = app_server
-        .thread_list(thread_list_params(cursor, provider_filter, sort_key))
+        .thread_list(thread_list_params(
+            cursor,
+            provider_filter,
+            sort_key,
+            include_non_interactive,
+        ))
         .await
         .map_err(std::io::Error::other)?;
     let num_scanned_files = response.data.len();
@@ -1092,6 +1101,7 @@ fn thread_list_params(
     cursor: Option<String>,
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
+    include_non_interactive: bool,
 ) -> ThreadListParams {
     ThreadListParams {
         cursor,
@@ -1104,7 +1114,8 @@ fn thread_list_params(
             ProviderFilter::Any => None,
             ProviderFilter::MatchDefault(default_provider) => Some(vec![default_provider]),
         },
-        source_kinds: Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
+        source_kinds: (!include_non_interactive)
+            .then_some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
         archived: Some(false),
         cwd: None,
         search_term: None,
@@ -1810,6 +1821,7 @@ mod tests {
             Some(String::from("cursor-1")),
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
+            /*include_non_interactive*/ false,
         );
 
         assert_eq!(params.cursor, Some(String::from("cursor-1")));
@@ -1821,6 +1833,20 @@ mod tests {
     }
 
     #[test]
+    fn remote_thread_list_params_can_include_non_interactive_sources() {
+        let params = thread_list_params(
+            Some(String::from("cursor-1")),
+            ProviderFilter::Any,
+            ThreadSortKey::UpdatedAt,
+            /*include_non_interactive*/ true,
+        );
+
+        assert_eq!(params.cursor, Some(String::from("cursor-1")));
+        assert_eq!(params.model_providers, None);
+        assert_eq!(params.source_kinds, None);
+    }
+
+    #[test]
     fn remote_picker_does_not_filter_rows_by_local_cwd() {
         let loader: PageLoader = Arc::new(|_| {});
         let state = PickerState::new(
@@ -1828,8 +1854,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::Any,
-            false,
-            None,
+            /*show_all*/ false,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
         let row = Row {
@@ -1859,8 +1885,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -1902,7 +1928,7 @@ mod tests {
         state.view_rows = Some(3);
         state.selected = 1;
         state.scroll_top = 0;
-        state.update_view_rows(3);
+        state.update_view_rows(/*rows*/ 3);
 
         let metrics = calculate_column_metrics(&state.filtered_rows, state.show_all);
 
@@ -1937,8 +1963,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
         state.inline_error = Some(String::from("读取会话元数据失败：/tmp/missing.jsonl"));
@@ -2171,8 +2197,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -2204,7 +2230,7 @@ mod tests {
         state.view_rows = Some(2);
         state.selected = 0;
         state.scroll_top = 0;
-        state.update_view_rows(2);
+        state.update_view_rows(/*rows*/ 2);
 
         state.update_thread_names().await;
 
@@ -2238,8 +2264,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -2252,8 +2278,8 @@ mod tests {
             Some(cursor_from_str(
                 "2025-01-02T00-00-00|00000000-0000-0000-0000-000000000000",
             )),
-            2,
-            false,
+            /*num_scanned_files*/ 2,
+            /*reached_scan_cap*/ false,
         ));
 
         state.ingest_page(page(
@@ -2264,8 +2290,8 @@ mod tests {
             Some(cursor_from_str(
                 "2025-01-01T00-00-00|00000000-0000-0000-0000-000000000001",
             )),
-            2,
-            false,
+            /*num_scanned_files*/ 2,
+            /*reached_scan_cap*/ false,
         ));
 
         state.ingest_page(page(
@@ -2274,9 +2300,9 @@ mod tests {
                 "2024-12-31T23:00:00Z",
                 "very old",
             )],
-            None,
-            1,
-            false,
+            /*next_cursor*/ None,
+            /*num_scanned_files*/ 1,
+            /*reached_scan_cap*/ false,
         ));
 
         let previews: Vec<_> = state
@@ -2307,8 +2333,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
         state.reset_pagination();
@@ -2320,12 +2346,12 @@ mod tests {
             Some(cursor_from_str(
                 "2025-01-03T00-00-00|00000000-0000-0000-0000-000000000000",
             )),
-            2,
-            false,
+            /*num_scanned_files*/ 2,
+            /*reached_scan_cap*/ false,
         ));
 
         assert!(recorded_requests.lock().unwrap().is_empty());
-        state.ensure_minimum_rows_for_view(10);
+        state.ensure_minimum_rows_for_view(/*minimum_rows*/ 10);
         let guard = recorded_requests.lock().unwrap();
         assert_eq!(guard.len(), 1);
         assert!(guard[0].search_token.is_none());
@@ -2341,7 +2367,7 @@ mod tests {
             labels: Vec::new(),
         };
 
-        let created = column_visibility(30, &metrics, ThreadSortKey::CreatedAt);
+        let created = column_visibility(/*area_width*/ 30, &metrics, ThreadSortKey::CreatedAt);
         assert_eq!(
             created,
             ColumnVisibility {
@@ -2352,7 +2378,7 @@ mod tests {
             }
         );
 
-        let updated = column_visibility(30, &metrics, ThreadSortKey::UpdatedAt);
+        let updated = column_visibility(/*area_width*/ 30, &metrics, ThreadSortKey::UpdatedAt);
         assert_eq!(
             updated,
             ColumnVisibility {
@@ -2363,7 +2389,7 @@ mod tests {
             }
         );
 
-        let wide = column_visibility(40, &metrics, ThreadSortKey::CreatedAt);
+        let wide = column_visibility(/*area_width*/ 40, &metrics, ThreadSortKey::CreatedAt);
         assert_eq!(
             wide,
             ColumnVisibility {
@@ -2388,8 +2414,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -2418,8 +2444,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -2432,8 +2458,11 @@ mod tests {
         }
 
         state.reset_pagination();
-        state.ingest_page(page(items, None, 20, false));
-        state.update_view_rows(5);
+        state.ingest_page(page(
+            items, /*next_cursor*/ None, /*num_scanned_files*/ 20,
+            /*reached_scan_cap*/ false,
+        ));
+        state.update_view_rows(/*rows*/ 5);
 
         assert_eq!(state.selected, 0);
         state
@@ -2463,8 +2492,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -2501,8 +2530,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
         let thread_id = ThreadId::new();
@@ -2570,8 +2599,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
 
@@ -2584,8 +2613,11 @@ mod tests {
         }
 
         state.reset_pagination();
-        state.ingest_page(page(items, None, 10, false));
-        state.update_view_rows(5);
+        state.ingest_page(page(
+            items, /*next_cursor*/ None, /*num_scanned_files*/ 10,
+            /*reached_scan_cap*/ false,
+        ));
+        state.update_view_rows(/*rows*/ 5);
 
         state.selected = state.filtered_rows.len().saturating_sub(1);
         state.ensure_selected_visible();
@@ -2615,8 +2647,8 @@ mod tests {
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::MatchDefault(String::from("openai")),
-            true,
-            None,
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
         state.reset_pagination();
@@ -2629,8 +2661,8 @@ mod tests {
             Some(cursor_from_str(
                 "2025-01-02T00-00-00|00000000-0000-0000-0000-000000000000",
             )),
-            1,
-            false,
+            /*num_scanned_files*/ 1,
+            /*reached_scan_cap*/ false,
         ));
         recorded_requests.lock().unwrap().clear();
 
@@ -2650,8 +2682,8 @@ mod tests {
                     Some(cursor_from_str(
                         "2025-01-03T00-00-00|00000000-0000-0000-0000-000000000001",
                     )),
-                    5,
-                    false,
+                    /*num_scanned_files*/ 5,
+                    /*reached_scan_cap*/ false,
                 )),
             })
             .await
@@ -2678,8 +2710,8 @@ mod tests {
                     Some(cursor_from_str(
                         "2025-01-04T00-00-00|00000000-0000-0000-0000-000000000002",
                     )),
-                    7,
-                    false,
+                    /*num_scanned_files*/ 7,
+                    /*reached_scan_cap*/ false,
                 )),
             })
             .await
@@ -2700,7 +2732,12 @@ mod tests {
             .handle_background_event(BackgroundEvent::PageLoaded {
                 request_token: second_request.request_token,
                 search_token: second_request.search_token,
-                page: Ok(page(Vec::new(), None, 0, false)),
+                page: Ok(page(
+                    Vec::new(),
+                    /*next_cursor*/ None,
+                    /*num_scanned_files*/ 0,
+                    /*reached_scan_cap*/ false,
+                )),
             })
             .await
             .unwrap();
@@ -2710,7 +2747,12 @@ mod tests {
             .handle_background_event(BackgroundEvent::PageLoaded {
                 request_token: active_request.request_token,
                 search_token: active_request.search_token,
-                page: Ok(page(Vec::new(), None, 3, true)),
+                page: Ok(page(
+                    Vec::new(),
+                    /*next_cursor*/ None,
+                    /*num_scanned_files*/ 3,
+                    /*reached_scan_cap*/ true,
+                )),
             })
             .await
             .unwrap();
