@@ -65,13 +65,10 @@ v*.*.*:
   - stages:
       - name: run npc
         imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
-        docker:
-          image:
+        image:
               name: docker.cnb.cool/zls-tools/vm/rust:latest
               dockerUser: $CNB_TOKEN_USER_NAME
-              dockerPassword: $CNB_ZP
-        services:
-        - docker
+              dockerPassword: $CNB_TOKEN
         env:
           CUSTOM_PROMPT: |
             你是一位资深工程师，擅长并发模型和性能优化。
