@@ -13,6 +13,7 @@ pub fn read_system_view(conn: &Connection, view: &str, limit: usize) -> Result<V
         }
         ParsedSystemView::Recent { limit } => read_recent_view(conn, limit),
         ParsedSystemView::Glossary { limit } => read_glossary_view(conn, limit),
+        ParsedSystemView::Alias { limit } => read_alias_view(conn, limit),
         other => Ok(json!({
             "view": other.raw(),
             "entryCount": 0,
@@ -35,6 +36,9 @@ enum ParsedSystemView {
     Glossary {
         limit: usize,
     },
+    Alias {
+        limit: usize,
+    },
     Unknown {
         raw: String,
     },
@@ -47,6 +51,7 @@ impl ParsedSystemView {
             Self::Index { .. } => "index",
             Self::Recent { .. } => "recent",
             Self::Glossary { .. } => "glossary",
+            Self::Alias { .. } => "alias",
             Self::Unknown { raw } => raw,
         }
     }
@@ -84,6 +89,14 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
         }),
         "glossary" if tail.is_empty() => Ok(ParsedSystemView::Glossary {
             limit: default_limit,
+        }),
+        "alias" if tail.is_empty() => Ok(ParsedSystemView::Alias {
+            limit: default_limit,
+        }),
+        "alias" if tail.len() == 1 => Ok(ParsedSystemView::Alias {
+            limit: tail[0]
+                .parse::<usize>()
+                .map_err(|err| anyhow!("invalid system alias limit `{}`: {err}", tail[0]))?,
         }),
         _ => Ok(ParsedSystemView::Unknown {
             raw: trimmed.to_string(),
@@ -237,4 +250,99 @@ fn read_glossary_view(conn: &Connection, limit: usize) -> Result<Value> {
         "entryCount": entries.len(),
         "entries": entries,
     }))
+}
+
+fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
+    let alias_nodes = alias_node_count(conn)?;
+    let trigger_nodes = trigger_node_count(conn)?;
+    let alias_nodes_missing = alias_nodes_missing_triggers(conn)?;
+    let entries = alias_entries(conn, limit)?;
+
+    Ok(json!({
+        "view": "alias",
+        "entryCount": entries.len(),
+        "aliasNodeCount": alias_nodes,
+        "triggerNodeCount": trigger_nodes,
+        "aliasNodesMissingTriggers": alias_nodes_missing,
+        "entries": entries,
+    }))
+}
+
+fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
+    let mut stmt = conn.prepare(
+        "SELECT alias.node_uuid,
+                alias.domain,
+                alias.path,
+                alias.alias_count,
+                COALESCE(trigger_counts.count, 0) AS trigger_count
+         FROM (
+             SELECT e.child_uuid AS node_uuid,
+                    MIN(p.domain) AS domain,
+                    MIN(p.path) AS path,
+                    COUNT(*) AS alias_count
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+             ORDER BY alias_count DESC, domain ASC, path ASC
+             LIMIT ?1
+         ) alias
+         LEFT JOIN (
+             SELECT node_uuid, COUNT(*) AS count
+             FROM glossary_keywords
+             GROUP BY node_uuid
+         ) trigger_counts ON trigger_counts.node_uuid = alias.node_uuid",
+    )?;
+
+    let entries = stmt
+        .query_map([limit as i64], |row| {
+            let trigger_count: i64 = row.get(4)?;
+            Ok(json!({
+                "nodeUuid": row.get::<_, String>(0)?,
+                "domain": row.get::<_, String>(1)?,
+                "path": row.get::<_, String>(2)?,
+                "aliasCount": row.get::<_, i64>(3)?,
+                "triggerCount": trigger_count,
+                "missingTriggers": trigger_count == 0,
+            }))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(entries)
+}
+
+fn alias_node_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT child_uuid
+             FROM edges
+             GROUP BY child_uuid
+             HAVING COUNT(*) > 1
+         )",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+fn trigger_node_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT child_uuid
+             FROM edges
+             GROUP BY child_uuid
+             HAVING COUNT(*) > 1
+         ) AS alias_nodes
+         WHERE alias_nodes.child_uuid NOT IN (
+             SELECT DISTINCT node_uuid FROM glossary_keywords
+         )",
+        [],
+        |row| row.get(0),
+    )?)
 }

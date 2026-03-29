@@ -7,6 +7,12 @@
 - `codex zmemory read core://agent --json`
 - `codex zmemory search "GraphService" --json`
 
+## project-init / contextual bootstrap
+- `codex zmemory create core://project-alpha --content "Project constraints" --priority 2 --json`
+- `codex zmemory create core://project-alpha/architecture --content "Architecture notes" --json`
+- `codex zmemory add-alias alias://project-alpha core://project-alpha --json`
+- `codex zmemory manage-triggers core://project-alpha --add launch --json`
+
 ## capture / create
 - `codex zmemory create core://project-alpha --content "Project constraints" --priority 2 --json`
 - `codex zmemory create --parent-uri core://project-alpha --title notes --content "Nested note" --json`
@@ -19,6 +25,9 @@
 ## linking / alias / triggers
 - `codex zmemory add-alias alias://latest-guidance core://project-alpha --json`
 - `codex zmemory manage-triggers core://project-alpha --add strategy --add review --json`
+
+## recall helpers
+- `codex zmemory search "review pressure" --uri core://project-alpha --limit 10 --json`
 
 ## review / admin
 - `codex zmemory stats --json`

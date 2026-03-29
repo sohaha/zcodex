@@ -93,11 +93,21 @@ codex zmemory doctor --json
 2. 再看 `doctor` 判断是否存在需要优先修复的告警。
 3. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
 
+### alias/trigger 治理输出
+
+为了进一步支持 alias/trigger 审核，可直接 `read system://alias [limit]`，该视图汇总 alias nodes、trigger 覆盖与 alias-without-trigger 的列表：
+
+- `codex zmemory read system://alias --json`：查看 alias/trigger 总量与缺失概况。
+- `codex zmemory read system://alias/5 --json`：按 alias 数量排序，列出最多 alias 的前 5 个 alias node 及其 trigger 情况。
+
+这些信息配合 `stats`/`doctor` 能形成“alias coverage + trigger wiring”评估，为 alias review 清单提供输入。
+
 ## memory skill 参考
 
 - 根级 skill `memory` 里详细记录了 recall/capture/refine/linking/review/handoff 的最小编排（见 `.codex/skills/memory/SKILL.md`）。
 - 任何时候想直接复用 CLI 示例，可参考 `.codex/skills/memory/references/cli-recipes.md`，按已实现的 `codex zmemory` 命令顺序排列。
 - 需要一个 review 复核清单时，可参阅 `.codex/skills/memory/references/review-playbook.md` 中列出的 `stats`/`doctor`/`export` 流程。
+- 需要启动一个新项目时，可以参考 review-playbook 里的 project init checklist，它直接用 `create`/`add-alias`/`manage-triggers` 等命令搭建骨架。
 
 ## 创建语义
 
