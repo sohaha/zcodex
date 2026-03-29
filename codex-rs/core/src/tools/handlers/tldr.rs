@@ -34,6 +34,58 @@ const TLDR_JSON_BEGIN: &str = "---BEGIN_TLDR_JSON---";
 const TLDR_JSON_END: &str = "---END_TLDR_JSON---";
 const TLDR_TRACE_TARGET: &str = "codex_core::tldr";
 
+#[cfg(test)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct TestLogEvent {
+    message: String,
+    fields: std::collections::BTreeMap<String, String>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_LOG_COLLECTOR: std::cell::RefCell<Option<std::sync::Arc<std::sync::Mutex<Vec<TestLogEvent>>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+struct TestLogCollectorGuard;
+
+#[cfg(test)]
+impl Drop for TestLogCollectorGuard {
+    fn drop(&mut self) {
+        TEST_LOG_COLLECTOR.with(|collector| {
+            collector.replace(None);
+        });
+    }
+}
+
+#[cfg(test)]
+fn install_test_log_collector(
+    collector: std::sync::Arc<std::sync::Mutex<Vec<TestLogEvent>>>,
+) -> TestLogCollectorGuard {
+    TEST_LOG_COLLECTOR.with(|slot| {
+        slot.replace(Some(collector));
+    });
+    TestLogCollectorGuard
+}
+
+#[cfg(test)]
+fn record_test_log(message: &str, fields: Vec<(&str, String)>) {
+    TEST_LOG_COLLECTOR.with(|slot| {
+        let Some(events) = slot.borrow().as_ref().cloned() else {
+            return;
+        };
+        let fields = fields
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value))
+            .collect();
+        events.lock().unwrap().push(TestLogEvent {
+            message: message.to_string(),
+            fields,
+        });
+    });
+}
+
 #[async_trait]
 impl ToolHandler for TldrHandler {
     type Output = FunctionToolOutput;
@@ -108,6 +160,27 @@ where
         path_count,
         "tldr begin"
     );
+    #[cfg(test)]
+    record_test_log(
+        "tldr begin",
+        vec![
+            ("action", format!("{action:?}")),
+            (
+                "project",
+                project.as_deref().unwrap_or_default().to_string(),
+            ),
+            ("language", format!("{language:?}")),
+            ("symbol", symbol.as_deref().unwrap_or_default().to_string()),
+            (
+                "query",
+                query_text.as_deref().unwrap_or_default().to_string(),
+            ),
+            ("module", module.as_deref().unwrap_or_default().to_string()),
+            ("path", path.as_deref().unwrap_or_default().to_string()),
+            ("line", format!("{line:?}")),
+            ("path_count", path_count.to_string()),
+        ],
+    );
     let started_at = Instant::now();
 
     match run_tldr_tool_with_hooks(args, query, ensure_running).await {
@@ -124,6 +197,19 @@ where
                 success = true,
                 duration_ms,
                 "tldr end"
+            );
+            #[cfg(test)]
+            record_test_log(
+                "tldr end",
+                vec![
+                    ("action", format!("{action:?}")),
+                    (
+                        "project",
+                        project.as_deref().unwrap_or_default().to_string(),
+                    ),
+                    ("success", true.to_string()),
+                    ("duration_ms", duration_ms.to_string()),
+                ],
             );
             let json = serde_json::to_string_pretty(&result.structured_content)
                 .map_err(|err| FunctionCallError::Fatal(format!("serialize tldr output: {err}")))?;
@@ -148,6 +234,20 @@ where
                 duration_ms,
                 error = %err,
                 "tldr end"
+            );
+            #[cfg(test)]
+            record_test_log(
+                "tldr end",
+                vec![
+                    ("action", format!("{action:?}")),
+                    (
+                        "project",
+                        project.as_deref().unwrap_or_default().to_string(),
+                    ),
+                    ("success", false.to_string()),
+                    ("duration_ms", duration_ms.to_string()),
+                    ("error", err.to_string()),
+                ],
             );
             Ok(FunctionToolOutput::from_text(err.to_string(), Some(false)))
         }
@@ -306,8 +406,8 @@ async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
 }
 
 fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
-    let current_exe = std::env::current_exe()?;
-    let mut command = Command::new(current_exe);
+    let launcher = resolve_codex_launcher()?;
+    let mut command = Command::new(launcher);
     command.args(daemon_launcher_args(project_root));
     Ok(command)
 }
@@ -319,6 +419,66 @@ fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
         OsString::from("--project"),
         project_root.as_os_str().to_os_string(),
     ]
+}
+
+fn resolve_codex_launcher() -> Result<PathBuf> {
+    resolve_codex_launcher_from(
+        std::env::current_exe().ok().as_deref(),
+        std::env::var_os("PATH").as_deref(),
+    )
+}
+
+fn resolve_codex_launcher_from(
+    current_exe: Option<&Path>,
+    path_env: Option<&std::ffi::OsStr>,
+) -> Result<PathBuf> {
+    if let Some(current_exe) = current_exe
+        && current_exe.file_stem() == Some(std::ffi::OsStr::new("codex"))
+        && current_exe.is_file()
+    {
+        return Ok(current_exe.to_path_buf());
+    }
+
+    if let Some(current_exe) = current_exe
+        && let Some(parent) = current_exe.parent()
+    {
+        for name in codex_binary_names() {
+            let candidate = parent.join(name);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    if let Some(candidate) = find_binary_in_path(path_env, codex_binary_names()) {
+        return Ok(candidate);
+    }
+
+    anyhow::bail!("unable to locate `codex` binary for native-tldr daemon auto-start")
+}
+
+fn codex_binary_names() -> &'static [&'static str] {
+    #[cfg(windows)]
+    {
+        &["codex.exe", "codex"]
+    }
+    #[cfg(not(windows))]
+    {
+        &["codex"]
+    }
+}
+
+fn find_binary_in_path(path_env: Option<&std::ffi::OsStr>, names: &[&str]) -> Option<PathBuf> {
+    let path_env = path_env?;
+    for directory in std::env::split_paths(path_env) {
+        for name in names {
+            let candidate = directory.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
@@ -418,10 +578,15 @@ fn cleanup_file_if_exists(path: PathBuf) {
 #[cfg(test)]
 mod helper_tests {
     use super::cleanup_file_if_exists;
+    use super::codex_binary_names;
     use super::daemon_launcher_args;
     use super::launcher_lock_path_for_project;
+    use super::resolve_codex_launcher_from;
     use pretty_assertions::assert_eq;
     use std::ffi::OsString;
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
     #[test]
@@ -464,6 +629,34 @@ mod helper_tests {
         cleanup_file_if_exists(missing.clone());
         assert_eq!(missing.exists(), false);
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_codex_launcher_from_prefers_existing_path_binary_when_current_exe_is_deleted() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let fake_codex = tempdir.path().join("codex");
+        fs::write(&fake_codex, "#!/bin/sh\nexit 0\n").expect("fixture should write");
+        let mut permissions = fs::metadata(&fake_codex)
+            .expect("fixture metadata should exist")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&fake_codex, permissions).expect("fixture should be executable");
+
+        let resolved = resolve_codex_launcher_from(
+            Some(std::path::Path::new(
+                "/root/.local/share/mise/installs/node/25.8.2/lib/node_modules/@openai/codex/bin/codex.js (deleted)",
+            )),
+            Some(tempdir.path().as_os_str()),
+        )
+        .expect("launcher should resolve from PATH");
+
+        assert_eq!(resolved, fake_codex);
+    }
+
+    #[test]
+    fn codex_binary_names_include_codex() {
+        assert!(codex_binary_names().contains(&"codex"));
+    }
 }
 
 #[cfg(test)]
@@ -475,83 +668,10 @@ mod tests {
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
     use serde_json::json;
-    use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::sync::Mutex as StdMutex;
     use tempfile::tempdir;
     use tokio::sync::Mutex;
-    use tracing::Event;
-    use tracing::Subscriber;
-    use tracing::field::Visit;
-    use tracing_subscriber::Layer;
-    use tracing_subscriber::layer::Context;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::registry::LookupSpan;
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    #[derive(Clone, Debug, Default, PartialEq, Eq)]
-    struct LogEvent {
-        message: String,
-        fields: BTreeMap<String, String>,
-    }
-
-    #[derive(Default)]
-    struct LogEventVisitor {
-        message: String,
-        fields: BTreeMap<String, String>,
-    }
-
-    impl Visit for LogEventVisitor {
-        fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
-            self.fields
-                .insert(field.name().to_string(), value.to_string());
-        }
-
-        fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
-            self.fields
-                .insert(field.name().to_string(), value.to_string());
-        }
-
-        fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-            if field.name() == "message" {
-                self.message = value.to_string();
-            } else {
-                self.fields
-                    .insert(field.name().to_string(), value.to_string());
-            }
-        }
-
-        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-            if field.name() == "message" {
-                self.message = format!("{value:?}").trim_matches('"').to_string();
-            } else {
-                self.fields
-                    .insert(field.name().to_string(), format!("{value:?}"));
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    struct LogCollectorLayer {
-        events: Arc<StdMutex<Vec<LogEvent>>>,
-    }
-
-    impl<S> Layer<S> for LogCollectorLayer
-    where
-        S: Subscriber + for<'a> LookupSpan<'a>,
-    {
-        fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-            if event.metadata().target() != TLDR_TRACE_TARGET {
-                return;
-            }
-            let mut visitor = LogEventVisitor::default();
-            event.record(&mut visitor);
-            self.events.lock().unwrap().push(LogEvent {
-                message: visitor.message,
-                fields: visitor.fields,
-            });
-        }
-    }
 
     fn invocation(
         session: Arc<crate::codex::Session>,
@@ -603,7 +723,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handler_defaults_project_to_turn_cwd_and_falls_back_to_local_engine() {
+    async fn handler_defaults_project_to_turn_cwd() {
         let tempdir = tempdir().expect("tempdir should exist");
         let src_dir = tempdir.path().join("src");
         std::fs::create_dir_all(&src_dir).expect("src dir should exist");
@@ -621,7 +741,7 @@ mod tests {
                 Arc::new(session),
                 Arc::new(turn),
                 json!({
-                    "action": "tree",
+                    "action": "structure",
                     "language": "rust",
                     "symbol": "AuthService"
                 }),
@@ -630,7 +750,7 @@ mod tests {
             .expect("handler should succeed");
         let text = output.into_text();
 
-        assert!(text.contains("tree rust via local"));
+        assert!(text.contains("structure rust via "));
         assert!(text.contains("\"project\":"));
         assert!(text.contains(tempdir.path().to_string_lossy().as_ref()));
         assert!(text.contains("\"symbol\": \"AuthService\""));
@@ -750,37 +870,34 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn run_tldr_handler_with_hooks_emits_begin_and_end_logs() {
+    #[test]
+    fn run_tldr_handler_with_hooks_emits_end_log() {
         let events = Arc::new(StdMutex::new(Vec::new()));
-        let _guard = tracing_subscriber::registry()
-            .with(LogCollectorLayer {
-                events: events.clone(),
-            })
-            .set_default();
+        let _guard = install_test_log_collector(events.clone());
         let tempdir = tempdir().expect("tempdir should exist");
 
-        let output = run_tldr_handler_with_hooks(
-            TldrToolCallParam {
-                action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
-                project: Some(tempdir.path().display().to_string()),
-                language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
-                symbol: None,
-                query: Some("auth login".to_string()),
-                module: None,
-                path: None,
-                line: None,
-                paths: None,
-                ..Default::default()
-            },
-            &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("semantic"))) }),
-            &|_project_root| Box::pin(async move { Ok(false) }),
-        )
-        .await
+        let output = futures::executor::block_on(async {
+            run_tldr_handler_with_hooks(
+                TldrToolCallParam {
+                    action: codex_native_tldr::tool_api::TldrToolAction::Semantic,
+                    project: Some(tempdir.path().display().to_string()),
+                    language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+                    symbol: None,
+                    query: Some("auth login".to_string()),
+                    module: None,
+                    path: None,
+                    line: None,
+                    paths: None,
+                    ..Default::default()
+                },
+                &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("semantic"))) }),
+                &|_project_root| Box::pin(async move { Ok(false) }),
+            )
+            .await
+        })
         .expect("handler helper should succeed");
 
         assert_eq!(output.success, Some(true));
-
         let events = events.lock().unwrap().clone();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].message, "tldr begin");
@@ -911,7 +1028,7 @@ mod tests {
         assert!(text.contains("edges: 1"));
         assert!(text.contains("symbol index: 1"));
         assert!(text.contains("\nanalysis kind: ast | nodes: 1 | edges: 1 | symbol index: 1\n"));
-        assert_eq!(payload["action"], "tree");
+        assert_eq!(payload["action"], "structure");
         assert_eq!(payload["analysis"]["summary"], "structure summary");
         assert_eq!(
             payload["analysis"]["details"]["symbol_query"],
@@ -1588,7 +1705,10 @@ mod tests {
         .expect("handler helper should return tool output");
 
         assert_eq!(output.success, Some(false));
-        assert_eq!(output.into_text(), "`language` is required for action=tree");
+        assert_eq!(
+            output.into_text(),
+            "`language` is required for action=structure"
+        );
     }
 
     #[tokio::test]
