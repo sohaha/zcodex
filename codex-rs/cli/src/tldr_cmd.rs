@@ -8,15 +8,17 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::api::AnalysisResponse;
+use codex_native_tldr::api::DiagnosticToolKind;
 use codex_native_tldr::api::DiagnosticsRequest;
 use codex_native_tldr::api::DiagnosticsResponse;
+use codex_native_tldr::api::DoctorRequest;
 use codex_native_tldr::api::DoctorResponse;
 use codex_native_tldr::api::SearchRequest;
 use codex_native_tldr::daemon::TldrDaemon;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
-use codex_native_tldr::daemon::lock_path_for_project;
+use codex_native_tldr::daemon::launch_lock_path_for_project as native_launch_lock_path_for_project;
 use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
 use codex_native_tldr::daemon::read_live_pid;
@@ -334,6 +336,22 @@ pub struct TldrDiagnosticsCommand {
     #[arg(long, value_enum)]
     pub lang: Option<CliLanguage>,
 
+    /// 只运行这些诊断工具，可重复传入。
+    #[arg(long = "only-tool", value_name = "TOOL")]
+    pub only_tools: Vec<String>,
+
+    /// 跳过 lint 类工具。
+    #[arg(long, default_value_t = false)]
+    pub no_lint: bool,
+
+    /// 跳过 typecheck 类工具。
+    #[arg(long, default_value_t = false)]
+    pub no_typecheck: bool,
+
+    /// 最多保留多少条诊断。
+    #[arg(long, default_value_t = 50)]
+    pub max_issues: usize,
+
     /// 以 JSON 输出。
     #[arg(long, default_value_t = false)]
     pub json: bool,
@@ -344,6 +362,18 @@ pub struct TldrDoctorCommand {
     /// 项目根目录。
     #[arg(long, default_value = ".")]
     pub project: PathBuf,
+
+    /// 仅检查指定语言相关的工具。
+    #[arg(long, value_enum)]
+    pub lang: Option<CliLanguage>,
+
+    /// 只检查这些工具，可重复传入。
+    #[arg(long = "only-tool", value_name = "TOOL")]
+    pub only_tools: Vec<String>,
+
+    /// 不返回安装提示。
+    #[arg(long, default_value_t = false)]
+    pub no_install_hints: bool,
 
     /// 以 JSON 输出。
     #[arg(long, default_value_t = false)]
@@ -887,6 +917,10 @@ async fn run_diagnostics_command(cmd: TldrDiagnosticsCommand) -> Result<()> {
     let request = DiagnosticsRequest {
         language,
         path: requested_path.clone(),
+        only_tools: cmd.only_tools.clone(),
+        run_lint: !cmd.no_lint,
+        run_typecheck: !cmd.no_typecheck,
+        max_issues: cmd.max_issues.max(1),
     };
     let daemon_response = query_daemon_with_autostart(
         &project_root,
@@ -931,7 +965,11 @@ async fn run_doctor_command(cmd: TldrDoctorCommand) -> Result<()> {
     let engine = TldrEngine::builder(project_root.clone())
         .with_config(config)
         .build();
-    let response = engine.doctor();
+    let response = engine.doctor(DoctorRequest {
+        language: cmd.lang.map(Into::into),
+        only_tools: cmd.only_tools.clone(),
+        include_install_hints: !cmd.no_install_hints,
+    });
     let payload = json!({
         "action": "doctor",
         "project": project_root,
@@ -1125,7 +1163,7 @@ async fn run_change_impact_command(cmd: TldrChangeImpactCommand) -> Result<()> {
 
 fn analysis_action_name(kind: AnalysisKind) -> &'static str {
     match kind {
-        AnalysisKind::Ast => "tree",
+        AnalysisKind::Ast => "structure",
         AnalysisKind::Extract => "extract",
         AnalysisKind::CallGraph => "context",
         AnalysisKind::Impact => "impact",
@@ -1323,7 +1361,21 @@ fn render_doctor_response_text(response: &DoctorResponse) -> Vec<String> {
         format!("message: {}", response.message),
     ];
     for tool in &response.tools {
-        lines.push(format!("tool {}: {}", tool.tool, tool.available));
+        let languages = tool
+            .languages
+            .iter()
+            .copied()
+            .map(SupportedLanguage::as_str)
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut line = format!(
+            "tool {}: {} ({}, languages={languages})",
+            tool.tool, tool.available, tool.purpose
+        );
+        if let Some(hint) = tool.install_hint.as_deref() {
+            line.push_str(&format!(" hint={hint}"));
+        }
+        lines.push(line);
     }
     lines
 }
@@ -1392,15 +1444,34 @@ fn render_diagnostics_response_text(
         format!("path: {}", response.path),
         format!("tools: {}", response.tools.len()),
         format!("diagnostics: {}", response.diagnostics.len()),
+        format!("truncated: {}", response.truncated),
         format!("message: {}", response.message),
     ];
+    for tool in &response.tools {
+        let kind = match tool.kind {
+            DiagnosticToolKind::Lint => "lint",
+            DiagnosticToolKind::Typecheck => "typecheck",
+        };
+        lines.push(format!("tool {}: {} ({kind})", tool.tool, tool.available));
+    }
     for diagnostic in &response.diagnostics {
+        let severity = match diagnostic.severity {
+            codex_native_tldr::api::DiagnosticSeverity::Error => "error",
+            codex_native_tldr::api::DiagnosticSeverity::Warning => "warning",
+            codex_native_tldr::api::DiagnosticSeverity::Info => "info",
+        };
+        let code = diagnostic
+            .code
+            .as_deref()
+            .map(|value| format!(" [{value}]"))
+            .unwrap_or_default();
         lines.push(format!(
-            "{}:{}:{} {} {}",
+            "{}:{}:{} {severity} {}{} {}",
             diagnostic.path,
             diagnostic.line,
             diagnostic.column,
             diagnostic.source,
+            code,
             diagnostic.message.replace('\n', "\\n")
         ));
     }
@@ -1473,8 +1544,18 @@ fn render_daemon_response_text(
                 .unwrap_or(false)
         ));
         lines.push(format!(
+            "session reindex in progress: {}",
+            snapshot
+                .map(|snapshot| snapshot.background_reindex_in_progress)
+                .unwrap_or(false)
+        ));
+        lines.push(format!(
             "semantic reindex pending: {}",
             daemon_status.semantic_reindex_pending
+        ));
+        lines.push(format!(
+            "semantic reindex in progress: {}",
+            daemon_status.semantic_reindex_in_progress
         ));
         if let Some(last_query_at) = daemon_status.last_query_at {
             lines.push(format!("last query at: {last_query_at:?}"));
@@ -1482,11 +1563,25 @@ fn render_daemon_response_text(
         lines.push(format!("auto start: {}", daemon_status.config.auto_start));
         lines.push(format!("socket mode: {}", daemon_status.config.socket_mode));
         lines.push(format!(
+            "session idle timeout secs: {}",
+            daemon_status.config.session_idle_timeout_secs
+        ));
+        lines.push(format!(
             "semantic enabled: {}",
             daemon_status.config.semantic_enabled
         ));
     }
     if let Some(snapshot) = snapshot {
+        if daemon_status.is_none() {
+            lines.push(format!(
+                "session reindex pending: {}",
+                snapshot.reindex_pending
+            ));
+            lines.push(format!(
+                "session reindex in progress: {}",
+                snapshot.background_reindex_in_progress
+            ));
+        }
         lines.push(format!("cached entries: {}", snapshot.cached_entries));
         lines.push(format!("dirty files: {}", snapshot.dirty_files));
         lines.push(format!(
@@ -1494,6 +1589,10 @@ fn render_daemon_response_text(
             snapshot.dirty_file_threshold
         ));
         lines.push(format!("reindex pending: {}", snapshot.reindex_pending));
+        lines.push(format!(
+            "reindex in progress: {}",
+            snapshot.background_reindex_in_progress
+        ));
         if let Some(last_reindex) = snapshot.last_reindex.as_ref() {
             lines.push(format!("last completed reindex: {:?}", last_reindex.status));
         }
@@ -1501,6 +1600,24 @@ fn render_daemon_response_text(
             lines.push(format!(
                 "last reindex attempt: {:?}",
                 last_reindex_attempt.status
+            ));
+        }
+        if let Some(last_warm) = snapshot.last_warm.as_ref() {
+            lines.push(format!("last warm status: {:?}", last_warm.status));
+            if !last_warm.languages.is_empty() {
+                let languages = last_warm
+                    .languages
+                    .iter()
+                    .copied()
+                    .map(SupportedLanguage::as_str)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                lines.push(format!("last warm languages: {languages}"));
+            }
+            lines.push(format!("last warm message: {}", last_warm.message));
+            lines.push(format!(
+                "last warm finished at: {:?}",
+                last_warm.finished_at
             ));
         }
     }
@@ -1546,7 +1663,7 @@ async fn run_daemon_action(
 }
 
 async fn run_daemon_start_command(project_root: &Path, json_output: bool) -> Result<()> {
-    let started = ensure_daemon_running(project_root).await?;
+    let started = ensure_daemon_running(project_root, true).await?;
     let status = query_daemon(project_root, &TldrDaemonCommand::Status).await?;
     let Some(response) = status else {
         bail!(
@@ -1630,11 +1747,12 @@ async fn query_daemon_with_autostart(
     project_root: &Path,
     command: &TldrDaemonCommand,
 ) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>> {
+    let auto_start_enabled = load_tldr_config(project_root)?.daemon.auto_start;
     query_daemon_with_hooks(
         project_root,
         command,
         |project_root, command| Box::pin(query_daemon(project_root, command)),
-        |project_root| Box::pin(ensure_daemon_running(project_root)),
+        move |project_root| Box::pin(ensure_daemon_running(project_root, auto_start_enabled)),
     )
     .await
 }
@@ -1679,13 +1797,23 @@ fn analysis_cache_key(
     format!("{}:{kind:?}:{symbol}:{path}:{line}", language.as_str())
 }
 
-async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
+async fn ensure_daemon_running(project_root: &Path, auto_start_enabled: bool) -> Result<bool> {
+    if !cfg!(unix) {
+        return Ok(false);
+    }
+    if !auto_start_enabled {
+        return Ok(false);
+    }
+
     DAEMON_LIFECYCLE_MANAGER
-        .ensure_running(
+        .ensure_running_with_launcher_lock(
             project_root,
-            daemon_metadata_looks_alive,
+            daemon_metadata_looks_alive_with_launcher_lock,
             cleanup_stale_daemon_artifacts,
-            |project_root| Box::pin(try_start_native_tldr_daemon(project_root)),
+            daemon_lock_is_held,
+            try_open_launcher_lock,
+            record_test_launcher_wait,
+            |project_root| Box::pin(spawn_native_tldr_daemon(project_root)),
         )
         .await
 }
@@ -1745,24 +1873,10 @@ fn record_test_launcher_wait(_project_root: &Path) {
 }
 
 #[cfg(unix)]
-async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
+async fn spawn_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     if daemon_lock_is_held(project_root)? {
-        return wait_for_daemon_startup(project_root).await;
+        return Ok(false);
     }
-
-    let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
-        record_test_launcher_wait(project_root);
-        return wait_for_daemon_startup(project_root).await;
-    };
-
-    if daemon_metadata_looks_alive(project_root) {
-        return Ok(true);
-    }
-    if daemon_lock_is_held(project_root)? {
-        return wait_for_daemon_startup_during_launch(project_root).await;
-    }
-
-    cleanup_stale_daemon_artifacts(project_root);
 
     let mut child = daemon_launcher_command(project_root)?
         .stdin(Stdio::null())
@@ -1774,41 +1888,15 @@ async fn try_start_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     tokio::spawn(async move {
         let _ = child.wait().await;
     });
-
-    let started = wait_for_daemon_startup_during_launch(project_root).await;
-    drop(launcher_lock);
-    started
+    Ok(true)
 }
 
 #[cfg(not(unix))]
-async fn try_start_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
+async fn spawn_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
     Ok(false)
 }
 
-async fn wait_for_daemon_startup(project_root: &Path) -> Result<bool> {
-    wait_for_daemon_startup_with_launcher_lock(project_root, false).await
-}
-
-async fn wait_for_daemon_startup_during_launch(project_root: &Path) -> Result<bool> {
-    wait_for_daemon_startup_with_launcher_lock(project_root, true).await
-}
-
-async fn wait_for_daemon_startup_with_launcher_lock(
-    project_root: &Path,
-    ignore_launcher_lock: bool,
-) -> Result<bool> {
-    let start = Instant::now();
-    let timeout = Duration::from_secs(3);
-    while start.elapsed() < timeout {
-        if daemon_metadata_looks_alive_with_launcher_lock(project_root, ignore_launcher_lock) {
-            return Ok(true);
-        }
-        sleep(Duration::from_millis(50)).await;
-    }
-
-    Ok(false)
-}
-
+#[cfg_attr(not(test), allow(dead_code))]
 fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
     daemon_metadata_looks_alive_with_launcher_lock(project_root, false)
 }
@@ -1850,7 +1938,7 @@ fn cleanup_stale_daemon_artifacts(project_root: &Path) {
 }
 
 fn launcher_lock_path_for_project(project_root: &Path) -> PathBuf {
-    lock_path_for_project(project_root).with_extension("launch.lock")
+    native_launch_lock_path_for_project(project_root)
 }
 
 fn try_open_launcher_lock(project_root: &Path) -> Result<Option<File>> {
@@ -1893,6 +1981,7 @@ mod output_tests {
     use super::cli_semantic_payload;
     use super::daemon_action_and_command;
     use super::render_analysis_response_text;
+    use super::render_diagnostics_response_text;
     use super::render_importers_response_text;
     use super::render_imports_response_text;
     use super::render_semantic_response_text;
@@ -1905,6 +1994,11 @@ mod output_tests {
     use codex_native_tldr::api::AnalysisResponse;
     use codex_native_tldr::api::AnalysisSymbolIndexEntry;
     use codex_native_tldr::api::AnalysisUnitDetail;
+    use codex_native_tldr::api::DiagnosticItem;
+    use codex_native_tldr::api::DiagnosticSeverity;
+    use codex_native_tldr::api::DiagnosticToolKind;
+    use codex_native_tldr::api::DiagnosticToolStatus;
+    use codex_native_tldr::api::DiagnosticsResponse;
     use codex_native_tldr::lang_support::LanguageRegistry;
     use codex_native_tldr::lang_support::SupportedLanguage;
     use codex_native_tldr::semantic::EmbeddingUnit;
@@ -2028,8 +2122,8 @@ mod output_tests {
     }
 
     #[test]
-    fn analysis_action_name_maps_ast_to_tree() {
-        assert_eq!(analysis_action_name(AnalysisKind::Ast), "tree");
+    fn analysis_action_name_maps_ast_to_structure() {
+        assert_eq!(analysis_action_name(AnalysisKind::Ast), "structure");
         assert_eq!(analysis_action_name(AnalysisKind::Extract), "extract");
         assert_eq!(analysis_action_name(AnalysisKind::Slice), "slice");
     }
@@ -2510,6 +2604,93 @@ mod output_tests {
         assert!(lines.contains(&"match 0: src/auth.rs:2 (embedding score: 0.750)".to_string()));
         assert!(lines.contains(&"  snippet: let auth_token = true;\\nverify();".to_string()));
     }
+
+    #[test]
+    fn render_diagnostics_response_text_includes_severity_and_code() {
+        let lines = render_diagnostics_response_text(
+            SupportedLanguage::Rust,
+            "local",
+            &DiagnosticsResponse {
+                language: SupportedLanguage::Rust,
+                path: "src/main.rs".to_string(),
+                tools: vec![DiagnosticToolStatus {
+                    tool: "cargo-check".to_string(),
+                    available: true,
+                    kind: DiagnosticToolKind::Typecheck,
+                }],
+                diagnostics: vec![DiagnosticItem {
+                    path: "src/main.rs".to_string(),
+                    line: 7,
+                    column: 3,
+                    severity: DiagnosticSeverity::Error,
+                    message: "unknown field".to_string(),
+                    code: Some("E0609".to_string()),
+                    source: "cargo-check".to_string(),
+                }],
+                truncated: false,
+                message: "diagnostics reported 1 issues".to_string(),
+            },
+        );
+
+        assert!(lines.contains(&"tool cargo-check: true (typecheck)".to_string()));
+        assert!(
+            lines.contains(&"src/main.rs:7:3 error cargo-check [E0609] unknown field".to_string())
+        );
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::TldrCli;
+    use super::TldrSubcommand;
+    use clap::Parser;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn diagnostics_command_parses_filter_flags() {
+        let cli = TldrCli::try_parse_from([
+            "codex",
+            "diagnostics",
+            "--lang",
+            "python",
+            "--only-tool",
+            "pyright",
+            "--no-lint",
+            "--max-issues",
+            "5",
+            "tool.py",
+        ])
+        .expect("diagnostics args should parse");
+
+        let TldrSubcommand::Diagnostics(command) = cli.subcommand else {
+            panic!("expected diagnostics subcommand");
+        };
+        assert_eq!(command.only_tools, vec!["pyright".to_string()]);
+        assert_eq!(command.no_lint, true);
+        assert_eq!(command.no_typecheck, false);
+        assert_eq!(command.max_issues, 5);
+    }
+
+    #[test]
+    fn doctor_command_parses_language_and_tool_filters() {
+        let cli = TldrCli::try_parse_from([
+            "codex",
+            "doctor",
+            "--lang",
+            "rust",
+            "--only-tool",
+            "cargo-clippy",
+            "--no-install-hints",
+        ])
+        .expect("doctor args should parse");
+
+        let TldrSubcommand::Doctor(command) = cli.subcommand else {
+            panic!("expected doctor subcommand");
+        };
+        assert_eq!(command.only_tools, vec!["cargo-clippy".to_string()]);
+        assert_eq!(command.no_install_hints, true);
+        assert!(command.lang.is_some());
+    }
 }
 
 #[cfg(test)]
@@ -2522,13 +2703,14 @@ mod lifecycle_tests {
     use super::query_daemon_with_autostart;
     use super::query_daemon_with_hooks;
     use super::render_daemon_response_text;
-    use super::try_start_native_tldr_daemon;
+    use super::spawn_native_tldr_daemon;
     use crate::tldr_cmd::CODEX_TLDR_TEST_DAEMON_BIN_ENV;
     use anyhow::Result;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::daemon::pid_path_for_project;
     use codex_native_tldr::daemon::socket_path_for_project;
+    use codex_native_tldr::lang_support::SupportedLanguage;
     use std::path::Path;
     use std::path::PathBuf;
     use std::process::Stdio;
@@ -2641,6 +2823,7 @@ mod lifecycle_tests {
                 dirty_files: 1,
                 dirty_file_threshold: 20,
                 reindex_pending: true,
+                background_reindex_in_progress: false,
                 last_query_at: None,
                 last_reindex: Some(codex_native_tldr::semantic::SemanticReindexReport {
                     status: codex_native_tldr::semantic::SemanticReindexStatus::Completed,
@@ -2666,6 +2849,7 @@ mod lifecycle_tests {
                     embedding_enabled: false,
                     embedding_dimensions: 0,
                 }),
+                last_warm: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -2675,6 +2859,7 @@ mod lifecycle_tests {
 
         assert!(output.contains("last completed reindex: Completed"));
         assert!(output.contains("last reindex attempt: Failed"));
+        assert!(output.contains("session reindex in progress: false"));
     }
 
     #[test]
@@ -2719,9 +2904,11 @@ mod lifecycle_tests {
                 dirty_files: 1,
                 dirty_file_threshold: 20,
                 reindex_pending: true,
+                background_reindex_in_progress: false,
                 last_query_at: None,
                 last_reindex: None,
                 last_reindex_attempt: None,
+                last_warm: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -2733,6 +2920,7 @@ mod lifecycle_tests {
         assert!(output.contains("cached entries: 2"));
         assert!(output.contains("dirty files: 1"));
         assert!(output.contains("reindex pending: true"));
+        assert!(output.contains("reindex in progress: false"));
     }
 
     #[test]
@@ -2751,9 +2939,11 @@ mod lifecycle_tests {
                 dirty_files: 1,
                 dirty_file_threshold: 20,
                 reindex_pending: false,
+                background_reindex_in_progress: false,
                 last_query_at: None,
                 last_reindex: None,
                 last_reindex_attempt: None,
+                last_warm: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -2765,6 +2955,7 @@ mod lifecycle_tests {
         assert!(output.contains("cached entries: 3"));
         assert!(output.contains("dirty files: 1"));
         assert!(output.contains("reindex pending: false"));
+        assert!(output.contains("reindex in progress: false"));
     }
 
     #[test]
@@ -2784,9 +2975,17 @@ mod lifecycle_tests {
                 dirty_files: 0,
                 dirty_file_threshold: 20,
                 reindex_pending: false,
+                background_reindex_in_progress: false,
                 last_query_at: Some(started_at),
                 last_reindex: None,
                 last_reindex_attempt: None,
+                last_warm: Some(codex_native_tldr::session::WarmReport {
+                    status: codex_native_tldr::session::WarmStatus::Loaded,
+                    languages: vec![SupportedLanguage::Rust],
+                    started_at,
+                    finished_at: started_at,
+                    message: "warm loaded 1 language indexes into daemon cache".to_string(),
+                }),
             }),
             daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                 project_root: PathBuf::from("/tmp/project"),
@@ -2802,6 +3001,7 @@ mod lifecycle_tests {
                 health_reason: None,
                 recovery_hint: None,
                 semantic_reindex_pending: false,
+                semantic_reindex_in_progress: false,
                 last_query_at: Some(started_at),
                 config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
                     auto_start: true,
@@ -2809,6 +3009,7 @@ mod lifecycle_tests {
                     semantic_enabled: true,
                     semantic_auto_reindex_threshold: 20,
                     session_dirty_file_threshold: 20,
+                    session_idle_timeout_secs: 1800,
                 },
             }),
             reindex_report: Some(codex_native_tldr::semantic::SemanticReindexReport {
@@ -2830,6 +3031,11 @@ mod lifecycle_tests {
         assert!(output.contains("pid is live: true"));
         assert!(output.contains("lock is held: true"));
         assert!(output.contains("dirty file threshold: 20"));
+        assert!(output.contains("session idle timeout secs: 1800"));
+        assert!(output.contains("session reindex in progress: false"));
+        assert!(output.contains("semantic reindex in progress: false"));
+        assert!(output.contains("last warm status: Loaded"));
+        assert!(output.contains("last warm languages: rust"));
         assert!(output.contains("reindex status: Completed"));
         assert!(output.contains("reindex files: 2"));
     }
@@ -3686,9 +3892,38 @@ mod lifecycle_tests {
         unsafe { std::env::set_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV, canonical_project.as_path()) };
         unsafe { std::env::set_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path) };
 
-        let started = ensure_daemon_running(&canonical_project).await?;
+        let started = ensure_daemon_running(&canonical_project, true).await?;
         assert!(started);
         assert!(!counter_path.exists(), "launcher lock should prevent spawn");
+
+        unsafe { std::env::remove_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV) };
+        unsafe { std::env::remove_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV) };
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_with_autostart_respects_disabled_auto_start_config() -> Result<()> {
+        let project = tempdir()?;
+        let canonical_project = project.path().canonicalize()?;
+        let codex_dir = canonical_project.join(".codex");
+        std::fs::create_dir(&codex_dir)?;
+        std::fs::write(
+            codex_dir.join("tldr.toml"),
+            "[daemon]\nauto_start = false\n",
+        )?;
+
+        let counter_path = canonical_project.join("launch_counter.log");
+        unsafe { std::env::set_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV, "/bin/true") };
+        unsafe { std::env::set_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path) };
+
+        let response =
+            query_daemon_with_autostart(&canonical_project, &TldrDaemonCommand::Ping).await?;
+        assert_eq!(response, None);
+        assert!(
+            !counter_path.exists(),
+            "disabled auto_start should skip spawning"
+        );
 
         unsafe { std::env::remove_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV) };
         unsafe { std::env::remove_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV) };
@@ -3742,7 +3977,7 @@ mod lifecycle_tests {
             std::fs::write(entered_signal, "entered")?;
         }
 
-        let started = ensure_daemon_running(&project_root).await?;
+        let started = ensure_daemon_running(&project_root, true).await?;
         assert!(started, "launcher contender should observe a live daemon");
         assert!(daemon_metadata_looks_alive(&project_root));
 
@@ -3771,7 +4006,7 @@ mod lifecycle_tests {
 
         let started = tokio::time::timeout(
             Duration::from_secs(4),
-            try_start_native_tldr_daemon(&canonical_project),
+            spawn_native_tldr_daemon(&canonical_project),
         )
         .await??;
 

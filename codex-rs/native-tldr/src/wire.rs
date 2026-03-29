@@ -6,6 +6,7 @@ use crate::semantic::SemanticMatch;
 use crate::semantic::SemanticReindexReport;
 use crate::semantic::SemanticSearchResponse;
 use crate::session::SessionSnapshot;
+use crate::session::WarmReport;
 use serde::Serialize;
 use serde_json::Value;
 use serde_json::json;
@@ -94,6 +95,7 @@ pub struct TldrDaemonConfigSummaryView {
     pub semantic_enabled: bool,
     pub semantic_auto_reindex_threshold: usize,
     pub session_dirty_file_threshold: usize,
+    pub session_idle_timeout_secs: u64,
 }
 
 impl From<&TldrDaemonConfigSummary> for TldrDaemonConfigSummaryView {
@@ -104,6 +106,7 @@ impl From<&TldrDaemonConfigSummary> for TldrDaemonConfigSummaryView {
             semantic_enabled: value.semantic_enabled,
             semantic_auto_reindex_threshold: value.semantic_auto_reindex_threshold,
             session_dirty_file_threshold: value.session_dirty_file_threshold,
+            session_idle_timeout_secs: value.session_idle_timeout_secs,
         }
     }
 }
@@ -144,14 +147,41 @@ impl From<&SemanticReindexReport> for TldrSemanticReindexReportView {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TldrWarmReportView {
+    pub status: String,
+    pub languages: Vec<String>,
+    pub started_at: SystemTime,
+    pub finished_at: SystemTime,
+    pub message: String,
+}
+
+impl From<&WarmReport> for TldrWarmReportView {
+    fn from(value: &WarmReport) -> Self {
+        Self {
+            status: format!("{:?}", value.status),
+            languages: value
+                .languages
+                .iter()
+                .map(|language| language.as_str().to_string())
+                .collect(),
+            started_at: value.started_at,
+            finished_at: value.finished_at,
+            message: value.message.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct TldrSessionSnapshotView {
     pub cached_entries: usize,
     pub dirty_files: usize,
     pub dirty_file_threshold: usize,
     pub reindex_pending: bool,
+    pub background_reindex_in_progress: bool,
     pub last_query_at: Option<SystemTime>,
     pub last_reindex: Option<TldrSemanticReindexReportView>,
     pub last_reindex_attempt: Option<TldrSemanticReindexReportView>,
+    pub last_warm: Option<TldrWarmReportView>,
 }
 
 impl From<&SessionSnapshot> for TldrSessionSnapshotView {
@@ -161,6 +191,7 @@ impl From<&SessionSnapshot> for TldrSessionSnapshotView {
             dirty_files: value.dirty_files,
             dirty_file_threshold: value.dirty_file_threshold,
             reindex_pending: value.reindex_pending,
+            background_reindex_in_progress: value.background_reindex_in_progress,
             last_query_at: value.last_query_at,
             last_reindex: value
                 .last_reindex
@@ -170,6 +201,7 @@ impl From<&SessionSnapshot> for TldrSessionSnapshotView {
                 .last_reindex_attempt
                 .as_ref()
                 .map(TldrSemanticReindexReportView::from),
+            last_warm: value.last_warm.as_ref().map(TldrWarmReportView::from),
         }
     }
 }
@@ -189,6 +221,7 @@ pub struct TldrDaemonStatusView {
     pub health_reason: Option<String>,
     pub recovery_hint: Option<String>,
     pub semantic_reindex_pending: bool,
+    pub semantic_reindex_in_progress: bool,
     pub last_query_at: Option<SystemTime>,
     pub config: TldrDaemonConfigSummaryView,
 }
@@ -209,6 +242,7 @@ impl From<&TldrDaemonStatus> for TldrDaemonStatusView {
             health_reason: value.health_reason.clone(),
             recovery_hint: value.recovery_hint.clone(),
             semantic_reindex_pending: value.semantic_reindex_pending,
+            semantic_reindex_in_progress: value.semantic_reindex_in_progress,
             last_query_at: value.last_query_at,
             config: TldrDaemonConfigSummaryView::from(&value.config),
         }
@@ -424,9 +458,11 @@ mod tests {
                 dirty_files: 1,
                 dirty_file_threshold: 20,
                 reindex_pending: true,
+                background_reindex_in_progress: true,
                 last_query_at: None,
                 last_reindex: None,
                 last_reindex_attempt: None,
+                last_warm: None,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -437,6 +473,7 @@ mod tests {
         assert_eq!(payload["snapshot"]["cached_entries"], 2);
         assert_eq!(payload["snapshot"]["dirty_files"], 1);
         assert_eq!(payload["snapshot"]["reindex_pending"], true);
+        assert_eq!(payload["snapshot"]["background_reindex_in_progress"], true);
     }
 
     #[test]
@@ -467,9 +504,17 @@ mod tests {
                 dirty_files: 0,
                 dirty_file_threshold: 20,
                 reindex_pending: false,
+                background_reindex_in_progress: false,
                 last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                 last_reindex: Some(report.clone()),
                 last_reindex_attempt: Some(report.clone()),
+                last_warm: Some(crate::session::WarmReport {
+                    status: crate::session::WarmStatus::Loaded,
+                    languages: vec![crate::lang_support::SupportedLanguage::Rust],
+                    started_at: std::time::SystemTime::UNIX_EPOCH,
+                    finished_at: std::time::SystemTime::UNIX_EPOCH,
+                    message: "warm loaded 1 language indexes into daemon cache".to_string(),
+                }),
             }),
             daemon_status: Some(crate::daemon::TldrDaemonStatus {
                 project_root: PathBuf::from("/tmp/project"),
@@ -485,6 +530,7 @@ mod tests {
                 health_reason: None,
                 recovery_hint: None,
                 semantic_reindex_pending: false,
+                semantic_reindex_in_progress: true,
                 last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                 config: crate::daemon::TldrDaemonConfigSummary {
                     auto_start: true,
@@ -492,6 +538,7 @@ mod tests {
                     semantic_enabled: true,
                     semantic_auto_reindex_threshold: 20,
                     session_dirty_file_threshold: 20,
+                    session_idle_timeout_secs: 1800,
                 },
             }),
             reindex_report: Some(report),
@@ -499,7 +546,16 @@ mod tests {
 
         let payload = daemon_response_payload("status", Path::new("/tmp/project"), &response);
         assert_eq!(payload["daemonStatus"]["healthy"], true);
+        assert_eq!(
+            payload["daemonStatus"]["config"]["session_idle_timeout_secs"],
+            1800
+        );
         assert_eq!(payload["reindexReport"]["status"], "Completed");
+        assert_eq!(
+            payload["daemonStatus"]["semantic_reindex_in_progress"],
+            true
+        );
+        assert_eq!(payload["snapshot"]["last_warm"]["status"], "Loaded");
         assert_eq!(payload["snapshot"]["last_reindex"]["status"], "Completed");
         assert_eq!(
             payload["snapshot"]["last_reindex_attempt"]["status"],

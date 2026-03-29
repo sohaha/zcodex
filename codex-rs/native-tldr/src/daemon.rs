@@ -10,11 +10,14 @@ use crate::api::ImportsRequest;
 use crate::api::ImportsResponse;
 use crate::api::SearchRequest;
 use crate::api::SearchResponse;
+use crate::lang_support::SupportedLanguage;
 use crate::semantic::SemanticReindexReport;
 use crate::semantic::SemanticSearchRequest;
 use crate::semantic::SemanticSearchResponse;
 use crate::session::Session;
 use crate::session::SessionConfig;
+use crate::session::WarmReport;
+use crate::session::WarmStatus;
 use anyhow::Context;
 use anyhow::Result;
 use md5::compute as md5_compute;
@@ -25,10 +28,16 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use std::time::Instant;
+use std::time::SystemTime;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 
 #[cfg(not(unix))]
 use tokio::net::TcpListener;
@@ -36,6 +45,13 @@ use tokio::net::TcpListener;
 use tokio::net::UnixListener;
 #[cfg(unix)]
 use tokio::net::UnixStream;
+
+#[cfg(unix)]
+const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+#[cfg(unix)]
+const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(1);
+#[cfg(unix)]
+const DAEMON_HEAVY_IO_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonConfig {
@@ -125,6 +141,7 @@ pub struct TldrDaemonConfigSummary {
     pub semantic_enabled: bool,
     pub semantic_auto_reindex_threshold: usize,
     pub session_dirty_file_threshold: usize,
+    pub session_idle_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -142,6 +159,7 @@ pub struct TldrDaemonStatus {
     pub health_reason: Option<String>,
     pub recovery_hint: Option<String>,
     pub semantic_reindex_pending: bool,
+    pub semantic_reindex_in_progress: bool,
     pub last_query_at: Option<std::time::SystemTime>,
     pub config: TldrDaemonConfigSummary,
 }
@@ -151,6 +169,7 @@ pub struct DaemonHealth {
     pub socket_exists: bool,
     pub pid_is_live: bool,
     pub lock_is_held: bool,
+    pub launch_lock_is_held: bool,
     pub healthy: bool,
     pub stale_socket: bool,
     pub stale_pid: bool,
@@ -160,7 +179,7 @@ pub struct DaemonHealth {
 
 impl DaemonHealth {
     pub fn should_cleanup_artifacts(&self) -> bool {
-        !self.lock_is_held && (self.stale_socket || self.stale_pid)
+        !self.lock_is_held && !self.launch_lock_is_held && (self.stale_socket || self.stale_pid)
     }
 }
 
@@ -198,11 +217,11 @@ impl TldrDaemon {
             TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
             TldrDaemonCommand::Warm => {
                 let mut session = self.session.lock().await;
-                let (message, reindex_report) = warm_with_reindex(&mut session, &self.engine);
+                let outcome = warm_with_reindex(&mut session, &self.engine);
                 let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
-                    message,
+                    message: outcome.message,
                     analysis: None,
                     imports: None,
                     importers: None,
@@ -215,7 +234,7 @@ impl TldrDaemon {
                         self.engine.config(),
                         &snapshot,
                     )?),
-                    reindex_report,
+                    reindex_report: outcome.reindex_report,
                 })
             }
             TldrDaemonCommand::Analyze { key, request } => {
@@ -288,19 +307,31 @@ impl TldrDaemon {
             }
             TldrDaemonCommand::Notify { path } => {
                 let mut session = self.session.lock().await;
-                let message = notify_session_message(&mut session, path);
+                let outcome = notify_session_message(
+                    &mut session,
+                    path,
+                    self.engine.config().semantic.auto_reindex_threshold,
+                );
+                let snapshot = session.snapshot();
+                let reindex_report = session.last_reindex_report();
+                drop(session);
+                if let Some(languages) = outcome.background_triggered {
+                    let session = Arc::clone(&self.session);
+                    let engine = self.engine.clone();
+                    spawn_background_reindex(session, engine, languages);
+                }
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
-                    message,
+                    message: outcome.message,
                     analysis: None,
                     imports: None,
                     importers: None,
                     search: None,
                     diagnostics: None,
                     semantic: None,
-                    snapshot: Some(session.snapshot()),
+                    snapshot: Some(snapshot),
                     daemon_status: None,
-                    reindex_report: session.last_reindex_report(),
+                    reindex_report,
                 })
             }
             TldrDaemonCommand::Snapshot => {
@@ -369,6 +400,9 @@ impl TldrDaemon {
     async fn run_unix(&self) -> Result<()> {
         let socket_path = self.socket_path();
         let pid_path = pid_path_for_project(&self.project_root);
+        let idle_timeout = self.engine.config().session.idle_timeout;
+        let last_activity = Arc::new(Mutex::new(Instant::now()));
+        let active_connections = Arc::new(AtomicUsize::new(0));
         let Some(_daemon_lock) = acquire_daemon_lock(&self.project_root)? else {
             return Ok(());
         };
@@ -391,9 +425,27 @@ impl TldrDaemon {
                     let (stream, _) = accept_result?;
                     let session = Arc::clone(&self.session);
                     let engine = self.engine.clone();
+                    let last_activity = Arc::clone(&last_activity);
+                    let active_connections = Arc::clone(&active_connections);
                     tokio::spawn(async move {
-                        let _ = serve_connection(stream, session, engine).await;
+                        let _ = serve_connection(
+                            stream,
+                            session,
+                            engine,
+                            last_activity,
+                            active_connections,
+                        ).await;
                     });
+                }
+                _ = tokio::time::sleep(idle_poll_interval(idle_timeout)) => {
+                    if should_shutdown_for_idle_timeout(
+                        &self.session,
+                        &last_activity,
+                        &active_connections,
+                        idle_timeout,
+                    ).await {
+                        break;
+                    }
                 }
                 signal = tokio::signal::ctrl_c() => {
                     signal?;
@@ -417,15 +469,36 @@ impl TldrDaemon {
     #[cfg(not(unix))]
     async fn run_tcp(&self) -> Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let idle_timeout = self.engine.config().session.idle_timeout;
+        let last_activity = Arc::new(Mutex::new(Instant::now()));
+        let active_connections = Arc::new(AtomicUsize::new(0));
         loop {
             tokio::select! {
                 accept_result = listener.accept() => {
                     let (stream, _) = accept_result?;
                     let session = Arc::clone(&self.session);
                     let engine = self.engine.clone();
+                    let last_activity = Arc::clone(&last_activity);
+                    let active_connections = Arc::clone(&active_connections);
                     tokio::spawn(async move {
-                        let _ = serve_connection(stream, session, engine).await;
+                        let _ = serve_connection(
+                            stream,
+                            session,
+                            engine,
+                            last_activity,
+                            active_connections,
+                        ).await;
                     });
+                }
+                _ = tokio::time::sleep(idle_poll_interval(idle_timeout)) => {
+                    if should_shutdown_for_idle_timeout(
+                        &self.session,
+                        &last_activity,
+                        &active_connections,
+                        idle_timeout,
+                    ).await {
+                        break;
+                    }
                 }
                 signal = tokio::signal::ctrl_c() => {
                     signal?;
@@ -435,6 +508,28 @@ impl TldrDaemon {
         }
         Ok(())
     }
+}
+
+fn idle_poll_interval(idle_timeout: Duration) -> Duration {
+    if idle_timeout.is_zero() {
+        return Duration::from_millis(10);
+    }
+    idle_timeout.min(Duration::from_secs(1))
+}
+
+async fn should_shutdown_for_idle_timeout(
+    session: &Arc<Mutex<Session>>,
+    last_activity: &Arc<Mutex<Instant>>,
+    active_connections: &Arc<AtomicUsize>,
+    idle_timeout: Duration,
+) -> bool {
+    if active_connections.load(Ordering::SeqCst) > 0 {
+        return false;
+    }
+    if session.lock().await.background_reindex_in_progress() {
+        return false;
+    }
+    last_activity.lock().await.elapsed() >= idle_timeout
 }
 
 async fn handle_with_session(
@@ -447,11 +542,11 @@ async fn handle_with_session(
         TldrDaemonCommand::Ping => Ok(TldrDaemonResponse::ok("pong")),
         TldrDaemonCommand::Warm => {
             let mut guard = session.lock().await;
-            let (message, reindex_report) = warm_with_reindex(&mut guard, engine);
+            let outcome = warm_with_reindex(&mut guard, engine);
             let snapshot = guard.snapshot();
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
-                message,
+                message: outcome.message,
                 analysis: None,
                 imports: None,
                 importers: None,
@@ -464,7 +559,7 @@ async fn handle_with_session(
                     engine.config(),
                     &snapshot,
                 )?),
-                reindex_report,
+                reindex_report: outcome.reindex_report,
             })
         }
         TldrDaemonCommand::Analyze { key, request } => {
@@ -537,19 +632,31 @@ async fn handle_with_session(
         }
         TldrDaemonCommand::Notify { path } => {
             let mut guard = session.lock().await;
-            let message = notify_session_message(&mut guard, path);
+            let outcome = notify_session_message(
+                &mut guard,
+                path,
+                engine.config().semantic.auto_reindex_threshold,
+            );
+            let snapshot = guard.snapshot();
+            let reindex_report = guard.last_reindex_report();
+            drop(guard);
+            if let Some(languages) = outcome.background_triggered {
+                let session = Arc::clone(session);
+                let engine = engine.clone();
+                spawn_background_reindex(session, engine, languages);
+            }
             Ok(TldrDaemonResponse {
                 status: "ok".to_string(),
-                message,
+                message: outcome.message,
                 analysis: None,
                 imports: None,
                 importers: None,
                 search: None,
                 diagnostics: None,
                 semantic: None,
-                snapshot: Some(guard.snapshot()),
+                snapshot: Some(snapshot),
                 daemon_status: None,
-                reindex_report: guard.last_reindex_report(),
+                reindex_report,
             })
         }
         TldrDaemonCommand::Snapshot => {
@@ -648,61 +755,251 @@ fn analyze_with_session(
     })
 }
 
-fn notify_session_message(session: &mut Session, path: PathBuf) -> String {
-    let dirty_state = session.mark_dirty(path);
-    if dirty_state.cache_invalidated {
-        return format!(
-            "dirty threshold reached; invalidated {} cached analyses; reindex pending",
-            dirty_state.invalidated_entries
-        );
-    }
-    if dirty_state.reindex_pending {
-        return format!(
-            "marked dirty ({}); phase-2 reindex pending",
-            dirty_state.dirty_files
-        );
-    }
-    format!("marked dirty ({})", dirty_state.dirty_files)
+struct NotifyOutcome {
+    message: String,
+    background_triggered: Option<Vec<SupportedLanguage>>,
 }
 
-fn warm_with_reindex(
+struct WarmOutcome {
+    message: String,
+    reindex_report: Option<SemanticReindexReport>,
+}
+
+fn notify_session_message(
     session: &mut Session,
-    engine: &TldrEngine,
-) -> (String, Option<SemanticReindexReport>) {
+    path: PathBuf,
+    auto_reindex_threshold: usize,
+) -> NotifyOutcome {
+    let dirty_state = session.mark_dirty(path);
+    let background_triggered = if dirty_state.dirty_files >= auto_reindex_threshold.max(1) {
+        session.claim_background_reindex()
+    } else {
+        None
+    };
+    let mut message = if dirty_state.cache_invalidated {
+        format!(
+            "dirty threshold reached; invalidated {} cached analyses; reindex pending",
+            dirty_state.invalidated_entries
+        )
+    } else if dirty_state.reindex_pending {
+        format!(
+            "marked dirty ({}); phase-2 reindex pending",
+            dirty_state.dirty_files
+        )
+    } else {
+        format!("marked dirty ({})", dirty_state.dirty_files)
+    };
+    if background_triggered.is_some() {
+        message.push_str("; background reindex scheduled");
+    }
+    NotifyOutcome {
+        message,
+        background_triggered,
+    }
+}
+
+fn warm_with_reindex(session: &mut Session, engine: &TldrEngine) -> WarmOutcome {
+    let started_at = SystemTime::now();
+    if session.background_reindex_in_progress() {
+        let message = "background semantic reindex already in progress".to_string();
+        session.record_warm(WarmReport {
+            status: WarmStatus::Busy,
+            languages: Vec::new(),
+            started_at,
+            finished_at: SystemTime::now(),
+            message: message.clone(),
+        });
+        return WarmOutcome {
+            message,
+            reindex_report: session.last_reindex_attempt_report(),
+        };
+    }
+
     if session.reindex_pending() {
-        match engine.semantic_reindex() {
+        let dirty_languages = session.dirty_languages();
+        if dirty_languages.is_empty() {
+            let report = if session.has_unmapped_dirty_paths() {
+                SemanticReindexReport::skipped(
+                    Vec::new(),
+                    "dirty paths did not map to supported source languages",
+                    engine.config().semantic.embedding_enabled,
+                    engine.config().semantic.embedding.dimensions,
+                )
+            } else {
+                SemanticReindexReport::skipped(
+                    Vec::new(),
+                    "no semantic sources were marked dirty",
+                    engine.config().semantic.embedding_enabled,
+                    engine.config().semantic.embedding.dimensions,
+                )
+            };
+            session.clear_dirty_files();
+            session.record_reindex_attempt(report.clone());
+            session.record_warm(WarmReport {
+                status: WarmStatus::Skipped,
+                languages: report.languages.clone(),
+                started_at,
+                finished_at: SystemTime::now(),
+                message: report.message.clone(),
+            });
+            return WarmOutcome {
+                message: report.message.clone(),
+                reindex_report: Some(report),
+            };
+        }
+        match engine.semantic_reindex_languages(&dirty_languages) {
             Ok(report) => {
                 session.record_reindex_attempt(report.clone());
                 if report.is_completed() {
                     session.complete_reindex(report.clone());
                 }
-                (report.message.clone(), Some(report))
+                let status = match report.status {
+                    crate::semantic::SemanticReindexStatus::Completed => WarmStatus::Reindexed,
+                    crate::semantic::SemanticReindexStatus::Failed => WarmStatus::Failed,
+                    crate::semantic::SemanticReindexStatus::Skipped => WarmStatus::Skipped,
+                };
+                session.record_warm(WarmReport {
+                    status,
+                    languages: report.languages.clone(),
+                    started_at,
+                    finished_at: SystemTime::now(),
+                    message: report.message.clone(),
+                });
+                WarmOutcome {
+                    message: report.message.clone(),
+                    reindex_report: Some(report),
+                }
             }
             Err(err) => {
                 let failure = SemanticReindexReport::failed(
+                    dirty_languages,
                     err.to_string(),
                     engine.config().semantic.embedding_enabled,
                     engine.config().semantic.embedding.dimensions,
                 );
                 session.record_reindex_attempt(failure.clone());
-                (failure.message.clone(), Some(failure))
+                session.record_warm(WarmReport {
+                    status: WarmStatus::Failed,
+                    languages: failure.languages.clone(),
+                    started_at,
+                    finished_at: SystemTime::now(),
+                    message: failure.message.clone(),
+                });
+                WarmOutcome {
+                    message: failure.message.clone(),
+                    reindex_report: Some(failure),
+                }
             }
         }
-    } else if let Some(report) = session.last_reindex_attempt_report() {
-        (report.message.clone(), Some(report))
     } else {
-        ("already warm".to_string(), None)
+        let project_languages = match engine.project_languages() {
+            Ok(languages) => languages,
+            Err(err) => {
+                let message = format!("warm failed: {err}");
+                session.record_warm(WarmReport {
+                    status: WarmStatus::Failed,
+                    languages: Vec::new(),
+                    started_at,
+                    finished_at: SystemTime::now(),
+                    message: message.clone(),
+                });
+                return WarmOutcome {
+                    message,
+                    reindex_report: session.last_reindex_attempt_report(),
+                };
+            }
+        };
+        if project_languages.is_empty() {
+            let message = "warm skipped: no supported source languages found".to_string();
+            session.record_warm(WarmReport {
+                status: WarmStatus::Skipped,
+                languages: Vec::new(),
+                started_at,
+                finished_at: SystemTime::now(),
+                message: message.clone(),
+            });
+            return WarmOutcome {
+                message,
+                reindex_report: session.last_reindex_attempt_report(),
+            };
+        }
+        match engine.warm_language_indexes(&project_languages) {
+            Ok(warmed_languages) => {
+                let message = format!(
+                    "warm loaded {} language indexes into daemon cache",
+                    warmed_languages.len()
+                );
+                session.record_warm(WarmReport {
+                    status: WarmStatus::Loaded,
+                    languages: warmed_languages,
+                    started_at,
+                    finished_at: SystemTime::now(),
+                    message: message.clone(),
+                });
+                WarmOutcome {
+                    message,
+                    reindex_report: session.last_reindex_attempt_report(),
+                }
+            }
+            Err(err) => {
+                let message = format!("warm failed: {err}");
+                session.record_warm(WarmReport {
+                    status: WarmStatus::Failed,
+                    languages: project_languages,
+                    started_at,
+                    finished_at: SystemTime::now(),
+                    message: message.clone(),
+                });
+                WarmOutcome {
+                    message,
+                    reindex_report: session.last_reindex_attempt_report(),
+                }
+            }
+        }
     }
+}
+
+fn spawn_background_reindex(
+    session: Arc<Mutex<Session>>,
+    engine: TldrEngine,
+    languages: Vec<SupportedLanguage>,
+) {
+    let embedding_enabled = engine.config().semantic.embedding_enabled;
+    let embedding_dimensions = engine.config().semantic.embedding.dimensions;
+    tokio::spawn(async move {
+        let result = engine.semantic_reindex_languages(&languages);
+        let mut guard = session.lock().await;
+        match result {
+            Ok(report) => {
+                guard.record_reindex_attempt(report.clone());
+                if report.is_completed() {
+                    guard.complete_reindex(report);
+                }
+            }
+            Err(err) => {
+                let failure = SemanticReindexReport::failed(
+                    languages.clone(),
+                    err.to_string(),
+                    embedding_enabled,
+                    embedding_dimensions,
+                );
+                guard.record_reindex_attempt(failure);
+            }
+        }
+    });
 }
 
 async fn serve_connection<T>(
     stream: T,
     session: Arc<Mutex<Session>>,
     engine: TldrEngine,
+    last_activity: Arc<Mutex<Instant>>,
+    active_connections: Arc<AtomicUsize>,
 ) -> Result<()>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
+    let _connection_guard = ActiveConnectionGuard::new(active_connections);
     let (reader, mut writer) = tokio::io::split(stream);
     let mut lines = BufReader::new(reader).lines();
 
@@ -718,9 +1015,27 @@ where
         writer
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
             .await?;
+        *last_activity.lock().await = Instant::now();
     }
 
     Ok(())
+}
+
+struct ActiveConnectionGuard {
+    active_connections: Arc<AtomicUsize>,
+}
+
+impl ActiveConnectionGuard {
+    fn new(active_connections: Arc<AtomicUsize>) -> Self {
+        active_connections.fetch_add(1, Ordering::SeqCst);
+        Self { active_connections }
+    }
+}
+
+impl Drop for ActiveConnectionGuard {
+    fn drop(&mut self) {
+        self.active_connections.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 pub fn socket_path_for_project(project_root: &Path) -> PathBuf {
@@ -740,6 +1055,13 @@ pub fn pid_path_for_project(project_root: &Path) -> PathBuf {
 pub fn lock_path_for_project(project_root: &Path) -> PathBuf {
     daemon_artifact_scope_dir().join(format!(
         "codex-native-tldr-{}.lock",
+        daemon_project_hash(project_root)
+    ))
+}
+
+pub fn launch_lock_path_for_project(project_root: &Path) -> PathBuf {
+    daemon_artifact_scope_dir().join(format!(
+        "codex-native-tldr-{}.launch.lock",
         daemon_project_hash(project_root)
     ))
 }
@@ -812,20 +1134,31 @@ pub fn daemon_lock_is_held(project_root: &Path) -> Result<bool> {
     Ok(try_open_daemon_lock(project_root)?.is_none())
 }
 
+pub fn launch_lock_is_held(project_root: &Path) -> Result<bool> {
+    Ok(try_open_launch_lock(project_root)?.is_none())
+}
+
 pub fn daemon_health(project_root: &Path) -> Result<DaemonHealth> {
     let socket_exists = socket_path_for_project(project_root).exists();
     let pid_is_live = read_live_pid(&pid_path_for_project(project_root)).unwrap_or(false);
     let lock_is_held = daemon_lock_is_held(project_root)?;
+    let launch_lock_is_held = launch_lock_is_held(project_root)?;
     let healthy = socket_exists && pid_is_live;
     let (health_reason, recovery_hint) = if healthy {
         (None, None)
     } else {
-        health_diagnostics(socket_exists, pid_is_live, lock_is_held)
+        health_diagnostics(
+            socket_exists,
+            pid_is_live,
+            lock_is_held,
+            launch_lock_is_held,
+        )
     };
     Ok(DaemonHealth {
         socket_exists,
         pid_is_live,
         lock_is_held,
+        launch_lock_is_held,
         healthy,
         stale_socket: socket_exists && !pid_is_live,
         stale_pid: !socket_exists && pid_is_live,
@@ -838,6 +1171,7 @@ fn health_diagnostics(
     socket_exists: bool,
     pid_is_live: bool,
     lock_is_held: bool,
+    launch_lock_is_held: bool,
 ) -> (Option<String>, Option<String>) {
     if socket_exists && !pid_is_live {
         return (
@@ -849,6 +1183,12 @@ fn health_diagnostics(
         return (
             Some("pid file exists but socket is missing".to_string()),
             Some("cleanup pid/socket files before restarting the daemon".to_string()),
+        );
+    }
+    if launch_lock_is_held {
+        return (
+            Some("daemon launch lock held; another process is starting it".to_string()),
+            Some("wait for the launcher to finish before cleaning up artifacts".to_string()),
         );
     }
     if lock_is_held {
@@ -903,6 +1243,8 @@ fn build_daemon_status(
     let pid_path = pid_path_for_project(project_root);
     let health = daemon_health(project_root)?;
 
+    let background_reindex_in_progress = snapshot.background_reindex_in_progress;
+    let semantic_reindex_pending = snapshot.reindex_pending || background_reindex_in_progress;
     Ok(TldrDaemonStatus {
         project_root: project_root.to_path_buf(),
         socket_path,
@@ -916,7 +1258,8 @@ fn build_daemon_status(
         stale_pid: health.stale_pid,
         health_reason: health.health_reason.clone(),
         recovery_hint: health.recovery_hint,
-        semantic_reindex_pending: snapshot.reindex_pending,
+        semantic_reindex_pending,
+        semantic_reindex_in_progress: background_reindex_in_progress,
         last_query_at: snapshot.last_query_at,
         config: config.daemon_config_summary(),
     })
@@ -940,10 +1283,61 @@ fn try_open_daemon_lock(project_root: &Path) -> Result<Option<File>> {
     }
 }
 
+fn try_open_launch_lock(project_root: &Path) -> Result<Option<File>> {
+    let lock_path = launch_lock_path_for_project(project_root);
+    ensure_daemon_artifact_parent(&lock_path)?;
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .with_context(|| format!("open daemon launch lock {}", lock_path.display()))?;
+
+    match lock_file.try_lock() {
+        Ok(()) => Ok(Some(lock_file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
 #[cfg(unix)]
 pub async fn query_daemon(
     project_root: &Path,
     command: &TldrDaemonCommand,
+) -> Result<Option<TldrDaemonResponse>> {
+    query_daemon_with_timeout(
+        project_root,
+        command,
+        DAEMON_CONNECT_TIMEOUT,
+        io_timeout_for_command(command),
+    )
+    .await
+}
+
+#[cfg(unix)]
+fn io_timeout_for_command(command: &TldrDaemonCommand) -> Duration {
+    match command {
+        TldrDaemonCommand::Ping
+        | TldrDaemonCommand::Notify { .. }
+        | TldrDaemonCommand::Snapshot
+        | TldrDaemonCommand::Status => DAEMON_IO_TIMEOUT,
+        TldrDaemonCommand::Warm
+        | TldrDaemonCommand::Analyze { .. }
+        | TldrDaemonCommand::Imports { .. }
+        | TldrDaemonCommand::Importers { .. }
+        | TldrDaemonCommand::Search { .. }
+        | TldrDaemonCommand::Diagnostics { .. }
+        | TldrDaemonCommand::Semantic { .. } => DAEMON_HEAVY_IO_TIMEOUT,
+    }
+}
+
+#[cfg(unix)]
+async fn query_daemon_with_timeout(
+    project_root: &Path,
+    command: &TldrDaemonCommand,
+    connect_timeout: Duration,
+    io_timeout: Duration,
 ) -> Result<Option<TldrDaemonResponse>> {
     let socket_path = socket_path_for_project(project_root);
     let pid_path = pid_path_for_project(project_root);
@@ -951,38 +1345,51 @@ pub async fn query_daemon(
         return Ok(None);
     }
 
-    let stream = match UnixStream::connect(&socket_path).await {
-        Ok(stream) => stream,
-        Err(err) if daemon_unavailable(&err) => {
-            cleanup_stale_socket(&socket_path);
-            cleanup_stale_pid_file(&pid_path);
+    let stream = match timeout(connect_timeout, UnixStream::connect(&socket_path)).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) if daemon_unavailable(&err) => {
+            maybe_cleanup_unavailable_daemon(project_root, &socket_path, &pid_path);
             return Ok(None);
         }
-        Err(err) => {
+        Ok(Err(err)) => {
             return Err(err).with_context(|| format!("connect socket {}", socket_path.display()));
         }
+        Err(_) => anyhow::bail!("timed out connecting to daemon {}", socket_path.display()),
     };
 
     let (reader, mut writer) = tokio::io::split(stream);
-    writer
-        .write_all(format!("{}\n", serde_json::to_string(command)?).as_bytes())
-        .await
-        .with_context(|| format!("write daemon command to {}", socket_path.display()))?;
+    timeout(
+        io_timeout,
+        writer.write_all(format!("{}\n", serde_json::to_string(command)?).as_bytes()),
+    )
+    .await
+    .with_context(|| format!("write timeout for {}", socket_path.display()))?
+    .with_context(|| format!("write daemon command to {}", socket_path.display()))?;
 
     let mut lines = BufReader::new(reader).lines();
-    let Some(line) = lines
-        .next_line()
+    let Some(line) = timeout(io_timeout, lines.next_line())
         .await
+        .with_context(|| format!("read timeout for {}", socket_path.display()))?
         .with_context(|| format!("read daemon response from {}", socket_path.display()))?
     else {
-        cleanup_stale_socket(&socket_path);
-        cleanup_stale_pid_file(&pid_path);
+        maybe_cleanup_unavailable_daemon(project_root, &socket_path, &pid_path);
         return Ok(None);
     };
 
     let response = serde_json::from_str(&line)
         .with_context(|| format!("decode daemon response from {}", socket_path.display()))?;
     Ok(Some(response))
+}
+
+#[cfg(unix)]
+fn maybe_cleanup_unavailable_daemon(project_root: &Path, socket_path: &Path, pid_path: &Path) {
+    if daemon_health(project_root)
+        .map(|health| health.should_cleanup_artifacts())
+        .unwrap_or(false)
+    {
+        cleanup_stale_socket(socket_path);
+        cleanup_stale_pid_file(pid_path);
+    }
 }
 
 #[cfg(unix)]
@@ -1024,6 +1431,8 @@ pub async fn query_daemon(
 
 #[cfg(test)]
 mod tests {
+    use super::DAEMON_HEAVY_IO_TIMEOUT;
+    use super::DAEMON_IO_TIMEOUT;
     use super::TldrDaemon;
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
@@ -1031,6 +1440,9 @@ mod tests {
     use super::daemon_health;
     use super::daemon_lock_is_held;
     use super::daemon_project_hash;
+    use super::io_timeout_for_command;
+    use super::launch_lock_is_held;
+    use super::launch_lock_path_for_project;
     use super::lock_path_for_project;
     use super::pid_is_alive;
     use super::query_daemon;
@@ -1039,12 +1451,17 @@ mod tests {
     use serial_test::serial;
     use std::fs::OpenOptions;
     use std::path::PathBuf;
+    use std::time::Duration;
     use tempfile::tempdir;
     use tokio::io::AsyncBufReadExt;
     use tokio::io::AsyncWriteExt;
     use tokio::io::BufReader;
+    #[cfg(unix)]
+    use tokio::time::sleep;
 
     use super::pid_path_for_project;
+    #[cfg(unix)]
+    use super::query_daemon_with_timeout;
     #[cfg(unix)]
     use super::socket_path_for_project;
     use crate::semantic::SemanticSearchRequest;
@@ -1236,6 +1653,59 @@ mod tests {
         std::fs::remove_file(&socket_path).expect("socket should be cleaned up");
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    #[serial]
+    async fn daemon_shuts_down_after_idle_timeout() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let project_root = project.path().to_path_buf();
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        let mut config = crate::TldrConfig::for_project(project_root.clone());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: Duration::from_millis(150),
+            dirty_file_threshold: 20,
+        };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(false);
+        let daemon = TldrDaemon::from_config(config);
+
+        let daemon_task = tokio::spawn(async move { daemon.run_until_shutdown().await });
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !socket_path.exists() || !pid_path.exists() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("daemon should create socket and pid files");
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect("ping should succeed")
+            .expect("daemon should respond");
+        assert_eq!(response.message, "pong");
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while socket_path.exists() || pid_path.exists() {
+                sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("daemon should exit after idle timeout");
+
+        daemon_task
+            .await
+            .expect("daemon task should join")
+            .expect("daemon should exit cleanly");
+
+        assert_eq!(
+            query_daemon(&project_root, &TldrDaemonCommand::Ping)
+                .await
+                .expect("post-idle query should not error"),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn notify_invalidates_cached_analyses_when_threshold_is_reached() {
         let project = tempfile::tempdir().expect("tempdir should exist");
@@ -1285,12 +1755,14 @@ mod tests {
                 dirty_files: 1,
                 dirty_file_threshold: 1,
                 reindex_pending: true,
+                background_reindex_in_progress: false,
                 last_query_at: analyze
                     .snapshot
                     .expect("analyze snapshot should exist")
                     .last_query_at,
                 last_reindex: None,
                 last_reindex_attempt: None,
+                last_warm: None,
             })
         );
     }
@@ -1331,6 +1803,125 @@ mod tests {
         assert!(snapshot.last_query_at.is_some());
         assert_eq!(snapshot.last_reindex, warm.reindex_report);
         assert_eq!(snapshot.last_reindex_attempt, warm.reindex_report);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn warm_reindexes_only_dirty_languages() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let src_dir = project.path().join("src");
+        let scripts_dir = project.path().join("scripts");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::create_dir_all(&scripts_dir).expect("scripts dir should exist");
+        std::fs::write(src_dir.join("main.rs"), "fn main() {}\n")
+            .expect("rust fixture should exist");
+        std::fs::write(scripts_dir.join("tool.py"), "def run():\n    return True\n")
+            .expect("python fixture should exist");
+
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 2,
+        };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("src/main.rs"),
+            })
+            .await
+            .expect("rust notify should succeed");
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("scripts/tool.py"),
+            })
+            .await
+            .expect("python notify should succeed");
+
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should succeed");
+        let languages = warm
+            .reindex_report
+            .as_ref()
+            .map(|report| report.languages.clone())
+            .expect("warm report should exist");
+
+        assert_eq!(
+            languages,
+            vec![
+                crate::lang_support::SupportedLanguage::Python,
+                crate::lang_support::SupportedLanguage::Rust
+            ]
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn warm_skips_reindex_for_unmapped_dirty_paths() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: std::time::Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        daemon
+            .handle_command(TldrDaemonCommand::Notify {
+                path: PathBuf::from("README.md"),
+            })
+            .await
+            .expect("notify should succeed");
+
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should succeed");
+        let report = warm.reindex_report.expect("warm report should exist");
+        let snapshot = warm.snapshot.expect("warm snapshot should exist");
+
+        assert_eq!(
+            report.status,
+            crate::semantic::SemanticReindexStatus::Skipped
+        );
+        assert_eq!(
+            report.languages,
+            Vec::<crate::lang_support::SupportedLanguage>::new()
+        );
+        assert_eq!(snapshot.reindex_pending, false);
+        assert_eq!(snapshot.dirty_files, 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn warm_without_dirty_files_records_loaded_languages() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let src_dir = project.path().join("src");
+        std::fs::create_dir_all(&src_dir).expect("src dir should exist");
+        std::fs::write(src_dir.join("main.rs"), "fn main() {}\n").expect("fixture should exist");
+
+        let mut config = crate::TldrConfig::for_project(project.path().to_path_buf());
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(true);
+        let daemon = TldrDaemon::from_config(config);
+
+        let warm = daemon
+            .handle_command(TldrDaemonCommand::Warm)
+            .await
+            .expect("warm should succeed");
+        let snapshot = warm.snapshot.expect("warm snapshot should exist");
+        let last_warm = snapshot.last_warm.expect("warm report should be recorded");
+
+        assert_eq!(warm.reindex_report, None);
+        assert_eq!(last_warm.status, crate::session::WarmStatus::Loaded);
+        assert_eq!(
+            last_warm.languages,
+            vec![crate::lang_support::SupportedLanguage::Rust]
+        );
+        assert!(warm.message.contains("warm loaded 1 language indexes"));
     }
 
     #[tokio::test]
@@ -1418,6 +2009,12 @@ mod tests {
         assert_eq!(
             warm.reindex_report.as_ref().map(|report| &report.status),
             Some(&crate::semantic::SemanticReindexStatus::Failed)
+        );
+        assert_eq!(
+            warm.reindex_report
+                .as_ref()
+                .map(|report| report.languages.clone()),
+            Some(vec![crate::lang_support::SupportedLanguage::Rust])
         );
         assert_eq!(
             status.reindex_report.as_ref().map(|report| &report.status),
@@ -1801,6 +2398,24 @@ mod tests {
     }
 
     #[test]
+    fn launch_lock_query_recovers_after_lock_file_is_deleted() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("deleted-launch-lock-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = launch_lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::write(&lock_path, "").expect("launch lock file should exist before deletion");
+        std::fs::remove_file(&lock_path).expect("launch lock file should be removed");
+        assert!(!lock_path.exists());
+
+        let lock_is_held =
+            launch_lock_is_held(&project_root).expect("launch lock query should succeed");
+
+        assert!(!lock_is_held);
+        assert!(lock_path.exists());
+    }
+
+    #[test]
     fn daemon_health_recovers_after_lock_file_is_deleted() {
         let tempdir = tempdir().expect("tempdir should exist");
         let project_root = tempdir.path().join("deleted-daemon-lock-health-project");
@@ -1976,5 +2591,95 @@ mod tests {
             Some("wait for the existing daemon or release the lock manually")
         );
         assert!(!health.should_cleanup_artifacts());
+    }
+
+    #[test]
+    fn daemon_health_reports_launch_lock_hint_when_startup_is_in_progress() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("launch-lock-reason-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let lock_path = launch_lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        let launch_lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("launch lock file should open");
+
+        launch_lock
+            .try_lock()
+            .expect("launch lock should be acquired");
+        let health = daemon_health(&project_root).expect("health should load");
+
+        assert!(health.launch_lock_is_held);
+        assert_eq!(
+            health.health_reason.as_deref(),
+            Some("daemon launch lock held; another process is starting it")
+        );
+        assert_eq!(
+            health.recovery_hint.as_deref(),
+            Some("wait for the launcher to finish before cleaning up artifacts")
+        );
+        assert!(!health.should_cleanup_artifacts());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_times_out_when_response_never_arrives() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("hung-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        let listener = UnixListener::bind(&socket_path).expect("listener should bind");
+        let accept_task = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("listener should accept");
+            sleep(Duration::from_millis(200)).await;
+        });
+
+        let error = query_daemon_with_timeout(
+            &project_root,
+            &TldrDaemonCommand::Ping,
+            Duration::from_millis(50),
+            Duration::from_millis(50),
+        )
+        .await
+        .expect_err("hung daemon should time out");
+
+        assert!(error.to_string().contains("read timeout"));
+        let _ = accept_task.await;
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn io_timeout_for_command_uses_extended_budget_for_heavy_actions() {
+        assert_eq!(
+            io_timeout_for_command(&TldrDaemonCommand::Ping),
+            DAEMON_IO_TIMEOUT
+        );
+        assert_eq!(
+            io_timeout_for_command(&TldrDaemonCommand::Status),
+            DAEMON_IO_TIMEOUT
+        );
+        assert_eq!(
+            io_timeout_for_command(&TldrDaemonCommand::Warm),
+            DAEMON_HEAVY_IO_TIMEOUT
+        );
+        assert_eq!(
+            io_timeout_for_command(&TldrDaemonCommand::Analyze {
+                key: "rust:Ast:*:*:*".to_string(),
+                request: crate::api::AnalysisRequest {
+                    kind: crate::api::AnalysisKind::Ast,
+                    language: crate::lang_support::SupportedLanguage::Rust,
+                    symbol: None,
+                    path: None,
+                    line: None,
+                    paths: Vec::new(),
+                },
+            }),
+            DAEMON_HEAVY_IO_TIMEOUT
+        );
     }
 }

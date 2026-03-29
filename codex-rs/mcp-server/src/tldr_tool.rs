@@ -1,15 +1,31 @@
+use anyhow::Result;
 use codex_native_tldr::daemon::TldrDaemonCommand;
+use codex_native_tldr::daemon::daemon_health;
+use codex_native_tldr::daemon::daemon_lock_is_held;
+use codex_native_tldr::daemon::launch_lock_path_for_project as native_launch_lock_path_for_project;
+use codex_native_tldr::daemon::pid_path_for_project;
 use codex_native_tldr::daemon::query_daemon;
+use codex_native_tldr::daemon::socket_path_for_project;
+use codex_native_tldr::lifecycle::DaemonLifecycleManager;
+use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
 use codex_native_tldr::tool_api::tldr_tool_output_schema;
-use codex_native_tldr::tool_api::wait_for_external_daemon;
+use once_cell::sync::Lazy;
 use rmcp::model::CallToolResult;
 use rmcp::model::Content;
 use rmcp::model::JsonObject;
 use rmcp::model::Tool;
 use schemars::r#gen::SchemaSettings;
+use std::ffi::OsStr;
+use std::ffi::OsString;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::process::Command;
 
 pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
     let schema = SchemaSettings::draft2019_09()
@@ -51,7 +67,7 @@ pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResu
     run_tldr_tool_with_mcp_hooks(
         args,
         |project_root, command| Box::pin(query_daemon(project_root, command)),
-        |project_root| Box::pin(wait_for_external_daemon(project_root)),
+        |project_root| Box::pin(ensure_daemon_running(project_root)),
     )
     .await
 }
@@ -92,6 +108,173 @@ fn error_result(text: String) -> CallToolResult {
     }
 }
 
+static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
+    Lazy::new(DaemonLifecycleManager::default);
+
+async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
+    if !cfg!(unix) {
+        return Ok(false);
+    }
+    if !load_tldr_config(project_root)?.daemon.auto_start {
+        return Ok(false);
+    }
+
+    DAEMON_LIFECYCLE_MANAGER
+        .ensure_running_with_launcher_lock(
+            project_root,
+            daemon_metadata_looks_alive_with_launcher_lock,
+            cleanup_stale_artifacts,
+            daemon_lock_is_held,
+            try_open_launcher_lock,
+            |_project_root| {},
+            |project_root| Box::pin(spawn_native_tldr_daemon(project_root)),
+        )
+        .await
+}
+
+fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
+    let launcher = resolve_codex_launcher()?;
+    let mut command = Command::new(launcher);
+    command.args(daemon_launcher_args(project_root));
+    Ok(command)
+}
+
+fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
+    [
+        OsString::from("tldr"),
+        OsString::from("internal-daemon"),
+        OsString::from("--project"),
+        project_root.as_os_str().to_os_string(),
+    ]
+}
+
+fn resolve_codex_launcher() -> Result<PathBuf> {
+    let current_exe = std::env::current_exe()?;
+    if current_exe.file_stem() == Some(OsStr::new("codex")) {
+        return Ok(current_exe);
+    }
+
+    if let Some(parent) = current_exe.parent() {
+        for name in codex_binary_names() {
+            let candidate = parent.join(name);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    if let Some(candidate) = find_binary_in_path(codex_binary_names()) {
+        return Ok(candidate);
+    }
+
+    anyhow::bail!("unable to locate `codex` binary for native-tldr daemon auto-start")
+}
+
+fn codex_binary_names() -> &'static [&'static str] {
+    #[cfg(windows)]
+    {
+        &["codex.exe", "codex"]
+    }
+    #[cfg(not(windows))]
+    {
+        &["codex"]
+    }
+}
+
+fn find_binary_in_path(names: &[&str]) -> Option<PathBuf> {
+    let path_var = std::env::var_os("PATH")?;
+    for directory in std::env::split_paths(&path_var) {
+        for name in names {
+            let candidate = directory.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn daemon_metadata_looks_alive_with_launcher_lock(
+    project_root: &Path,
+    ignore_launcher_lock: bool,
+) -> bool {
+    match daemon_health(project_root) {
+        Ok(health) => {
+            if health.healthy {
+                return true;
+            }
+            if !ignore_launcher_lock && launcher_lock_is_held(project_root).unwrap_or(false) {
+                return false;
+            }
+            if health.should_cleanup_artifacts() {
+                cleanup_stale_artifacts(project_root);
+            }
+            false
+        }
+        Err(_) => false,
+    }
+}
+
+async fn spawn_native_tldr_daemon(project_root: &Path) -> Result<bool> {
+    let mut child = daemon_launcher_command(project_root)?
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+
+    Ok(true)
+}
+
+fn cleanup_stale_artifacts(project_root: &Path) {
+    if launcher_lock_is_held(project_root).unwrap_or(false) {
+        return;
+    }
+
+    let Ok(health) = daemon_health(project_root) else {
+        return;
+    };
+    if !health.should_cleanup_artifacts() {
+        return;
+    }
+    cleanup_file_if_exists(socket_path_for_project(project_root));
+    cleanup_file_if_exists(pid_path_for_project(project_root));
+}
+
+fn try_open_launcher_lock(project_root: &Path) -> Result<Option<File>> {
+    let lock_path = native_launch_lock_path_for_project(project_root);
+    if let Some(parent) = lock_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)?;
+
+    match lock_file.try_lock() {
+        Ok(()) => Ok(Some(lock_file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn launcher_lock_is_held(project_root: &Path) -> Result<bool> {
+    Ok(try_open_launcher_lock(project_root)?.is_none())
+}
+
+fn cleanup_file_if_exists(path: PathBuf) {
+    if let Err(err) = std::fs::remove_file(&path)
+        && err.kind() != std::io::ErrorKind::NotFound
+    {
+        let _ = err;
+    }
+}
+
 fn create_tool_input_schema(
     schema: schemars::schema::RootSchema,
     panic_message: &str,
@@ -116,6 +299,7 @@ fn create_tool_input_schema(
 #[cfg(test)]
 mod tests {
     use super::create_tool_for_tldr_tool_call_param;
+    use super::ensure_daemon_running;
     use super::run_tldr_tool_with_mcp_hooks;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
@@ -148,7 +332,7 @@ mod tests {
         assert_eq!(
             tool_json["inputSchema"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree",
+                "structure",
                 "search",
                 "extract",
                 "imports",
@@ -180,7 +364,7 @@ mod tests {
         assert_eq!(
             tool_json["outputSchema"]["$defs"]["analysisResult"]["properties"]["action"]["enum"],
             serde_json::json!([
-                "tree",
+                "structure",
                 "extract",
                 "context",
                 "impact",
@@ -215,6 +399,8 @@ mod tests {
             path: None,
             line: None,
             paths: None,
+
+            ..Default::default()
         })
         .expect("tool call should serialize");
 
@@ -245,6 +431,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -274,6 +462,10 @@ mod tests {
                                 units: Vec::new(),
                             }),
                         }),
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -322,6 +514,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -393,6 +587,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -464,6 +660,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -536,6 +734,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: Some(vec!["src/lib.rs".to_string()]),
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -605,6 +805,10 @@ mod tests {
                                 ],
                             }),
                         }),
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -653,6 +857,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -678,6 +884,10 @@ mod tests {
                                 units: Vec::new(),
                             }),
                         }),
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -720,6 +930,8 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -752,6 +964,10 @@ mod tests {
                                 units: Vec::new(),
                             }),
                         }),
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -792,6 +1008,8 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -806,6 +1024,8 @@ mod tests {
                             imports: vec!["use crate::auth::token;".to_string()],
                         }),
                         importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -849,6 +1069,8 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: Some(4),
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -879,6 +1101,10 @@ mod tests {
                                 units: Vec::new(),
                             }),
                         }),
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -933,8 +1159,10 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
-            {
+            |_project_root, _command| {
                 let response = response.clone();
                 Box::pin(async move {
                     Ok(Some(TldrDaemonResponse {
@@ -982,6 +1210,7 @@ mod tests {
             tools: vec![codex_native_tldr::api::DiagnosticToolStatus {
                 tool: "cargo-check".to_string(),
                 available: true,
+                kind: codex_native_tldr::api::DiagnosticToolKind::Typecheck,
             }],
             diagnostics: vec![codex_native_tldr::api::DiagnosticItem {
                 path: "src/main.rs".to_string(),
@@ -992,6 +1221,7 @@ mod tests {
                 code: Some("E001".to_string()),
                 source: "cargo-check".to_string(),
             }],
+            truncated: false,
             message: "diagnostics reported 1 issue".to_string(),
         };
         let result = run_tldr_tool_with_mcp_hooks(
@@ -1005,8 +1235,10 @@ mod tests {
                 path: Some("src/main.rs".to_string()),
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
-            {
+            |_project_root, _command| {
                 let diagnostics = diagnostics.clone();
                 Box::pin(async move {
                     Ok(Some(TldrDaemonResponse {
@@ -1061,6 +1293,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1068,6 +1302,10 @@ mod tests {
                         status: "ok".to_string(),
                         message: "status".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1106,6 +1344,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1113,6 +1353,10 @@ mod tests {
                         status: "ok".to_string(),
                         message: "pong".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: None,
                         daemon_status: None,
@@ -1151,6 +1395,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1158,15 +1404,21 @@ mod tests {
                         status: "ok".to_string(),
                         message: "already warm".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 0,
                             dirty_files: 0,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
+                            background_reindex_in_progress: false,
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1203,6 +1455,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1210,15 +1464,21 @@ mod tests {
                         status: "ok".to_string(),
                         message: "snapshot".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 2,
                             dirty_files: 1,
                             dirty_file_threshold: 20,
                             reindex_pending: true,
+                            background_reindex_in_progress: false,
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1256,6 +1516,8 @@ mod tests {
                 path: Some("src/lib.rs".to_string()),
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1263,15 +1525,21 @@ mod tests {
                         status: "ok".to_string(),
                         message: "marked src/lib.rs dirty".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 1,
                             dirty_files: 1,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
+                            background_reindex_in_progress: false,
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1324,6 +1592,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| {
                 let report = report.clone();
@@ -1332,15 +1602,30 @@ mod tests {
                         status: "ok".to_string(),
                         message: "status".to_string(),
                         analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
                         semantic: None,
                         snapshot: Some(codex_native_tldr::session::SessionSnapshot {
                             cached_entries: 1,
                             dirty_files: 0,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
+                            background_reindex_in_progress: false,
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                             last_reindex: Some(report.clone()),
                             last_reindex_attempt: Some(report.clone()),
+                            last_warm: Some(codex_native_tldr::session::WarmReport {
+                                status: codex_native_tldr::session::WarmStatus::Loaded,
+                                languages: vec![
+                                    codex_native_tldr::lang_support::SupportedLanguage::Rust,
+                                ],
+                                started_at: std::time::SystemTime::UNIX_EPOCH,
+                                finished_at: std::time::SystemTime::UNIX_EPOCH,
+                                message: "warm loaded 1 language indexes into daemon cache"
+                                    .to_string(),
+                            }),
                         }),
                         daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                             project_root: std::path::PathBuf::from("/tmp/project"),
@@ -1356,6 +1641,7 @@ mod tests {
                             health_reason: None,
                             recovery_hint: None,
                             semantic_reindex_pending: false,
+                            semantic_reindex_in_progress: false,
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
                             config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
                                 auto_start: true,
@@ -1363,6 +1649,7 @@ mod tests {
                                 semantic_enabled: true,
                                 semantic_auto_reindex_threshold: 20,
                                 session_dirty_file_threshold: 20,
+                                session_idle_timeout_secs: 1800,
                             },
                         }),
                         reindex_report: Some(report),
@@ -1380,6 +1667,7 @@ mod tests {
 
         assert_eq!(structured["daemonStatus"]["healthy"], true);
         assert_eq!(structured["reindexReport"]["status"], "Completed");
+        assert_eq!(structured["snapshot"]["last_warm"]["status"], "Loaded");
         assert_eq!(
             structured["snapshot"]["last_reindex_attempt"]["status"],
             "Completed"
@@ -1391,7 +1679,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let result = run_tldr_tool_with_mcp_hooks(
             TldrToolCallParam {
-                action: TldrToolAction::Tree,
+                action: TldrToolAction::Structure,
                 project: Some(tempdir.path().display().to_string()),
                 language: None,
                 symbol: None,
@@ -1400,6 +1688,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
             |_project_root| Box::pin(async move { Ok(false) }),
@@ -1410,7 +1700,7 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         assert_eq!(
             result_json["content"][0]["text"],
-            "tldr tool failed: `language` is required for action=tree"
+            "tldr tool failed: `language` is required for action=structure"
         );
     }
 
@@ -1428,6 +1718,8 @@ mod tests {
                 path: None,
                 line: None,
                 paths: None,
+
+                ..Default::default()
             },
             |_project_root, _command| Box::pin(async move { Ok(None) }),
             |_project_root| Box::pin(async move { Ok(false) }),
@@ -1441,6 +1733,25 @@ mod tests {
         }));
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn ensure_daemon_running_respects_disabled_auto_start_config() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let codex_dir = tempdir.path().join(".codex");
+        std::fs::create_dir(&codex_dir).expect("config dir should exist");
+        std::fs::write(
+            codex_dir.join("tldr.toml"),
+            "[daemon]\nauto_start = false\n",
+        )
+        .expect("config file should exist");
+
+        let started = ensure_daemon_running(tempdir.path())
+            .await
+            .expect("ensure daemon should succeed");
+
+        assert!(!started);
+    }
+
     #[tokio::test]
     async fn query_daemon_with_hooks_retries_when_external_daemon_becomes_ready() {
         let tempdir = tempdir().expect("tempdir should exist");
@@ -1451,6 +1762,10 @@ mod tests {
             status: "ok".to_string(),
             message: "pong".to_string(),
             analysis: None,
+            imports: None,
+            importers: None,
+            search: None,
+            diagnostics: None,
             semantic: None,
             snapshot: None,
             daemon_status: None,

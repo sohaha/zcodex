@@ -18,11 +18,12 @@ pub mod session;
 pub mod tool_api;
 pub mod wire;
 
-use crate::analysis::analyze_project;
+use crate::analysis::analyze_project_with_index;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
 use crate::api::DiagnosticsRequest;
 use crate::api::DiagnosticsResponse;
+use crate::api::DoctorRequest;
 use crate::api::DoctorResponse;
 use crate::api::ImportersRequest;
 use crate::api::ImportersResponse;
@@ -81,6 +82,7 @@ impl TldrConfig {
             semantic_enabled: self.semantic.enabled,
             semantic_auto_reindex_threshold: self.semantic.auto_reindex_threshold,
             session_dirty_file_threshold: self.session.dirty_file_threshold,
+            session_idle_timeout_secs: self.session.idle_timeout.as_secs(),
         }
     }
 }
@@ -123,6 +125,79 @@ impl TldrEngine {
         SemanticIndexer::new(self.config.semantic.clone())
     }
 
+    fn cached_semantic_index(&self, language: SupportedLanguage) -> Option<SemanticIndex> {
+        let guard = self
+            .semantic_indexes
+            .read()
+            .expect("semantic index cache lock should not be poisoned");
+        guard.get(&language).cloned()
+    }
+
+    fn current_cached_semantic_index(
+        &self,
+        language: SupportedLanguage,
+        indexer: &SemanticIndexer,
+    ) -> Result<Option<SemanticIndex>> {
+        let Some(index) = self.cached_semantic_index(language) else {
+            return Ok(None);
+        };
+        let current_fingerprint =
+            indexer.current_source_fingerprint(&self.config.project_root, language)?;
+        if index.source_fingerprint == current_fingerprint {
+            return Ok(Some(index));
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn load_or_build_semantic_index(
+        &self,
+        language: SupportedLanguage,
+    ) -> Result<SemanticIndex> {
+        let indexer = self.semantic_indexer();
+        if let Some(index) = self.current_cached_semantic_index(language, &indexer)? {
+            return Ok(index);
+        }
+
+        let index = indexer.load_or_build_index(&self.config.project_root, language)?;
+        self.semantic_indexes
+            .write()
+            .expect("semantic index cache lock should not be poisoned")
+            .insert(language, index.clone());
+        Ok(index)
+    }
+
+    fn load_or_build_analysis_index(&self, language: SupportedLanguage) -> Result<SemanticIndex> {
+        let indexer = self.semantic_indexer();
+        if let Some(index) = self.current_cached_semantic_index(language, &indexer)? {
+            return Ok(index);
+        }
+
+        let mut semantic_config = self.config.semantic.clone();
+        semantic_config.embedding.enabled = false;
+        semantic_config.embedding_enabled = false;
+        SemanticIndexer::new(semantic_config)
+            .load_or_build_index(&self.config.project_root, language)
+    }
+
+    pub fn project_languages(&self) -> Result<Vec<SupportedLanguage>> {
+        self.semantic_indexer()
+            .project_languages(&self.config.project_root)
+    }
+
+    pub fn warm_language_indexes(
+        &self,
+        languages: &[SupportedLanguage],
+    ) -> Result<Vec<SupportedLanguage>> {
+        let mut warmed = Vec::new();
+        for language in languages {
+            let index = self.load_or_build_semantic_index(*language)?;
+            if index.indexed_files > 0 {
+                warmed.push(index.language);
+            }
+        }
+        Ok(warmed)
+    }
+
     pub fn semantic_search(
         &self,
         request: SemanticSearchRequest,
@@ -133,30 +208,23 @@ impl TldrEngine {
         }
 
         let language = request.language;
-        let cached = self
-            .semantic_indexes
-            .read()
-            .expect("semantic index cache lock should not be poisoned")
-            .get(&language)
-            .cloned();
-        let index = if let Some(index) = cached {
-            index
-        } else {
-            let index = indexer.load_or_build_index(&self.config.project_root, language)?;
-            self.semantic_indexes
-                .write()
-                .expect("semantic index cache lock should not be poisoned")
-                .insert(language, index.clone());
-            index
-        };
+        let index = self.load_or_build_semantic_index(language)?;
 
         indexer.search_index(&index, request.query)
     }
 
     pub fn semantic_reindex(&self) -> Result<SemanticReindexReport> {
+        let registry = LanguageRegistry;
+        self.semantic_reindex_languages(&registry.supported_languages())
+    }
+
+    pub fn semantic_reindex_languages(
+        &self,
+        languages: &[SupportedLanguage],
+    ) -> Result<SemanticReindexReport> {
         let (indexes, report) = self
             .semantic_indexer()
-            .reindex_all(&self.config.project_root)?;
+            .reindex_languages(&self.config.project_root, languages)?;
         let mut cache = self
             .semantic_indexes
             .write()
@@ -169,7 +237,8 @@ impl TldrEngine {
     }
 
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {
-        analyze_project(&self.config.project_root, &self.config, request)
+        let index = self.load_or_build_analysis_index(request.language)?;
+        analyze_project_with_index(&self.config.project_root, request, index)
     }
 
     pub fn imports(&self, request: ImportsRequest) -> Result<ImportsResponse> {
@@ -188,8 +257,8 @@ impl TldrEngine {
         collect_diagnostics(&self.config.project_root, request)
     }
 
-    pub fn doctor(&self) -> DoctorResponse {
-        doctor_tools()
+    pub fn doctor(&self, request: DoctorRequest) -> DoctorResponse {
+        doctor_tools(request)
     }
 }
 
@@ -335,8 +404,37 @@ mod tests {
     }
 
     #[test]
+    fn warm_language_indexes_loads_detected_project_languages() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(tempdir.path().join("src/lib.rs"), "fn login() {}\n")
+            .expect("fixture should be written");
+        let engine = TldrEngine::builder(tempdir.path().to_path_buf())
+            .with_semantic(SemanticConfig::default().with_enabled(true))
+            .build();
+
+        let languages = engine
+            .project_languages()
+            .expect("project languages should be detected");
+        let warmed = engine
+            .warm_language_indexes(&languages)
+            .expect("warm should succeed");
+
+        assert_eq!(languages, vec![SupportedLanguage::Rust]);
+        assert_eq!(warmed, vec![SupportedLanguage::Rust]);
+        assert_eq!(
+            engine
+                .semantic_indexes
+                .read()
+                .expect("semantic index cache lock should not be poisoned")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     #[serial]
-    fn semantic_search_reuses_cached_index_until_reindex() {
+    fn semantic_search_refreshes_cached_index_when_sources_change() {
         let tempdir = tempdir().expect("tempdir should exist");
         std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
         std::fs::write(
@@ -361,16 +459,6 @@ mod tests {
             "fn logout() {\n    audit(user);\n}\n",
         )
         .expect("updated fixture should be written");
-        let cached = engine
-            .semantic_search(SemanticSearchRequest {
-                language: SupportedLanguage::Rust,
-                query: "login".to_string(),
-            })
-            .expect("cached search should succeed");
-        assert_eq!(cached.matches[0].unit.symbol.as_deref(), Some("login"));
-
-        let report = engine.semantic_reindex().expect("reindex should succeed");
-        assert!(report.is_completed());
         let refreshed = engine
             .semantic_search(SemanticSearchRequest {
                 language: SupportedLanguage::Rust,
@@ -378,6 +466,16 @@ mod tests {
             })
             .expect("refreshed search should succeed");
         assert_eq!(refreshed.matches[0].unit.symbol.as_deref(), Some("logout"));
+
+        let cached_languages = engine
+            .semantic_indexes
+            .read()
+            .expect("semantic index cache lock should not be poisoned")
+            .len();
+        assert_eq!(cached_languages, 1);
+
+        let report = engine.semantic_reindex().expect("reindex should succeed");
+        assert!(report.is_completed());
     }
 
     #[tokio::test]
@@ -442,8 +540,8 @@ mod tests {
         config.semantic = SemanticConfig {
             enabled: true,
             feature_gate: "semantic-embed".to_string(),
-            model: "minilm".to_string(),
-            auto_reindex_threshold: 1,
+            model: "bge-large-en-v1.5".to_string(),
+            auto_reindex_threshold: 2,
             embedding_enabled: true,
             embedding: SemanticEmbeddingConfig::default(),
             ignore: Vec::new(),
@@ -468,9 +566,12 @@ mod tests {
         let snapshot = response.snapshot.expect("snapshot should exist");
         let daemon_status = response.daemon_status.expect("daemon status should exist");
         assert!(snapshot.reindex_pending);
+        assert!(!snapshot.background_reindex_in_progress);
         assert!(daemon_status.semantic_reindex_pending);
+        assert!(!daemon_status.semantic_reindex_in_progress);
         assert!(daemon_status.config.semantic_enabled);
-        assert_eq!(daemon_status.config.semantic_auto_reindex_threshold, 1);
+        assert_eq!(daemon_status.config.semantic_auto_reindex_threshold, 2);
         assert_eq!(daemon_status.config.session_dirty_file_threshold, 1);
+        assert_eq!(daemon_status.config.session_idle_timeout_secs, 60);
     }
 }

@@ -2,12 +2,14 @@ use crate::TldrEngine;
 use crate::api::AnalysisKind;
 use crate::api::AnalysisRequest;
 use crate::api::DiagnosticsRequest;
+use crate::api::DoctorRequest;
 use crate::api::ImportersRequest;
 use crate::api::ImportsRequest;
 use crate::api::SearchRequest;
 use crate::daemon::TldrDaemonCommand;
 use crate::daemon::TldrDaemonResponse;
 use crate::daemon::daemon_health;
+use crate::daemon::launch_lock_is_held;
 use crate::lang_support::LanguageRegistry;
 use crate::lang_support::SupportedLanguage;
 use crate::lifecycle::DaemonLifecycleManager;
@@ -32,7 +34,7 @@ use tokio::time::sleep;
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TldrToolAction {
-    Tree,
+    Structure,
     Search,
     Extract,
     Imports,
@@ -122,6 +124,37 @@ pub struct TldrToolCallParam {
     pub line: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paths: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub only_tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_lint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_typecheck: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_issues: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_install_hints: Option<bool>,
+}
+
+impl Default for TldrToolCallParam {
+    fn default() -> Self {
+        Self {
+            action: TldrToolAction::Ping,
+            project: None,
+            language: None,
+            symbol: None,
+            query: None,
+            module: None,
+            path: None,
+            line: None,
+            paths: None,
+            only_tools: None,
+            run_lint: None,
+            run_typecheck: None,
+            max_issues: None,
+            include_install_hints: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -148,11 +181,11 @@ where
 {
     let project_root = resolve_project_root(args.project.as_deref())?;
     match args.action {
-        TldrToolAction::Tree => {
+        TldrToolAction::Structure => {
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Tree,
+                TldrToolAction::Structure,
                 language,
                 args.symbol,
                 None,
@@ -341,9 +374,17 @@ where
                 .clone()
                 .ok_or_else(|| anyhow::anyhow!("`path` is required for action=diagnostics"))?;
             let language = required_or_inferred_language(&args, Some(path.as_str()))?;
-            run_diagnostics_tool(&project_root, language, path, &query, &ensure_running).await
+            run_diagnostics_tool(
+                &project_root,
+                language,
+                path,
+                &args,
+                &query,
+                &ensure_running,
+            )
+            .await
         }
-        TldrToolAction::Doctor => run_doctor_tool(&project_root),
+        TldrToolAction::Doctor => run_doctor_tool(&project_root, &args),
         TldrToolAction::Ping => {
             run_daemon_tool(
                 &project_root,
@@ -416,7 +457,7 @@ where
     E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
 {
     let kind = match action {
-        TldrToolAction::Tree => AnalysisKind::Ast,
+        TldrToolAction::Structure => AnalysisKind::Ast,
         TldrToolAction::Extract => AnalysisKind::Extract,
         TldrToolAction::Context => AnalysisKind::CallGraph,
         TldrToolAction::Impact => AnalysisKind::Impact,
@@ -673,7 +714,7 @@ where
 }
 
 pub async fn wait_for_external_daemon(project_root: &Path) -> Result<bool> {
-    if !crate::daemon::daemon_lock_is_held(project_root)? {
+    if !crate::daemon::daemon_lock_is_held(project_root)? && !launch_lock_is_held(project_root)? {
         return Ok(false);
     }
 
@@ -697,7 +738,7 @@ pub fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
 
 pub fn action_name(action: &TldrToolAction) -> &'static str {
     match action {
-        TldrToolAction::Tree => "tree",
+        TldrToolAction::Structure => "structure",
         TldrToolAction::Search => "search",
         TldrToolAction::Extract => "extract",
         TldrToolAction::Imports => "imports",
@@ -856,6 +897,7 @@ async fn run_diagnostics_tool<Q, E>(
     project_root: &Path,
     language: SupportedLanguage,
     path: String,
+    args: &TldrToolCallParam,
     query: &Q,
     ensure_running: &E,
 ) -> Result<TldrToolResult>
@@ -866,6 +908,10 @@ where
     let request = DiagnosticsRequest {
         language,
         path: path.clone(),
+        only_tools: args.only_tools.clone().unwrap_or_default(),
+        run_lint: args.run_lint.unwrap_or(true),
+        run_typecheck: args.run_typecheck.unwrap_or(true),
+        max_issues: args.max_issues.unwrap_or(50).max(1),
     };
     let daemon_response = query_daemon_with_hooks(
         project_root,
@@ -913,17 +959,23 @@ where
     })
 }
 
-fn run_doctor_tool(project_root: &Path) -> Result<TldrToolResult> {
+fn run_doctor_tool(project_root: &Path, args: &TldrToolCallParam) -> Result<TldrToolResult> {
     let config = load_tldr_config(project_root)?;
     let engine = TldrEngine::builder(project_root.to_path_buf())
         .with_config(config)
         .build();
-    let response = engine.doctor();
+    let response = engine.doctor(DoctorRequest {
+        language: args.language.map(Into::into),
+        only_tools: args.only_tools.clone().unwrap_or_default(),
+        include_install_hints: args.include_install_hints.unwrap_or(true),
+    });
     let structured_content = json!({
         "action": "doctor",
         "project": project_root,
+        "language": args.language.map(SupportedLanguage::from).map(SupportedLanguage::as_str),
         "message": response.message,
         "tools": response.tools,
+        "doctor": response,
     });
     let text = structured_content["message"]
         .as_str()
@@ -1270,7 +1322,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
               "type": "object",
               "properties": {
                 "action": {
-                  "enum": ["tree", "extract", "context", "impact", "calls", "dead", "arch", "change-impact", "cfg", "dfg", "slice"]
+                  "enum": ["structure", "extract", "context", "impact", "calls", "dead", "arch", "change-impact", "cfg", "dfg", "slice"]
                 },
                 "project": { "type": "string" },
                 "language": { "type": "string" },
@@ -1469,7 +1521,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                         "type": "object",
                         "properties": {
                           "tool": { "type": "string" },
-                          "available": { "type": "boolean" }
+                          "available": { "type": "boolean" },
+                          "kind": { "type": "string" }
                         }
                       }
                     },
@@ -1488,6 +1541,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                         }
                       }
                     },
+                    "truncated": { "type": "boolean" },
                     "message": { "type": "string" }
                   }
                 }
@@ -1507,6 +1561,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
               "properties": {
                 "action": { "const": "doctor" },
                 "project": { "type": "string" },
+                "language": { "type": ["string", "null"] },
                 "message": { "type": "string" },
                 "tools": {
                   "type": "array",
@@ -1514,7 +1569,35 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                     "type": "object",
                     "properties": {
                       "tool": { "type": "string" },
-                      "available": { "type": "boolean" }
+                      "available": { "type": "boolean" },
+                      "purpose": { "type": "string" },
+                      "languages": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                      },
+                      "install_hint": { "type": ["string", "null"] }
+                    }
+                  }
+                },
+                "doctor": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tool": { "type": "string" },
+                          "available": { "type": "boolean" },
+                          "purpose": { "type": "string" },
+                          "languages": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          },
+                          "install_hint": { "type": ["string", "null"] }
+                        }
+                      }
                     }
                   }
                 }
@@ -1523,7 +1606,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "action",
                 "project",
                 "message",
-                "tools"
+                "tools",
+                "doctor"
               ]
             },
             "daemonResult": {
@@ -1542,9 +1626,23 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                     "dirty_files": { "type": "integer" },
                     "dirty_file_threshold": { "type": "integer" },
                     "reindex_pending": { "type": "boolean" },
+                    "background_reindex_in_progress": { "type": "boolean" },
                     "last_query_at": { "type": ["string", "null"] },
                     "last_reindex": { "$ref": "#/$defs/reindexReport" },
-                    "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" }
+                    "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" },
+                    "last_warm": {
+                      "type": "object",
+                      "properties": {
+                        "status": { "type": "string" },
+                        "languages": {
+                          "type": "array",
+                          "items": { "type": "string" }
+                        },
+                        "started_at": { "type": "string" },
+                        "finished_at": { "type": "string" },
+                        "message": { "type": "string" }
+                      }
+                    }
                   }
                 },
                 "daemonStatus": {
@@ -1563,6 +1661,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                     "health_reason": { "type": ["string", "null"] },
                     "recovery_hint": { "type": ["string", "null"] },
                     "semantic_reindex_pending": { "type": "boolean" },
+                    "semantic_reindex_in_progress": { "type": "boolean" },
                     "last_query_at": { "type": ["string", "null"] },
                     "config": {
                       "type": "object",
@@ -1571,7 +1670,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                         "socket_mode": { "type": "string" },
                         "semantic_enabled": { "type": "boolean" },
                         "semantic_auto_reindex_threshold": { "type": "integer" },
-                        "session_dirty_file_threshold": { "type": "integer" }
+                        "session_dirty_file_threshold": { "type": "integer" },
+                        "session_idle_timeout_secs": { "type": "integer" }
                       }
                     }
                   }
@@ -1616,7 +1716,7 @@ mod tests {
 
     #[test]
     fn action_name_covers_analysis_actions() {
-        assert_eq!(action_name(&TldrToolAction::Tree), "tree");
+        assert_eq!(action_name(&TldrToolAction::Structure), "structure");
         assert_eq!(action_name(&TldrToolAction::Search), "search");
         assert_eq!(action_name(&TldrToolAction::Extract), "extract");
         assert_eq!(action_name(&TldrToolAction::Imports), "imports");
@@ -1659,6 +1759,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1703,6 +1804,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1747,6 +1849,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1764,9 +1867,11 @@ mod tests {
                             dirty_files: 0,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
+                            background_reindex_in_progress: false,
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1798,6 +1903,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -1815,9 +1921,11 @@ mod tests {
                             dirty_files: 1,
                             dirty_file_threshold: 20,
                             reindex_pending: true,
+                            background_reindex_in_progress: false,
                             last_query_at: None,
                             last_reindex: None,
                             last_reindex_attempt: None,
+                            last_warm: None,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1836,12 +1944,12 @@ mod tests {
     }
 
     #[test]
-    fn tree_action_requires_language() {
+    fn structure_action_requires_language() {
         let error = tokio::runtime::Runtime::new()
             .expect("runtime should exist")
             .block_on(run_tldr_tool_with_hooks(
                 TldrToolCallParam {
-                    action: TldrToolAction::Tree,
+                    action: TldrToolAction::Structure,
                     project: Some(
                         tempdir()
                             .expect("tempdir should exist")
@@ -1857,13 +1965,17 @@ mod tests {
 
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
             ))
-            .expect_err("tree without language should fail");
+            .expect_err("structure without language should fail");
 
-        assert_eq!(error.to_string(), "`language` is required for action=tree");
+        assert_eq!(
+            error.to_string(),
+            "`language` is required for action=structure"
+        );
     }
 
     #[test]
@@ -1888,6 +2000,7 @@ mod tests {
 
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1918,6 +2031,7 @@ mod tests {
                     path: Some("src/lib.rs".to_string()),
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1948,6 +2062,7 @@ mod tests {
                     path: None,
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -1981,6 +2096,7 @@ mod tests {
                     path: None,
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -2011,6 +2127,7 @@ mod tests {
                     path: None,
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -2045,6 +2162,7 @@ mod tests {
 
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -2076,6 +2194,7 @@ mod tests {
 
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
@@ -2094,7 +2213,7 @@ mod tests {
         let tempdir = tempdir().expect("tempdir should exist");
         let error = run_tldr_tool_with_hooks(
             TldrToolCallParam {
-                action: TldrToolAction::Tree,
+                action: TldrToolAction::Structure,
                 project: Some(tempdir.path().display().to_string()),
                 language: Some(TldrToolLanguage::Rust),
                 symbol: None,
@@ -2104,6 +2223,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -2148,6 +2268,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 Box::pin(async move {
@@ -2206,6 +2327,7 @@ mod tests {
 
                 line: None,
                 paths: None,
+                ..Default::default()
             },
             |_project_root, _command| {
                 let report = report.clone();
@@ -2224,9 +2346,18 @@ mod tests {
                             dirty_files: 0,
                             dirty_file_threshold: 20,
                             reindex_pending: false,
+                            background_reindex_in_progress: false,
                             last_query_at: Some(SystemTime::UNIX_EPOCH),
                             last_reindex: Some(report.clone()),
                             last_reindex_attempt: Some(report.clone()),
+                            last_warm: Some(crate::session::WarmReport {
+                                status: crate::session::WarmStatus::Loaded,
+                                languages: vec![SupportedLanguage::Rust],
+                                started_at: SystemTime::UNIX_EPOCH,
+                                finished_at: SystemTime::UNIX_EPOCH,
+                                message: "warm loaded 1 language indexes into daemon cache"
+                                    .to_string(),
+                            }),
                         }),
                         daemon_status: Some(TldrDaemonStatus {
                             project_root: PathBuf::from("/tmp/project"),
@@ -2242,6 +2373,7 @@ mod tests {
                             health_reason: None,
                             recovery_hint: None,
                             semantic_reindex_pending: false,
+                            semantic_reindex_in_progress: false,
                             last_query_at: Some(SystemTime::UNIX_EPOCH),
                             config: TldrDaemonConfigSummary {
                                 auto_start: true,
@@ -2249,6 +2381,7 @@ mod tests {
                                 semantic_enabled: true,
                                 semantic_auto_reindex_threshold: 20,
                                 session_dirty_file_threshold: 20,
+                                session_idle_timeout_secs: 1800,
                             },
                         }),
                         reindex_report: Some(report),
@@ -2262,8 +2395,16 @@ mod tests {
 
         assert_eq!(result.structured_content["daemonStatus"]["healthy"], true);
         assert_eq!(
+            result.structured_content["daemonStatus"]["config"]["session_idle_timeout_secs"],
+            1800
+        );
+        assert_eq!(
             result.structured_content["reindexReport"]["status"],
             "Completed"
+        );
+        assert_eq!(
+            result.structured_content["snapshot"]["last_warm"]["status"],
+            "Loaded"
         );
         assert_eq!(
             result.structured_content["snapshot"]["last_reindex"]["status"],
@@ -2293,6 +2434,7 @@ mod tests {
 
                     line: None,
                     paths: None,
+                    ..Default::default()
                 },
                 |_project_root, _command| Box::pin(async move { Ok(None) }),
                 |_project_root| Box::pin(async move { Ok(false) }),
