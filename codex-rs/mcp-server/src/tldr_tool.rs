@@ -12,8 +12,11 @@ use codex_native_tldr::lifecycle::QueryHooksResult;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolResult;
+use codex_native_tldr::tool_api::daemon_unavailable_error_for_project;
+use codex_native_tldr::tool_api::degraded_mode_name;
 use codex_native_tldr::tool_api::query_daemon_with_hooks_detailed;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
+use codex_native_tldr::tool_api::structured_failure_error_type;
 use codex_native_tldr::tool_api::tldr_tool_output_schema;
 use codex_native_tldr::wire::daemon_response_payload;
 use once_cell::sync::Lazy;
@@ -205,39 +208,7 @@ fn daemon_unavailable_error_from_ready_result(
     project_root: &Path,
     ready_result: Option<&DaemonReadyResult>,
 ) -> anyhow::Error {
-    let project = project_root.display();
-    if let Some(failure) = ready_result.and_then(|value| value.structured_failure.as_ref()) {
-        if let Some(hint) = &failure.retry_hint {
-            return anyhow::anyhow!(
-                "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
-                failure.reason
-            );
-        }
-        return anyhow::anyhow!(
-            "native-tldr daemon is unavailable for {project}: {}",
-            failure.reason
-        );
-    }
-    match daemon_health(project_root) {
-        Ok(health) => {
-            if let Some(failure) = health.structured_failure {
-                if let Some(hint) = failure.retry_hint {
-                    anyhow::anyhow!(
-                        "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
-                        failure.reason
-                    )
-                } else {
-                    anyhow::anyhow!(
-                        "native-tldr daemon is unavailable for {project}: {}",
-                        failure.reason
-                    )
-                }
-            } else {
-                anyhow::anyhow!("native-tldr daemon is unavailable for {project}")
-            }
-        }
-        Err(_) => anyhow::anyhow!("native-tldr daemon is unavailable for {project}"),
-    }
+    daemon_unavailable_error_for_project(project_root, ready_result)
 }
 
 fn success_result(text: String, structured_content: serde_json::Value) -> CallToolResult {
@@ -314,24 +285,6 @@ fn tldr_error_structured_content_for_project(
     }
 
     tldr_error_structured_content(text)
-}
-
-fn structured_failure_error_type(
-    kind: &codex_native_tldr::daemon::StructuredFailureKind,
-) -> &'static str {
-    match kind {
-        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnavailable => "daemon_unavailable",
-        codex_native_tldr::daemon::StructuredFailureKind::DaemonStarting => "daemon_starting",
-        codex_native_tldr::daemon::StructuredFailureKind::StaleSocket => "stale_socket",
-        codex_native_tldr::daemon::StructuredFailureKind::StalePid => "stale_pid",
-        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnhealthy => "daemon_unhealthy",
-    }
-}
-
-fn degraded_mode_name(kind: &codex_native_tldr::daemon::DegradedModeKind) -> &'static str {
-    match kind {
-        codex_native_tldr::daemon::DegradedModeKind::DiagnosticOnly => "diagnostic_only",
-    }
 }
 
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =

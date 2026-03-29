@@ -19,7 +19,9 @@ use codex_native_tldr::lifecycle::DaemonLifecycleManager;
 use codex_native_tldr::lifecycle::DaemonReadyResult;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::action_name;
+use codex_native_tldr::tool_api::degraded_mode_name;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
+use codex_native_tldr::tool_api::structured_failure_error_type;
 use once_cell::sync::Lazy;
 use serde_json::json;
 use std::ffi::OsString;
@@ -455,24 +457,6 @@ fn render_tldr_error_summary(payload: &serde_json::Value) -> String {
         return format!("structured failure: {error_type}");
     }
     "tldr failed".to_string()
-}
-
-fn structured_failure_error_type(
-    kind: &codex_native_tldr::daemon::StructuredFailureKind,
-) -> &'static str {
-    match kind {
-        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnavailable => "daemon_unavailable",
-        codex_native_tldr::daemon::StructuredFailureKind::DaemonStarting => "daemon_starting",
-        codex_native_tldr::daemon::StructuredFailureKind::StaleSocket => "stale_socket",
-        codex_native_tldr::daemon::StructuredFailureKind::StalePid => "stale_pid",
-        codex_native_tldr::daemon::StructuredFailureKind::DaemonUnhealthy => "daemon_unhealthy",
-    }
-}
-
-fn degraded_mode_name(kind: &codex_native_tldr::daemon::DegradedModeKind) -> &'static str {
-    match kind {
-        codex_native_tldr::daemon::DegradedModeKind::DiagnosticOnly => "diagnostic_only",
-    }
 }
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {

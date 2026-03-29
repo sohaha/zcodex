@@ -642,10 +642,10 @@ where
 }
 
 fn daemon_unavailable_error(project_root: &Path) -> anyhow::Error {
-    daemon_unavailable_error_with_ready_result(project_root, None)
+    daemon_unavailable_error_for_project(project_root, None)
 }
 
-fn daemon_unavailable_error_with_ready_result(
+pub fn daemon_unavailable_error_for_project(
     project_root: &Path,
     ready_result: Option<&DaemonReadyResult>,
 ) -> anyhow::Error {
@@ -793,6 +793,22 @@ pub fn daemon_metadata_looks_alive(project_root: &Path) -> bool {
     daemon_health(project_root)
         .map(|health| health.healthy)
         .unwrap_or(false)
+}
+
+pub fn structured_failure_error_type(kind: &crate::daemon::StructuredFailureKind) -> &'static str {
+    match kind {
+        crate::daemon::StructuredFailureKind::DaemonUnavailable => "daemon_unavailable",
+        crate::daemon::StructuredFailureKind::DaemonStarting => "daemon_starting",
+        crate::daemon::StructuredFailureKind::StaleSocket => "stale_socket",
+        crate::daemon::StructuredFailureKind::StalePid => "stale_pid",
+        crate::daemon::StructuredFailureKind::DaemonUnhealthy => "daemon_unhealthy",
+    }
+}
+
+pub fn degraded_mode_name(kind: &crate::daemon::DegradedModeKind) -> &'static str {
+    match kind {
+        crate::daemon::DegradedModeKind::DiagnosticOnly => "diagnostic_only",
+    }
 }
 
 pub fn action_name(action: &TldrToolAction) -> &'static str {

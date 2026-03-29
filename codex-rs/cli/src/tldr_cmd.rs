@@ -30,6 +30,7 @@ use codex_native_tldr::lifecycle::QueryHooksResult;
 use codex_native_tldr::load_tldr_config;
 use codex_native_tldr::semantic::SemanticSearchRequest;
 use codex_native_tldr::semantic::SemanticSearchResponse;
+use codex_native_tldr::tool_api::daemon_unavailable_error_for_project;
 use codex_native_tldr::wire::daemon_response_payload;
 use codex_native_tldr::wire::semantic_payload;
 use once_cell::sync::Lazy;
@@ -1661,39 +1662,7 @@ fn daemon_unavailable_error_with_ready_result(
     project_root: &Path,
     ready_result: Option<&DaemonReadyResult>,
 ) -> anyhow::Error {
-    let project = project_root.display();
-    if let Some(failure) = ready_result.and_then(|value| value.structured_failure.as_ref()) {
-        if let Some(hint) = &failure.retry_hint {
-            return anyhow::anyhow!(
-                "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
-                failure.reason
-            );
-        }
-        return anyhow::anyhow!(
-            "native-tldr daemon is unavailable for {project}: {}",
-            failure.reason
-        );
-    }
-    match daemon_health(project_root) {
-        Ok(health) => {
-            if let Some(failure) = health.structured_failure {
-                if let Some(hint) = failure.retry_hint {
-                    anyhow::anyhow!(
-                        "native-tldr daemon is unavailable for {project}: {} (hint: {hint})",
-                        failure.reason
-                    )
-                } else {
-                    anyhow::anyhow!(
-                        "native-tldr daemon is unavailable for {project}: {}",
-                        failure.reason
-                    )
-                }
-            } else {
-                anyhow::anyhow!("native-tldr daemon is unavailable for {project}")
-            }
-        }
-        Err(_) => anyhow::anyhow!("native-tldr daemon is unavailable for {project}"),
-    }
+    daemon_unavailable_error_for_project(project_root, ready_result)
 }
 
 async fn run_daemon_start_command(project_root: &Path, json_output: bool) -> Result<()> {
