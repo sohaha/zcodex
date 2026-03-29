@@ -10681,12 +10681,12 @@ async fn background_event_updates_status_header() {
     chat.handle_codex_event(Event {
         id: "bg-1".into(),
         msg: EventMsg::BackgroundEvent(BackgroundEventEvent {
-            message: "Waiting for `vim`".to_string(),
+            message: "等待 `vim` 完成".to_string(),
         }),
     });
 
     assert!(chat.bottom_pane.status_indicator_visible());
-    assert_eq!(chat.current_status.header, "Waiting for `vim`");
+    assert_eq!(chat.current_status.header, "等待 `vim` 完成");
     assert!(drain_insert_history(&mut rx).is_empty());
 }
 

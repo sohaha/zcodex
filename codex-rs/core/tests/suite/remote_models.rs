@@ -251,9 +251,7 @@ async fn namespaced_model_slug_uses_catalog_metadata_without_fallback_warning() 
     loop {
         let event = wait_for_event(&codex, |_| true).await;
         match event {
-            EventMsg::Warning(warning)
-                if warning.message.contains("Defaulting to fallback metadata") =>
-            {
+            EventMsg::Warning(warning) if warning.message.contains("将使用回退元数据") => {
                 fallback_warning_count += 1;
             }
             EventMsg::TurnComplete(_) => break,

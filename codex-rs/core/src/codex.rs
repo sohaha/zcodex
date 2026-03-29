@@ -2507,7 +2507,7 @@ impl Session {
                 tc,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+                        "未找到模型 `{}` 的元数据。将使用回退元数据；这可能降低性能并引发问题。",
                         tc.model_info.slug
                     ),
                 }),
