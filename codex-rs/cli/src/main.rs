@@ -27,10 +27,10 @@ use codex_rtk::alias_name as rtk_alias_name;
 use codex_rtk::is_alias_invocation as is_rtk_alias_invocation;
 use codex_state::StateRuntime;
 use codex_state::state_db_path;
-use codex_tui::AppExitInfo;
-use codex_tui::Cli as TuiCli;
-use codex_tui::ExitReason;
-use codex_tui::update_action::UpdateAction;
+use codex_tui_app_server::AppExitInfo;
+use codex_tui_app_server::Cli as TuiCli;
+use codex_tui_app_server::ExitReason;
+use codex_tui_app_server::update_action::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
@@ -496,11 +496,11 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
         }
         #[cfg(not(windows))]
         {
-            let (cmd, args) = action.command_args();
+            let (cmd, args): (&str, &[&str]) = action.command_args();
             let command_path = crate::wsl_paths::normalize_for_wsl(cmd);
             let normalized_args: Vec<String> = args
                 .iter()
-                .map(crate::wsl_paths::normalize_for_wsl)
+                .map(|arg| crate::wsl_paths::normalize_for_wsl(arg))
                 .collect();
             std::process::Command::new(&command_path)
                 .args(&normalized_args)
@@ -680,6 +680,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     app_server_cli.analytics_default_enabled,
                     transport,
                     codex_protocol::protocol::SessionSource::VSCode,
+                    codex_app_server::AppServerWebsocketAuthSettings::default(),
                 )
                 .await?;
             }
@@ -1203,62 +1204,20 @@ async fn run_interactive_tui(
         }
     }
 
-    let use_app_server_tui = codex_tui::should_use_app_server_tui(&interactive).await?;
     let normalized_remote = remote
         .as_deref()
         .map(codex_tui_app_server::normalize_remote_addr)
         .transpose()
         .map_err(std::io::Error::other)?;
-    if normalized_remote.is_some() && !use_app_server_tui {
-        return Ok(AppExitInfo::fatal(
-            "`--remote` 需要启用 `tui_app_server` 功能开关。",
-        ));
-    }
-    if use_app_server_tui {
-        codex_tui_app_server::run_main(
-            into_app_server_tui_cli(interactive),
-            arg0_paths,
-            codex_core::config_loader::LoaderOverrides::default(),
-            normalized_remote,
-        )
-        .await
-        .map(into_legacy_app_exit_info)
-    } else {
-        codex_tui::run_main(
-            interactive,
-            arg0_paths,
-            codex_core::config_loader::LoaderOverrides::default(),
-        )
-        .await
-    }
-}
-
-fn into_app_server_tui_cli(cli: TuiCli) -> codex_tui_app_server::Cli {
-    codex_tui_app_server::Cli {
-        prompt: cli.prompt,
-        images: cli.images,
-        resume_picker: cli.resume_picker,
-        resume_last: cli.resume_last,
-        resume_session_id: cli.resume_session_id,
-        resume_show_all: cli.resume_show_all,
-        fork_picker: cli.fork_picker,
-        fork_last: cli.fork_last,
-        fork_session_id: cli.fork_session_id,
-        fork_show_all: cli.fork_show_all,
-        model: cli.model,
-        oss: cli.oss,
-        oss_provider: cli.oss_provider,
-        config_profile: cli.config_profile,
-        sandbox_mode: cli.sandbox_mode,
-        approval_policy: cli.approval_policy,
-        full_auto: cli.full_auto,
-        dangerously_bypass_approvals_and_sandbox: cli.dangerously_bypass_approvals_and_sandbox,
-        cwd: cli.cwd,
-        web_search: cli.web_search,
-        add_dir: cli.add_dir,
-        no_alt_screen: cli.no_alt_screen,
-        config_overrides: cli.config_overrides,
-    }
+    codex_tui_app_server::run_main(
+        interactive,
+        arg0_paths,
+        codex_core::config_loader::LoaderOverrides::default(),
+        normalized_remote,
+        /*remote_auth_token*/ None,
+    )
+    .await
+    .map(into_legacy_app_exit_info)
 }
 
 fn into_legacy_update_action(

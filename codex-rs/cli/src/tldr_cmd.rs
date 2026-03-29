@@ -8,7 +8,6 @@ use codex_native_tldr::TldrEngine;
 use codex_native_tldr::api::AnalysisKind;
 use codex_native_tldr::api::AnalysisRequest;
 use codex_native_tldr::api::AnalysisResponse;
-use codex_native_tldr::api::DiagnosticToolKind;
 use codex_native_tldr::api::DiagnosticsRequest;
 use codex_native_tldr::api::DiagnosticsResponse;
 use codex_native_tldr::api::DoctorRequest;
@@ -1361,21 +1360,7 @@ fn render_doctor_response_text(response: &DoctorResponse) -> Vec<String> {
         format!("message: {}", response.message),
     ];
     for tool in &response.tools {
-        let languages = tool
-            .languages
-            .iter()
-            .copied()
-            .map(SupportedLanguage::as_str)
-            .collect::<Vec<_>>()
-            .join(",");
-        let mut line = format!(
-            "tool {}: {} ({}, languages={languages})",
-            tool.tool, tool.available, tool.purpose
-        );
-        if let Some(hint) = tool.install_hint.as_deref() {
-            line.push_str(&format!(" hint={hint}"));
-        }
-        lines.push(line);
+        lines.push(format!("tool {}: {}", tool.tool, tool.available));
     }
     lines
 }
@@ -1444,15 +1429,10 @@ fn render_diagnostics_response_text(
         format!("path: {}", response.path),
         format!("tools: {}", response.tools.len()),
         format!("diagnostics: {}", response.diagnostics.len()),
-        format!("truncated: {}", response.truncated),
         format!("message: {}", response.message),
     ];
     for tool in &response.tools {
-        let kind = match tool.kind {
-            DiagnosticToolKind::Lint => "lint",
-            DiagnosticToolKind::Typecheck => "typecheck",
-        };
-        lines.push(format!("tool {}: {} ({kind})", tool.tool, tool.available));
+        lines.push(format!("tool {}: {}", tool.tool, tool.available));
     }
     for diagnostic in &response.diagnostics {
         let severity = match diagnostic.severity {
@@ -1806,13 +1786,10 @@ async fn ensure_daemon_running(project_root: &Path, auto_start_enabled: bool) ->
     }
 
     DAEMON_LIFECYCLE_MANAGER
-        .ensure_running_with_launcher_lock(
+        .ensure_running(
             project_root,
-            daemon_metadata_looks_alive_with_launcher_lock,
+            daemon_metadata_looks_alive,
             cleanup_stale_daemon_artifacts,
-            daemon_lock_is_held,
-            try_open_launcher_lock,
-            record_test_launcher_wait,
             |project_root| Box::pin(spawn_native_tldr_daemon(project_root)),
         )
         .await
@@ -1996,7 +1973,6 @@ mod output_tests {
     use codex_native_tldr::api::AnalysisUnitDetail;
     use codex_native_tldr::api::DiagnosticItem;
     use codex_native_tldr::api::DiagnosticSeverity;
-    use codex_native_tldr::api::DiagnosticToolKind;
     use codex_native_tldr::api::DiagnosticToolStatus;
     use codex_native_tldr::api::DiagnosticsResponse;
     use codex_native_tldr::lang_support::LanguageRegistry;
@@ -2616,7 +2592,6 @@ mod output_tests {
                 tools: vec![DiagnosticToolStatus {
                     tool: "cargo-check".to_string(),
                     available: true,
-                    kind: DiagnosticToolKind::Typecheck,
                 }],
                 diagnostics: vec![DiagnosticItem {
                     path: "src/main.rs".to_string(),
@@ -2627,12 +2602,11 @@ mod output_tests {
                     code: Some("E0609".to_string()),
                     source: "cargo-check".to_string(),
                 }],
-                truncated: false,
                 message: "diagnostics reported 1 issues".to_string(),
             },
         );
 
-        assert!(lines.contains(&"tool cargo-check: true (typecheck)".to_string()));
+        assert!(lines.contains(&"tool cargo-check: true".to_string()));
         assert!(
             lines.contains(&"src/main.rs:7:3 error cargo-check [E0609] unknown field".to_string())
         );
