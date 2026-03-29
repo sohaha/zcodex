@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-03-29T08:19:38.828Z
-- 本轮摘要：已收尾提交同步修复：将 codex-rs/tui 恢复为指向 tui_app_server 的兼容壳，补回 legacy main.rs 与 styles.md；把 codex_mcp_interface.md 中 tldr 动作 tree 改为 structure；删除两份误跟踪的 tui_app_server .snap.new 工件。验证 just fmt 与在禁用 RUSTC_WRAPPER/sccache 增量冲突后 cargo check -p codex-tui 通过；提交为 00d866736。仓库仍有与本任务无关的 zmemory 修改未提交。
+- 更新时间：2026-03-29T11:35:30Z
+- 本轮摘要：native-tldr P0 先补 lifecycle 异常恢复：当 launcher lock 或 daemon lock 的持有者消失、且 daemon 最终未 ready 时，当前调用会继续争抢 launcher lock 并自恢复拉起；同时补了两条回归测试覆盖 launcher/daemon lock 清除后的恢复路径。验证通过 `just fmt` 与 `cargo nextest run -p codex-native-tldr`。
 
 ## 待确认问题
 

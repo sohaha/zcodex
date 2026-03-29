@@ -128,9 +128,15 @@ impl DaemonLifecycleManager {
 
         let key = project_key(project_root);
         if daemon_lock_is_held(project_root)? {
-            return Ok(self
+            if self
                 .wait_until_alive_with_launcher_lock(project_root, &is_alive, true)
-                .await);
+                .await
+            {
+                return Ok(true);
+            }
+            if daemon_lock_is_held(project_root)? {
+                return Ok(false);
+            }
         }
         if wait_for_existing_launch(&key).await {
             return Ok(self
@@ -147,11 +153,33 @@ impl DaemonLifecycleManager {
             return Ok(true);
         }
 
-        let Some(_launcher_lock) = try_open_launcher_lock(project_root)? else {
+        let launcher_lock = if let Some(launcher_lock) = try_open_launcher_lock(project_root)? {
+            launcher_lock
+        } else {
             on_launcher_wait(project_root);
-            return Ok(self
+            if self
                 .wait_until_alive_with_launcher_lock(project_root, &is_alive, false)
-                .await);
+                .await
+            {
+                self.clear_backoff(&key);
+                return Ok(true);
+            }
+            if daemon_lock_is_held(project_root)? {
+                if self
+                    .wait_until_alive_with_launcher_lock(project_root, &is_alive, true)
+                    .await
+                {
+                    self.clear_backoff(&key);
+                    return Ok(true);
+                }
+                if daemon_lock_is_held(project_root)? {
+                    return Ok(false);
+                }
+            }
+            let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
+                return Ok(false);
+            };
+            launcher_lock
         };
 
         if is_alive(project_root, true) {
@@ -280,6 +308,7 @@ mod tests {
     use crate::daemon::TldrDaemonCommand;
     use crate::daemon::TldrDaemonResponse;
     use pretty_assertions::assert_eq;
+    use std::fs::OpenOptions;
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::sync::atomic::AtomicUsize;
@@ -670,5 +699,152 @@ mod tests {
         );
         assert_eq!(launch_count.load(Ordering::SeqCst), 1);
         assert!(alive.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn ensure_running_with_launcher_lock_recovers_when_launcher_owner_disappears() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().to_path_buf();
+        let manager = DaemonLifecycleManager {
+            launch_backoff: Duration::from_millis(5),
+            ready_timeout: Duration::from_millis(60),
+            ready_poll_interval: Duration::from_millis(10),
+        };
+        let alive = Arc::new(AtomicBool::new(false));
+        let launcher_attempts = Arc::new(AtomicUsize::new(0));
+        let launcher_waits = Arc::new(AtomicUsize::new(0));
+        let launch_calls = Arc::new(AtomicUsize::new(0));
+        let launcher_lock_path = project_root.join("launcher.lock");
+
+        let started = manager
+            .ensure_running_with_launcher_lock(
+                &project_root,
+                {
+                    let alive = Arc::clone(&alive);
+                    move |_, _| alive.load(Ordering::SeqCst)
+                },
+                |_| {},
+                |_| Ok(false),
+                {
+                    let launcher_attempts = Arc::clone(&launcher_attempts);
+                    let launcher_lock_path = launcher_lock_path.clone();
+                    move |_| {
+                        let launcher_attempts = Arc::clone(&launcher_attempts);
+                        let launcher_lock_path = launcher_lock_path.clone();
+                        let opened = launcher_attempts.fetch_add(1, Ordering::SeqCst);
+                        if opened == 0 {
+                            Ok(None)
+                        } else {
+                            Ok(Some(
+                                OpenOptions::new()
+                                    .read(true)
+                                    .write(true)
+                                    .create(true)
+                                    .truncate(false)
+                                    .open(&launcher_lock_path)
+                                    .expect("launcher lock should open"),
+                            ))
+                        }
+                    }
+                },
+                {
+                    let launcher_waits = Arc::clone(&launcher_waits);
+                    move |_| {
+                        launcher_waits.fetch_add(1, Ordering::SeqCst);
+                    }
+                },
+                {
+                    let alive = Arc::clone(&alive);
+                    let launch_calls = Arc::clone(&launch_calls);
+                    move |_| {
+                        let alive = Arc::clone(&alive);
+                        let launch_calls = Arc::clone(&launch_calls);
+                        Box::pin(async move {
+                            launch_calls.fetch_add(1, Ordering::SeqCst);
+                            alive.store(true, Ordering::SeqCst);
+                            Ok(true)
+                        })
+                    }
+                },
+            )
+            .await
+            .expect("ensure_running_with_launcher_lock should succeed");
+
+        assert!(started);
+        assert!(alive.load(Ordering::SeqCst));
+        assert_eq!(launcher_waits.load(Ordering::SeqCst), 1);
+        assert_eq!(launch_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(launcher_attempts.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn ensure_running_with_launcher_lock_recovers_when_daemon_lock_clears_before_ready() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().to_path_buf();
+        let manager = DaemonLifecycleManager {
+            launch_backoff: Duration::from_millis(5),
+            ready_timeout: Duration::from_millis(80),
+            ready_poll_interval: Duration::from_millis(10),
+        };
+        let alive = Arc::new(AtomicBool::new(false));
+        let daemon_lock = Arc::new(AtomicBool::new(true));
+        let launch_calls = Arc::new(AtomicUsize::new(0));
+        let launcher_lock_path = project_root.join("launcher.lock");
+
+        {
+            let daemon_lock = Arc::clone(&daemon_lock);
+            tokio::spawn(async move {
+                sleep(Duration::from_millis(25)).await;
+                daemon_lock.store(false, Ordering::SeqCst);
+            });
+        }
+
+        let started = manager
+            .ensure_running_with_launcher_lock(
+                &project_root,
+                {
+                    let alive = Arc::clone(&alive);
+                    move |_, _| alive.load(Ordering::SeqCst)
+                },
+                |_| {},
+                {
+                    let daemon_lock = Arc::clone(&daemon_lock);
+                    move |_| Ok(daemon_lock.load(Ordering::SeqCst))
+                },
+                {
+                    let launcher_lock_path = launcher_lock_path.clone();
+                    move |_| {
+                        Ok(Some(
+                            OpenOptions::new()
+                                .read(true)
+                                .write(true)
+                                .create(true)
+                                .truncate(false)
+                                .open(&launcher_lock_path)
+                                .expect("launcher lock should open"),
+                        ))
+                    }
+                },
+                |_| {},
+                {
+                    let alive = Arc::clone(&alive);
+                    let launch_calls = Arc::clone(&launch_calls);
+                    move |_| {
+                        let alive = Arc::clone(&alive);
+                        let launch_calls = Arc::clone(&launch_calls);
+                        Box::pin(async move {
+                            launch_calls.fetch_add(1, Ordering::SeqCst);
+                            alive.store(true, Ordering::SeqCst);
+                            Ok(true)
+                        })
+                    }
+                },
+            )
+            .await
+            .expect("ensure_running_with_launcher_lock should succeed");
+
+        assert!(started);
+        assert!(alive.load(Ordering::SeqCst));
+        assert_eq!(launch_calls.load(Ordering::SeqCst), 1);
     }
 }
