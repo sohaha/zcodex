@@ -14,6 +14,7 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 target_dir="${script_dir}/../../.cargo-target"
 compat_obj="${target_dir}/isoc23-compat.o"
+compat_lib_dir="${target_dir}/linker-lib-compat"
 
 ensure_isoc23_compat() {
   if nm -D /usr/lib/x86_64-linux-gnu/libc.so.6 2>/dev/null | grep -q "__isoc23_strtol"; then
@@ -63,12 +64,30 @@ if [ -f /usr/lib/x86_64-linux-gnu/libc.so.6 ] && ! nm -D /usr/lib/x86_64-linux-g
   extra_obj="${compat_obj}"
 fi
 
+ensure_stdcpp_compat() {
+  local system_lib="/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
+  local compat_lib="${compat_lib_dir}/libstdc++.so"
+
+  if [ -f /usr/lib/x86_64-linux-gnu/libstdc++.so ] || [ ! -f "${system_lib}" ]; then
+    return
+  fi
+
+  mkdir -p "${compat_lib_dir}"
+  ln -sf "${system_lib}" "${compat_lib}"
+}
+
+extra_link_args=()
+ensure_stdcpp_compat
+if [ -f "${compat_lib_dir}/libstdc++.so" ]; then
+  extra_link_args+=("-L${compat_lib_dir}")
+fi
+
 if command -v mold >/dev/null 2>&1; then
-  exec "${linker_cmd[@]}" -fuse-ld=mold "$@" ${extra_obj:+"$extra_obj"}
+  exec "${linker_cmd[@]}" -fuse-ld=mold "$@" ${extra_obj:+"$extra_obj"} "${extra_link_args[@]}"
 fi
 
 if command -v ld.lld >/dev/null 2>&1; then
-  exec "${linker_cmd[@]}" -fuse-ld=lld "$@" ${extra_obj:+"$extra_obj"}
+  exec "${linker_cmd[@]}" -fuse-ld=lld "$@" ${extra_obj:+"$extra_obj"} "${extra_link_args[@]}"
 fi
 
-exec "${linker_cmd[@]}" "$@" ${extra_obj:+"$extra_obj"}
+exec "${linker_cmd[@]}" "$@" ${extra_obj:+"$extra_obj"} "${extra_link_args[@]}"
