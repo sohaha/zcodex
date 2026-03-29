@@ -11,20 +11,24 @@ help:
 # `codex`
 alias c := codex
 codex *args:
+    export CARGO_TARGET_DIR="$(just target-dir run-codex)"; \
     cargo run --bin codex -- "$@"
 
 # `codex exec`
 exec *args:
+    export CARGO_TARGET_DIR="$(just target-dir run-codex-exec)"; \
     cargo run --bin codex -- exec "$@"
 
 # Run the CLI version of the file-search crate.
 file-search *args:
+    export CARGO_TARGET_DIR="$(just target-dir run-file-search)"; \
     cargo run --bin codex-file-search -- "$@"
 
 # Build the CLI and run the app-server test client
 app-server-test-client *args:
-    cargo build -p codex-cli
-    cargo run -p codex-app-server-test-client -- --codex-bin ./target/debug/codex "$@"
+    export CARGO_TARGET_DIR="$(just target-dir run-app-server-test-client)"; \
+    cargo build -p codex-cli; \
+    cargo run -p codex-app-server-test-client -- --codex-bin "$CARGO_TARGET_DIR/debug/codex" "$@"
 
 # format code
 fmt:
@@ -127,20 +131,25 @@ build-for-release:
 
 # Run the MCP server
 mcp-server-run *args:
+    export CARGO_TARGET_DIR="$(just target-dir run-mcp-server)"; \
     cargo run -p codex-mcp-server -- "$@"
 
 # Regenerate the json schema for config.toml from the current config types.
 write-config-schema:
+    export CARGO_TARGET_DIR="$(just target-dir run-write-config-schema)"; \
     cargo run -p codex-core --bin codex-write-config-schema
 
 # Regenerate vendored app-server protocol schema artifacts.
 write-app-server-schema *args:
+    export CARGO_TARGET_DIR="$(just target-dir run-write-app-server-schema)"; \
     cargo run -p codex-app-server-protocol --bin write_schema_fixtures -- "$@"
 
 [no-cd]
 write-hooks-schema:
+    export CARGO_TARGET_DIR="$(bash ./codex-rs/scripts/resolve-cargo-target-dir.sh run-write-hooks-schema)"; \
     cargo run --manifest-path ./codex-rs/Cargo.toml -p codex-hooks --bin write_hooks_schema_fixtures
 
 # Tail logs from the state SQLite database
 log *args:
+    export CARGO_TARGET_DIR="$(just target-dir run-log)"; \
     if [ "${1:-}" = "--" ]; then shift; fi; cargo run -p codex-state --bin logs_client -- "$@"
