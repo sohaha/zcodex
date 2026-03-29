@@ -14,6 +14,9 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+const SEMANTIC_PAYLOAD_MAX_MATCHES: usize = 20;
+const SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS: usize = 240;
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct TldrSemanticMatchView {
     pub path: PathBuf,
@@ -29,10 +32,21 @@ pub struct TldrSemanticMatchView {
 
 impl From<&SemanticMatch> for TldrSemanticMatchView {
     fn from(value: &SemanticMatch) -> Self {
+        let snippet = if value.snippet.chars().count() > SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS {
+            let mut snippet = value
+                .snippet
+                .chars()
+                .take(SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS)
+                .collect::<String>();
+            snippet.push_str("...");
+            snippet
+        } else {
+            value.snippet.clone()
+        };
         Self {
             path: value.path.clone(),
             line: value.line,
-            snippet: value.snippet.clone(),
+            snippet,
             symbol: value.unit.symbol.clone(),
             qualified_symbol: value.unit.qualified_symbol.clone(),
             kind: value.unit.kind.clone(),
@@ -57,6 +71,8 @@ pub struct TldrSemanticResponseView {
     #[serde(rename = "embeddingUsed")]
     pub embedding_used: bool,
     pub message: String,
+    #[serde(rename = "degradedMode", skip_serializing_if = "Option::is_none")]
+    pub degraded_mode: Option<TldrDegradedModeView>,
     pub matches: Vec<TldrSemanticMatchView>,
 }
 
@@ -68,6 +84,10 @@ impl TldrSemanticResponseView {
         source: &str,
         response: &SemanticSearchResponse,
     ) -> Self {
+        let payload_truncated = response.matches.len() > SEMANTIC_PAYLOAD_MAX_MATCHES
+            || response.matches.iter().any(|semantic_match| {
+                semantic_match.snippet.chars().count() > SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS
+            });
         Self {
             action: action.map(str::to_string),
             project: project_root.to_path_buf(),
@@ -76,16 +96,34 @@ impl TldrSemanticResponseView {
             query: response.query.clone(),
             enabled: response.enabled,
             indexed_files: response.indexed_files,
-            truncated: response.truncated,
+            truncated: response.truncated || payload_truncated,
             embedding_used: response.embedding_used,
             message: response.message.clone(),
+            degraded_mode: degraded_mode_for_source(source),
             matches: response
                 .matches
                 .iter()
+                .take(SEMANTIC_PAYLOAD_MAX_MATCHES)
                 .map(TldrSemanticMatchView::from)
                 .collect(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TldrStructuredFailureView {
+    pub error_type: String,
+    pub reason: String,
+    pub retryable: bool,
+    pub retry_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TldrDegradedModeView {
+    pub is_degraded: bool,
+    pub mode: String,
+    pub fallback_path: String,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -260,10 +298,15 @@ pub struct TldrDaemonResponseView {
     pub daemon_status: Option<TldrDaemonStatusView>,
     #[serde(rename = "reindexReport")]
     pub reindex_report: Option<TldrSemanticReindexReportView>,
+    #[serde(rename = "structuredFailure", skip_serializing_if = "Option::is_none")]
+    pub structured_failure: Option<TldrStructuredFailureView>,
+    #[serde(rename = "degradedMode", skip_serializing_if = "Option::is_none")]
+    pub degraded_mode: Option<TldrDegradedModeView>,
 }
 
 impl TldrDaemonResponseView {
     pub fn from_response(action: &str, project_root: &Path, response: &TldrDaemonResponse) -> Self {
+        let daemon_status = response.daemon_status.as_ref();
         Self {
             action: action.to_string(),
             project: project_root.to_path_buf(),
@@ -281,8 +324,64 @@ impl TldrDaemonResponseView {
                 .reindex_report
                 .as_ref()
                 .map(TldrSemanticReindexReportView::from),
+            structured_failure: daemon_status.and_then(structured_failure_for_daemon_status),
+            degraded_mode: daemon_status.and_then(degraded_mode_for_daemon_status),
         }
     }
+}
+
+fn degraded_mode_for_source(source: &str) -> Option<TldrDegradedModeView> {
+    if source == "local" {
+        Some(TldrDegradedModeView {
+            is_degraded: true,
+            mode: "local_fallback".to_string(),
+            fallback_path: "local".to_string(),
+            reason: Some("daemon-first path unavailable; used local engine".to_string()),
+        })
+    } else {
+        None
+    }
+}
+
+fn structured_failure_for_daemon_status(
+    status: &TldrDaemonStatus,
+) -> Option<TldrStructuredFailureView> {
+    if status.healthy {
+        return None;
+    }
+
+    let error_type = if status.stale_socket || status.stale_pid {
+        "stale_artifacts"
+    } else if status.lock_is_held {
+        "daemon_starting"
+    } else if !status.socket_exists && !status.pid_is_live {
+        "daemon_unavailable"
+    } else {
+        "daemon_unhealthy"
+    };
+
+    Some(TldrStructuredFailureView {
+        error_type: error_type.to_string(),
+        reason: status
+            .health_reason
+            .clone()
+            .unwrap_or_else(|| "native-tldr daemon is not healthy".to_string()),
+        retryable: true,
+        retry_hint: status.recovery_hint.clone(),
+    })
+}
+
+fn degraded_mode_for_daemon_status(status: &TldrDaemonStatus) -> Option<TldrDegradedModeView> {
+    if status.healthy {
+        return None;
+    }
+
+    Some(TldrDegradedModeView {
+        is_degraded: true,
+        mode: "diagnostic_only".to_string(),
+        fallback_path: "status_only".to_string(),
+        reason: status.health_reason.clone(),
+    })
 }
 
 pub fn semantic_payload(
@@ -315,6 +414,7 @@ pub fn daemon_response_payload(
 
 #[cfg(test)]
 mod tests {
+    use super::SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS;
     use super::daemon_response_payload;
     use super::semantic_payload;
     use crate::daemon::TldrDaemonResponse;
@@ -379,6 +479,7 @@ mod tests {
         );
 
         assert_eq!(payload["embeddingUsed"], true);
+        assert!(payload.get("degradedMode").is_none());
         assert_eq!(payload["matches"][0]["path"], "src/auth.rs");
         assert_eq!(payload["matches"][0]["symbol"], "verify_token");
         assert_eq!(
@@ -392,6 +493,150 @@ mod tests {
         );
         assert!(payload["matches"][0].get("unit").is_none());
         assert!(payload["matches"][0].get("embedding_text").is_none());
+    }
+
+    #[test]
+    fn semantic_payload_caps_match_count_and_marks_truncated() {
+        let matches = (0..25)
+            .map(|index| SemanticMatch {
+                score: index,
+                path: PathBuf::from(format!("src/auth_{index}.rs")),
+                line: index + 1,
+                snippet: format!("let auth_token_{index} = true;"),
+                unit: EmbeddingUnit {
+                    path: PathBuf::from(format!("src/auth_{index}.rs")),
+                    language: SupportedLanguage::Rust,
+                    symbol: Some(format!("verify_token_{index}")),
+                    qualified_symbol: Some(format!("auth::verify_token_{index}")),
+                    symbol_aliases: vec![format!("verify_token_{index}")],
+                    kind: "function".to_string(),
+                    line: index + 1,
+                    span_end_line: index + 2,
+                    module_path: vec!["auth".to_string()],
+                    visibility: Some("pub".to_string()),
+                    signature: Some(format!("pub fn verify_token_{index}() -> bool")),
+                    docs: Vec::new(),
+                    imports: Vec::new(),
+                    references: Vec::new(),
+                    code_preview: "fn verify_token() {}".to_string(),
+                    calls: Vec::new(),
+                    called_by: Vec::new(),
+                    dependencies: Vec::new(),
+                    cfg_summary: "cfg".to_string(),
+                    dfg_summary: "dfg".to_string(),
+                    embedding_vector: None,
+                },
+                embedding_text: "internal".to_string(),
+                embedding_score: Some(0.75),
+            })
+            .collect();
+        let response = SemanticSearchResponse {
+            enabled: true,
+            query: "auth token".to_string(),
+            indexed_files: 25,
+            truncated: false,
+            matches,
+            embedding_used: true,
+            message: "semantic search returned 25 matches".to_string(),
+        };
+
+        let payload = semantic_payload(
+            Some("semantic"),
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "daemon",
+            &response,
+        );
+
+        assert_eq!(payload["matches"].as_array().map(Vec::len), Some(20));
+        assert_eq!(payload["truncated"], true);
+    }
+
+    #[test]
+    fn semantic_payload_marks_local_source_as_degraded_mode() {
+        let response = SemanticSearchResponse {
+            enabled: true,
+            query: "auth token".to_string(),
+            indexed_files: 1,
+            truncated: false,
+            matches: Vec::new(),
+            embedding_used: false,
+            message: "local fallback".to_string(),
+        };
+
+        let payload = semantic_payload(
+            Some("semantic"),
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "local",
+            &response,
+        );
+
+        assert_eq!(payload["degradedMode"]["is_degraded"], true);
+        assert_eq!(payload["degradedMode"]["mode"], "local_fallback");
+        assert_eq!(payload["degradedMode"]["fallback_path"], "local");
+    }
+
+    #[test]
+    fn semantic_payload_truncates_long_snippets_and_marks_truncated() {
+        let long_snippet = "a".repeat(SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS + 50);
+        let response = SemanticSearchResponse {
+            enabled: true,
+            query: "auth token".to_string(),
+            indexed_files: 1,
+            truncated: false,
+            matches: vec![SemanticMatch {
+                score: 7,
+                path: PathBuf::from("src/auth.rs"),
+                line: 2,
+                snippet: long_snippet,
+                unit: EmbeddingUnit {
+                    path: PathBuf::from("src/auth.rs"),
+                    language: SupportedLanguage::Rust,
+                    symbol: Some("verify_token".to_string()),
+                    qualified_symbol: Some("auth::verify_token".to_string()),
+                    symbol_aliases: vec!["verify_token".to_string()],
+                    kind: "function".to_string(),
+                    line: 1,
+                    span_end_line: 4,
+                    module_path: vec!["auth".to_string()],
+                    visibility: Some("pub".to_string()),
+                    signature: Some("pub fn verify_token() -> bool".to_string()),
+                    docs: Vec::new(),
+                    imports: Vec::new(),
+                    references: Vec::new(),
+                    code_preview: "fn verify_token() {}".to_string(),
+                    calls: Vec::new(),
+                    called_by: Vec::new(),
+                    dependencies: Vec::new(),
+                    cfg_summary: "cfg".to_string(),
+                    dfg_summary: "dfg".to_string(),
+                    embedding_vector: None,
+                },
+                embedding_text: "internal".to_string(),
+                embedding_score: Some(0.75),
+            }],
+            embedding_used: true,
+            message: "semantic search returned 1 matches".to_string(),
+        };
+
+        let payload = semantic_payload(
+            Some("semantic"),
+            Path::new("/tmp/project"),
+            SupportedLanguage::Rust,
+            "daemon",
+            &response,
+        );
+        let snippet = payload["matches"][0]["snippet"]
+            .as_str()
+            .expect("snippet should serialize");
+
+        assert_eq!(
+            snippet.chars().count(),
+            SEMANTIC_PAYLOAD_MAX_SNIPPET_CHARS + 3
+        );
+        assert!(snippet.ends_with("..."));
+        assert_eq!(payload["truncated"], true);
     }
 
     #[test]
@@ -417,6 +662,8 @@ mod tests {
         assert_eq!(payload["message"], "pong");
         assert!(payload.get("analysis").is_none());
         assert!(payload.get("semantic").is_none());
+        assert!(payload.get("structuredFailure").is_none());
+        assert!(payload.get("degradedMode").is_none());
     }
 
     #[test]
@@ -546,6 +793,7 @@ mod tests {
 
         let payload = daemon_response_payload("status", Path::new("/tmp/project"), &response);
         assert_eq!(payload["daemonStatus"]["healthy"], true);
+        assert!(payload.get("structuredFailure").is_none());
         assert_eq!(
             payload["daemonStatus"]["config"]["session_idle_timeout_secs"],
             1800
@@ -561,5 +809,60 @@ mod tests {
             payload["snapshot"]["last_reindex_attempt"]["status"],
             "Completed"
         );
+    }
+
+    #[test]
+    fn daemon_response_payload_surfaces_structured_failure_for_unhealthy_status() {
+        let response = TldrDaemonResponse {
+            status: "ok".to_string(),
+            message: "status".to_string(),
+            analysis: None,
+            imports: None,
+            importers: None,
+            search: None,
+            diagnostics: None,
+            semantic: None,
+            snapshot: None,
+            daemon_status: Some(crate::daemon::TldrDaemonStatus {
+                project_root: PathBuf::from("/tmp/project"),
+                socket_path: PathBuf::from("/tmp/project.sock"),
+                pid_path: PathBuf::from("/tmp/project.pid"),
+                lock_path: PathBuf::from("/tmp/project.lock"),
+                socket_exists: false,
+                pid_is_live: false,
+                lock_is_held: false,
+                healthy: false,
+                stale_socket: false,
+                stale_pid: false,
+                health_reason: Some("daemon missing".to_string()),
+                recovery_hint: Some("start the daemon".to_string()),
+                semantic_reindex_pending: false,
+                semantic_reindex_in_progress: false,
+                last_query_at: None,
+                config: crate::daemon::TldrDaemonConfigSummary {
+                    auto_start: true,
+                    socket_mode: "unix".to_string(),
+                    semantic_enabled: true,
+                    semantic_auto_reindex_threshold: 20,
+                    session_dirty_file_threshold: 20,
+                    session_idle_timeout_secs: 1800,
+                },
+            }),
+            reindex_report: None,
+        };
+
+        let payload = daemon_response_payload("status", Path::new("/tmp/project"), &response);
+
+        assert_eq!(
+            payload["structuredFailure"]["error_type"],
+            "daemon_unavailable"
+        );
+        assert_eq!(payload["structuredFailure"]["retryable"], true);
+        assert_eq!(
+            payload["structuredFailure"]["retry_hint"],
+            "start the daemon"
+        );
+        assert_eq!(payload["degradedMode"]["is_degraded"], true);
+        assert_eq!(payload["degradedMode"]["mode"], "diagnostic_only");
     }
 }
