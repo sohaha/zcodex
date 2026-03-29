@@ -321,6 +321,21 @@ fn build_request_rejects_unknown_required_tool_choice() {
 }
 
 #[test]
+fn build_request_rejects_unsupported_tool_choice() {
+    let mut request = request_with_tools(Vec::new(), Vec::new());
+    request.tool_choice = "required_by_default".to_string();
+
+    let Err(err) = build_request_with_stream(&request, /*stream*/ false) else {
+        panic!("unsupported tool_choice should be rejected");
+    };
+    assert!(matches!(
+        err,
+        ApiError::InvalidRequest { message }
+            if message == "chat completions does not support tool_choice required_by_default"
+    ));
+}
+
+#[test]
 fn build_request_rejects_hosted_tools() {
     for tool_type in ["web_search", "image_generation"] {
         let request = request_with_tools(vec![json!({ "type": tool_type })], Vec::new());

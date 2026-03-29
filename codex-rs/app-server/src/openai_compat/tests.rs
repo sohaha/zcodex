@@ -434,6 +434,46 @@ async fn chat_wire_api_rejects_unknown_named_required_tool_choice() {
 }
 
 #[tokio::test]
+async fn chat_wire_api_rejects_unsupported_tool_choice() {
+    let response = proxy_request(
+        chat_state("http://127.0.0.1:1/v1".to_string()),
+        Method::POST,
+        CompatEndpoint::Responses,
+        None,
+        HeaderMap::new(),
+        Some(
+            json!({
+                "model": "gpt-chat",
+                "instructions": "system",
+                "input": [{
+                    "type": "message",
+                    "role": "user",
+                    "content": [{ "type": "input_text", "text": "hello" }]
+                }],
+                "tools": [],
+                "tool_choice": "required_by_default",
+                "parallel_tool_calls": false,
+                "store": false,
+                "stream": false,
+                "include": []
+            })
+            .to_string(),
+        ),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let body: Value = serde_json::from_slice(&body).expect("json body");
+    assert_eq!(
+        body["error"]["message"],
+        "failed to translate /v1/responses request into /v1/chat/completions: invalid_request: chat completions does not support tool_choice required_by_default"
+    );
+}
+
+#[tokio::test]
 async fn chat_wire_api_rejects_hosted_tools_when_translating_responses() {
     let response = proxy_request(
         chat_state("http://127.0.0.1:1/v1".to_string()),
