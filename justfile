@@ -1,6 +1,9 @@
 set working-directory := "codex-rs"
 set positional-arguments
 
+target-dir slot:
+    bash ./scripts/resolve-cargo-target-dir.sh "{{slot}}"
+
 # Display help
 help:
     just -l
@@ -27,10 +30,14 @@ app-server-test-client *args:
 fmt:
     cargo fmt -- --config imports_granularity=Item 2>/dev/null
 
+# 为不同 cargo 流程分配独立 target 子目录，减少多会话并发时的 build lock。
+# 如需把同一条命令再拆到独立 lane，可额外设置 `CODEX_CARGO_LANE=<name>`。
 fix *args:
+    export CARGO_TARGET_DIR="$(just target-dir fix)"; \
     cargo clippy --fix --tests --allow-dirty "$@"
 
 clippy *args:
+    export CARGO_TARGET_DIR="$(just target-dir clippy)"; \
     cargo clippy --tests "$@"
 
 install:
@@ -49,7 +56,7 @@ test:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
+    export CARGO_TARGET_DIR="$(just target-dir nextest-workspace)"; \
     cargo nextest run --no-fail-fast
 
 # Fast local loop for codex-core. Uses more disk for build caches to reduce
@@ -59,7 +66,7 @@ core-test-fast *args:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
+    export CARGO_TARGET_DIR="$(just target-dir nextest-core)"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-core --no-fail-fast --test all "$@"; \
     else \
@@ -73,7 +80,7 @@ app-server-test-fast *args:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
+    export CARGO_TARGET_DIR="$(just target-dir nextest-app-server)"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-app-server --no-fail-fast --test all "$@"; \
     else \
@@ -87,7 +94,7 @@ native-tldr-test-fast *args:
       export RUSTC_WRAPPER="${RUSTC_WRAPPER:-sccache}"; \
       export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
     fi; \
-    export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-/workspace/.cargo-target}"; \
+    export CARGO_TARGET_DIR="$(just target-dir nextest-native-tldr)"; \
     if cargo nextest --version >/dev/null 2>&1; then \
       cargo nextest run -p codex-native-tldr --no-fail-fast "$@"; \
     else \
