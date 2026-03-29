@@ -93,6 +93,12 @@ codex zmemory doctor --json
 2. 再看 `doctor` 判断是否存在需要优先修复的告警。
 3. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
 
+## memory skill 参考
+
+- 根级 skill `memory` 里详细记录了 recall/capture/refine/linking/review/handoff 的最小编排（见 `.codex/skills/memory/SKILL.md`）。
+- 任何时候想直接复用 CLI 示例，可参考 `.codex/skills/memory/references/cli-recipes.md`，按已实现的 `codex zmemory` 命令顺序排列。
+- 需要一个 review 复核清单时，可参阅 `.codex/skills/memory/references/review-playbook.md` 中列出的 `stats`/`doctor`/`export` 流程。
+
 ## 创建语义
 
 `zmemory` 支持两种路径创建模式：

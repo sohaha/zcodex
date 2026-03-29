@@ -64,3 +64,8 @@ description: 在当前仓库中编排 zmemory 的 recall、capture、refine、li
 - 不扩到 daemon / REST / 独立 admin 服务
 - 不替换项目现有 handoff 机制
 - 不把 upstream `.codex/skills/memory/` 整包复制进来
+
+## 引用
+
+- `[references/cli-recipes.md](references/cli-recipes.md)`：与当前 `codex zmemory` CLI 完全一致的命令示例，按 recall/capture/refine/linking/review 组织。
+- `[references/review-playbook.md](references/review-playbook.md)`：当前 review 顺序与清单，直接调用 `stats`/`doctor`/`export` 等动作。
