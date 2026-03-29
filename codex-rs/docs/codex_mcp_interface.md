@@ -178,9 +178,54 @@ Typical inputs:
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, and `summary`.
 For `extract`, the analysis payload also includes the requested `path`, and `analysis.kind` is reported as `extract`.
 For `slice`, the analysis payload includes `path`, `line`, `analysis.kind = "slice"`, plus `analysis.details.slice_target` and `analysis.details.slice_lines` for the current backward slice result.
-For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `source`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata. `source` is either `daemon` (cached `SemanticIndex`) or `local`. The tool now projects a stable public match shape and does **not** expose internal fields such as `unit` or `embedding_text` by default.
-For `status`, the structured output includes `snapshot`, `daemonStatus`, and the latest `reindexReport` for the most recent semantic reindex attempt. `snapshot.last_reindex` remains the latest completed reindex, while `snapshot.last_reindex_attempt` can also surface a failed `warm` attempt. `daemonStatus` details `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons.
+For `semantic`, the structured output includes `enabled`, `indexedFiles`, `truncated`, `embeddingUsed`, `source`, `matches`, and per-match `path`/`line`/`snippet`/`embedding_score` metadata. `source` is either `daemon` (cached `SemanticIndex`) or `local`. When `source = "local"`, the payload also includes `degradedMode` so clients can tell this was a local fallback rather than a healthy daemon hit. The tool projects a stable public match shape and does **not** expose internal fields such as `unit` or `embedding_text` by default.
+For `status`, the structured output includes `snapshot`, `daemonStatus`, and the latest `reindexReport` for the most recent semantic reindex attempt. `snapshot.last_reindex` remains the latest completed reindex, while `snapshot.last_reindex_attempt` can also surface a failed `warm` attempt. `daemonStatus` details `lock_is_held`, `semantic_reindex_pending`, `health_reason`, `recovery_hint`, `socket_exists`, and PID/socket liveness so clients can distinguish live, stale, or launching daemons. When the daemon is unhealthy, the payload additionally includes `structuredFailure` and `degradedMode`.
 The output schema is modeled as a union of three result families: analysis (`structure|extract|context|impact|cfg|dfg|slice`), `semantic`, and daemon (`ping|warm|snapshot|status|notify`).
+
+Structured reliability fields:
+
+- `structuredFailure.error_type`: machine-readable error class such as `daemon_unavailable`, `daemon_starting`, `stale_artifacts`
+- `structuredFailure.reason`: current failure reason
+- `structuredFailure.retryable`: whether a retry is reasonable
+- `structuredFailure.retry_hint`: operator / agent hint
+- `degradedMode.is_degraded`: whether the current result is degraded
+- `degradedMode.mode`: degradation mode such as `local_fallback`, `diagnostic_only`, `unavailable`
+- `degradedMode.fallback_path`: fallback path actually used
+
+Example degraded semantic response excerpt:
+
+```json
+{
+  "action": "semantic",
+  "source": "local",
+  "degradedMode": {
+    "is_degraded": true,
+    "mode": "local_fallback",
+    "fallback_path": "local",
+    "reason": "daemon-first path unavailable; used local engine"
+  }
+}
+```
+
+Example unhealthy daemon status excerpt:
+
+```json
+{
+  "action": "status",
+  "status": "ok",
+  "structuredFailure": {
+    "error_type": "daemon_unavailable",
+    "reason": "daemon missing",
+    "retryable": true,
+    "retry_hint": "start the daemon"
+  },
+  "degradedMode": {
+    "is_degraded": true,
+    "mode": "diagnostic_only",
+    "fallback_path": "status_only"
+  }
+}
+```
 
 ## Approvals (server -> client)
 

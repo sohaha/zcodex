@@ -1,5 +1,8 @@
+use crate::daemon::DegradedMode;
+use crate::daemon::StructuredFailure;
 use crate::daemon::TldrDaemonCommand;
 use crate::daemon::TldrDaemonResponse;
+use crate::daemon::daemon_health;
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -17,6 +20,13 @@ use tokio::time::sleep;
 pub type QueryFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<TldrDaemonResponse>>> + Send + 'a>>;
 pub type LaunchFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DaemonReadyResult {
+    pub ready: bool,
+    pub structured_failure: Option<StructuredFailure>,
+    pub degraded_mode: Option<DegradedMode>,
+}
 
 pub struct DaemonLifecycleManager {
     launch_backoff: Duration,
@@ -72,36 +82,56 @@ impl DaemonLifecycleManager {
         A: Fn(&Path) -> bool,
         C: Fn(&Path),
     {
+        Ok(self
+            .ensure_running_detailed(project_root, is_alive, cleanup, launch)
+            .await?
+            .ready)
+    }
+
+    pub async fn ensure_running_detailed<L, A, C>(
+        &self,
+        project_root: &Path,
+        is_alive: A,
+        cleanup: C,
+        launch: L,
+    ) -> Result<DaemonReadyResult>
+    where
+        L: for<'a> Fn(&'a Path) -> LaunchFuture<'a>,
+        A: Fn(&Path) -> bool,
+        C: Fn(&Path),
+    {
         if is_alive(project_root) {
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
 
         let key = project_key(project_root);
         if wait_for_existing_launch(&key).await {
-            return Ok(self.wait_until_alive(project_root, &is_alive).await);
+            let ready = self.wait_until_alive(project_root, &is_alive).await;
+            return Ok(daemon_ready_result(project_root, ready));
         }
         if self.should_backoff(&key) {
-            return Ok(false);
+            return Ok(daemon_ready_result(project_root, false));
         }
 
         let _tracker = LaunchTracker::new(key.clone());
         if is_alive(project_root) {
             self.clear_backoff(&key);
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
 
         cleanup(project_root);
         if is_alive(project_root) {
             self.clear_backoff(&key);
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
 
         if launch(project_root).await? {
             self.clear_backoff(&key);
-            return Ok(self.wait_until_alive(project_root, &is_alive).await);
+            let ready = self.wait_until_alive(project_root, &is_alive).await;
+            return Ok(daemon_ready_result(project_root, ready));
         }
         self.record_launch_failure(&key);
-        Ok(false)
+        Ok(daemon_ready_result(project_root, false))
     }
 
     pub async fn ensure_running_with_launcher_lock<L, A, C, D, O, W>(
@@ -122,8 +152,40 @@ impl DaemonLifecycleManager {
         O: Fn(&Path) -> Result<Option<File>>,
         W: Fn(&Path),
     {
+        Ok(self
+            .ensure_running_with_launcher_lock_detailed(
+                project_root,
+                is_alive,
+                cleanup,
+                daemon_lock_is_held,
+                try_open_launcher_lock,
+                on_launcher_wait,
+                launch,
+            )
+            .await?
+            .ready)
+    }
+
+    pub async fn ensure_running_with_launcher_lock_detailed<L, A, C, D, O, W>(
+        &self,
+        project_root: &Path,
+        is_alive: A,
+        cleanup: C,
+        daemon_lock_is_held: D,
+        try_open_launcher_lock: O,
+        on_launcher_wait: W,
+        launch: L,
+    ) -> Result<DaemonReadyResult>
+    where
+        L: for<'a> Fn(&'a Path) -> LaunchFuture<'a>,
+        A: Fn(&Path, bool) -> bool,
+        C: Fn(&Path),
+        D: Fn(&Path) -> Result<bool>,
+        O: Fn(&Path) -> Result<Option<File>>,
+        W: Fn(&Path),
+    {
         if is_alive(project_root, false) {
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
 
         let key = project_key(project_root);
@@ -132,25 +194,26 @@ impl DaemonLifecycleManager {
                 .wait_until_alive_with_launcher_lock(project_root, &is_alive, true)
                 .await
             {
-                return Ok(true);
+                return Ok(daemon_ready_result(project_root, true));
             }
             if daemon_lock_is_held(project_root)? {
-                return Ok(false);
+                return Ok(daemon_ready_result(project_root, false));
             }
         }
         if wait_for_existing_launch(&key).await {
-            return Ok(self
+            let ready = self
                 .wait_until_alive_with_launcher_lock(project_root, &is_alive, false)
-                .await);
+                .await;
+            return Ok(daemon_ready_result(project_root, ready));
         }
         if self.should_backoff(&key) {
-            return Ok(false);
+            return Ok(daemon_ready_result(project_root, false));
         }
 
         let _tracker = LaunchTracker::new(key.clone());
         if is_alive(project_root, false) {
             self.clear_backoff(&key);
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
 
         let _launcher_lock = if let Some(launcher_lock) = try_open_launcher_lock(project_root)? {
@@ -162,7 +225,7 @@ impl DaemonLifecycleManager {
                 .await
             {
                 self.clear_backoff(&key);
-                return Ok(true);
+                return Ok(daemon_ready_result(project_root, true));
             }
             if daemon_lock_is_held(project_root)? {
                 if self
@@ -170,43 +233,45 @@ impl DaemonLifecycleManager {
                     .await
                 {
                     self.clear_backoff(&key);
-                    return Ok(true);
+                    return Ok(daemon_ready_result(project_root, true));
                 }
                 if daemon_lock_is_held(project_root)? {
-                    return Ok(false);
+                    return Ok(daemon_ready_result(project_root, false));
                 }
             }
             let Some(launcher_lock) = try_open_launcher_lock(project_root)? else {
-                return Ok(false);
+                return Ok(daemon_ready_result(project_root, false));
             };
             launcher_lock
         };
 
         if is_alive(project_root, true) {
             self.clear_backoff(&key);
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
 
         cleanup(project_root);
         if is_alive(project_root, true) {
             self.clear_backoff(&key);
-            return Ok(true);
+            return Ok(daemon_ready_result(project_root, true));
         }
         if daemon_lock_is_held(project_root)? {
             self.clear_backoff(&key);
-            return Ok(self
+            let ready = self
                 .wait_until_alive_with_launcher_lock(project_root, &is_alive, true)
-                .await);
+                .await;
+            return Ok(daemon_ready_result(project_root, ready));
         }
 
         if launch(project_root).await? {
             self.clear_backoff(&key);
-            return Ok(self
+            let ready = self
                 .wait_until_alive_with_launcher_lock(project_root, &is_alive, true)
-                .await);
+                .await;
+            return Ok(daemon_ready_result(project_root, ready));
         }
         self.record_launch_failure(&key);
-        Ok(false)
+        Ok(daemon_ready_result(project_root, false))
     }
 
     async fn wait_until_alive<A>(&self, project_root: &Path, is_alive: &A) -> bool
@@ -258,6 +323,17 @@ impl DaemonLifecycleManager {
     }
 }
 
+fn daemon_ready_result(project_root: &Path, ready: bool) -> DaemonReadyResult {
+    let health = daemon_health(project_root).ok();
+    DaemonReadyResult {
+        ready,
+        structured_failure: health
+            .as_ref()
+            .and_then(|value| value.structured_failure.clone()),
+        degraded_mode: health.and_then(|value| value.degraded_mode),
+    }
+}
+
 async fn wait_for_existing_launch(key: &str) -> bool {
     if !lock_map(&LAUNCHING_PROJECTS).contains(key) {
         return false;
@@ -305,6 +381,8 @@ fn lock_map<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::DaemonLifecycleManager;
+    use crate::daemon::DegradedModeKind;
+    use crate::daemon::StructuredFailureKind;
     use crate::daemon::TldrDaemonCommand;
     use crate::daemon::TldrDaemonResponse;
     use pretty_assertions::assert_eq;
@@ -615,6 +693,32 @@ mod tests {
 
         assert!(started);
         assert!(alive.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn ensure_running_detailed_reports_structured_failure_when_launch_fails() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let manager = DaemonLifecycleManager::new(Duration::from_millis(5));
+
+        let result = manager
+            .ensure_running_detailed(
+                tempdir.path(),
+                |_| false,
+                |_| {},
+                |_| Box::pin(async move { Ok(false) }),
+            )
+            .await
+            .expect("ensure_running_detailed should succeed");
+
+        assert_eq!(result.ready, false);
+        assert_eq!(
+            result.structured_failure.map(|failure| failure.kind),
+            Some(StructuredFailureKind::DaemonUnavailable)
+        );
+        assert_eq!(
+            result.degraded_mode.map(|mode| mode.kind),
+            Some(DegradedModeKind::DiagnosticOnly)
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

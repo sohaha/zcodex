@@ -88,6 +88,23 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 - semantic / status 对外 schema 已收口到稳定 view；更激进的 payload 控制仍可继续增强
 - semantic embedding 的 ONNX Runtime 现改为运行时动态加载；构建时不再静态链接预编译 ORT，但执行 semantic embedding 前需要让 `libonnxruntime.so` 可被动态加载器找到，或设置 `ORT_DYLIB_PATH=/path/to/libonnxruntime.so`
 
+## agent-first 指引
+
+- 参考说明：`../../docs/tldr-agent-first-guidance/tool-description.md`
+- 当问题属于结构化代码理解、依赖关系、影响分析、诊断、语义搜索时，应优先考虑 `tldr`
+- 当结果含有 `degradedMode` 时，说明当前结果是降级路径，不应当作 daemon 正常成功
+- 当结果含有 `structuredFailure` 时，应读取：
+  - `error_type`
+  - `reason`
+  - `retryable`
+  - `retry_hint`
+
+当前对外约定：
+
+- `semantic` 在 `source = "local"` 时，会额外返回 `degradedMode`
+- daemon 结果中只要带有 `daemonStatus` 且其处于不健康状态，就会额外返回 `structuredFailure` 与 `degradedMode`
+- 这些字段属于稳定 wire contract，对 MCP/CLI JSON 消费方开放
+
 ## 后续方向
 
 - 继续补 daemon 崩溃/残留 artifact/权限异常的压力回归

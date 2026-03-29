@@ -145,6 +145,35 @@ pub struct TldrDaemonConfigSummary {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StructuredFailureKind {
+    DaemonUnavailable,
+    DaemonStarting,
+    StaleSocket,
+    StalePid,
+    DaemonUnhealthy,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StructuredFailure {
+    pub kind: StructuredFailureKind,
+    pub reason: String,
+    pub retryable: bool,
+    pub retry_hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum DegradedModeKind {
+    DiagnosticOnly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DegradedMode {
+    pub kind: DegradedModeKind,
+    pub fallback_path: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TldrDaemonStatus {
     pub project_root: PathBuf,
     pub socket_path: PathBuf,
@@ -158,6 +187,8 @@ pub struct TldrDaemonStatus {
     pub stale_pid: bool,
     pub health_reason: Option<String>,
     pub recovery_hint: Option<String>,
+    pub structured_failure: Option<StructuredFailure>,
+    pub degraded_mode: Option<DegradedMode>,
     pub semantic_reindex_pending: bool,
     pub semantic_reindex_in_progress: bool,
     pub last_query_at: Option<std::time::SystemTime>,
@@ -175,6 +206,8 @@ pub struct DaemonHealth {
     pub stale_pid: bool,
     pub health_reason: Option<String>,
     pub recovery_hint: Option<String>,
+    pub structured_failure: Option<StructuredFailure>,
+    pub degraded_mode: Option<DegradedMode>,
 }
 
 impl DaemonHealth {
@@ -218,6 +251,13 @@ impl TldrDaemon {
             TldrDaemonCommand::Warm => {
                 let mut session = self.session.lock().await;
                 let outcome = warm_with_reindex(&mut session, &self.engine);
+                let base_snapshot = session.snapshot();
+                let daemon_status =
+                    build_daemon_status(&self.project_root, self.engine.config(), &base_snapshot)?;
+                session.record_runtime_signals(
+                    daemon_status.structured_failure.clone(),
+                    daemon_status.degraded_mode.is_some(),
+                );
                 let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
                     status: "ok".to_string(),
@@ -229,11 +269,7 @@ impl TldrDaemon {
                     diagnostics: None,
                     semantic: None,
                     snapshot: Some(snapshot.clone()),
-                    daemon_status: Some(build_daemon_status(
-                        &self.project_root,
-                        self.engine.config(),
-                        &snapshot,
-                    )?),
+                    daemon_status: Some(daemon_status),
                     reindex_report: outcome.reindex_report,
                 })
             }
@@ -335,7 +371,12 @@ impl TldrDaemon {
                 })
             }
             TldrDaemonCommand::Snapshot => {
-                let session = self.session.lock().await;
+                let mut session = self.session.lock().await;
+                let health = daemon_health(&self.project_root)?;
+                session.record_runtime_signals(
+                    health.structured_failure,
+                    health.degraded_mode.is_some(),
+                );
                 Ok(TldrDaemonResponse {
                     analysis: None,
                     imports: None,
@@ -347,7 +388,14 @@ impl TldrDaemon {
                 })
             }
             TldrDaemonCommand::Status => {
-                let session = self.session.lock().await;
+                let mut session = self.session.lock().await;
+                let base_snapshot = session.snapshot();
+                let daemon_status =
+                    build_daemon_status(&self.project_root, self.engine.config(), &base_snapshot)?;
+                session.record_runtime_signals(
+                    daemon_status.structured_failure.clone(),
+                    daemon_status.degraded_mode.is_some(),
+                );
                 let snapshot = session.snapshot();
                 Ok(TldrDaemonResponse {
                     analysis: None,
@@ -357,11 +405,7 @@ impl TldrDaemon {
                     diagnostics: None,
                     snapshot: Some(snapshot.clone()),
                     reindex_report: session.last_reindex_attempt_report(),
-                    daemon_status: Some(build_daemon_status(
-                        &self.project_root,
-                        self.engine.config(),
-                        &snapshot,
-                    )?),
+                    daemon_status: Some(daemon_status),
                     ..TldrDaemonResponse::ok("status")
                 })
             }
@@ -1144,7 +1188,7 @@ pub fn daemon_health(project_root: &Path) -> Result<DaemonHealth> {
     let lock_is_held = daemon_lock_is_held(project_root)?;
     let launch_lock_is_held = launch_lock_is_held(project_root)?;
     let healthy = socket_exists && pid_is_live;
-    let (health_reason, recovery_hint) = if healthy {
+    let (structured_failure, degraded_mode) = if healthy {
         (None, None)
     } else {
         health_diagnostics(
@@ -1154,6 +1198,12 @@ pub fn daemon_health(project_root: &Path) -> Result<DaemonHealth> {
             launch_lock_is_held,
         )
     };
+    let health_reason = structured_failure
+        .as_ref()
+        .map(|failure| failure.reason.clone());
+    let recovery_hint = structured_failure
+        .as_ref()
+        .and_then(|failure| failure.retry_hint.clone());
     Ok(DaemonHealth {
         socket_exists,
         pid_is_live,
@@ -1164,6 +1214,8 @@ pub fn daemon_health(project_root: &Path) -> Result<DaemonHealth> {
         stale_pid: !socket_exists && pid_is_live,
         health_reason,
         recovery_hint,
+        structured_failure,
+        degraded_mode,
     })
 }
 
@@ -1172,34 +1224,90 @@ fn health_diagnostics(
     pid_is_live: bool,
     lock_is_held: bool,
     launch_lock_is_held: bool,
-) -> (Option<String>, Option<String>) {
+) -> (Option<StructuredFailure>, Option<DegradedMode>) {
     if socket_exists && !pid_is_live {
         return (
-            Some("stale socket without live daemon".to_string()),
-            Some("remove stale socket/pid files and restart the daemon".to_string()),
+            Some(StructuredFailure {
+                kind: StructuredFailureKind::StaleSocket,
+                reason: "stale socket without live daemon".to_string(),
+                retryable: true,
+                retry_hint: Some(
+                    "remove stale socket/pid files and restart the daemon".to_string(),
+                ),
+            }),
+            Some(DegradedMode {
+                kind: DegradedModeKind::DiagnosticOnly,
+                fallback_path: "status_only".to_string(),
+                reason: Some("daemon metadata is stale".to_string()),
+            }),
         );
     }
     if !socket_exists && pid_is_live {
         return (
-            Some("pid file exists but socket is missing".to_string()),
-            Some("cleanup pid/socket files before restarting the daemon".to_string()),
+            Some(StructuredFailure {
+                kind: StructuredFailureKind::StalePid,
+                reason: "pid file exists but socket is missing".to_string(),
+                retryable: true,
+                retry_hint: Some(
+                    "cleanup pid/socket files before restarting the daemon".to_string(),
+                ),
+            }),
+            Some(DegradedMode {
+                kind: DegradedModeKind::DiagnosticOnly,
+                fallback_path: "status_only".to_string(),
+                reason: Some("daemon metadata is stale".to_string()),
+            }),
         );
     }
     if launch_lock_is_held {
         return (
-            Some("daemon launch lock held; another process is starting it".to_string()),
-            Some("wait for the launcher to finish before cleaning up artifacts".to_string()),
+            Some(StructuredFailure {
+                kind: StructuredFailureKind::DaemonStarting,
+                reason: "daemon launch lock held; another process is starting it".to_string(),
+                retryable: true,
+                retry_hint: Some(
+                    "wait for the launcher to finish before cleaning up artifacts".to_string(),
+                ),
+            }),
+            Some(DegradedMode {
+                kind: DegradedModeKind::DiagnosticOnly,
+                fallback_path: "status_only".to_string(),
+                reason: Some("daemon startup is in progress".to_string()),
+            }),
         );
     }
     if lock_is_held {
         return (
-            Some("daemon lock held; another process may be starting it".to_string()),
-            Some("wait for the existing daemon or release the lock manually".to_string()),
+            Some(StructuredFailure {
+                kind: StructuredFailureKind::DaemonStarting,
+                reason: "daemon lock held; another process may be starting it".to_string(),
+                retryable: true,
+                retry_hint: Some(
+                    "wait for the existing daemon or release the lock manually".to_string(),
+                ),
+            }),
+            Some(DegradedMode {
+                kind: DegradedModeKind::DiagnosticOnly,
+                fallback_path: "status_only".to_string(),
+                reason: Some("daemon startup is in progress".to_string()),
+            }),
         );
     }
     (
-        Some("daemon unavailable (missing socket and pid)".to_string()),
-        Some("run `codex tldr ...` to auto-start the internal daemon or inspect logs".to_string()),
+        Some(StructuredFailure {
+            kind: StructuredFailureKind::DaemonUnavailable,
+            reason: "daemon unavailable (missing socket and pid)".to_string(),
+            retryable: true,
+            retry_hint: Some(
+                "run `codex tldr ...` to auto-start the internal daemon or inspect logs"
+                    .to_string(),
+            ),
+        }),
+        Some(DegradedMode {
+            kind: DegradedModeKind::DiagnosticOnly,
+            fallback_path: "status_only".to_string(),
+            reason: Some("daemon-only actions cannot proceed without a live daemon".to_string()),
+        }),
     )
 }
 
@@ -1258,6 +1366,8 @@ fn build_daemon_status(
         stale_pid: health.stale_pid,
         health_reason: health.health_reason.clone(),
         recovery_hint: health.recovery_hint,
+        structured_failure: health.structured_failure,
+        degraded_mode: health.degraded_mode,
         semantic_reindex_pending,
         semantic_reindex_in_progress: background_reindex_in_progress,
         last_query_at: snapshot.last_query_at,
@@ -1844,6 +1954,8 @@ mod tests {
                 last_reindex: None,
                 last_reindex_attempt: None,
                 last_warm: None,
+                last_structured_failure: None,
+                degraded_mode_active: false,
             })
         );
     }

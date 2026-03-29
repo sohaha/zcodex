@@ -1291,6 +1291,24 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "embedding_dimensions": { "type": "integer" }
               }
             },
+            "structuredFailure": {
+              "type": ["object", "null"],
+              "properties": {
+                "error_type": { "type": "string" },
+                "reason": { "type": "string" },
+                "retryable": { "type": "boolean" },
+                "retry_hint": { "type": ["string", "null"] }
+              }
+            },
+            "degradedMode": {
+              "type": ["object", "null"],
+              "properties": {
+                "is_degraded": { "type": "boolean" },
+                "mode": { "type": "string" },
+                "fallback_path": { "type": "string" },
+                "reason": { "type": ["string", "null"] }
+              }
+            },
             "semantic": {
               "type": "object",
               "properties": {
@@ -1300,6 +1318,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "truncated": { "type": "boolean" },
                 "embeddingUsed": { "type": "boolean" },
                 "message": { "type": "string" },
+                "degradedMode": { "$ref": "#/$defs/degradedMode" },
                 "matches": {
                   "type": "array",
                     "items": {
@@ -1394,6 +1413,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "truncated",
                 "embeddingUsed",
                 "message",
+                "degradedMode",
                 "matches",
                 "semantic"
               ]
@@ -1619,6 +1639,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 "project": { "type": "string" },
                 "status": { "type": "string" },
                 "message": { "type": "string" },
+                "structuredFailure": { "$ref": "#/$defs/structuredFailure" },
+                "degradedMode": { "$ref": "#/$defs/degradedMode" },
                 "snapshot": {
                   "type": "object",
                   "properties": {
@@ -1630,6 +1652,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                     "last_query_at": { "type": ["string", "null"] },
                     "last_reindex": { "$ref": "#/$defs/reindexReport" },
                     "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" },
+                    "lastStructuredFailure": { "$ref": "#/$defs/structuredFailure" },
+                    "degradedModeActive": { "type": "boolean" },
                     "last_warm": {
                       "type": "object",
                       "properties": {
@@ -1660,6 +1684,8 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                     "stale_pid": { "type": "boolean" },
                     "health_reason": { "type": ["string", "null"] },
                     "recovery_hint": { "type": ["string", "null"] },
+                    "structuredFailure": { "$ref": "#/$defs/structuredFailure" },
+                    "degradedMode": { "$ref": "#/$defs/degradedMode" },
                     "semantic_reindex_pending": { "type": "boolean" },
                     "semantic_reindex_in_progress": { "type": "boolean" },
                     "last_query_at": { "type": ["string", "null"] },
@@ -1678,7 +1704,7 @@ pub fn tldr_tool_output_schema() -> serde_json::Value {
                 },
                 "reindexReport": { "$ref": "#/$defs/reindexReport" }
               },
-              "required": ["action", "project", "status", "message"]
+              "required": ["action", "project", "status", "message", "structuredFailure", "degradedMode"]
             }
           },
           "oneOf": [
@@ -1703,6 +1729,10 @@ mod tests {
     use super::TldrToolLanguage;
     use super::action_name;
     use super::run_tldr_tool_with_hooks;
+    use crate::daemon::DegradedMode;
+    use crate::daemon::DegradedModeKind;
+    use crate::daemon::StructuredFailure;
+    use crate::daemon::StructuredFailureKind;
     use crate::daemon::TldrDaemonConfigSummary;
     use crate::daemon::TldrDaemonResponse;
     use crate::daemon::TldrDaemonStatus;
@@ -1787,6 +1817,14 @@ mod tests {
         assert_eq!(result.structured_content["action"], "ping");
         assert_eq!(result.structured_content["status"], "ok");
         assert_eq!(result.structured_content["message"], "pong");
+        assert_eq!(
+            result.structured_content["structuredFailure"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            result.structured_content["degradedMode"],
+            serde_json::Value::Null
+        );
     }
 
     #[tokio::test]
@@ -1832,6 +1870,14 @@ mod tests {
         assert_eq!(result.structured_content["action"], "status");
         assert_eq!(result.structured_content["status"], "ok");
         assert_eq!(result.structured_content["message"], "status");
+        assert_eq!(
+            result.structured_content["structuredFailure"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            result.structured_content["degradedMode"],
+            serde_json::Value::Null
+        );
     }
 
     #[tokio::test]
@@ -1872,6 +1918,8 @@ mod tests {
                             last_reindex: None,
                             last_reindex_attempt: None,
                             last_warm: None,
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1926,6 +1974,8 @@ mod tests {
                             last_reindex: None,
                             last_reindex_attempt: None,
                             last_warm: None,
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -2358,6 +2408,8 @@ mod tests {
                                 message: "warm loaded 1 language indexes into daemon cache"
                                     .to_string(),
                             }),
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: Some(TldrDaemonStatus {
                             project_root: PathBuf::from("/tmp/project"),
@@ -2372,6 +2424,8 @@ mod tests {
                             stale_pid: false,
                             health_reason: None,
                             recovery_hint: None,
+                            structured_failure: None,
+                            degraded_mode: None,
                             semantic_reindex_pending: false,
                             semantic_reindex_in_progress: false,
                             last_query_at: Some(SystemTime::UNIX_EPOCH),
@@ -2395,6 +2449,14 @@ mod tests {
 
         assert_eq!(result.structured_content["daemonStatus"]["healthy"], true);
         assert_eq!(
+            result.structured_content["structuredFailure"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            result.structured_content["degradedMode"],
+            serde_json::Value::Null
+        );
+        assert_eq!(
             result.structured_content["daemonStatus"]["config"]["session_idle_timeout_secs"],
             1800
         );
@@ -2409,6 +2471,96 @@ mod tests {
         assert_eq!(
             result.structured_content["snapshot"]["last_reindex"]["status"],
             "Completed"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_tldr_tool_with_hooks_surfaces_structured_failure_for_unhealthy_status() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let result = run_tldr_tool_with_hooks(
+            TldrToolCallParam {
+                action: TldrToolAction::Status,
+                project: Some(tempdir.path().display().to_string()),
+                language: None,
+                symbol: None,
+                query: None,
+                module: None,
+                path: None,
+                line: None,
+                paths: None,
+                ..Default::default()
+            },
+            |_project_root, _command| {
+                Box::pin(async move {
+                    Ok(Some(TldrDaemonResponse {
+                        status: "ok".to_string(),
+                        message: "status".to_string(),
+                        analysis: None,
+                        imports: None,
+                        importers: None,
+                        search: None,
+                        diagnostics: None,
+                        semantic: None,
+                        snapshot: None,
+                        daemon_status: Some(TldrDaemonStatus {
+                            project_root: PathBuf::from("/tmp/project"),
+                            socket_path: PathBuf::from("/tmp/project.sock"),
+                            pid_path: PathBuf::from("/tmp/project.pid"),
+                            lock_path: PathBuf::from("/tmp/project.lock"),
+                            socket_exists: false,
+                            pid_is_live: false,
+                            lock_is_held: false,
+                            healthy: false,
+                            stale_socket: false,
+                            stale_pid: false,
+                            health_reason: Some("daemon missing".to_string()),
+                            recovery_hint: Some("start the daemon".to_string()),
+                            structured_failure: Some(StructuredFailure {
+                                kind: StructuredFailureKind::DaemonUnavailable,
+                                reason: "daemon missing".to_string(),
+                                retryable: true,
+                                retry_hint: Some("start the daemon".to_string()),
+                            }),
+                            degraded_mode: Some(DegradedMode {
+                                kind: DegradedModeKind::DiagnosticOnly,
+                                fallback_path: "status_only".to_string(),
+                                reason: Some(
+                                    "daemon-only actions cannot proceed without a live daemon"
+                                        .to_string(),
+                                ),
+                            }),
+                            semantic_reindex_pending: false,
+                            semantic_reindex_in_progress: false,
+                            last_query_at: None,
+                            config: TldrDaemonConfigSummary {
+                                auto_start: true,
+                                socket_mode: "unix".to_string(),
+                                semantic_enabled: true,
+                                semantic_auto_reindex_threshold: 20,
+                                session_dirty_file_threshold: 20,
+                                session_idle_timeout_secs: 1800,
+                            },
+                        }),
+                        reindex_report: None,
+                    }))
+                })
+            },
+            |_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await
+        .expect("status tool should succeed");
+
+        assert_eq!(
+            result.structured_content["structuredFailure"]["error_type"],
+            "daemon_unavailable"
+        );
+        assert_eq!(
+            result.structured_content["degradedMode"]["mode"],
+            "diagnostic_only"
+        );
+        assert_eq!(
+            result.structured_content["structuredFailure"]["retry_hint"],
+            "start the daemon"
         );
     }
 

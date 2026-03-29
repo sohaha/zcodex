@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use crate::api::AnalysisResponse;
+use crate::daemon::StructuredFailure;
 use crate::lang_support::SupportedLanguage;
 use crate::semantic::SemanticReindexReport;
 
@@ -45,6 +46,8 @@ pub struct SessionSnapshot {
     pub last_reindex: Option<SemanticReindexReport>,
     pub last_reindex_attempt: Option<SemanticReindexReport>,
     pub last_warm: Option<WarmReport>,
+    pub last_structured_failure: Option<StructuredFailure>,
+    pub degraded_mode_active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -77,6 +80,8 @@ pub struct Session {
     last_reindex: Option<SemanticReindexReport>,
     last_reindex_attempt: Option<SemanticReindexReport>,
     last_warm: Option<WarmReport>,
+    last_structured_failure: Option<StructuredFailure>,
+    degraded_mode_active: bool,
 }
 
 impl Session {
@@ -92,6 +97,8 @@ impl Session {
             last_reindex: None,
             last_reindex_attempt: None,
             last_warm: None,
+            last_structured_failure: None,
+            degraded_mode_active: false,
         }
     }
 
@@ -162,7 +169,18 @@ impl Session {
             last_reindex: self.last_reindex.clone(),
             last_reindex_attempt: self.last_reindex_attempt.clone(),
             last_warm: self.last_warm.clone(),
+            last_structured_failure: self.last_structured_failure.clone(),
+            degraded_mode_active: self.degraded_mode_active,
         }
+    }
+
+    pub fn record_runtime_signals(
+        &mut self,
+        structured_failure: Option<StructuredFailure>,
+        degraded_mode_active: bool,
+    ) {
+        self.last_structured_failure = structured_failure;
+        self.degraded_mode_active = degraded_mode_active;
     }
 
     pub fn complete_reindex(&mut self, report: SemanticReindexReport) {
@@ -225,6 +243,8 @@ mod tests {
     use crate::SupportedLanguage;
     use crate::api::AnalysisKind;
     use crate::api::AnalysisResponse;
+    use crate::daemon::StructuredFailure;
+    use crate::daemon::StructuredFailureKind;
     use crate::semantic::SemanticReindexReport;
     use pretty_assertions::assert_eq;
     use std::path::PathBuf;
@@ -313,5 +333,24 @@ mod tests {
         let snapshot = session.snapshot();
         assert_eq!(snapshot.last_reindex, Some(completed));
         assert_eq!(snapshot.last_reindex_attempt, Some(failed));
+    }
+
+    #[test]
+    fn record_runtime_signals_persists_last_structured_failure_in_snapshot() {
+        let mut session = Session::new(SessionConfig {
+            idle_timeout: Duration::from_secs(60),
+            dirty_file_threshold: 1,
+        });
+        let failure = StructuredFailure {
+            kind: StructuredFailureKind::DaemonUnavailable,
+            reason: "daemon missing".to_string(),
+            retryable: true,
+            retry_hint: Some("start daemon".to_string()),
+        };
+
+        session.record_runtime_signals(Some(failure.clone()), true);
+
+        assert_eq!(session.snapshot().last_structured_failure, Some(failure));
+        assert_eq!(session.snapshot().degraded_mode_active, true);
     }
 }

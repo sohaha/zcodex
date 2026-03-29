@@ -326,6 +326,7 @@ mod tests {
     use super::ensure_daemon_running;
     use super::launcher_lock_is_held;
     use super::run_tldr_tool_with_mcp_hooks;
+    use super::try_open_launcher_lock;
     use codex_native_tldr::daemon::TldrDaemonCommand;
     use codex_native_tldr::daemon::TldrDaemonResponse;
     use codex_native_tldr::daemon::pid_path_for_project;
@@ -1447,6 +1448,8 @@ mod tests {
                             last_reindex: None,
                             last_reindex_attempt: None,
                             last_warm: None,
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1507,6 +1510,8 @@ mod tests {
                             last_reindex: None,
                             last_reindex_attempt: None,
                             last_warm: None,
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1568,6 +1573,8 @@ mod tests {
                             last_reindex: None,
                             last_reindex_attempt: None,
                             last_warm: None,
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: None,
                         reindex_report: None,
@@ -1654,6 +1661,8 @@ mod tests {
                                 message: "warm loaded 1 language indexes into daemon cache"
                                     .to_string(),
                             }),
+                            last_structured_failure: None,
+                            degraded_mode_active: false,
                         }),
                         daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                             project_root: std::path::PathBuf::from("/tmp/project"),
@@ -1668,6 +1677,8 @@ mod tests {
                             stale_pid: false,
                             health_reason: None,
                             recovery_hint: None,
+                            structured_failure: None,
+                            degraded_mode: None,
                             semantic_reindex_pending: false,
                             semantic_reindex_in_progress: false,
                             last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
@@ -1905,6 +1916,26 @@ mod tests {
 
         assert!(!lock_is_held);
         assert!(lock_path.exists());
+    }
+
+    #[test]
+    fn try_open_launcher_lock_errors_when_parent_path_is_blocked_by_file() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("blocked-launch-lock-project");
+        let lock_path = codex_native_tldr::daemon::launch_lock_path_for_project(&project_root);
+        create_artifact_parent(&lock_path);
+        std::fs::create_dir_all(&lock_path).expect("lock path directory should be created");
+
+        let error = try_open_launcher_lock(&project_root)
+            .expect_err("directory at launcher lock path should error");
+
+        assert!(
+            error.to_string().contains("directory")
+                || error.to_string().contains("Is a directory")
+                || error.to_string().contains("create")
+                || error.to_string().contains("open"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

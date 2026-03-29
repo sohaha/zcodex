@@ -101,6 +101,24 @@ fn bind_test_unix_listener(socket_path: &Path) -> anyhow::Result<UnixListener> {
     Ok(UnixListener::bind(socket_path)?)
 }
 
+#[cfg(feature = "tldr")]
+fn prepare_local_only_tldr_project(project_root: &Path) -> anyhow::Result<()> {
+    let socket_path = socket_path_for_project(project_root);
+    if socket_path.exists() {
+        std::fs::remove_file(&socket_path)?;
+    }
+    let pid_path = codex_native_tldr::daemon::pid_path_for_project(project_root);
+    if pid_path.exists() {
+        std::fs::remove_file(&pid_path)?;
+    }
+    std::fs::create_dir_all(project_root.join(".codex"))?;
+    std::fs::write(
+        project_root.join(".codex/tldr.toml"),
+        "[daemon]\nauto_start = false\n",
+    )?;
+    Ok(())
+}
+
 /// Test that a shell command that is not on the "trusted" list triggers an
 /// elicitation request to the MCP and that sending the approval runs the
 /// command, as expected.
@@ -712,6 +730,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -747,6 +767,10 @@ mod tldr_tests {
             mcp_process.read_stream_until_response_message(RequestId::Number(request_id)),
         )
         .await??;
+        eprintln!(
+            "structure response={}",
+            serde_json::to_string(&response.result)?
+        );
 
         let structured = response.result["structuredContent"]
             .as_object()
@@ -833,15 +857,18 @@ mod tldr_tests {
     }
 
     async fn tldr_tool_structure_exposes_graph_detail_kinds() -> anyhow::Result<()> {
+        let _guard = tldr_artifact_test_guard();
         let McpHandle {
             process: mut mcp_process,
             server: _server,
             dir: _dir,
         } = create_mcp_process(Vec::new()).await?;
         let project = TempDir::new()?;
-        std::fs::create_dir_all(project.path().join("src"))?;
+        let canonical_project = project.path().canonicalize()?;
+        prepare_local_only_tldr_project(&canonical_project)?;
+        std::fs::create_dir_all(canonical_project.join("src"))?;
         std::fs::write(
-            project.path().join("src/main.rs"),
+            canonical_project.join("src/main.rs"),
             "use crate::auth::Session;\n\nfn helper(session: Session) {}\nfn main() { helper(todo!()); }\n",
         )?;
 
@@ -851,7 +878,7 @@ mod tldr_tests {
                 Some(
                     serde_json::json!({
                         "action": "structure",
-                        "project": project.path(),
+                        "project": canonical_project,
                         "language": "rust"
                     })
                     .as_object()
@@ -941,6 +968,7 @@ mod tldr_tests {
             canonical_project.join("src/main.rs"),
             "use crate::auth::Session;\n\nfn helper(session: Session) {}\nfn main() { helper(todo!()); }\n",
         )?;
+        prepare_local_only_tldr_project(&canonical_project)?;
 
         let expected_analysis = codex_native_tldr::TldrEngine::builder(canonical_project.clone())
             .with_config(TldrConfig::for_project(canonical_project.clone()))
@@ -1022,6 +1050,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -1084,6 +1114,7 @@ mod tldr_tests {
             canonical_project.join("src/main.rs"),
             "fn helper() {}\nfn main() { helper(); }\n",
         )?;
+        prepare_local_only_tldr_project(&canonical_project)?;
 
         let expected_analysis = codex_native_tldr::TldrEngine::builder(canonical_project.clone())
             .with_config(TldrConfig::for_project(canonical_project.clone()))
@@ -1125,7 +1156,6 @@ mod tldr_tests {
             response.result["structuredContent"].clone()
         };
 
-        let socket_path = socket_path_for_project(&canonical_project);
         if socket_path.exists() {
             std::fs::remove_file(&socket_path)?;
         }
@@ -1167,6 +1197,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -1230,6 +1262,7 @@ mod tldr_tests {
             canonical_project.join("src/main.rs"),
             "fn helper() {}\nfn main() { helper(); }\n",
         )?;
+        prepare_local_only_tldr_project(&canonical_project)?;
 
         let expected_analysis = codex_native_tldr::TldrEngine::builder(canonical_project.clone())
             .with_config(TldrConfig::for_project(canonical_project.clone()))
@@ -1272,9 +1305,6 @@ mod tldr_tests {
         };
 
         let socket_path = socket_path_for_project(&canonical_project);
-        if socket_path.exists() {
-            std::fs::remove_file(&socket_path)?;
-        }
         let listener = bind_test_unix_listener(&socket_path)?;
         let daemon_analysis = expected_analysis.clone();
         let server_handle = task::spawn(async move {
@@ -1313,6 +1343,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -1739,6 +1771,8 @@ mod tldr_tests {
                                     last_query_at: None,
                                     last_reindex: None,
                                     last_reindex_attempt: None,
+                                    last_structured_failure: None,
+                                    degraded_mode_active: false,
                                 }),
                                 daemon_status: None,
                                 reindex_report: None,
@@ -1766,6 +1800,8 @@ mod tldr_tests {
                                 last_query_at: None,
                                 last_reindex: None,
                                 last_reindex_attempt: Some(failed_report.clone()),
+                                last_structured_failure: None,
+                                degraded_mode_active: false,
                             }),
                             daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                                 project_root: canonical_project_for_server.clone(),
@@ -1786,6 +1822,8 @@ mod tldr_tests {
                                 recovery_hint: Some(
                                     "remove stale socket/pid files and restart the daemon".into(),
                                 ),
+                                structured_failure: None,
+                                degraded_mode: None,
                                 semantic_reindex_pending: true,
                                 semantic_reindex_in_progress: false,
                                 last_query_at: None,
@@ -1822,6 +1860,8 @@ mod tldr_tests {
                                 last_query_at: None,
                                 last_reindex: None,
                                 last_reindex_attempt: Some(failed_report.clone()),
+                                last_structured_failure: None,
+                                degraded_mode_active: false,
                             }),
                             daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                                 project_root: canonical_project_for_server.clone(),
@@ -1842,6 +1882,8 @@ mod tldr_tests {
                                 recovery_hint: Some(
                                     "remove stale socket/pid files and restart the daemon".into(),
                                 ),
+                                structured_failure: None,
+                                degraded_mode: None,
                                 semantic_reindex_pending: true,
                                 semantic_reindex_in_progress: false,
                                 last_query_at: None,
@@ -2000,6 +2042,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -2104,6 +2148,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -2200,6 +2246,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -2294,6 +2342,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: None,
                 reindex_report: None,
@@ -2475,6 +2525,8 @@ mod tldr_tests {
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
+                    last_structured_failure: None,
+                    degraded_mode_active: false,
                 }),
                 daemon_status: Some(codex_native_tldr::daemon::TldrDaemonStatus {
                     project_root: canonical_project_for_server.clone(),
@@ -2497,6 +2549,8 @@ mod tldr_tests {
                     recovery_hint: Some(
                         "wait for the existing daemon or release the lock manually".into(),
                     ),
+                    structured_failure: None,
+                    degraded_mode: None,
                     semantic_reindex_pending: false,
                     semantic_reindex_in_progress: false,
                     last_query_at: None,

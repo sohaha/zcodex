@@ -1,3 +1,7 @@
+use crate::daemon::DegradedMode;
+use crate::daemon::DegradedModeKind;
+use crate::daemon::StructuredFailure;
+use crate::daemon::StructuredFailureKind;
 use crate::daemon::TldrDaemonConfigSummary;
 use crate::daemon::TldrDaemonResponse;
 use crate::daemon::TldrDaemonStatus;
@@ -71,7 +75,7 @@ pub struct TldrSemanticResponseView {
     #[serde(rename = "embeddingUsed")]
     pub embedding_used: bool,
     pub message: String,
-    #[serde(rename = "degradedMode", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "degradedMode")]
     pub degraded_mode: Option<TldrDegradedModeView>,
     pub matches: Vec<TldrSemanticMatchView>,
 }
@@ -118,12 +122,34 @@ pub struct TldrStructuredFailureView {
     pub retry_hint: Option<String>,
 }
 
+impl From<&StructuredFailure> for TldrStructuredFailureView {
+    fn from(value: &StructuredFailure) -> Self {
+        Self {
+            error_type: structured_failure_kind_name(&value.kind).to_string(),
+            reason: value.reason.clone(),
+            retryable: value.retryable,
+            retry_hint: value.retry_hint.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct TldrDegradedModeView {
     pub is_degraded: bool,
     pub mode: String,
     pub fallback_path: String,
     pub reason: Option<String>,
+}
+
+impl From<&DegradedMode> for TldrDegradedModeView {
+    fn from(value: &DegradedMode) -> Self {
+        Self {
+            is_degraded: true,
+            mode: degraded_mode_kind_name(&value.kind).to_string(),
+            fallback_path: value.fallback_path.clone(),
+            reason: value.reason.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -220,6 +246,10 @@ pub struct TldrSessionSnapshotView {
     pub last_reindex: Option<TldrSemanticReindexReportView>,
     pub last_reindex_attempt: Option<TldrSemanticReindexReportView>,
     pub last_warm: Option<TldrWarmReportView>,
+    #[serde(rename = "lastStructuredFailure")]
+    pub last_structured_failure: Option<TldrStructuredFailureView>,
+    #[serde(rename = "degradedModeActive")]
+    pub degraded_mode_active: bool,
 }
 
 impl From<&SessionSnapshot> for TldrSessionSnapshotView {
@@ -240,6 +270,11 @@ impl From<&SessionSnapshot> for TldrSessionSnapshotView {
                 .as_ref()
                 .map(TldrSemanticReindexReportView::from),
             last_warm: value.last_warm.as_ref().map(TldrWarmReportView::from),
+            last_structured_failure: value
+                .last_structured_failure
+                .as_ref()
+                .map(TldrStructuredFailureView::from),
+            degraded_mode_active: value.degraded_mode_active,
         }
     }
 }
@@ -258,6 +293,10 @@ pub struct TldrDaemonStatusView {
     pub stale_pid: bool,
     pub health_reason: Option<String>,
     pub recovery_hint: Option<String>,
+    #[serde(rename = "structuredFailure")]
+    pub structured_failure: Option<TldrStructuredFailureView>,
+    #[serde(rename = "degradedMode")]
+    pub degraded_mode: Option<TldrDegradedModeView>,
     pub semantic_reindex_pending: bool,
     pub semantic_reindex_in_progress: bool,
     pub last_query_at: Option<SystemTime>,
@@ -279,6 +318,11 @@ impl From<&TldrDaemonStatus> for TldrDaemonStatusView {
             stale_pid: value.stale_pid,
             health_reason: value.health_reason.clone(),
             recovery_hint: value.recovery_hint.clone(),
+            structured_failure: value
+                .structured_failure
+                .as_ref()
+                .map(TldrStructuredFailureView::from),
+            degraded_mode: value.degraded_mode.as_ref().map(TldrDegradedModeView::from),
             semantic_reindex_pending: value.semantic_reindex_pending,
             semantic_reindex_in_progress: value.semantic_reindex_in_progress,
             last_query_at: value.last_query_at,
@@ -298,9 +342,9 @@ pub struct TldrDaemonResponseView {
     pub daemon_status: Option<TldrDaemonStatusView>,
     #[serde(rename = "reindexReport")]
     pub reindex_report: Option<TldrSemanticReindexReportView>,
-    #[serde(rename = "structuredFailure", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "structuredFailure")]
     pub structured_failure: Option<TldrStructuredFailureView>,
-    #[serde(rename = "degradedMode", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "degradedMode")]
     pub degraded_mode: Option<TldrDegradedModeView>,
 }
 
@@ -324,8 +368,12 @@ impl TldrDaemonResponseView {
                 .reindex_report
                 .as_ref()
                 .map(TldrSemanticReindexReportView::from),
-            structured_failure: daemon_status.and_then(structured_failure_for_daemon_status),
-            degraded_mode: daemon_status.and_then(degraded_mode_for_daemon_status),
+            structured_failure: daemon_status
+                .and_then(|status| status.structured_failure.as_ref())
+                .map(TldrStructuredFailureView::from),
+            degraded_mode: daemon_status
+                .and_then(|status| status.degraded_mode.as_ref())
+                .map(TldrDegradedModeView::from),
         }
     }
 }
@@ -343,45 +391,20 @@ fn degraded_mode_for_source(source: &str) -> Option<TldrDegradedModeView> {
     }
 }
 
-fn structured_failure_for_daemon_status(
-    status: &TldrDaemonStatus,
-) -> Option<TldrStructuredFailureView> {
-    if status.healthy {
-        return None;
+fn structured_failure_kind_name(kind: &StructuredFailureKind) -> &'static str {
+    match kind {
+        StructuredFailureKind::DaemonUnavailable => "daemon_unavailable",
+        StructuredFailureKind::DaemonStarting => "daemon_starting",
+        StructuredFailureKind::StaleSocket => "stale_socket",
+        StructuredFailureKind::StalePid => "stale_pid",
+        StructuredFailureKind::DaemonUnhealthy => "daemon_unhealthy",
     }
-
-    let error_type = if status.stale_socket || status.stale_pid {
-        "stale_artifacts"
-    } else if status.lock_is_held {
-        "daemon_starting"
-    } else if !status.socket_exists && !status.pid_is_live {
-        "daemon_unavailable"
-    } else {
-        "daemon_unhealthy"
-    };
-
-    Some(TldrStructuredFailureView {
-        error_type: error_type.to_string(),
-        reason: status
-            .health_reason
-            .clone()
-            .unwrap_or_else(|| "native-tldr daemon is not healthy".to_string()),
-        retryable: true,
-        retry_hint: status.recovery_hint.clone(),
-    })
 }
 
-fn degraded_mode_for_daemon_status(status: &TldrDaemonStatus) -> Option<TldrDegradedModeView> {
-    if status.healthy {
-        return None;
+fn degraded_mode_kind_name(kind: &DegradedModeKind) -> &'static str {
+    match kind {
+        DegradedModeKind::DiagnosticOnly => "diagnostic_only",
     }
-
-    Some(TldrDegradedModeView {
-        is_degraded: true,
-        mode: "diagnostic_only".to_string(),
-        fallback_path: "status_only".to_string(),
-        reason: status.health_reason.clone(),
-    })
 }
 
 pub fn semantic_payload(
@@ -422,6 +445,7 @@ mod tests {
     use crate::semantic::EmbeddingUnit;
     use crate::semantic::SemanticMatch;
     use crate::semantic::SemanticSearchResponse;
+    use serde_json::Value;
     use std::path::Path;
     use std::path::PathBuf;
 
@@ -479,7 +503,7 @@ mod tests {
         );
 
         assert_eq!(payload["embeddingUsed"], true);
-        assert!(payload.get("degradedMode").is_none());
+        assert_eq!(payload["degradedMode"], Value::Null);
         assert_eq!(payload["matches"][0]["path"], "src/auth.rs");
         assert_eq!(payload["matches"][0]["symbol"], "verify_token");
         assert_eq!(
@@ -662,8 +686,8 @@ mod tests {
         assert_eq!(payload["message"], "pong");
         assert!(payload.get("analysis").is_none());
         assert!(payload.get("semantic").is_none());
-        assert!(payload.get("structuredFailure").is_none());
-        assert!(payload.get("degradedMode").is_none());
+        assert_eq!(payload["structuredFailure"], Value::Null);
+        assert_eq!(payload["degradedMode"], Value::Null);
     }
 
     #[test]
@@ -710,6 +734,8 @@ mod tests {
                 last_reindex: None,
                 last_reindex_attempt: None,
                 last_warm: None,
+                last_structured_failure: None,
+                degraded_mode_active: false,
             }),
             daemon_status: None,
             reindex_report: None,
@@ -762,6 +788,8 @@ mod tests {
                     finished_at: std::time::SystemTime::UNIX_EPOCH,
                     message: "warm loaded 1 language indexes into daemon cache".to_string(),
                 }),
+                last_structured_failure: None,
+                degraded_mode_active: false,
             }),
             daemon_status: Some(crate::daemon::TldrDaemonStatus {
                 project_root: PathBuf::from("/tmp/project"),
@@ -776,6 +804,8 @@ mod tests {
                 stale_pid: false,
                 health_reason: None,
                 recovery_hint: None,
+                structured_failure: None,
+                degraded_mode: None,
                 semantic_reindex_pending: false,
                 semantic_reindex_in_progress: true,
                 last_query_at: Some(std::time::SystemTime::UNIX_EPOCH),
@@ -793,7 +823,8 @@ mod tests {
 
         let payload = daemon_response_payload("status", Path::new("/tmp/project"), &response);
         assert_eq!(payload["daemonStatus"]["healthy"], true);
-        assert!(payload.get("structuredFailure").is_none());
+        assert_eq!(payload["structuredFailure"], Value::Null);
+        assert_eq!(payload["degradedMode"], Value::Null);
         assert_eq!(
             payload["daemonStatus"]["config"]["session_idle_timeout_secs"],
             1800
@@ -836,6 +867,19 @@ mod tests {
                 stale_pid: false,
                 health_reason: Some("daemon missing".to_string()),
                 recovery_hint: Some("start the daemon".to_string()),
+                structured_failure: Some(crate::daemon::StructuredFailure {
+                    kind: crate::daemon::StructuredFailureKind::DaemonUnavailable,
+                    reason: "daemon missing".to_string(),
+                    retryable: true,
+                    retry_hint: Some("start the daemon".to_string()),
+                }),
+                degraded_mode: Some(crate::daemon::DegradedMode {
+                    kind: crate::daemon::DegradedModeKind::DiagnosticOnly,
+                    fallback_path: "status_only".to_string(),
+                    reason: Some(
+                        "daemon-only actions cannot proceed without a live daemon".to_string(),
+                    ),
+                }),
                 semantic_reindex_pending: false,
                 semantic_reindex_in_progress: false,
                 last_query_at: None,
