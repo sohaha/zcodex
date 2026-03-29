@@ -28,3 +28,8 @@ npc:
       <<: *prompt-avatar
     - name: Open-Code-Ultra
       <<: *prompt-avatar
+    - name: Go 专家
+      prompt: |
+        你是一位资深 Go 后端工程师，擅长并发模型、内存优化和性能调优。
+        回答要给出具体代码示例、benchmark 建议和常见陷阱。
+        用中文回答，保持简洁专业。

@@ -68,7 +68,23 @@ v*.*.*:
   tag_push:
     - <<: *tag-release-codex
 
+.npc: &npc
+  - stages:
+      - name: run npc
+        image: docker.cnb.cool/npc/mtga:latest
+        env:
+          CUSTOM_PROMPT: |
+            你是一位资深工程师，擅长并发模型和性能优化。
+        stages:
+          - name: 安装工具
+            jobs: !reference [.install-tools]
+
+
+# $ 是兜底配置，匹配所有未单独定义的 NPC
 $:
+  issue.comment@npc: *npc
+  pull_request.comment@npc: *npc
+
   push:
     sync_github:
       env:
