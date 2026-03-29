@@ -603,7 +603,7 @@ mod tldr_tests {
                 "tldr",
                 Some(
                     serde_json::json!({
-                        "action": "tree",
+                        "action": "structure",
                         "project": project.path(),
                         "language": "rust",
                         "symbol": "main"
@@ -625,12 +625,12 @@ mod tldr_tests {
             response.result,
             json!({
                 "content": [{
-                    "text": format!("tree rust via local: {summary}"),
+                    "text": format!("structure rust via local: {summary}"),
                     "type": "text"
                 }],
                 "isError": false,
                 "structuredContent": {
-                    "action": "tree",
+                    "action": "structure",
                     "analysis": {
                         "kind": "ast",
                         "summary": summary,
@@ -691,12 +691,18 @@ mod tldr_tests {
                     summary: "daemon summary".to_string(),
                     details: None,
                 }),
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 0,
                     dirty_files: 0,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -720,7 +726,7 @@ mod tldr_tests {
             .send_named_tool_call(
                 "tldr",
                 Some(serde_json::Map::from_iter([
-                    ("action".to_string(), json!("tree")),
+                    ("action".to_string(), json!("structure")),
                     (
                         "project".to_string(),
                         json!(canonical_project.to_string_lossy()),
@@ -742,7 +748,7 @@ mod tldr_tests {
         assert_eq!(structured["source"], "daemon");
         assert_eq!(structured["summary"], "daemon summary");
         assert_eq!(structured["message"], "daemon");
-        assert_eq!(structured["action"], "tree");
+        assert_eq!(structured["action"], "structure");
         assert_eq!(structured["analysis"]["kind"], "ast");
         assert_eq!(structured["analysis"]["summary"], "daemon summary");
 
@@ -833,7 +839,7 @@ mod tldr_tests {
                 "tldr",
                 Some(
                     serde_json::json!({
-                        "action": "tree",
+                        "action": "structure",
                         "project": project.path(),
                         "language": "rust"
                     })
@@ -931,6 +937,9 @@ mod tldr_tests {
             .analyze(codex_native_tldr::api::AnalysisRequest {
                 kind: AnalysisKind::Ast,
                 language: SupportedLanguage::Rust,
+                path: None,
+                line: None,
+                paths: Vec::new(),
                 symbol: None,
             })?;
 
@@ -944,7 +953,7 @@ mod tldr_tests {
                 .send_named_tool_call(
                     "tldr",
                     Some(serde_json::Map::from_iter([
-                        ("action".to_string(), json!("tree")),
+                        ("action".to_string(), json!("structure")),
                         (
                             "project".to_string(),
                             json!(canonical_project.to_string_lossy()),
@@ -987,12 +996,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "daemon".to_string(),
                 analysis: Some(daemon_analysis),
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 0,
                     dirty_files: 0,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -1016,7 +1031,7 @@ mod tldr_tests {
                 .send_named_tool_call(
                     "tldr",
                     Some(serde_json::Map::from_iter([
-                        ("action".to_string(), json!("tree")),
+                        ("action".to_string(), json!("structure")),
                         (
                             "project".to_string(),
                             json!(canonical_project.to_string_lossy()),
@@ -1065,6 +1080,9 @@ mod tldr_tests {
             .analyze(codex_native_tldr::api::AnalysisRequest {
                 kind: AnalysisKind::CallGraph,
                 language: SupportedLanguage::Rust,
+                path: None,
+                line: None,
+                paths: Vec::new(),
                 symbol: Some("helper".to_string()),
             })?;
 
@@ -1123,12 +1141,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "daemon".to_string(),
                 analysis: Some(daemon_analysis),
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 0,
                     dirty_files: 0,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -1202,6 +1226,9 @@ mod tldr_tests {
             .analyze(codex_native_tldr::api::AnalysisRequest {
                 kind: AnalysisKind::Pdg,
                 language: SupportedLanguage::Rust,
+                path: None,
+                line: None,
+                paths: Vec::new(),
                 symbol: Some("helper".to_string()),
             })?;
 
@@ -1260,12 +1287,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "daemon".to_string(),
                 analysis: Some(daemon_analysis),
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 0,
                     dirty_files: 0,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -1353,6 +1386,10 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "semantic from daemon".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
                     enabled: true,
                     query: "auth token".to_string(),
@@ -1778,12 +1815,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "warmed".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 5,
                     dirty_files: 1,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -1876,12 +1919,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "notify ok".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 0,
                     dirty_files: 2,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -1966,12 +2015,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "snapshot ok".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 7,
                     dirty_files: 0,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -2054,12 +2109,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "pong".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 0,
                     dirty_files: 0,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -2203,12 +2264,18 @@ mod tldr_tests {
                 status: "ok".to_string(),
                 message: "status".to_string(),
                 analysis: None,
+                imports: None,
+                importers: None,
+                search: None,
+                diagnostics: None,
                 semantic: None,
                 snapshot: Some(SessionSnapshot {
                     cached_entries: 2,
                     dirty_files: 1,
                     dirty_file_threshold: 20,
                     reindex_pending: false,
+                    background_reindex_in_progress: false,
+                    last_warm: None,
                     last_query_at: None,
                     last_reindex: None,
                     last_reindex_attempt: None,
@@ -2235,6 +2302,7 @@ mod tldr_tests {
                         "wait for the existing daemon or release the lock manually".into(),
                     ),
                     semantic_reindex_pending: false,
+                    semantic_reindex_in_progress: false,
                     last_query_at: None,
                     config: codex_native_tldr::daemon::TldrDaemonConfigSummary {
                         auto_start: true,
@@ -2242,6 +2310,7 @@ mod tldr_tests {
                         semantic_enabled: true,
                         semantic_auto_reindex_threshold: 20,
                         session_dirty_file_threshold: 20,
+                        session_idle_timeout_secs: 1800,
                     },
                 }),
                 reindex_report: None,

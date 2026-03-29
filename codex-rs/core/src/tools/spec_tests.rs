@@ -930,6 +930,195 @@ fn tldr_tool_description_mentions_soft_auto_routing_without_promising_forced_rew
 }
 
 #[test]
+fn zmemory_tool_requires_feature_flag() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
+    assert_lacks_tool_name(&tools, "zmemory");
+    assert!(!registry.has_handler("zmemory", None));
+}
+
+#[test]
+fn zmemory_tool_is_available_when_enabled() {
+    let config = test_config();
+    let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
+    let mut features = Features::with_defaults();
+    features.enable(Feature::ZmemoryTool);
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+
+    let (tools, registry) = build_specs(&tools_config, None, None, &[]).build();
+    assert_contains_tool_names(&tools, &["zmemory"]);
+    assert!(registry.has_handler("zmemory", None));
+}
+
+#[test]
+fn zmemory_tool_uses_shared_output_schema_contract() {
+    let ToolSpec::Function(tool) = create_zmemory_tool() else {
+        panic!("zmemory must be a function tool");
+    };
+    let JsonSchema::Object {
+        properties,
+        required,
+        additional_properties,
+    } = tool.parameters
+    else {
+        panic!("zmemory params must be an object schema");
+    };
+
+    assert_eq!(required, Some(vec!["action".to_string()]));
+    assert_eq!(additional_properties, Some(false.into()));
+    for key in [
+        "action",
+        "codexHome",
+        "uri",
+        "newUri",
+        "targetUri",
+        "query",
+        "content",
+        "oldString",
+        "newString",
+        "append",
+        "parentUri",
+        "title",
+        "priority",
+        "disclosure",
+        "add",
+        "remove",
+        "limit",
+    ] {
+        assert!(properties.contains_key(key), "missing parameter: {key}");
+    }
+
+    assert_eq!(
+        tool.output_schema,
+        Some(codex_zmemory::tool_api::zmemory_tool_output_schema())
+    );
+}
+
+#[test]
+fn zmemory_tool_description_mentions_embedded_local_scope() {
+    let ToolSpec::Function(tool) = create_zmemory_tool() else {
+        panic!("zmemory must be a function tool");
+    };
+
+    assert!(tool.description.contains("Embedded long-term memory graph"));
+    assert!(tool.description.contains("local SQLite + FTS5 store"));
+    assert!(tool.description.contains("without any REST API or daemon"));
+}
+
+#[test]
+fn zmemory_tool_uri_parameter_documents_system_views() {
+    let ToolSpec::Function(tool) = create_zmemory_tool() else {
+        panic!("zmemory must be a function tool");
+    };
+    let JsonSchema::Object { properties, .. } = tool.parameters else {
+        panic!("zmemory params must be an object schema");
+    };
+
+    let JsonSchema::String {
+        description: Some(uri_description),
+    } = properties
+        .get("uri")
+        .cloned()
+        .expect("uri parameter should exist")
+    else {
+        panic!("uri parameter must be a string schema with description");
+    };
+
+    assert!(uri_description.contains("core://..."));
+    assert!(
+        uri_description.contains("system://boot|index|index/<domain>|recent|recent/<n>|glossary")
+    );
+    assert!(uri_description.contains("optional search scope"));
+}
+
+#[test]
+fn zmemory_tool_update_parameters_document_patch_and_append_modes() {
+    let ToolSpec::Function(tool) = create_zmemory_tool() else {
+        panic!("zmemory must be a function tool");
+    };
+    let JsonSchema::Object { properties, .. } = tool.parameters else {
+        panic!("zmemory params must be an object schema");
+    };
+
+    let JsonSchema::String {
+        description: Some(old_string_description),
+    } = properties
+        .get("oldString")
+        .cloned()
+        .expect("oldString parameter should exist")
+    else {
+        panic!("oldString parameter must be a string schema with description");
+    };
+    let JsonSchema::String {
+        description: Some(append_description),
+    } = properties
+        .get("append")
+        .cloned()
+        .expect("append parameter should exist")
+    else {
+        panic!("append parameter must be a string schema with description");
+    };
+
+    assert!(old_string_description.contains("newString"));
+    assert!(append_description.contains("Cannot be combined"));
+}
+
+#[test]
+fn zmemory_tool_create_parameters_document_parent_uri_title() {
+    let ToolSpec::Function(tool) = create_zmemory_tool() else {
+        panic!("zmemory must be a function tool");
+    };
+    let JsonSchema::Object { properties, .. } = tool.parameters else {
+        panic!("zmemory params must be an object schema");
+    };
+
+    let JsonSchema::String {
+        description: Some(parent_description),
+    } = properties
+        .get("parentUri")
+        .cloned()
+        .expect("parentUri parameter should exist")
+    else {
+        panic!("parentUri parameter must be a string schema with description");
+    };
+
+    let JsonSchema::String {
+        description: Some(title_description),
+    } = properties
+        .get("title")
+        .cloned()
+        .expect("title parameter should exist")
+    else {
+        panic!("title parameter must be a string schema with description");
+    };
+
+    assert!(parent_description.contains("construct the new URI"));
+    assert!(title_description.contains("next available ordinal"));
+}
+
+#[test]
 fn request_user_input_description_reflects_default_mode_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);

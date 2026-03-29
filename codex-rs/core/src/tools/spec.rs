@@ -329,6 +329,7 @@ pub(crate) struct ToolsConfig {
     pub tool_suggest: bool,
     pub exec_permission_approvals_enabled: bool,
     pub request_permissions_tool_enabled: bool,
+    pub zmemory_tool_enabled: bool,
     pub code_mode_enabled: bool,
     pub code_mode_only_enabled: bool,
     pub js_repl_enabled: bool,
@@ -403,6 +404,7 @@ impl ToolsConfig {
             features.enabled(Feature::ImageGeneration) && supports_image_generation(model_info);
         let exec_permission_approvals_enabled = features.enabled(Feature::ExecPermissionApprovals);
         let request_permissions_tool_enabled = features.enabled(Feature::RequestPermissionsTool);
+        let zmemory_tool_enabled = features.enabled(Feature::ZmemoryTool);
         let shell_command_backend =
             if features.enabled(Feature::ShellTool) && features.enabled(Feature::ShellZshFork) {
                 ShellCommandBackendConfig::ZshFork
@@ -468,6 +470,7 @@ impl ToolsConfig {
             tool_suggest: include_tool_suggest,
             exec_permission_approvals_enabled,
             request_permissions_tool_enabled,
+            zmemory_tool_enabled,
             code_mode_enabled: include_code_mode,
             code_mode_only_enabled: include_code_mode_only,
             js_repl_enabled: include_js_repl,
@@ -1821,6 +1824,164 @@ fn create_tldr_tool() -> ToolSpec {
     })
 }
 
+fn create_zmemory_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "action".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Action to run: read, search, create, update, delete-path, add-alias, manage-triggers, stats, doctor, or rebuild-search."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "codexHome".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional Codex home path. Defaults to the current session's codex home."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "uri".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|index|index/<domain>|recent|recent/<n>|glossary for built-in views."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "newUri".to_string(),
+            JsonSchema::String {
+                description: Some("Alias URI to create for action=add-alias.".to_string()),
+            },
+        ),
+        (
+            "targetUri".to_string(),
+            JsonSchema::String {
+                description: Some("Existing target URI for action=add-alias.".to_string()),
+            },
+        ),
+        (
+            "query".to_string(),
+            JsonSchema::String {
+                description: Some("Search query for action=search.".to_string()),
+            },
+        ),
+        (
+            "content".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Memory content for action=create, or a full replacement body for action=update."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "oldString".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Substring to replace for action=update. Must be paired with newString."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "newString".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Replacement text for action=update. Must be paired with oldString."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "append".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Text to append for action=update. Cannot be combined with content or oldString/newString."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "priority".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Optional path priority used for ordering search and boot views.".to_string(),
+                ),
+            },
+        ),
+        (
+            "disclosure".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional disclosure note stored alongside a path edge.".to_string(),
+                ),
+            },
+        ),
+        (
+            "parentUri".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Parent path used to construct the new URI when action=create; mutually exclusive with uri.".to_string(),
+                ),
+            },
+        ),
+        (
+            "title".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional title appended to parentUri; when omitted the next available ordinal is used.".to_string(),
+                ),
+            },
+        ),
+        (
+            "add".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Keywords to add for action=manage-triggers.".to_string(),
+                ),
+            },
+        ),
+        (
+            "remove".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Keywords to remove for action=manage-triggers.".to_string(),
+                ),
+            },
+        ),
+        (
+            "limit".to_string(),
+            JsonSchema::Number {
+                description: Some(
+                    "Maximum number of search or system-view results to return.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "zmemory".to_string(),
+        description: "Embedded long-term memory graph backed by a local SQLite + FTS5 store. Use it to read, search, and maintain structured memory paths without any REST API or daemon."
+            .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["action".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: Some(codex_zmemory::tool_api::zmemory_tool_output_schema()),
+    })
+}
+
 fn create_close_agent_tool() -> ToolSpec {
     let mut properties = BTreeMap::new();
     properties.insert(
@@ -2869,6 +3030,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
+    use crate::tools::handlers::ZmemoryHandler;
     use crate::tools::handlers::multi_agents::CloseAgentHandler;
     use crate::tools::handlers::multi_agents::ResumeAgentHandler;
     use crate::tools::handlers::multi_agents::SendInputHandler;
@@ -3043,6 +3205,15 @@ pub(crate) fn build_specs_with_discoverable_tools(
         config.code_mode_enabled,
     );
     builder.register_handler("tldr", Arc::new(TldrHandler));
+    if config.zmemory_tool_enabled {
+        push_tool_spec(
+            &mut builder,
+            create_zmemory_tool(),
+            /*supports_parallel_tool_calls*/ false,
+            config.code_mode_enabled,
+        );
+        builder.register_handler("zmemory", Arc::new(ZmemoryHandler));
+    }
 
     if config.js_repl_enabled {
         push_tool_spec(
