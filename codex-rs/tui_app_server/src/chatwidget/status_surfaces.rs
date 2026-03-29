@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Status-line and terminal-title rendering helpers for `ChatWidget`.
 //!
 //! Keeping this logic in a focused submodule makes the additive title/status

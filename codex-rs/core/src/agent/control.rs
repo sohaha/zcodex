@@ -637,13 +637,6 @@ impl AgentControl {
         Some(thread.config_snapshot().await)
     }
 
-    pub(crate) async fn get_thread_config_snapshot(
-        &self,
-        thread_id: ThreadId,
-    ) -> Option<ThreadConfigSnapshot> {
-        self.get_agent_config_snapshot(thread_id).await
-    }
-
     pub(crate) async fn resolve_agent_reference(
         &self,
         _current_thread_id: ThreadId,

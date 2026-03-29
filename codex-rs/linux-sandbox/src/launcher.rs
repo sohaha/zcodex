@@ -68,13 +68,6 @@ fn preferred_bwrap_launcher_for_path_with_probe(
     })
 }
 
-pub(crate) fn preferred_bwrap_supports_argv0() -> bool {
-    match preferred_bwrap_launcher() {
-        BubblewrapLauncher::System(launcher) => launcher.supports_argv0,
-        BubblewrapLauncher::Vendored => true,
-    }
-}
-
 fn system_bwrap_supports_argv0(system_bwrap_path: &Path) -> bool {
     // bubblewrap added `--argv0` in v0.9.0:
     // https://github.com/containers/bubblewrap/releases/tag/v0.9.0

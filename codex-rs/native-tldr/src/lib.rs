@@ -18,7 +18,9 @@ pub mod session;
 pub mod tool_api;
 pub mod wire;
 
+use crate::analysis::analyze_project;
 use crate::analysis::analyze_project_with_index;
+use crate::api::AnalysisKind;
 use crate::api::AnalysisRequest;
 use crate::api::AnalysisResponse;
 use crate::api::DiagnosticsRequest;
@@ -237,6 +239,12 @@ impl TldrEngine {
     }
 
     pub fn analyze(&self, request: AnalysisRequest) -> Result<AnalysisResponse> {
+        if matches!(
+            request.kind,
+            AnalysisKind::Impact | AnalysisKind::Calls | AnalysisKind::Dead | AnalysisKind::Arch
+        ) {
+            return analyze_project(&self.config.project_root, &self.config, request);
+        }
         let index = self.load_or_build_analysis_index(request.language)?;
         analyze_project_with_index(&self.config.project_root, request, index)
     }

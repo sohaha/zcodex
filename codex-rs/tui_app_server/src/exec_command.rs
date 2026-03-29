@@ -16,6 +16,7 @@ pub(crate) fn strip_bash_lc_and_escape(command: &[String]) -> String {
     escape_command(command)
 }
 
+#[cfg(test)]
 pub(crate) fn split_command_string(command: &str) -> Vec<String> {
     let Some(parts) = shlex::split(command) else {
         return vec![command.to_string()];

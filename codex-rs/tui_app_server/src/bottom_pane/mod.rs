@@ -867,6 +867,7 @@ impl BottomPane {
     }
 
     /// Update custom prompts available for the slash popup.
+    #[allow(dead_code)]
     pub(crate) fn set_custom_prompts(&mut self, prompts: Vec<CustomPrompt>) {
         self.composer.set_custom_prompts(prompts);
         self.request_redraw();

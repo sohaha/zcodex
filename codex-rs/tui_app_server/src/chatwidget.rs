@@ -919,6 +919,7 @@ pub(crate) struct ChatWidget {
     terminal_title_animation_origin: Instant,
     // Cached project root display name for the current cwd; avoids walking parent directories on
     // frequent title/status refreshes.
+    #[allow(dead_code)]
     status_line_project_root_name_cache: Option<CachedProjectRootName>,
     // Cached git branch name for the status line (None if unknown).
     status_line_branch: Option<String>,
@@ -9742,6 +9743,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    #[allow(dead_code)]
     fn add_app_server_stub_message(&mut self, feature: &str) {
         warn!(feature, "stubbed unsupported app-server TUI feature");
         self.add_error_message(format!("{feature}: {APP_SERVER_TUI_STUB_MESSAGE}"));
@@ -10278,6 +10280,7 @@ impl ChatWidget {
         ));
     }
 
+    #[allow(dead_code)]
     fn on_list_custom_prompts(&mut self, ev: ListCustomPromptsResponseEvent) {
         let len = ev.custom_prompts.len();
         debug!("received {len} custom prompts");

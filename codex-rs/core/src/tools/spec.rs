@@ -524,11 +524,6 @@ impl ToolsConfig {
         self
     }
 
-    pub fn with_auto_tldr_routing(mut self, auto_tldr_routing: AutoTldrRoutingMode) -> Self {
-        self.auto_tldr_routing = auto_tldr_routing;
-        self
-    }
-
     pub fn with_unified_exec_shell_mode(
         mut self,
         unified_exec_shell_mode: UnifiedExecShellMode,
