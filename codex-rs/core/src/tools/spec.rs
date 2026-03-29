@@ -1873,7 +1873,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "uri".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n> for built-in views."
+                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n> for built-in views. system://boot follows configured CORE_MEMORY_URIS anchors, while non-system domains must come from VALID_DOMAINS."
                         .to_string(),
                 ),
             },
@@ -1936,7 +1936,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "priority".to_string(),
             JsonSchema::Number {
                 description: Some(
-                    "Optional path priority used for ordering search and boot views.".to_string(),
+                    "Optional path priority used for ordering search results; boot uses configured CORE_MEMORY_URIS anchors instead of global priority ranking.".to_string(),
                 ),
             },
         ),
@@ -1944,7 +1944,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "disclosure".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional disclosure note stored alongside a path edge.".to_string(),
+                    "Optional disclosure note stored alongside a path edge. Keep it single-purpose so stats/doctor can flag missing or ambiguous disclosure coverage.".to_string(),
                 ),
             },
         ),
@@ -1986,7 +1986,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "limit".to_string(),
             JsonSchema::Number {
                 description: Some(
-                    "Maximum number of search or system-view results to return.".to_string(),
+                    "Maximum number of search or system-view results to return. For system://boot this caps how many configured CORE_MEMORY_URIS anchors are emitted.".to_string(),
                 ),
             },
         ),

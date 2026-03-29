@@ -932,6 +932,8 @@ fn zmemory_tool_uri_parameter_documents_system_views() {
         )
     );
     assert!(uri_description.contains("optional search scope"));
+    assert!(uri_description.contains("CORE_MEMORY_URIS"));
+    assert!(uri_description.contains("VALID_DOMAINS"));
 }
 
 #[test]
@@ -997,6 +999,48 @@ fn zmemory_tool_create_parameters_document_parent_uri_title() {
 
     assert!(parent_description.contains("construct the new URI"));
     assert!(title_description.contains("next available ordinal"));
+}
+
+#[test]
+fn zmemory_tool_priority_disclosure_and_limit_document_boot_and_governance() {
+    let ToolSpec::Function(tool) = create_zmemory_tool() else {
+        panic!("zmemory must be a function tool");
+    };
+    let JsonSchema::Object { properties, .. } = tool.parameters else {
+        panic!("zmemory params must be an object schema");
+    };
+
+    let JsonSchema::Number {
+        description: Some(priority_description),
+    } = properties
+        .get("priority")
+        .cloned()
+        .expect("priority parameter should exist")
+    else {
+        panic!("priority parameter must be a number schema with description");
+    };
+    let JsonSchema::String {
+        description: Some(disclosure_description),
+    } = properties
+        .get("disclosure")
+        .cloned()
+        .expect("disclosure parameter should exist")
+    else {
+        panic!("disclosure parameter must be a string schema with description");
+    };
+    let JsonSchema::Number {
+        description: Some(limit_description),
+    } = properties
+        .get("limit")
+        .cloned()
+        .expect("limit parameter should exist")
+    else {
+        panic!("limit parameter must be a number schema with description");
+    };
+
+    assert!(priority_description.contains("CORE_MEMORY_URIS"));
+    assert!(disclosure_description.contains("single-purpose"));
+    assert!(limit_description.contains("CORE_MEMORY_URIS"));
 }
 
 #[test]

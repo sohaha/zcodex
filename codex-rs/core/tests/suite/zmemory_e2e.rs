@@ -264,7 +264,7 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
         test.home.path(),
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
-            uri: Some("core://agent-profile".to_string()),
+            uri: Some("core://agent".to_string()),
             content: Some("Salem profile memory".to_string()),
             priority: Some(6),
             ..ZmemoryToolCallParam::default()
@@ -309,6 +309,71 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
     assert_eq!(payload["result"]["view"]["view"], "index");
     assert_eq!(payload["result"]["view"]["domain"], "core");
     assert_eq!(payload["result"]["view"]["entryCount"], 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::ZmemoryTool)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool(
+        test.home.path(),
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("Boot anchor".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-boot",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "read",
+                    "uri": "system://boot",
+                    "limit": 5
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("export boot anchors").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-boot")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "read");
+    assert_eq!(payload["result"]["view"]["view"], "boot");
+    assert_eq!(payload["result"]["view"]["entryCount"], 1);
+    assert_eq!(payload["result"]["view"]["entries"][0]["uri"], "core://agent");
+    assert_eq!(payload["result"]["view"]["missingUris"][0], "core://my_user");
 
     Ok(())
 }
