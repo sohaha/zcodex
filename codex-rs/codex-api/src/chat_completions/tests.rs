@@ -322,6 +322,33 @@ fn build_request_supports_named_required_tool_choice_for_local_shell() {
 }
 
 #[test]
+fn build_request_supports_named_required_tool_choice_for_tool_search() {
+    let mut request = request_with_tools(
+        vec![json!({
+            "type": "tool_search",
+            "description": "Find tools",
+            "parameters": {
+                "type": "object",
+                "properties": { "query": { "type": "string" } },
+                "required": ["query"],
+            }
+        })],
+        Vec::new(),
+    );
+    request.tool_choice = "required:tool_search".to_string();
+
+    let chat =
+        build_request_with_stream(&request, /*stream*/ false).expect("tool_search tool_choice");
+    assert_eq!(
+        chat.body["tool_choice"],
+        json!({
+            "type": "function",
+            "function": { "name": "tool_search" },
+        })
+    );
+}
+
+#[test]
 fn build_request_rejects_unknown_required_tool_choice() {
     let mut request = request_with_tools(Vec::new(), Vec::new());
     request.tool_choice = "required:read_file".to_string();
