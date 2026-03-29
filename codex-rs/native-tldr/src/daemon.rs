@@ -1440,6 +1440,7 @@ mod tests {
     use super::daemon_health;
     use super::daemon_lock_is_held;
     use super::daemon_project_hash;
+    use super::ensure_daemon_artifact_parent;
     use super::io_timeout_for_command;
     use super::launch_lock_is_held;
     use super::launch_lock_path_for_project;
@@ -1585,6 +1586,86 @@ mod tests {
 
         assert_eq!(response, None);
         assert!(!socket_path.exists(), "stale socket should be removed");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_removes_stale_pid_alongside_unavailable_socket() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("stale-daemon-with-pid-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        drop(listener);
+        std::fs::write(&pid_path, "999999").expect("stale pid should be writable");
+        assert!(
+            socket_path.exists(),
+            "socket path should remain after listener drop"
+        );
+        assert!(pid_path.exists(), "pid path should exist before cleanup");
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect("stale socket should not error");
+
+        assert_eq!(response, None);
+        assert!(!socket_path.exists(), "stale socket should be removed");
+        assert!(
+            !pid_path.exists(),
+            "stale pid should be removed with stale socket"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn query_daemon_keeps_stale_artifacts_while_launch_lock_is_held() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("launch-locked-stale-daemon-project");
+        std::fs::create_dir(&project_root).expect("project root should be created");
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        let launch_lock_path = launch_lock_path_for_project(&project_root);
+        create_artifact_parent(&socket_path);
+        create_artifact_parent(&pid_path);
+        create_artifact_parent(&launch_lock_path);
+        if socket_path.exists() {
+            std::fs::remove_file(&socket_path).expect("stale socket should be removed");
+        }
+
+        let listener = UnixListener::bind(&socket_path).expect("socket should bind");
+        drop(listener);
+        std::fs::write(&pid_path, "999999").expect("stale pid should be writable");
+        let launch_lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&launch_lock_path)
+            .expect("launch lock file should open");
+        launch_lock
+            .try_lock()
+            .expect("launch lock should be acquired");
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Ping)
+            .await
+            .expect("stale socket should not error");
+
+        assert_eq!(response, None);
+        assert!(
+            socket_path.exists(),
+            "socket should remain while launch lock is held"
+        );
+        assert!(
+            pid_path.exists(),
+            "pid should remain while launch lock is held"
+        );
     }
 
     #[cfg(unix)]
@@ -2480,6 +2561,38 @@ mod tests {
         assert_eq!(
             std::fs::read_to_string(&pid_path).expect("pid file should be readable"),
             std::process::id().to_string()
+        );
+    }
+
+    #[test]
+    fn ensure_daemon_artifact_parent_errors_when_parent_path_is_blocked_by_file() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let blocked_parent = tempdir.path().join("blocked-parent");
+        std::fs::write(&blocked_parent, "not a directory").expect("blocked parent should exist");
+        let artifact_path = blocked_parent.join("daemon.sock");
+
+        let error = ensure_daemon_artifact_parent(&artifact_path)
+            .expect_err("file in artifact parent chain should error");
+
+        assert!(
+            error.to_string().contains("create daemon artifact dir"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn write_pid_file_errors_when_parent_path_is_blocked_by_file() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let blocked_parent = tempdir.path().join("blocked-pid-parent");
+        std::fs::write(&blocked_parent, "not a directory").expect("blocked parent should exist");
+        let pid_path = blocked_parent.join("daemon.pid");
+
+        let error =
+            write_pid_file(&pid_path).expect_err("file in pid parent chain should block writes");
+
+        assert!(
+            error.to_string().contains("create daemon artifact dir"),
+            "unexpected error: {error}"
         );
     }
 
