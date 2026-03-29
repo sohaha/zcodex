@@ -100,6 +100,14 @@ fn provider_with_bearer_for(base_url: String) -> ModelProviderInfo {
     }
 }
 
+fn provider_with_env_key_for(base_url: String, wire_api: WireApi) -> ModelProviderInfo {
+    ModelProviderInfo {
+        env_key: Some("CODEX_TEST_PROVIDER_API_KEY".into()),
+        wire_api,
+        ..provider_for(base_url)
+    }
+}
+
 fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "mock-anthropic".into(),
@@ -659,6 +667,74 @@ async fn refresh_available_models_uses_provider_supplied_auth() {
         models_mock.requests().len(),
         1,
         "provider-supplied auth should trigger one /models request"
+    );
+}
+
+#[tokio::test]
+async fn refresh_available_models_uses_env_key_auth_for_chat_provider() {
+    const SUBPROCESS_ENV: &str = "CODEX_TEST_CHAT_MODELS_REFRESH_SUBPROCESS";
+    const BASE_URL_ENV: &str = "CODEX_TEST_CHAT_MODELS_REFRESH_BASE_URL";
+
+    if std::env::var_os(SUBPROCESS_ENV).is_none() {
+        let server = MockServer::start().await;
+        let dynamic_slug = "dynamic-model-only-for-chat-env-key";
+        let models_mock = mount_models_once(
+            &server,
+            ModelsResponse {
+                models: vec![remote_model(dynamic_slug, "Chat Env Key", 1)],
+            },
+        )
+        .await;
+
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("test binary path should resolve"),
+        )
+        .arg("--exact")
+        .arg("models_manager::manager::tests::refresh_available_models_uses_env_key_auth_for_chat_provider")
+        .env(SUBPROCESS_ENV, "1")
+        .env(BASE_URL_ENV, server.uri())
+        .env("CODEX_TEST_PROVIDER_API_KEY", "provider-env-key")
+        .output()
+        .expect("subprocess should run");
+
+        assert!(
+            output.status.success(),
+            "subprocess failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            models_mock.requests().len(),
+            1,
+            "chat provider env_key auth should trigger one /models request"
+        );
+        return;
+    }
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = Arc::new(AuthManager::new(
+        codex_home.path().to_path_buf(),
+        false,
+        AuthCredentialsStoreMode::File,
+    ));
+    let base_url = std::env::var(BASE_URL_ENV).expect("subprocess base URL should be set");
+    let provider = provider_with_env_key_for(base_url, WireApi::Chat);
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect("chat provider env_key auth should allow /models refresh");
+    let cached_remote = manager.get_remote_models().await;
+    assert!(
+        cached_remote
+            .iter()
+            .any(|candidate| candidate.slug == "dynamic-model-only-for-chat-env-key"),
+        "chat provider env_key auth should allow /models refresh"
     );
 }
 
