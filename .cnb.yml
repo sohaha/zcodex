@@ -55,7 +55,7 @@ include:
   - https://cnb.cool/zls-tools/vm/-/blob/main/tools/sync-github-sohaha.yml
   # - https://cnb.cool/zls-tools/vm/-/blob/main/tools/knowledge.yml
   - https://cnb.cool/zls-tools/vm/-/blob/main/rust-ide.yml
-  - https://cnb.cool/zls-tools/vm/-/blob/main/tools/install-tools.yml
+  # - https://cnb.cool/zls-tools/vm/-/blob/main/tools/install-tools.yml
 
 v*.*.*:
   tag_push:
@@ -64,7 +64,7 @@ v*.*.*:
 .npc: &npc
   - stages:
       - name: run npc
-        image: docker.cnb.cool/npc/mtga:latest
+        image: docker.cnb.cool/zls-tools/vm/rust:latest
         env:
           CUSTOM_PROMPT: |
             你是一位资深工程师，擅长并发模型和性能优化。
