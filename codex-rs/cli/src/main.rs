@@ -1054,6 +1054,14 @@ fn localize_help_output(output: String) -> String {
             "Print this message or the help of the given subcommand(s)",
             "显示此消息或指定子命令的帮助",
         )
+        .replace(
+            "Print this message or the help of the given\nsubcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace(
+            "Print this message or the help of the given\n                   subcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
         .replace("Print help for the subcommand(s)", "显示指定子命令的帮助")
         .replace(
             "Print help (see a summary with '-h')",
@@ -1938,6 +1946,16 @@ mod tests {
         let help = render_result.to_string();
 
         assert!(help.contains("tldr"));
+    }
+
+    #[test]
+    fn localize_help_output_replaces_wrapped_help_line() {
+        let localized = localize_help_output(
+            "help             Print this message or the help of the given\n                   subcommand(s)\n".to_string(),
+        );
+
+        assert!(localized.contains("显示此消息或指定子命令的帮助"));
+        assert!(!localized.contains("Print this message or the help of the given"));
     }
 
     #[test]

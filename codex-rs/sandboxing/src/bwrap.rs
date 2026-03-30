@@ -11,7 +11,7 @@ fn system_bwrap_warning_for_lookup(system_bwrap_path: Option<PathBuf>) -> Option
     match system_bwrap_path {
         Some(_) => None,
         None => Some(
-            "Codex could not find system bubblewrap on PATH. Please install bubblewrap with your package manager. Codex will use the vendored bubblewrap in the meantime."
+            "Codex 未在 PATH 中找到系统 bubblewrap。请使用你的包管理器安装 bubblewrap。Codex 当前会先使用内置的 bubblewrap。"
                 .to_string(),
         ),
     }

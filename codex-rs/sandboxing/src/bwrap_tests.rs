@@ -9,7 +9,10 @@ fn system_bwrap_warning_reports_missing_system_bwrap() {
     let warning = system_bwrap_warning_for_lookup(/*system_bwrap_path*/ None)
         .expect("missing system bwrap should emit a warning");
 
-    assert!(warning.contains("could not find system bubblewrap"));
+    assert!(
+        warning.contains("未在 PATH 中找到系统 bubblewrap"),
+        "warning should be localized: {warning}"
+    );
 }
 
 #[test]
