@@ -168,6 +168,19 @@ fn shell_command_handler_resolves_rtk_to_absolute_helper_path() {
 }
 
 #[test]
+fn shell_command_handler_resolves_rtk_with_leading_env_assignment() {
+    let resolved = super::resolve_rtk_physical_command(
+        "PATH=/root/.cargo/bin:$PATH rtk cargo nextest run -p codex-cli",
+        Some(&std::path::PathBuf::from("/tmp/codex")),
+    );
+
+    assert_eq!(
+        resolved,
+        "PATH=/root/.cargo/bin:$PATH /tmp/codex rtk cargo nextest run -p codex-cli"
+    );
+}
+
+#[test]
 fn shell_command_handler_leaves_non_rtk_commands_unchanged_when_resolving_physical_path() {
     let resolved = super::resolve_rtk_physical_command(
         "git status",
@@ -432,6 +445,11 @@ fn shell_command_handler_records_original_command_when_rewritten() {
         "rg -n needle src/main.rs",
         "rtk grep needle src/main.rs -n",
         "codex rtk grep needle src/main.rs -n",
+    );
+    assert_rewritten(
+        "PATH=/root/.cargo/bin:$PATH cargo nextest run -p codex-cli",
+        "PATH=/root/.cargo/bin:$PATH rtk cargo nextest run -p codex-cli",
+        "PATH=/root/.cargo/bin:$PATH codex rtk cargo nextest run -p codex-cli",
     );
 }
 

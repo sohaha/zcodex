@@ -76,6 +76,12 @@ struct RoutedCommand {
     model_output_prefix: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RoutedCommandParts {
+    leading_env: Vec<String>,
+    argv: Vec<String>,
+}
+
 impl ShellHandler {
     fn to_exec_params(
         params: &ShellToolCallParams,
@@ -184,25 +190,27 @@ impl ShellCommandHandler {
         let analysis = analyze_shell_command(command);
         match analysis.kind {
             ShellCommandRewriteKind::AlreadyRtk => {
+                let executed_command = normalize_exec_command(&analysis.command);
                 tracing::info!(
                     target: "codex_core::shell_rtk",
                     original = %trimmed,
-                    executed = %analysis.command,
+                    executed = %executed_command,
                     "shell_command already routed via RTK"
                 );
                 RoutedCommand {
-                    command: analysis.command,
+                    command: executed_command,
                     display_command: Some(trimmed.to_string()),
                     interaction_input: None,
                     model_output_prefix: None,
                 }
             }
             ShellCommandRewriteKind::Rewritten => {
-                let display_command = logical_rtk_command(&analysis.command);
+                let executed_command = normalize_exec_command(&analysis.command);
+                let display_command = logical_rtk_command(&executed_command);
                 tracing::info!(
                     target: "codex_core::shell_rtk",
                     original = %trimmed,
-                    executed = %analysis.command,
+                    executed = %executed_command,
                     "shell_command routed via embedded RTK"
                 );
                 RoutedCommand {
@@ -210,7 +218,7 @@ impl ShellCommandHandler {
                         "[shell_command routed via embedded RTK]\noriginal: {trimmed}\nrewritten: {display_command}"
                     )),
                     interaction_input: Some(trimmed.to_string()),
-                    command: analysis.command,
+                    command: executed_command,
                     display_command: Some(display_command),
                 }
             }
@@ -279,30 +287,76 @@ fn resolve_rtk_physical_command(command: &str, codex_exe: Option<&std::path::Pat
     let Some(codex_exe) = codex_exe else {
         return command.to_string();
     };
-    let Some(mut tokens) = shlex::split(command) else {
+    let Some(mut parts) = split_routed_command(command) else {
         return command.to_string();
     };
-    let Some(index) = tokens.iter().position(|token| token == "rtk") else {
+    let Some(index) = parts.argv.iter().position(|token| token == "rtk") else {
         return command.to_string();
     };
-    tokens[index] = codex_exe.to_string_lossy().into_owned();
-    tokens.insert(index + 1, "rtk".to_string());
-    codex_shell_command::parse_command::shlex_join(&tokens)
+    parts.argv[index] = codex_exe.to_string_lossy().into_owned();
+    parts.argv.insert(index + 1, "rtk".to_string());
+    render_exec_command(&parts)
+}
+
+fn normalize_exec_command(command: &str) -> String {
+    split_routed_command(command)
+        .filter(|parts| !parts.leading_env.is_empty())
+        .map(|parts| render_exec_command(&parts))
+        .unwrap_or_else(|| command.to_string())
 }
 
 fn logical_rtk_command(command: &str) -> String {
-    let Some(mut tokens) = shlex::split(command) else {
+    let Some(mut parts) = split_routed_command(command) else {
         return command.to_string();
     };
-    let Some(index) = tokens.iter().position(|token| token == "rtk") else {
+    let Some(index) = parts.argv.iter().position(|token| token == "rtk") else {
         return command.to_string();
     };
-    tokens.insert(index, "codex".to_string());
-    tokens
-        .into_iter()
-        .map(render_display_token)
-        .collect::<Vec<_>>()
-        .join(" ")
+    parts.argv.insert(index, "codex".to_string());
+    render_display_command(&parts)
+}
+
+fn split_routed_command(command: &str) -> Option<RoutedCommandParts> {
+    let tokens = shlex::split(command)?;
+    let split_at = tokens
+        .iter()
+        .take_while(|token| looks_like_env_assignment(token))
+        .count();
+    let (leading_env, argv) = tokens.split_at(split_at);
+    if argv.is_empty() {
+        return None;
+    }
+    Some(RoutedCommandParts {
+        leading_env: leading_env.to_vec(),
+        argv: argv.to_vec(),
+    })
+}
+
+fn render_exec_command(parts: &RoutedCommandParts) -> String {
+    render_command(parts, codex_shell_command::parse_command::shlex_join)
+}
+
+fn render_display_command(parts: &RoutedCommandParts) -> String {
+    render_command(parts, |argv| {
+        argv.iter()
+            .cloned()
+            .map(render_display_token)
+            .collect::<Vec<_>>()
+            .join(" ")
+    })
+}
+
+fn render_command(parts: &RoutedCommandParts, render_argv: impl Fn(&[String]) -> String) -> String {
+    let env_prefix = if parts.leading_env.is_empty() {
+        None
+    } else {
+        Some(parts.leading_env.join(" "))
+    };
+    let argv = render_argv(&parts.argv);
+    match env_prefix {
+        Some(env_prefix) => format!("{env_prefix} {argv}"),
+        None => argv,
+    }
 }
 
 fn render_display_token(token: String) -> String {
