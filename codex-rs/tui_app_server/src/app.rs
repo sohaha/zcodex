@@ -99,6 +99,7 @@ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::FinalOutput;
 use codex_protocol::protocol::GetHistoryEntryResponseEvent;
+use codex_protocol::protocol::ListCustomPromptsResponseEvent;
 use codex_protocol::protocol::ListSkillsResponseEvent;
 #[cfg(test)]
 use codex_protocol::protocol::McpAuthStatus;
@@ -1942,14 +1943,22 @@ impl App {
         }
     }
 
-    /// Intercept composer-history operations and handle them locally against
-    /// `$CODEX_HOME/history.jsonl`, bypassing the app-server RPC layer.
+    /// Intercept local filesystem-backed operations and handle them without
+    /// going through the app-server RPC layer.
     async fn try_handle_local_history_op(
         &mut self,
         thread_id: ThreadId,
         op: &AppCommand,
     ) -> Result<bool> {
         match op.view() {
+            AppCommandView::Other(Op::ListCustomPrompts) => {
+                let prompts_dir = self.chat_widget.config_ref().codex_home.join("prompts");
+                let custom_prompts =
+                    codex_core::custom_prompts::discover_prompts_in(&prompts_dir).await;
+                self.chat_widget
+                    .on_list_custom_prompts(ListCustomPromptsResponseEvent { custom_prompts });
+                Ok(true)
+            }
             AppCommandView::Other(Op::AddToHistory { text }) => {
                 let text = text.clone();
                 let config = self.chat_widget.config_ref().clone();
@@ -5876,6 +5885,29 @@ mod tests {
         assert_eq!(event.offset, 0);
         assert_eq!(event.log_id, 1);
         assert!(event.entry.is_none());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_custom_prompts_is_handled_locally_in_app_server_tui() -> Result<()> {
+        let mut app = make_test_app().await;
+        let prompts_dir = app.config.codex_home.join("prompts");
+        std::fs::create_dir_all(&prompts_dir)?;
+        std::fs::write(
+            prompts_dir.join("hello.md"),
+            "---\ndescription: test\n---\nHello from prompt\n",
+        )?;
+
+        let handled = app
+            .try_handle_local_history_op(ThreadId::new(), &Op::ListCustomPrompts.into())
+            .await?;
+
+        assert!(handled);
+        assert_eq!(
+            app.chat_widget.custom_prompt_names(),
+            vec!["hello".to_string()]
+        );
 
         Ok(())
     }

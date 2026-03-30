@@ -10237,6 +10237,11 @@ impl ChatWidget {
         self.bottom_pane.has_active_view()
     }
 
+    #[cfg(test)]
+    pub(crate) fn custom_prompt_names(&self) -> Vec<String> {
+        self.bottom_pane.custom_prompt_names()
+    }
+
     pub(crate) fn show_esc_backtrack_hint(&mut self) {
         self.bottom_pane.show_esc_backtrack_hint();
     }
@@ -10280,7 +10285,7 @@ impl ChatWidget {
     }
 
     #[allow(dead_code)]
-    fn on_list_custom_prompts(&mut self, ev: ListCustomPromptsResponseEvent) {
+    pub(crate) fn on_list_custom_prompts(&mut self, ev: ListCustomPromptsResponseEvent) {
         let len = ev.custom_prompts.len();
         debug!("received {len} custom prompts");
         self.bottom_pane.set_custom_prompts(ev.custom_prompts);

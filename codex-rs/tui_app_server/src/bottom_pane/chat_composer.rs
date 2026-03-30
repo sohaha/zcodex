@@ -3525,6 +3525,14 @@ impl ChatComposer {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn custom_prompt_names(&self) -> Vec<String> {
+        self.custom_prompts
+            .iter()
+            .map(|prompt| prompt.name.clone())
+            .collect()
+    }
+
     /// Synchronize `self.file_search_popup` with the current text in the textarea.
     /// Note this is only called when self.active_popup is NOT Command.
     fn sync_file_search_popup(&mut self, query: String) {
