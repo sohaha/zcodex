@@ -32,6 +32,17 @@ fn extract_zmemory_json_block(text: &str) -> Value {
     serde_json::from_str(json).expect("zmemory json block should parse")
 }
 
+fn sorted_object_keys(value: &Value) -> Vec<&str> {
+    let mut keys = value
+        .as_object()
+        .expect("value should be an object")
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -86,7 +97,6 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
     assert_eq!(payload["action"], "create");
     assert_eq!(payload["result"]["uri"], "core://agent-profile");
     assert_eq!(payload["result"]["priority"], 7);
-
     let read_back = run_zmemory_tool_with_context(
         test.home.path(),
         test.cwd_path(),
@@ -100,6 +110,59 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
     assert_eq!(
         read_back.structured_content["result"]["content"],
         "Salem profile memory"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::MemoryTool)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-stats",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "stats"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("inspect memory stats").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-stats")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "stats");
+    assert_eq!(
+        sorted_object_keys(&payload["result"]["pathResolution"]),
+        vec!["dbPath", "reason", "source", "workspaceKey"]
     );
 
     Ok(())
