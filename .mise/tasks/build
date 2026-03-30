@@ -10,58 +10,6 @@ export CARGO_PROFILE_DEV_DEBUG="${CARGO_PROFILE_DEV_DEBUG:-0}"
 source "$script_dir/lib-artifact-size"
 source "$script_dir/lib-speed-first-build"
 
-if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  cat >&2 <<'EOF'
-[mise] 用法:
-  mise run build [cargo build args...]
-  mise run build cli [cargo build args...]
-  mise run build codex [cargo build args...]
-  mise run build local-release [cargo build args...]
-  mise run build release [cargo build args...]
-  mise run build ubuntu-linux-amd64 [args...]
-  mise run build ubuntu-macos-arm64 [args...]
-  mise run build ubuntu-win-amd64 [args...]
-  mise run build ubuntu-win-arm64 [args...]
-
-[mise] 默认会启用 speed-first 本地构建缓存：
-  CODEX_BUILD_SPEED_FIRST=0              关闭 speed-first 默认值
-  CODEX_BUILD_RAM_TARGET=0               强制本地 build 使用磁盘 target
-  CODEX_BUILD_RAM_TARGET=1               强制本地 build 使用 /dev/shm target
-  CODEX_BUILD_RAM_TARGET=auto            共享内存足够时自动切到 /dev/shm target
-  CARGO_TARGET_DIR=/path/to/target       覆盖 target 目录
-  SCCACHE_DIR=/path/to/sccache           覆盖 sccache 缓存目录
-  SCCACHE_CACHE_SIZE=100G                覆盖 sccache 缓存上限
-  TMPDIR=/path/to/tmp                    覆盖临时目录
-EOF
-  exit 0
-fi
-
-case "${1:-}" in
-  cli|codex|codex-cli)
-    shift
-    ;;
-  local-release|release)
-    shift
-    if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-      cat >&2 <<'EOF'
-[mise] 用法:
-  mise run build local-release [cargo build args...]
-  mise run build release [cargo build args...]
-
-[mise] 该目标等价于：
-  mise run build --release
-EOF
-      exit 0
-    fi
-    exec "$script_dir/build" --release "$@"
-    ;;
-  ubuntu-linux-amd64|ubuntu-macos-arm64|ubuntu-win-amd64|ubuntu-win-arm64)
-    target_task="$1"
-    shift
-    exec "$script_dir/build-$target_task" "$@"
-    ;;
-esac
-
 target_requires_linux_build_deps() {
   local target="${CARGO_BUILD_TARGET:-}"
   local previous_was_target=0
@@ -277,22 +225,81 @@ run_build() {
   overwrite_installed_codex_if_present "$built_codex_bin"
 }
 
-ensure_linux_build_deps "$@"
-configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target" "prefer-ram"
-print_speed_first_build_summary
+main() {
+  if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    cat >&2 <<'EOF'
+[mise] 用法:
+  mise run build [cargo build args...]
+  mise run build cli [cargo build args...]
+  mise run build codex [cargo build args...]
+  mise run build local-release [cargo build args...]
+  mise run build release [cargo build args...]
+  mise run build ubuntu-linux-amd64 [args...]
+  mise run build ubuntu-macos-arm64 [args...]
+  mise run build ubuntu-win-amd64 [args...]
+  mise run build ubuntu-win-arm64 [args...]
 
-if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
-  export RUSTC_WRAPPER="$(command -v sccache)"
-fi
+[mise] 默认会启用 speed-first 本地构建缓存：
+  CODEX_BUILD_SPEED_FIRST=0              关闭 speed-first 默认值
+  CODEX_BUILD_RAM_TARGET=0               强制本地 build 使用磁盘 target
+  CODEX_BUILD_RAM_TARGET=1               强制本地 build 使用 /dev/shm target
+  CODEX_BUILD_RAM_TARGET=auto            共享内存足够时自动切到 /dev/shm target
+  CARGO_TARGET_DIR=/path/to/target       覆盖 target 目录
+  SCCACHE_DIR=/path/to/sccache           覆盖 sccache 缓存目录
+  SCCACHE_CACHE_SIZE=100G                覆盖 sccache 缓存上限
+  TMPDIR=/path/to/tmp                    覆盖临时目录
+EOF
+    exit 0
+  fi
 
-if command -v mold >/dev/null 2>&1; then
-  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold"
-elif command -v ld.lld >/dev/null 2>&1; then
-  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=lld"
-fi
+  case "${1:-}" in
+    cli|codex|codex-cli)
+      shift
+      ;;
+    local-release|release)
+      shift
+      if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+        cat >&2 <<'EOF'
+[mise] 用法:
+  mise run build local-release [cargo build args...]
+  mise run build release [cargo build args...]
 
-codex_bin="$(resolve_codex_bin "$@")"
-run_build "$codex_bin" "$@"
-if [ "${CODEX_SKIP_ARTIFACT_SIZE_PRINT:-0}" != "1" ]; then
-  print_artifact_size "build" "$codex_bin"
+[mise] 该目标等价于：
+  mise run build --release
+EOF
+        exit 0
+      fi
+      exec "$script_dir/build" --release "$@"
+      ;;
+    ubuntu-linux-amd64|ubuntu-macos-arm64|ubuntu-win-amd64|ubuntu-win-arm64)
+      target_task="$1"
+      shift
+      exec "$script_dir/build-$target_task" "$@"
+      ;;
+  esac
+
+  ensure_linux_build_deps "$@"
+  configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target" "prefer-ram"
+  print_speed_first_build_summary
+
+  if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
+    export RUSTC_WRAPPER="$(command -v sccache)"
+  fi
+
+  if command -v mold >/dev/null 2>&1; then
+    export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold"
+  elif command -v ld.lld >/dev/null 2>&1; then
+    export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=lld"
+  fi
+
+  local codex_bin
+  codex_bin="$(resolve_codex_bin "$@")"
+  run_build "$codex_bin" "$@"
+  if [ "${CODEX_SKIP_ARTIFACT_SIZE_PRINT:-0}" != "1" ]; then
+    print_artifact_size "build" "$codex_bin"
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
 fi
