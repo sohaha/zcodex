@@ -546,10 +546,9 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
             row.get(0)
         })?;
-    let path_resolution = serde_json::to_value(config.path_resolution())?;
+    let path_resolution = path_resolution_payload(config);
 
     Ok(json!({
-        "dbPath": config.db_path().display().to_string(),
         "pathResolution": path_resolution,
         "nodeCount": node_count,
         "memoryCount": memory_count,
@@ -570,7 +569,7 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
 fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let doctor = run_doctor(conn, &config.db_path().display().to_string())?;
     let stats = stats_action(conn, config)?;
-    let path_resolution = serde_json::to_value(config.path_resolution())?;
+    let path_resolution = path_resolution_payload(config);
     Ok(json!({
         "healthy": doctor.get("healthy").and_then(serde_json::Value::as_bool).unwrap_or(false),
         "orphanedMemoryCount": doctor.get("orphanedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
@@ -591,9 +590,18 @@ fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
             .unwrap_or_else(|| json!(0)),
         "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
         "stats": stats,
-        "dbPath": config.db_path().display().to_string(),
         "pathResolution": path_resolution,
     }))
+}
+
+fn path_resolution_payload(config: &ZmemoryConfig) -> Value {
+    let resolution = config.path_resolution();
+    json!({
+        "dbPath": resolution.db_path.display().to_string(),
+        "workspaceKey": resolution.workspace_key.clone(),
+        "source": resolution.source,
+        "reason": resolution.reason.clone(),
+    })
 }
 
 fn rebuild_search_action(conn: &mut Connection) -> Result<Value> {
@@ -1810,6 +1818,8 @@ mod tests {
             stats["result"]["pathResolution"]["dbPath"],
             json!(config.db_path().display().to_string())
         );
+        assert_eq!(stats["result"].get("dbPath"), None);
+        assert_eq!(stats["result"]["pathResolution"].get("canonicalBase"), None);
 
         let doctor = execute_action(
             &config,
@@ -1823,6 +1833,11 @@ mod tests {
         assert_eq!(
             doctor["result"]["pathResolution"]["dbPath"],
             json!(config.db_path().display().to_string())
+        );
+        assert_eq!(doctor["result"].get("dbPath"), None);
+        assert_eq!(
+            doctor["result"]["pathResolution"].get("canonicalBase"),
+            None
         );
         let issues = doctor["result"]["issues"]
             .as_array()
