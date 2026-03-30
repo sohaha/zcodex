@@ -70,6 +70,10 @@ test:
     export CARGO_TARGET_DIR="$(just target-dir nextest-workspace)"; \
     cargo nextest run --no-fail-fast
 
+[no-cd]
+build-test:
+    mise run test build
+
 # Fast local loop for codex-core. Uses more disk for build caches to reduce
 # repeated compile time.
 core-test-fast *args:

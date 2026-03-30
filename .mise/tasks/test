@@ -8,6 +8,7 @@ print_usage() {
   cat >&2 <<'EOF'
 [mise] 用法:
   mise run test --slot <name> core [cargo test args...]
+  mise run test build
   mise run test core [cargo test args...]
   mise run test cli [cargo test args...]
   mise run test tui [cargo test args...]
@@ -50,6 +51,22 @@ if [ "$#" -eq 0 ]; then
 fi
 
 case "${1:-}" in
+  build)
+    if [ "$#" -eq 2 ] && is_help_flag "${2:-}"; then
+      cat >&2 <<'EOF'
+[mise] `build` 会运行构建脚本自身的回归检查：
+  - build-paths.sh
+EOF
+      exit 0
+    fi
+    shift
+    if [ "$#" -gt 0 ]; then
+      echo "[mise] `test build` 不接受额外 cargo 参数" >&2
+      exit 1
+    fi
+    bash "$script_dir/tests/build-paths.sh"
+    exit 0
+    ;;
   tldr)
     if [ "$#" -eq 2 ] && is_help_flag "${2:-}"; then
       cat >&2 <<'EOF'
