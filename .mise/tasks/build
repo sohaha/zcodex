@@ -168,8 +168,12 @@ resolve_codex_bin() {
   local profile_dir
   local slot
 
-  slot="$(bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" cargo build -p codex-cli --bin codex -j "$jobs" "$@")"
-  target_dir="$(bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot")"
+  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    target_dir="$CARGO_TARGET_DIR"
+  else
+    slot="$(bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" cargo build -p codex-cli --bin codex -j "$jobs" "$@")"
+    target_dir="$(bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot")"
+  fi
   build_target="$(resolve_build_target "$@")"
   profile_dir="$(resolve_build_profile_dir "$@")"
 
