@@ -3,8 +3,8 @@ source: tui_app_server/src/chatwidget/tests.rs
 assertion_line: 12789
 expression: combined
 ---
-• Running UserPromptSubmit hook: checking go-workflow input policy
+• 正在运行 提交消息 钩子: checking go-workflow input policy
 
-UserPromptSubmit hook (stopped)
-  warning: go-workflow must start from PlanMode
-  stop: prompt blocked
+提交消息 钩子（已停止）
+  警告：go-workflow must start from PlanMode
+  停止：prompt blocked
