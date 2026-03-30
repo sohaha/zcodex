@@ -59,7 +59,7 @@ The legacy alias `memory_tool = false` remains supported for backward
 compatibility, but `memories` is the recommended canonical key.
 
 To pin `zmemory` to a specific SQLite file, set `zmemory_path` in
-`config.toml`:
+`~/.codex/config.toml`:
 
 ```toml
 zmemory_path = "./agents/memory.db"
