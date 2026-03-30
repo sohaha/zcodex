@@ -68,6 +68,7 @@ fn assert_safe(shell: &Shell, command: &str) {
 fn assert_kept_raw(command: &str, reason: &str) {
     let routed = ShellCommandHandler::route_command(command);
     assert_eq!(routed.command, command);
+    assert!(routed.env_assignments.is_empty());
     assert_eq!(routed.interaction_input, None);
     assert_eq!(
         routed.model_output_prefix,
@@ -77,9 +78,21 @@ fn assert_kept_raw(command: &str, reason: &str) {
     );
 }
 
-fn assert_rewritten(command: &str, rewritten_command: &str, display_command: &str) {
+fn assert_rewritten(
+    command: &str,
+    rewritten_command: &str,
+    display_command: &str,
+    env_assignments: &[&str],
+) {
     let routed = ShellCommandHandler::route_command(command);
     assert_eq!(routed.command, rewritten_command);
+    assert_eq!(
+        routed.env_assignments,
+        env_assignments
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(routed.interaction_input, Some(command.to_string()));
     assert_eq!(
         routed.model_output_prefix,
@@ -168,19 +181,6 @@ fn shell_command_handler_resolves_rtk_to_absolute_helper_path() {
 }
 
 #[test]
-fn shell_command_handler_resolves_rtk_with_leading_env_assignment() {
-    let resolved = super::resolve_rtk_physical_command(
-        "PATH=/root/.cargo/bin:$PATH rtk cargo nextest run -p codex-cli",
-        Some(&std::path::PathBuf::from("/tmp/codex")),
-    );
-
-    assert_eq!(
-        resolved,
-        "PATH=/root/.cargo/bin:$PATH /tmp/codex rtk cargo nextest run -p codex-cli"
-    );
-}
-
-#[test]
 fn shell_command_handler_leaves_non_rtk_commands_unchanged_when_resolving_physical_path() {
     let resolved = super::resolve_rtk_physical_command(
         "git status",
@@ -188,6 +188,28 @@ fn shell_command_handler_leaves_non_rtk_commands_unchanged_when_resolving_physic
     );
 
     assert_eq!(resolved, "git status");
+}
+
+#[test]
+fn shell_command_handler_applies_leading_env_assignments_to_exec_env() {
+    let mut env = HashMap::from([
+        ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
+        ("HOME".to_string(), "/root".to_string()),
+    ]);
+
+    super::apply_env_assignments(
+        &mut env,
+        &[
+            "PATH=/root/.cargo/bin:$PATH".to_string(),
+            "CODEX_HOME=${HOME}/.codex".to_string(),
+        ],
+    );
+
+    assert_eq!(
+        env.get("PATH"),
+        Some(&"/root/.cargo/bin:/usr/local/bin:/usr/bin".to_string())
+    );
+    assert_eq!(env.get("CODEX_HOME"), Some(&"/root/.codex".to_string()));
 }
 
 #[cfg(unix)]
@@ -438,18 +460,21 @@ fn shell_command_handler_reports_missing_command_after_prefixes() {
 fn shell_command_handler_records_original_command_when_rewritten() {
     assert_rewritten(
         "FOO=1 git status",
-        "FOO=1 rtk git status",
+        "rtk git status",
         "FOO=1 codex rtk git status",
+        &["FOO=1"],
     );
     assert_rewritten(
         "rg -n needle src/main.rs",
         "rtk grep needle src/main.rs -n",
         "codex rtk grep needle src/main.rs -n",
+        &[],
     );
     assert_rewritten(
         "PATH=/root/.cargo/bin:$PATH cargo nextest run -p codex-cli",
-        "PATH=/root/.cargo/bin:$PATH rtk cargo nextest run -p codex-cli",
+        "rtk cargo nextest run -p codex-cli",
         "PATH=/root/.cargo/bin:$PATH codex rtk cargo nextest run -p codex-cli",
+        &["PATH=/root/.cargo/bin:$PATH"],
     );
 }
 
@@ -459,6 +484,7 @@ fn shell_command_handler_displays_wrapped_rewrites_with_codex_prefix() {
         "nice -n 5 git status",
         "nice -n 5 rtk git status",
         "nice -n 5 codex rtk git status",
+        &[],
     );
 }
 
@@ -479,6 +505,7 @@ fn shell_command_handler_reports_parse_failures_as_raw() {
 fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
     let routed = ShellCommandHandler::route_command("grep 'a|b' src/main.rs");
     assert_eq!(routed.command, "rtk grep 'a|b' src/main.rs");
+    assert!(routed.env_assignments.is_empty());
     assert_eq!(
         routed.interaction_input,
         Some("grep 'a|b' src/main.rs".to_string())
@@ -495,7 +522,7 @@ fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
 
 #[test]
 fn shell_command_handler_normalizes_codex_rtk_help_commands() {
-    assert_rewritten("codex rtk --help", "rtk --help", "codex rtk --help");
+    assert_rewritten("codex rtk --help", "rtk --help", "codex rtk --help", &[]);
 }
 
 #[test]

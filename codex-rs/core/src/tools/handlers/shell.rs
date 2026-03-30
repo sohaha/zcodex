@@ -40,6 +40,7 @@ use crate::tools::sandboxing::ToolCtx;
 use crate::tools::spec::ShellCommandBackendConfig;
 use codex_features::Feature;
 use codex_protocol::models::PermissionProfile;
+use std::collections::HashMap;
 pub struct ShellHandler;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -56,6 +57,7 @@ struct RunExecLikeArgs {
     tool_name: String,
     exec_params: ExecParams,
     display_command: Option<Vec<String>>,
+    env_assignments: Vec<String>,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
     interaction_input: Option<String>,
@@ -72,6 +74,7 @@ struct RunExecLikeArgs {
 struct RoutedCommand {
     command: String,
     display_command: Option<String>,
+    env_assignments: Vec<String>,
     interaction_input: Option<String>,
     model_output_prefix: Option<String>,
 }
@@ -190,27 +193,54 @@ impl ShellCommandHandler {
         let analysis = analyze_shell_command(command);
         match analysis.kind {
             ShellCommandRewriteKind::AlreadyRtk => {
-                let executed_command = normalize_exec_command(&analysis.command);
+                let Some(parts) = split_routed_command(&analysis.command) else {
+                    return RoutedCommand {
+                        command: analysis.command,
+                        display_command: Some(trimmed.to_string()),
+                        env_assignments: Vec::new(),
+                        interaction_input: None,
+                        model_output_prefix: None,
+                    };
+                };
+                let executed_command = if parts.leading_env.is_empty() {
+                    analysis.command
+                } else {
+                    render_exec_argv(&parts.argv)
+                };
                 tracing::info!(
                     target: "codex_core::shell_rtk",
                     original = %trimmed,
-                    executed = %executed_command,
+                    executed = %render_exec_command(&parts),
                     "shell_command already routed via RTK"
                 );
                 RoutedCommand {
                     command: executed_command,
                     display_command: Some(trimmed.to_string()),
+                    env_assignments: parts.leading_env,
                     interaction_input: None,
                     model_output_prefix: None,
                 }
             }
             ShellCommandRewriteKind::Rewritten => {
-                let executed_command = normalize_exec_command(&analysis.command);
-                let display_command = logical_rtk_command(&executed_command);
+                let Some(parts) = split_routed_command(&analysis.command) else {
+                    return RoutedCommand {
+                        command: analysis.command,
+                        display_command: None,
+                        env_assignments: Vec::new(),
+                        interaction_input: None,
+                        model_output_prefix: None,
+                    };
+                };
+                let executed_command = if parts.leading_env.is_empty() {
+                    analysis.command
+                } else {
+                    render_exec_argv(&parts.argv)
+                };
+                let display_command = logical_rtk_command(&parts);
                 tracing::info!(
                     target: "codex_core::shell_rtk",
                     original = %trimmed,
-                    executed = %executed_command,
+                    executed = %render_exec_command(&parts),
                     "shell_command routed via embedded RTK"
                 );
                 RoutedCommand {
@@ -220,6 +250,7 @@ impl ShellCommandHandler {
                     interaction_input: Some(trimmed.to_string()),
                     command: executed_command,
                     display_command: Some(display_command),
+                    env_assignments: parts.leading_env,
                 }
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => {
@@ -235,6 +266,7 @@ impl ShellCommandHandler {
                 RoutedCommand {
                     command: analysis.command,
                     display_command: None,
+                    env_assignments: Vec::new(),
                     interaction_input: None,
                     model_output_prefix: Some(format!(
                         "[shell_command kept raw]\noriginal: {}\nexecuted: {}\nreason: {}",
@@ -287,30 +319,21 @@ fn resolve_rtk_physical_command(command: &str, codex_exe: Option<&std::path::Pat
     let Some(codex_exe) = codex_exe else {
         return command.to_string();
     };
-    let Some(mut parts) = split_routed_command(command) else {
+    let Some(mut argv) = shlex::split(command) else {
         return command.to_string();
     };
-    let Some(index) = parts.argv.iter().position(|token| token == "rtk") else {
+    let Some(index) = argv.iter().position(|token| token == "rtk") else {
         return command.to_string();
     };
-    parts.argv[index] = codex_exe.to_string_lossy().into_owned();
-    parts.argv.insert(index + 1, "rtk".to_string());
-    render_exec_command(&parts)
+    argv[index] = codex_exe.to_string_lossy().into_owned();
+    argv.insert(index + 1, "rtk".to_string());
+    render_exec_argv(&argv)
 }
 
-fn normalize_exec_command(command: &str) -> String {
-    split_routed_command(command)
-        .filter(|parts| !parts.leading_env.is_empty())
-        .map(|parts| render_exec_command(&parts))
-        .unwrap_or_else(|| command.to_string())
-}
-
-fn logical_rtk_command(command: &str) -> String {
-    let Some(mut parts) = split_routed_command(command) else {
-        return command.to_string();
-    };
+fn logical_rtk_command(parts: &RoutedCommandParts) -> String {
+    let mut parts = parts.clone();
     let Some(index) = parts.argv.iter().position(|token| token == "rtk") else {
-        return command.to_string();
+        return render_display_command(&parts);
     };
     parts.argv.insert(index, "codex".to_string());
     render_display_command(&parts)
@@ -333,7 +356,7 @@ fn split_routed_command(command: &str) -> Option<RoutedCommandParts> {
 }
 
 fn render_exec_command(parts: &RoutedCommandParts) -> String {
-    render_command(parts, codex_shell_command::parse_command::shlex_join)
+    render_command(parts, render_exec_argv)
 }
 
 fn render_display_command(parts: &RoutedCommandParts) -> String {
@@ -344,6 +367,10 @@ fn render_display_command(parts: &RoutedCommandParts) -> String {
             .collect::<Vec<_>>()
             .join(" ")
     })
+}
+
+fn render_exec_argv(argv: &[String]) -> String {
+    codex_shell_command::parse_command::shlex_join(argv)
 }
 
 fn render_command(parts: &RoutedCommandParts, render_argv: impl Fn(&[String]) -> String) -> String {
@@ -378,6 +405,72 @@ fn looks_like_env_assignment(token: &str) -> bool {
         return false;
     }
     chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn parse_env_assignment(token: &str) -> Option<(&str, &str)> {
+    let (name, value) = token.split_once('=')?;
+    if looks_like_env_assignment(token) {
+        Some((name, value))
+    } else {
+        None
+    }
+}
+
+fn apply_env_assignments(env: &mut HashMap<String, String>, assignments: &[String]) {
+    for assignment in assignments {
+        let Some((name, raw_value)) = parse_env_assignment(assignment) else {
+            continue;
+        };
+        let value = expand_env_assignment_value(raw_value, env);
+        env.insert(name.to_string(), value);
+    }
+}
+
+fn expand_env_assignment_value(raw_value: &str, env: &HashMap<String, String>) -> String {
+    let mut output = String::new();
+    let chars = raw_value.chars().collect::<Vec<_>>();
+    let mut index = 0;
+    while let Some(ch) = chars.get(index).copied() {
+        if ch != '$' {
+            output.push(ch);
+            index += 1;
+            continue;
+        }
+
+        match chars.get(index + 1).copied() {
+            Some('{') => {
+                let mut end = index + 2;
+                while chars.get(end).is_some_and(|next| *next != '}') {
+                    end += 1;
+                }
+                if chars.get(end) == Some(&'}') {
+                    let name = chars[index + 2..end].iter().collect::<String>();
+                    output.push_str(env.get(&name).map_or("", String::as_str));
+                    index = end + 1;
+                } else {
+                    output.push(ch);
+                    index += 1;
+                }
+            }
+            Some(next) if next == '_' || next.is_ascii_alphabetic() => {
+                let mut end = index + 2;
+                while chars
+                    .get(end)
+                    .is_some_and(|next| *next == '_' || next.is_ascii_alphanumeric())
+                {
+                    end += 1;
+                }
+                let name = chars[index + 1..end].iter().collect::<String>();
+                output.push_str(env.get(&name).map_or("", String::as_str));
+                index = end;
+            }
+            _ => {
+                output.push(ch);
+                index += 1;
+            }
+        }
+    }
+    output
 }
 
 impl From<ShellCommandBackendConfig> for ShellCommandHandler {
@@ -440,6 +533,7 @@ impl ToolHandler for ShellHandler {
                     tool_name: tool_name.clone(),
                     exec_params,
                     display_command: None,
+                    env_assignments: Vec::new(),
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
                     interaction_input: None,
@@ -460,6 +554,7 @@ impl ToolHandler for ShellHandler {
                     tool_name: tool_name.clone(),
                     exec_params,
                     display_command: None,
+                    env_assignments: Vec::new(),
                     additional_permissions: None,
                     prefix_rule: None,
                     interaction_input: None,
@@ -577,6 +672,7 @@ impl ToolHandler for ShellCommandHandler {
             tool_name,
             exec_params,
             display_command,
+            env_assignments: routed_command.env_assignments,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             interaction_input: routed_command.interaction_input,
@@ -598,6 +694,7 @@ impl ShellHandler {
             tool_name,
             exec_params,
             display_command,
+            env_assignments,
             additional_permissions,
             prefix_rule,
             interaction_input,
@@ -614,6 +711,9 @@ impl ShellHandler {
         let dependency_env = session.dependency_env().await;
         if !dependency_env.is_empty() {
             exec_params.env.extend(dependency_env.clone());
+        }
+        if !env_assignments.is_empty() {
+            apply_env_assignments(&mut exec_params.env, &env_assignments);
         }
 
         let explicit_env_overrides = explicit_snapshot_env_overrides(
