@@ -1781,6 +1781,7 @@ type QueryDaemonFuture<'a> = Pin<
             + 'a,
     >,
 >;
+#[cfg(test)]
 type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
 type EnsureDaemonDetailedFuture<'a> =
     Pin<Box<dyn Future<Output = Result<DaemonReadyResult>> + Send + 'a>>;
@@ -1788,6 +1789,7 @@ type EnsureDaemonDetailedFuture<'a> =
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
 
+#[cfg(test)]
 async fn query_daemon_with_hooks<Q, E>(
     project_root: &Path,
     command: &TldrDaemonCommand,
@@ -1831,6 +1833,7 @@ fn analysis_cache_key(
     format!("{}:{kind:?}:{symbol}:{path}:{line}", language.as_str())
 }
 
+#[cfg(test)]
 async fn ensure_daemon_running(project_root: &Path, auto_start_enabled: bool) -> Result<bool> {
     Ok(
         ensure_daemon_running_detailed(project_root, auto_start_enabled)
