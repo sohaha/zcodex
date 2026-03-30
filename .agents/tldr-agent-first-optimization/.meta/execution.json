@@ -1,0 +1,48 @@
+{
+  "feature": "tldr-agent-first-optimization",
+  "createdAt": "2026-03-30T07:03:07Z",
+  "parameters": {
+    "skipUI": true,
+    "skipDeploy": true,
+    "quick": false
+  },
+  "stages": {
+    "1": {
+      "status": "completed",
+      "startTime": "2026-03-30T07:03:07Z",
+      "endTime": "2026-03-30T07:10:00Z"
+    },
+    "2": {
+      "status": "completed",
+      "startTime": "2026-03-30T07:08:00Z",
+      "endTime": "2026-03-30T07:10:00Z"
+    },
+    "3": {
+      "status": "in_progress",
+      "startTime": "2026-03-30T07:10:00Z",
+      "endTime": null
+    },
+    "4": {
+      "status": "skipped",
+      "startTime": null,
+      "endTime": null
+    }
+  },
+  "qualityGates": {
+    "gate0": "approved",
+    "gate1": "approved",
+    "gate2": null
+  },
+  "humanInterventions": [
+    {
+      "at": "2026-03-30T07:00:00Z",
+      "type": "direction_confirmed",
+      "note": "用户选择直接按既定方案实施。"
+    },
+    {
+      "at": "2026-03-30T07:02:00Z",
+      "type": "artifact_first",
+      "note": "用户要求先在 .agents 中写好对应文档，再继续实施。"
+    }
+  ]
+}

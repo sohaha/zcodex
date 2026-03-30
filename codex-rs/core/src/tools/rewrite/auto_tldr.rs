@@ -2,6 +2,7 @@ use crate::codex::TurnContext;
 use crate::config::AutoTldrRoutingMode;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::AutoTldrContext;
+use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::decision::ToolRewriteDecision;
 use crate::tools::router::ToolCall;
@@ -49,6 +50,13 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         };
     }
 
+    if matches!(directives.problem_kind, ProblemKind::Factual) && !directives.force_tldr {
+        return ToolRewriteDecision::Passthrough {
+            call,
+            reason: "factual_query",
+        };
+    }
+
     let args: GrepFilesArgs = match serde_json::from_str(arguments) {
         Ok(args) => args,
         Err(_) => {
@@ -81,6 +89,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         args.include.as_deref(),
         &auto_tldr_context,
         mode,
+        directives.force_tldr,
     ) else {
         return ToolRewriteDecision::Passthrough {
             call,
@@ -93,16 +102,26 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
 
     let (action, reason, symbol, query) =
         if directives.prefer_context_search && looks_like_symbol(pattern) {
+            let reason = match directives.problem_kind {
+                ProblemKind::Structural => "structural_symbol_query",
+                ProblemKind::Mixed => "mixed_symbol_query",
+                ProblemKind::Factual => "factual_symbol_query",
+            };
             (
                 TldrToolAction::Context,
-                "symbol_query",
+                reason,
                 Some(pattern.to_string()),
                 None,
             )
         } else {
+            let reason = match directives.problem_kind {
+                ProblemKind::Structural => "structural_code_search_query",
+                ProblemKind::Mixed => "mixed_code_search_query",
+                ProblemKind::Factual => "factual_code_search_query",
+            };
             (
                 TldrToolAction::Semantic,
-                "code_search_query",
+                reason,
                 None,
                 Some(pattern.to_string()),
             )
@@ -152,10 +171,11 @@ fn infer_language(
     include: Option<&str>,
     auto_tldr_context: &AutoTldrContext,
     mode: AutoTldrRoutingMode,
+    force_tldr: bool,
 ) -> Option<TldrToolLanguage> {
     let inferred = infer_language_from_path(search_path)
         .or_else(|| include.and_then(infer_language_from_include));
-    if mode.uses_last_tldr_context() {
+    if force_tldr || mode.uses_last_tldr_context() {
         inferred.or(auto_tldr_context.last_language)
     } else {
         inferred
@@ -266,6 +286,7 @@ mod tests {
     use crate::config::AutoTldrRoutingMode;
     use crate::tools::context::ToolPayload;
     use crate::tools::rewrite::AutoTldrContext;
+    use crate::tools::rewrite::ProblemKind;
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::decision::ToolRewriteDecision;
     use crate::tools::router::ToolCall;
@@ -297,7 +318,7 @@ mod tests {
         let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
             panic!("expected rewrite");
         };
-        assert_eq!(reason, "symbol_query");
+        assert_eq!(reason, "structural_symbol_query");
         assert_eq!(call.tool_name, "tldr");
         let ToolPayload::Function { arguments } = call.payload else {
             panic!("expected function payload");
@@ -403,7 +424,7 @@ mod tests {
         let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
             panic!("expected rewrite");
         };
-        assert_eq!(reason, "symbol_query");
+        assert_eq!(reason, "structural_symbol_query");
         let ToolPayload::Function { arguments } = call.payload else {
             panic!("expected function payload");
         };
@@ -413,5 +434,117 @@ mod tests {
         assert_eq!(args.language, Some(TldrToolLanguage::Rust));
         assert_eq!(args.symbol.as_deref(), Some("ToolCallRuntime"));
         assert_eq!(args.query, None);
+    }
+
+    #[tokio::test]
+    async fn force_tldr_reuses_last_language_even_in_safe_mode() {
+        let (_, turn) = make_session_and_context().await;
+        *turn.auto_tldr_context.write().await = AutoTldrContext {
+            last_language: Some(TldrToolLanguage::Rust),
+            ..Default::default()
+        };
+        let call = ToolCall {
+            tool_name: "grep_files".to_string(),
+            tool_namespace: None,
+            call_id: "call-4".to_string(),
+            payload: ToolPayload::Function {
+                arguments: r#"{"pattern":"ToolCallRuntime"}"#.to_string(),
+            },
+        };
+
+        let decision = rewrite_grep_files_to_tldr(
+            &turn,
+            call,
+            ToolRoutingDirectives {
+                force_tldr: true,
+                ..Default::default()
+            },
+            AutoTldrRoutingMode::Safe,
+        )
+        .await;
+
+        let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
+            panic!("expected rewrite");
+        };
+        assert_eq!(reason, "structural_symbol_query");
+        let ToolPayload::Function { arguments } = call.payload else {
+            panic!("expected function payload");
+        };
+        let args: TldrToolCallParam =
+            serde_json::from_str(&arguments).expect("parse rewritten tldr args");
+        assert_eq!(args.action, TldrToolAction::Context);
+        assert_eq!(args.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(args.symbol.as_deref(), Some("ToolCallRuntime"));
+    }
+
+    #[tokio::test]
+    async fn factual_queries_stay_on_raw_grep_path_even_when_code_like() {
+        let (_, turn) = make_session_and_context().await;
+        let call = ToolCall {
+            tool_name: "grep_files".to_string(),
+            tool_namespace: None,
+            call_id: "call-5".to_string(),
+            payload: ToolPayload::Function {
+                arguments: r#"{"pattern":"default_timeout","include":"*.rs"}"#.to_string(),
+            },
+        };
+
+        let decision = rewrite_grep_files_to_tldr(
+            &turn,
+            call.clone(),
+            ToolRoutingDirectives {
+                problem_kind: ProblemKind::Factual,
+                ..Default::default()
+            },
+            AutoTldrRoutingMode::Safe,
+        )
+        .await;
+
+        let ToolRewriteDecision::Passthrough {
+            call: passthrough,
+            reason,
+        } = decision
+        else {
+            panic!("expected passthrough");
+        };
+        assert_eq!(reason, "factual_query");
+        assert_eq!(passthrough.tool_name, call.tool_name);
+    }
+
+    #[tokio::test]
+    async fn mixed_queries_still_use_tldr_first_for_symbol_mapping() {
+        let (_, turn) = make_session_and_context().await;
+        let call = ToolCall {
+            tool_name: "grep_files".to_string(),
+            tool_namespace: None,
+            call_id: "call-6".to_string(),
+            payload: ToolPayload::Function {
+                arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
+            },
+        };
+
+        let decision = rewrite_grep_files_to_tldr(
+            &turn,
+            call,
+            ToolRoutingDirectives {
+                problem_kind: ProblemKind::Mixed,
+                ..Default::default()
+            },
+            AutoTldrRoutingMode::Safe,
+        )
+        .await;
+
+        let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
+            panic!("expected rewrite");
+        };
+        assert_eq!(reason, "mixed_symbol_query");
+        let ToolPayload::Function { arguments } = call.payload else {
+            panic!("expected function payload");
+        };
+        let args: TldrToolCallParam =
+            serde_json::from_str(&arguments).expect("parse rewritten tldr args");
+        assert_eq!(args.action, TldrToolAction::Context);
+        assert_eq!(args.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(args.symbol.as_deref(), Some("create_tldr_tool"));
     }
 }
