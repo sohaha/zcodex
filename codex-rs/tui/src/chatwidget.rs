@@ -6014,12 +6014,12 @@ impl ChatWidget {
 
     fn status_line_reasoning_effort_label(effort: Option<ReasoningEffortConfig>) -> &'static str {
         match effort {
-            Some(ReasoningEffortConfig::Minimal) => "minimal",
-            Some(ReasoningEffortConfig::Low) => "low",
-            Some(ReasoningEffortConfig::Medium) => "medium",
-            Some(ReasoningEffortConfig::High) => "high",
-            Some(ReasoningEffortConfig::XHigh) => "xhigh",
-            None | Some(ReasoningEffortConfig::None) => "default",
+            Some(ReasoningEffortConfig::Minimal) => "极低",
+            Some(ReasoningEffortConfig::Low) => "低",
+            Some(ReasoningEffortConfig::Medium) => "中",
+            Some(ReasoningEffortConfig::High) => "高",
+            Some(ReasoningEffortConfig::XHigh) => "极高",
+            None | Some(ReasoningEffortConfig::None) => "默认",
         }
     }
 
@@ -8341,18 +8341,19 @@ impl ChatWidget {
             let mut message = format!("模型已切换为 {next_model}");
             if !next_model.starts_with("codex-auto-") {
                 let reasoning_label = match next_effort {
-                    Some(ReasoningEffortConfig::Minimal) => "minimal",
-                    Some(ReasoningEffortConfig::Low) => "low",
-                    Some(ReasoningEffortConfig::Medium) => "medium",
-                    Some(ReasoningEffortConfig::High) => "high",
-                    Some(ReasoningEffortConfig::XHigh) => "xhigh",
-                    None | Some(ReasoningEffortConfig::None) => "default",
+                    Some(effort) => Self::reasoning_effort_label(effort),
+                    None => "默认",
                 };
                 message.push(' ');
                 message.push_str(reasoning_label);
             }
             message.push_str("，用于 ");
-            message.push_str(next_mode.display_name());
+            message.push_str(match next_mode {
+                ModeKind::Plan => "计划",
+                ModeKind::Default => "默认",
+                ModeKind::PairProgramming => "结对编程",
+                ModeKind::Execute => "执行",
+            });
             message.push_str(" 模式。");
             self.add_info_message(message, /*hint*/ None);
         }
@@ -9373,7 +9374,7 @@ impl ChatWidget {
         flex.push(
             /*flex*/ 0,
             RenderableItem::Borrowed(&self.bottom_pane).inset(Insets::tlbr(
-                /*top*/ 1, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
+                /*top*/ 0, /*left*/ 0, /*bottom*/ 0, /*right*/ 0,
             )),
         );
         RenderableItem::Owned(Box::new(flex))

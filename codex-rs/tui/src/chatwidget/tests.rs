@@ -5853,7 +5853,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("模型已切换为 gpt-5.1-codex-mini medium，用于 Plan 模式。"),
+        plan_messages.contains("模型已切换为 gpt-5.1-codex-mini 中，用于 计划 模式。"),
         "expected Plan-mode model switch notice, got: {plan_messages:?}"
     );
 
@@ -5866,8 +5866,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .map(|lines| lines_to_single_string(lines))
         .collect::<Vec<_>>()
         .join("\n");
-    let expected_default_message =
-        format!("模型已切换为 {default_model} default，用于 Default 模式。");
+    let expected_default_message = format!("模型已切换为 {default_model} 默认，用于 默认 模式。");
     assert!(
         default_messages.contains(&expected_default_message),
         "expected Default-mode model switch notice, got: {default_messages:?}"
@@ -5890,7 +5889,7 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("模型已切换为 gpt-5.3-codex medium，用于 Plan 模式。"),
+        plan_messages.contains("模型已切换为 gpt-5.3-codex 中，用于 计划 模式。"),
         "expected reasoning-change notice in 计划模式, got: {plan_messages:?}"
     );
 }
@@ -6624,7 +6623,7 @@ async fn undo_failure_events_render_error_message() {
         id: "turn-2".to_string(),
         msg: EventMsg::UndoCompleted(UndoCompletedEvent {
             success: false,
-            message: Some("Failed to restore workspace state.".to_string()),
+            message: Some("恢复工作区状态失败。".to_string()),
         }),
     });
 
@@ -6637,7 +6636,7 @@ async fn undo_failure_events_render_error_message() {
 
     let completed = lines_to_single_string(&cells[0]);
     assert!(
-        completed.contains("Failed to restore workspace state."),
+        completed.contains("恢复工作区状态失败。"),
         "expected failure message, got {completed:?}"
     );
 }
@@ -7274,7 +7273,7 @@ async fn plugins_popup_snapshot_shows_all_marketplaces_and_sorts_installed_then_
                 "plugin-bravo",
                 "bravo",
                 Some("Bravo Search"),
-                Some("Search docs and tickets."),
+                Some("搜索文档与工单。"),
                 false,
                 true,
                 PluginInstallPolicy::Available,
@@ -7283,7 +7282,7 @@ async fn plugins_popup_snapshot_shows_all_marketplaces_and_sorts_installed_then_
                 "plugin-alpha",
                 "alpha",
                 Some("Alpha Sync"),
-                Some("Already installed but disabled."),
+                Some("已安装，但当前已禁用。"),
                 true,
                 false,
                 PluginInstallPolicy::Available,
@@ -7292,7 +7291,7 @@ async fn plugins_popup_snapshot_shows_all_marketplaces_and_sorts_installed_then_
                 "plugin-starter",
                 "starter",
                 Some("Starter"),
-                Some("Included by default."),
+                Some("默认已包含。"),
                 false,
                 true,
                 PluginInstallPolicy::InstalledByDefault,
@@ -7302,13 +7301,13 @@ async fn plugins_popup_snapshot_shows_all_marketplaces_and_sorts_installed_then_
             "plugin-hidden",
             "hidden",
             Some("Hidden Repo Plugin"),
-            Some("Should not be shown in /plugins."),
+            Some("不应显示在 /plugins 中。"),
             false,
             true,
             PluginInstallPolicy::Available,
         )]),
     ]);
-    response.remote_sync_error = Some("remote sync timed out".to_string());
+    response.remote_sync_error = Some("远程同步超时".to_string());
 
     let popup = render_loaded_plugins_popup(&mut chat, response);
     assert_snapshot!("plugins_popup_curated_marketplace", popup);
@@ -11896,7 +11895,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
 
     assert_eq!(
         status_line_text(&chat),
-        Some("gpt-5.4 xhigh 极速 · 100% 剩余 · /tmp/project".to_string())
+        Some("gpt-5.4 极高 极速 · 100% 剩余 · /tmp/project".to_string())
     );
 
     chat.set_model("gpt-5.3-codex");
@@ -11904,7 +11903,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
 
     assert_eq!(
         status_line_text(&chat),
-        Some("gpt-5.3-codex xhigh · 100% 剩余 · /tmp/project".to_string())
+        Some("gpt-5.3-codex 极高 · 100% 剩余 · /tmp/project".to_string())
     );
 }
 
@@ -11936,6 +11935,35 @@ async fn status_line_model_with_reasoning_fast_footer_snapshot() {
         "status_line_model_with_reasoning_fast_footer",
         terminal.backend()
     );
+}
+
+#[tokio::test]
+async fn startup_prompt_sits_directly_below_header_when_no_tooltip_is_visible() {
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.show_welcome_banner = false;
+
+    let width = 80;
+    let height = chat.desired_height(width);
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
+    terminal
+        .draw(|f| chat.render(f.area(), f.buffer_mut()))
+        .expect("draw startup prompt");
+
+    let screen = format!("{:?}", terminal.backend());
+    let rows: Vec<&str> = screen.lines().collect();
+    let header_row = rows
+        .iter()
+        .position(|row| row.contains("╰") && row.contains("╯"))
+        .expect("header bottom row should exist");
+    let prompt_row = rows
+        .iter()
+        .position(|row| row.trim_start().starts_with('›'))
+        .expect("composer prompt row should exist");
+
+    assert_eq!(prompt_row, header_row + 1);
 }
 
 #[tokio::test]
@@ -12156,7 +12184,7 @@ async fn pre_tool_use_hook_events_render_snapshot() {
     assert_hook_events_snapshot(
         codex_protocol::protocol::HookEventName::PreToolUse,
         "pre-tool-use:0:/tmp/hooks.json",
-        "warming the shell",
+        "正在预热 shell",
         "pre_tool_use_hook_events_render_snapshot",
     )
     .await;
@@ -12167,7 +12195,7 @@ async fn session_start_hook_events_render_snapshot() {
     assert_hook_events_snapshot(
         codex_protocol::protocol::HookEventName::SessionStart,
         "session-start:0:/tmp/hooks.json",
-        "warming the shell",
+        "正在预热 shell",
         "session_start_hook_events_render_snapshot",
     )
     .await;
@@ -12227,7 +12255,7 @@ async fn assert_hook_events_snapshot(
                     },
                     codex_protocol::protocol::HookOutputEntry {
                         kind: codex_protocol::protocol::HookOutputEntryKind::Context,
-                        text: "Remember the startup checklist.".to_string(),
+                        text: "请记住启动检查清单。".to_string(),
                     },
                 ],
             },

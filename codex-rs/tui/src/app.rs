@@ -4405,12 +4405,12 @@ impl App {
 
     fn reasoning_label(reasoning_effort: Option<ReasoningEffortConfig>) -> &'static str {
         match reasoning_effort {
-            Some(ReasoningEffortConfig::Minimal) => "minimal",
-            Some(ReasoningEffortConfig::Low) => "low",
-            Some(ReasoningEffortConfig::Medium) => "medium",
-            Some(ReasoningEffortConfig::High) => "high",
-            Some(ReasoningEffortConfig::XHigh) => "xhigh",
-            None | Some(ReasoningEffortConfig::None) => "default",
+            Some(ReasoningEffortConfig::Minimal) => "极低",
+            Some(ReasoningEffortConfig::Low) => "低",
+            Some(ReasoningEffortConfig::Medium) => "中",
+            Some(ReasoningEffortConfig::High) => "高",
+            Some(ReasoningEffortConfig::XHigh) => "极高",
+            None | Some(ReasoningEffortConfig::None) => "默认",
         }
     }
 
