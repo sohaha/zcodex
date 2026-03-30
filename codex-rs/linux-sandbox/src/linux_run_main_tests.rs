@@ -147,6 +147,28 @@ fn rewrites_bwrap_helper_command_not_nested_user_command_when_current_exe_appear
 }
 
 #[test]
+fn launcher_reexec_path_prefers_codex_linux_sandbox_argv0_alias() {
+    let launcher_path = launcher_reexec_path(
+        Some(std::ffi::OsStr::new(
+            "/tmp/codex-arg0-session/codex-linux-sandbox",
+        )),
+        Path::new("/usr/bin/codex-exec"),
+    );
+
+    assert_eq!(launcher_path, "/tmp/codex-arg0-session/codex-linux-sandbox");
+}
+
+#[test]
+fn launcher_reexec_path_falls_back_to_current_exe_without_alias_argv0() {
+    let launcher_path = launcher_reexec_path(
+        Some(std::ffi::OsStr::new("/usr/bin/codex-exec")),
+        Path::new("/usr/bin/codex-exec"),
+    );
+
+    assert_eq!(launcher_path, "/usr/bin/codex-exec");
+}
+
+#[test]
 fn inserts_unshare_net_when_network_isolation_requested() {
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let argv = build_bwrap_argv(

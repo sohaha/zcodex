@@ -32,6 +32,13 @@ pub(crate) fn exec_bwrap(argv: Vec<String>, preserved_files: Vec<File>) -> ! {
     }
 }
 
+pub(crate) fn preferred_bwrap_supports_argv0() -> bool {
+    match preferred_bwrap_launcher() {
+        BubblewrapLauncher::System(launcher) => launcher.supports_argv0,
+        BubblewrapLauncher::Vendored => true,
+    }
+}
+
 fn preferred_bwrap_launcher() -> BubblewrapLauncher {
     static LAUNCHER: OnceLock<BubblewrapLauncher> = OnceLock::new();
     LAUNCHER

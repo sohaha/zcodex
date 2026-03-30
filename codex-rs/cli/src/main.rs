@@ -46,9 +46,12 @@ mod mcp_cmd;
 mod tldr_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
+mod zmemory_cmd;
 
 use crate::mcp_cmd::McpCli;
 use crate::tldr_cmd::TldrCli;
+use crate::zmemory_cmd::ZmemoryCli;
+use crate::zmemory_cmd::run_zmemory_command;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -114,6 +117,9 @@ enum Subcommand {
 
     /// 运行原生 TLDR 代码上下文分析命令。
     Tldr(TldrCli),
+
+    /// 管理本地 zmemory 长期记忆。
+    Zmemory(ZmemoryCli),
 
     /// 以 MCP 服务器（标准输入/输出）模式启动 Codex。
     McpServer,
@@ -668,6 +674,10 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         Some(Subcommand::Tldr(tldr_cli)) => {
             reject_remote_mode_for_subcommand(root_remote.as_deref(), "tldr")?;
             tldr_cmd::run_tldr_command(tldr_cli).await?;
+        }
+        Some(Subcommand::Zmemory(zmemory_cli)) => {
+            reject_remote_mode_for_subcommand(root_remote.as_deref(), "zmemory")?;
+            run_zmemory_command(zmemory_cli).await?;
         }
         Some(Subcommand::AppServer(app_server_cli)) => match app_server_cli.subcommand {
             None => {

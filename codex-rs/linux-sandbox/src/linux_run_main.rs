@@ -12,11 +12,13 @@ use crate::bwrap::BwrapOptions;
 use crate::bwrap::create_bwrap_command_args;
 use crate::landlock::apply_sandbox_policy_to_current_thread;
 use crate::launcher::exec_bwrap;
+use crate::launcher::preferred_bwrap_supports_argv0;
 use crate::proxy_routing::activate_proxy_routes_in_netns;
 use crate::proxy_routing::prepare_host_proxy_route_spec;
 use codex_protocol::protocol::FileSystemSandboxPolicy;
 use codex_protocol::protocol::NetworkSandboxPolicy;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_sandboxing::landlock::CODEX_LINUX_SANDBOX_ARG0;
 
 #[derive(Debug, Parser)]
 /// CLI surface for the Linux sandbox helper.
@@ -426,12 +428,18 @@ fn run_bwrap_with_proc_fallback(
         mount_proc,
         network_mode,
     };
-    let bwrap_args = build_bwrap_argv(
+    let mut bwrap_args = build_bwrap_argv(
         inner,
         file_system_sandbox_policy,
         sandbox_policy_cwd,
         command_cwd,
         options,
+    );
+    let launcher_path = current_launcher_path();
+    apply_inner_command_argv0_for_launcher(
+        &mut bwrap_args.args,
+        preferred_bwrap_supports_argv0(),
+        launcher_path,
     );
     exec_bwrap(bwrap_args.args, bwrap_args.preserved_files);
 }
@@ -456,7 +464,7 @@ fn build_bwrap_argv(
     command_cwd: &Path,
     options: BwrapOptions,
 ) -> crate::bwrap::BwrapArgs {
-    let mut bwrap_args = create_bwrap_command_args(
+    let bwrap_args = create_bwrap_command_args(
         inner,
         file_system_sandbox_policy,
         sandbox_policy_cwd,
@@ -470,10 +478,9 @@ fn build_bwrap_argv(
         .iter()
         .position(|arg| arg == "--")
         .unwrap_or_else(|| panic!("bubblewrap argv 缺少命令分隔符 `--`"));
-    bwrap_args.args.splice(
-        command_separator_index..command_separator_index,
-        ["--argv0".to_string(), "codex-linux-sandbox".to_string()],
-    );
+    if command_separator_index + 1 >= bwrap_args.args.len() {
+        panic!("bubblewrap argv 缺少内部命令");
+    }
 
     let mut argv = vec!["bwrap".to_string()];
     argv.extend(bwrap_args.args);
@@ -481,6 +488,49 @@ fn build_bwrap_argv(
         args: argv,
         preserved_files: bwrap_args.preserved_files,
     }
+}
+
+fn apply_inner_command_argv0_for_launcher(
+    argv: &mut Vec<String>,
+    supports_argv0: bool,
+    launcher_path: String,
+) {
+    let command_separator_index = argv
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or_else(|| panic!("bubblewrap argv 缺少命令分隔符 `--`"));
+    let inner_command_index = command_separator_index + 1;
+    if inner_command_index >= argv.len() {
+        panic!("bubblewrap argv 缺少内部命令");
+    }
+
+    if supports_argv0 {
+        argv.splice(
+            command_separator_index..command_separator_index,
+            ["--argv0".to_string(), CODEX_LINUX_SANDBOX_ARG0.to_string()],
+        );
+        return;
+    }
+
+    argv[inner_command_index] = launcher_path;
+}
+
+fn current_launcher_path() -> String {
+    let argv0 = std::env::args_os().next();
+    let current_exe = std::env::current_exe()
+        .unwrap_or_else(|err| panic!("failed to resolve current executable path: {err}"));
+    launcher_reexec_path(argv0.as_deref(), current_exe.as_path())
+}
+
+fn launcher_reexec_path(argv0: Option<&std::ffi::OsStr>, current_exe: &Path) -> String {
+    if let Some(argv0) = argv0 {
+        let argv0_path = Path::new(argv0);
+        if argv0_path.file_name().and_then(|name| name.to_str()) == Some(CODEX_LINUX_SANDBOX_ARG0) {
+            return argv0_path.to_string_lossy().into_owned();
+        }
+    }
+
+    current_exe.to_string_lossy().into_owned()
 }
 
 fn preflight_proc_mount_support(
