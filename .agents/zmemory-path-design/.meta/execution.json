@@ -1,0 +1,21 @@
+{
+  "feature": "zmemory-path-design",
+  "createdAt": "2026-03-30T07:42:19Z",
+  "parameters": {
+    "skipUI": true,
+    "skipDeploy": true,
+    "quick": false
+  },
+  "stages": {
+    "1": { "status": "completed", "startTime": "2026-03-30T07:42:19Z", "endTime": "2026-03-30T12:20:00Z" },
+    "2": { "status": "completed", "startTime": "2026-03-30T12:20:00Z", "endTime": "2026-03-30T12:35:00Z" },
+    "3": { "status": "pending", "startTime": null, "endTime": null },
+    "4": { "status": "pending", "startTime": null, "endTime": null }
+  },
+  "qualityGates": {
+    "gate0": null,
+    "gate1": "passed-with-conditions",
+    "gate2": null
+  },
+  "humanInterventions": []
+}
