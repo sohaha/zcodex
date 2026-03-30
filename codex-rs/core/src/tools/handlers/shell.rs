@@ -58,6 +58,7 @@ struct RunExecLikeArgs {
     exec_params: ExecParams,
     display_command: Option<Vec<String>>,
     env_assignments: Vec<String>,
+    env_unsets: Vec<String>,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
     interaction_input: Option<String>,
@@ -75,6 +76,7 @@ struct RoutedCommand {
     command: String,
     display_command: Option<String>,
     env_assignments: Vec<String>,
+    env_unsets: Vec<String>,
     interaction_input: Option<String>,
     model_output_prefix: Option<String>,
 }
@@ -198,6 +200,7 @@ impl ShellCommandHandler {
                         command: analysis.command,
                         display_command: Some(trimmed.to_string()),
                         env_assignments: Vec::new(),
+                        env_unsets: Vec::new(),
                         interaction_input: None,
                         model_output_prefix: None,
                     };
@@ -217,6 +220,7 @@ impl ShellCommandHandler {
                     command: executed_command,
                     display_command: Some(trimmed.to_string()),
                     env_assignments: parts.leading_env,
+                    env_unsets: Vec::new(),
                     interaction_input: None,
                     model_output_prefix: None,
                 }
@@ -227,6 +231,7 @@ impl ShellCommandHandler {
                         command: analysis.command,
                         display_command: None,
                         env_assignments: Vec::new(),
+                        env_unsets: Vec::new(),
                         interaction_input: None,
                         model_output_prefix: None,
                     };
@@ -251,6 +256,7 @@ impl ShellCommandHandler {
                     command: executed_command,
                     display_command: Some(display_command),
                     env_assignments: parts.leading_env,
+                    env_unsets: Vec::new(),
                 }
             }
             ShellCommandRewriteKind::Passthrough { reason, candidate } => {
@@ -267,6 +273,7 @@ impl ShellCommandHandler {
                     command: analysis.command,
                     display_command: None,
                     env_assignments: Vec::new(),
+                    env_unsets: Vec::new(),
                     interaction_input: None,
                     model_output_prefix: Some(format!(
                         "[shell_command kept raw]\noriginal: {}\nexecuted: {}\nreason: {}",
@@ -426,7 +433,17 @@ fn apply_env_assignments(env: &mut HashMap<String, String>, assignments: &[Strin
     }
 }
 
-fn strip_simple_env_wrapper(command: &str, env_assignments: &mut Vec<String>) -> Option<String> {
+fn apply_env_unsets(env: &mut HashMap<String, String>, unsets: &[String]) {
+    for unset in unsets {
+        env.remove(unset);
+    }
+}
+
+fn strip_simple_env_wrapper(
+    command: &str,
+    env_assignments: &mut Vec<String>,
+    env_unsets: &mut Vec<String>,
+) -> Option<String> {
     let tokens = shlex::split(command)?;
     let [first, rest @ ..] = tokens.as_slice() else {
         return None;
@@ -437,10 +454,28 @@ fn strip_simple_env_wrapper(command: &str, env_assignments: &mut Vec<String>) ->
 
     let mut index = 0;
     let mut extracted = Vec::new();
+    let mut extracted_unsets = Vec::new();
     let mut saw_double_dash = false;
     while let Some(token) = rest.get(index) {
         if token == "--" && !saw_double_dash {
             saw_double_dash = true;
+            index += 1;
+            continue;
+        }
+        if token == "-u" {
+            let name = rest.get(index + 1)?;
+            if !is_valid_env_name(name) {
+                return None;
+            }
+            extracted_unsets.push(name.clone());
+            index += 2;
+            continue;
+        }
+        if let Some(name) = token.strip_prefix("--unset=") {
+            if !is_valid_env_name(name) {
+                return None;
+            }
+            extracted_unsets.push(name.to_string());
             index += 1;
             continue;
         }
@@ -455,7 +490,7 @@ fn strip_simple_env_wrapper(command: &str, env_assignments: &mut Vec<String>) ->
         break;
     }
 
-    if extracted.is_empty() {
+    if extracted.is_empty() && extracted_unsets.is_empty() {
         return None;
     }
 
@@ -465,6 +500,7 @@ fn strip_simple_env_wrapper(command: &str, env_assignments: &mut Vec<String>) ->
     }
 
     env_assignments.extend(extracted);
+    env_unsets.extend(extracted_unsets);
     Some(render_exec_argv(argv))
 }
 
@@ -513,6 +549,15 @@ fn expand_env_assignment_value(raw_value: &str, env: &HashMap<String, String>) -
         }
     }
     output
+}
+
+fn is_valid_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
 impl From<ShellCommandBackendConfig> for ShellCommandHandler {
@@ -576,6 +621,7 @@ impl ToolHandler for ShellHandler {
                     exec_params,
                     display_command: None,
                     env_assignments: Vec::new(),
+                    env_unsets: Vec::new(),
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
                     interaction_input: None,
@@ -597,6 +643,7 @@ impl ToolHandler for ShellHandler {
                     exec_params,
                     display_command: None,
                     env_assignments: Vec::new(),
+                    env_unsets: Vec::new(),
                     additional_permissions: None,
                     prefix_rule: None,
                     interaction_input: None,
@@ -679,9 +726,11 @@ impl ToolHandler for ShellCommandHandler {
         .await;
         let mut params = params;
         let mut routed_command = Self::route_command(&params.command);
-        if let Some(command) =
-            strip_simple_env_wrapper(&routed_command.command, &mut routed_command.env_assignments)
-        {
+        if let Some(command) = strip_simple_env_wrapper(
+            &routed_command.command,
+            &mut routed_command.env_assignments,
+            &mut routed_command.env_unsets,
+        ) {
             routed_command.command = command;
         }
         let mut routing_env = create_env(
@@ -720,6 +769,7 @@ impl ToolHandler for ShellCommandHandler {
             exec_params,
             display_command,
             env_assignments: routed_command.env_assignments,
+            env_unsets: routed_command.env_unsets,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             interaction_input: routed_command.interaction_input,
@@ -742,6 +792,7 @@ impl ShellHandler {
             exec_params,
             display_command,
             env_assignments,
+            env_unsets,
             additional_permissions,
             prefix_rule,
             interaction_input,
@@ -758,6 +809,9 @@ impl ShellHandler {
         let dependency_env = session.dependency_env().await;
         if !dependency_env.is_empty() {
             exec_params.env.extend(dependency_env.clone());
+        }
+        if !env_unsets.is_empty() {
+            apply_env_unsets(&mut exec_params.env, &env_unsets);
         }
         if !env_assignments.is_empty() {
             apply_env_assignments(&mut exec_params.env, &env_assignments);

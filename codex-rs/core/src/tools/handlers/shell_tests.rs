@@ -69,6 +69,7 @@ fn assert_kept_raw(command: &str, reason: &str) {
     let routed = ShellCommandHandler::route_command(command);
     assert_eq!(routed.command, command);
     assert!(routed.env_assignments.is_empty());
+    assert!(routed.env_unsets.is_empty());
     assert_eq!(routed.interaction_input, None);
     assert_eq!(
         routed.model_output_prefix,
@@ -93,6 +94,7 @@ fn assert_rewritten(
             .map(|value| (*value).to_string())
             .collect::<Vec<_>>()
     );
+    assert!(routed.env_unsets.is_empty());
     assert_eq!(routed.interaction_input, Some(command.to_string()));
     assert_eq!(
         routed.model_output_prefix,
@@ -215,9 +217,11 @@ fn shell_command_handler_applies_leading_env_assignments_to_exec_env() {
 #[test]
 fn shell_command_handler_strips_simple_env_wrapper_into_exec_env() {
     let mut env_assignments = Vec::new();
+    let mut env_unsets = Vec::new();
     let command = super::strip_simple_env_wrapper(
         "env FOO=1 BAR=$FOO rtk grep 'a|b' src/main.rs",
         &mut env_assignments,
+        &mut env_unsets,
     );
 
     assert_eq!(command, Some("rtk grep 'a|b' src/main.rs".to_string()));
@@ -225,18 +229,51 @@ fn shell_command_handler_strips_simple_env_wrapper_into_exec_env() {
         env_assignments,
         vec!["FOO=1".to_string(), "BAR=$FOO".to_string()]
     );
+    assert!(env_unsets.is_empty());
 }
 
 #[test]
 fn shell_command_handler_keeps_env_wrapper_with_flags_in_exec_command() {
     let mut env_assignments = Vec::new();
+    let mut env_unsets = Vec::new();
     let command = super::strip_simple_env_wrapper(
         "env --chdir=repo FOO=1 rtk git status",
         &mut env_assignments,
+        &mut env_unsets,
     );
 
     assert_eq!(command, None);
     assert!(env_assignments.is_empty());
+    assert!(env_unsets.is_empty());
+}
+
+#[test]
+fn shell_command_handler_strips_env_wrapper_with_unset_into_exec_env() {
+    let mut env_assignments = Vec::new();
+    let mut env_unsets = Vec::new();
+    let command = super::strip_simple_env_wrapper(
+        "env -u FOO --unset=BAR BAZ=$HOME rtk git status",
+        &mut env_assignments,
+        &mut env_unsets,
+    );
+
+    assert_eq!(command, Some("rtk git status".to_string()));
+    assert_eq!(env_assignments, vec!["BAZ=$HOME".to_string()]);
+    assert_eq!(env_unsets, vec!["FOO".to_string(), "BAR".to_string()]);
+}
+
+#[test]
+fn shell_command_handler_applies_unsets_before_assignments() {
+    let mut env = HashMap::from([
+        ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
+        ("FOO".to_string(), "old".to_string()),
+    ]);
+
+    super::apply_env_unsets(&mut env, &["FOO".to_string()]);
+    super::apply_env_assignments(&mut env, &["BAR=$FOO".to_string()]);
+
+    assert!(!env.contains_key("FOO"));
+    assert_eq!(env.get("BAR"), Some(&String::new()));
 }
 
 #[cfg(unix)]
@@ -533,6 +570,7 @@ fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
     let routed = ShellCommandHandler::route_command("grep 'a|b' src/main.rs");
     assert_eq!(routed.command, "rtk grep 'a|b' src/main.rs");
     assert!(routed.env_assignments.is_empty());
+    assert!(routed.env_unsets.is_empty());
     assert_eq!(
         routed.interaction_input,
         Some("grep 'a|b' src/main.rs".to_string())
