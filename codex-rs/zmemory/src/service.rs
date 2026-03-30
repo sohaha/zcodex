@@ -549,6 +549,10 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let path_resolution = path_resolution_payload(config);
 
     Ok(json!({
+        "dbPath": path_resolution["dbPath"].clone(),
+        "workspaceKey": path_resolution["workspaceKey"].clone(),
+        "source": path_resolution["source"].clone(),
+        "reason": path_resolution["reason"].clone(),
         "pathResolution": path_resolution,
         "nodeCount": node_count,
         "memoryCount": memory_count,
@@ -571,6 +575,10 @@ fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let stats = stats_action(conn, config)?;
     let path_resolution = path_resolution_payload(config);
     Ok(json!({
+        "dbPath": path_resolution["dbPath"].clone(),
+        "workspaceKey": path_resolution["workspaceKey"].clone(),
+        "source": path_resolution["source"].clone(),
+        "reason": path_resolution["reason"].clone(),
         "healthy": doctor.get("healthy").and_then(serde_json::Value::as_bool).unwrap_or(false),
         "orphanedMemoryCount": doctor.get("orphanedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
         "deprecatedMemoryCount": doctor.get("deprecatedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
@@ -1819,7 +1827,22 @@ mod tests {
             stats["result"]["pathResolution"]["dbPath"],
             json!(config.db_path().display().to_string())
         );
-        assert_eq!(stats["result"].get("dbPath"), None);
+        assert_eq!(
+            stats["result"]["dbPath"],
+            stats["result"]["pathResolution"]["dbPath"]
+        );
+        assert_eq!(
+            stats["result"]["workspaceKey"],
+            stats["result"]["pathResolution"]["workspaceKey"]
+        );
+        assert_eq!(
+            stats["result"]["source"],
+            stats["result"]["pathResolution"]["source"]
+        );
+        assert_eq!(
+            stats["result"]["reason"],
+            stats["result"]["pathResolution"]["reason"]
+        );
         assert_eq!(stats["result"]["pathResolution"].get("canonicalBase"), None);
         assert_eq!(
             sorted_object_keys(&stats["result"]["pathResolution"]),
@@ -1839,7 +1862,22 @@ mod tests {
             doctor["result"]["pathResolution"]["dbPath"],
             json!(config.db_path().display().to_string())
         );
-        assert_eq!(doctor["result"].get("dbPath"), None);
+        assert_eq!(
+            doctor["result"]["dbPath"],
+            doctor["result"]["pathResolution"]["dbPath"]
+        );
+        assert_eq!(
+            doctor["result"]["workspaceKey"],
+            doctor["result"]["pathResolution"]["workspaceKey"]
+        );
+        assert_eq!(
+            doctor["result"]["source"],
+            doctor["result"]["pathResolution"]["source"]
+        );
+        assert_eq!(
+            doctor["result"]["reason"],
+            doctor["result"]["pathResolution"]["reason"]
+        );
         assert_eq!(
             doctor["result"]["pathResolution"].get("canonicalBase"),
             None

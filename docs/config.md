@@ -80,7 +80,9 @@ codex zmemory stats --json
 codex zmemory doctor --json
 ```
 
-The stable diagnostic payload is `result.pathResolution`:
+The stable diagnostic payload is `result.pathResolution` (and the same
+`dbPath` / `workspaceKey` / `source` / `reason` fields are mirrored at the top
+level of `result` for quick checks):
 
 ```json
 {

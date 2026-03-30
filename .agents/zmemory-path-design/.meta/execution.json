@@ -9,13 +9,23 @@
   "stages": {
     "1": { "status": "completed", "startTime": "2026-03-30T07:42:19Z", "endTime": "2026-03-30T12:20:00Z" },
     "2": { "status": "completed", "startTime": "2026-03-30T12:20:00Z", "endTime": "2026-03-30T12:35:00Z" },
-    "3": { "status": "pending", "startTime": null, "endTime": null },
-    "4": { "status": "pending", "startTime": null, "endTime": null }
+    "3": { "status": "completed", "startTime": "2026-03-30T11:05:00Z", "endTime": "2026-03-30T11:40:32Z" },
+    "4": { "status": "skipped", "startTime": null, "endTime": null }
   },
   "qualityGates": {
     "gate0": null,
     "gate1": "passed-with-conditions",
-    "gate2": null
+    "gate2": {
+      "status": "passed-with-conditions",
+      "at": "2026-03-30T11:40:32Z",
+      "note": "zmemory path observability changes passed codex-zmemory full tests plus targeted codex-cli/core verification; full codex-cli zmemory suite still has pre-existing alias/disclosure failures unrelated to this patch."
+    }
   },
-  "humanInterventions": []
+  "humanInterventions": [
+    {
+      "at": "2026-03-30T11:32:00Z",
+      "type": "verification_adjusted",
+      "note": "用户提醒避免 Cargo 锁后，改用已编译测试二进制补做 CLI 定点验证。"
+    }
+  ]
 }

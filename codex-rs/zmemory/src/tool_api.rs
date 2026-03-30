@@ -265,7 +265,7 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .unwrap_or("unknown")
         ),
         "stats" => format!(
-            "stats: {} nodes, {} paths, {} docs ({})",
+            "stats: {} nodes, {} paths, {} docs ({}, {})",
             result
                 .get("nodeCount")
                 .and_then(serde_json::Value::as_i64)
@@ -279,13 +279,16 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .and_then(serde_json::Value::as_i64)
                 .unwrap_or_default(),
             result
-                .get("pathResolution")
-                .and_then(|value| value.get("dbPath"))
+                .get("dbPath")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown db")
+                .unwrap_or("unknown db"),
+            result
+                .get("reason")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown reason")
         ),
         "doctor" => format!(
-            "doctor: {} ({})",
+            "doctor: {} ({}, {})",
             if result
                 .get("healthy")
                 .and_then(serde_json::Value::as_bool)
@@ -296,10 +299,13 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 "unhealthy"
             },
             result
-                .get("pathResolution")
-                .and_then(|value| value.get("dbPath"))
+                .get("dbPath")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown db")
+                .unwrap_or("unknown db"),
+            result
+                .get("reason")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown reason")
         ),
         "rebuild-search" => format!(
             "rebuilt search index: {} documents",

@@ -164,6 +164,14 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
         sorted_object_keys(&payload["result"]["pathResolution"]),
         vec!["dbPath", "reason", "source", "workspaceKey"]
     );
+    assert_eq!(
+        payload["result"]["dbPath"],
+        payload["result"]["pathResolution"]["dbPath"]
+    );
+    assert_eq!(
+        payload["result"]["reason"],
+        payload["result"]["pathResolution"]["reason"]
+    );
 
     Ok(())
 }

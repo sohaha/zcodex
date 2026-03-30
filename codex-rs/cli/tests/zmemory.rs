@@ -50,6 +50,14 @@ async fn zmemory_stats_json_works_on_empty_db() -> Result<()> {
     assert_eq!(payload["result"]["deprecatedMemoryCount"], 0);
     assert_eq!(payload["result"]["aliasNodeCount"], 0);
     assert_eq!(payload["result"]["triggerNodeCount"], 0);
+    assert_eq!(
+        payload["result"]["dbPath"],
+        payload["result"]["pathResolution"]["dbPath"]
+    );
+    assert_eq!(
+        payload["result"]["reason"],
+        payload["result"]["pathResolution"]["reason"]
+    );
     Ok(())
 }
 

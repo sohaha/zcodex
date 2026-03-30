@@ -110,7 +110,7 @@ codex zmemory doctor --json
 
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
-- `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`
+- `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
 - `codex zmemory export recent --json`：查看最近变更节点
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
 
