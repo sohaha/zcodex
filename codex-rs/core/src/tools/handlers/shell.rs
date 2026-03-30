@@ -426,6 +426,48 @@ fn apply_env_assignments(env: &mut HashMap<String, String>, assignments: &[Strin
     }
 }
 
+fn strip_simple_env_wrapper(command: &str, env_assignments: &mut Vec<String>) -> Option<String> {
+    let tokens = shlex::split(command)?;
+    let [first, rest @ ..] = tokens.as_slice() else {
+        return None;
+    };
+    if first != "env" {
+        return None;
+    }
+
+    let mut index = 0;
+    let mut extracted = Vec::new();
+    let mut saw_double_dash = false;
+    while let Some(token) = rest.get(index) {
+        if token == "--" && !saw_double_dash {
+            saw_double_dash = true;
+            index += 1;
+            continue;
+        }
+        if looks_like_env_assignment(token) {
+            extracted.push(token.clone());
+            index += 1;
+            continue;
+        }
+        if token.starts_with('-') {
+            return None;
+        }
+        break;
+    }
+
+    if extracted.is_empty() {
+        return None;
+    }
+
+    let argv = rest.get(index..)?;
+    if argv.is_empty() {
+        return None;
+    }
+
+    env_assignments.extend(extracted);
+    Some(render_exec_argv(argv))
+}
+
 fn expand_env_assignment_value(raw_value: &str, env: &HashMap<String, String>) -> String {
     let mut output = String::new();
     let chars = raw_value.chars().collect::<Vec<_>>();
@@ -637,6 +679,11 @@ impl ToolHandler for ShellCommandHandler {
         .await;
         let mut params = params;
         let mut routed_command = Self::route_command(&params.command);
+        if let Some(command) =
+            strip_simple_env_wrapper(&routed_command.command, &mut routed_command.env_assignments)
+        {
+            routed_command.command = command;
+        }
         let mut routing_env = create_env(
             &turn.shell_environment_policy,
             Some(session.conversation_id),

@@ -212,6 +212,33 @@ fn shell_command_handler_applies_leading_env_assignments_to_exec_env() {
     assert_eq!(env.get("CODEX_HOME"), Some(&"/root/.codex".to_string()));
 }
 
+#[test]
+fn shell_command_handler_strips_simple_env_wrapper_into_exec_env() {
+    let mut env_assignments = Vec::new();
+    let command = super::strip_simple_env_wrapper(
+        "env FOO=1 BAR=$FOO rtk grep 'a|b' src/main.rs",
+        &mut env_assignments,
+    );
+
+    assert_eq!(command, Some("rtk grep 'a|b' src/main.rs".to_string()));
+    assert_eq!(
+        env_assignments,
+        vec!["FOO=1".to_string(), "BAR=$FOO".to_string()]
+    );
+}
+
+#[test]
+fn shell_command_handler_keeps_env_wrapper_with_flags_in_exec_command() {
+    let mut env_assignments = Vec::new();
+    let command = super::strip_simple_env_wrapper(
+        "env --chdir=repo FOO=1 rtk git status",
+        &mut env_assignments,
+    );
+
+    assert_eq!(command, None);
+    assert!(env_assignments.is_empty());
+}
+
 #[cfg(unix)]
 #[test]
 fn shell_command_handler_falls_back_to_path_codex_when_current_exe_is_gone() {
