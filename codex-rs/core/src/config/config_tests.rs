@@ -942,6 +942,23 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
 }
 
 #[test]
+fn loaded_config_defaults_show_tooltips_to_disabled() -> std::io::Result<()> {
+    let fixture = create_test_fixture()?;
+
+    let config = Config::load_from_base_config_with_overrides(
+        fixture.cfg.clone(),
+        ConfigOverrides {
+            cwd: Some(fixture.cwd()),
+            ..Default::default()
+        },
+        fixture.codex_home(),
+    )?;
+
+    assert!(!config.show_tooltips);
+    Ok(())
+}
+
+#[test]
 fn test_sandbox_config_parsing() {
     let sandbox_full_access = r#"
 sandbox_mode = "danger-full-access"
