@@ -2813,6 +2813,10 @@ mod tests {
         render_lines(&cell.transcript_lines(u16::MAX))
     }
 
+    fn sanitize_snapshot_version(text: String) -> String {
+        text.replace(&format!("(v{CODEX_CLI_VERSION})"), "(v1.0.0)")
+    }
+
     #[test]
     fn update_available_history_cell_uses_fork_release_links() {
         let cell = UpdateAvailableHistoryCell::new("9.9.9".to_string(), None);
@@ -3006,7 +3010,7 @@ mod tests {
             false,
         );
 
-        let rendered = render_transcript(&cell).join("\n");
+        let rendered = sanitize_snapshot_version(render_transcript(&cell).join("\n"));
         insta::assert_snapshot!(rendered);
     }
 
