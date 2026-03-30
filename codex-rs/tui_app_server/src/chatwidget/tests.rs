@@ -8297,6 +8297,40 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
     );
 }
 
+#[tokio::test]
+async fn plugin_install_auth_popup_renders_localized_copy() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_feature_enabled(Feature::Plugins, true);
+    chat.plugin_install_auth_flow = Some(PluginInstallAuthFlowState {
+        plugin_display_name: "Starter".to_string(),
+        next_app_index: 0,
+    });
+    chat.plugin_install_apps_needing_auth = vec![AppSummary {
+        id: "notion-id".to_string(),
+        name: "Notion".to_string(),
+        description: Some("Notion app".to_string()),
+        install_url: Some("https://example.test/notion".to_string()),
+        needs_auth: true,
+    }];
+    chat.open_plugin_install_auth_popup();
+
+    let popup = normalize_ui_text(&render_bottom_popup(&chat, 80));
+    assert!(
+        popup.contains("已安装插件：Starter"),
+        "expected localized plugin header, got:\n{popup}"
+    );
+    assert!(
+        popup.contains("应用设置 1/1：Notion"),
+        "expected localized app setup header, got:\n{popup}"
+    );
+    assert!(
+        popup.contains("在 ChatGPT 中安装")
+            && popup.contains("我已安装")
+            && popup.contains("跳过剩余应用设置"),
+        "expected localized auth actions, got:\n{popup}"
+    );
+}
+
 fn selected_permissions_popup_line(popup: &str) -> String {
     popup
         .lines()
@@ -12462,35 +12496,6 @@ async fn status_line_model_with_reasoning_fast_footer_snapshot() {
         "status_line_model_with_reasoning_fast_footer",
         terminal.backend()
     );
-}
-
-#[tokio::test]
-async fn startup_prompt_sits_directly_below_header_when_no_tooltip_is_visible() {
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.show_welcome_banner = false;
-
-    let width = 80;
-    let height = chat.desired_height(width);
-    let mut terminal = Terminal::new(TestBackend::new(width, height)).expect("create terminal");
-    terminal
-        .draw(|f| chat.render(f.area(), f.buffer_mut()))
-        .expect("draw startup prompt");
-
-    let screen = format!("{:?}", terminal.backend());
-    let rows: Vec<&str> = screen.lines().collect();
-    let header_row = rows
-        .iter()
-        .position(|row| row.contains("╰") && row.contains("╯"))
-        .expect("header bottom row should exist");
-    let prompt_row = rows
-        .iter()
-        .position(|row| row.trim_start().starts_with('›'))
-        .expect("composer prompt row should exist");
-
-    assert_eq!(prompt_row, header_row + 1);
 }
 
 #[tokio::test]

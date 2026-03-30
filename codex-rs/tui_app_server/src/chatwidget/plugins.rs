@@ -416,17 +416,17 @@ impl ChatWidget {
         let current = flow.next_app_index + 1;
         let is_installed = self.plugin_install_auth_app_is_installed(app.id.as_str());
         let status_label = if is_installed {
-            "Already installed in this session."
+            "本次会话中已安装。"
         } else {
-            "Install the required Apps in ChatGPT to continue:"
+            "请先在 ChatGPT 中安装所需应用，再继续："
         };
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Plugins".bold()));
+        header.push(Line::from("插件".bold()));
         header.push(Line::from(
-            format!("{} plugin installed.", flow.plugin_display_name).bold(),
+            format!("已安装插件：{}", flow.plugin_display_name).bold(),
         ));
         header.push(Line::from(
-            format!("App setup {current}/{total}: {}", app.name).dim(),
+            format!("应用设置 {current}/{total}：{}", app.name).dim(),
         ));
         header.push(Line::from(status_label.dim()));
 
@@ -434,14 +434,14 @@ impl ChatWidget {
 
         if let Some(install_url) = app.install_url.clone() {
             let install_label = if is_installed {
-                "Manage on ChatGPT"
+                "在 ChatGPT 中管理"
             } else {
-                "Install on ChatGPT"
+                "在 ChatGPT 中安装"
             };
             items.push(SelectionItem {
                 name: install_label.to_string(),
-                description: Some("Open the ChatGPT app management page".to_string()),
-                selected_description: Some("Open the app page in your browser.".to_string()),
+                description: Some("打开 ChatGPT 应用管理页面。".to_string()),
+                selected_description: Some("在浏览器中打开应用页面。".to_string()),
                 actions: vec![Box::new(move |tx| {
                     tx.send(AppEvent::OpenUrlInBrowser {
                         url: install_url.clone(),
@@ -451,8 +451,8 @@ impl ChatWidget {
             });
         } else {
             items.push(SelectionItem {
-                name: "ChatGPT apps link unavailable".to_string(),
-                description: Some("This app did not provide an install/manage URL.".to_string()),
+                name: "ChatGPT 应用链接不可用".to_string(),
+                description: Some("此应用未提供安装或管理链接。".to_string()),
                 is_disabled: true,
                 ..Default::default()
             });
@@ -460,9 +460,9 @@ impl ChatWidget {
 
         if is_installed {
             items.push(SelectionItem {
-                name: "Continue".to_string(),
-                description: Some("This app is already installed.".to_string()),
-                selected_description: Some("Advance to the next app.".to_string()),
+                name: "继续".to_string(),
+                description: Some("此应用已安装。".to_string()),
+                selected_description: Some("继续处理下一个应用。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::PluginInstallAuthAdvance {
                         refresh_connectors: false,
@@ -472,13 +472,9 @@ impl ChatWidget {
             });
         } else {
             items.push(SelectionItem {
-                name: "I've installed it".to_string(),
-                description: Some(
-                    "Trust your confirmation and continue to the next app.".to_string(),
-                ),
-                selected_description: Some(
-                    "Continue without waiting for refresh to complete.".to_string(),
-                ),
+                name: "我已安装".to_string(),
+                description: Some("相信你的确认并继续处理下一个应用。".to_string()),
+                selected_description: Some("无需等待刷新完成，直接继续。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::PluginInstallAuthAdvance {
                         refresh_connectors: true,
@@ -489,9 +485,9 @@ impl ChatWidget {
         }
 
         items.push(SelectionItem {
-            name: "Skip remaining app setup".to_string(),
-            description: Some("Stop this follow-up flow for this plugin.".to_string()),
-            selected_description: Some("Abandon remaining required app setup.".to_string()),
+            name: "跳过剩余应用设置".to_string(),
+            description: Some("停止这个插件的后续引导流程。".to_string()),
+            selected_description: Some("放弃剩余必需的应用设置。".to_string()),
             actions: vec![Box::new(|tx| {
                 tx.send(AppEvent::PluginInstallAuthAbandon);
             })],
