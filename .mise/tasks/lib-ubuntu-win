@@ -38,6 +38,89 @@ ensure_host_tools() {
   "${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates curl coreutils xz-utils
 }
 
+resolve_windows_msvc_host_tool() {
+  local tool="$1"
+  local candidate
+
+  if command -v "$tool" >/dev/null 2>&1; then
+    command -v "$tool"
+    return 0
+  fi
+
+  if [ "$tool" = "clang-cl" ] && command -v clang >/dev/null 2>&1; then
+    command -v clang
+    return 0
+  fi
+
+  for candidate in /usr/bin/"$tool"-* /usr/lib/llvm-*/bin/"$tool" /usr/lib/llvm-*/bin/"$tool"-*; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+has_windows_msvc_host_tools() {
+  resolve_windows_msvc_host_tool clang-cl >/dev/null 2>&1 \
+    && resolve_windows_msvc_host_tool lld-link >/dev/null 2>&1 \
+    && resolve_windows_msvc_host_tool llvm-lib >/dev/null 2>&1
+}
+
+ensure_windows_msvc_host_tools() {
+  local -a sudo_cmd=()
+
+  if has_windows_msvc_host_tools; then
+    return
+  fi
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    die "[mise] 缺少 Windows MSVC 交叉编译宿主工具；请先安装 clang、lld、llvm"
+  fi
+
+  if [ "${EUID}" -ne 0 ]; then
+    sudo_cmd=(sudo)
+  fi
+
+  "${sudo_cmd[@]}" apt-get update
+  "${sudo_cmd[@]}" apt-get install -y --no-install-recommends ca-certificates clang lld llvm
+}
+
+prepare_windows_msvc_host_tools() {
+  local wrapper_dir clang_bin lld_link_bin llvm_lib_bin
+
+  clang_bin="$(resolve_windows_msvc_host_tool clang-cl)"
+  lld_link_bin="$(resolve_windows_msvc_host_tool lld-link)"
+  llvm_lib_bin="$(resolve_windows_msvc_host_tool llvm-lib)"
+  wrapper_dir="$repo_root/.cache/ubuntu-win-msvc-toolchain"
+  mkdir -p "$wrapper_dir"
+
+  cat > "$wrapper_dir/clang-cl" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "$clang_bin" --driver-mode=cl "\$@"
+EOF
+
+  cat > "$wrapper_dir/lld-link" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "$lld_link_bin" "\$@"
+EOF
+
+  cat > "$wrapper_dir/llvm-lib" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+exec "$llvm_lib_bin" "\$@"
+EOF
+
+  chmod +x "$wrapper_dir/clang-cl" "$wrapper_dir/lld-link" "$wrapper_dir/llvm-lib"
+  export PATH="$wrapper_dir:$PATH"
+}
+
 ensure_default_release_args() {
   for arg in "$@"; do
     case "$arg" in
@@ -264,7 +347,7 @@ bootstrap_cross_deps() {
   local should_bootstrap=0
 
   if [ "$target" = "x86_64-pc-windows-msvc" ]; then
-    if ! has_cargo_xwin || ! has_rust_target; then
+    if ! has_cargo_xwin || ! has_rust_target || ! has_windows_msvc_host_tools; then
       should_bootstrap=1
     fi
   elif ! has_cargo_zigbuild || ! has_rust_target; then
@@ -308,6 +391,11 @@ ensure_cross_deps() {
       echo "[$build_task_name] 缺少 cargo-xwin，请先运行 `mise run $deps_task_name`" >&2
       exit 1
     fi
+    if ! has_windows_msvc_host_tools; then
+      echo "[$build_task_name] 缺少 Windows MSVC 交叉编译宿主工具，请先运行 `mise run $deps_task_name`" >&2
+      exit 1
+    fi
+    prepare_windows_msvc_host_tools
     return
   fi
 
@@ -339,6 +427,8 @@ install_cross_deps() {
   fi
 
   if [ "$target" = "x86_64-pc-windows-msvc" ]; then
+    ensure_windows_msvc_host_tools
+
     if ! has_cargo_xwin; then
       cargo install --locked cargo-xwin
     fi
