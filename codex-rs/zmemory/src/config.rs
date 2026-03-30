@@ -1,8 +1,9 @@
+use crate::path_resolution::ZmemoryPathResolution;
 use std::path::Path;
 use std::path::PathBuf;
 
-pub const ZMEMORY_DIR: &str = "zmemory";
-pub const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
+pub(crate) const ZMEMORY_DIR: &str = "zmemory";
+pub(crate) const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
 const VALID_DOMAINS_ENV: &str = "VALID_DOMAINS";
 const CORE_MEMORY_URIS_ENV: &str = "CORE_MEMORY_URIS";
 const DEFAULT_VALID_DOMAINS: &[&str] = &["core"];
@@ -12,7 +13,7 @@ const DEFAULT_CORE_MEMORY_URIS: &[&str] =
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZmemoryConfig {
     codex_home: PathBuf,
-    db_path: PathBuf,
+    path_resolution: ZmemoryPathResolution,
     settings: ZmemorySettings,
 }
 
@@ -23,9 +24,10 @@ pub struct ZmemorySettings {
 }
 
 impl ZmemoryConfig {
-    pub fn new(codex_home: impl Into<PathBuf>) -> Self {
+    pub fn new(codex_home: impl Into<PathBuf>, path_resolution: ZmemoryPathResolution) -> Self {
         Self::new_with_settings(
             codex_home,
+            path_resolution,
             ZmemorySettings::from_env_vars(
                 std::env::var(VALID_DOMAINS_ENV).ok(),
                 std::env::var(CORE_MEMORY_URIS_ENV).ok(),
@@ -33,12 +35,14 @@ impl ZmemoryConfig {
         )
     }
 
-    pub fn new_with_settings(codex_home: impl Into<PathBuf>, settings: ZmemorySettings) -> Self {
-        let codex_home = codex_home.into();
-        let db_path = zmemory_db_path(&codex_home);
+    pub fn new_with_settings(
+        codex_home: impl Into<PathBuf>,
+        path_resolution: ZmemoryPathResolution,
+        settings: ZmemorySettings,
+    ) -> Self {
         Self {
-            codex_home,
-            db_path,
+            codex_home: codex_home.into(),
+            path_resolution,
             settings,
         }
     }
@@ -48,7 +52,11 @@ impl ZmemoryConfig {
     }
 
     pub fn db_path(&self) -> &Path {
-        &self.db_path
+        &self.path_resolution.db_path
+    }
+
+    pub fn path_resolution(&self) -> &ZmemoryPathResolution {
+        &self.path_resolution
     }
 
     pub fn is_valid_domain(&self, domain: &str) -> bool {
@@ -121,7 +129,10 @@ mod tests {
     use super::ZmemoryConfig;
     use super::ZmemorySettings;
     use super::zmemory_db_path;
+    use crate::path_resolution::ZmemoryPathResolution;
+    use crate::path_resolution::ZmemoryPathSource;
     use pretty_assertions::assert_eq;
+    use std::path::PathBuf;
 
     #[test]
     fn db_path_uses_codex_home_subdirectory() {
@@ -166,7 +177,7 @@ mod tests {
                     "writer".to_string(),
                     "notes".to_string(),
                 ],
-                core_memory_uris: vec!["core://agent".to_string(), "core://my_user".to_string(),],
+                core_memory_uris: vec!["core://agent".to_string(), "core://my_user".to_string()],
             }
         );
     }
@@ -175,11 +186,35 @@ mod tests {
     fn config_allows_system_even_when_not_listed() {
         let config = ZmemoryConfig::new_with_settings(
             "/tmp/codex-home",
+            sample_resolution("/tmp/codex-home/zmemory/workspace-test/zmemory.db"),
             ZmemorySettings::from_env_vars(Some("writer".to_string()), None),
         );
 
         assert!(config.is_valid_domain("writer"));
         assert!(config.is_valid_domain("system"));
         assert!(!config.is_valid_domain("core"));
+    }
+
+    #[test]
+    fn config_uses_resolved_db_path() {
+        let resolution = sample_resolution("/tmp/workspace/memory.db");
+        let config = ZmemoryConfig::new_with_settings(
+            "/tmp/codex-home",
+            resolution.clone(),
+            ZmemorySettings::from_env_vars(None, None),
+        );
+
+        assert_eq!(config.db_path(), resolution.db_path.as_path());
+        assert_eq!(config.path_resolution(), &resolution);
+    }
+
+    fn sample_resolution(db_path: &str) -> ZmemoryPathResolution {
+        ZmemoryPathResolution {
+            db_path: PathBuf::from(db_path),
+            workspace_key: Some("workspace-test".to_string()),
+            source: ZmemoryPathSource::Cwd,
+            canonical_base: Some(PathBuf::from("/tmp/workspace")),
+            reason: "test".to_string(),
+        }
     }
 }

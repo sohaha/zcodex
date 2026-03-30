@@ -165,6 +165,38 @@ consolidation_model = "gpt-5"
 }
 
 #[test]
+fn test_toml_parsing_zmemory_path() {
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+zmemory_path = "./agents/memory.db"
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+
+    assert_eq!(
+        cfg.zmemory_path,
+        Some(std::path::PathBuf::from("./agents/memory.db"))
+    );
+
+    let cwd = tempdir().expect("tempdir");
+    let codex_home = tempdir().expect("tempdir");
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides {
+            cwd: Some(cwd.path().to_path_buf()),
+            ..ConfigOverrides::default()
+        },
+        codex_home.path().to_path_buf(),
+    )
+    .expect("load config with zmemory_path");
+
+    assert_eq!(
+        config.zmemory_path,
+        Some(std::path::PathBuf::from("./agents/memory.db"))
+    );
+}
+
+#[test]
 fn parses_bundled_skills_config() {
     let cfg: ConfigToml = toml::from_str(
         r#"
@@ -4511,6 +4543,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
+            zmemory_path: None,
             agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
             codex_home: fixture.codex_home(),
             sqlite_home: fixture.codex_home(),
@@ -4702,6 +4735,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        zmemory_path: None,
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -4846,6 +4880,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        zmemory_path: None,
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -4976,6 +5011,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
+        zmemory_path: None,
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),

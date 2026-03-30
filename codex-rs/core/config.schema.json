@@ -2614,6 +2614,10 @@
       "description": "Tracks whether the Windows onboarding screen has been acknowledged.",
       "type": "boolean"
     },
+    "zmemory_path": {
+      "description": "Optional override for the `zmemory` database path. Relative paths are resolved later relative to the active workspace.",
+      "type": "string"
+    },
     "zsh_path": {
       "allOf": [
         {

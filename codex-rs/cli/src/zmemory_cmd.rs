@@ -2,10 +2,11 @@ use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
 use clap::ValueEnum;
+use codex_core::config::ConfigBuilder;
 use codex_core::config::find_codex_home;
 use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
-use codex_zmemory::tool_api::run_zmemory_tool;
+use codex_zmemory::tool_api::run_zmemory_tool_with_context;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -274,7 +275,18 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
     };
 
     let codex_home = output.codex_home.unwrap_or(find_codex_home()?);
-    let result = run_zmemory_tool(&codex_home, args)?;
+    let cwd = std::env::current_dir()?;
+    let config = ConfigBuilder::default()
+        .codex_home(codex_home.clone())
+        .fallback_cwd(Some(cwd.clone()))
+        .build()
+        .await?;
+    let result = run_zmemory_tool_with_context(
+        &codex_home,
+        config.cwd.as_path(),
+        config.zmemory_path.as_deref(),
+        args,
+    )?;
     if output.json {
         println!(
             "{}",

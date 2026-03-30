@@ -58,6 +58,21 @@ memories = false
 The legacy alias `memory_tool = false` remains supported for backward
 compatibility, but `memories` is the recommended canonical key.
 
+To pin `zmemory` to a specific SQLite file, set `zmemory_path` in
+`config.toml`:
+
+```toml
+zmemory_path = "./agents/memory.db"
+```
+
+- Absolute paths are used directly.
+- Relative paths are resolved against the active repo root when Codex is
+  inside a git repository, otherwise against the current working directory.
+- When `zmemory_path` is unset, Codex isolates memories by workspace and stores
+  them under `$CODEX_HOME/zmemory/workspace-<hash>/zmemory.db`.
+- To keep using the legacy global database, set
+  `zmemory_path = "$CODEX_HOME/zmemory/zmemory.db"` explicitly.
+
 ## JSON Schema
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.

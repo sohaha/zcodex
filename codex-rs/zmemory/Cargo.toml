@@ -14,10 +14,12 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+codex-git-utils = { workspace = true }
 rusqlite = { workspace = true, features = ["bundled"] }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]

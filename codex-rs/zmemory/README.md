@@ -26,7 +26,11 @@
 
 ## 存储
 
-- 数据库位置：`$CODEX_HOME/zmemory/zmemory.db`
+- 默认数据库位置：`$CODEX_HOME/zmemory/workspace-<hash>/zmemory.db`
+- 当 `zmemory_path` 显式配置时：
+  - 绝对路径直接使用
+  - 相对路径在 git 仓库内相对主 repo root 解析，非 git 目录相对当前 `cwd` 解析
+- 如需继续使用旧的全局数据库，请显式配置 `zmemory_path = "$CODEX_HOME/zmemory/zmemory.db"`
 - 存储引擎：`SQLite + FTS5`
 - 为了降低环境依赖，当前使用 `rusqlite` 的 `bundled` sqlite
 
@@ -106,6 +110,7 @@ codex zmemory doctor --json
 
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
+- `codex zmemory stats --json` / `doctor --json`：同时查看 `pathResolution.dbPath`、`pathResolution.source`、`pathResolution.reason`
 - `codex zmemory export recent --json`：查看最近变更节点
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
 

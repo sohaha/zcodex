@@ -5,7 +5,7 @@ use anyhow::Result;
 use codex_features::Feature;
 use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
-use codex_zmemory::tool_api::run_zmemory_tool;
+use codex_zmemory::tool_api::run_zmemory_tool_with_context;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_function_call;
@@ -87,8 +87,10 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
     assert_eq!(payload["result"]["uri"], "core://agent-profile");
     assert_eq!(payload["result"]["priority"], 7);
 
-    let read_back = run_zmemory_tool(
+    let read_back = run_zmemory_tool_with_context(
         test.home.path(),
+        test.cwd_path(),
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
             uri: Some("core://agent-profile".to_string()),
@@ -160,8 +162,10 @@ async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
     assert_eq!(payload["result"]["uri"], "core://team-salem");
     assert!(payload["result"]["documentCount"].is_i64());
 
-    let read_back = run_zmemory_tool(
+    let read_back = run_zmemory_tool_with_context(
         test.home.path(),
+        test.cwd_path(),
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
             uri: Some("core://team-salem".to_string()),
@@ -189,8 +193,10 @@ async fn zmemory_function_search_returns_bounded_json_for_existing_memory() -> R
     });
     let test = builder.build(&server).await?;
 
-    run_zmemory_tool(
+    run_zmemory_tool_with_context(
         test.home.path(),
+        test.cwd_path(),
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent-profile".to_string()),
@@ -260,8 +266,10 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
     });
     let test = builder.build(&server).await?;
 
-    run_zmemory_tool(
+    run_zmemory_tool_with_context(
         test.home.path(),
+        test.cwd_path(),
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
@@ -326,8 +334,10 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     });
     let test = builder.build(&server).await?;
 
-    run_zmemory_tool(
+    run_zmemory_tool_with_context(
         test.home.path(),
+        test.cwd_path(),
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),

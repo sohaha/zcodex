@@ -8,7 +8,7 @@ use crate::tools::registry::ToolKind;
 use anyhow::Result;
 use async_trait::async_trait;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
-use codex_zmemory::tool_api::run_zmemory_tool;
+use codex_zmemory::tool_api::run_zmemory_tool_with_context;
 use std::path::PathBuf;
 
 pub struct ZmemoryHandler;
@@ -50,7 +50,8 @@ impl ToolHandler for ZmemoryHandler {
             None => session.codex_home().await,
         };
 
-        match run_zmemory_tool(&codex_home, args) {
+        let zmemory_path = turn.config.zmemory_path.as_deref();
+        match run_zmemory_tool_with_context(&codex_home, turn.cwd.as_path(), zmemory_path, args) {
             Ok(result) => {
                 let json =
                     serde_json::to_string_pretty(&result.structured_content).map_err(|err| {

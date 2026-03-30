@@ -546,9 +546,11 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
             row.get(0)
         })?;
+    let path_resolution = serde_json::to_value(config.path_resolution())?;
 
     Ok(json!({
         "dbPath": config.db_path().display().to_string(),
+        "pathResolution": path_resolution,
         "nodeCount": node_count,
         "memoryCount": memory_count,
         "pathCount": path_count,
@@ -568,6 +570,7 @@ fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
 fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let doctor = run_doctor(conn, &config.db_path().display().to_string())?;
     let stats = stats_action(conn, config)?;
+    let path_resolution = serde_json::to_value(config.path_resolution())?;
     Ok(json!({
         "healthy": doctor.get("healthy").and_then(serde_json::Value::as_bool).unwrap_or(false),
         "orphanedMemoryCount": doctor.get("orphanedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
@@ -589,6 +592,7 @@ fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
         "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
         "stats": stats,
         "dbPath": config.db_path().display().to_string(),
+        "pathResolution": path_resolution,
     }))
 }
 
@@ -1172,6 +1176,7 @@ mod tests {
     use super::execute_action;
     use crate::config::ZmemoryConfig;
     use crate::config::ZmemorySettings;
+    use crate::path_resolution::resolve_zmemory_path;
     use crate::tool_api::ZmemoryToolAction;
     use crate::tool_api::ZmemoryToolCallParam;
     use pretty_assertions::assert_eq;
@@ -1182,13 +1187,18 @@ mod tests {
 
     fn config() -> (TempDir, ZmemoryConfig) {
         let dir = TempDir::new().expect("tempdir");
-        let config = ZmemoryConfig::new(dir.path().to_path_buf());
+        let resolution =
+            resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
+        let config = ZmemoryConfig::new(dir.path().to_path_buf(), resolution);
         (dir, config)
     }
 
     fn config_with_settings(settings: ZmemorySettings) -> (TempDir, ZmemoryConfig) {
         let dir = TempDir::new().expect("tempdir");
-        let config = ZmemoryConfig::new_with_settings(dir.path().to_path_buf(), settings);
+        let resolution =
+            resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
+        let config =
+            ZmemoryConfig::new_with_settings(dir.path().to_path_buf(), resolution, settings);
         (dir, config)
     }
 
@@ -1796,6 +1806,10 @@ mod tests {
         assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
         assert_eq!(stats["result"]["pathsMissingDisclosure"], 1);
         assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
+        assert_eq!(
+            stats["result"]["pathResolution"]["dbPath"],
+            json!(config.db_path().display().to_string())
+        );
 
         let doctor = execute_action(
             &config,
@@ -1806,6 +1820,10 @@ mod tests {
         )
         .expect("doctor should succeed");
         assert_eq!(doctor["result"]["healthy"], false);
+        assert_eq!(
+            doctor["result"]["pathResolution"]["dbPath"],
+            json!(config.db_path().display().to_string())
+        );
         let issues = doctor["result"]["issues"]
             .as_array()
             .expect("issues should be an array");

@@ -1,4 +1,5 @@
 use crate::config::ZmemoryConfig;
+use crate::path_resolution::resolve_zmemory_path;
 use crate::schema::DEFAULT_DOMAIN;
 use crate::service::execute_action;
 use anyhow::Result;
@@ -152,7 +153,18 @@ pub fn run_zmemory_tool(
     codex_home: &Path,
     args: ZmemoryToolCallParam,
 ) -> Result<ZmemoryToolResult> {
-    let config = ZmemoryConfig::new(codex_home);
+    let cwd = std::env::current_dir()?;
+    run_zmemory_tool_with_context(codex_home, &cwd, None, args)
+}
+
+pub fn run_zmemory_tool_with_context(
+    codex_home: &Path,
+    cwd: &Path,
+    zmemory_path: Option<&Path>,
+    args: ZmemoryToolCallParam,
+) -> Result<ZmemoryToolResult> {
+    let path_resolution = resolve_zmemory_path(codex_home, cwd, zmemory_path)?;
+    let config = ZmemoryConfig::new(codex_home, path_resolution);
     let structured_content = execute_action(&config, &args)?;
     let text = render_summary(&structured_content);
     Ok(ZmemoryToolResult {
@@ -253,7 +265,7 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .unwrap_or("unknown")
         ),
         "stats" => format!(
-            "stats: {} nodes, {} paths, {} docs",
+            "stats: {} nodes, {} paths, {} docs ({})",
             result
                 .get("nodeCount")
                 .and_then(serde_json::Value::as_i64)
@@ -265,10 +277,15 @@ fn render_summary(payload: &serde_json::Value) -> String {
             result
                 .get("searchDocumentCount")
                 .and_then(serde_json::Value::as_i64)
-                .unwrap_or_default()
+                .unwrap_or_default(),
+            result
+                .get("pathResolution")
+                .and_then(|value| value.get("dbPath"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown db")
         ),
         "doctor" => format!(
-            "doctor: {}",
+            "doctor: {} ({})",
             if result
                 .get("healthy")
                 .and_then(serde_json::Value::as_bool)
@@ -277,7 +294,12 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 "healthy"
             } else {
                 "unhealthy"
-            }
+            },
+            result
+                .get("pathResolution")
+                .and_then(|value| value.get("dbPath"))
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown db")
         ),
         "rebuild-search" => format!(
             "rebuilt search index: {} documents",
