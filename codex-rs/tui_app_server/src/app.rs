@@ -5265,7 +5265,7 @@ impl App {
 
     #[cfg(target_os = "windows")]
     fn spawn_world_writable_scan(
-        cwd: PathBuf,
+        cwd: AbsolutePathBuf,
         env_map: std::collections::HashMap<String, String>,
         logs_base_dir: PathBuf,
         sandbox_policy: codex_protocol::protocol::SandboxPolicy,

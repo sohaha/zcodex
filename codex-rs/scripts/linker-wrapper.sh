@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-declare -a linker_cmd
+declare -a linker_cmd=()
 
 if [ -n "${CC:-}" ]; then
   read -r -a linker_cmd <<<"$CC"
-elif command -v clang >/dev/null 2>&1; then
+  # cargo-zigbuild exports `CC="zig cc ..."` for musl targets. Host-side GNU
+  # build scripts still use this wrapper, and honoring that CC would link those
+  # host binaries against musl instead of glibc.
+  if [[ "${linker_cmd[*]}" == *"zig"* ]]; then
+    linker_cmd=()
+  fi
+fi
+
+if [ "${#linker_cmd[@]}" -eq 0 ] && command -v clang >/dev/null 2>&1; then
   linker_cmd=("clang")
 else
-  linker_cmd=("cc")
+  if [ "${#linker_cmd[@]}" -eq 0 ]; then
+    linker_cmd=("cc")
+  fi
 fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
