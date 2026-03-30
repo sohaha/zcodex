@@ -1190,6 +1190,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use rusqlite::Connection;
     use rusqlite::params;
+    use serde_json::Value;
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -1820,6 +1821,10 @@ mod tests {
         );
         assert_eq!(stats["result"].get("dbPath"), None);
         assert_eq!(stats["result"]["pathResolution"].get("canonicalBase"), None);
+        assert_eq!(
+            sorted_object_keys(&stats["result"]["pathResolution"]),
+            vec!["dbPath", "reason", "source", "workspaceKey"]
+        );
 
         let doctor = execute_action(
             &config,
@@ -1838,6 +1843,10 @@ mod tests {
         assert_eq!(
             doctor["result"]["pathResolution"].get("canonicalBase"),
             None
+        );
+        assert_eq!(
+            sorted_object_keys(&doctor["result"]["pathResolution"]),
+            vec!["dbPath", "reason", "source", "workspaceKey"]
         );
         let issues = doctor["result"]["issues"]
             .as_array()
@@ -2506,5 +2515,16 @@ mod tests {
                 .iter()
                 .any(|issue| issue["code"] == "dangling_keywords")
         );
+    }
+
+    fn sorted_object_keys(value: &Value) -> Vec<&str> {
+        let mut keys = value
+            .as_object()
+            .expect("value should be an object")
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        keys.sort_unstable();
+        keys
     }
 }

@@ -73,6 +73,24 @@ zmemory_path = "./agents/memory.db"
 - To keep using the legacy global database, set
   `zmemory_path = "$CODEX_HOME/zmemory/zmemory.db"` explicitly.
 
+You can verify the active resolution with:
+
+```shell
+codex zmemory stats --json
+codex zmemory doctor --json
+```
+
+The stable diagnostic payload is `result.pathResolution`:
+
+```json
+{
+  "dbPath": "/home/me/.codex/zmemory/workspace-a1b2c3d4e5f6/zmemory.db",
+  "workspaceKey": "workspace-a1b2c3d4e5f6",
+  "source": "repoRoot",
+  "reason": "defaulted to repo root /workspace/my-repo"
+}
+```
+
 ## JSON Schema
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.

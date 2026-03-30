@@ -110,9 +110,25 @@ codex zmemory doctor --json
 
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
-- `codex zmemory stats --json` / `doctor --json`：同时查看 `pathResolution.dbPath`、`pathResolution.source`、`pathResolution.reason`
+- `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`
 - `codex zmemory export recent --json`：查看最近变更节点
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
+
+当前 `pathResolution` 的稳定字段为：
+
+```json
+{
+  "dbPath": "/home/me/.codex/zmemory/workspace-a1b2c3d4e5f6/zmemory.db",
+  "workspaceKey": "workspace-a1b2c3d4e5f6",
+  "source": "repoRoot",
+  "reason": "defaulted to repo root /workspace/my-repo"
+}
+```
+
+- `dbPath`：当前实际使用的 sqlite 文件
+- `workspaceKey`：默认隔离模式下的工作区 key；显式 `zmemory_path` 时通常为 `null`
+- `source`：`explicit` / `repoRoot` / `cwd`
+- `reason`：人类可读的解析原因
 
 建议的最小 review 顺序：
 
