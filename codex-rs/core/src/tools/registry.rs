@@ -304,10 +304,26 @@ impl ToolRegistry {
             )
             .await
         {
-            return Err(FunctionCallError::RespondToModel(format!(
+            let message = format!(
                 "Command blocked by PreToolUse hook: {reason}. Command: {}",
                 pre_tool_use_payload.command
-            )));
+            );
+            otel.tool_result_with_tags(
+                tool_name.as_ref(),
+                &call_id_owned,
+                log_payload.as_ref(),
+                Duration::ZERO,
+                /*success*/ false,
+                &message,
+                &metric_tags,
+                mcp_server_ref,
+                mcp_server_origin_ref,
+            );
+            return Ok(AnyToolResult {
+                call_id: invocation.call_id.clone(),
+                payload: invocation.payload.clone(),
+                result: Box::new(FunctionToolOutput::from_text(message, Some(false))),
+            });
         }
 
         let is_mutating = handler.is_mutating(&invocation).await;

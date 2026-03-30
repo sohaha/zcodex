@@ -65,24 +65,19 @@ fn assert_safe(shell: &Shell, command: &str) {
     ));
 }
 
-fn assert_kept_raw(command: &str, reason: &str) {
+fn assert_kept_raw(command: &str, _reason: &str) {
     let routed = ShellCommandHandler::route_command(command);
     assert_eq!(routed.command, command);
     assert!(routed.env_assignments.is_empty());
     assert!(routed.env_unsets.is_empty());
     assert_eq!(routed.interaction_input, None);
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(format!(
-            "[shell_command kept raw]\noriginal: {command}\nexecuted: {command}\nreason: {reason}"
-        ))
-    );
+    assert_eq!(routed.model_output_prefix, None);
 }
 
 fn assert_rewritten(
     command: &str,
     rewritten_command: &str,
-    display_command: &str,
+    _display_command: &str,
     env_assignments: &[&str],
 ) {
     let routed = ShellCommandHandler::route_command(command);
@@ -96,12 +91,7 @@ fn assert_rewritten(
     );
     assert!(routed.env_unsets.is_empty());
     assert_eq!(routed.interaction_input, Some(command.to_string()));
-    assert_eq!(
-        routed.model_output_prefix,
-        Some(format!(
-            "[shell_command routed via embedded RTK]\noriginal: {command}\nrewritten: {display_command}"
-        ))
-    );
+    assert_eq!(routed.model_output_prefix, None);
 }
 
 #[tokio::test]
@@ -623,10 +613,7 @@ fn shell_command_handler_keeps_codex_rtk_passthrough_matrix_raw() {
 fn shell_command_handler_keeps_codex_rtk_shell_syntax_raw() {
     let routed = ShellCommandHandler::route_command("codex rtk grep \"$(pwd)\" src/main.rs");
     assert_eq!(routed.command, "codex rtk grep \"$(pwd)\" src/main.rs");
-    assert!(matches!(
-        routed.model_output_prefix.as_deref(),
-        Some(prefix) if prefix.contains("contains compound shell syntax")
-    ));
+    assert_eq!(routed.model_output_prefix, None);
 }
 
 #[test]

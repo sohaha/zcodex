@@ -31,6 +31,8 @@ use crate::tools::handlers::normalize_and_validate_additional_permissions;
 use crate::tools::handlers::parse_arguments_with_base_path;
 use crate::tools::handlers::resolve_workdir_base_path;
 use crate::tools::orchestrator::ToolOrchestrator;
+use crate::tools::registry::PostToolUsePayload;
+use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::runtimes::shell::ShellRequest;
@@ -249,9 +251,7 @@ impl ShellCommandHandler {
                     "shell_command routed via embedded RTK"
                 );
                 RoutedCommand {
-                    model_output_prefix: Some(format!(
-                        "[shell_command routed via embedded RTK]\noriginal: {trimmed}\nrewritten: {display_command}"
-                    )),
+                    model_output_prefix: None,
                     interaction_input: Some(trimmed.to_string()),
                     command: executed_command,
                     display_command: Some(display_command),
@@ -275,12 +275,7 @@ impl ShellCommandHandler {
                     env_assignments: Vec::new(),
                     env_unsets: Vec::new(),
                     interaction_input: None,
-                    model_output_prefix: Some(format!(
-                        "[shell_command kept raw]\noriginal: {}\nexecuted: {}\nreason: {}",
-                        trimmed,
-                        executed_command,
-                        reason.as_str()
-                    )),
+                    model_output_prefix: None,
                 }
             }
         }
@@ -662,6 +657,46 @@ impl ToolHandler for ShellHandler {
             ))),
         }
     }
+
+    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
+        match &invocation.payload {
+            ToolPayload::Function { arguments } => {
+                serde_json::from_str::<ShellToolCallParams>(arguments)
+                    .ok()
+                    .map(|args| PreToolUsePayload {
+                        command: codex_shell_command::parse_command::shlex_join(&args.command),
+                    })
+            }
+            ToolPayload::LocalShell { params } => Some(PreToolUsePayload {
+                command: codex_shell_command::parse_command::shlex_join(&params.command),
+            }),
+            _ => None,
+        }
+    }
+
+    fn post_tool_use_payload(
+        &self,
+        call_id: &str,
+        payload: &ToolPayload,
+        result: &dyn crate::tools::context::ToolOutput,
+    ) -> Option<PostToolUsePayload> {
+        let command = match payload {
+            ToolPayload::Function { arguments } => {
+                serde_json::from_str::<ShellToolCallParams>(arguments)
+                    .ok()
+                    .map(|args| codex_shell_command::parse_command::shlex_join(&args.command))?
+            }
+            ToolPayload::LocalShell { params } => {
+                codex_shell_command::parse_command::shlex_join(&params.command)
+            }
+            _ => return None,
+        };
+        let tool_response = result.post_tool_use_response(call_id, payload)?;
+        Some(PostToolUsePayload {
+            command,
+            tool_response,
+        })
+    }
 }
 
 #[async_trait]
@@ -695,6 +730,36 @@ impl ToolHandler for ShellCommandHandler {
                 !is_known_safe_command(&command)
             })
             .unwrap_or(true)
+    }
+
+    fn pre_tool_use_payload(&self, invocation: &ToolInvocation) -> Option<PreToolUsePayload> {
+        let ToolPayload::Function { arguments } = &invocation.payload else {
+            return None;
+        };
+
+        serde_json::from_str::<ShellCommandToolCallParams>(arguments)
+            .ok()
+            .map(|args| PreToolUsePayload {
+                command: args.command,
+            })
+    }
+
+    fn post_tool_use_payload(
+        &self,
+        call_id: &str,
+        payload: &ToolPayload,
+        result: &dyn crate::tools::context::ToolOutput,
+    ) -> Option<PostToolUsePayload> {
+        let ToolPayload::Function { arguments } = payload else {
+            return None;
+        };
+
+        let args = serde_json::from_str::<ShellCommandToolCallParams>(arguments).ok()?;
+        let tool_response = result.post_tool_use_response(call_id, payload)?;
+        Some(PostToolUsePayload {
+            command: args.command,
+            tool_response,
+        })
     }
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
@@ -965,6 +1030,10 @@ impl ShellHandler {
             )
             .await
             .map(|result| result.output);
+        let post_tool_use_response = out
+            .as_ref()
+            .ok()
+            .map(|output| serde_json::Value::String(output.aggregated_output.text.clone()));
         let event_ctx = ToolEventCtx::new(
             session.as_ref(),
             turn.as_ref(),
@@ -972,7 +1041,9 @@ impl ShellHandler {
             /*turn_diff_tracker*/ None,
         );
         let content = emitter.finish(event_ctx, out).await?;
-        Ok(FunctionToolOutput::from_text(content, Some(true)))
+        let mut output = FunctionToolOutput::from_text(content, Some(true));
+        output.post_tool_use_response = post_tool_use_response;
+        Ok(output)
     }
 }
 

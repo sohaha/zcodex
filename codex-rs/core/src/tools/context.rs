@@ -206,7 +206,9 @@ impl ToolOutput for FunctionToolOutput {
     }
 
     fn post_tool_use_response(&self, _call_id: &str, _payload: &ToolPayload) -> Option<JsonValue> {
-        self.post_tool_use_response.clone()
+        self.post_tool_use_response.clone().or_else(|| {
+            function_call_output_content_items_to_text(&self.body).map(JsonValue::String)
+        })
     }
 }
 

@@ -262,12 +262,14 @@ fn write_pre_tool_use_hook(
     mode: &str,
     reason: &str,
 ) -> Result<()> {
-    let script_path = home.join("pre_tool_use_hook.py");
     let log_path = home.join("pre_tool_use_hook_log.jsonl");
     let mode_json = serde_json::to_string(mode).context("serialize pre tool use mode")?;
     let reason_json = serde_json::to_string(reason).context("serialize pre tool use reason")?;
-    let script = format!(
-        r#"import json
+    let (runner, extension) = preferred_script_runner()?;
+    let script_path = home.join(format!("pre_tool_use_hook.{extension}"));
+    let script = if extension == "py" {
+        format!(
+            r#"import json
 from pathlib import Path
 import sys
 
@@ -292,15 +294,45 @@ elif mode == "exit_2":
     sys.stderr.write(reason + "\n")
     raise SystemExit(2)
 "#,
-        log_path = log_path.display(),
-        mode_json = mode_json,
-        reason_json = reason_json,
-    );
+            log_path = log_path.display(),
+            mode_json = mode_json,
+            reason_json = reason_json,
+        )
+    } else {
+        format!(
+            r#"import fs from "node:fs";
+
+const logPath = {log_path_json};
+const mode = {mode_json};
+const reason = {reason_json};
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+
+fs.appendFileSync(logPath, `${{JSON.stringify(payload)}}\n`, "utf8");
+
+if (mode === "json_deny") {{
+    console.log(JSON.stringify({{
+        hookSpecificOutput: {{
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason,
+        }},
+    }}));
+}} else if (mode === "exit_2") {{
+    process.stderr.write(`${{reason}}\n`);
+    process.exit(2);
+}}
+"#,
+            log_path_json =
+                serde_json::to_string(&log_path).context("serialize pre tool use log path")?,
+            mode_json = mode_json,
+            reason_json = reason_json,
+        )
+    };
 
     let mut group = serde_json::json!({
         "hooks": [{
             "type": "command",
-            "command": format!("python3 {}", script_path.display()),
+            "command": format!("{runner} {}", script_path.display()),
             "statusMessage": "running pre tool use hook",
         }]
     });
@@ -325,12 +357,14 @@ fn write_post_tool_use_hook(
     mode: &str,
     reason: &str,
 ) -> Result<()> {
-    let script_path = home.join("post_tool_use_hook.py");
     let log_path = home.join("post_tool_use_hook_log.jsonl");
     let mode_json = serde_json::to_string(mode).context("serialize post tool use mode")?;
     let reason_json = serde_json::to_string(reason).context("serialize post tool use reason")?;
-    let script = format!(
-        r#"import json
+    let (runner, extension) = preferred_script_runner()?;
+    let script_path = home.join(format!("post_tool_use_hook.{extension}"));
+    let script = if extension == "py" {
+        format!(
+            r#"import json
 from pathlib import Path
 import sys
 
@@ -364,15 +398,54 @@ elif mode == "exit_2":
     sys.stderr.write(reason + "\n")
     raise SystemExit(2)
 "#,
-        log_path = log_path.display(),
-        mode_json = mode_json,
-        reason_json = reason_json,
-    );
+            log_path = log_path.display(),
+            mode_json = mode_json,
+            reason_json = reason_json,
+        )
+    } else {
+        format!(
+            r#"import fs from "node:fs";
+
+const logPath = {log_path_json};
+const mode = {mode_json};
+const reason = {reason_json};
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
+
+fs.appendFileSync(logPath, `${{JSON.stringify(payload)}}\n`, "utf8");
+
+if (mode === "context") {{
+    console.log(JSON.stringify({{
+        hookSpecificOutput: {{
+            hookEventName: "PostToolUse",
+            additionalContext: reason,
+        }},
+    }}));
+}} else if (mode === "decision_block") {{
+    console.log(JSON.stringify({{
+        decision: "block",
+        reason,
+    }}));
+}} else if (mode === "continue_false") {{
+    console.log(JSON.stringify({{
+        continue: false,
+        stopReason: reason,
+    }}));
+}} else if (mode === "exit_2") {{
+    process.stderr.write(`${{reason}}\n`);
+    process.exit(2);
+}}
+"#,
+            log_path_json =
+                serde_json::to_string(&log_path).context("serialize post tool use log path")?,
+            mode_json = mode_json,
+            reason_json = reason_json,
+        )
+    };
 
     let mut group = serde_json::json!({
         "hooks": [{
             "type": "command",
-            "command": format!("python3 {}", script_path.display()),
+            "command": format!("{runner} {}", script_path.display()),
             "statusMessage": "running post tool use hook",
         }]
     });
