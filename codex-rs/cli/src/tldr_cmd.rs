@@ -1781,29 +1781,11 @@ type QueryDaemonFuture<'a> = Pin<
             + 'a,
     >,
 >;
-#[cfg(test)]
-type EnsureDaemonFuture<'a> = Pin<Box<dyn Future<Output = Result<bool>> + Send + 'a>>;
 type EnsureDaemonDetailedFuture<'a> =
     Pin<Box<dyn Future<Output = Result<DaemonReadyResult>> + Send + 'a>>;
 
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
-
-#[cfg(test)]
-async fn query_daemon_with_hooks<Q, E>(
-    project_root: &Path,
-    command: &TldrDaemonCommand,
-    query: Q,
-    ensure_running: E,
-) -> Result<Option<codex_native_tldr::daemon::TldrDaemonResponse>>
-where
-    Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
-    E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
-{
-    DAEMON_LIFECYCLE_MANAGER
-        .query_or_spawn_with_hooks(project_root, command, query, ensure_running)
-        .await
-}
 
 async fn query_daemon_with_hooks_detailed<Q, E>(
     project_root: &Path,
@@ -1831,15 +1813,6 @@ fn analysis_cache_key(
     let path = path.unwrap_or("*");
     let line = line.map_or("*".to_string(), |value| value.to_string());
     format!("{}:{kind:?}:{symbol}:{path}:{line}", language.as_str())
-}
-
-#[cfg(test)]
-async fn ensure_daemon_running(project_root: &Path, auto_start_enabled: bool) -> Result<bool> {
-    Ok(
-        ensure_daemon_running_detailed(project_root, auto_start_enabled)
-            .await?
-            .ready,
-    )
 }
 
 async fn ensure_daemon_running_detailed(
@@ -2751,10 +2724,9 @@ mod lifecycle_tests {
     use super::cleanup_stale_daemon_artifacts;
     use super::daemon_launcher_args;
     use super::daemon_metadata_looks_alive;
-    use super::ensure_daemon_running;
+    use super::ensure_daemon_running_detailed;
     use super::launcher_lock_path_for_project;
     use super::query_daemon_with_autostart;
-    use super::query_daemon_with_hooks;
     use super::query_daemon_with_hooks_detailed;
     use super::render_daemon_response_text;
     use super::spawn_native_tldr_daemon;
@@ -3133,7 +3105,7 @@ mod lifecycle_tests {
             reindex_report: None,
         };
 
-        let response = query_daemon_with_hooks(
+        let response = query_daemon_with_hooks_detailed(
             tempdir.path(),
             &command,
             {
@@ -3158,7 +3130,11 @@ mod lifecycle_tests {
                     let ensure_calls = Arc::clone(&ensure_calls);
                     Box::pin(async move {
                         ensure_calls.fetch_add(1, Ordering::SeqCst);
-                        Ok(true)
+                        Ok(DaemonReadyResult {
+                            ready: true,
+                            structured_failure: None,
+                            degraded_mode: None,
+                        })
                     })
                 }
             },
@@ -3166,7 +3142,8 @@ mod lifecycle_tests {
         .await
         .unwrap();
 
-        assert_eq!(response, Some(query_response));
+        assert_eq!(response.response, Some(query_response));
+        assert_eq!(response.ready_result, None);
         assert_eq!(query_calls.load(Ordering::SeqCst), 2);
         assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
     }
@@ -3178,7 +3155,7 @@ mod lifecycle_tests {
         let query_calls = Arc::new(AtomicUsize::new(0));
         let ensure_calls = Arc::new(AtomicUsize::new(0));
 
-        let response = query_daemon_with_hooks(
+        let response = query_daemon_with_hooks_detailed(
             tempdir.path(),
             &command,
             {
@@ -3197,7 +3174,11 @@ mod lifecycle_tests {
                     let ensure_calls = Arc::clone(&ensure_calls);
                     Box::pin(async move {
                         ensure_calls.fetch_add(1, Ordering::SeqCst);
-                        Ok(false)
+                        Ok(DaemonReadyResult {
+                            ready: false,
+                            structured_failure: None,
+                            degraded_mode: None,
+                        })
                     })
                 }
             },
@@ -3205,7 +3186,15 @@ mod lifecycle_tests {
         .await
         .unwrap();
 
-        assert_eq!(response, None);
+        assert_eq!(response.response, None);
+        assert_eq!(
+            response.ready_result,
+            Some(DaemonReadyResult {
+                ready: false,
+                structured_failure: None,
+                degraded_mode: None,
+            })
+        );
         assert_eq!(query_calls.load(Ordering::SeqCst), 1);
         assert_eq!(ensure_calls.load(Ordering::SeqCst), 1);
     }
@@ -4035,8 +4024,8 @@ mod lifecycle_tests {
         unsafe { std::env::set_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV, canonical_project.as_path()) };
         unsafe { std::env::set_var(CODEX_TLDR_TEST_LAUNCH_COUNTER_ENV, &counter_path) };
 
-        let started = ensure_daemon_running(&canonical_project, true).await?;
-        assert!(started);
+        let started = ensure_daemon_running_detailed(&canonical_project, true).await?;
+        assert!(started.ready);
         assert!(!counter_path.exists(), "launcher lock should prevent spawn");
 
         unsafe { std::env::remove_var(CODEX_TLDR_TEST_DAEMON_BIN_ENV) };
@@ -4120,8 +4109,11 @@ mod lifecycle_tests {
             std::fs::write(entered_signal, "entered")?;
         }
 
-        let started = ensure_daemon_running(&project_root, true).await?;
-        assert!(started, "launcher contender should observe a live daemon");
+        let started = ensure_daemon_running_detailed(&project_root, true).await?;
+        assert!(
+            started.ready,
+            "launcher contender should observe a live daemon"
+        );
         assert!(daemon_metadata_looks_alive(&project_root));
 
         std::fs::write(&done_signal, "done")?;
