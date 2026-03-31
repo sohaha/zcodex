@@ -220,7 +220,7 @@ encoding_rs = "0.8.35"
 env-flags = "0.1.1"
 env_logger = "0.11.9"
 eventsource-stream = "0.2.3"
-fastembed = "5.13.0"
+fastembed = { version = "5.13.0", default-features = false, features = ["hf-hub-native-tls", "image-models", "ort-load-dynamic"] }
 futures = { version = "0.3", default-features = false }
 gethostname = "1.1.0"
 globset = "0.4"
