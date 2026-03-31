@@ -1,1 +1,0 @@
-ALTER TABLE user_data DROP COLUMN github_token;

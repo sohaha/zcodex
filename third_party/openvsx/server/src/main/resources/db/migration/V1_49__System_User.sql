@@ -1,1 +1,0 @@
-UPDATE user_data SET provider = 'system' WHERE login_name IN ('ExtensionControlUser', 'FixTargetPlatformMigration');

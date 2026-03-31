@@ -1,1 +1,0 @@
-ALTER TABLE extension_version ADD COLUMN sponsor_link CHARACTER VARYING(255);

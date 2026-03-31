@@ -1,1 +1,0 @@
-CREATE INDEX file_resource_type_idx ON file_resource(type);

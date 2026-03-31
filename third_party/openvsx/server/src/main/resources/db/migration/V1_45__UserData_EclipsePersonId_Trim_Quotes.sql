@@ -1,1 +1,0 @@
-UPDATE user_data SET eclipse_person_id = TRIM('"' FROM eclipse_person_id) WHERE eclipse_person_id LIKE '"%"';

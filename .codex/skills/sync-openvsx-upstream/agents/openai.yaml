@@ -1,7 +1,0 @@
-interface:
-  display_name: "同步 OpenVSX 上游"
-  short_description: "把 eclipse-openvsx/openvsx 的 main 安全同步到 third_party/openvsx"
-  default_prompt: "Use $sync-openvsx-upstream to audit and sync eclipse-openvsx/openvsx main into /workspace/third_party/openvsx, preserve local patches when needed, and update the recorded sync baseline."
-
-policy:
-  allow_implicit_invocation: true

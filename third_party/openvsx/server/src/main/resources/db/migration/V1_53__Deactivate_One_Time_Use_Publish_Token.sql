@@ -1,1 +1,0 @@
-UPDATE personal_access_token set active = FALSE WHERE description = 'One time use publish token';
