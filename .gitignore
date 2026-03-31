@@ -98,6 +98,5 @@ CHANGELOG.ignore.md
 __pycache__/
 *.pyc
 
-.agents
 /codex
 .tmp/
