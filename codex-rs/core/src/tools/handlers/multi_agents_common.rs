@@ -4,6 +4,8 @@ use crate::codex::TurnContext;
 use crate::config::Config;
 use crate::error::CodexErr;
 use crate::function_tool::FunctionCallError;
+use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use crate::models_manager::manager::ModelsManager;
 use crate::models_manager::manager::RefreshStrategy;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolOutput;
@@ -24,6 +26,7 @@ use codex_protocol::user_input::UserInput;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use tracing::warn;
 
 /// Minimum wait timeout to prevent tight polling loops from burning CPU.
 pub(crate) const MIN_WAIT_TIMEOUT_MS: i64 = 10_000;
@@ -273,55 +276,191 @@ pub(crate) fn apply_spawn_agent_overrides(config: &mut Config, child_depth: i32)
     }
 }
 
+pub(crate) fn apply_requested_spawn_agent_provider_override(
+    config: &mut Config,
+    requested_provider: Option<&str>,
+) -> Result<(), FunctionCallError> {
+    let Some(requested_provider) = requested_provider else {
+        return Ok(());
+    };
+
+    let provider = config
+        .model_providers
+        .get(requested_provider)
+        .cloned()
+        .ok_or_else(|| {
+            let available = config
+                .model_providers
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            FunctionCallError::RespondToModel(format!(
+                "Unknown provider `{requested_provider}` for spawn_agent. Available providers: {available}"
+            ))
+        })?;
+    config.model_provider_id = requested_provider.to_string();
+    config.model_provider = provider;
+    Ok(())
+}
+
+pub(crate) fn spawn_agent_models_manager(session: &Session, config: &Config) -> ModelsManager {
+    ModelsManager::new_with_provider(
+        config.codex_home.clone(),
+        session.services.auth_manager.clone(),
+        config.model_catalog.clone(),
+        config.model_catalog_merge.clone(),
+        CollaborationModesConfig::default(),
+        config.model_provider.clone(),
+    )
+}
+
+pub(crate) fn spawn_agent_models_manager_for_provider(
+    session: &Session,
+    turn: &TurnContext,
+    config: &Config,
+) -> std::sync::Arc<ModelsManager> {
+    if config.model_provider == turn.provider {
+        session.services.models_manager.clone()
+    } else {
+        std::sync::Arc::new(spawn_agent_models_manager(session, config))
+    }
+}
+
 pub(crate) async fn apply_requested_spawn_agent_model_overrides(
     session: &Session,
     turn: &TurnContext,
     config: &mut Config,
+    requested_provider: Option<&str>,
     requested_model: Option<&str>,
     requested_reasoning_effort: Option<ReasoningEffort>,
 ) -> Result<(), FunctionCallError> {
-    if requested_model.is_none() && requested_reasoning_effort.is_none() {
+    if requested_provider.is_none()
+        && requested_model.is_none()
+        && requested_reasoning_effort.is_none()
+    {
         return Ok(());
     }
 
-    if let Some(requested_model) = requested_model {
-        let available_models = session
-            .services
-            .models_manager
-            .list_models(RefreshStrategy::Offline)
-            .await;
-        let selected_model_name = find_spawn_agent_model_name(&available_models, requested_model)?;
-        let selected_model_info = session
-            .services
-            .models_manager
-            .get_model_info(&selected_model_name, config)
-            .await;
+    let original_provider_id = config.model_provider_id.clone();
+    let original_provider = config.model_provider.clone();
+    let original_model = config.model.clone();
+    let original_reasoning_effort = config.model_reasoning_effort;
+    let restore_original_selection = |config: &mut Config| {
+        config.model_provider_id = original_provider_id.clone();
+        config.model_provider = original_provider.clone();
+        config.model = original_model.clone();
+        config.model_reasoning_effort = original_reasoning_effort;
+    };
 
-        config.model = Some(selected_model_name.clone());
-        if let Some(reasoning_effort) = requested_reasoning_effort {
-            validate_spawn_agent_reasoning_effort(
-                &selected_model_name,
-                &selected_model_info.supported_reasoning_levels,
-                reasoning_effort,
-            )?;
-            config.model_reasoning_effort = Some(reasoning_effort);
-        } else {
-            config.model_reasoning_effort = selected_model_info.default_reasoning_level;
+    apply_requested_spawn_agent_provider_override(config, requested_provider)?;
+
+    let models_manager = spawn_agent_models_manager_for_provider(session, turn, config);
+    let selected_model_name = if let Some(requested_model) = requested_model {
+        match resolve_spawn_agent_model_name(models_manager.as_ref(), requested_model).await {
+            Ok(model) => model,
+            Err(err) => {
+                restore_original_selection(config);
+                if requested_provider.is_some() {
+                    return Err(err);
+                }
+                warn!(
+                    requested_model,
+                    fallback_model = %turn.model_info.slug,
+                    "spawn_agent requested model unavailable after refreshing model catalog; falling back to parent model"
+                );
+                return Ok(());
+            }
         }
+    } else if requested_provider.is_some() {
+        match select_spawn_agent_model_for_provider_switch(models_manager.as_ref(), config).await {
+            Ok(model) => model,
+            Err(err) => {
+                restore_original_selection(config);
+                return Err(err);
+            }
+        }
+    } else {
+        config
+            .model
+            .clone()
+            .unwrap_or_else(|| turn.model_info.slug.clone())
+    };
+    let selected_model_info = models_manager
+        .get_model_info(&selected_model_name, config)
+        .await;
 
-        return Ok(());
-    }
-
+    config.model = Some(selected_model_name.clone());
     if let Some(reasoning_effort) = requested_reasoning_effort {
-        validate_spawn_agent_reasoning_effort(
-            &turn.model_info.slug,
-            &turn.model_info.supported_reasoning_levels,
+        let validation = validate_spawn_agent_reasoning_effort(
+            &selected_model_name,
+            &selected_model_info.supported_reasoning_levels,
             reasoning_effort,
-        )?;
+        );
+        if let Err(err) = validation {
+            restore_original_selection(config);
+            if requested_provider.is_some() || requested_model.is_none() {
+                return Err(err);
+            }
+            warn!(
+                requested_model = %selected_model_name,
+                requested_reasoning_effort = %reasoning_effort,
+                fallback_model = %turn.model_info.slug,
+                "spawn_agent requested reasoning effort is unsupported for the requested model; falling back to parent model"
+            );
+            return Ok(());
+        }
         config.model_reasoning_effort = Some(reasoning_effort);
+    } else if requested_model.is_some() || requested_provider.is_some() {
+        config.model_reasoning_effort = selected_model_info.default_reasoning_level;
     }
 
     Ok(())
+}
+
+pub(crate) async fn resolve_spawn_agent_model_name(
+    models_manager: &ModelsManager,
+    requested_model: &str,
+) -> Result<String, FunctionCallError> {
+    let offline_models = models_manager.list_models(RefreshStrategy::Offline).await;
+    if let Ok(model) = find_spawn_agent_model_name(&offline_models, requested_model) {
+        return Ok(model);
+    }
+
+    let refreshed_models = models_manager.list_models(RefreshStrategy::Online).await;
+    find_spawn_agent_model_name(&refreshed_models, requested_model)
+}
+
+pub(crate) async fn select_spawn_agent_model_for_provider_switch(
+    models_manager: &ModelsManager,
+    config: &Config,
+) -> Result<String, FunctionCallError> {
+    if let Some(current_model) = config.model.as_deref()
+        && resolve_spawn_agent_model_name(models_manager, current_model)
+            .await
+            .is_ok()
+    {
+        return Ok(current_model.to_string());
+    }
+
+    if let Some(provider_default_model) = config.model_provider.model.as_deref() {
+        return resolve_spawn_agent_model_name(models_manager, provider_default_model).await;
+    }
+
+    let available_models = models_manager
+        .list_models(RefreshStrategy::OnlineIfUncached)
+        .await;
+    available_models
+        .iter()
+        .find(|model| model.is_default)
+        .or_else(|| available_models.first())
+        .map(|model| model.model.clone())
+        .ok_or_else(|| {
+            FunctionCallError::RespondToModel(format!(
+                "Provider `{}` has no available models for spawn_agent",
+                config.model_provider_id
+            ))
+        })
 }
 
 fn find_spawn_agent_model_name(

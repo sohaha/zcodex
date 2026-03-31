@@ -1,0 +1,110 @@
+plan = "plan/2026-03-31-codex-multi-model-agent-orchestration.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立按 Agent 粒度的模型与 provider 路由契约"
+scope = """
+在 `codex-rs/core` 内收口多模型编排的基础契约：让子 Agent 的模型 / provider 选择在 spawn / orchestration 阶段显式可控，
+并把选择逻辑从“继承父 Agent 当前模型”提升为“基于能力矩阵和现有 provider 配置进行决策”。
+包含配置读取、provider 选择、models manager 与 spawn 参数贯通；不在本 issue 中落地 fan-out / join / retry / cancel 编排流程，
+也不新增任何原生 provider 或新的 `WireApi` 变体。
+"""
+touch_points = [
+  "module:codex-core",
+  "codex-rs/core/src/model_provider_info.rs",
+  "codex-rs/core/src/config/mod.rs",
+  "codex-rs/core/src/models_manager/manager.rs",
+  "codex-rs/core/src/tools/handlers/multi_agents_common.rs",
+  "codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs"
+]
+depends_on = []
+done_when = "子 Agent 可以在现有 provider 体系内被显式分配模型与 provider，且路由逻辑改为按声明能力与配置决策，而不是只依赖父 Agent 模型继承"
+validate_by = "Run existing repository command cargo nextest run -p codex-core"
+regress_by = "Run existing repository command cargo nextest run -p codex-core"
+regress_timing = "before_fanout"
+status = "in_progress"
+validate_status = "in_progress"
+regress_status = "not_run"
+notes = "用户已明确允许在当前脏工作区继续（选项 1）。本轮只在 a1 允许范围内做最小改动，并尽量避开已存在的无关修改。由于当前工作区存在大量并行改动，本 issue 由主代理本地执行，避免额外并发写入风险。现已在 `codex-rs/core` 贯通 `spawn_agent` / `spawn_agent` v2 的 `provider` 参数、provider-aware model catalog 选择与 spec 暴露，并把共享 override 逻辑收口到 `multi_agents_common`，同时补了 provider+unknown-model 不应污染配置的回归测试。为避免 cargo 锁，本轮验证使用独立 `CARGO_HOME=/tmp/cargo-home-a1-provider-verify-2` 与 `CARGO_TARGET_DIR=/tmp/cargo-target-a1-provider-verify-2`；已通过 targeted checks：`cargo test -p codex-core --lib spawn_agent_accepts_provider_override_and_uses_provider_catalog --quiet`、`cargo test -p codex-core --lib multi_agent_v2_spawn_accepts_provider_override --quiet`、`cargo test -p codex-core --lib spawn_agent_refreshes_model_catalog_before_falling_back_to_parent_model --quiet`、`cargo test -p codex-core --lib spawn_agent_rejects_provider_override_when_requested_model_is_unknown --quiet`、`cargo test -p codex-core --lib spawn_agent_falls_back_to_parent_model_when_requested_model_is_unknown --quiet`、`cargo test -p codex-core --lib spawn_agent_falls_back_to_parent_model_when_requested_reasoning_is_unsupported --quiet`、`cargo test -p codex-core --test all spawn_agent_role_overrides_requested_model_and_reasoning_settings --quiet`、`cargo test -p codex-core --lib test_build_specs_collab_tools_enabled --quiet`、`cargo test -p codex-core --lib test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume --quiet`。完整 `validate_by` / `regress_by` 规定的 `cargo nextest run -p codex-core` 仍未执行，因此本 issue 先维持 `in_progress` 并等待后续完整回归。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "在现有 runtime 与 agent_jobs 上落地内置编排 MVP"
+scope = """
+在不引入第二套 runtime 的前提下，基于现有 `spawn_agent`、collab 原语与持久化 `agent_jobs` 建立内置编排 MVP，
+明确支持有边界的 fan-out / join / retry / cancel 语义，并让状态迁移保持显式、可恢复、可观察。
+包含 `AgentControl`、agent job 运行与持久化状态相关代码；不在本 issue 中扩展 protocol / app-server / TUI 展示面。
+"""
+touch_points = [
+  "module:codex-core",
+  "module:codex-state",
+  "codex-rs/core/src/agent/control.rs",
+  "codex-rs/core/src/tools/handlers/agent_jobs.rs",
+  "codex-rs/state/src/runtime/agent_jobs.rs",
+  "codex-rs/state/migrations/0014_agent_jobs.sql"
+]
+depends_on = ["a1"]
+done_when = "内置编排可以在现有 runtime 上执行有边界的 fan-out / join / retry / cancel 流程，且相关 job 状态可被持久化、恢复与失败处理"
+validate_by = "Run existing repository command cargo nextest run -p codex-core && cargo nextest run -p codex-state"
+regress_by = "Run existing repository command cargo nextest run -p codex-core && cargo nextest run -p codex-state"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "扩展编排协议与 app-server 合同"
+scope = """
+在 runtime 语义稳定后，把编排状态、Agent 模型 / provider 元数据与必要的错误 / 进度信息沉淀到共享协议与 app-server 合同，
+让下游界面和消费者能稳定读取这些信息。包含 protocol、app-server-protocol 与 app-server 的合同收口；
+不在本 issue 中实现 TUI 渲染、snapshot 更新或文档整理。
+"""
+touch_points = [
+  "module:codex-protocol",
+  "module:codex-app-server-protocol",
+  "module:codex-app-server",
+  "codex-rs/protocol/src/protocol.rs",
+  "codex-rs/app-server-protocol/src/protocol/v2.rs",
+  "codex-rs/app-server/src/bespoke_event_handling.rs"
+]
+depends_on = ["a1", "a2"]
+done_when = "共享协议与 app-server 合同能够稳定表达编排状态及 Agent 模型 / provider 元数据，且不会让执行阶段因缺少接口约束而卡住"
+validate_by = "Run existing repository command cargo nextest run -p codex-app-server-protocol && cargo nextest run -p codex-app-server"
+regress_by = "Run existing repository command cargo nextest run -p codex-app-server-protocol && cargo nextest run -p codex-app-server"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "补齐 TUI、hooks 可见性与交付文档"
+scope = """
+基于已收口的协议与运行时语义，完善 TUI 中的多 Agent 可见性、与 hooks 对齐的生命周期展示，以及必要的交付文档与 snapshot 更新，
+让用户可以直接观察哪些 Agent 被运行、使用了哪个模型 / provider、当前编排处于什么状态。包含 `tui_app_server` 可见性、相关 snapshots 与文档更新；
+不再改动核心编排契约或新增 provider 实现。
+"""
+touch_points = [
+  "module:codex-tui",
+  "module:codex-hooks",
+  "codex-rs/tui_app_server/src/multi_agents.rs",
+  "codex-rs/tui_app_server/src/chatwidget.rs",
+  "codex-rs/tui_app_server/src/snapshots/*",
+  "codex-rs/app-server/README.md"
+]
+depends_on = ["a2", "a3"]
+done_when = "TUI 与相关文档能清楚展示编排状态和 Agent 模型 / provider 信息，相关 hooks 可见性与 snapshots 完整对齐"
+validate_by = "Run existing repository command cargo nextest run -p codex-tui && cargo nextest run -p codex-app-server, then manually review updated TUI snapshots and `codex-rs/app-server/README.md`"
+regress_by = "Run existing repository command cargo nextest run -p codex-tui && cargo nextest run -p codex-app-server"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "none"

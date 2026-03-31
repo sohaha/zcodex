@@ -8,6 +8,7 @@ use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::function_tool::FunctionCallError;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use crate::models_manager::manager::RefreshStrategy;
 use crate::protocol::AgentStatus;
 use crate::protocol::AskForApproval;
 use crate::protocol::EventMsg;
@@ -300,6 +301,70 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
 }
 
 #[tokio::test]
+async fn spawn_agent_accepts_provider_override_and_uses_provider_catalog() {
+    #[derive(Debug, Deserialize)]
+    struct SpawnAgentResult {
+        agent_id: String,
+        nickname: Option<String>,
+    }
+
+    let (mut session, turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    session.services.agent_control = manager.agent_control();
+
+    let output = SpawnAgentHandler
+        .handle(invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "provider": "anthropic"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should accept provider overrides");
+    let (content, _) = expect_text_output(output);
+    let result: SpawnAgentResult =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+
+    let agent_id = parse_agent_id(&result.agent_id);
+    assert!(
+        result
+            .nickname
+            .as_deref()
+            .is_some_and(|nickname| !nickname.is_empty())
+    );
+
+    let thread = manager
+        .get_thread(agent_id)
+        .await
+        .expect("spawned agent thread should exist");
+    let snapshot = thread.config_snapshot().await;
+    assert_eq!(snapshot.model_provider_id, "anthropic");
+    assert_eq!(snapshot.model, "claude-sonnet-4-20250514");
+
+    let available_models = thread
+        .codex
+        .session
+        .services
+        .models_manager
+        .list_models(RefreshStrategy::Offline)
+        .await;
+    assert_eq!(
+        available_models
+            .iter()
+            .map(|model| model.model.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-1-20250805",
+            "claude-3-5-haiku-20241022",
+        ]
+    );
+}
+
+#[tokio::test]
 async fn spawn_agent_accepts_overlay_model() {
     #[derive(Debug, Deserialize)]
     struct SpawnAgentResult {
@@ -378,12 +443,14 @@ async fn spawn_agent_refreshes_model_catalog_before_falling_back_to_parent_model
         provider.clone(),
     );
     session.services.models_manager = manager.get_models_manager();
+    config.model_provider = provider.clone();
     turn.provider = provider;
 
     apply_requested_spawn_agent_model_overrides(
         &session,
         &turn,
         &mut config,
+        None,
         Some(remote_model.slug.as_str()),
         None,
     )
@@ -395,6 +462,32 @@ async fn spawn_agent_refreshes_model_catalog_before_falling_back_to_parent_model
         config.model_reasoning_effort,
         remote_model.default_reasoning_level
     );
+}
+
+#[tokio::test]
+async fn spawn_agent_rejects_provider_override_when_requested_model_is_unknown() {
+    let (session, turn) = make_session_and_context().await;
+    let mut config = (*turn.config).clone();
+    let original_provider_id = config.model_provider_id.clone();
+    let original_model = config.model.clone();
+
+    let Err(FunctionCallError::RespondToModel(message)) =
+        apply_requested_spawn_agent_model_overrides(
+            &session,
+            &turn,
+            &mut config,
+            Some("anthropic"),
+            Some("missing-custom-model"),
+            None,
+        )
+        .await
+    else {
+        panic!("provider-scoped unknown model should be rejected");
+    };
+
+    assert!(message.contains("Unknown model `missing-custom-model`"));
+    assert_eq!(config.model_provider_id, original_provider_id);
+    assert_eq!(config.model, original_model);
 }
 
 #[tokio::test]
@@ -1271,6 +1364,58 @@ async fn multi_agent_v2_spawn_includes_agent_id_key_when_named() {
     assert_eq!(result["task_name"], "/root/test_process");
     assert!(result.get("nickname").is_some());
     assert_eq!(success, Some(true));
+}
+
+#[tokio::test]
+async fn multi_agent_v2_spawn_accepts_provider_override() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    let root = manager
+        .start_thread((*turn.config).clone())
+        .await
+        .expect("root thread should start");
+    session.services.agent_control = manager.agent_control();
+    session.conversation_id = root.thread_id;
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::MultiAgentV2)
+        .expect("test config should allow feature update");
+    turn.config = Arc::new(config);
+
+    let output = SpawnAgentHandlerV2
+        .handle(invocation(
+            Arc::new(session),
+            Arc::new(turn),
+            "spawn_agent",
+            function_payload(json!({
+                "message": "inspect this repo",
+                "task_name": "anthropic_worker",
+                "provider": "anthropic"
+            })),
+        ))
+        .await
+        .expect("spawn_agent should accept provider overrides");
+    let (content, _) = expect_text_output(output);
+    let result: serde_json::Value =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+
+    assert_eq!(result["task_name"], "/root/anthropic_worker");
+
+    let child_thread_id = manager
+        .list_thread_ids()
+        .await
+        .into_iter()
+        .find(|thread_id| *thread_id != root.thread_id)
+        .expect("spawned child thread should exist");
+    let snapshot = manager
+        .get_thread(child_thread_id)
+        .await
+        .expect("spawned child thread should exist")
+        .config_snapshot()
+        .await;
+    assert_eq!(snapshot.model_provider_id, "anthropic");
+    assert_eq!(snapshot.model, "claude-sonnet-4-20250514");
 }
 
 #[tokio::test]

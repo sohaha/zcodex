@@ -396,6 +396,14 @@ fn test_build_specs_collab_tools_enabled() {
         &tools,
         &["spawn_agent", "send_input", "wait_agent", "close_agent"],
     );
+    let spawn_agent = find_tool(&tools, "spawn_agent");
+    let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = &spawn_agent.spec else {
+        panic!("spawn_agent should be a function tool");
+    };
+    let JsonSchema::Object { properties, .. } = parameters else {
+        panic!("spawn_agent should use object params");
+    };
+    assert!(properties.contains_key("provider"));
     assert_lacks_tool_name(&tools, "spawn_agents_on_csv");
     assert_lacks_tool_name(&tools, "list_agents");
 }
@@ -453,6 +461,7 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
     else {
         panic!("spawn_agent should use object params");
     };
+    assert!(properties.contains_key("provider"));
     assert!(properties.contains_key("task_name"));
     assert_eq!(required.as_ref(), Some(&vec!["task_name".to_string()]));
     let output_schema = output_schema

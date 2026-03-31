@@ -1154,6 +1154,15 @@ fn spawn_agent_common_properties(config: &ToolsConfig) -> BTreeMap<String, JsonS
             },
         ),
         (
+            "provider".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional provider override for the new agent. Use a configured model provider key; this replaces the inherited provider."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
             "reasoning_effort".to_string(),
             JsonSchema::String {
                 description: Some(

@@ -68,6 +68,7 @@ impl ToolHandler for Handler {
             &session,
             turn.as_ref(),
             &mut config,
+            args.provider.as_deref(),
             args.model.as_deref(),
             args.reasoning_effort,
         )
@@ -203,6 +204,7 @@ struct SpawnAgentArgs {
     items: Option<Vec<UserInput>>,
     task_name: String,
     agent_type: Option<String>,
+    provider: Option<String>,
     model: Option<String>,
     reasoning_effort: Option<ReasoningEffort>,
     #[serde(default)]
