@@ -78,6 +78,8 @@ You can verify the active resolution with:
 ```shell
 codex zmemory stats --json
 codex zmemory doctor --json
+codex zmemory read system://workspace --json
+codex zmemory read system://defaults --json
 ```
 
 The stable diagnostic payload is `result.pathResolution` (and the same
@@ -92,6 +94,21 @@ level of `result` for quick checks):
   "reason": "defaulted to repo root /workspace/my-repo"
 }
 ```
+
+`system://workspace` is the runtime fact view for the active session. It adds
+fields such as `hasExplicitZmemoryPath`, `defaultDbPath`, `dbPathDiffers`,
+`bootHealthy`, and an embedded `boot` snapshot so you can tell whether the
+current workspace is using the default workspace-hash database or an explicit
+override.
+
+`system://defaults` is the product-default fact view. It reports the default
+`validDomains`, `coreMemoryUris`, default DB path policy, and the recommended
+coding-memory anchors without conflating them with the current workspace state.
+
+If a direct `read <uri>` misses or `search` returns no matches, use
+`system://workspace`, `stats`, `doctor`, and `system://alias` before concluding
+that no durable memory exists at all; an unhealthy boot graph or missing
+triggers can mean the issue is recall coverage rather than missing data.
 
 ## JSON Schema
 

@@ -59,6 +59,8 @@
 系统视图：
 
 - `system://boot`
+- `system://defaults`
+- `system://workspace`
 - `system://index`
 - `system://recent`
 - `system://glossary`
@@ -87,6 +89,8 @@ codex zmemory doctor --json
 `export` 是本地 CLI 的薄封装，用来导出内置系统视图，不会扩成 REST API、daemon 或独立服务。
 
 - `codex zmemory export boot [--limit N]`
+- `codex zmemory export defaults`
+- `codex zmemory export workspace`
 - `codex zmemory export index [--domain core] [--limit N]`
 - `codex zmemory export recent [--limit N]`
 - `codex zmemory export glossary [--limit N]`
@@ -97,6 +101,8 @@ codex zmemory doctor --json
 底层仍复用 `read system://...`：
 
 - `export boot` -> `system://boot`
+- `export defaults` -> `system://defaults`
+- `export workspace` -> `system://workspace`
 - `export index --domain core` -> `system://index/core`
 - `export recent --limit 5` -> `system://recent/5`
 - `export glossary` -> `system://glossary`
@@ -104,10 +110,18 @@ codex zmemory doctor --json
 
 `system://boot` 现在优先返回 `CORE_MEMORY_URIS` 中已存在的锚点节点，并显式给出缺失锚点列表；不再按全库 priority 直接截取前 N 条。
 
+`system://defaults` / `system://workspace` 用来显式区分“产品默认事实”和“当前工作区实际事实”：
+
+- `system://defaults`：返回产品默认 `validDomains` / `coreMemoryUris`、默认 DB path policy、推荐 coding-memory domains / boot anchors，以及 boot contract 的固定事实对象。
+- `system://workspace`：返回当前实际 `dbPath/source/reason/workspaceKey/workspaceBase`、`hasExplicitZmemoryPath`、`defaultWorkspaceKey/defaultDbPath/dbPathDiffers`、runtime `validDomains/coreMemoryUris`，并内嵌 `boot` / `bootHealthy`。
+- 当问题是在问“现在到底用的是哪个记忆库”“这是产品默认还是当前仓库覆盖”时，应先读 `system://workspace`，再用 `system://defaults` 校对默认值。
+
 ## review 治理入口
 
 当前本地 review 不额外引入独立服务，而是复用现有动作层：
 
+- `codex zmemory read system://workspace --json`：确认当前工作区实际 DB、默认路径差异、boot 健康度
+- `codex zmemory read system://defaults --json`：确认产品默认 domains / boot anchors / 默认路径策略
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
 - `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
@@ -132,10 +146,17 @@ codex zmemory doctor --json
 
 建议的最小 review 顺序：
 
-1. 先看 `stats` 判断 orphan / deprecated / disclosure 压力。
-2. 再看 `doctor` 判断是否存在需要优先修复的告警。
-3. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
-4. 视 `stats` 中 alias/trigger/disclosure 覆盖后，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
+1. 先看 `system://workspace` 判断当前实际 DB、boot 是否健康、是否显式覆盖默认路径。
+2. 再看 `system://defaults`，确认当前现象是产品默认还是 workspace 特例。
+3. 再看 `stats` / `doctor` 判断 orphan / deprecated / alias / disclosure 压力。
+4. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
+5. 若 `stats` / `doctor` 提示 alias/trigger 缺口，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
+
+### 区分“没有记忆”与“搜不到”
+
+- `read <uri>` 返回 `memory not found`，只代表这条具体路径不存在。
+- `search <query>` 结果为空，不能直接当作“系统没有相关记忆”；先检查 `system://workspace.bootHealthy`、`stats` / `doctor`、以及 `system://alias` 的 trigger 覆盖。
+- 若 `doctor/stats` 已显示 alias/trigger/disclosure 缺口，当前更接近“可检索性不足”，而不是“没有 durable memory”。
 
 `system://alias` 视图返回结构：
 
@@ -158,13 +179,18 @@ codex zmemory doctor --json
 
 这些信息配合 `stats`/`doctor` 能形成“alias coverage + trigger wiring”评估，为 alias review 清单提供输入。
 
-## memory skill 参考
+### 旧节点桥接策略
 
-- 根级 skill `memory` 里详细记录了 recall/capture/refine/linking/review/handoff 的最小编排（见 `.codex/skills/memory/SKILL.md`）。
-- 任何时候想直接复用 CLI 示例，可参考 `.codex/skills/memory/references/cli-recipes.md`，按已实现的 `codex zmemory` 命令顺序排列。
-- 需要一个 review 复核清单时，可参阅 `.codex/skills/memory/references/review-playbook.md` 中列出的 `stats`/`doctor`/`export` 流程。
-- 想在 review 中具体处理 alias/trigger 覆盖，可直接查 `.codex/skills/memory/references/review-playbook.md` 里新增的 alias check，例如 `read system://alias` + `manage-triggers` 建议。
-- 需要启动一个新项目时，可以参考 review-playbook 里的 project init checklist，它直接用 `create`/`add-alias`/`manage-triggers` 等命令搭建骨架。
+- `update` 在内容变化时会写入新的 memory 版本，并把旧版本标记为 `deprecated`，同时记录 `migrated_to`。
+- `delete-path` 在删除最后一个 path 引用时，会把对应 memory 标记为 deprecated；此时 `orphanedMemoryCount` 会升高，表示节点仍在库里但已经没有活跃 path。
+- `stats` / `doctor` 暴露 `deprecatedMemoryCount` 和 `orphanedMemoryCount`，用于区分“迁移中的旧版本”和“需要手工处理的孤儿旧节点”。
+- 当前 bridge 策略是显式治理而不是自动迁移：先保留一个 canonical live node，再用 `add-alias` 保留旧叫法、用 `manage-triggers` 补自然问法，最后复跑 `stats` / `doctor` 观察压力是否下降。
+
+## 项目内参考
+
+- `docs/config.md`：查看 `memories` feature、`zmemory_path`、默认路径策略与 `system://workspace` / `system://defaults` 的用途。
+- `.agents/embedded-zmemory-overhaul/architecture.md`：查看 recall/orchestration、治理闭环和 defaults-vs-workspace 设计背景。
+- `.agents/embedded-zmemory-overhaul/qa-report.md`：查看当前验证命令、通过项和剩余风险。
 
 ## 创建语义
 
