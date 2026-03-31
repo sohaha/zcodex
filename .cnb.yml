@@ -55,6 +55,7 @@ include:
   - https://cnb.cool/zls-tools/vm/-/blob/main/tools/sync-github-sohaha.yml
   # - https://cnb.cool/zls-tools/vm/-/blob/main/tools/knowledge.yml
   - https://cnb.cool/zls-tools/vm/-/blob/main/rust-ide.yml
+  - https://cnb.cool/zls-tools/vm/-/blob/main/npc.yml
   # - https://cnb.cool/zls-tools/vm/-/blob/main/tools/install-tools.yml
 
 v*.*.*:
@@ -62,42 +63,7 @@ v*.*.*:
     - <<: *tag-release-codex
 
 
-# .npc: &npc
-#   - services:
-#       - docker
-#     env:
-#         dockerPassword: $CNB_TOKEN
-#     stages:
-#       - name: run with npc
-#         # imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
-#         image:
-#               name: docker.cnb.cool/zls-tools/vm/rust:latest
-#               dockerUser: $CNB_TOKEN_USER_NAME
-#               dockerPassword: $CNB_TOKEN
-#         env:
-#           CUSTOM_PROMPT: |
-#             你是一位资深工程师，擅长并发模型和性能优化。
-#         # stages:
-#         #   - name: 安装工具
-#         #     jobs: !reference [.install-tools]
-
-.npc: &npc
-  - services:
-      - docker
-    imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
-    stages:
-      - name: run with npc
-        image:
-          name: docker.cnb.cool/zls-tools/vm/rust:latest
-          dockerUser: $CNB_DOCKER_USER
-          dockerPassword: $CNB_DOCKER_PASSWORD
-
-
-# $ 是兜底配置，匹配所有未单独定义的 NPC
 $:
-  issue.comment@npc: *npc
-  pull_request.comment@npc: *npc
-
   push:
     sync_github:
       env:
