@@ -928,10 +928,12 @@ fn zmemory_tool_uri_parameter_documents_system_views() {
     assert!(uri_description.contains("core://..."));
     assert!(
         uri_description.contains(
-            "system://boot|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n>"
+            "system://boot|defaults|workspace|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n>"
         )
     );
     assert!(uri_description.contains("optional search scope"));
+    assert!(uri_description.contains("product defaults"));
+    assert!(uri_description.contains("current workspace runtime facts"));
     assert!(uri_description.contains("CORE_MEMORY_URIS"));
     assert!(uri_description.contains("VALID_DOMAINS"));
 }
@@ -1041,6 +1043,8 @@ fn zmemory_tool_priority_disclosure_and_limit_document_boot_and_governance() {
     assert!(priority_description.contains("CORE_MEMORY_URIS"));
     assert!(disclosure_description.contains("single-purpose"));
     assert!(limit_description.contains("CORE_MEMORY_URIS"));
+    assert!(limit_description.contains("system://defaults"));
+    assert!(limit_description.contains("system://workspace"));
 }
 
 #[test]

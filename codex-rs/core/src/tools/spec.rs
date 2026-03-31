@@ -1873,7 +1873,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "uri".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n> for built-in views. system://boot follows configured CORE_MEMORY_URIS anchors, while non-system domains must come from VALID_DOMAINS."
+                    "Primary URI for read/update/delete/manage-triggers, or an optional search scope. Use core://... for normal memory paths and system://boot|defaults|workspace|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n> for built-in views. system://defaults exposes product defaults, system://workspace exposes current workspace runtime facts, system://boot follows configured CORE_MEMORY_URIS anchors, while non-system domains must come from VALID_DOMAINS."
                         .to_string(),
                 ),
             },
@@ -1986,7 +1986,7 @@ fn create_zmemory_tool() -> ToolSpec {
             "limit".to_string(),
             JsonSchema::Number {
                 description: Some(
-                    "Maximum number of search or system-view results to return. For system://boot this caps how many configured CORE_MEMORY_URIS anchors are emitted.".to_string(),
+                    "Maximum number of search or system-view results to return. For system://boot this caps how many configured CORE_MEMORY_URIS anchors are emitted; system://defaults and system://workspace return fixed fact objects.".to_string(),
                 ),
             },
         ),

@@ -18,6 +18,8 @@ use core_test_support::test_codex::test_codex;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
+use std::sync::Arc;
+use tempfile::TempDir;
 
 const ZMEMORY_JSON_BEGIN: &str = "---BEGIN_ZMEMORY_JSON---";
 const ZMEMORY_JSON_END: &str = "---END_ZMEMORY_JSON---";
@@ -41,6 +43,29 @@ fn sorted_object_keys(value: &Value) -> Vec<&str> {
         .collect::<Vec<_>>();
     keys.sort_unstable();
     keys
+}
+
+fn tool_parameter_description(
+    body: &Value,
+    tool_name: &str,
+    parameter_name: &str,
+) -> Option<String> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .and_then(|tools| {
+            tools.iter().find_map(|tool| {
+                if tool.get("name").and_then(Value::as_str) == Some(tool_name) {
+                    tool.get("parameters")
+                        .and_then(|parameters| parameters.get("properties"))
+                        .and_then(|properties| properties.get(parameter_name))
+                        .and_then(|parameter| parameter.get("description"))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+        })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -111,6 +136,45 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
         read_back.structured_content["result"]["content"],
         "Salem profile memory"
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let resp_mock = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::MemoryTool)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("describe the available tools").await?;
+
+    let body = resp_mock.single_request().body_json();
+    let uri_description = tool_parameter_description(&body, "zmemory", "uri")
+        .expect("zmemory uri description should be present");
+    let limit_description = tool_parameter_description(&body, "zmemory", "limit")
+        .expect("zmemory limit description should be present");
+
+    assert!(
+        uri_description.contains(
+            "system://boot|defaults|workspace|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n>"
+        )
+    );
+    assert!(uri_description.contains("product defaults"));
+    assert!(uri_description.contains("current workspace runtime facts"));
+    assert!(limit_description.contains("system://defaults"));
+    assert!(limit_description.contains("system://workspace"));
 
     Ok(())
 }
@@ -461,6 +525,85 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
         payload["result"]["view"]["missingUris"][0],
         "core://my_user"
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_runtime() -> Result<()>
+{
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let explicit_db_path = home.path().join("custom-zmemory").join("memory.db");
+    std::fs::create_dir_all(
+        explicit_db_path
+            .parent()
+            .expect("explicit zmemory path should have a parent"),
+    )?;
+    let mut builder = test_codex().with_home(home).with_config({
+        let explicit_db_path = explicit_db_path.clone();
+        move |config| {
+            config
+                .features
+                .enable(Feature::MemoryTool)
+                .expect("test config should allow feature update");
+            config.zmemory_path = Some(explicit_db_path.clone());
+        }
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-workspace",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "read",
+                    "uri": "system://workspace"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("inspect workspace memory runtime facts")
+        .await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-workspace")
+        .expect("function tool output should be present");
+    assert!(output.contains("read system://workspace: workspace view"));
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "read");
+    assert_eq!(payload["result"]["uri"], "system://workspace");
+    assert_eq!(payload["result"]["view"]["view"], "workspace");
+    assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
+    assert_eq!(payload["result"]["view"]["source"], "explicit");
+    assert_eq!(payload["result"]["view"]["dbPathDiffers"], true);
+    assert_ne!(
+        payload["result"]["view"]["dbPath"],
+        payload["result"]["view"]["defaultDbPath"]
+    );
+    assert_eq!(
+        payload["result"]["view"]["workspaceBase"],
+        json!(test.cwd_path().display().to_string())
+    );
+    assert_eq!(payload["result"]["view"]["boot"]["view"], "boot");
+    assert_eq!(payload["result"]["view"]["bootHealthy"], false);
 
     Ok(())
 }

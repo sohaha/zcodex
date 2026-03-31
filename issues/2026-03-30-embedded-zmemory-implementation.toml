@@ -1,0 +1,134 @@
+plan = "plan/2026-03-30-embedded-zmemory-implementation.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "在 codex-core 落地 recall gate 与 root/subagent memory 协议"
+scope = """
+在 `codex-rs/core` 中把内置 zmemory 从静态提示升级为运行时语义：引入长期上下文 recall policy/gate，
+并把 root session 与 subagent 的 memory 协议显式分层。包含 `codex.rs`、`memories/prompts.rs`、
+`templates/memories/zmemory_instructions.md` 及相关测试；不在本 issue 中实现 zmemory crate 的新 system view。
+"""
+touch_points = [
+  "module:codex-core",
+  "codex-rs/core/src/codex.rs",
+  "codex-rs/core/src/memories/prompts.rs",
+  "codex-rs/core/templates/memories/zmemory_instructions.md",
+  "codex-rs/core/tests/suite/zmemory_prompt.rs",
+  "codex-rs/core/tests/suite/zmemory_e2e.rs"
+]
+depends_on = []
+done_when = "root session 的长期上下文问题会先经过 recall gate，subagent 获得只读 recall 语义，且相关 core prompt/e2e 测试覆盖并通过"
+validate_by = "Run existing repository command cargo test -p codex-core zmemory_prompt --quiet && cargo test -p codex-core --test all zmemory_ --quiet"
+regress_by = "Run existing repository command cargo test -p codex-core --test all zmemory_ --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已在 codex-core 落地 turn-scoped recall gate：长上下文 prompt 会注入显式 `## Zmemory Recall Gate` developer context，subagent 获得只读 recall 协议，root/subagent 的 prompt 模式已分层。验证已通过：`cargo test -p codex-core zmemory_prompt --quiet`、`cargo test -p codex-core build_initial_context_includes_read_only_zmemory_guidance_for_subagent_sessions --quiet`、`cargo test -p codex-core runtime_recall_gate_context_ --quiet`、`cargo test -p codex-core build_zmemory_developer_instructions_ --quiet`、`cargo test -p codex-core --test all zmemory_ --quiet`。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "在 codex-zmemory 建立 defaults/workspace 结构化事实视图"
+scope = """
+在 `codex-rs/zmemory` 中提供稳定的结构化契约，用于区分产品默认事实与当前 workspace 运行事实。
+包含 `system_views.rs`、`service.rs`、`tool_api.rs` 的输出收口，以及对应的 crate 级测试；
+不在本 issue 中完成 core 侧消费这些视图的最终对答语义。
+"""
+touch_points = [
+  "module:codex-zmemory",
+  "codex-rs/zmemory/src/system_views.rs",
+  "codex-rs/zmemory/src/service.rs",
+  "codex-rs/zmemory/src/tool_api.rs"
+]
+depends_on = []
+done_when = "embedded zmemory 能稳定导出 defaults/workspace 事实对象，并能表达显式 `zmemory_path` 与产品默认路径的差异"
+validate_by = "Run existing repository command cargo test -p codex-zmemory --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "此 issue 只负责事实层与结构化输出，不把回答语义硬编码到提示文本。本轮由主代理直接执行：`system_views/service/tool_api` 契约需要连续判断，且当前回合未显式授权子代理。现已在 `codex-zmemory` 增加 `system://defaults` 与 `system://workspace`：前者导出产品默认 domains/boot/db-path policy，后者导出当前 workspace 的 dbPath/source/reason、显式 `zmemory_path`、runtime domains/boot、默认路径推导与 `dbPathDiffers`；`tool_api` 的 read summary 也会对 system view 给出更清晰摘要。验证已通过：`cargo nextest run -p codex-zmemory`。自审未发现额外阻塞问题。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "收口 boot/domain 合同并同步 CLI 导出入口"
+scope = """
+围绕编码协作型 memory 模型收口 `boot` 与 domain 合同：调整或明确推荐的 domain/anchor 语义，
+保留 `missingUris` 的诊断价值，并让 CLI `zmemory export` / 可发现性能够消费新的系统视图或等价结构。
+包含 `config.rs`、`system_views.rs`、`cli/src/zmemory_cmd.rs` 及相关 CLI 测试；不做旧 durable memory 的迁移桥接。
+"""
+touch_points = [
+  "module:codex-zmemory",
+  "module:codex-cli",
+  "codex-rs/zmemory/src/config.rs",
+  "codex-rs/zmemory/src/system_views.rs",
+  "codex-rs/cli/src/zmemory_cmd.rs",
+  "codex-rs/cli/tests/zmemory.rs"
+]
+depends_on = ["a2"]
+done_when = "boot 保持最小核心协作入口且显式报告缺失锚点，CLI 能导出或读取新的 runtime 语义对象，相关 CLI/zmemory 测试通过"
+validate_by = "Run existing repository command cargo test -p codex-cli --test zmemory --quiet"
+regress_by = "Run existing repository command cargo test -p codex-zmemory --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "a2 已完成后，已在 `codex-zmemory`/`codex-cli` 收口 a3：`system://defaults` 现在同时导出产品默认值、推荐 coding-memory domains/boot anchors 与 boot contract；CLI `zmemory export` 新增 `defaults`/`workspace` 目标；CLI 测试也修正为与当前 edge 唯一约束、boot 健康语义一致。为避免共享 cargo 锁，本轮验证使用独立 `CARGO_HOME=/tmp/codex-cargo-home-zmemory-a3` 与 `CARGO_TARGET_DIR=/tmp/codex-cargo-target-zmemory-a3`。验证已通过：`cargo test -p codex-cli --test zmemory --quiet`，回归已通过：`cargo test -p codex-zmemory --quiet`。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "对齐 core tool/spec 与跨 crate 语义验证"
+scope = """
+让 `codex-core` 的 tool handler/spec、e2e 语义与新的 embedded zmemory 事实层保持一致，
+确保系统能在回答前区分默认值与 workspace 实际值，并把新增 contract 落到 targeted validation。
+包含 `core/src/tools/handlers/zmemory.rs`、`core/src/tools/spec.rs` 及相关 core e2e/spec 测试；
+不在本 issue 中处理治理迁移策略。
+"""
+touch_points = [
+  "module:codex-core",
+  "codex-rs/core/src/tools/handlers/zmemory.rs",
+  "codex-rs/core/src/tools/spec.rs",
+  "codex-rs/core/src/tools/spec_tests.rs",
+  "codex-rs/core/tests/suite/zmemory_e2e.rs"
+]
+depends_on = ["a1", "a2", "a3"]
+done_when = "core tool/spec 能消费新的 runtime fact contract，e2e 不再把产品默认值当作当前 workspace 实际值，相关 core 测试通过"
+validate_by = "Run existing repository command cargo test -p codex-core --test all zmemory_ --quiet"
+regress_by = "Run existing repository command cargo test -p codex-core zmemory_prompt --quiet && cargo test -p codex-core --test all zmemory_ --quiet"
+regress_timing = "after_done"
+status = "in_progress"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "a1/a2/a3 已完成后，已在 `core/src/tools/spec.rs`、`core/src/tools/spec_tests.rs`、`core/tests/suite/zmemory_e2e.rs` 对齐新的 embedded zmemory runtime fact contract：tool spec 公开 `system://defaults|workspace`，e2e 覆盖 explicit `zmemory_path` 与产品默认路径的差异，并补了一个走 `--test all` 链路的 tool spec 文案断言，避免被无关的 core lib unit-test 编译问题阻塞。验证继续使用独立 `CARGO_HOME=/tmp/codex-cargo-home-zmemory-a3` 与 `CARGO_TARGET_DIR=/tmp/codex-cargo-target-zmemory-a3`；已通过 `cargo test -p codex-core --test all zmemory_prompt --quiet` 与 `cargo test -p codex-core --test all zmemory_ --quiet`。"
+
+[[issue]]
+id = "a5"
+sequence = 50
+title = "补齐治理桥接与文档 QA 收口"
+scope = """
+在 Milestone 1 完成后，为 embedded zmemory 补齐 alias/trigger/query 治理信号、旧 durable node 的渐进桥接策略，
+并同步 README、config 文档、QA 报告与 architecture 文档。包含必要的治理测试与文档更新；
+不做破坏式批量迁移，也不扩展到 `.ai` 或外置 memory 方案。
+"""
+touch_points = [
+  "module:codex-zmemory",
+  "codex-rs/zmemory/README.md",
+  "docs/config.md",
+  ".agents/embedded-zmemory-overhaul/architecture.md",
+  ".agents/embedded-zmemory-overhaul/qa-report.md"
+]
+depends_on = ["a4"]
+done_when = "系统能区分无记忆与可检索性不足，旧节点存在可执行桥接策略，文档与 QA 结论和真实 embedded 行为一致"
+validate_by = "Run existing repository command cargo test -p codex-zmemory --quiet, then manually verify `codex-rs/zmemory/README.md`, `docs/config.md`, `.agents/embedded-zmemory-overhaul/architecture.md`, and `.agents/embedded-zmemory-overhaul/qa-report.md` all reflect the implemented governance and bridge behavior"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "治理与迁移闭环放在第二里程碑，避免掩盖运行时语义尚未落地的问题。"
