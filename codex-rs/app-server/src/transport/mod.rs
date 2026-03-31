@@ -172,15 +172,26 @@ async fn forward_incoming_message(
     connection_id: ConnectionId,
     payload: &str,
 ) -> bool {
-    match serde_json::from_str::<JSONRPCMessage>(payload) {
-        Ok(message) => {
+    match deserialize_incoming_message(payload) {
+        Ok(Some(message)) => {
             enqueue_incoming_message(transport_event_tx, writer, connection_id, message).await
         }
+        Ok(None) => true,
         Err(err) => {
             error!("Failed to deserialize JSONRPCMessage: {err}");
             true
         }
     }
+}
+
+fn deserialize_incoming_message(
+    payload: &str,
+) -> Result<Option<JSONRPCMessage>, serde_json::Error> {
+    if payload.trim().is_empty() {
+        return Ok(None);
+    }
+
+    serde_json::from_str(payload).map(Some)
 }
 
 async fn enqueue_incoming_message(
@@ -428,6 +439,32 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "unsupported --listen URL `http://127.0.0.1:1234`; expected `stdio://` or `ws://IP:PORT`"
+        );
+    }
+
+    #[test]
+    fn deserialize_incoming_message_ignores_blank_payloads() {
+        assert_eq!(
+            deserialize_incoming_message("").expect("blank payload"),
+            None
+        );
+        assert_eq!(
+            deserialize_incoming_message("  \t ").expect("whitespace payload"),
+            None
+        );
+    }
+
+    #[test]
+    fn deserialize_incoming_message_parses_valid_jsonrpc_messages() {
+        let message = deserialize_incoming_message(r#"{"method":"initialized"}"#)
+            .expect("valid notification")
+            .expect("message should be present");
+        assert_eq!(
+            message,
+            JSONRPCMessage::Notification(codex_app_server_protocol::JSONRPCNotification {
+                method: "initialized".to_string(),
+                params: None,
+            })
         );
     }
 
