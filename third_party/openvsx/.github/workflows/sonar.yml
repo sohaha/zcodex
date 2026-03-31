@@ -1,0 +1,41 @@
+name: Sonar
+on:
+  push:
+    branches:
+      - main
+jobs:
+  sonar:
+    name: Sonar
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    if: github.repository == 'eclipse-openvsx/openvsx'
+    steps:
+    - name: Checkout
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      with:
+          persist-credentials: false
+          fetch-depth: 0
+    - name: Cache SonarCloud packages
+      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306  # v5.0.3
+      with:
+        path: ~/.sonar/cache
+        key: ${{ runner.os }}-sonar
+        restore-keys: ${{ runner.os }}-sonar
+    - name: Set up JDK
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+      with:
+        distribution: 'temurin'
+        java-version: 25
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5
+    - name: Generate JaCoCo test report
+      run: server/gradlew --no-daemon -p server jacocoTestReport
+    - name: Make server libraries directory
+      run: mkdir server/libraries
+    - name: Copy server libraries
+      run: find ~/.gradle/caches -type f -name '*.jar' -exec cp {} server/libraries \;
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9  # v7.0.0
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

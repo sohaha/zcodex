@@ -1,0 +1,13 @@
+{
+  "extends": "./base.tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["es6"],
+    "skipLibCheck": true,
+    "outDir": "../lib/default"
+  },
+  "include": [
+    "../src/default/server.ts"
+  ]
+}
