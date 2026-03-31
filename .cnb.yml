@@ -61,13 +61,13 @@ v*.*.*:
   tag_push:
     - <<: *tag-release-codex
 
-env:
-  dockerPassword: ${CNB_TOKEN_SECRET}
-secrets:
-  - CNB_TOKEN_SECRET
 
 .npc: &npc
-  - stages:
+  - services:
+      - docker
+    env:
+        dockerPassword: $CNB_TOKEN
+    stages:
       - name: run with npc
         # imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
         image:
