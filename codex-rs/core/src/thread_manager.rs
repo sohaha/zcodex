@@ -1,7 +1,6 @@
 use crate::AuthManager;
 use crate::CodexAuth;
 use crate::ModelProviderInfo;
-use crate::OPENAI_PROVIDER_ID;
 use crate::SkillsManager;
 use crate::agent::AgentControl;
 use crate::codex::Codex;
@@ -34,6 +33,7 @@ use codex_protocol::config_types::CollaborationModeMask;
 #[cfg(test)]
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::McpServerRefreshConfig;
 use codex_protocol::protocol::Op;
@@ -200,7 +200,12 @@ pub(crate) struct ThreadManagerState {
     threads: Arc<RwLock<HashMap<ThreadId, Arc<CodexThread>>>>,
     thread_created_tx: broadcast::Sender<ThreadId>,
     auth_manager: Arc<AuthManager>,
+    codex_home: PathBuf,
+    model_catalog: Option<ModelsResponse>,
+    model_catalog_merge: Option<ModelsResponse>,
+    models_provider: ModelProviderInfo,
     models_manager: Arc<ModelsManager>,
+    collaboration_modes_config: CollaborationModesConfig,
     environment_manager: Arc<EnvironmentManager>,
     skills_manager: Arc<SkillsManager>,
     plugins_manager: Arc<PluginsManager>,
@@ -220,12 +225,10 @@ impl ThreadManager {
         environment_manager: Arc<EnvironmentManager>,
     ) -> Self {
         let codex_home = config.codex_home.clone();
+        let model_catalog = config.model_catalog.clone();
+        let model_catalog_merge = config.model_catalog_merge.clone();
+        let models_provider = config.model_provider.clone();
         let restriction_product = session_source.restriction_product();
-        let openai_models_provider = config
-            .model_providers
-            .get(OPENAI_PROVIDER_ID)
-            .cloned()
-            .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
             codex_home.clone(),
@@ -242,14 +245,19 @@ impl ThreadManager {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
+                codex_home: codex_home.clone(),
+                model_catalog: model_catalog.clone(),
+                model_catalog_merge: model_catalog_merge.clone(),
+                models_provider: models_provider.clone(),
                 models_manager: Arc::new(ModelsManager::new_with_provider(
                     codex_home,
                     auth_manager.clone(),
-                    config.model_catalog.clone(),
-                    config.model_catalog_merge.clone(),
+                    model_catalog,
+                    model_catalog_merge,
                     collaboration_modes_config,
-                    openai_models_provider,
+                    models_provider,
                 )),
+                collaboration_modes_config,
                 environment_manager,
                 skills_manager,
                 plugins_manager,
@@ -314,11 +322,16 @@ impl ThreadManager {
             state: Arc::new(ThreadManagerState {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
+                codex_home: codex_home.clone(),
+                model_catalog: None,
+                model_catalog_merge: None,
+                models_provider: provider.clone(),
                 models_manager: Arc::new(ModelsManager::with_provider_for_tests(
                     codex_home,
                     auth_manager.clone(),
                     provider,
                 )),
+                collaboration_modes_config: CollaborationModesConfig::default(),
                 environment_manager,
                 skills_manager,
                 plugins_manager,
@@ -849,12 +862,29 @@ impl ThreadManagerState {
             self.skills_manager.as_ref(),
             self.plugins_manager.as_ref(),
         );
+        let models_manager = if config.model_provider == self.models_provider
+            && Arc::ptr_eq(&auth_manager, &self.auth_manager)
+            && config.codex_home == self.codex_home
+            && config.model_catalog == self.model_catalog
+            && config.model_catalog_merge == self.model_catalog_merge
+        {
+            Arc::clone(&self.models_manager)
+        } else {
+            Arc::new(ModelsManager::new_with_provider(
+                config.codex_home.clone(),
+                Arc::clone(&auth_manager),
+                config.model_catalog.clone(),
+                config.model_catalog_merge.clone(),
+                self.collaboration_modes_config,
+                config.model_provider.clone(),
+            ))
+        };
         let CodexSpawnOk {
             codex, thread_id, ..
         } = Codex::spawn(CodexSpawnArgs {
             config,
             auth_manager,
-            models_manager: Arc::clone(&self.models_manager),
+            models_manager,
             environment_manager: Arc::clone(&self.environment_manager),
             skills_manager: Arc::clone(&self.skills_manager),
             plugins_manager: Arc::clone(&self.plugins_manager),

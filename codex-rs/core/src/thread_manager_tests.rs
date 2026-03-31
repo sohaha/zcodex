@@ -304,6 +304,158 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
     assert_eq!(models_mock.requests().len(), 1);
 }
 
+#[tokio::test]
+async fn start_thread_reuses_shared_models_manager_when_spawn_context_matches() {
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config();
+    config.codex_home = temp_dir.path().join("codex-home");
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        auth_manager,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
+    );
+
+    let thread_id = manager
+        .start_thread(config)
+        .await
+        .expect("start thread")
+        .thread_id;
+    let thread = manager.get_thread(thread_id).await.expect("get thread");
+
+    assert!(Arc::ptr_eq(
+        &manager.get_models_manager(),
+        &thread.codex.session.services.models_manager,
+    ));
+}
+
+#[tokio::test]
+async fn resume_thread_with_different_auth_manager_builds_distinct_models_manager() {
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config();
+    config.codex_home = temp_dir.path().join("codex-home");
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+
+    let manager_auth =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        manager_auth,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
+    );
+    let resume_auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("other-key"));
+
+    let thread_id = manager
+        .resume_thread_with_history(
+            config,
+            InitialHistory::New,
+            resume_auth,
+            /*persist_extended_history*/ false,
+            /*parent_trace*/ None,
+        )
+        .await
+        .expect("resume thread")
+        .thread_id;
+    let thread = manager.get_thread(thread_id).await.expect("get thread");
+
+    assert!(!Arc::ptr_eq(
+        &manager.get_models_manager(),
+        &thread.codex.session.services.models_manager,
+    ));
+}
+
+#[tokio::test]
+async fn start_thread_with_different_codex_home_builds_distinct_models_manager() {
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config();
+    config.codex_home = temp_dir.path().join("codex-home");
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        auth_manager,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
+    );
+
+    let mut child_config = config.clone();
+    child_config.codex_home = temp_dir.path().join("other-codex-home");
+    child_config.cwd = child_config.codex_home.abs();
+    std::fs::create_dir_all(&child_config.codex_home).expect("create child codex home");
+
+    let thread_id = manager
+        .start_thread(child_config)
+        .await
+        .expect("start thread")
+        .thread_id;
+    let thread = manager.get_thread(thread_id).await.expect("get thread");
+
+    assert!(!Arc::ptr_eq(
+        &manager.get_models_manager(),
+        &thread.codex.session.services.models_manager,
+    ));
+}
+
+#[tokio::test]
+async fn start_thread_with_non_default_provider_reuses_matching_shared_models_manager() {
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config();
+    config.codex_home = temp_dir.path().join("codex-home");
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+    let custom_provider_id = "custom-openai".to_string();
+    let custom_provider =
+        ModelProviderInfo::create_openai_provider(Some("https://example.invalid/v1".to_string()));
+    config.model_provider_id = custom_provider_id.clone();
+    config.model_provider = custom_provider.clone();
+    config
+        .model_providers
+        .insert(custom_provider_id, custom_provider);
+
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        auth_manager,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
+    );
+
+    let thread_id = manager
+        .start_thread(config)
+        .await
+        .expect("start thread")
+        .thread_id;
+    let thread = manager.get_thread(thread_id).await.expect("get thread");
+
+    assert!(Arc::ptr_eq(
+        &manager.get_models_manager(),
+        &thread.codex.session.services.models_manager,
+    ));
+}
+
 #[test]
 fn interrupted_fork_snapshot_appends_interrupt_boundary() {
     let committed_history =
