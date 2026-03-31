@@ -62,24 +62,37 @@ v*.*.*:
     - <<: *tag-release-codex
 
 
+# .npc: &npc
+#   - services:
+#       - docker
+#     env:
+#         dockerPassword: $CNB_TOKEN
+#     stages:
+#       - name: run with npc
+#         # imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
+#         image:
+#               name: docker.cnb.cool/zls-tools/vm/rust:latest
+#               dockerUser: $CNB_TOKEN_USER_NAME
+#               dockerPassword: $CNB_TOKEN
+#         env:
+#           CUSTOM_PROMPT: |
+#             你是一位资深工程师，擅长并发模型和性能优化。
+#         # stages:
+#         #   - name: 安装工具
+#         #     jobs: !reference [.install-tools]
+
 .npc: &npc
   - services:
       - docker
-    env:
-        dockerPassword: $CNB_TOKEN
+    imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
+    docker:
+        image:
+          name: docker.cnb.cool/zls-tools/vm/rust:latest
+          dockerUser: $CNB_DOCKER_USER
+          dockerPassword: $CNB_DOCKER_PASSWORD
     stages:
       - name: run with npc
-        # imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
-        image:
-              name: docker.cnb.cool/zls-tools/vm/rust:latest
-              dockerUser: $CNB_TOKEN_USER_NAME
-              dockerPassword: $CNB_TOKEN
-        env:
-          CUSTOM_PROMPT: |
-            你是一位资深工程师，擅长并发模型和性能优化。
-        # stages:
-        #   - name: 安装工具
-        #     jobs: !reference [.install-tools]
+        image: cnbcool/default-npc-agent:latest
 
 
 # $ 是兜底配置，匹配所有未单独定义的 NPC
