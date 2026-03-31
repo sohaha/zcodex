@@ -85,11 +85,6 @@ v*.*.*:
   - services:
       - docker
     imports: https://cnb.cool/zls-tools/env/-/blob/main/docker.yml
-    docker:
-        image:
-          name: docker.cnb.cool/zls-tools/vm/rust:latest
-          dockerUser: $CNB_DOCKER_USER
-          dockerPassword: $CNB_DOCKER_PASSWORD
     stages:
       - name: run with npc
         image:
