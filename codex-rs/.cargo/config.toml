@@ -5,6 +5,12 @@ rustc-wrapper = "scripts/rustc-wrapper.sh"
 [target.'cfg(all(unix, target_os = "linux", target_env = "gnu"))']
 linker = "scripts/linker-wrapper.sh"
 
+[target.x86_64-unknown-linux-musl]
+rustflags = ["-C", "link-arg=-lm"]
+
+[target.aarch64-unknown-linux-musl]
+rustflags = ["-C", "link-arg=-lm"]
+
 [target.'cfg(all(windows, target_env = "msvc"))']
 rustflags = ["-C", "link-arg=/STACK:8388608"]
 
