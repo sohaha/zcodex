@@ -92,7 +92,10 @@ v*.*.*:
           dockerPassword: $CNB_DOCKER_PASSWORD
     stages:
       - name: run with npc
-        image: cnbcool/default-npc-agent:latest
+        image:
+          name: docker.cnb.cool/zls-tools/vm/rust:latest
+          dockerUser: $CNB_DOCKER_USER
+          dockerPassword: $CNB_DOCKER_PASSWORD
 
 
 # $ 是兜底配置，匹配所有未单独定义的 NPC
