@@ -5,6 +5,7 @@ use crate::tools::rewrite::AutoTldrContext;
 use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::decision::ToolRewriteDecision;
+use crate::tools::rewrite::resolve_tldr_project_root;
 use crate::tools::router::ToolCall;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::tool_api::TldrToolAction;
@@ -12,7 +13,6 @@ use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolLanguage;
 use serde::Deserialize;
 use std::path::Path;
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct GrepFilesArgs {
@@ -97,7 +97,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         };
     };
 
-    let project_root = resolve_project_root(turn, args.path.as_deref());
+    let project_root = resolve_tldr_project_root(turn.cwd.as_path(), Some(search_path.as_path()));
     let project = project_root.display().to_string();
 
     let (action, reason, symbol, query) =
@@ -239,18 +239,6 @@ fn supported_to_tool_language(language: SupportedLanguage) -> TldrToolLanguage {
     }
 }
 
-fn resolve_project_root(turn: &TurnContext, path: Option<&str>) -> PathBuf {
-    let resolved = turn.resolve_path(path.map(str::to_string));
-    if resolved.extension().is_some() {
-        resolved
-            .parent()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| turn.cwd.to_path_buf())
-    } else {
-        resolved
-    }
-}
-
 fn looks_like_regex_pattern(pattern: &str) -> bool {
     pattern.chars().any(|ch| {
         matches!(
@@ -289,6 +277,7 @@ mod tests {
     use crate::tools::rewrite::ProblemKind;
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::decision::ToolRewriteDecision;
+    use crate::tools::rewrite::resolve_tldr_project_root;
     use crate::tools::router::ToolCall;
     use codex_native_tldr::tool_api::TldrToolAction;
     use codex_native_tldr::tool_api::TldrToolCallParam;
@@ -298,6 +287,10 @@ mod tests {
     #[tokio::test]
     async fn routes_symbol_searches_to_tldr_context_by_default() {
         let (_, turn) = make_session_and_context().await;
+        let expected_project =
+            resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
+                .display()
+                .to_string();
         let call = ToolCall {
             tool_name: "grep_files".to_string(),
             tool_namespace: None,
@@ -327,6 +320,7 @@ mod tests {
             serde_json::from_str(&arguments).expect("parse rewritten tldr args");
         assert_eq!(args.action, TldrToolAction::Context);
         assert_eq!(args.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(args.project.as_deref(), Some(expected_project.as_str()));
         assert_eq!(args.symbol.as_deref(), Some("create_tldr_tool"));
         assert_eq!(args.query, None);
     }
@@ -400,6 +394,10 @@ mod tests {
     #[tokio::test]
     async fn aggressive_mode_reuses_last_tldr_language_for_default_context_queries() {
         let (_, turn) = make_session_and_context().await;
+        let expected_project =
+            resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
+                .display()
+                .to_string();
         *turn.auto_tldr_context.write().await = AutoTldrContext {
             last_language: Some(TldrToolLanguage::Rust),
             ..Default::default()
@@ -432,6 +430,7 @@ mod tests {
             serde_json::from_str(&arguments).expect("parse rewritten tldr args");
         assert_eq!(args.action, TldrToolAction::Context);
         assert_eq!(args.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(args.project.as_deref(), Some(expected_project.as_str()));
         assert_eq!(args.symbol.as_deref(), Some("ToolCallRuntime"));
         assert_eq!(args.query, None);
     }
@@ -439,6 +438,10 @@ mod tests {
     #[tokio::test]
     async fn force_tldr_reuses_last_language_even_in_safe_mode() {
         let (_, turn) = make_session_and_context().await;
+        let expected_project =
+            resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
+                .display()
+                .to_string();
         *turn.auto_tldr_context.write().await = AutoTldrContext {
             last_language: Some(TldrToolLanguage::Rust),
             ..Default::default()
@@ -474,6 +477,7 @@ mod tests {
             serde_json::from_str(&arguments).expect("parse rewritten tldr args");
         assert_eq!(args.action, TldrToolAction::Context);
         assert_eq!(args.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(args.project.as_deref(), Some(expected_project.as_str()));
         assert_eq!(args.symbol.as_deref(), Some("ToolCallRuntime"));
     }
 
@@ -514,6 +518,10 @@ mod tests {
     #[tokio::test]
     async fn mixed_queries_still_use_tldr_first_for_symbol_mapping() {
         let (_, turn) = make_session_and_context().await;
+        let expected_project =
+            resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
+                .display()
+                .to_string();
         let call = ToolCall {
             tool_name: "grep_files".to_string(),
             tool_namespace: None,
@@ -545,6 +553,7 @@ mod tests {
             serde_json::from_str(&arguments).expect("parse rewritten tldr args");
         assert_eq!(args.action, TldrToolAction::Context);
         assert_eq!(args.language, Some(TldrToolLanguage::Rust));
+        assert_eq!(args.project.as_deref(), Some(expected_project.as_str()));
         assert_eq!(args.symbol.as_deref(), Some("create_tldr_tool"));
     }
 }

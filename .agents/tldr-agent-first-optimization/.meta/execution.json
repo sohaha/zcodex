@@ -1,38 +1,27 @@
 {
-  "feature": "tldr-agent-first-optimization",
-  "createdAt": "2026-03-30T07:03:07Z",
   "parameters": {
-    "skipUI": true,
+    "quick": false,
     "skipDeploy": true,
-    "quick": false
-  },
-  "stages": {
-    "1": {
-      "status": "completed",
-      "startTime": "2026-03-30T07:03:07Z",
-      "endTime": "2026-03-30T07:10:00Z"
-    },
-    "2": {
-      "status": "completed",
-      "startTime": "2026-03-30T07:08:00Z",
-      "endTime": "2026-03-30T07:10:00Z"
-    },
-    "3": {
-      "status": "in_progress",
-      "startTime": "2026-03-30T07:10:00Z",
-      "endTime": null
-    },
-    "4": {
-      "status": "skipped",
-      "startTime": null,
-      "endTime": null
-    }
+    "skipUI": true
   },
   "qualityGates": {
-    "gate0": "approved",
-    "gate1": "approved",
-    "gate2": null
+    "gate2": {
+      "note": "skipDeploy=true for this boss run; no stage-4 deployment/performance gate applies yet.",
+      "at": "2026-03-30T12:10:35Z",
+      "status": "not_applicable"
+    },
+    "gate0": {
+      "note": "2026-03-31 reran just fmt and just fix -p codex-core successfully during final TLDR cleanup.",
+      "at": "2026-03-31T15:45:00Z",
+      "status": "passed"
+    },
+    "gate1": {
+      "status": "passed",
+      "at": "2026-03-31T17:40:00Z",
+      "note": "Used isolated CARGO_HOME=/tmp/cargo-home-tldr-a4 and CARGO_TARGET_DIR=/tmp/cargo-target-tldr-a4 to compile codex-core, reran 10 targeted TLDR tests with --exact, then widened coverage to 67 related tests across rewrite, tldr handler, subagent guidance, and router dispatch; all passed. Also removed the hidden libonnxruntime.so dependency from run_tldr_handler_with_hooks_emits_end_log by mocking a daemon semantic payload."
+    }
   },
+  "createdAt": "2026-03-30T07:03:07Z",
   "humanInterventions": [
     {
       "at": "2026-03-30T07:00:00Z",
@@ -41,8 +30,77 @@
     },
     {
       "at": "2026-03-30T07:02:00Z",
-      "type": "artifact_first",
-      "note": "用户要求先在 .agents 中写好对应文档，再继续实施。"
+      "note": "用户要求先在 .agents 中写好对应文档，再继续实施。",
+      "type": "artifact_first"
+    },
+    {
+      "at": "2026-03-30T12:10:35Z",
+      "note": "QA attempted targeted codex-core test for read_gate coverage, but compilation was manually interrupted after ~135s; Gate 1 remains blocked.",
+      "type": "verification_blocked"
+    },
+    {
+      "at": "2026-03-30T12:18:00Z",
+      "type": "parallel_verification",
+      "note": "User requested parallel verification with isolated cargo directories to avoid lock contention; 3 targeted tests passed and 1 shell-search test timed out."
+    },
+    {
+      "at": "2026-03-30T12:30:00Z",
+      "note": "Aggressive reruns with isolated cargo directories still timed out on shell_search_rewrite compilation; Gate 1 remains blocked on shell-path verification.",
+      "type": "parallel_verification_retry"
+    },
+    {
+      "type": "verification_completed",
+      "note": "Sequential long-timeout reruns on warmed isolated target completed both shell_search_rewrite tests successfully; gate1 upgraded to passed-with-conditions for landed scope only.",
+      "at": "2026-03-30T12:45:00Z"
+    },
+    {
+      "at": "2026-03-30T13:10:00Z",
+      "note": "Implemented remaining T-006~T-008 and accepted stage-3 completion with passed-with-conditions QA due to post-fix no-rerun workflow.",
+      "type": "stage3_scope_completed"
+    },
+    {
+      "at": "2026-03-31T04:16:25Z",
+      "note": "Resumed from handoff, resolved the exact libtest names, and completed the missing post-fix rerun on the current codex_core test binary; gate1 is now fully passed.",
+      "type": "verification_completed"
+    },
+    {
+      "at": "2026-03-31T15:20:00Z",
+      "note": "Added the direct-tldr missing-project repo-root fallback regression and reran 10 exact TLDR tests in isolated cargo directories; all passed.",
+      "type": "verification_completed"
+    },
+    {
+      "at": "2026-03-31T15:45:00Z",
+      "note": "Ran just fmt and just fix -p codex-core during final TLDR cleanup using isolated cargo directories; no post-fix rerun was performed per repo workflow.",
+      "type": "final_cleanup"
+    },
+    {
+      "at": "2026-03-31T17:40:00Z",
+      "note": "Fixed run_tldr_handler_with_hooks_emits_end_log to use a complete daemon semantic payload instead of falling back to local semantic embedding, then reran 67 broader TLDR-related codex-core tests from the isolated test binary; all passed.",
+      "type": "verification_completed"
     }
-  ]
+  ],
+  "feature": "tldr-agent-first-optimization",
+  "stages": {
+    "4": {
+      "endTime": null,
+      "status": "skipped",
+      "startTime": null
+    },
+    "3": {
+      "status": "completed",
+      "startTime": "2026-03-30T07:10:00Z",
+      "endTime": "2026-03-31T17:40:00Z",
+      "note": "T-006~T-008 landed: subagent tldr-first guidance, richer AutoTldrContext observability, first-structural-query warm, shell search interception, read gating, project-root resolution, and direct-tldr default-project repo-root fallback. The 2026-03-31 cleanup pass reran 10 targeted codex-core tests in isolated cargo directories, fixed the hidden libonnxruntime.so dependency in the handler end-log test, and then widened coverage to 67 related tests; all passed. just fmt and just fix -p codex-core had already passed earlier in the same isolated workflow."
+    },
+    "1": {
+      "endTime": "2026-03-30T07:10:00Z",
+      "startTime": "2026-03-30T07:03:07Z",
+      "status": "completed"
+    },
+    "2": {
+      "startTime": "2026-03-30T07:08:00Z",
+      "status": "completed",
+      "endTime": "2026-03-30T07:10:00Z"
+    }
+  }
 }

@@ -1,11 +1,14 @@
 use super::parse_arguments;
+use crate::codex::TurnContext;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
-use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
+use crate::tools::rewrite::ProblemKind;
+use crate::tools::rewrite::resolve_tldr_project_root;
+use crate::tools::rewrite::should_auto_warm_tldr;
 use anyhow::Result;
 use async_trait::async_trait;
 use codex_native_tldr::daemon::TldrDaemonCommand;
@@ -21,6 +24,7 @@ use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::action_name;
 use codex_native_tldr::tool_api::run_tldr_tool_with_hooks;
 use codex_native_tldr::wire::daemon_failure_payload_for_project;
+use codex_protocol::models::function_call_output_content_items_to_text;
 use once_cell::sync::Lazy;
 use serde_json::json;
 use std::ffi::OsString;
@@ -113,10 +117,12 @@ impl ToolHandler for TldrHandler {
         };
         let mut args: TldrToolCallParam = parse_arguments(&arguments)?;
         if args.project.is_none() {
-            args.project = Some(turn.cwd.display().to_string());
+            args.project = Some(default_tldr_project(turn.cwd.as_path()));
         }
 
         let saved_args = args.clone();
+        let problem_kind = turn.tool_routing_directives.read().await.problem_kind;
+        maybe_issue_first_structural_warm(&turn, &saved_args, problem_kind).await;
         let auto_start_enabled = matches!(
             saved_args.action,
             codex_native_tldr::tool_api::TldrToolAction::Ping
@@ -139,13 +145,76 @@ impl ToolHandler for TldrHandler {
             },
         )
         .await?;
-        if output.success_for_logging() {
-            turn.auto_tldr_context
-                .write()
-                .await
-                .record_success(&saved_args);
-        }
+        let degraded_mode = extract_degraded_mode(&output);
+        turn.auto_tldr_context.write().await.record_result(
+            &saved_args,
+            problem_kind,
+            degraded_mode,
+        );
         Ok(output)
+    }
+}
+
+async fn maybe_issue_first_structural_warm(
+    turn: &TurnContext,
+    args: &TldrToolCallParam,
+    problem_kind: ProblemKind,
+) {
+    try_issue_first_structural_warm_with_hooks(
+        turn,
+        args,
+        problem_kind,
+        &|project_root, command| Box::pin(query_daemon(project_root, command)),
+        &|project_root| Box::pin(async move { ensure_daemon_running(project_root).await }),
+    )
+    .await;
+}
+
+async fn try_issue_first_structural_warm_with_hooks<Q, E>(
+    turn: &TurnContext,
+    args: &TldrToolCallParam,
+    problem_kind: ProblemKind,
+    query: &Q,
+    ensure_running: &E,
+) where
+    Q: for<'a> Fn(
+        &'a Path,
+        &'a TldrDaemonCommand,
+    ) -> codex_native_tldr::tool_api::QueryDaemonFuture<'a>,
+    E: for<'a> Fn(&'a Path) -> codex_native_tldr::tool_api::EnsureDaemonFuture<'a>,
+{
+    let should_warm = {
+        let context = turn.auto_tldr_context.read().await.clone();
+        should_auto_warm_tldr(problem_kind, &args.action, &context)
+    };
+    if !should_warm {
+        return;
+    }
+
+    let Some(project) = args.project.clone() else {
+        return;
+    };
+
+    let warm_args = TldrToolCallParam {
+        action: codex_native_tldr::tool_api::TldrToolAction::Warm,
+        project: Some(project),
+        language: args.language,
+        symbol: None,
+        query: None,
+        module: None,
+        path: None,
+        line: None,
+        paths: None,
+        only_tools: None,
+        run_lint: None,
+        run_typecheck: None,
+        max_issues: None,
+        include_install_hints: None,
+    };
+    if let Ok(output) = run_tldr_handler_with_hooks(warm_args, query, ensure_running).await
+        && output.success.unwrap_or(true)
+    {
+        turn.auto_tldr_context.write().await.note_warmup_requested();
     }
 }
 
@@ -289,6 +358,12 @@ where
 fn sanitize_tldr_text(text: &str) -> String {
     text.replace(TLDR_JSON_BEGIN, "[BEGIN TLDR JSON]")
         .replace(TLDR_JSON_END, "[END TLDR JSON]")
+}
+
+fn default_tldr_project(cwd: &Path) -> String {
+    resolve_tldr_project_root(cwd, Some(cwd))
+        .display()
+        .to_string()
 }
 
 fn render_tldr_summary(payload: &serde_json::Value) -> String {
@@ -443,6 +518,18 @@ fn render_tldr_error_summary(payload: &serde_json::Value) -> String {
         return format!("structured failure: {error_type}");
     }
     "tldr failed".to_string()
+}
+
+fn extract_degraded_mode(output: &FunctionToolOutput) -> Option<String> {
+    let text = function_call_output_content_items_to_text(&output.body)?;
+    let (_, json_and_suffix): (&str, &str) = text.split_once(&format!("\n{TLDR_JSON_BEGIN}\n"))?;
+    let json = json_and_suffix.strip_suffix(&format!("\n{TLDR_JSON_END}"))?;
+    let payload: serde_json::Value = serde_json::from_str(json).ok()?;
+    payload
+        .get("degradedMode")
+        .and_then(|value| value.get("mode"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }
 
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
@@ -766,6 +853,54 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn first_structural_warm_only_marks_requested_after_success() {
+        let (_, turn) = make_session_and_context().await;
+        let args = TldrToolCallParam {
+            action: codex_native_tldr::tool_api::TldrToolAction::Context,
+            project: Some(turn.cwd.display().to_string()),
+            language: Some(codex_native_tldr::tool_api::TldrToolLanguage::Rust),
+            symbol: Some("AuthService".to_string()),
+            query: None,
+            module: None,
+            path: None,
+            line: None,
+            paths: None,
+            ..Default::default()
+        };
+
+        try_issue_first_structural_warm_with_hooks(
+            &turn,
+            &args,
+            ProblemKind::Structural,
+            &|_project_root, _command| Box::pin(async move { Ok(None) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+        assert_eq!(turn.auto_tldr_context.read().await.warmup_requested, false);
+
+        try_issue_first_structural_warm_with_hooks(
+            &turn,
+            &args,
+            ProblemKind::Structural,
+            &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("already warm"))) }),
+            &|_project_root| Box::pin(async move { Ok(false) }),
+        )
+        .await;
+        assert_eq!(turn.auto_tldr_context.read().await.warmup_requested, true);
+    }
+
+    #[tokio::test]
+    async fn missing_project_defaults_to_repo_root() {
+        let (_, turn) = make_session_and_context().await;
+        let expected_project =
+            resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
+                .display()
+                .to_string();
+
+        assert_eq!(default_tldr_project(turn.cwd.as_path()), expected_project);
+    }
+
     fn extract_json_block(text: &str) -> serde_json::Value {
         let (prefix, json_and_suffix) = text
             .split_once(&format!("\n{TLDR_JSON_BEGIN}\n"))
@@ -949,7 +1084,53 @@ mod tests {
                     paths: None,
                     ..Default::default()
                 },
-                &|_project_root, _command| Box::pin(async move { Ok(Some(daemon_ok("semantic"))) }),
+                &|_project_root, _command| {
+                    Box::pin(async move {
+                        Ok(Some(TldrDaemonResponse {
+                            semantic: Some(codex_native_tldr::semantic::SemanticSearchResponse {
+                                enabled: true,
+                                query: "auth login".to_string(),
+                                indexed_files: 1,
+                                truncated: false,
+                                matches: vec![codex_native_tldr::semantic::SemanticMatch {
+                                    score: 10,
+                                    path: PathBuf::from("src/lib.rs"),
+                                    line: 1,
+                                    snippet: "pub struct AuthService;".to_string(),
+                                    unit: codex_native_tldr::semantic::EmbeddingUnit {
+                                        path: PathBuf::from("src/lib.rs"),
+                                        language:
+                                            codex_native_tldr::lang_support::SupportedLanguage::Rust,
+                                        symbol: Some("AuthService".to_string()),
+                                        qualified_symbol: Some("auth::AuthService".to_string()),
+                                        symbol_aliases: vec!["AuthService".to_string()],
+                                        kind: "struct".to_string(),
+                                        line: 1,
+                                        span_end_line: 1,
+                                        module_path: vec!["auth".to_string()],
+                                        visibility: Some("pub".to_string()),
+                                        signature: Some("pub struct AuthService".to_string()),
+                                        docs: Vec::new(),
+                                        imports: Vec::new(),
+                                        references: Vec::new(),
+                                        code_preview: "pub struct AuthService;".to_string(),
+                                        calls: Vec::new(),
+                                        called_by: Vec::new(),
+                                        dependencies: Vec::new(),
+                                        cfg_summary: "cfg".to_string(),
+                                        dfg_summary: "dfg".to_string(),
+                                        embedding_vector: None,
+                                    },
+                                    embedding_text: "internal".to_string(),
+                                    embedding_score: Some(0.75),
+                                }],
+                                embedding_used: true,
+                                message: "semantic search returned 1 matches".to_string(),
+                            }),
+                            ..daemon_ok("semantic")
+                        }))
+                    })
+                },
                 &|_project_root| Box::pin(async move { Ok(false) }),
             )
             .await

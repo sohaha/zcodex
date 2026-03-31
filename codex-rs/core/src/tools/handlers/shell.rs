@@ -35,6 +35,7 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
+use crate::tools::rewrite::shell_search_rewrite::maybe_intercept_shell_search;
 use crate::tools::runtimes::shell::ShellRequest;
 use crate::tools::runtimes::shell::ShellRuntime;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
@@ -782,6 +783,20 @@ impl ToolHandler for ShellCommandHandler {
         let cwd = resolve_workdir_base_path(&arguments, turn.cwd.as_path())?;
         let params: ShellCommandToolCallParams =
             parse_arguments_with_base_path(&arguments, cwd.as_path())?;
+        let mut params = params;
+        let mut routed_command = Self::route_command(&params.command);
+        let directives = turn.tool_routing_directives.read().await.clone();
+        if let Some(interception) = maybe_intercept_shell_search(
+            &params.command,
+            &routed_command.command,
+            cwd.as_path(),
+            &directives,
+        ) {
+            return Ok(FunctionToolOutput::from_text(
+                interception.message,
+                Some(false),
+            ));
+        }
         maybe_emit_implicit_skill_invocation(
             session.as_ref(),
             turn.as_ref(),
@@ -789,8 +804,6 @@ impl ToolHandler for ShellCommandHandler {
             cwd.as_path(),
         )
         .await;
-        let mut params = params;
-        let mut routed_command = Self::route_command(&params.command);
         if let Some(command) = strip_simple_env_wrapper(
             &routed_command.command,
             &mut routed_command.env_assignments,
