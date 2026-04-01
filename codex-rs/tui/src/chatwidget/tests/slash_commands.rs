@@ -240,7 +240,7 @@ async fn slash_buddy_show_then_pet_reports_state() {
     assert_eq!(cells.len(), 1, "expected one show info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Buddy hatched:"),
+        rendered.contains("Buddy hatched:") || rendered.contains("Buddy is back:"),
         "unexpected show message: {rendered:?}"
     );
 
@@ -253,6 +253,25 @@ async fn slash_buddy_show_then_pet_reports_state() {
         "unexpected pet message: {rendered:?}"
     );
     assert!(chat.bottom_pane.buddy_visible());
+}
+
+#[tokio::test]
+async fn slash_buddy_status_reports_traits() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Buddy, "status".to_string(), Vec::new());
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one status info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Buddy status:"),
+        "unexpected status message: {rendered:?}"
+    );
+    assert!(
+        rendered.contains("Peak stat:"),
+        "expected trait details in status message: {rendered:?}"
+    );
 }
 
 #[tokio::test]

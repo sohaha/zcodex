@@ -1192,6 +1192,9 @@ impl BottomPane {
     pub(crate) fn show_buddy(&mut self, seed: &str) -> BuddyCommandResult {
         let result = self.buddy.show(seed);
         self.request_redraw();
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
         result
     }
 
@@ -1204,12 +1207,19 @@ impl BottomPane {
     pub(crate) fn pet_buddy(&mut self, seed: &str) -> BuddyCommandResult {
         let result = self.buddy.pet(seed);
         self.request_redraw();
-        self.request_redraw_in(BuddyWidget::feedback_duration());
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
         result
     }
 
     pub(crate) fn buddy_status(&mut self, seed: &str) -> BuddyCommandResult {
         self.buddy.status(seed)
+    }
+
+    pub(crate) fn ensure_buddy_visible(&mut self, seed: &str) {
+        self.buddy.ensure_visible(seed);
+        self.request_redraw();
     }
 
     #[cfg(test)]

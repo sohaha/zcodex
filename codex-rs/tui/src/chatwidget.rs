@@ -4831,7 +4831,7 @@ impl ChatWidget {
             .set_connectors_enabled(widget.connectors_enabled());
         if widget.config.tui_show_buddy {
             let seed = widget.buddy_seed();
-            let _ = widget.bottom_pane.show_buddy(&seed);
+            widget.bottom_pane.ensure_buddy_visible(&seed);
         }
         widget.refresh_status_surfaces();
 

@@ -1,0 +1,6 @@
+---
+source: tui/src/buddy/mod.rs
+assertion_line: 272
+expression: snapshot_buffer(&buf)
+---
+(OvO) "settles in with a star…
