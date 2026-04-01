@@ -48,7 +48,10 @@ impl UnifiedExecFooter {
         }
 
         let count = self.processes.len();
-        Some(format!("{count} 个后台终端运行中 · /ps 查看 · /stop 关闭"))
+        let plural = if count == 1 { "" } else { "s" };
+        Some(format!(
+            "{count} background terminal{plural} running · /ps to view · /stop to close"
+        ))
     }
 
     fn render_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -87,7 +90,7 @@ mod tests {
     #[test]
     fn desired_height_empty() {
         let footer = UnifiedExecFooter::new();
-        assert_eq!(footer.desired_height(40), 0);
+        assert_eq!(footer.desired_height(/*width*/ 40), 0);
     }
 
     #[test]

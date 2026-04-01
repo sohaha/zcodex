@@ -32,7 +32,6 @@ use super::helpers::compose_agents_summary;
 use super::helpers::compose_model_display;
 use super::helpers::format_directory_display;
 use super::helpers::format_tokens_compact;
-use super::helpers::localize_approval_policy;
 use super::rate_limits::RateLimitSnapshotDisplay;
 use super::rate_limits::StatusRateLimitData;
 use super::rate_limits::StatusRateLimitRow;
@@ -43,7 +42,8 @@ use super::rate_limits::format_status_limit_summary;
 use super::rate_limits::render_status_limit_progress_bar;
 use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
-use codex_core::AuthManager;
+use std::sync::Arc;
+use std::sync::RwLock;
 
 #[derive(Debug, Clone)]
 struct StatusContextWindowData {
@@ -61,6 +61,38 @@ pub(crate) struct StatusTokenUsageData {
 }
 
 #[derive(Debug)]
+struct StatusRateLimitState {
+    rate_limits: StatusRateLimitData,
+    refreshing_rate_limits: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StatusHistoryHandle {
+    rate_limit_state: Arc<RwLock<StatusRateLimitState>>,
+}
+
+impl StatusHistoryHandle {
+    pub(crate) fn finish_rate_limit_refresh(
+        &self,
+        rate_limits: &[RateLimitSnapshotDisplay],
+        now: DateTime<Local>,
+    ) {
+        let rate_limits = if rate_limits.len() <= 1 {
+            compose_rate_limit_data(rate_limits.first(), now)
+        } else {
+            compose_rate_limit_data_many(rate_limits, now)
+        };
+        #[expect(clippy::expect_used)]
+        let mut state = self
+            .rate_limit_state
+            .write()
+            .expect("status history rate-limit state poisoned");
+        state.rate_limits = rate_limits;
+        state.refreshing_rate_limits = false;
+    }
+}
+
+#[derive(Debug)]
 struct StatusHistoryCell {
     model_name: String,
     model_details: Vec<String>,
@@ -74,21 +106,21 @@ struct StatusHistoryCell {
     session_id: Option<String>,
     forked_from: Option<String>,
     token_usage: StatusTokenUsageData,
-    rate_limits: StatusRateLimitData,
+    rate_limit_state: Arc<RwLock<StatusRateLimitState>>,
 }
 
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn new_status_output(
     config: &Config,
-    auth_manager: &AuthManager,
+    account_display: Option<&StatusAccountDisplay>,
     token_info: Option<&TokenUsageInfo>,
     total_usage: &TokenUsage,
     session_id: &Option<ThreadId>,
     thread_name: Option<String>,
     forked_from: Option<ThreadId>,
     rate_limits: Option<&RateLimitSnapshotDisplay>,
-    plan_type: Option<PlanType>,
+    _plan_type: Option<PlanType>,
     now: DateTime<Local>,
     model_name: &str,
     collaboration_mode: Option<&str>,
@@ -97,74 +129,118 @@ pub(crate) fn new_status_output(
     let snapshots = rate_limits.map(std::slice::from_ref).unwrap_or_default();
     new_status_output_with_rate_limits(
         config,
-        auth_manager,
+        account_display,
         token_info,
         total_usage,
         session_id,
         thread_name,
         forked_from,
         snapshots,
-        plan_type,
+        _plan_type,
         now,
         model_name,
         collaboration_mode,
         reasoning_effort_override,
+        /*refreshing_rate_limits*/ false,
     )
 }
 
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn new_status_output_with_rate_limits(
     config: &Config,
-    auth_manager: &AuthManager,
+    account_display: Option<&StatusAccountDisplay>,
     token_info: Option<&TokenUsageInfo>,
     total_usage: &TokenUsage,
     session_id: &Option<ThreadId>,
     thread_name: Option<String>,
     forked_from: Option<ThreadId>,
     rate_limits: &[RateLimitSnapshotDisplay],
-    plan_type: Option<PlanType>,
+    _plan_type: Option<PlanType>,
     now: DateTime<Local>,
     model_name: &str,
     collaboration_mode: Option<&str>,
     reasoning_effort_override: Option<Option<ReasoningEffort>>,
+    refreshing_rate_limits: bool,
 ) -> CompositeHistoryCell {
-    let command = PlainHistoryCell::new(vec!["/status".magenta().into()]);
-    let card = StatusHistoryCell::new(
+    new_status_output_with_rate_limits_handle(
         config,
-        auth_manager,
+        account_display,
         token_info,
         total_usage,
         session_id,
         thread_name,
         forked_from,
         rate_limits,
-        plan_type,
+        _plan_type,
         now,
         model_name,
         collaboration_mode,
         reasoning_effort_override,
+        refreshing_rate_limits,
+    )
+    .0
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn new_status_output_with_rate_limits_handle(
+    config: &Config,
+    account_display: Option<&StatusAccountDisplay>,
+    token_info: Option<&TokenUsageInfo>,
+    total_usage: &TokenUsage,
+    session_id: &Option<ThreadId>,
+    thread_name: Option<String>,
+    forked_from: Option<ThreadId>,
+    rate_limits: &[RateLimitSnapshotDisplay],
+    _plan_type: Option<PlanType>,
+    now: DateTime<Local>,
+    model_name: &str,
+    collaboration_mode: Option<&str>,
+    reasoning_effort_override: Option<Option<ReasoningEffort>>,
+    refreshing_rate_limits: bool,
+) -> (CompositeHistoryCell, StatusHistoryHandle) {
+    let command = PlainHistoryCell::new(vec!["/status".magenta().into()]);
+    let (card, handle) = StatusHistoryCell::new(
+        config,
+        account_display,
+        token_info,
+        total_usage,
+        session_id,
+        thread_name,
+        forked_from,
+        rate_limits,
+        _plan_type,
+        now,
+        model_name,
+        collaboration_mode,
+        reasoning_effort_override,
+        refreshing_rate_limits,
     );
 
-    CompositeHistoryCell::new(vec![Box::new(command), Box::new(card)])
+    (
+        CompositeHistoryCell::new(vec![Box::new(command), Box::new(card)]),
+        handle,
+    )
 }
 
 impl StatusHistoryCell {
     #[allow(clippy::too_many_arguments)]
     fn new(
         config: &Config,
-        auth_manager: &AuthManager,
+        account_display: Option<&StatusAccountDisplay>,
         token_info: Option<&TokenUsageInfo>,
         total_usage: &TokenUsage,
         session_id: &Option<ThreadId>,
         thread_name: Option<String>,
         forked_from: Option<ThreadId>,
         rate_limits: &[RateLimitSnapshotDisplay],
-        plan_type: Option<PlanType>,
+        _plan_type: Option<PlanType>,
         now: DateTime<Local>,
         model_name: &str,
         collaboration_mode: Option<&str>,
         reasoning_effort_override: Option<Option<ReasoningEffort>>,
-    ) -> Self {
+        refreshing_rate_limits: bool,
+    ) -> (Self, StatusHistoryHandle) {
         let mut config_entries = vec![
             ("workdir", config.cwd.display().to_string()),
             ("model", model_name.to_string()),
@@ -196,19 +272,19 @@ impl StatusHistoryCell {
         let approval = config_entries
             .iter()
             .find(|(k, _)| *k == "approval")
-            .map(|(_, v)| localize_approval_policy(v))
-            .unwrap_or_else(|| "<未知>".to_string());
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| "<unknown>".to_string());
         let sandbox = match config.permissions.sandbox_policy.get() {
             SandboxPolicy::DangerFullAccess => "danger-full-access".to_string(),
-            SandboxPolicy::ReadOnly { .. } => "只读".to_string(),
+            SandboxPolicy::ReadOnly { .. } => "read-only".to_string(),
             SandboxPolicy::WorkspaceWrite {
                 network_access: true,
                 ..
-            } => "workspace-write（允许网络访问）".to_string(),
+            } => "workspace-write with network access".to_string(),
             SandboxPolicy::WorkspaceWrite { .. } => "workspace-write".to_string(),
             SandboxPolicy::ExternalSandbox { network_access } => {
                 if matches!(network_access, NetworkAccess::Enabled) {
-                    "external-sandbox（允许网络访问）".to_string()
+                    "external-sandbox (network access enabled)".to_string()
                 } else {
                     "external-sandbox".to_string()
                 }
@@ -218,17 +294,17 @@ impl StatusHistoryCell {
             && *config.permissions.sandbox_policy.get()
                 == SandboxPolicy::new_workspace_write_policy()
         {
-            "默认".to_string()
+            "Default".to_string()
         } else if config.permissions.approval_policy.value() == AskForApproval::Never
             && *config.permissions.sandbox_policy.get() == SandboxPolicy::DangerFullAccess
         {
-            "完全访问".to_string()
+            "Full Access".to_string()
         } else {
-            format!("自定义 ({sandbox}, {approval})")
+            format!("Custom ({sandbox}, {approval})")
         };
         let agents_summary = compose_agents_summary(config);
         let model_provider = format_model_provider(config);
-        let account = compose_account_display(auth_manager, plan_type);
+        let account = compose_account_display(account_display);
         let session_id = session_id.as_ref().map(std::string::ToString::to_string);
         let forked_from = forked_from.map(|id| id.to_string());
         let default_usage = TokenUsage::default();
@@ -253,22 +329,29 @@ impl StatusHistoryCell {
         } else {
             compose_rate_limit_data_many(rate_limits, now)
         };
-
-        Self {
-            model_name,
-            model_details,
-            directory: config.cwd.clone(),
-            permissions,
-            agents_summary,
-            collaboration_mode: collaboration_mode.map(ToString::to_string),
-            model_provider,
-            account,
-            thread_name,
-            session_id,
-            forked_from,
-            token_usage,
+        let rate_limit_state = Arc::new(RwLock::new(StatusRateLimitState {
             rate_limits,
-        }
+            refreshing_rate_limits,
+        }));
+
+        (
+            Self {
+                model_name,
+                model_details,
+                directory: config.cwd.to_path_buf(),
+                permissions,
+                agents_summary,
+                collaboration_mode: collaboration_mode.map(ToString::to_string),
+                model_provider,
+                account,
+                thread_name,
+                session_id,
+                forked_from,
+                token_usage,
+                rate_limit_state: rate_limit_state.clone(),
+            },
+            StatusHistoryHandle { rate_limit_state },
+        )
     }
 
     fn token_usage_spans(&self) -> Vec<Span<'static>> {
@@ -278,13 +361,13 @@ impl StatusHistoryCell {
 
         vec![
             Span::from(total_fmt),
-            Span::from(" 总计 "),
+            Span::from(" total "),
             Span::from(" (").dim(),
             Span::from(input_fmt).dim(),
-            Span::from(" 输入").dim(),
+            Span::from(" input").dim(),
             Span::from(" + ").dim(),
             Span::from(output_fmt).dim(),
-            Span::from(" 输出").dim(),
+            Span::from(" output").dim(),
             Span::from(")").dim(),
         ]
     }
@@ -296,10 +379,10 @@ impl StatusHistoryCell {
         let window_fmt = format_tokens_compact(context.window);
 
         Some(vec![
-            Span::from(format!("剩余 {percent}%")),
+            Span::from(format!("{percent}% left")),
             Span::from(" (").dim(),
             Span::from(used_fmt).dim(),
-            Span::from(" 已用 / ").dim(),
+            Span::from(" used / ").dim(),
             Span::from(window_fmt).dim(),
             Span::from(")").dim(),
         ])
@@ -307,28 +390,57 @@ impl StatusHistoryCell {
 
     fn rate_limit_lines(
         &self,
+        state: &StatusRateLimitState,
         available_inner_width: usize,
         formatter: &FieldFormatter,
     ) -> Vec<Line<'static>> {
-        match &self.rate_limits {
+        match &state.rate_limits {
             StatusRateLimitData::Available(rows_data) => {
                 if rows_data.is_empty() {
-                    return vec![formatter.line("限额", vec![Span::from("数据暂不可用").dim()])];
+                    return vec![formatter.line(
+                        "Limits",
+                        vec![if state.refreshing_rate_limits {
+                            Span::from("refreshing cached limits...").dim()
+                        } else {
+                            Span::from("data not available yet").dim()
+                        }],
+                    )];
                 }
 
-                self.rate_limit_row_lines(rows_data, available_inner_width, formatter)
+                let mut lines =
+                    self.rate_limit_row_lines(rows_data, available_inner_width, formatter);
+                if state.refreshing_rate_limits {
+                    lines.push(formatter.line(
+                        "Notice",
+                        vec![Span::from("refreshing limits in background...").dim()],
+                    ));
+                }
+                lines
             }
             StatusRateLimitData::Stale(rows_data) => {
                 let mut lines =
                     self.rate_limit_row_lines(rows_data, available_inner_width, formatter);
                 lines.push(formatter.line(
-                    "警告",
-                    vec![Span::from("限额数据可能已过期，请开始新一轮对话刷新。").dim()],
+                    "Warning",
+                    vec![Span::from(if state.refreshing_rate_limits {
+                        "limits may be stale - refreshing in background..."
+                    } else {
+                        "limits may be stale - start new turn to refresh."
+                    })
+                    .dim()],
                 ));
                 lines
             }
             StatusRateLimitData::Missing => {
-                vec![formatter.line("限额", vec![Span::from("数据暂不可用").dim()])]
+                vec![formatter.line(
+                    "Limits",
+                    vec![Span::from(if state.refreshing_rate_limits {
+                        "refreshing limits..."
+                    } else {
+                        "data not available yet"
+                    })
+                    .dim()],
+                )]
             }
         }
     }
@@ -357,7 +469,7 @@ impl StatusHistoryCell {
                     let base_line = Line::from(base_spans.clone());
 
                     if let Some(resets_at) = resets_at.as_ref() {
-                        let resets_span = Span::from(format!("(重置于 {resets_at})")).dim();
+                        let resets_span = Span::from(format!("(resets {resets_at})")).dim();
                         let mut inline_spans = base_spans.clone();
                         inline_spans.push(Span::from(" ").dim());
                         inline_spans.push(resets_span.clone());
@@ -386,11 +498,16 @@ impl StatusHistoryCell {
         lines
     }
 
-    fn collect_rate_limit_labels(&self, seen: &mut BTreeSet<String>, labels: &mut Vec<String>) {
-        match &self.rate_limits {
+    fn collect_rate_limit_labels(
+        &self,
+        state: &StatusRateLimitState,
+        seen: &mut BTreeSet<String>,
+        labels: &mut Vec<String>,
+    ) {
+        match &state.rate_limits {
             StatusRateLimitData::Available(rows) => {
                 if rows.is_empty() {
-                    push_label(labels, seen, "限额");
+                    push_label(labels, seen, "Limits");
                 } else {
                     for row in rows {
                         push_label(labels, seen, row.label.as_str());
@@ -401,9 +518,9 @@ impl StatusHistoryCell {
                 for row in rows {
                     push_label(labels, seen, row.label.as_str());
                 }
-                push_label(labels, seen, "警告");
+                push_label(labels, seen, "Warning");
             }
-            StatusRateLimitData::Missing => push_label(labels, seen, "限额"),
+            StatusRateLimitData::Missing => push_label(labels, seen, "Limits"),
         }
     }
 }
@@ -432,53 +549,60 @@ impl HistoryCell for StatusHistoryCell {
                 (None, None) => "ChatGPT".to_string(),
             },
             StatusAccountDisplay::ApiKey => {
-                "已配置 API key（运行 codex login 可切换使用 ChatGPT）".to_string()
+                "API key configured (run codex login to use ChatGPT)".to_string()
             }
         });
 
-        let mut labels: Vec<String> = vec!["模型", "目录", "权限", "Agents.md"]
+        let mut labels: Vec<String> = vec!["Model", "Directory", "Permissions", "Agents.md"]
             .into_iter()
             .map(str::to_string)
             .collect();
         let mut seen: BTreeSet<String> = labels.iter().cloned().collect();
         let thread_name = self.thread_name.as_deref().filter(|name| !name.is_empty());
+        #[expect(clippy::expect_used)]
+        let rate_limit_state = self
+            .rate_limit_state
+            .read()
+            .expect("status history rate-limit state poisoned");
 
         if self.model_provider.is_some() {
-            push_label(&mut labels, &mut seen, "模型提供方");
+            push_label(&mut labels, &mut seen, "Model provider");
         }
         if account_value.is_some() {
-            push_label(&mut labels, &mut seen, "账号");
+            push_label(&mut labels, &mut seen, "Account");
         }
         if thread_name.is_some() {
-            push_label(&mut labels, &mut seen, "线程名称");
+            push_label(&mut labels, &mut seen, "Thread name");
         }
         if self.session_id.is_some() {
-            push_label(&mut labels, &mut seen, "会话");
+            push_label(&mut labels, &mut seen, "Session");
         }
         if self.session_id.is_some() && self.forked_from.is_some() {
-            push_label(&mut labels, &mut seen, "派生自");
+            push_label(&mut labels, &mut seen, "Forked from");
         }
         if self.collaboration_mode.is_some() {
-            push_label(&mut labels, &mut seen, "协作模式");
+            push_label(&mut labels, &mut seen, "Collaboration mode");
         }
-        push_label(&mut labels, &mut seen, "Token 用量");
+        push_label(&mut labels, &mut seen, "Token usage");
         if self.token_usage.context_window.is_some() {
-            push_label(&mut labels, &mut seen, "上下文窗口");
+            push_label(&mut labels, &mut seen, "Context window");
         }
 
-        self.collect_rate_limit_labels(&mut seen, &mut labels);
+        self.collect_rate_limit_labels(&rate_limit_state, &mut seen, &mut labels);
 
         let formatter = FieldFormatter::from_labels(labels.iter().map(String::as_str));
         let value_width = formatter.value_width(available_inner_width);
 
         let note_first_line = Line::from(vec![
-            Span::from("访问 ").cyan(),
+            Span::from("Visit ").cyan(),
             "https://chatgpt.com/codex/settings/usage"
                 .cyan()
                 .underlined(),
-            Span::from(" 获取最新").cyan(),
+            Span::from(" for up-to-date").cyan(),
         ]);
-        let note_second_line = Line::from(vec![Span::from("限额和积分信息").cyan()]);
+        let note_second_line = Line::from(vec![
+            Span::from("information on rate limits and credits").cyan(),
+        ]);
         let note_lines = adaptive_wrap_lines(
             [note_first_line, note_second_line],
             RtOptions::new(available_inner_width),
@@ -495,44 +619,44 @@ impl HistoryCell for StatusHistoryCell {
 
         let directory_value = format_directory_display(&self.directory, Some(value_width));
 
-        lines.push(formatter.line("模型", model_spans));
+        lines.push(formatter.line("Model", model_spans));
         if let Some(model_provider) = self.model_provider.as_ref() {
-            lines.push(formatter.line("模型提供方", vec![Span::from(model_provider.clone())]));
+            lines.push(formatter.line("Model provider", vec![Span::from(model_provider.clone())]));
         }
-        lines.push(formatter.line("目录", vec![Span::from(directory_value)]));
-        lines.push(formatter.line("权限", vec![Span::from(self.permissions.clone())]));
+        lines.push(formatter.line("Directory", vec![Span::from(directory_value)]));
+        lines.push(formatter.line("Permissions", vec![Span::from(self.permissions.clone())]));
         lines.push(formatter.line("Agents.md", vec![Span::from(self.agents_summary.clone())]));
 
         if let Some(account_value) = account_value {
-            lines.push(formatter.line("账号", vec![Span::from(account_value)]));
+            lines.push(formatter.line("Account", vec![Span::from(account_value)]));
         }
 
         if let Some(thread_name) = thread_name {
-            lines.push(formatter.line("线程名称", vec![Span::from(thread_name.to_string())]));
+            lines.push(formatter.line("Thread name", vec![Span::from(thread_name.to_string())]));
         }
         if let Some(collab_mode) = self.collaboration_mode.as_ref() {
-            lines.push(formatter.line("协作模式", vec![Span::from(collab_mode.clone())]));
+            lines.push(formatter.line("Collaboration mode", vec![Span::from(collab_mode.clone())]));
         }
         if let Some(session) = self.session_id.as_ref() {
-            lines.push(formatter.line("会话", vec![Span::from(session.clone())]));
+            lines.push(formatter.line("Session", vec![Span::from(session.clone())]));
         }
         if self.session_id.is_some()
             && let Some(forked_from) = self.forked_from.as_ref()
         {
-            lines.push(formatter.line("派生自", vec![Span::from(forked_from.clone())]));
+            lines.push(formatter.line("Forked from", vec![Span::from(forked_from.clone())]));
         }
 
         lines.push(Line::from(Vec::<Span<'static>>::new()));
-        // 仅对 ChatGPT 订阅用户隐藏 token 用量
+        // Hide token usage only for ChatGPT subscribers
         if !matches!(self.account, Some(StatusAccountDisplay::ChatGpt { .. })) {
-            lines.push(formatter.line("Token 用量", self.token_usage_spans()));
+            lines.push(formatter.line("Token usage", self.token_usage_spans()));
         }
 
         if let Some(spans) = self.context_window_spans() {
-            lines.push(formatter.line("上下文窗口", spans));
+            lines.push(formatter.line("Context window", spans));
         }
 
-        lines.extend(self.rate_limit_lines(available_inner_width, &formatter));
+        lines.extend(self.rate_limit_lines(&rate_limit_state, available_inner_width, &formatter));
 
         let content_width = lines.iter().map(line_display_width).max().unwrap_or(0);
         let inner_width = content_width.min(available_inner_width);

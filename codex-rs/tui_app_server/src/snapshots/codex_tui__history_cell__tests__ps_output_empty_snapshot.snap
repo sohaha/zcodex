@@ -1,9 +1,0 @@
----
-source: tui/src/history_cell.rs
-expression: rendered
----
-/ps
-
-后台终端
-
-  • 当前没有运行中的后台终端。

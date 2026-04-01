@@ -69,9 +69,9 @@ fn format_unified_exec_interaction(command: &[String], input: Option<&str>) -> S
     match input {
         Some(data) if !data.is_empty() => {
             let preview = summarize_interaction_input(data);
-            format!("已与 `{command_display}` 交互，发送 `{preview}`")
+            format!("Interacted with `{command_display}`, sent `{preview}`")
         }
-        _ => format!("等待 `{command_display}` 完成"),
+        _ => format!("Waited for `{command_display}`"),
     }
 }
 
@@ -260,9 +260,9 @@ impl ExecCell {
             },
             " ".into(),
             if self.is_active() {
-                "探索中".bold()
+                "Exploring".bold()
             } else {
-                "已探索".bold()
+                "Explored".bold()
             },
         ]));
 
@@ -304,7 +304,7 @@ impl ExecCell {
                     })
                     .unique();
                 vec![(
-                    "读取",
+                    "Read",
                     Itertools::intersperse(names.into_iter().map(Into::into), ", ".dim()).collect(),
                 )]
             } else {
@@ -312,23 +312,23 @@ impl ExecCell {
                 for parsed in &call.parsed {
                     match parsed {
                         ParsedCommand::Read { name, .. } => {
-                            lines.push(("读取", vec![name.clone().into()]));
+                            lines.push(("Read", vec![name.clone().into()]));
                         }
                         ParsedCommand::ListFiles { cmd, path } => {
-                            lines.push(("列出", vec![path.clone().unwrap_or(cmd.clone()).into()]));
+                            lines.push(("List", vec![path.clone().unwrap_or(cmd.clone()).into()]));
                         }
                         ParsedCommand::Search { cmd, query, path } => {
                             let spans = match (query, path) {
                                 (Some(q), Some(p)) => {
-                                    vec![q.clone().into(), " 在 ".dim(), p.clone().into()]
+                                    vec![q.clone().into(), " in ".dim(), p.clone().into()]
                                 }
                                 (Some(q), None) => vec![q.clone().into()],
                                 _ => vec![cmd.clone().into()],
                             };
-                            lines.push(("搜索", spans));
+                            lines.push(("Search", spans));
                         }
                         ParsedCommand::Unknown { cmd } => {
-                            lines.push(("执行", vec![cmd.clone().into()]));
+                            lines.push(("Run", vec![cmd.clone().into()]));
                         }
                     }
                 }
@@ -368,11 +368,11 @@ impl ExecCell {
         let title = if is_interaction {
             ""
         } else if self.is_active() {
-            "运行中"
+            "Running"
         } else if call.is_user_shell_command() {
-            "你执行了"
+            "You ran"
         } else {
-            "已执行"
+            "Ran"
         };
 
         let mut header_line = if is_interaction {
@@ -454,7 +454,7 @@ impl ExecCell {
             if raw_output.lines.is_empty() {
                 if !call.is_unified_exec_interaction() {
                     lines.extend(prefix_lines(
-                        vec![Line::from("（无输出）".dim())],
+                        vec![Line::from("(no output)".dim())],
                         Span::from(layout.output_block.initial_prefix).dim(),
                         Span::from(layout.output_block.subsequent_prefix),
                     ));
@@ -758,7 +758,7 @@ mod tests {
             interaction_input: None,
         };
 
-        let cell = ExecCell::new(call, false);
+        let cell = ExecCell::new(call, /*animations_enabled*/ false);
 
         // Use a narrow width so each logical line wraps into many on-screen lines.
         let lines = cell.command_display_lines(width);
@@ -796,8 +796,13 @@ mod tests {
             Line::from("    tail"),
         ];
 
-        let truncated =
-            ExecCell::truncate_lines_middle(&lines, 2, 12, Some(4), Some(Line::from("    ".dim())));
+        let truncated = ExecCell::truncate_lines_middle(
+            &lines,
+            /*max_rows*/ 2,
+            /*width*/ 12,
+            Some(4),
+            Some(Line::from("    ".dim())),
+        );
         let rendered: Vec<String> = truncated
             .iter()
             .map(|line| {
@@ -820,7 +825,10 @@ mod tests {
         lines.extend(std::iter::repeat_n(Line::from("    "), 26));
         lines.push(Line::from("    end"));
 
-        let truncated = ExecCell::truncate_lines_middle(&lines, 28, 80, None, None);
+        let truncated = ExecCell::truncate_lines_middle(
+            &lines, /*max_rows*/ 28, /*width*/ 80, /*omitted_hint*/ None,
+            /*ellipsis_prefix*/ None,
+        );
 
         assert_eq!(truncated, lines);
     }
@@ -840,9 +848,9 @@ mod tests {
             interaction_input: None,
         };
 
-        let cell = ExecCell::new(call, false);
+        let cell = ExecCell::new(call, /*animations_enabled*/ false);
         let rendered: Vec<String> = cell
-            .command_display_lines(36)
+            .command_display_lines(/*width*/ 36)
             .iter()
             .map(|line| {
                 line.spans
@@ -877,9 +885,9 @@ mod tests {
             interaction_input: None,
         };
 
-        let cell = ExecCell::new(call, false);
+        let cell = ExecCell::new(call, /*animations_enabled*/ false);
         let rendered: Vec<String> = cell
-            .display_lines(36)
+            .display_lines(/*width*/ 36)
             .iter()
             .map(|line| {
                 line.spans
@@ -918,9 +926,9 @@ mod tests {
             interaction_input: None,
         };
 
-        let cell = ExecCell::new(call, false);
+        let cell = ExecCell::new(call, /*animations_enabled*/ false);
         let rendered: Vec<String> = cell
-            .command_display_lines(36)
+            .command_display_lines(/*width*/ 36)
             .iter()
             .map(|line| {
                 line.spans
@@ -955,7 +963,7 @@ mod tests {
             interaction_input: None,
         };
 
-        let cell = ExecCell::new(call, false);
+        let cell = ExecCell::new(call, /*animations_enabled*/ false);
         let width: u16 = 36;
         let logical_height = cell.transcript_lines(width).len() as u16;
         let wrapped_height = cell.desired_transcript_height(width);

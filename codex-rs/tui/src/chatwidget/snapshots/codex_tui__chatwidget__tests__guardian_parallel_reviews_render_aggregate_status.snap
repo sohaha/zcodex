@@ -2,11 +2,11 @@
 source: tui/src/chatwidget/tests.rs
 expression: rendered
 ---
-• 正 在 审 核  2 个 审 批 请 求  (0秒  • esc 可 中 断 )
+• Reviewing 2 approval requests (0s • esc to interrupt)
   └ • rm -rf '/tmp/guardian target 1'
     • rm -rf '/tmp/guardian target 2'
 
 
-› 让  Codex 处 理 任 何 事 情
+› Ask Codex to do anything
 
-  ? 查 看 快 捷 键                                          剩 余 上 下 文  100%
+  gpt-5.3-codex default · 100% left · /tmp/project

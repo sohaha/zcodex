@@ -1,9 +1,0 @@
----
-source: tui_app_server/src/chatwidget/tests.rs
-expression: combined
----
-• 正在运行 会话启动 钩子: 正在预热 shell
-
-会话启动 钩子（已完成）
-  警告：来自钩子的提示
-  钩子上下文：请记住启动检查清单。

@@ -1,6 +1,0 @@
----
-source: tui/src/chatwidget/tests.rs
-expression: exec_blob
----
-• 已执行 sleep 1
-  └ （无输出）

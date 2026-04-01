@@ -1,19 +1,22 @@
-use crate::repo_urls::ANNOUNCEMENT_TIP_URL;
 use codex_features::FEATURES;
 use codex_protocol::account::PlanType;
 use lazy_static::lazy_static;
 use rand::Rng;
 
+const ANNOUNCEMENT_TIP_URL: &str =
+    "https://raw.githubusercontent.com/openai/codex/main/announcement_tip.toml";
+
 const IS_MACOS: bool = cfg!(target_os = "macos");
 const IS_WINDOWS: bool = cfg!(target_os = "windows");
 
-const PAID_TOOLTIP: &str = "*新功能* 立即试用 **Codex App**，截至 *4月2日* 可享 2 倍速率额度。运行 `codex app`，或访问 https://chatgpt.com/codex?app-landing-page=true";
-const PAID_TOOLTIP_WINDOWS: &str = "*新功能* **Codex App** 现已支持 **Windows**，截至 *4月2日* 可享 2 倍速率额度。运行 `codex app`，或访问 https://chatgpt.com/codex?app-landing-page=true";
-const PAID_TOOLTIP_NON_MAC: &str = "*新功能* 截至 *4月2日* 可享 2 倍速率额度。";
-const FAST_TOOLTIP: &str = "*新功能* 使用 **/fast** 即可开启最快推理速度，按 2 倍计划用量计费。";
-const OTHER_TOOLTIP: &str = "*新功能* 试试 **Codex App**，更快完成构建。运行 `codex app`，或访问 https://chatgpt.com/codex?app-landing-page=true";
-const OTHER_TOOLTIP_NON_MAC: &str = "*新功能* 使用 Codex，更快完成构建。";
-const FREE_GO_TOOLTIP: &str = "*新功能* 限时免费，Codex 已包含在你的套餐内，一起开始构建吧。";
+const PAID_TOOLTIP: &str = "*New* Try the **Codex App** with 2x rate limits until *April 2nd*. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const PAID_TOOLTIP_WINDOWS: &str = "*New* Try the **Codex App**, now available on **Windows**, with 2x rate limits until *April 2nd*. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const PAID_TOOLTIP_NON_MAC: &str = "*New* 2x rate limits until *April 2nd*.";
+const FAST_TOOLTIP: &str = "*New* Use **/fast** to enable our fastest inference at 2X plan usage.";
+const OTHER_TOOLTIP: &str = "*New* Build faster with the **Codex App**. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true";
+const OTHER_TOOLTIP_NON_MAC: &str = "*New* Build faster with Codex.";
+const FREE_GO_TOOLTIP: &str =
+    "*New* For a limited time, Codex is included in your plan for free – let’s build together.";
 
 const RAW_TOOLTIPS: &str = include_str!("../tooltips.txt");
 
@@ -57,11 +60,13 @@ pub(crate) fn get_tooltip(plan: Option<PlanType>, fast_mode_enabled: bool) -> Op
     // Leave small chance for a random tooltip to be shown.
     if rng.random_ratio(8, 10) {
         match plan {
-            Some(PlanType::Plus)
-            | Some(PlanType::Business)
-            | Some(PlanType::Team)
-            | Some(PlanType::Enterprise)
-            | Some(PlanType::Pro) => {
+            Some(plan_type)
+                if matches!(
+                    plan_type,
+                    PlanType::Plus | PlanType::Enterprise | PlanType::Pro
+                ) || plan_type.is_team_like()
+                    || plan_type.is_business_like() =>
+            {
                 return Some(pick_paid_tooltip(&mut rng, fast_mode_enabled).to_string());
             }
             Some(PlanType::Go) | Some(PlanType::Free) => {
@@ -286,7 +291,9 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         for seed in 0..32 {
             let mut rng = StdRng::seed_from_u64(seed);
-            seen.insert(pick_paid_tooltip(&mut rng, false));
+            seen.insert(pick_paid_tooltip(
+                &mut rng, /*fast_mode_enabled*/ false,
+            ));
         }
 
         let expected = std::collections::BTreeSet::from([paid_app_tooltip(), FAST_TOOLTIP]);
@@ -298,7 +305,7 @@ mod tests {
         let mut seen = std::collections::BTreeSet::new();
         for seed in 0..8 {
             let mut rng = StdRng::seed_from_u64(seed);
-            seen.insert(pick_paid_tooltip(&mut rng, true));
+            seen.insert(pick_paid_tooltip(&mut rng, /*fast_mode_enabled*/ true));
         }
 
         let expected = std::collections::BTreeSet::from([paid_app_tooltip()]);

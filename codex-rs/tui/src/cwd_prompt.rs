@@ -30,10 +30,17 @@ pub(crate) enum CwdPromptAction {
 }
 
 impl CwdPromptAction {
-    fn action_label(self) -> &'static str {
+    fn verb(self) -> &'static str {
         match self {
-            CwdPromptAction::Resume => "继续",
-            CwdPromptAction::Fork => "分叉",
+            CwdPromptAction::Resume => "resume",
+            CwdPromptAction::Fork => "fork",
+        }
+    }
+
+    fn past_participle(self) -> &'static str {
+        match self {
+            CwdPromptAction::Resume => "resumed",
+            CwdPromptAction::Fork => "forked",
         }
     }
 }
@@ -188,46 +195,49 @@ impl WidgetRef for &CwdPromptScreen {
         Clear.render(area, buf);
         let mut column = ColumnRenderable::new();
 
-        let action_label = self.action.action_label();
+        let action_verb = self.action.verb();
+        let action_past = self.action.past_participle();
         let current_cwd = self.current_cwd.as_str();
         let session_cwd = self.session_cwd.as_str();
 
         column.push("");
         column.push(Line::from(vec![
-            "请选择用于".into(),
-            action_label.bold(),
-            "该会话的工作目录".into(),
+            "Choose working directory to ".into(),
+            action_verb.bold(),
+            " this session".into(),
         ]));
         column.push("");
         column.push(
-            Line::from("会话目录 = 上次会话记录中的最近工作目录")
-                .dim()
-                .inset(Insets::tlbr(
-                    /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-                )),
+            Line::from(format!(
+                "Session = latest cwd recorded in the {action_past} session"
+            ))
+            .dim()
+            .inset(Insets::tlbr(
+                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
+            )),
         );
         column.push(
-            Line::from("当前目录 = 你现在所在的工作目录".dim()).inset(Insets::tlbr(
+            Line::from("Current = your current working directory".dim()).inset(Insets::tlbr(
                 /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
             )),
         );
         column.push("");
         column.push(selection_option_row(
             /*index*/ 0,
-            format!("使用会话目录（{session_cwd}）"),
+            format!("Use session directory ({session_cwd})"),
             self.highlighted == CwdSelection::Session,
         ));
         column.push(selection_option_row(
             /*index*/ 1,
-            format!("使用当前目录（{current_cwd}）"),
+            format!("Use current directory ({current_cwd})"),
             self.highlighted == CwdSelection::Current,
         ));
         column.push("");
         column.push(
             Line::from(vec![
-                "按 ".dim(),
+                "Press ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
-                " 继续".dim(),
+                " to continue".dim(),
             ])
             .inset(Insets::tlbr(
                 /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
@@ -258,7 +268,8 @@ mod tests {
     #[test]
     fn cwd_prompt_snapshot() {
         let screen = new_prompt();
-        let mut terminal = Terminal::new(VT100Backend::new(80, 14)).expect("terminal");
+        let mut terminal =
+            Terminal::new(VT100Backend::new(/*width*/ 80, /*height*/ 14)).expect("terminal");
         terminal
             .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
             .expect("render cwd prompt");
@@ -273,7 +284,8 @@ mod tests {
             "/Users/example/current".to_string(),
             "/Users/example/session".to_string(),
         );
-        let mut terminal = Terminal::new(VT100Backend::new(80, 14)).expect("terminal");
+        let mut terminal =
+            Terminal::new(VT100Backend::new(/*width*/ 80, /*height*/ 14)).expect("terminal");
         terminal
             .draw(|frame| frame.render_widget_ref(&screen, frame.area()))
             .expect("render cwd prompt");

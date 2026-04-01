@@ -513,12 +513,7 @@ async fn send_inter_agent_communication_without_turn_queues_message_without_trig
 
     timeout(Duration::from_secs(5), async {
         loop {
-            if thread
-                .codex
-                .session
-                .has_queued_response_items_for_next_turn()
-                .await
-            {
+            if thread.codex.session.has_pending_input().await {
                 break;
             }
             sleep(Duration::from_millis(10)).await;
@@ -673,6 +668,7 @@ async fn spawn_agent_can_fork_parent_thread_history() {
             })),
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id),
+                fork_mode: Some(SpawnAgentForkMode::FullHistory),
             },
         )
         .await
@@ -759,6 +755,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
             })),
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id.clone()),
+                fork_mode: Some(SpawnAgentForkMode::FullHistory),
             },
         )
         .await
@@ -832,6 +829,7 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
             })),
             SpawnAgentOptions {
                 fork_parent_spawn_call_id: Some(parent_spawn_call_id.clone()),
+                fork_mode: Some(SpawnAgentForkMode::FullHistory),
             },
         )
         .await

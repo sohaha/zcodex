@@ -2,4 +2,4 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  ctrl + c 再按一次可退出                                                       " Hidden by multi-width symbols: [(12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " "), (24, " ")]
+"  ctrl + c again to quit                                                        "

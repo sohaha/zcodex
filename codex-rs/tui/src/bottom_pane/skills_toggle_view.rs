@@ -22,7 +22,6 @@ use crate::render::renderable::Renderable;
 use crate::skills_helpers::match_skill;
 use crate::skills_helpers::truncate_skill_name;
 use crate::style::user_message_style;
-use codex_protocol::protocol::Op;
 
 use super::CancellationEvent;
 use super::bottom_pane_view::BottomPaneView;
@@ -31,7 +30,7 @@ use super::scroll_state::ScrollState;
 use super::selection_popup_common::GenericDisplayRow;
 use super::selection_popup_common::render_rows_single_line;
 
-const SEARCH_PLACEHOLDER: &str = "输入以搜索技能";
+const SEARCH_PLACEHOLDER: &str = "Type to search skills";
 const SEARCH_PROMPT_PREFIX: &str = "> ";
 
 pub(crate) struct SkillsToggleItem {
@@ -56,8 +55,10 @@ pub(crate) struct SkillsToggleView {
 impl SkillsToggleView {
     pub(crate) fn new(items: Vec<SkillsToggleItem>, app_event_tx: AppEventSender) -> Self {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("启用/禁用技能".bold()));
-        header.push(Line::from("开启或关闭技能。你的更改会自动保存。".dim()));
+        header.push(Line::from("Enable/Disable Skills".bold()));
+        header.push(Line::from(
+            "Turn skills on or off. Your changes are saved automatically.".dim(),
+        ));
 
         let mut view = Self {
             items,
@@ -185,10 +186,8 @@ impl SkillsToggleView {
         }
         self.complete = true;
         self.app_event_tx.send(AppEvent::ManageSkillsClosed);
-        self.app_event_tx.send(AppEvent::CodexOp(Op::ListSkills {
-            cwds: Vec::new(),
-            force_reload: true,
-        }));
+        self.app_event_tx
+            .list_skills(Vec::new(), /*force_reload*/ true);
     }
 
     fn rows_width(total_width: u16) -> u16 {
@@ -352,7 +351,7 @@ impl Renderable for SkillsToggleView {
                 &rows,
                 &self.state,
                 render_area.height as usize,
-                "无匹配项",
+                "no matches",
             );
         }
 
@@ -368,13 +367,13 @@ impl Renderable for SkillsToggleView {
 
 fn skills_toggle_hint_line() -> Line<'static> {
     Line::from(vec![
-        "按 ".into(),
+        "Press ".into(),
         key_hint::plain(KeyCode::Char(' ')).into(),
-        " 或 ".into(),
+        " or ".into(),
         key_hint::plain(KeyCode::Enter).into(),
-        " 切换；按 ".into(),
+        " to toggle; ".into(),
         key_hint::plain(KeyCode::Esc).into(),
-        " 关闭".into(),
+        " to close".into(),
     ])
 }
 
@@ -430,6 +429,6 @@ mod tests {
             },
         ];
         let view = SkillsToggleView::new(items, tx);
-        assert_snapshot!("skills_toggle_basic", render_lines(&view, 72));
+        assert_snapshot!("skills_toggle_basic", render_lines(&view, /*width*/ 72));
     }
 }

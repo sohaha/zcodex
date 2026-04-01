@@ -2,7 +2,7 @@
 source: tui/src/chatwidget/tests.rs
 expression: before
 ---
-  应 用
-  正 在 加 载 已 安 装 和 可 用 的 应 用 ...
+  Apps
+  Loading installed and available apps...
 
-›    正 在 加 载 应 用 ...  完 整 列 表 就 绪 后 会 自 动 更 新 。
+›    Loading apps...  This updates when the full list is ready.

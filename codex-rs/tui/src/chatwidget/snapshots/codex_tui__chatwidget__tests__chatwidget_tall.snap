@@ -2,10 +2,9 @@
 source: tui/src/chatwidget/tests.rs
 expression: term.backend().vt100().screen().contents()
 ---
+• Working (0s • esc to interrupt)
 
-• 处理中 (0秒 • esc 可中断)
-
-• 已排队的后续消息
+• Queued follow-up messages
   ↳ Hello, world! 0
   ↳ Hello, world! 1
   ↳ Hello, world! 2
@@ -23,6 +22,6 @@ expression: term.backend().vt100().screen().contents()
   ↳ Hello, world! 14
   ↳ Hello, world! 15
 
-› 让 Codex 处理任何事情
+› Ask Codex to do anything
 
-  ? 查看快捷键                                                 剩余上下文 100%
+  gpt-5.3-codex default · 100% left · /tmp/project

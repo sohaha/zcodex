@@ -10,6 +10,7 @@ use crate::error::EnvVarError;
 use codex_api::Provider as ApiProvider;
 use codex_api::provider::RetryConfig as ApiRetryConfig;
 use codex_api::provider::WireApi as ApiWireApi;
+use codex_protocol::config_types::ModelProviderAuthInfo;
 use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;
@@ -166,6 +167,9 @@ pub struct ModelProviderInfo {
     #[serde(alias = "api_key")]
     pub experimental_bearer_token: Option<String>,
 
+    /// Command-backed bearer-token configuration for this provider.
+    pub auth: Option<ModelProviderAuthInfo>,
+
     /// Which wire protocol this provider expects.
     #[serde(default)]
     pub wire_api: WireApi,
@@ -221,6 +225,36 @@ impl ModelProviderInfo {
             || self.configured_bearer_token().is_some()
             || has_authorization_header(self.http_headers.as_ref())
             || has_authorization_header(self.env_http_headers.as_ref())
+    }
+
+    pub(crate) fn validate(&self) -> std::result::Result<(), String> {
+        let Some(auth) = self.auth.as_ref() else {
+            return Ok(());
+        };
+
+        if auth.command.trim().is_empty() {
+            return Err("provider auth.command must not be empty".to_string());
+        }
+
+        let mut conflicts = Vec::new();
+        if self.env_key.is_some() {
+            conflicts.push("env_key");
+        }
+        if self.experimental_bearer_token.is_some() {
+            conflicts.push("experimental_bearer_token");
+        }
+        if self.requires_openai_auth {
+            conflicts.push("requires_openai_auth");
+        }
+
+        if conflicts.is_empty() {
+            Ok(())
+        } else {
+            Err(format!(
+                "provider auth cannot be combined with {}",
+                conflicts.join(", ")
+            ))
+        }
     }
 
     fn build_header_map(&self) -> crate::error::Result<HeaderMap> {
@@ -385,6 +419,7 @@ impl ModelProviderInfo {
             env_key: None,
             env_key_instructions: None,
             experimental_bearer_token: None,
+            auth: None,
             wire_api: WireApi::Responses,
             query_params: None,
             http_headers: Some(
@@ -423,6 +458,7 @@ impl ModelProviderInfo {
             env_key: Some("ANTHROPIC_API_KEY".into()),
             env_key_instructions: None,
             experimental_bearer_token: None,
+            auth: None,
             wire_api: WireApi::Anthropic,
             query_params: None,
             http_headers: None,
@@ -454,6 +490,10 @@ impl ModelProviderInfo {
 
     pub fn uses_official_openai_responses_api(&self) -> bool {
         self.wire_api == WireApi::Responses && self.uses_official_openai_api()
+    }
+
+    pub(crate) fn has_command_auth(&self) -> bool {
+        self.auth.is_some()
     }
 }
 
@@ -527,6 +567,7 @@ pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> M
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
+        auth: None,
         wire_api,
         query_params: None,
         http_headers: None,

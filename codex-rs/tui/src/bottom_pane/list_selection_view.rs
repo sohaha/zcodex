@@ -364,9 +364,9 @@ impl ListSelectionView {
                     let prefix = if is_selected { '›' } else { ' ' };
                     let name = item.name.as_str();
                     let marker = if item.is_current {
-                        "（当前）"
+                        " (current)"
                     } else if item.is_default {
-                        "（默认）"
+                        " (default)"
                     } else {
                         ""
                     };
@@ -872,7 +872,7 @@ impl Renderable for ListSelectionView {
                     &rows,
                     &self.state,
                     render_area.height as usize,
-                    "无匹配结果",
+                    "no matches",
                 ),
                 ColumnWidthMode::AutoAllRows => render_rows_stable_col_widths(
                     render_area,
@@ -880,7 +880,7 @@ impl Renderable for ListSelectionView {
                     &rows,
                     &self.state,
                     render_area.height as usize,
-                    "无匹配结果",
+                    "no matches",
                 ),
                 ColumnWidthMode::Fixed => render_rows_with_col_width_mode(
                     render_area,
@@ -888,7 +888,7 @@ impl Renderable for ListSelectionView {
                     &rows,
                     &self.state,
                     render_area.height as usize,
-                    "无匹配结果",
+                    "no matches",
                     ColumnWidthMode::Fixed,
                 ),
             };
@@ -1046,15 +1046,15 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let items = vec![
             SelectionItem {
-                name: "只读".to_string(),
-                description: Some("可读取文件".to_string()),
+                name: "Read Only".to_string(),
+                description: Some("Codex can read files".to_string()),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
-                name: "完全访问".to_string(),
-                description: Some("可编辑文件".to_string()),
+                name: "Full Access".to_string(),
+                description: Some("Codex can edit files".to_string()),
                 is_current: false,
                 dismiss_on_select: true,
                 ..Default::default()
@@ -1062,7 +1062,7 @@ mod tests {
         ];
         ListSelectionView::new(
             SelectionViewParams {
-                title: Some("选择权限模式".to_string()),
+                title: Some("Select Approval Mode".to_string()),
                 subtitle: subtitle.map(str::to_string),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
@@ -1073,7 +1073,7 @@ mod tests {
     }
 
     fn render_lines(view: &ListSelectionView) -> String {
-        render_lines_with_width(view, 48)
+        render_lines_with_width(view, /*width*/ 48)
     }
 
     fn render_lines_with_width(view: &ListSelectionView, width: u16) -> String {
@@ -1153,7 +1153,7 @@ mod tests {
 
     #[test]
     fn renders_blank_line_between_title_and_items_without_subtitle() {
-        let view = make_selection_view(None);
+        let view = make_selection_view(/*subtitle*/ None);
         assert_snapshot!(
             "list_selection_spacing_without_subtitle",
             render_lines(&view)
@@ -1172,17 +1172,24 @@ mod tests {
         let tx = AppEventSender::new(tx_raw);
         let home = dirs::home_dir().expect("home directory should be available");
         let codex_home = home.join(".codex");
-        let params =
-            crate::theme_picker::build_theme_picker_params(None, Some(&codex_home), Some(94));
+        let params = crate::theme_picker::build_theme_picker_params(
+            /*current_name*/ None,
+            Some(&codex_home),
+            Some(94),
+        );
         let view = ListSelectionView::new(params, tx);
 
-        let rendered = render_lines_in_area(&view, 94, 35);
-        assert!(!rendered.trim().is_empty());
+        let rendered = render_lines_in_area(&view, /*width*/ 94, /*height*/ 35);
+        assert!(rendered.contains("Move up/down to live preview themes"));
     }
 
     #[test]
     fn theme_picker_enables_side_content_background_preservation() {
-        let params = crate::theme_picker::build_theme_picker_params(None, None, Some(120));
+        let params = crate::theme_picker::build_theme_picker_params(
+            /*current_name*/ None,
+            /*codex_home*/ None,
+            Some(120),
+        );
         assert!(
             params.preserve_side_content_bg,
             "theme picker should preserve side-content backgrounds to keep diff preview styling",
@@ -1237,20 +1244,20 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
-            name: "只读".to_string(),
-            description: Some("可读取文件".to_string()),
+            name: "Read Only".to_string(),
+            description: Some("Codex can read files".to_string()),
             is_current: true,
             dismiss_on_select: true,
             ..Default::default()
         }];
         let footer_note = Line::from(vec![
-            "提示：运行 ".dim(),
-            "/setup-default-sandbox".cyan(),
-            " 以允许联网访问。".dim(),
+            "Note: ".dim(),
+            "Use /setup-default-sandbox".cyan(),
+            " to allow network access.".dim(),
         ]);
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("选择权限模式".to_string()),
+                title: Some("Select Approval Mode".to_string()),
                 footer_note: Some(footer_note),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
@@ -1260,7 +1267,7 @@ mod tests {
         );
         assert_snapshot!(
             "list_selection_footer_note_wraps",
-            render_lines_with_width(&view, 40)
+            render_lines_with_width(&view, /*width*/ 40)
         );
     }
 
@@ -1269,19 +1276,19 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let items = vec![SelectionItem {
-            name: "只读".to_string(),
-            description: Some("可读取文件".to_string()),
+            name: "Read Only".to_string(),
+            description: Some("Codex can read files".to_string()),
             is_current: false,
             dismiss_on_select: true,
             ..Default::default()
         }];
         let mut view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("选择权限模式".to_string()),
+                title: Some("Select Approval Mode".to_string()),
                 footer_hint: Some(standard_popup_hint_line()),
                 items,
                 is_searchable: true,
-                search_placeholder: Some("输入以搜索分支".to_string()),
+                search_placeholder: Some("Type to search branches".to_string()),
                 ..Default::default()
             },
             tx,
@@ -1302,7 +1309,7 @@ mod tests {
         let mut view = ListSelectionView::new(
             SelectionViewParams {
                 items: vec![SelectionItem {
-                    name: "只读".to_string(),
+                    name: "Read Only".to_string(),
                     dismiss_on_select: true,
                     ..Default::default()
                 }],
@@ -1380,7 +1387,7 @@ mod tests {
             tx,
         );
 
-        let rendered = render_lines_with_width(&view, 60);
+        let rendered = render_lines_with_width(&view, /*width*/ 60);
         let command_line = rendered
             .lines()
             .find(|line| line.contains("python -mpre_commit run"))
@@ -1403,27 +1410,35 @@ mod tests {
         let items = vec![
             SelectionItem {
                 name: "gpt-5.1-codex".to_string(),
-                description: Some("为 Codex 优化，平衡推理质量与编码能力。".to_string()),
+                description: Some(
+                    "Optimized for Codex. Balance of reasoning quality and coding ability."
+                        .to_string(),
+                ),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-5.1-codex-mini".to_string(),
-                description: Some("为 Codex 优化，更便宜、更快，但能力稍弱。".to_string()),
+                description: Some(
+                    "Optimized for Codex. Cheaper, faster, but less capable.".to_string(),
+                ),
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-4.1-codex".to_string(),
-                description: Some("旧版模型。需要兼容较早的自动化流程时使用。".to_string()),
+                description: Some(
+                    "Legacy model. Use when you need compatibility with older automations."
+                        .to_string(),
+                ),
                 dismiss_on_select: true,
                 ..Default::default()
             },
         ];
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("选择模型与推理强度".to_string()),
+                title: Some("Select Model and Effort".to_string()),
                 items,
                 ..Default::default()
             },
@@ -1463,7 +1478,7 @@ mod tests {
             },
             tx,
         );
-        let rendered = render_lines_with_width(&view, 24);
+        let rendered = render_lines_with_width(&view, /*width*/ 24);
         assert!(
             rendered.contains("3."),
             "third option missing for width 24:\n{rendered}"
@@ -1477,27 +1492,35 @@ mod tests {
         let items = vec![
             SelectionItem {
                 name: "gpt-5.1-codex".to_string(),
-                description: Some("为 Codex 优化，平衡推理质量与编码能力。".to_string()),
+                description: Some(
+                    "Optimized for Codex. Balance of reasoning quality and coding ability."
+                        .to_string(),
+                ),
                 is_current: true,
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-5.1-codex-mini".to_string(),
-                description: Some("为 Codex 优化，更便宜、更快，但能力稍弱。".to_string()),
+                description: Some(
+                    "Optimized for Codex. Cheaper, faster, but less capable.".to_string(),
+                ),
                 dismiss_on_select: true,
                 ..Default::default()
             },
             SelectionItem {
                 name: "gpt-4.1-codex".to_string(),
-                description: Some("旧版模型。需要兼容较早的自动化流程时使用。".to_string()),
+                description: Some(
+                    "Legacy model. Use when you need compatibility with older automations."
+                        .to_string(),
+                ),
                 dismiss_on_select: true,
                 ..Default::default()
             },
         ];
         let view = ListSelectionView::new(
             SelectionViewParams {
-                title: Some("选择模型与推理强度".to_string()),
+                title: Some("Select Model and Effort".to_string()),
                 items,
                 ..Default::default()
             },
@@ -1505,7 +1528,7 @@ mod tests {
         );
         assert_snapshot!(
             "list_selection_model_picker_width_80",
-            render_lines_with_width(&view, 80)
+            render_lines_with_width(&view, /*width*/ 80)
         );
     }
 
@@ -1532,7 +1555,7 @@ mod tests {
         );
         assert_snapshot!(
             "list_selection_narrow_width_preserves_rows",
-            render_lines_with_width(&view, 24)
+            render_lines_with_width(&view, /*width*/ 24)
         );
     }
 
@@ -1540,7 +1563,7 @@ mod tests {
     fn snapshot_auto_visible_col_width_mode_scroll_behavior() {
         assert_snapshot!(
             "list_selection_col_width_mode_auto_visible_scroll",
-            render_before_after_scroll_snapshot(ColumnWidthMode::AutoVisible, 96)
+            render_before_after_scroll_snapshot(ColumnWidthMode::AutoVisible, /*width*/ 96)
         );
     }
 
@@ -1548,7 +1571,7 @@ mod tests {
     fn snapshot_auto_all_rows_col_width_mode_scroll_behavior() {
         assert_snapshot!(
             "list_selection_col_width_mode_auto_all_rows_scroll",
-            render_before_after_scroll_snapshot(ColumnWidthMode::AutoAllRows, 96)
+            render_before_after_scroll_snapshot(ColumnWidthMode::AutoAllRows, /*width*/ 96)
         );
     }
 
@@ -1556,7 +1579,7 @@ mod tests {
     fn snapshot_fixed_col_width_mode_scroll_behavior() {
         assert_snapshot!(
             "list_selection_col_width_mode_fixed_scroll",
-            render_before_after_scroll_snapshot(ColumnWidthMode::Fixed, 96)
+            render_before_after_scroll_snapshot(ColumnWidthMode::Fixed, /*width*/ 96)
         );
     }
 
@@ -1575,11 +1598,11 @@ mod tests {
             tx,
         );
 
-        let before_scroll = render_lines_with_width(&view, 96);
+        let before_scroll = render_lines_with_width(&view, /*width*/ 96);
         for _ in 0..8 {
             view.handle_key_event(KeyEvent::from(KeyCode::Down));
         }
-        let after_scroll = render_lines_with_width(&view, 96);
+        let after_scroll = render_lines_with_width(&view, /*width*/ 96);
 
         assert!(
             after_scroll.contains("9. Item 9 with an intentionally much longer name"),
@@ -1677,7 +1700,7 @@ mod tests {
             tx,
         );
 
-        assert_eq!(view.side_layout_width(80), None);
+        assert_eq!(view.side_layout_width(/*content_width*/ 80), None);
     }
 
     #[test]
@@ -1707,7 +1730,7 @@ mod tests {
             tx,
         );
 
-        let rendered = render_lines_with_width(&view, 70);
+        let rendered = render_lines_with_width(&view, /*width*/ 70);
         assert!(
             rendered.contains('N'),
             "expected stacked marker to be rendered:\n{rendered}"

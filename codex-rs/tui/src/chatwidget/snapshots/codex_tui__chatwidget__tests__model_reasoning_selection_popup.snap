@@ -1,12 +1,13 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 1664
 expression: popup
 ---
-  为  gpt-5.1-codex-max 选 择 推 理 级 别
+  Select Reasoning Level for gpt-5.1-codex-max
 
-  1. 低           更 快 响 应 ， 较 轻 推 理
-  2. 中 （ 默 认 ）   平 衡 速 度 与 推 理 深 度 ， 适 合 日 常 任 务
-› 3. 高 （ 当 前 ）   更 深 的 推 理 深 度 ， 适 合 复 杂 问 题
-  4. 极 高         极 高 推 理 深 度 ， 适 合 复 杂 问 题
+  1. Low               响 应 更 快 ， 推 理 更 轻 量
+  2. Medium (default)  兼 顾 速 度 与 推 理 深 度 ， 适 合 日 常 任 务
+› 3. High (current)    为 复 杂 问 题 提 供 更 深 层 的 推 理
+  4. Extra high        为 复 杂 问 题 提 供 超 深 度 推 理
 
-  按  enter 确 认 ， 按  esc 返 回
+  Press enter to confirm or esc to go back

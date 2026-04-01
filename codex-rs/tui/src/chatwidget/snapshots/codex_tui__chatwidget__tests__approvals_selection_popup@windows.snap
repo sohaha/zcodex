@@ -1,14 +1,17 @@
 ---
 source: tui/src/chatwidget/tests.rs
-assertion_line: 7365
 expression: popup
 ---
-  更新模型权限
+  Update Model Permissions
 
-› 1. 只读（当前）  Codex 可读取当前工作区中的文件。
-                          编辑文件或访问互联网都需要审批。
-  2. 默认              Codex 可读取并编辑当前工作区中的文件，并可运行命令。 访问互联网或编辑其他文件都需要审批。
-  3. 完全访问          Codex 可编辑此工作区外的文件，并可在无需审批的情况下访问互联网。
-                          请谨慎使用。
+› 1. Read Only (current)  Codex can read files in the current workspace.
+                          Approval is required to edit files or access the
+                          internet.
+  2. Default              Codex can read and edit files in the current
+                          workspace, and run commands. Approval is required to
+                          access the internet or edit other files.
+  3. Full Access          Codex can edit files outside this workspace and
+                          access the internet without asking for approval.
+                          Exercise caution when using.
 
-  按 enter 确认，按 esc 返回
+  Press enter to confirm or esc to go back

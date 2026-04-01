@@ -45,7 +45,7 @@ impl PendingThreadApprovals {
         let mut lines = Vec::new();
         for thread in self.threads.iter().take(3) {
             let wrapped = adaptive_wrap_lines(
-                std::iter::once(Line::from(format!("{thread} 中有待审批项"))),
+                std::iter::once(Line::from(format!("Approval needed in {thread}"))),
                 RtOptions::new(width as usize)
                     .initial_indent(Line::from(vec!["  ".into(), "!".red().bold(), " ".into()]))
                     .subsequent_indent(Line::from("    ")),
@@ -61,7 +61,7 @@ impl PendingThreadApprovals {
             Line::from(vec![
                 "    ".into(),
                 "/agent".cyan().bold(),
-                " 可切换线程".dim(),
+                " to switch threads".dim(),
             ])
             .dim(),
         );
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn desired_height_empty() {
         let widget = PendingThreadApprovals::new();
-        assert_eq!(widget.desired_height(40), 0);
+        assert_eq!(widget.desired_height(/*width*/ 40), 0);
     }
 
     #[test]
@@ -117,10 +117,10 @@ mod tests {
         widget.set_threads(vec!["Robie [explorer]".to_string()]);
 
         assert_snapshot!(
-            snapshot_rows(&widget, 40).replace(' ', "."),
-            @"
-        ..!.Robie.[explorer].中.有.待.审.批.项........
-        ..../agent.可.切.换.线.程....................
+            snapshot_rows(&widget, /*width*/ 40).replace(' ', "."),
+            @r"
+        ..!.Approval.needed.in.Robie.[explorer].
+        ..../agent.to.switch.threads............
         "
         );
     }
@@ -129,20 +129,20 @@ mod tests {
     fn render_multiple_threads_snapshot() {
         let mut widget = PendingThreadApprovals::new();
         widget.set_threads(vec![
-            "主线程 [默认]".to_string(),
+            "Main [default]".to_string(),
             "Robie [explorer]".to_string(),
             "Inspector".to_string(),
             "Extra agent".to_string(),
         ]);
 
         assert_snapshot!(
-            snapshot_rows(&widget, 44).replace(' ', "."),
-            @"
-        ..!.主.线.程..[默.认.].中.有.待.审.批.项...............
-        ..!.Robie.[explorer].中.有.待.审.批.项............
-        ..!.Inspector.中.有.待.审.批.项...................
+            snapshot_rows(&widget, /*width*/ 44).replace(' ', "."),
+            @r"
+        ..!.Approval.needed.in.Main.[default].......
+        ..!.Approval.needed.in.Robie.[explorer].....
+        ..!.Approval.needed.in.Inspector............
         ............................................
-        ..../agent.可.切.换.线.程........................
+        ..../agent.to.switch.threads................
         "
         );
     }

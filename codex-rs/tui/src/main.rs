@@ -1,12 +1,8 @@
-#![allow(clippy::print_stdout, clippy::print_stderr)]
-
-//! Compatibility entrypoint for the legacy `codex-rs/tui` crate path.
-
 use clap::Parser;
 use codex_arg0::Arg0DispatchPaths;
 use codex_arg0::arg0_dispatch_or_else;
-use codex_tui_app_server::Cli;
-use codex_tui_app_server::run_main;
+use codex_tui::Cli;
+use codex_tui::run_main;
 use codex_utils_cli::CliConfigOverrides;
 
 #[derive(Parser, Debug)]

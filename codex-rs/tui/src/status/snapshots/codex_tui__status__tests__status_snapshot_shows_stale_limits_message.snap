@@ -1,23 +1,24 @@
 ---
 source: tui/src/status/tests.rs
+assertion_line: 957
 expression: sanitized
 ---
 /status
 
-╭───────────────────────────────────────────────────────────────╮
-│  >_ OpenAI Codex (v1.0.0)                                     │
-│                                                               │
-│ 访问 https://chatgpt.com/codex/settings/usage 获取最新        │
-│ 限额和积分信息                                                │
-│                                                               │
-│  模型:         gpt-5.1-codex-max (推理 默认, 摘要 自动)       │
-│  目录:         /workspace/tests                               │
-│  权限:         自定义 (只读, 按需批准)                        │
-│  Agents.md:    ../AGENTS.md                                   │
-│                                                               │
-│  Token 用量:   1.9K 总计  (1K 输入 + 900 输出)                │
-│  上下文窗口:   剩余 100% (2.25K 已用 / 272K)                  │
-│  5h 限额:      [██████░░░░░░░░░░░░░░] 剩余 28% (重置于 03:14) │
-│  每周 限额:    [████████████░░░░░░░░] 剩余 60% (重置于 03:34) │
-│  警告:         限额数据可能已过期，请开始新一轮对话刷新。     │
-╰───────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────╮
+│  >_ OpenAI Codex (v0.0.0)                                             │
+│                                                                       │
+│ Visit https://chatgpt.com/codex/settings/usage for up-to-date         │
+│ information on rate limits and credits                                │
+│                                                                       │
+│  Model:            gpt-5.1-codex-max (reasoning none, summaries auto) │
+│  Directory: [[workspace]]                                             │
+│  Permissions:      Custom (read-only, on-request)                     │
+│  Agents.md:        ../AGENTS.md                                       │
+│                                                                       │
+│  Token usage:      1.9K total  (1K input + 900 output)                │
+│  Context window:   100% left (2.25K used / 272K)                      │
+│  5h limit:         [██████░░░░░░░░░░░░░░] 28% left (resets 03:14)     │
+│  Weekly limit:     [████████████░░░░░░░░] 60% left (resets 03:34)     │
+│  Warning:          limits may be stale - start new turn to refresh.   │
+╰───────────────────────────────────────────────────────────────────────╯

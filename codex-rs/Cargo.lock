@@ -1446,10 +1446,12 @@ checksum = "e9b18233253483ce2f65329a24072ec414db782531bdbb7d0bbc4bd2ce6b7e21"
 name = "codex-analytics"
 version = "0.0.0"
 dependencies = [
+ "codex-app-server-protocol",
  "codex-git-utils",
  "codex-login",
  "codex-plugin",
  "codex-protocol",
+ "os_info",
  "pretty_assertions",
  "serde",
  "serde_json",
@@ -2801,6 +2803,8 @@ dependencies = [
 name = "codex-tools"
 version = "0.0.0"
 dependencies = [
+ "codex-app-server-protocol",
+ "codex-code-mode",
  "codex-protocol",
  "pretty_assertions",
  "rmcp",
@@ -2824,7 +2828,6 @@ dependencies = [
  "codex-arg0",
  "codex-chatgpt",
  "codex-cli",
- "codex-client",
  "codex-cloud-requirements",
  "codex-core",
  "codex-features",
@@ -2856,7 +2859,6 @@ dependencies = [
  "diffy",
  "dirs",
  "dunce",
- "hound",
  "image",
  "insta",
  "itertools 0.14.0",
@@ -5190,12 +5192,6 @@ dependencies = [
  "libc",
  "windows-link",
 ]
-
-[[package]]
-name = "hound"
-version = "3.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "http"
@@ -8738,7 +8734,6 @@ dependencies = [
  "js-sys",
  "log",
  "mime",
- "mime_guess",
  "native-tls",
  "percent-encoding",
  "pin-project-lite",

@@ -1,8 +1,0 @@
----
-source: tui/src/history_cell.rs
-expression: rendered
----
-• 已执行 set -o pipefail
-  │ cargo test
-  │ --all-features --quiet
-  └ （无输出）

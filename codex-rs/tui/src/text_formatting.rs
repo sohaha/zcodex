@@ -327,29 +327,29 @@ pub(crate) fn center_truncate_path(path: &str, max_width: usize) -> String {
     front_truncate(path, max_width)
 }
 
-/// 按中文语序连接字符串列表。
+/// Join a list of strings with proper English punctuation.
 /// Examples:
 /// - [] -> ""
 /// - ["apple"] -> "apple"
-/// - ["apple", "banana"] -> "apple 和 banana"
-/// - ["apple", "banana", "cherry"] -> "apple、banana 和 cherry"
+/// - ["apple", "banana"] -> "apple and banana"
+/// - ["apple", "banana", "cherry"] -> "apple, banana and cherry"
 pub(crate) fn proper_join<T: AsRef<str>>(items: &[T]) -> String {
     match items.len() {
         0 => String::new(),
         1 => items[0].as_ref().to_string(),
-        2 => format!("{} 和 {}", items[0].as_ref(), items[1].as_ref()),
+        2 => format!("{} and {}", items[0].as_ref(), items[1].as_ref()),
         _ => {
             let last = items[items.len() - 1].as_ref();
             let mut result = String::new();
 
             for (i, item) in items.iter().take(items.len() - 1).enumerate() {
                 if i > 0 {
-                    result.push('、');
+                    result.push_str(", ");
                 }
                 result.push_str(item.as_ref());
             }
 
-            format!("{result} 和 {last}")
+            format!("{result} and {last}")
         }
     }
 }
@@ -362,80 +362,80 @@ mod tests {
     #[test]
     fn test_truncate_text() {
         let text = "Hello, world!";
-        let truncated = truncate_text(text, 8);
+        let truncated = truncate_text(text, /*max_graphemes*/ 8);
         assert_eq!(truncated, "Hello...");
     }
 
     #[test]
     fn test_truncate_empty_string() {
         let text = "";
-        let truncated = truncate_text(text, 5);
+        let truncated = truncate_text(text, /*max_graphemes*/ 5);
         assert_eq!(truncated, "");
     }
 
     #[test]
     fn test_truncate_max_graphemes_zero() {
         let text = "Hello";
-        let truncated = truncate_text(text, 0);
+        let truncated = truncate_text(text, /*max_graphemes*/ 0);
         assert_eq!(truncated, "");
     }
 
     #[test]
     fn test_truncate_max_graphemes_one() {
         let text = "Hello";
-        let truncated = truncate_text(text, 1);
+        let truncated = truncate_text(text, /*max_graphemes*/ 1);
         assert_eq!(truncated, "H");
     }
 
     #[test]
     fn test_truncate_max_graphemes_two() {
         let text = "Hello";
-        let truncated = truncate_text(text, 2);
+        let truncated = truncate_text(text, /*max_graphemes*/ 2);
         assert_eq!(truncated, "He");
     }
 
     #[test]
     fn test_truncate_max_graphemes_three_boundary() {
         let text = "Hello";
-        let truncated = truncate_text(text, 3);
+        let truncated = truncate_text(text, /*max_graphemes*/ 3);
         assert_eq!(truncated, "...");
     }
 
     #[test]
     fn test_truncate_text_shorter_than_limit() {
         let text = "Hi";
-        let truncated = truncate_text(text, 10);
+        let truncated = truncate_text(text, /*max_graphemes*/ 10);
         assert_eq!(truncated, "Hi");
     }
 
     #[test]
     fn test_truncate_text_exact_length() {
         let text = "Hello";
-        let truncated = truncate_text(text, 5);
+        let truncated = truncate_text(text, /*max_graphemes*/ 5);
         assert_eq!(truncated, "Hello");
     }
 
     #[test]
     fn test_truncate_emoji() {
         let text = "👋🌍🚀✨💫";
-        let truncated = truncate_text(text, 3);
+        let truncated = truncate_text(text, /*max_graphemes*/ 3);
         assert_eq!(truncated, "...");
 
-        let truncated_longer = truncate_text(text, 4);
+        let truncated_longer = truncate_text(text, /*max_graphemes*/ 4);
         assert_eq!(truncated_longer, "👋...");
     }
 
     #[test]
     fn test_truncate_unicode_combining_characters() {
         let text = "é́ñ̃"; // Characters with combining marks
-        let truncated = truncate_text(text, 2);
+        let truncated = truncate_text(text, /*max_graphemes*/ 2);
         assert_eq!(truncated, "é́ñ̃");
     }
 
     #[test]
     fn test_truncate_very_long_text() {
         let text = "a".repeat(1000);
-        let truncated = truncate_text(&text, 10);
+        let truncated = truncate_text(&text, /*max_graphemes*/ 10);
         assert_eq!(truncated, "aaaaaaa...");
         assert_eq!(truncated.len(), 10); // 7 'a's + 3 dots
     }
@@ -461,7 +461,7 @@ mod tests {
     fn test_center_truncate_doesnt_truncate_short_path() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!("{sep}Users{sep}codex{sep}Public");
-        let truncated = center_truncate_path(&path, 40);
+        let truncated = center_truncate_path(&path, /*max_width*/ 40);
 
         assert_eq!(truncated, path);
     }
@@ -470,7 +470,7 @@ mod tests {
     fn test_center_truncate_truncates_long_path() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!("~{sep}hello{sep}the{sep}fox{sep}is{sep}very{sep}fast");
-        let truncated = center_truncate_path(&path, 24);
+        let truncated = center_truncate_path(&path, /*max_width*/ 24);
 
         assert_eq!(
             truncated,
@@ -484,7 +484,7 @@ mod tests {
         let path = format!(
             "C:{sep}Users{sep}codex{sep}Projects{sep}super{sep}long{sep}windows{sep}path{sep}file.txt"
         );
-        let truncated = center_truncate_path(&path, 36);
+        let truncated = center_truncate_path(&path, /*max_width*/ 36);
 
         let expected = format!("C:{sep}Users{sep}codex{sep}…{sep}path{sep}file.txt");
 
@@ -495,7 +495,7 @@ mod tests {
     fn test_center_truncate_handles_long_segment() {
         let sep = std::path::MAIN_SEPARATOR;
         let path = format!("~{sep}supercalifragilisticexpialidocious");
-        let truncated = center_truncate_path(&path, 18);
+        let truncated = center_truncate_path(&path, /*max_width*/ 18);
 
         assert_eq!(truncated, format!("~{sep}…cexpialidocious"));
     }
@@ -567,14 +567,14 @@ mod tests {
         let empty: Vec<String> = vec![];
         assert_eq!(proper_join(&empty), "");
         assert_eq!(proper_join(&["apple"]), "apple");
-        assert_eq!(proper_join(&["apple", "banana"]), "apple 和 banana");
+        assert_eq!(proper_join(&["apple", "banana"]), "apple and banana");
         assert_eq!(
             proper_join(&["apple", "banana", "cherry"]),
-            "apple、banana 和 cherry"
+            "apple, banana and cherry"
         );
         assert_eq!(
             proper_join(&["apple", "banana", "cherry", "date"]),
-            "apple、banana、cherry 和 date"
+            "apple, banana, cherry and date"
         );
     }
 }

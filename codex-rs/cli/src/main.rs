@@ -27,10 +27,10 @@ use codex_rtk::alias_name as rtk_alias_name;
 use codex_rtk::is_alias_invocation as is_rtk_alias_invocation;
 use codex_state::StateRuntime;
 use codex_state::state_db_path;
-use codex_tui_app_server::AppExitInfo;
-use codex_tui_app_server::Cli as TuiCli;
-use codex_tui_app_server::ExitReason;
-use codex_tui_app_server::update_action::UpdateAction;
+use codex_tui::AppExitInfo;
+use codex_tui::Cli as TuiCli;
+use codex_tui::ExitReason;
+use codex_tui::update_action::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
@@ -1224,10 +1224,10 @@ async fn run_interactive_tui(
 
     let normalized_remote = remote
         .as_deref()
-        .map(codex_tui_app_server::normalize_remote_addr)
+        .map(codex_tui::normalize_remote_addr)
         .transpose()
         .map_err(std::io::Error::other)?;
-    codex_tui_app_server::run_main(
+    codex_tui::run_main(
         interactive,
         arg0_paths,
         codex_core::config_loader::LoaderOverrides::default(),
@@ -1238,28 +1238,22 @@ async fn run_interactive_tui(
     .map(into_legacy_app_exit_info)
 }
 
-fn into_legacy_update_action(
-    action: codex_tui_app_server::update_action::UpdateAction,
-) -> UpdateAction {
+fn into_legacy_update_action(action: codex_tui::update_action::UpdateAction) -> UpdateAction {
     match action {
-        codex_tui_app_server::update_action::UpdateAction::NpmGlobalLatest => {
-            UpdateAction::NpmGlobalLatest
-        }
-        codex_tui_app_server::update_action::UpdateAction::BunGlobalLatest => {
-            UpdateAction::BunGlobalLatest
-        }
-        codex_tui_app_server::update_action::UpdateAction::BrewUpgrade => UpdateAction::BrewUpgrade,
+        codex_tui::update_action::UpdateAction::NpmGlobalLatest => UpdateAction::NpmGlobalLatest,
+        codex_tui::update_action::UpdateAction::BunGlobalLatest => UpdateAction::BunGlobalLatest,
+        codex_tui::update_action::UpdateAction::BrewUpgrade => UpdateAction::BrewUpgrade,
     }
 }
 
-fn into_legacy_exit_reason(reason: codex_tui_app_server::ExitReason) -> ExitReason {
+fn into_legacy_exit_reason(reason: codex_tui::ExitReason) -> ExitReason {
     match reason {
-        codex_tui_app_server::ExitReason::UserRequested => ExitReason::UserRequested,
-        codex_tui_app_server::ExitReason::Fatal(message) => ExitReason::Fatal(message),
+        codex_tui::ExitReason::UserRequested => ExitReason::UserRequested,
+        codex_tui::ExitReason::Fatal(message) => ExitReason::Fatal(message),
     }
 }
 
-fn into_legacy_app_exit_info(exit_info: codex_tui_app_server::AppExitInfo) -> AppExitInfo {
+fn into_legacy_app_exit_info(exit_info: codex_tui::AppExitInfo) -> AppExitInfo {
     AppExitInfo {
         token_usage: exit_info.token_usage,
         thread_id: exit_info.thread_id,

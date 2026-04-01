@@ -5,6 +5,8 @@ use codex_core::config_loader::ConfigLayerEntry;
 use codex_core::config_loader::ConfigLayerStack;
 use codex_core::config_loader::ConfigLayerStackOrdering;
 use codex_core::config_loader::NetworkConstraints;
+use codex_core::config_loader::NetworkDomainPermissionToml;
+use codex_core::config_loader::NetworkUnixSocketPermissionToml;
 use codex_core::config_loader::RequirementSource;
 use codex_core::config_loader::ResidencyRequirement;
 use codex_core::config_loader::SandboxModeRequirement;
@@ -22,7 +24,7 @@ pub(crate) fn new_debug_config_output(
 
     if let Some(proxy) = session_network_proxy {
         lines.push("".into());
-        lines.push("会话运行时：".bold().into());
+        lines.push("Session runtime:".bold().into());
         lines.push("  - network_proxy".into());
         let SessionNetworkProxyRuntime {
             http_addr,
@@ -55,25 +57,29 @@ fn session_all_proxy_url(http_addr: &str, socks_addr: &str, socks_enabled: bool)
 fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     let mut lines = vec!["/debug-config".magenta().into(), "".into()];
 
-    lines.push("配置层堆栈（优先级最低的在前）：".bold().into());
+    lines.push(
+        "Config layer stack (lowest precedence first):"
+            .bold()
+            .into(),
+    );
     let layers = stack.get_layers(
         ConfigLayerStackOrdering::LowestPrecedenceFirst,
         /*include_disabled*/ true,
     );
     if layers.is_empty() {
-        lines.push("  <无>".dim().into());
+        lines.push("  <none>".dim().into());
     } else {
         for (index, layer) in layers.iter().enumerate() {
             let source = format_config_layer_source(&layer.name);
             let status = if layer.is_disabled() {
-                "已禁用"
+                "disabled"
             } else {
-                "已启用"
+                "enabled"
             };
             lines.push(format!("  {}. {source} ({status})", index + 1).into());
             lines.extend(render_non_file_layer_details(layer));
             if let Some(reason) = &layer.disabled_reason {
-                lines.push(format!("     原因: {reason}").dim().into());
+                lines.push(format!("     reason: {reason}").dim().into());
             }
         }
     }
@@ -82,7 +88,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     let requirements_toml = stack.requirements_toml();
 
     lines.push("".into());
-    lines.push("约束：".bold().into());
+    lines.push("Requirements:".bold().into());
     let mut requirement_lines = Vec::new();
 
     if let Some(policies) = requirements_toml.allowed_approval_policies.as_ref() {
@@ -162,7 +168,7 @@ fn render_debug_config_lines(stack: &ConfigLayerStack) -> Vec<Line<'static>> {
     }
 
     if requirement_lines.is_empty() {
-        lines.push("  <无>".dim().into());
+        lines.push("  <none>".dim().into());
     } else {
         lines.extend(requirement_lines);
     }
@@ -188,7 +194,7 @@ fn render_session_flag_details(config: &TomlValue) -> Vec<Line<'static>> {
     flatten_toml_key_values(config, /*prefix*/ None, &mut pairs);
 
     if pairs.is_empty() {
-        return vec!["     - <无>".dim().into()];
+        return vec!["     - <none>".dim().into()];
     }
 
     pairs
@@ -203,15 +209,15 @@ fn render_mdm_layer_details(layer: &ConfigLayerEntry) -> Vec<Line<'static>> {
         .map(ToString::to_string)
         .unwrap_or_else(|| format_toml_value(&layer.config));
     if value.is_empty() {
-        return vec!["     MDM 值: <空>".dim().into()];
+        return vec!["     MDM value: <empty>".dim().into()];
     }
 
     if value.contains('\n') {
-        let mut lines = vec!["     MDM 值:".into()];
+        let mut lines = vec!["     MDM value:".into()];
         lines.extend(value.lines().map(|line| format!("       {line}").into()));
         lines
     } else {
-        vec![format!("     MDM 值: {value}").into()]
+        vec![format!("     MDM value: {value}").into()]
     }
 }
 
@@ -251,13 +257,13 @@ fn requirement_line(
 ) -> Line<'static> {
     let source = source
         .map(ToString::to_string)
-        .unwrap_or_else(|| "<未指定>".to_string());
-    format!("  - {name}: {value}（来源: {source}）").into()
+        .unwrap_or_else(|| "<unspecified>".to_string());
+    format!("  - {name}: {value} (source: {source})").into()
 }
 
 fn join_or_empty(values: Vec<String>) -> String {
     if values.is_empty() {
-        "<空>".to_string()
+        "<empty>".to_string()
     } else {
         values.join(", ")
     }
@@ -283,30 +289,30 @@ fn format_config_layer_source(source: &ConfigLayerSource) -> String {
             format!("MDM ({domain}:{key})")
         }
         ConfigLayerSource::System { file } => {
-            format!("系统 ({})", file.as_path().display())
+            format!("system ({})", file.as_path().display())
         }
         ConfigLayerSource::User { file } => {
-            format!("用户 ({})", file.as_path().display())
+            format!("user ({})", file.as_path().display())
         }
         ConfigLayerSource::Project { dot_codex_folder } => {
             format!(
-                "项目 ({}/config.toml)",
+                "project ({}/config.toml)",
                 dot_codex_folder.as_path().display()
             )
         }
-        ConfigLayerSource::SessionFlags => "会话参数".to_string(),
+        ConfigLayerSource::SessionFlags => "session-flags".to_string(),
         ConfigLayerSource::LegacyManagedConfigTomlFromFile { file } => {
-            format!("旧版 managed_config.toml ({})", file.as_path().display())
+            format!("legacy managed_config.toml ({})", file.as_path().display())
         }
         ConfigLayerSource::LegacyManagedConfigTomlFromMdm => {
-            "旧版 managed_config.toml (MDM)".to_string()
+            "legacy managed_config.toml (MDM)".to_string()
         }
     }
 }
 
 fn format_sandbox_mode_requirement(mode: SandboxModeRequirement) -> String {
     match mode {
-        SandboxModeRequirement::ReadOnly => "只读".to_string(),
+        SandboxModeRequirement::ReadOnly => "read-only".to_string(),
         SandboxModeRequirement::WorkspaceWrite => "workspace-write".to_string(),
         SandboxModeRequirement::DangerFullAccess => "danger-full-access".to_string(),
         SandboxModeRequirement::ExternalSandbox => "external-sandbox".to_string(),
@@ -329,10 +335,9 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
         allow_upstream_proxy,
         dangerously_allow_non_loopback_proxy,
         dangerously_allow_all_unix_sockets,
-        allowed_domains,
+        domains,
         managed_allowed_domains_only,
-        denied_domains,
-        allow_unix_sockets,
+        unix_sockets,
         allow_local_binding,
     } = network;
 
@@ -358,21 +363,24 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
             "dangerously_allow_all_unix_sockets={dangerously_allow_all_unix_sockets}"
         ));
     }
-    if let Some(allowed_domains) = allowed_domains {
-        parts.push(format!("allowed_domains=[{}]", allowed_domains.join(", ")));
+    if let Some(domains) = domains {
+        parts.push(format!(
+            "domains={}",
+            format_network_permission_entries(&domains.entries, format_network_domain_permission)
+        ));
     }
     if let Some(managed_allowed_domains_only) = managed_allowed_domains_only {
         parts.push(format!(
             "managed_allowed_domains_only={managed_allowed_domains_only}"
         ));
     }
-    if let Some(denied_domains) = denied_domains {
-        parts.push(format!("denied_domains=[{}]", denied_domains.join(", ")));
-    }
-    if let Some(allow_unix_sockets) = allow_unix_sockets {
+    if let Some(unix_sockets) = unix_sockets {
         parts.push(format!(
-            "allow_unix_sockets=[{}]",
-            allow_unix_sockets.join(", ")
+            "unix_sockets={}",
+            format_network_permission_entries(
+                &unix_sockets.entries,
+                format_network_unix_socket_permission,
+            )
         ));
     }
     if let Some(allow_local_binding) = allow_local_binding {
@@ -380,6 +388,33 @@ fn format_network_constraints(network: &NetworkConstraints) -> String {
     }
 
     join_or_empty(parts)
+}
+
+fn format_network_permission_entries<T: Copy>(
+    entries: &std::collections::BTreeMap<String, T>,
+    format_value: impl Fn(T) -> &'static str,
+) -> String {
+    let parts = entries
+        .iter()
+        .map(|(key, value)| format!("{key}={}", format_value(*value)))
+        .collect::<Vec<_>>();
+    format!("{{{}}}", parts.join(", "))
+}
+
+fn format_network_domain_permission(permission: NetworkDomainPermissionToml) -> &'static str {
+    match permission {
+        NetworkDomainPermissionToml::Allow => "allow",
+        NetworkDomainPermissionToml::Deny => "deny",
+    }
+}
+
+fn format_network_unix_socket_permission(
+    permission: NetworkUnixSocketPermissionToml,
+) -> &'static str {
+    match permission {
+        NetworkUnixSocketPermissionToml::Allow => "allow",
+        NetworkUnixSocketPermissionToml::None => "none",
+    }
 }
 
 #[cfg(test)]
@@ -396,6 +431,10 @@ mod tests {
     use codex_core::config_loader::McpServerIdentity;
     use codex_core::config_loader::McpServerRequirement;
     use codex_core::config_loader::NetworkConstraints;
+    use codex_core::config_loader::NetworkDomainPermissionToml;
+    use codex_core::config_loader::NetworkDomainPermissionsToml;
+    use codex_core::config_loader::NetworkUnixSocketPermissionToml;
+    use codex_core::config_loader::NetworkUnixSocketPermissionsToml;
     use codex_core::config_loader::RequirementSource;
     use codex_core::config_loader::ResidencyRequirement;
     use codex_core::config_loader::SandboxModeRequirement;
@@ -464,11 +503,11 @@ mod tests {
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("(已启用)"));
-        assert!(rendered.contains("(已禁用)"));
-        assert!(rendered.contains("原因: project is untrusted"));
-        assert!(rendered.contains("约束："));
-        assert!(rendered.contains("  <无>"));
+        assert!(rendered.contains("(enabled)"));
+        assert!(rendered.contains("(disabled)"));
+        assert!(rendered.contains("reason: project is untrusted"));
+        assert!(rendered.contains("Requirements:"));
+        assert!(rendered.contains("  <none>"));
     }
 
     #[test]
@@ -512,7 +551,12 @@ mod tests {
             network: Some(Sourced::new(
                 NetworkConstraints {
                     enabled: Some(true),
-                    allowed_domains: Some(vec!["example.com".to_string()]),
+                    domains: Some(NetworkDomainPermissionsToml {
+                        entries: BTreeMap::from([(
+                            "example.com".to_string(),
+                            NetworkDomainPermissionToml::Allow,
+                        )]),
+                    }),
                     ..Default::default()
                 },
                 RequirementSource::CloudRequirements,
@@ -557,28 +601,64 @@ mod tests {
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_approval_policies: on-request（来源: cloud requirements）")
+            rendered.contains("allowed_approval_policies: on-request (source: cloud requirements)")
         );
         assert!(
             rendered.contains(
                 format!(
-                    "allowed_sandbox_modes: 只读（来源: {}）",
+                    "allowed_sandbox_modes: read-only (source: {})",
                     requirements_file.as_path().display()
                 )
                 .as_str(),
             )
         );
         assert!(
-            rendered
-                .contains("allowed_web_search_modes: cached, disabled（来源: cloud requirements）")
+            rendered.contains(
+                "allowed_web_search_modes: cached, disabled (source: cloud requirements)"
+            )
         );
-        assert!(rendered.contains("mcp_servers: docs（来源: MDM managed_config.toml (legacy)）"));
-        assert!(rendered.contains("enforce_residency: us（来源: cloud requirements）"));
+        assert!(rendered.contains("mcp_servers: docs (source: MDM managed_config.toml (legacy))"));
+        assert!(rendered.contains("enforce_residency: us (source: cloud requirements)"));
         assert!(rendered.contains(
-            "experimental_network: enabled=true, allowed_domains=[example.com]（来源: cloud requirements）"
+            "experimental_network: enabled=true, domains={example.com=allow} (source: cloud requirements)"
         ));
         assert!(!rendered.contains("  - rules:"));
     }
+
+    #[test]
+    fn debug_config_output_formats_unix_socket_permissions() {
+        let requirements = ConfigRequirements {
+            network: Some(Sourced::new(
+                NetworkConstraints {
+                    unix_sockets: Some(NetworkUnixSocketPermissionsToml {
+                        entries: BTreeMap::from([
+                            (
+                                "/tmp/codex.sock".to_string(),
+                                NetworkUnixSocketPermissionToml::Allow,
+                            ),
+                            (
+                                "/tmp/blocked.sock".to_string(),
+                                NetworkUnixSocketPermissionToml::None,
+                            ),
+                        ]),
+                    }),
+                    ..Default::default()
+                },
+                RequirementSource::CloudRequirements,
+            )),
+            ..ConfigRequirements::default()
+        };
+
+        let stack =
+            ConfigLayerStack::new(Vec::new(), requirements, ConfigRequirementsToml::default())
+                .expect("config layer stack");
+
+        let rendered = render_to_text(&render_debug_config_lines(&stack));
+        assert!(rendered.contains(
+            "experimental_network: unix_sockets={/tmp/blocked.sock=none, /tmp/codex.sock=allow} (source: cloud requirements)"
+        ));
+    }
+
     #[test]
     fn debug_config_output_lists_session_flag_key_value_pairs() {
         let session_flags = toml::from_str::<TomlValue>(
@@ -602,7 +682,7 @@ writable_roots = ["/tmp"]
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("会话参数 (已启用)"));
+        assert!(rendered.contains("session-flags (enabled)"));
         assert!(rendered.contains("     - model = \"gpt-5\""));
         assert!(rendered.contains("     - sandbox_workspace_write.network_access = true"));
         assert!(rendered.contains("sandbox_workspace_write.writable_roots"));
@@ -630,8 +710,8 @@ approval_policy = "never"
         .expect("config layer stack");
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
-        assert!(rendered.contains("旧版 managed_config.toml (MDM) (已启用)"));
-        assert!(rendered.contains("MDM 值:"));
+        assert!(rendered.contains("legacy managed_config.toml (MDM) (enabled)"));
+        assert!(rendered.contains("MDM value:"));
         assert!(rendered.contains("# managed by MDM"));
         assert!(rendered.contains("model = \"managed_model\""));
         assert!(rendered.contains("approval_policy = \"never\""));
@@ -665,14 +745,18 @@ approval_policy = "never"
 
         let rendered = render_to_text(&render_debug_config_lines(&stack));
         assert!(
-            rendered.contains("allowed_web_search_modes: disabled（来源: cloud requirements）")
+            rendered.contains("allowed_web_search_modes: disabled (source: cloud requirements)")
         );
     }
 
     #[test]
     fn session_all_proxy_url_uses_socks_when_enabled() {
         assert_eq!(
-            session_all_proxy_url("127.0.0.1:3128", "127.0.0.1:8081", true),
+            session_all_proxy_url(
+                "127.0.0.1:3128",
+                "127.0.0.1:8081",
+                /*socks_enabled*/ true
+            ),
             "socks5h://127.0.0.1:8081".to_string()
         );
     }
@@ -680,7 +764,11 @@ approval_policy = "never"
     #[test]
     fn session_all_proxy_url_uses_http_when_socks_disabled() {
         assert_eq!(
-            session_all_proxy_url("127.0.0.1:3128", "127.0.0.1:8081", false),
+            session_all_proxy_url(
+                "127.0.0.1:3128",
+                "127.0.0.1:8081",
+                /*socks_enabled*/ false
+            ),
             "http://127.0.0.1:3128".to_string()
         );
     }

@@ -6,7 +6,6 @@ use crate::render::Insets;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableExt as _;
-use crate::repo_urls::LATEST_RELEASE_NOTES_URL;
 use crate::selection_list::selection_option_row;
 use crate::tui::FrameRequester;
 use crate::tui::Tui;
@@ -192,7 +191,7 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push("");
         column.push(Line::from(vec![
             padded_emoji("  ✨").bold().cyan(),
-            "发现可用更新！".bold(),
+            "Update available!".bold(),
             " ".into(),
             format!(
                 "{current} -> {latest}",
@@ -204,33 +203,35 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push("");
         column.push(
             Line::from(vec![
-                "发行说明：".dim(),
-                LATEST_RELEASE_NOTES_URL.dim().underlined(),
+                "Release notes: ".dim(),
+                "https://github.com/openai/codex/releases/latest"
+                    .dim()
+                    .underlined(),
             ])
             .inset(Insets::tlbr(0, 2, 0, 0)),
         );
         column.push("");
         column.push(selection_option_row(
             0,
-            format!("立即更新（将运行 `{update_command}`）"),
+            format!("Update now (runs `{update_command}`)"),
             self.highlighted == UpdateSelection::UpdateNow,
         ));
         column.push(selection_option_row(
             1,
-            "跳过".to_string(),
+            "Skip".to_string(),
             self.highlighted == UpdateSelection::NotNow,
         ));
         column.push(selection_option_row(
             2,
-            "跳过直到下个版本".to_string(),
+            "Skip until next version".to_string(),
             self.highlighted == UpdateSelection::DontRemind,
         ));
         column.push("");
         column.push(
             Line::from(vec![
-                "按 ".dim(),
+                "Press ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
-                " 继续".dim(),
+                " to continue".dim(),
             ])
             .inset(Insets::tlbr(0, 2, 0, 0)),
         );

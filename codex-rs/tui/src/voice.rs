@@ -1,114 +1,33 @@
-use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
-use crate::audio_device::preferred_input_config;
-use crate::audio_device::select_configured_input_device_and_config;
 use base64::Engine;
-use codex_client::build_reqwest_client_with_custom_ca;
-use codex_core::auth::AuthCredentialsStoreMode;
 use codex_core::config::Config;
-use codex_core::config::find_codex_home;
-use codex_core::default_client::get_codex_user_agent;
-use codex_login::AuthMode;
-use codex_login::CodexAuth;
 use codex_protocol::protocol::ConversationAudioParams;
-use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RealtimeAudioFrame;
 use cpal::traits::DeviceTrait;
-use cpal::traits::HostTrait;
 use cpal::traits::StreamTrait;
-use hound::SampleFormat;
-use hound::WavSpec;
-use hound::WavWriter;
 use std::collections::VecDeque;
-use std::io::Cursor;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU16;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
-use std::time::Instant;
 use tracing::error;
-use tracing::info;
-use tracing::trace;
 
-const AUDIO_MODEL: &str = "gpt-4o-mini-transcribe";
 const MODEL_AUDIO_SAMPLE_RATE: u32 = 24_000;
 const MODEL_AUDIO_CHANNELS: u16 = 1;
-// While playback is buffered, ignore low-level mic input that is likely just
-// speaker echo. A user who starts talking over playback should cross this peak
-// threshold and reopen the gate.
-const REALTIME_INTERRUPT_INPUT_PEAK_THRESHOLD: u16 = 4_000;
-// After we decide an interruption is intentional, keep forwarding the next few
-// callbacks so trailing syllables are not chopped up between chunks.
-const REALTIME_INTERRUPT_GRACE_PERIOD: Duration = Duration::from_millis(900);
-
-#[derive(Clone)]
-pub(crate) enum RealtimeInputBehavior {
-    Ungated,
-    PlaybackAware {
-        playback_queued_samples: Arc<AtomicUsize>,
-    },
-}
-
-struct TranscriptionAuthContext {
-    mode: AuthMode,
-    bearer_token: String,
-    chatgpt_account_id: Option<String>,
-    chatgpt_base_url: String,
-}
-
-pub struct RecordedAudio {
-    pub data: Vec<i16>,
-    pub sample_rate: u32,
-    pub channels: u16,
-}
 
 pub struct VoiceCapture {
     stream: Option<cpal::Stream>,
-    sample_rate: u32,
-    channels: u16,
-    data: Arc<Mutex<Vec<i16>>>,
     stopped: Arc<AtomicBool>,
     last_peak: Arc<AtomicU16>,
 }
 
 impl VoiceCapture {
-    pub fn start() -> Result<Self, String> {
-        let (device, config) = select_default_input_device_and_config()?;
+    pub fn start_realtime(config: &Config, tx: AppEventSender) -> Result<Self, String> {
+        let (device, config) = select_realtime_input_device_and_config(config)?;
 
         let sample_rate = config.sample_rate().0;
         let channels = config.channels();
-        let data: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::new()));
-        let stopped = Arc::new(AtomicBool::new(false));
-        let last_peak = Arc::new(AtomicU16::new(0));
-
-        let stream = build_input_stream(&device, &config, data.clone(), last_peak.clone())?;
-        stream
-            .play()
-            .map_err(|e| format!("启动音频输入流失败：{e}"))?;
-
-        Ok(Self {
-            stream: Some(stream),
-            sample_rate,
-            channels,
-            data,
-            stopped,
-            last_peak,
-        })
-    }
-
-    pub fn start_realtime(
-        config: &Config,
-        tx: AppEventSender,
-        input_behavior: RealtimeInputBehavior,
-    ) -> Result<Self, String> {
-        let (device, config) = select_configured_input_device_and_config(config)?;
-
-        let sample_rate = config.sample_rate().0;
-        let channels = config.channels();
-        let data: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::new()));
         let stopped = Arc::new(AtomicBool::new(false));
         let last_peak = Arc::new(AtomicU16::new(0));
 
@@ -118,54 +37,28 @@ impl VoiceCapture {
             sample_rate,
             channels,
             tx,
-            input_behavior,
             last_peak.clone(),
         )?;
         stream
             .play()
-            .map_err(|e| format!("启动音频输入流失败：{e}"))?;
+            .map_err(|e| format!("failed to start input stream: {e}"))?;
 
         Ok(Self {
             stream: Some(stream),
-            sample_rate,
-            channels,
-            data,
             stopped,
             last_peak,
         })
     }
 
-    pub fn stop(mut self) -> Result<RecordedAudio, String> {
+    pub fn stop(mut self) {
         // Mark stopped so any metering task can exit cleanly.
         self.stopped.store(true, Ordering::SeqCst);
         // Dropping the stream stops capture.
         self.stream.take();
-        let data = self
-            .data
-            .lock()
-            .map_err(|_| "音频缓冲区锁定失败".to_string())?
-            .clone();
-        Ok(RecordedAudio {
-            data,
-            sample_rate: self.sample_rate,
-            channels: self.channels,
-        })
-    }
-
-    pub fn data_arc(&self) -> Arc<Mutex<Vec<i16>>> {
-        self.data.clone()
     }
 
     pub fn stopped_flag(&self) -> Arc<AtomicBool> {
         self.stopped.clone()
-    }
-
-    pub fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
-    pub fn channels(&self) -> u16 {
-        self.channels
     }
 
     pub fn last_peak_arc(&self) -> Arc<AtomicU16> {
@@ -232,80 +125,22 @@ impl RecordingMeterState {
     }
 }
 
-pub fn transcribe_async(
-    id: String,
-    audio: RecordedAudio,
-    context: Option<String>,
-    tx: AppEventSender,
-) {
-    std::thread::spawn(move || {
-        // Enforce minimum duration to avoid garbage outputs.
-        const MIN_DURATION_SECONDS: f32 = 1.0;
-        let duration_seconds = clip_duration_seconds(&audio);
-        if duration_seconds < MIN_DURATION_SECONDS {
-            let msg = format!(
-                "录音过短（{duration_seconds:.2} 秒）；至少需要 {MIN_DURATION_SECONDS:.2} 秒"
-            );
-            info!("{msg}");
-            tx.send(AppEvent::TranscriptionFailed { id, error: msg });
-            return;
-        }
-
-        // Encode entire clip as normalized WAV.
-        let wav_bytes = match encode_wav_normalized(&audio) {
-            Ok(b) => b,
-            Err(e) => {
-                error!("failed to encode wav: {e}");
-                tx.send(AppEvent::TranscriptionFailed { id, error: e });
-                return;
-            }
-        };
-
-        // Run the HTTP request on a small, dedicated runtime.
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(rt) => rt,
-            Err(e) => {
-                error!("failed to create tokio runtime: {e}");
-                return;
-            }
-        };
-
-        let tx2 = tx.clone();
-        let id2 = id.clone();
-        let res: Result<String, String> = rt
-            .block_on(async move { transcribe_bytes(wav_bytes, context, duration_seconds).await });
-
-        match res {
-            Ok(text) => {
-                tx2.send(AppEvent::TranscriptionComplete { id: id2, text });
-                info!("voice transcription succeeded");
-            }
-            Err(e) => {
-                error!("voice transcription error: {e}");
-                tx.send(AppEvent::TranscriptionFailed { id, error: e });
-            }
-        }
-    });
-}
-
 // -------------------------
 // Voice input helpers
 // -------------------------
 
-fn select_default_input_device_and_config()
--> Result<(cpal::Device, cpal::SupportedStreamConfig), String> {
-    let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "当前没有可用的音频输入设备".to_string())?;
-    let config = preferred_input_config(&device)?;
-    Ok((device, config))
+fn select_realtime_input_device_and_config(
+    config: &Config,
+) -> Result<(cpal::Device, cpal::SupportedStreamConfig), String> {
+    crate::audio_device::select_configured_input_device_and_config(config)
 }
 
-fn build_input_stream(
+fn build_realtime_input_stream(
     device: &cpal::Device,
     config: &cpal::SupportedStreamConfig,
-    data: Arc<Mutex<Vec<i16>>>,
+    sample_rate: u32,
+    channels: u16,
+    tx: AppEventSender,
     last_peak: Arc<AtomicU16>,
 ) -> Result<cpal::Stream, String> {
     match config.sample_format() {
@@ -315,135 +150,39 @@ fn build_input_stream(
                 move |input: &[f32], _| {
                     let peak = peak_f32(input);
                     last_peak.store(peak, Ordering::Relaxed);
-                    if let Ok(mut buf) = data.lock() {
-                        for &s in input {
-                            buf.push(f32_to_i16(s));
-                        }
-                    }
+                    let samples = input.iter().copied().map(f32_to_i16).collect::<Vec<_>>();
+                    send_realtime_audio_chunk(&tx, samples, sample_rate, channels);
                 },
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("构建输入流失败：{e}")),
+            .map_err(|e| format!("failed to build input stream: {e}")),
         cpal::SampleFormat::I16 => device
             .build_input_stream(
                 &config.clone().into(),
                 move |input: &[i16], _| {
                     let peak = peak_i16(input);
                     last_peak.store(peak, Ordering::Relaxed);
-                    if let Ok(mut buf) = data.lock() {
-                        buf.extend_from_slice(input);
-                    }
+                    send_realtime_audio_chunk(&tx, input.to_vec(), sample_rate, channels);
                 },
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("构建输入流失败：{e}")),
+            .map_err(|e| format!("failed to build input stream: {e}")),
         cpal::SampleFormat::U16 => device
             .build_input_stream(
                 &config.clone().into(),
                 move |input: &[u16], _| {
-                    if let Ok(mut buf) = data.lock() {
-                        let peak = convert_u16_to_i16_and_peak(input, &mut buf);
-                        last_peak.store(peak, Ordering::Relaxed);
-                    }
+                    let mut samples = Vec::with_capacity(input.len());
+                    let peak = convert_u16_to_i16_and_peak(input, &mut samples);
+                    last_peak.store(peak, Ordering::Relaxed);
+                    send_realtime_audio_chunk(&tx, samples, sample_rate, channels);
                 },
                 move |err| error!("audio input error: {err}"),
                 None,
             )
-            .map_err(|e| format!("构建输入流失败：{e}")),
-        _ => Err("不支持的输入采样格式".to_string()),
-    }
-}
-
-fn build_realtime_input_stream(
-    device: &cpal::Device,
-    config: &cpal::SupportedStreamConfig,
-    sample_rate: u32,
-    channels: u16,
-    tx: AppEventSender,
-    input_behavior: RealtimeInputBehavior,
-    last_peak: Arc<AtomicU16>,
-) -> Result<cpal::Stream, String> {
-    match config.sample_format() {
-        cpal::SampleFormat::F32 => device
-            .build_input_stream(
-                &config.clone().into(),
-                {
-                    let last_peak = Arc::clone(&last_peak);
-                    let tx = tx;
-                    let mut allow_input_until = None;
-                    move |input: &[f32], _| {
-                        let peak = peak_f32(input);
-                        if !should_send_realtime_input(
-                            peak,
-                            &input_behavior,
-                            &mut allow_input_until,
-                        ) {
-                            last_peak.store(0, Ordering::Relaxed);
-                            return;
-                        }
-                        last_peak.store(peak, Ordering::Relaxed);
-                        let samples = input.iter().copied().map(f32_to_i16).collect::<Vec<_>>();
-                        send_realtime_audio_chunk(&tx, samples, sample_rate, channels);
-                    }
-                },
-                move |err| error!("audio input error: {err}"),
-                None,
-            )
-            .map_err(|e| format!("构建输入流失败：{e}")),
-        cpal::SampleFormat::I16 => device
-            .build_input_stream(
-                &config.clone().into(),
-                {
-                    let last_peak = Arc::clone(&last_peak);
-                    let tx = tx;
-                    let mut allow_input_until = None;
-                    move |input: &[i16], _| {
-                        let peak = peak_i16(input);
-                        if !should_send_realtime_input(
-                            peak,
-                            &input_behavior,
-                            &mut allow_input_until,
-                        ) {
-                            last_peak.store(0, Ordering::Relaxed);
-                            return;
-                        }
-                        last_peak.store(peak, Ordering::Relaxed);
-                        send_realtime_audio_chunk(&tx, input.to_vec(), sample_rate, channels);
-                    }
-                },
-                move |err| error!("audio input error: {err}"),
-                None,
-            )
-            .map_err(|e| format!("构建输入流失败：{e}")),
-        cpal::SampleFormat::U16 => device
-            .build_input_stream(
-                &config.clone().into(),
-                {
-                    let last_peak = Arc::clone(&last_peak);
-                    let tx = tx;
-                    let mut allow_input_until = None;
-                    move |input: &[u16], _| {
-                        let mut samples = Vec::with_capacity(input.len());
-                        let peak = convert_u16_to_i16_and_peak(input, &mut samples);
-                        if !should_send_realtime_input(
-                            peak,
-                            &input_behavior,
-                            &mut allow_input_until,
-                        ) {
-                            last_peak.store(0, Ordering::Relaxed);
-                            return;
-                        }
-                        last_peak.store(peak, Ordering::Relaxed);
-                        send_realtime_audio_chunk(&tx, samples, sample_rate, channels);
-                    }
-                },
-                move |err| error!("audio input error: {err}"),
-                None,
-            )
-            .map_err(|e| format!("构建输入流失败：{e}")),
-        _ => Err("不支持的输入采样格式".to_string()),
+            .map_err(|e| format!("failed to build input stream: {e}")),
+        _ => Err("unsupported input sample format".to_string()),
     }
 }
 
@@ -480,17 +219,15 @@ fn send_realtime_audio_chunk(
     let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
     let samples_per_channel = (samples.len() / usize::from(MODEL_AUDIO_CHANNELS)) as u32;
 
-    tx.send(AppEvent::CodexOp(Op::RealtimeConversationAudio(
-        ConversationAudioParams {
-            frame: RealtimeAudioFrame {
-                data: encoded,
-                sample_rate: MODEL_AUDIO_SAMPLE_RATE,
-                num_channels: MODEL_AUDIO_CHANNELS,
-                samples_per_channel: Some(samples_per_channel),
-                item_id: None,
-            },
+    tx.realtime_conversation_audio(ConversationAudioParams {
+        frame: RealtimeAudioFrame {
+            data: encoded,
+            sample_rate: MODEL_AUDIO_SAMPLE_RATE,
+            num_channels: MODEL_AUDIO_CHANNELS,
+            samples_per_channel: Some(samples_per_channel),
+            item_id: None,
         },
-    )));
+    });
 }
 
 #[inline]
@@ -546,31 +283,24 @@ fn convert_u16_to_i16_and_peak(input: &[u16], out: &mut Vec<i16>) -> u16 {
 pub(crate) struct RealtimeAudioPlayer {
     _stream: cpal::Stream,
     queue: Arc<Mutex<VecDeque<i16>>>,
-    // Mirror the queue depth without locking so the input callback can cheaply
-    // tell whether playback is still draining.
-    queued_samples: Arc<AtomicUsize>,
     output_sample_rate: u32,
     output_channels: u16,
 }
 
 impl RealtimeAudioPlayer {
-    pub(crate) fn start(config: &Config, queued_samples: Arc<AtomicUsize>) -> Result<Self, String> {
+    pub(crate) fn start(config: &Config) -> Result<Self, String> {
         let (device, config) =
             crate::audio_device::select_configured_output_device_and_config(config)?;
         let output_sample_rate = config.sample_rate().0;
         let output_channels = config.channels();
         let queue = Arc::new(Mutex::new(VecDeque::new()));
-        let stream = build_output_stream(
-            &device,
-            &config,
-            Arc::clone(&queue),
-            Arc::clone(&queued_samples),
-        )?;
-        stream.play().map_err(|e| format!("启动输出流失败：{e}"))?;
+        let stream = build_output_stream(&device, &config, Arc::clone(&queue))?;
+        stream
+            .play()
+            .map_err(|e| format!("failed to start output stream: {e}"))?;
         Ok(Self {
             _stream: stream,
             queue,
-            queued_samples,
             output_sample_rate,
             output_channels,
         })
@@ -578,13 +308,13 @@ impl RealtimeAudioPlayer {
 
     pub(crate) fn enqueue_frame(&self, frame: &RealtimeAudioFrame) -> Result<(), String> {
         if frame.num_channels == 0 || frame.sample_rate == 0 {
-            return Err("实时音频帧格式无效".to_string());
+            return Err("invalid realtime audio frame format".to_string());
         }
         let raw_bytes = base64::engine::general_purpose::STANDARD
             .decode(&frame.data)
-            .map_err(|e| format!("解码实时音频失败：{e}"))?;
+            .map_err(|e| format!("failed to decode realtime audio: {e}"))?;
         if raw_bytes.len() % 2 != 0 {
-            return Err("实时音频帧字节长度不是偶数".to_string());
+            return Err("realtime audio frame had odd byte length".to_string());
         }
         let mut pcm = Vec::with_capacity(raw_bytes.len() / 2);
         for pair in raw_bytes.chunks_exact(2) {
@@ -603,19 +333,14 @@ impl RealtimeAudioPlayer {
         let mut guard = self
             .queue
             .lock()
-            .map_err(|_| "音频输出队列锁定失败".to_string())?;
+            .map_err(|_| "failed to lock output audio queue".to_string())?;
         // TODO(aibrahim): Cap or trim this queue if we observe producer bursts outrunning playback.
-        // Keep the atomic in sync with the buffered PCM so capture can treat any
-        // queued output as active playback even before the audio callback drains it.
-        self.queued_samples
-            .fetch_add(converted.len(), Ordering::Relaxed);
         guard.extend(converted);
         Ok(())
     }
 
     pub(crate) fn clear(&self) {
         if let Ok(mut guard) = self.queue.lock() {
-            self.queued_samples.store(0, Ordering::Relaxed);
             guard.clear();
         }
     }
@@ -625,153 +350,67 @@ fn build_output_stream(
     device: &cpal::Device,
     config: &cpal::SupportedStreamConfig,
     queue: Arc<Mutex<VecDeque<i16>>>,
-    queued_samples: Arc<AtomicUsize>,
 ) -> Result<cpal::Stream, String> {
     let config_any: cpal::StreamConfig = config.clone().into();
     match config.sample_format() {
         cpal::SampleFormat::F32 => device
             .build_output_stream(
                 &config_any,
-                move |output: &mut [f32], _| fill_output_f32(output, &queue, &queued_samples),
+                move |output: &mut [f32], _| fill_output_f32(output, &queue),
                 move |err| error!("audio output error: {err}"),
                 None,
             )
-            .map_err(|e| format!("构建 f32 输出流失败：{e}")),
+            .map_err(|e| format!("failed to build f32 output stream: {e}")),
         cpal::SampleFormat::I16 => device
             .build_output_stream(
                 &config_any,
-                move |output: &mut [i16], _| fill_output_i16(output, &queue, &queued_samples),
+                move |output: &mut [i16], _| fill_output_i16(output, &queue),
                 move |err| error!("audio output error: {err}"),
                 None,
             )
-            .map_err(|e| format!("构建 i16 输出流失败：{e}")),
+            .map_err(|e| format!("failed to build i16 output stream: {e}")),
         cpal::SampleFormat::U16 => device
             .build_output_stream(
                 &config_any,
-                move |output: &mut [u16], _| fill_output_u16(output, &queue, &queued_samples),
+                move |output: &mut [u16], _| fill_output_u16(output, &queue),
                 move |err| error!("audio output error: {err}"),
                 None,
             )
-            .map_err(|e| format!("构建 u16 输出流失败：{e}")),
-        other => Err(format!("不支持的输出采样格式：{other:?}")),
+            .map_err(|e| format!("failed to build u16 output stream: {e}")),
+        other => Err(format!("unsupported output sample format: {other:?}")),
     }
 }
 
-fn fill_output_i16(
-    output: &mut [i16],
-    queue: &Arc<Mutex<VecDeque<i16>>>,
-    queued_samples: &Arc<AtomicUsize>,
-) {
+fn fill_output_i16(output: &mut [i16], queue: &Arc<Mutex<VecDeque<i16>>>) {
     if let Ok(mut guard) = queue.lock() {
-        let mut consumed = 0usize;
         for sample in output {
-            *sample = if let Some(next) = guard.pop_front() {
-                consumed += 1;
-                next
-            } else {
-                0
-            };
-        }
-        if consumed > 0 {
-            let _ = queued_samples.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |queued| {
-                Some(queued.saturating_sub(consumed))
-            });
+            *sample = guard.pop_front().unwrap_or(0);
         }
         return;
     }
     output.fill(0);
 }
 
-fn fill_output_f32(
-    output: &mut [f32],
-    queue: &Arc<Mutex<VecDeque<i16>>>,
-    queued_samples: &Arc<AtomicUsize>,
-) {
+fn fill_output_f32(output: &mut [f32], queue: &Arc<Mutex<VecDeque<i16>>>) {
     if let Ok(mut guard) = queue.lock() {
-        let mut consumed = 0usize;
         for sample in output {
-            let v = if let Some(next) = guard.pop_front() {
-                consumed += 1;
-                next
-            } else {
-                0
-            };
+            let v = guard.pop_front().unwrap_or(0);
             *sample = (v as f32) / (i16::MAX as f32);
-        }
-        if consumed > 0 {
-            let _ = queued_samples.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |queued| {
-                Some(queued.saturating_sub(consumed))
-            });
         }
         return;
     }
     output.fill(0.0);
 }
 
-fn fill_output_u16(
-    output: &mut [u16],
-    queue: &Arc<Mutex<VecDeque<i16>>>,
-    queued_samples: &Arc<AtomicUsize>,
-) {
+fn fill_output_u16(output: &mut [u16], queue: &Arc<Mutex<VecDeque<i16>>>) {
     if let Ok(mut guard) = queue.lock() {
-        let mut consumed = 0usize;
         for sample in output {
-            let v = if let Some(next) = guard.pop_front() {
-                consumed += 1;
-                next
-            } else {
-                0
-            };
+            let v = guard.pop_front().unwrap_or(0);
             *sample = (v as i32 + 32768).clamp(0, u16::MAX as i32) as u16;
-        }
-        if consumed > 0 {
-            let _ = queued_samples.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |queued| {
-                Some(queued.saturating_sub(consumed))
-            });
         }
         return;
     }
     output.fill(32768);
-}
-
-/// Block quiet mic chunks while assistant playback is still buffered, but once a
-/// real interruption is detected keep forwarding input briefly so the full
-/// utterance reaches the server.
-fn should_send_realtime_input(
-    peak: u16,
-    input_behavior: &RealtimeInputBehavior,
-    allow_input_until: &mut Option<Instant>,
-) -> bool {
-    let playback_queued_samples = match input_behavior {
-        RealtimeInputBehavior::Ungated => {
-            *allow_input_until = None;
-            return true;
-        }
-        RealtimeInputBehavior::PlaybackAware {
-            playback_queued_samples,
-        } => playback_queued_samples,
-    };
-
-    let now = Instant::now();
-
-    if playback_queued_samples.load(Ordering::Relaxed) == 0 {
-        *allow_input_until = None;
-        return true;
-    }
-
-    if let Some(deadline) = *allow_input_until {
-        if now < deadline {
-            return true;
-        }
-        *allow_input_until = None;
-    }
-
-    if peak >= REALTIME_INTERRUPT_INPUT_PEAK_THRESHOLD {
-        *allow_input_until = Some(now + REALTIME_INTERRUPT_GRACE_PERIOD);
-        return true;
-    }
-
-    false
 }
 
 fn convert_pcm16(
@@ -833,278 +472,18 @@ fn convert_pcm16(
     out
 }
 
-// -------------------------
-// Transcription helpers
-// -------------------------
-
-fn clip_duration_seconds(audio: &RecordedAudio) -> f32 {
-    let total_samples = audio.data.len() as f32;
-    let samples_per_second = (audio.sample_rate as f32) * (audio.channels as f32);
-    if samples_per_second > 0.0 {
-        total_samples / samples_per_second
-    } else {
-        0.0
-    }
-}
-
-fn encode_wav_normalized(audio: &RecordedAudio) -> Result<Vec<u8>, String> {
-    let converted;
-    let (channels, sample_rate, segment) =
-        if audio.channels == MODEL_AUDIO_CHANNELS && audio.sample_rate == MODEL_AUDIO_SAMPLE_RATE {
-            (audio.channels, audio.sample_rate, audio.data.as_slice())
-        } else {
-            converted = convert_pcm16(
-                &audio.data,
-                audio.sample_rate,
-                audio.channels,
-                MODEL_AUDIO_SAMPLE_RATE,
-                MODEL_AUDIO_CHANNELS,
-            );
-            (
-                MODEL_AUDIO_CHANNELS,
-                MODEL_AUDIO_SAMPLE_RATE,
-                converted.as_slice(),
-            )
-        };
-
-    let mut wav_bytes: Vec<u8> = Vec::new();
-    let spec = WavSpec {
-        channels,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: SampleFormat::Int,
-    };
-    let mut cursor = Cursor::new(&mut wav_bytes);
-    let mut writer =
-        WavWriter::new(&mut cursor, spec).map_err(|_| "创建 wav 写入器失败".to_string())?;
-
-    // Simple peak normalization with headroom to improve audibility on quiet inputs.
-    let mut peak: i16 = 0;
-    for &s in segment {
-        let a = s.unsigned_abs();
-        if a > peak.unsigned_abs() {
-            peak = s;
-        }
-    }
-    let peak_abs = (peak as i32).unsigned_abs() as i32;
-    let target = (i16::MAX as f32) * 0.9; // leave some headroom
-    let gain: f32 = if peak_abs > 0 {
-        target / (peak_abs as f32)
-    } else {
-        1.0
-    };
-
-    for &s in segment {
-        let v = ((s as f32) * gain)
-            .round()
-            .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
-        writer
-            .write_sample(v)
-            .map_err(|_| "写入 wav 样本失败".to_string())?;
-    }
-    writer
-        .finalize()
-        .map_err(|_| "完成 wav 文件失败".to_string())?;
-    Ok(wav_bytes)
-}
-
-fn normalize_chatgpt_base_url(input: &str) -> String {
-    let mut base_url = input.to_string();
-    while base_url.ends_with('/') {
-        base_url.pop();
-    }
-    if (base_url.starts_with("https://chatgpt.com")
-        || base_url.starts_with("https://chat.openai.com"))
-        && !base_url.contains("/backend-api")
-    {
-        base_url = format!("{base_url}/backend-api");
-    }
-    base_url
-}
-
-async fn resolve_auth() -> Result<TranscriptionAuthContext, String> {
-    let codex_home = find_codex_home().map_err(|e| format!("查找 Codex 目录失败：{e}"))?;
-    let auth = CodexAuth::from_auth_storage(&codex_home, AuthCredentialsStoreMode::Auto)
-        .map_err(|e| format!("读取 auth.json 失败：{e}"))?
-        .ok_or_else(|| "尚未配置 Codex 登录；请先运行 `codex login`".to_string())?;
-
-    let chatgpt_account_id = auth.get_account_id();
-
-    let token = auth
-        .get_token()
-        .map_err(|e| format!("获取认证 token 失败：{e}"))?;
-    let config = Config::load_with_cli_overrides(Vec::new())
-        .await
-        .map_err(|e| format!("加载配置失败：{e}"))?;
-    Ok(TranscriptionAuthContext {
-        mode: auth.api_auth_mode(),
-        bearer_token: token,
-        chatgpt_account_id,
-        chatgpt_base_url: normalize_chatgpt_base_url(&config.chatgpt_base_url),
-    })
-}
-
-async fn transcribe_bytes(
-    wav_bytes: Vec<u8>,
-    context: Option<String>,
-    duration_seconds: f32,
-) -> Result<String, String> {
-    let auth = resolve_auth().await?;
-    let client = build_reqwest_client_with_custom_ca(reqwest::Client::builder())
-        .map_err(|error| format!("构建转录 HTTP 客户端失败：{error}"))?;
-    let audio_bytes = wav_bytes.len();
-    let prompt_for_log = context.as_deref().unwrap_or("").to_string();
-    let (endpoint, request) =
-        if matches!(auth.mode, AuthMode::Chatgpt | AuthMode::ChatgptAuthTokens) {
-            let part = reqwest::multipart::Part::bytes(wav_bytes)
-                .file_name("audio.wav")
-                .mime_str("audio/wav")
-                .map_err(|e| format!("设置 MIME 类型失败：{e}"))?;
-            let form = reqwest::multipart::Form::new().part("file", part);
-            let endpoint = format!("{}/transcribe", auth.chatgpt_base_url);
-            let mut req = client
-                .post(&endpoint)
-                .bearer_auth(&auth.bearer_token)
-                .multipart(form)
-                .header("User-Agent", get_codex_user_agent());
-            if let Some(acc) = auth.chatgpt_account_id {
-                req = req.header("ChatGPT-Account-Id", acc);
-            }
-            (endpoint, req)
-        } else {
-            let part = reqwest::multipart::Part::bytes(wav_bytes)
-                .file_name("audio.wav")
-                .mime_str("audio/wav")
-                .map_err(|e| format!("设置 MIME 类型失败：{e}"))?;
-            let mut form = reqwest::multipart::Form::new()
-                .text("model", AUDIO_MODEL)
-                .part("file", part);
-            if let Some(context) = context {
-                form = form.text("prompt", context);
-            }
-            let endpoint = "https://api.openai.com/v1/audio/transcriptions".to_string();
-            (
-                endpoint,
-                client
-                    .post("https://api.openai.com/v1/audio/transcriptions")
-                    .bearer_auth(&auth.bearer_token)
-                    .multipart(form)
-                    .header("User-Agent", get_codex_user_agent()),
-            )
-        };
-
-    let audio_kib = audio_bytes as f32 / 1024.0;
-    let mode = auth.mode;
-    trace!(
-        "sending transcription request: mode={mode:?} endpoint={endpoint} duration={duration_seconds:.2}s audio={audio_kib:.1}KiB prompt={prompt_for_log}"
-    );
-
-    let resp = request
-        .send()
-        .await
-        .map_err(|e| format!("转录请求失败：{e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .unwrap_or_else(|_| "<读取正文失败>".to_string());
-        return Err(format!("转录失败：{status} {body}"));
-    }
-
-    let v: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("解析 JSON 失败：{e}"))?;
-    let text = v
-        .get("text")
-        .and_then(|t| t.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    if text.is_empty() {
-        Err("转录结果为空".to_string())
-    } else {
-        Ok(text)
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::RealtimeInputBehavior;
-    use super::RecordedAudio;
     use super::convert_pcm16;
-    use super::encode_wav_normalized;
-    use super::should_send_realtime_input;
     use pretty_assertions::assert_eq;
-    use std::io::Cursor;
-    use std::sync::Arc;
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-    use std::time::Instant;
 
     #[test]
     fn convert_pcm16_downmixes_and_resamples_for_model_input() {
         let input = vec![100, 300, 200, 400, 500, 700, 600, 800];
-        let converted = convert_pcm16(&input, 48_000, 2, 24_000, 1);
+        let converted = convert_pcm16(
+            &input, /*input_sample_rate*/ 48_000, /*input_channels*/ 2,
+            /*output_sample_rate*/ 24_000, /*output_channels*/ 1,
+        );
         assert_eq!(converted, vec![200, 700]);
-    }
-
-    #[test]
-    fn encode_wav_normalized_outputs_24khz_mono_audio() {
-        let audio = RecordedAudio {
-            data: vec![100, 300, 200, 400, 500, 700, 600, 800],
-            sample_rate: 48_000,
-            channels: 2,
-        };
-
-        let wav = encode_wav_normalized(&audio).expect("wav should encode");
-        let reader = hound::WavReader::new(Cursor::new(wav)).expect("wav should parse");
-        let spec = reader.spec();
-        let samples = reader
-            .into_samples::<i16>()
-            .collect::<Result<Vec<_>, _>>()
-            .expect("samples should decode");
-
-        assert_eq!(spec.channels, 1);
-        assert_eq!(spec.sample_rate, 24_000);
-        assert_eq!(samples, vec![8_426, 29_490]);
-    }
-
-    #[test]
-    fn ungated_realtime_input_ignores_playback_backlog() {
-        let mut allow_input_until = Some(Instant::now() + Duration::from_secs(1));
-        let playback_queued_samples = Arc::new(AtomicUsize::new(1024));
-
-        assert!(should_send_realtime_input(
-            0,
-            &RealtimeInputBehavior::Ungated,
-            &mut allow_input_until,
-        ));
-        assert_eq!(allow_input_until, None);
-        assert_eq!(playback_queued_samples.load(Ordering::Relaxed), 1024);
-    }
-
-    #[test]
-    fn playback_aware_realtime_input_requires_an_interrupt_peak() {
-        let mut allow_input_until = None;
-        let playback_queued_samples = Arc::new(AtomicUsize::new(1024));
-        let input_behavior = RealtimeInputBehavior::PlaybackAware {
-            playback_queued_samples: Arc::clone(&playback_queued_samples),
-        };
-
-        assert!(!should_send_realtime_input(
-            100,
-            &input_behavior,
-            &mut allow_input_until,
-        ));
-        assert!(should_send_realtime_input(
-            5_000,
-            &input_behavior,
-            &mut allow_input_until,
-        ));
-        assert!(allow_input_until.is_some());
     }
 }

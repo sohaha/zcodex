@@ -8,11 +8,11 @@ expression: "render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72))
 
   Plan and reference events from your calendar
 
-  请 先 在 浏 览 器 中 安 装 此 应 用 ， 然 后 回 到 这 里 。
-  新 安 装 的 应 用 可 能 需 要 几 分 钟 后 才 会 出 现 在  /apps 中 。
-  安 装 后 ， 使 用  $ 将 此 应 用 插 入 提 示 词 。
+  Install this app in your browser, then return here.
+  Newly installed apps can take a few minutes to appear in /apps.
+  After installed, use $ to insert this app into the prompt.
 
 
-  › 1. 在  ChatGPT 中 安 装
-    2. 返 回
-  使 用  tab / ↑ ↓ 移 动 ， enter 选 择 ， esc 关 闭
+  › 1. Install on ChatGPT
+    2. Back
+  Use tab / ↑ ↓ to move, enter to select, esc to close

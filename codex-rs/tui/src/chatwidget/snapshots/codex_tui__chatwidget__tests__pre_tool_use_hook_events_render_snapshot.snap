@@ -2,8 +2,8 @@
 source: tui/src/chatwidget/tests.rs
 expression: combined
 ---
-• 正在运行 调用工具前 钩子: 正在预热 shell
+• Running PreToolUse hook: warming the shell
 
-调用工具前 钩子（已完成）
-  警告：来自钩子的提示
-  钩子上下文：请记住启动检查清单。
+PreToolUse hook (completed)
+  warning: Heads up from the hook
+  hook context: Remember the startup checklist.

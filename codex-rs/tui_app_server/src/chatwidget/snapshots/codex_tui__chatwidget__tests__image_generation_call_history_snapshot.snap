@@ -1,7 +1,0 @@
----
-source: tui/src/chatwidget/tests.rs
-expression: combined
----
-• 生成图片：
-  └ A tiny blue square
-  └ 保存到：file:///tmp/ig-1.png

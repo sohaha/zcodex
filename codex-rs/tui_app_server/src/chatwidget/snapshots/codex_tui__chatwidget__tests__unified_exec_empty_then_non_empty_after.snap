@@ -1,8 +1,0 @@
----
-source: tui/src/chatwidget/tests.rs
-expression: combined
----
-• 等待后台终端 · just fix
-
-↳ 与后台终端交互 · just fix
-  └ ls

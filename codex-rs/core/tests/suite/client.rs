@@ -1,5 +1,7 @@
+use codex_core::AuthManager;
 use codex_core::CodexAuth;
 use codex_core::ModelClient;
+use codex_core::ModelProviderAuthInfo;
 use codex_core::ModelProviderInfo;
 use codex_core::NewThread;
 use codex_core::Prompt;
@@ -64,6 +66,7 @@ use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::io::Write;
+use std::num::NonZeroU64;
 use std::sync::Arc;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -142,6 +145,95 @@ fn write_auth_json(
     .unwrap();
 
     fake_jwt
+}
+
+struct ProviderAuthCommandFixture {
+    tempdir: TempDir,
+    command: String,
+    args: Vec<String>,
+}
+
+impl ProviderAuthCommandFixture {
+    fn new(tokens: &[&str]) -> std::io::Result<Self> {
+        let tempdir = tempfile::tempdir()?;
+        let tokens_file = tempdir.path().join("tokens.txt");
+        let mut token_file_contents = String::new();
+        for token in tokens {
+            token_file_contents.push_str(token);
+            token_file_contents.push('\n');
+        }
+        std::fs::write(&tokens_file, token_file_contents)?;
+
+        #[cfg(unix)]
+        let (command, args) = {
+            let script_path = tempdir.path().join("print-token.sh");
+            std::fs::write(
+                &script_path,
+                r#"#!/bin/sh
+first_line=$(sed -n '1p' tokens.txt)
+printf '%s\n' "$first_line"
+tail -n +2 tokens.txt > tokens.next
+mv tokens.next tokens.txt
+"#,
+            )?;
+            let mut permissions = std::fs::metadata(&script_path)?.permissions();
+            {
+                use std::os::unix::fs::PermissionsExt;
+                permissions.set_mode(0o755);
+            }
+            std::fs::set_permissions(&script_path, permissions)?;
+            ("./print-token.sh".to_string(), Vec::new())
+        };
+
+        #[cfg(windows)]
+        let (command, args) = {
+            let script_path = tempdir.path().join("print-token.ps1");
+            std::fs::write(
+                &script_path,
+                r#"$lines = @(Get-Content -Path tokens.txt)
+if ($lines.Count -eq 0) { exit 1 }
+Write-Output $lines[0]
+$lines | Select-Object -Skip 1 | Set-Content -Path tokens.txt
+"#,
+            )?;
+            (
+                "powershell".to_string(),
+                vec![
+                    "-NoProfile".to_string(),
+                    "-ExecutionPolicy".to_string(),
+                    "Bypass".to_string(),
+                    "-File".to_string(),
+                    ".\\print-token.ps1".to_string(),
+                ],
+            )
+        };
+
+        Ok(Self {
+            tempdir,
+            command,
+            args,
+        })
+    }
+
+    fn auth(&self) -> ModelProviderAuthInfo {
+        ModelProviderAuthInfo {
+            command: self.command.clone(),
+            args: self.args.clone(),
+            timeout_ms: non_zero_u64(/*value*/ 1_000),
+            refresh_interval_ms: non_zero_u64(/*value*/ 60_000),
+            cwd: match codex_utils_absolute_path::AbsolutePathBuf::try_from(self.tempdir.path()) {
+                Ok(cwd) => cwd,
+                Err(err) => panic!("tempdir should be absolute: {err}"),
+            },
+        }
+    }
+}
+
+fn non_zero_u64(value: u64) -> NonZeroU64 {
+    match NonZeroU64::new(value) {
+        Some(value) => value,
+        None => panic!("expected non-zero value: {value}"),
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1939,6 +2031,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
+        auth: None,
         wire_api: WireApi::Responses,
         query_params: None,
         http_headers: None,
@@ -2537,6 +2630,7 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         // Reuse the existing environment variable to avoid using unsafe code
         env_key: Some(existing_env_var_with_random_value.to_string()),
         experimental_bearer_token: None,
+        auth: None,
         query_params: Some(std::collections::HashMap::from([(
             "api-version".to_string(),
             "2025-04-01-preview".to_string(),
@@ -2625,6 +2719,7 @@ async fn env_var_overrides_loaded_auth() {
         )])),
         env_key_instructions: None,
         experimental_bearer_token: None,
+        auth: None,
         wire_api: WireApi::Responses,
         http_headers: Some(std::collections::HashMap::from([(
             "Custom-Header".to_string(),

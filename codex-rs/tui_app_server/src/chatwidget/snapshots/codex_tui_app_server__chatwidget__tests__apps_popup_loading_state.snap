@@ -1,5 +1,0 @@
----
-source: tui_app_server/src/chatwidget/tests.rs
-expression: before
----
-应用正在加载已安装和可用的应用...›正在加载应用...完整列表就绪后会自动更新。
