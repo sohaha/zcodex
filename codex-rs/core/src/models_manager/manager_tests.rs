@@ -96,6 +96,7 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
 fn provider_with_bearer_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         experimental_bearer_token: Some("test-token".into()),
+        auth: None,
         ..provider_for(base_url)
     }
 }
@@ -116,6 +117,7 @@ fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
+        auth: None,
         wire_api: WireApi::Anthropic,
         query_params: None,
         http_headers: None,

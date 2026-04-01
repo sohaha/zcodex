@@ -12,6 +12,8 @@ use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_tools::AdditionalProperties;
+use codex_tools::CommandToolOptions;
+use codex_tools::ShellToolOptions;
 use codex_tools::mcp_tool_to_deferred_responses_api_tool;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
@@ -3008,7 +3010,9 @@ fn test_mcp_tool_anyof_defaults_to_string() {
 
 #[test]
 fn test_shell_tool() {
-    let tool = super::create_shell_tool(/*exec_permission_approvals_enabled*/ false);
+    let tool = super::create_shell_tool(ShellToolOptions {
+        exec_permission_approvals_enabled: false,
+    });
     let ToolSpec::Function(ResponsesApiTool {
         description, name, ..
     }) = &tool
@@ -3041,9 +3045,10 @@ Examples of valid command strings:
 
 #[test]
 fn test_exec_command_tool_windows_description_includes_shell_safety_guidance() {
-    let tool = super::create_exec_command_tool(
-        /*allow_login_shell*/ true, /*exec_permission_approvals_enabled*/ false,
-    );
+    let tool = super::create_exec_command_tool(CommandToolOptions {
+        allow_login_shell: true,
+        exec_permission_approvals_enabled: false,
+    });
     let ToolSpec::Function(ResponsesApiTool {
         description, name, ..
     }) = &tool
@@ -3066,7 +3071,9 @@ fn test_exec_command_tool_windows_description_includes_shell_safety_guidance() {
 
 #[test]
 fn shell_tool_with_request_permission_includes_additional_permissions() {
-    let tool = super::create_shell_tool(/*exec_permission_approvals_enabled*/ true);
+    let tool = super::create_shell_tool(ShellToolOptions {
+        exec_permission_approvals_enabled: true,
+    });
     let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = tool else {
         panic!("expected function tool");
     };
@@ -3099,7 +3106,7 @@ fn shell_tool_with_request_permission_includes_additional_permissions() {
 
 #[test]
 fn request_permissions_tool_includes_full_permission_schema() {
-    let tool = super::create_request_permissions_tool();
+    let tool = super::create_request_permissions_tool(request_permissions_tool_description());
     let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = tool else {
         panic!("expected function tool");
     };
@@ -3146,9 +3153,10 @@ fn request_permissions_tool_includes_full_permission_schema() {
 
 #[test]
 fn test_shell_command_tool() {
-    let tool = super::create_shell_command_tool(
-        /*allow_login_shell*/ true, /*exec_permission_approvals_enabled*/ false,
-    );
+    let tool = super::create_shell_command_tool(CommandToolOptions {
+        allow_login_shell: true,
+        exec_permission_approvals_enabled: false,
+    });
     let ToolSpec::Function(ResponsesApiTool {
         description, name, ..
     }) = &tool

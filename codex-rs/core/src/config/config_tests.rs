@@ -1809,6 +1809,7 @@ fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
                 env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
                 env_key_instructions: None,
                 experimental_bearer_token: None,
+                auth: None,
                 wire_api: crate::WireApi::Anthropic,
                 query_params: None,
                 http_headers: Some(HashMap::from([(
@@ -1875,6 +1876,7 @@ fn provider_model_overrides_global_model() -> std::io::Result<()> {
                 env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
                 env_key_instructions: None,
                 experimental_bearer_token: None,
+                auth: None,
                 wire_api: crate::WireApi::Anthropic,
                 query_params: None,
                 http_headers: None,
@@ -1928,6 +1930,7 @@ fn profile_model_overrides_provider_model() -> std::io::Result<()> {
                 env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
                 env_key_instructions: None,
                 experimental_bearer_token: None,
+                auth: None,
                 wire_api: crate::WireApi::Anthropic,
                 query_params: None,
                 http_headers: None,
