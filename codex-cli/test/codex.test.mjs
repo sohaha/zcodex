@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -44,4 +45,23 @@ test("sanitizeRipgrepConfig keeps valid RIPGREP_CONFIG_PATH", () => {
 
   assert.strictEqual(sanitized, env);
   assert.equal(sanitized.RIPGREP_CONFIG_PATH, configPath);
+});
+
+test("codex launcher still runs when invoked through a symlink", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-symlink-"));
+  const linkPath = path.join(tempDir, "codex-link.js");
+  const scriptPath = path.resolve("bin/codex.js");
+  fs.symlinkSync(scriptPath, linkPath);
+
+  const result = spawnSync(process.execPath, [linkPath], {
+    cwd: path.resolve("."),
+    encoding: "utf8",
+    env: { ...process.env, PATH: process.env.PATH || "" },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(
+    `${result.stdout}${result.stderr}`,
+    /缺少可选依赖|不支持的 target triple|不支持的平台|Error/,
+  );
 });
