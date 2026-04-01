@@ -149,6 +149,7 @@ enum Subcommand {
     Apply(ApplyCommand),
 
     /// 恢复之前的交互会话（默认打开选择器；使用 --last 可继续最近一次）。
+    #[clap(visible_alias = "r")]
     Resume(ResumeCommand),
 
     /// 从之前的交互会话分叉（默认打开选择器；使用 --last 可分叉最近一次）。
@@ -1750,6 +1751,14 @@ mod tests {
             panic!("expected resume subcommand");
         };
         assert_eq!(remote.remote.as_deref(), Some("ws://127.0.0.1:4500"));
+    }
+
+    #[test]
+    fn short_resume_alias_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "r"]).expect("parse");
+        let Some(Subcommand::Resume(_)) = cli.subcommand else {
+            panic!("expected resume subcommand");
+        };
     }
 
     #[test]
