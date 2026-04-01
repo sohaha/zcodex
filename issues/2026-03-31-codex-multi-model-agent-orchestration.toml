@@ -51,10 +51,10 @@ done_when = "内置编排可以在现有 runtime 上执行有边界的 fan-out /
 validate_by = "Run existing repository command cargo nextest run -p codex-core && cargo nextest run -p codex-state"
 regress_by = "Run existing repository command cargo nextest run -p codex-core && cargo nextest run -p codex-state"
 regress_timing = "before_fanout"
-status = "todo"
+status = "in_progress"
 validate_status = "not_run"
 regress_status = "not_run"
-notes = "none"
+notes = "a2 实现已完成：已为 `agent_jobs` 持久化 `max_retries`，`spawn_agents_on_csv` 暴露并校验 `max_retries` 参数；job loop 改为先 claim item 再 spawn，spawn 失败、缺失 report、超时、恢复期脏状态都会统一走 `retry_or_fail_claimed_item(...)`；仅在真实启动 worker 失败之外的占位回退（如 `AgentLimitReached`/线程绑定失败）时释放 claim，避免白白消耗 attempt；同时将“存在 failed item”的 job 最终状态显式收口为 `failed`。新增 `codex-core` 两条 retry 集成测试（缺失 report 后重试成功、重试耗尽后 job 失败），以及 `codex-state` 的 `max_retries` roundtrip / claim release 单测。已运行并通过定点验证：`CARGO_TARGET_DIR=/workspace/.cargo-target-a2 cargo test -p codex-state agent_jobs:: -- --nocapture` 与 `CARGO_TARGET_DIR=/workspace/.cargo-target-a2 cargo test -p codex-core --test all suite::agent_jobs:: -- --nocapture`。按仓库规则，完整 `validate_by/regress_by`（`cargo nextest run -p codex-core && cargo nextest run -p codex-state`）需先征得用户同意后再执行，因此当前先保留为未跑。"
 
 [[issue]]
 id = "a3"

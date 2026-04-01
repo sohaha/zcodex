@@ -29,6 +29,7 @@ INSERT INTO agent_jobs (
     instruction,
     auto_export,
     max_runtime_seconds,
+    max_retries,
     output_schema_json,
     input_headers_json,
     input_csv_path,
@@ -38,7 +39,7 @@ INSERT INTO agent_jobs (
     started_at,
     completed_at,
     last_error
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
             "#,
         )
         .bind(params.id.as_str())
@@ -47,6 +48,7 @@ INSERT INTO agent_jobs (
         .bind(params.instruction.as_str())
         .bind(i64::from(params.auto_export))
         .bind(max_runtime_seconds)
+        .bind(i64::from(params.max_retries))
         .bind(output_schema_json)
         .bind(input_headers_json)
         .bind(params.input_csv_path.as_str())
@@ -108,6 +110,7 @@ SELECT
     instruction,
     auto_export,
     max_runtime_seconds,
+    max_retries,
     output_schema_json,
     input_headers_json,
     input_csv_path,
@@ -398,6 +401,39 @@ WHERE job_id = ? AND item_id = ? AND status = ?
         Ok(result.rows_affected() > 0)
     }
 
+    pub async fn release_agent_job_item_claim(
+        &self,
+        job_id: &str,
+        item_id: &str,
+        error_message: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        let now = Utc::now().timestamp();
+        let result = sqlx::query(
+            r#"
+UPDATE agent_job_items
+SET
+    status = ?,
+    assigned_thread_id = NULL,
+    attempt_count = CASE
+        WHEN attempt_count > 0 THEN attempt_count - 1
+        ELSE 0
+    END,
+    updated_at = ?,
+    last_error = ?
+WHERE job_id = ? AND item_id = ? AND status = ?
+            "#,
+        )
+        .bind(AgentJobItemStatus::Pending.as_str())
+        .bind(now)
+        .bind(error_message)
+        .bind(job_id)
+        .bind(item_id)
+        .bind(AgentJobItemStatus::Running.as_str())
+        .execute(self.pool.as_ref())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
     pub async fn set_agent_job_item_thread(
         &self,
         job_id: &str,
@@ -587,6 +623,7 @@ mod tests {
                     instruction: "Return a result".to_string(),
                     auto_export: true,
                     max_runtime_seconds: None,
+                    max_retries: 0,
                     output_schema_json: None,
                     input_headers: vec!["path".to_string()],
                     input_csv_path: "/tmp/in.csv".to_string(),
@@ -679,6 +716,71 @@ mod tests {
         assert_eq!(item.status, AgentJobItemStatus::Failed);
         assert_eq!(item.result_json, None);
         assert_eq!(item.last_error, Some("missing report".to_string()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn release_agent_job_item_claim_restores_pending_without_consuming_attempt()
+    -> anyhow::Result<()> {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+        let (job_id, item_id, _thread_id) =
+            create_running_single_item_job(runtime.as_ref()).await?;
+
+        let released = runtime
+            .release_agent_job_item_claim(
+                job_id.as_str(),
+                item_id.as_str(),
+                Some("agent limit reached"),
+            )
+            .await?;
+        assert!(released);
+
+        let item = runtime
+            .get_agent_job_item(job_id.as_str(), item_id.as_str())
+            .await?
+            .expect("job item should exist");
+        assert_eq!(item.status, AgentJobItemStatus::Pending);
+        assert_eq!(item.attempt_count, 0);
+        assert_eq!(item.assigned_thread_id, None);
+        assert_eq!(item.last_error, Some("agent limit reached".to_string()));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn create_agent_job_round_trips_max_retries() -> anyhow::Result<()> {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+
+        runtime
+            .create_agent_job(
+                &AgentJobCreateParams {
+                    id: "job-roundtrip".to_string(),
+                    name: "test-job".to_string(),
+                    instruction: "Return a result".to_string(),
+                    auto_export: true,
+                    max_runtime_seconds: Some(30),
+                    max_retries: 2,
+                    output_schema_json: None,
+                    input_headers: vec!["path".to_string()],
+                    input_csv_path: "/tmp/in.csv".to_string(),
+                    output_csv_path: "/tmp/out.csv".to_string(),
+                },
+                &[AgentJobItemCreateParams {
+                    item_id: "item-1".to_string(),
+                    row_index: 0,
+                    source_id: None,
+                    row_json: json!({"path":"file-1"}),
+                }],
+            )
+            .await?;
+
+        let job = runtime
+            .get_agent_job("job-roundtrip")
+            .await?
+            .expect("job should exist");
+        assert_eq!(job.max_runtime_seconds, Some(30));
+        assert_eq!(job.max_retries, 2);
         Ok(())
     }
 }

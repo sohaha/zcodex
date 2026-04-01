@@ -43,12 +43,44 @@ struct StopAfterFirstResponder {
     worker_calls: Arc<AtomicUsize>,
 }
 
+struct RetryOnceResponder {
+    spawn_args_json: String,
+    seen_main: AtomicBool,
+    seen_first_worker: AtomicBool,
+    call_counter: AtomicUsize,
+}
+
+struct AlwaysMissingReportResponder {
+    spawn_args_json: String,
+    seen_main: AtomicBool,
+}
+
 impl StopAfterFirstResponder {
     fn new(spawn_args_json: String, worker_calls: Arc<AtomicUsize>) -> Self {
         Self {
             spawn_args_json,
             seen_main: AtomicBool::new(false),
             worker_calls,
+        }
+    }
+}
+
+impl RetryOnceResponder {
+    fn new(spawn_args_json: String) -> Self {
+        Self {
+            spawn_args_json,
+            seen_main: AtomicBool::new(false),
+            seen_first_worker: AtomicBool::new(false),
+            call_counter: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl AlwaysMissingReportResponder {
+    fn new(spawn_args_json: String) -> Self {
+        Self {
+            spawn_args_json,
+            seen_main: AtomicBool::new(false),
         }
     }
 }
@@ -129,6 +161,93 @@ impl Respond for AgentJobsResponder {
                 ev_response_created("resp-worker"),
                 ev_function_call(&call_id, "report_agent_job_result", &args_json),
                 ev_completed("resp-worker"),
+            ]));
+        }
+
+        if !self.seen_main.swap(true, Ordering::SeqCst) {
+            return sse_response(sse(vec![
+                ev_response_created("resp-main"),
+                ev_function_call("call-spawn", "spawn_agents_on_csv", &self.spawn_args_json),
+                ev_completed("resp-main"),
+            ]));
+        }
+
+        sse_response(sse(vec![
+            ev_response_created("resp-default"),
+            ev_completed("resp-default"),
+        ]))
+    }
+}
+
+impl Respond for RetryOnceResponder {
+    fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+        let body_bytes = decode_body_bytes(request);
+        let body: Value = serde_json::from_slice(&body_bytes).unwrap_or(Value::Null);
+
+        if has_function_call_output(&body) {
+            return sse_response(sse(vec![
+                ev_response_created("resp-tool"),
+                ev_completed("resp-tool"),
+            ]));
+        }
+
+        if let Some((job_id, item_id)) = extract_job_and_item(&body) {
+            if !self.seen_first_worker.swap(true, Ordering::SeqCst) {
+                return sse_response(sse(vec![
+                    ev_response_created("resp-worker-missing"),
+                    ev_completed("resp-worker-missing"),
+                ]));
+            }
+            let call_id = format!(
+                "call-worker-{}",
+                self.call_counter.fetch_add(1, Ordering::SeqCst)
+            );
+            let args = json!({
+                "job_id": job_id,
+                "item_id": item_id,
+                "result": { "item_id": item_id }
+            });
+            let args_json = serde_json::to_string(&args).unwrap_or_else(|err| {
+                panic!("worker args serialize: {err}");
+            });
+            return sse_response(sse(vec![
+                ev_response_created("resp-worker"),
+                ev_function_call(&call_id, "report_agent_job_result", &args_json),
+                ev_completed("resp-worker"),
+            ]));
+        }
+
+        if !self.seen_main.swap(true, Ordering::SeqCst) {
+            return sse_response(sse(vec![
+                ev_response_created("resp-main"),
+                ev_function_call("call-spawn", "spawn_agents_on_csv", &self.spawn_args_json),
+                ev_completed("resp-main"),
+            ]));
+        }
+
+        sse_response(sse(vec![
+            ev_response_created("resp-default"),
+            ev_completed("resp-default"),
+        ]))
+    }
+}
+
+impl Respond for AlwaysMissingReportResponder {
+    fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
+        let body_bytes = decode_body_bytes(request);
+        let body: Value = serde_json::from_slice(&body_bytes).unwrap_or(Value::Null);
+
+        if has_function_call_output(&body) {
+            return sse_response(sse(vec![
+                ev_response_created("resp-tool"),
+                ev_completed("resp-tool"),
+            ]));
+        }
+
+        if extract_job_and_item(&body).is_some() {
+            return sse_response(sse(vec![
+                ev_response_created("resp-worker-missing"),
+                ev_completed("resp-worker-missing"),
             ]));
         }
 
@@ -444,5 +563,137 @@ async fn spawn_agents_on_csv_stop_halts_future_items() -> Result<()> {
     assert_eq!(progress.running_items, 0);
     assert_eq!(progress.pending_items, 2);
     assert_eq!(worker_calls.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_agents_on_csv_retries_missing_reports_once() -> Result<()> {
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::SpawnCsv)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let input_path = test.cwd_path().join("agent_jobs_retry.csv");
+    let output_path = test.cwd_path().join("agent_jobs_retry_out.csv");
+    fs::write(&input_path, "path\nfile-1\n")?;
+
+    let args = json!({
+        "csv_path": input_path.display().to_string(),
+        "instruction": "Return {path}",
+        "output_csv_path": output_path.display().to_string(),
+        "max_retries": 1,
+    });
+    let args_json = serde_json::to_string(&args)?;
+
+    let responder = RetryOnceResponder::new(args_json);
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(responder)
+        .mount(&server)
+        .await;
+
+    test.submit_turn("run retrying job").await?;
+
+    let output = fs::read_to_string(&output_path)?;
+    let job_id = output
+        .lines()
+        .skip(1)
+        .next()
+        .and_then(|line| {
+            parse_simple_csv_line(line)
+                .iter()
+                .find(|value| value.len() == 36)
+                .cloned()
+        })
+        .expect("job_id from csv");
+    let db = test.codex.state_db().expect("state db");
+    let job = db.get_agent_job(job_id.as_str()).await?.expect("job");
+    assert_eq!(job.status, codex_state::AgentJobStatus::Completed);
+    let items = db
+        .list_agent_job_items(job.id.as_str(), /*status*/ None, Some(10))
+        .await?;
+    let item = items.first().expect("item");
+    assert_eq!(item.status, codex_state::AgentJobItemStatus::Completed);
+    assert_eq!(item.attempt_count, 2);
+    assert_eq!(item.result_json, Some(json!({ "item_id": item.item_id })));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn spawn_agents_on_csv_marks_job_failed_after_retry_exhaustion() -> Result<()> {
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::SpawnCsv)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let input_path = test.cwd_path().join("agent_jobs_retry_fail.csv");
+    let output_path = test.cwd_path().join("agent_jobs_retry_fail_out.csv");
+    fs::write(&input_path, "path\nfile-1\n")?;
+
+    let args = json!({
+        "csv_path": input_path.display().to_string(),
+        "instruction": "Return {path}",
+        "output_csv_path": output_path.display().to_string(),
+        "max_retries": 1,
+    });
+    let args_json = serde_json::to_string(&args)?;
+
+    let responder = AlwaysMissingReportResponder::new(args_json);
+    Mock::given(method("POST"))
+        .and(path_regex(".*/responses$"))
+        .respond_with(responder)
+        .mount(&server)
+        .await;
+
+    test.submit_turn("run exhausting retry job").await?;
+
+    let output = fs::read_to_string(&output_path)?;
+    let job_id = output
+        .lines()
+        .skip(1)
+        .next()
+        .and_then(|line| {
+            parse_simple_csv_line(line)
+                .iter()
+                .find(|value| value.len() == 36)
+                .cloned()
+        })
+        .expect("job_id from csv");
+    let db = test.codex.state_db().expect("state db");
+    let job = db.get_agent_job(job_id.as_str()).await?.expect("job");
+    assert_eq!(job.status, codex_state::AgentJobStatus::Failed);
+    assert!(
+        job.last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("1 failed items"))
+    );
+    let items = db
+        .list_agent_job_items(job.id.as_str(), /*status*/ None, Some(10))
+        .await?;
+    let item = items.first().expect("item");
+    assert_eq!(item.status, codex_state::AgentJobItemStatus::Failed);
+    assert_eq!(item.attempt_count, 2);
+    assert_eq!(item.result_json, None);
+    assert!(
+        item.last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("report_agent_job_result"))
+    );
     Ok(())
 }

@@ -79,6 +79,7 @@ pub struct AgentJob {
     pub instruction: String,
     pub auto_export: bool,
     pub max_runtime_seconds: Option<u64>,
+    pub max_retries: u32,
     // TODO(jif-oai): Convert to JSON Schema and enforce structured outputs.
     pub output_schema_json: Option<Value>,
     pub input_headers: Vec<String>,
@@ -125,6 +126,7 @@ pub struct AgentJobCreateParams {
     pub instruction: String,
     pub auto_export: bool,
     pub max_runtime_seconds: Option<u64>,
+    pub max_retries: u32,
     pub output_schema_json: Option<Value>,
     pub input_headers: Vec<String>,
     pub input_csv_path: String,
@@ -147,6 +149,7 @@ pub(crate) struct AgentJobRow {
     pub(crate) instruction: String,
     pub(crate) auto_export: i64,
     pub(crate) max_runtime_seconds: Option<i64>,
+    pub(crate) max_retries: i64,
     pub(crate) output_schema_json: Option<String>,
     pub(crate) input_headers_json: String,
     pub(crate) input_csv_path: String,
@@ -173,6 +176,8 @@ impl TryFrom<AgentJobRow> for AgentJob {
             .map(u64::try_from)
             .transpose()
             .map_err(|_| anyhow::anyhow!("invalid max_runtime_seconds value"))?;
+        let max_retries = u32::try_from(value.max_retries)
+            .map_err(|_| anyhow::anyhow!("invalid max_retries value"))?;
         Ok(Self {
             id: value.id,
             name: value.name,
@@ -180,6 +185,7 @@ impl TryFrom<AgentJobRow> for AgentJob {
             instruction: value.instruction,
             auto_export: value.auto_export != 0,
             max_runtime_seconds,
+            max_retries,
             output_schema_json,
             input_headers,
             input_csv_path: value.input_csv_path,

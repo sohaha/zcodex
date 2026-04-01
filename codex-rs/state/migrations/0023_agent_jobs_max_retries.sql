@@ -1,0 +1,2 @@
+ALTER TABLE agent_jobs
+ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 0;

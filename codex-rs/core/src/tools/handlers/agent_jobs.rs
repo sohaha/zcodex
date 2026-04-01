@@ -39,6 +39,7 @@ pub struct BatchJobHandler;
 
 const DEFAULT_AGENT_JOB_CONCURRENCY: usize = 16;
 const MAX_AGENT_JOB_CONCURRENCY: usize = 64;
+const MAX_AGENT_JOB_RETRIES: u32 = 3;
 const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
 const DEFAULT_AGENT_JOB_ITEM_TIMEOUT: Duration = Duration::from_secs(60 * 30);
@@ -53,6 +54,7 @@ struct SpawnAgentsOnCsvArgs {
     max_concurrency: Option<usize>,
     max_workers: Option<usize>,
     max_runtime_seconds: Option<u64>,
+    max_retries: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -320,6 +322,7 @@ mod spawn_agents_on_csv {
             args.max_runtime_seconds
                 .or(turn.config.agent_job_max_runtime_seconds),
         )?;
+        let max_retries = normalize_max_retries(args.max_retries)?;
         let _job = db
             .create_agent_job(
                 &codex_state::AgentJobCreateParams {
@@ -328,6 +331,7 @@ mod spawn_agents_on_csv {
                     instruction: args.instruction,
                     auto_export: true,
                     max_runtime_seconds,
+                    max_retries,
                     output_schema_json: args.output_schema,
                     input_headers: headers,
                     input_csv_path: input_path.display().to_string(),
@@ -566,6 +570,16 @@ fn normalize_max_runtime_seconds(requested: Option<u64>) -> Result<Option<u64>, 
     Ok(Some(requested))
 }
 
+fn normalize_max_retries(requested: Option<u32>) -> Result<u32, FunctionCallError> {
+    let requested = requested.unwrap_or(0);
+    if requested > MAX_AGENT_JOB_RETRIES {
+        return Err(FunctionCallError::RespondToModel(format!(
+            "max_retries must be <= {MAX_AGENT_JOB_RETRIES}"
+        )));
+    }
+    Ok(requested)
+}
+
 async fn run_agent_job_loop(
     session: Arc<Session>,
     turn: Arc<TurnContext>,
@@ -623,11 +637,18 @@ async fn run_agent_job_loop(
                 )
                 .await?;
             for item in pending_items {
+                let claimed = db
+                    .mark_agent_job_item_running(job_id.as_str(), item.item_id.as_str())
+                    .await?;
+                if !claimed {
+                    continue;
+                }
                 let prompt = build_worker_prompt(&job, &item)?;
                 let items = vec![UserInput::Text {
                     text: prompt,
                     text_elements: Vec::new(),
                 }];
+                let attempt_count = item.attempt_count + 1;
                 let thread_id = match session
                     .services
                     .agent_control
@@ -642,7 +663,7 @@ async fn run_agent_job_loop(
                 {
                     Ok(thread_id) => thread_id,
                     Err(CodexErr::AgentLimitReached { .. }) => {
-                        db.mark_agent_job_item_pending(
+                        db.release_agent_job_item_claim(
                             job_id.as_str(),
                             item.item_id.as_str(),
                             /*error_message*/ None,
@@ -652,9 +673,12 @@ async fn run_agent_job_loop(
                     }
                     Err(err) => {
                         let error_message = format!("failed to spawn worker: {err}");
-                        db.mark_agent_job_item_failed(
+                        retry_or_fail_claimed_item(
+                            db.clone(),
                             job_id.as_str(),
                             item.item_id.as_str(),
+                            attempt_count,
+                            job.max_retries,
                             error_message.as_str(),
                         )
                         .await?;
@@ -663,7 +687,7 @@ async fn run_agent_job_loop(
                     }
                 };
                 let assigned = db
-                    .mark_agent_job_item_running_with_thread(
+                    .set_agent_job_item_thread(
                         job_id.as_str(),
                         item.item_id.as_str(),
                         thread_id.to_string().as_str(),
@@ -675,6 +699,12 @@ async fn run_agent_job_loop(
                         .agent_control
                         .shutdown_live_agent(thread_id)
                         .await;
+                    db.release_agent_job_item_claim(
+                        job_id.as_str(),
+                        item.item_id.as_str(),
+                        /*error_message*/ None,
+                    )
+                    .await?;
                     continue;
                 }
                 active_items.insert(
@@ -774,8 +804,23 @@ async fn run_agent_job_loop(
     }
     if progress.failed_items > 0 {
         let failed_items = progress.failed_items;
-        let message = format!("agent job completed with {failed_items} failed items");
-        let _ = session.notify_background_event(&turn, message).await;
+        let message = format!("agent job failed with {failed_items} failed items");
+        let _ = session
+            .notify_background_event(&turn, message.as_str())
+            .await;
+        db.mark_agent_job_failed(job_id.as_str(), message.as_str())
+            .await?;
+        let progress = db.get_agent_job_progress(job_id.as_str()).await?;
+        progress_emitter
+            .maybe_emit(
+                &session,
+                &turn,
+                job_id.as_str(),
+                &progress,
+                /*force*/ true,
+            )
+            .await?;
+        return Ok(());
     }
     db.mark_agent_job_completed(job_id.as_str()).await?;
     let progress = db.get_agent_job_progress(job_id.as_str()).await?;
@@ -815,6 +860,10 @@ async fn recover_running_items(
     active_items: &mut HashMap<ThreadId, ActiveJobItem>,
     runtime_timeout: Duration,
 ) -> anyhow::Result<()> {
+    let job = db
+        .get_agent_job(job_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("agent job {job_id} was not found"))?;
     let running_items = db
         .list_agent_job_items(
             job_id,
@@ -825,8 +874,15 @@ async fn recover_running_items(
     for item in running_items {
         if is_item_stale(&item, runtime_timeout) {
             let error_message = format!("worker exceeded max runtime of {runtime_timeout:?}");
-            db.mark_agent_job_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
-                .await?;
+            retry_or_fail_claimed_item(
+                db.clone(),
+                job_id,
+                item.item_id.as_str(),
+                item.attempt_count,
+                job.max_retries,
+                error_message.as_str(),
+            )
+            .await?;
             if let Some(assigned_thread_id) = item.assigned_thread_id.as_ref()
                 && let Ok(thread_id) = ThreadId::from_string(assigned_thread_id.as_str())
             {
@@ -839,9 +895,12 @@ async fn recover_running_items(
             continue;
         }
         let Some(assigned_thread_id) = item.assigned_thread_id.clone() else {
-            db.mark_agent_job_item_failed(
+            retry_or_fail_claimed_item(
+                db.clone(),
                 job_id,
                 item.item_id.as_str(),
+                item.attempt_count,
+                job.max_retries,
                 "running item is missing assigned_thread_id",
             )
             .await?;
@@ -851,9 +910,12 @@ async fn recover_running_items(
             Ok(thread_id) => thread_id,
             Err(err) => {
                 let error_message = format!("invalid assigned_thread_id: {err:?}");
-                db.mark_agent_job_item_failed(
+                retry_or_fail_claimed_item(
+                    db.clone(),
                     job_id,
                     item.item_id.as_str(),
+                    item.attempt_count,
+                    job.max_retries,
                     error_message.as_str(),
                 )
                 .await?;
@@ -939,6 +1001,10 @@ async fn reap_stale_active_items(
     active_items: &mut HashMap<ThreadId, ActiveJobItem>,
     runtime_timeout: Duration,
 ) -> anyhow::Result<bool> {
+    let job = db
+        .get_agent_job(job_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("agent job {job_id} was not found"))?;
     let mut stale = Vec::new();
     for (thread_id, item) in active_items.iter() {
         if item.started_at.elapsed() >= runtime_timeout {
@@ -950,8 +1016,21 @@ async fn reap_stale_active_items(
     }
     for (thread_id, item_id) in stale {
         let error_message = format!("worker exceeded max runtime of {runtime_timeout:?}");
-        db.mark_agent_job_item_failed(job_id, item_id.as_str(), error_message.as_str())
-            .await?;
+        let item = db
+            .get_agent_job_item(job_id, item_id.as_str())
+            .await?
+            .ok_or_else(|| {
+                anyhow::anyhow!("job item not found for stale reap: {job_id}/{item_id}")
+            })?;
+        retry_or_fail_claimed_item(
+            db.clone(),
+            job_id,
+            item_id.as_str(),
+            item.attempt_count,
+            job.max_retries,
+            error_message.as_str(),
+        )
+        .await?;
         let _ = session
             .services
             .agent_control
@@ -979,13 +1058,19 @@ async fn finalize_finished_item(
         if item.result_json.is_some() {
             let _ = db.mark_agent_job_item_completed(job_id, item_id).await?;
         } else {
-            let _ = db
-                .mark_agent_job_item_failed(
-                    job_id,
-                    item_id,
-                    "worker finished without calling report_agent_job_result",
-                )
-                .await?;
+            let job = db
+                .get_agent_job(job_id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("agent job {job_id} was not found"))?;
+            retry_or_fail_claimed_item(
+                db.clone(),
+                job_id,
+                item_id,
+                item.attempt_count,
+                job.max_retries,
+                "worker finished without calling report_agent_job_result",
+            )
+            .await?;
         }
     }
     let _ = session
@@ -993,6 +1078,26 @@ async fn finalize_finished_item(
         .agent_control
         .shutdown_live_agent(thread_id)
         .await;
+    Ok(())
+}
+
+async fn retry_or_fail_claimed_item(
+    db: Arc<codex_state::StateRuntime>,
+    job_id: &str,
+    item_id: &str,
+    attempt_count: i64,
+    max_retries: u32,
+    error_message: &str,
+) -> anyhow::Result<()> {
+    if attempt_count <= i64::from(max_retries) {
+        let _ = db
+            .mark_agent_job_item_pending(job_id, item_id, Some(error_message))
+            .await?;
+    } else {
+        let _ = db
+            .mark_agent_job_item_failed(job_id, item_id, error_message)
+            .await?;
+    }
     Ok(())
 }
 
