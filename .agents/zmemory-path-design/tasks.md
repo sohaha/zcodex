@@ -50,17 +50,17 @@ dependencies: [prd, tech-review]
 | CLI 诊断输出 | `doctor/stats` 报告 JSON 中带 `pathResolution` 与 `reason` | `cargo test -p codex-cli --test zmemory` |
 | 核心工具 + handler | `codex-core` zmemory handler 读 `pathResolution`，model tool output 包含 reason | `cargo test -p codex-core tools::handlers::zmemory` |
 | 集成验收 | 现有 e2e 确认 doctor/stats 新字段 | `cargo test -p codex-core suite::zmemory_e2e` |
-| 配置层 | 新 `zmemory_path` 字段在 config loader/schema 中可读、可写、可校验 | `cargo test -p codex-core config::tests && just write-config-schema` |
+| 配置层 | 新 `[zmemory].path` 字段在 config loader/schema 中可读、可写、可校验 | `cargo test -p codex-core config::tests && just write-config-schema` |
 
 ---
 
 ## 2. 任务详情
 
-### Story: S-001 - zmemory_path 单值隔离与可观测
+### Story: S-001 - [zmemory].path 单值隔离与可观测
 
 ---
 
-#### Task T-001：在 codex-zmemory 内构建统一的 zmemory_path 解析 helper
+#### Task T-001：在 codex-zmemory 内构建统一的 [zmemory].path 解析 helper
 
 **类型**：创建
 
@@ -72,7 +72,7 @@ dependencies: [prd, tech-review]
 | `codex-rs/zmemory/Cargo.toml` | 修改 | 新增对 `codex-git-utils` 的依赖 |
 
 **实现步骤**：
-1. **设计解析链**：接收 `codex_home` 路径、`turn.cwd`、可选 `zmemory_path` 字符串，返回 `ZmemoryPathResolution { db_path, workspace_key, source, canonical_base, reason }`。
+1. **设计解析链**：接收 `codex_home` 路径、`turn.cwd`、可选 `[zmemory].path` 字符串，返回 `ZmemoryPathResolution { db_path, workspace_key, source, canonical_base, reason }`。
    ```rust
    pub fn resolve_zmemory_path(
        codex_home: &Path,
@@ -81,7 +81,7 @@ dependencies: [prd, tech-review]
    ) -> Result<ZmemoryPathResolution> { ... }
    ```
    - `source` 区分 `Explicit`, `RepoRoot`, `Cwd`，`reason` 记录原始输入与选定 anchor。
-2. **默认隔离策略**：使用现有主仓库根识别优先取主仓库根，否则 fallback `cwd`，canonicalize 后直接 `sha256`（取前 12 hex）生成 `workspace_key`，再拼接 `codex_home/zmemory/workspace-<key>/zmemory.db`。
+2. **默认隔离策略**：使用现有主仓库根识别优先取主仓库根，否则 fallback `cwd`，canonicalize 后直接 `sha256`（取前 12 hex）生成 `workspace_key`，再拼接 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`。
 3. **错误处理**：base 路径 `canonicalize` 失败时直接返回错误，不静默回退到旧全局路径。
 
 **测试用例**：
@@ -125,7 +125,7 @@ dependencies: [prd, tech-review]
 | 用例 ID | 描述 | 类型 |
 |---------|------|------|
 | TC-002-1 | 默认构造时返回 helper 的 `db_path`、workspace key | 单元测试 |
-| TC-002-2 | 传入 `zmemory_path` 覆盖，确保 `source=Explicit` | 单元测试 |
+| TC-002-2 | 传入 `[zmemory].path` 覆盖，确保 `source=Explicit` | 单元测试 |
 
 **复杂度**：中
 
@@ -158,7 +158,7 @@ dependencies: [prd, tech-review]
    ```json
    "pathResolution": {
      "dbPath": "...",
-     "workspaceKey": "workspace-abc",
+     "workspaceKey": "my-repo-a1b2c3d4e5f6",
      "source": "RepoRoot",
      "reason": "repo root at ..."
    }
@@ -196,11 +196,11 @@ dependencies: [prd, tech-review]
 |----------|------|------|
 | `codex-rs/cli/src/zmemory_cmd.rs` | 修改 | 让 `doctor`/`stats` 输出携带 `pathResolution` |
 | `codex-rs/zmemory/src/tool_api.rs` | 修改 | 让 tool 通过 helper 初始化 `ZmemoryConfig` |
-| `codex-rs/core/src/tools/handlers/zmemory.rs` | 修改 | 传递 `turn.cwd` + config `zmemory_path` 给 helper |
+| `codex-rs/core/src/tools/handlers/zmemory.rs` | 修改 | 传递 `turn.cwd` + config `[zmemory].path` 给 helper |
 
 **实现步骤**：
-1. `run_zmemory_tool` 增加 `cwd`（从 CLI/handler 提供）和 `zmemory_path` 字段，先调用 helper 得到 resolution，再用 `ZmemoryConfig::new_with_resolution` 构建 config。
-2. `codex-core` 的 `ZmemoryHandler` 读取 `turn.cwd`、session 的 `codex_home()`，再向 helper 传入配置链中的 `zmemory_path`，确保 CLI/TUI/agent 看到同一个 `db_path`。
+1. `run_zmemory_tool` 增加 `cwd`（从 CLI/handler 提供）和 `[zmemory].path` 字段，先调用 helper 得到 resolution，再用 `ZmemoryConfig::new_with_resolution` 构建 config。
+2. `codex-core` 的 `ZmemoryHandler` 读取 `turn.cwd`、session 的 `codex_home()`，再向 helper 传入配置链中的 `[zmemory].path`，确保 CLI/TUI/agent 看到同一个 `db_path`。
 3. `codex zmemory doctor --json` 与 `stats --json` 把 `pathResolution` 传播到 function tool output（`result` 字段），CLI 人类可读模式也能显示当前 `db_path` 与 `reason`。
 4. 首版不新增独立 `path` 子命令，避免范围扩大；若后续发现 `doctor/stats` 不足，再单列增量任务。
 
@@ -215,7 +215,7 @@ dependencies: [prd, tech-review]
 **依赖**：T-001、T-002、T-003
 
 **注意事项**：
-- 相对 `zmemory_path` 仍需以主仓库根解析，helper 不能在 CLI 和 handler 分别实现。
+- 相对 `[zmemory].path` 仍需以主仓库根解析，helper 不能在 CLI 和 handler 分别实现。
 - 首版只走统一配置链，不增加命令行/env 额外入口。
 
 **完成标志**：
@@ -233,13 +233,13 @@ dependencies: [prd, tech-review]
 | 文件路径 | 操作 | 说明 |
 |----------|------|------|
 | `codex-rs/zmemory/README.md` | 修改 | 描述新配置、hashed workspace 路径、`doctor/stats` 诊断方式 |
-| `docs/config.md` | 修改 | 新增 `zmemory_path` 配置说明及迁移建议 |
+| `docs/config.md` | 修改 | 新增 `[zmemory].path` 配置说明及迁移建议 |
 
 **实现步骤**：
-1. 在 README `存储` 段落补充：当未设置 `zmemory_path` 时，helper 通过 canonical repo/cwd hash 生成 `codex_home/zmemory/workspace-<hash>/zmemory.db`，并展示 `reason` 与 `workspaceKey` 示例。
+1. 在 README `存储` 段落补充：当未设置 `[zmemory].path` 时，helper 通过 canonical repo/cwd hash 生成 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`，并展示 `reason` 与 `workspaceKey` 示例。
 2. 新增“路径可观测性”小节，解释 `codex zmemory doctor --json` 与 `codex zmemory stats --json` 如何查看当前 `dbPath`、`workspaceKey`、`source`。
-3. docs/config.md 附加 `zmemory_path` 字段说明以及手动迁移旧 `zmemory.db` 的提示（仅在配置文件中显式指向 `$CODEX_HOME/zmemory/zmemory.db` 时启用）。
-4. 明确技术评审决定：不自动复制旧 `zmemory.db`，需要用户通过 `zmemory_path` 指定旧地址，避免权限/锁冲突。
+3. docs/config.md 附加 `[zmemory].path` 字段说明以及手动迁移旧 `zmemory.db` 的提示（仅在配置文件中显式指向 `$CODEX_HOME/zmemory/zmemory.db` 时启用）。
+4. 明确技术评审决定：不自动复制旧 `zmemory.db`，需要用户通过 `[zmemory].path` 指定旧地址，避免权限/锁冲突。
 
 **测试用例**：
 - 文档无需机器测试，但需二次 review 保证示例与实现一致。
@@ -250,10 +250,10 @@ dependencies: [prd, tech-review]
 
 **注意事项**：
 - 迁移段应醒目标记“手动”并给出配置文件示例。
-- README 里提及 `workspaceKey` 命名规则（`workspace-<sha256 prefix>`），不要直接暴露原始路径。
+- README 里提及 `workspaceKey` 命名规则（`<slug>-<sha256 prefix>`），不要直接暴露原始路径。
 
 **完成标志**：
-- [ ] README 与 config 文档均新增 `zmemory_path` 章节
+- [ ] README 与 config 文档均新增 `[zmemory].path` 章节
 - [ ] 文档示例展示 `codex zmemory doctor --json`/`stats --json` 输出与旧全局库配置样板
 - [ ] 手动迁移提醒与 auto-copy 说明一致
 
@@ -270,7 +270,7 @@ dependencies: [prd, tech-review]
 | `codex-rs/zmemory/src/config.rs` | 修改 | 增加配置/解析测试 |
 | `codex-rs/zmemory/src/service.rs` | 修改 | 断言 `doctor` 新字段 |
 | `codex-rs/zmemory/src/repository.rs` | 修改 | 把 log/test 打杂继续保留 |
-| `codex-rs/core/src/config/mod.rs` | 修改 | 新增 `zmemory_path` 配置读取与优先级测试 |
+| `codex-rs/core/src/config/mod.rs` | 修改 | 新增 `[zmemory].path` 配置读取与优先级测试 |
 | `codex-rs/core/config.schema.json` | 修改 | 更新配置 schema |
 
 **实现步骤**：
@@ -285,7 +285,7 @@ dependencies: [prd, tech-review]
 | TC-006-1 | helper + config 在主仓库根/worktree 场景下给出预期 identity | 单元测试 |
 | TC-006-2 | core tool e2e 读取 `pathResolution` | 集成测试 |
 | TC-006-3 | CLI `doctor/stats --json` 中的 `pathResolution` 输出可 parse | 单元测试 |
-| TC-006-4 | `ConfigToml` 中新增 `zmemory_path` 字段后 schema 与读取逻辑一致 | 单元测试 |
+| TC-006-4 | `ConfigToml` 中新增 `[zmemory].path` 字段后 schema 与读取逻辑一致 | 单元测试 |
 | TC-006-5 | 显式指向旧全局库 `$CODEX_HOME/zmemory/zmemory.db` 的兼容路径可正常解析 | 单元测试 |
 
 **复杂度**：中
@@ -308,7 +308,7 @@ dependencies: [prd, tech-review]
 - [x] 阅读 `.agents/zmemory-path-design/prd.md`、`architecture.md`、`tech-review.md` 并理解约束
 - [x] 理解现有 `codex-rs/zmemory/src/config.rs` 与 `repository.rs` 设计
 - [x] 熟悉 `codex-rs/core/src/config/mod.rs` 的 repo_root 识别以及 `codex-rs/cli/src/zmemory_cmd.rs` 的命令结构
-- [x] 明确 README + docs 需要新增 `zmemory_path` 段落并与 tech-review 迁移决策一致
+- [x] 明确 README + docs 需要新增 `[zmemory].path` 段落并与 tech-review 迁移决策一致
 - [ ] 统计需要修改/新增的测试用例并列入 Section 1.3 的测试矩阵
 
 ---
@@ -344,7 +344,7 @@ graph TD
 | `codex-rs/zmemory/src/tool_api.rs` | T-004 | helper 初始化 `ZmemoryConfig` |
 | `codex-rs/cli/src/zmemory_cmd.rs` | T-004 | 让 `doctor/stats` 展示 `pathResolution` |
 | `codex-rs/core/src/tools/handlers/zmemory.rs` | T-004 | 统一 helper、传 `turn.cwd` |
-| `docs/config.md` | T-005 | 新增 `zmemory_path` 配置说明 |
+| `docs/config.md` | T-005 | 新增 `[zmemory].path` 配置说明 |
 | `codex-rs/zmemory/README.md` | T-005 | 描述 hashed workspace、path 命令、迁移策略 |
 | `codex-rs/core/tests/suite/zmemory_e2e.rs` | T-006 | 确保 handler 输出包含 `pathResolution` |
 
@@ -359,16 +359,16 @@ graph TD
 
 ## 6. 兼容与迁移策略
 
-- 默认路径仍维持在 `codex_home/zmemory/workspace-<sha256-prefix>/zmemory.db`，`<sha256-prefix>` 由 canonical 的 repo root 或 cwd 生成，避免暴露原始目录名，便于跨平台一致。
-- tech-review 决定**不自动复制旧的 `$CODEX_HOME/zmemory/zmemory.db`**；文档中提示用户通过配置文件中的 `zmemory_path` 手动指向旧库。
+- 默认路径仍维持在 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`，`<sha256-prefix>` 由 canonical 的 repo root 或 cwd 生成，避免暴露原始目录名，便于跨平台一致。
+- tech-review 决定**不自动复制旧的 `$CODEX_HOME/zmemory/zmemory.db`**；文档中提示用户通过配置文件中的 `[zmemory].path` 手动指向旧库。
 - CLI/handler 会把 `pathResolution` 附加到 `codex zmemory doctor --json` 与 `codex zmemory stats --json` 输出，便于脚本校验当前 workspaceKey 是否与预期一致。
-- 如果 canonicalize/主仓库根解析失败（例如权限、worktree 结构异常），helper 直接返回错误并提示用户显式配置 `zmemory_path`，避免默认行为 silent fail。
+- 如果 canonicalize/主仓库根解析失败（例如权限、worktree 结构异常），helper 直接返回错误并提示用户显式配置 `[zmemory].path`，避免默认行为 silent fail。
 
 ---
 
 ## 7. 代码规范提醒
 
-- 函数尽量保持在 50 行内，复杂逻辑分解成小 helper，例如 `resolve_workspace_key`/`format_reason`。
+- 函数尽量保持在 50 行内，复杂逻辑分解成小 helper，例如 `project_key_for_workspace`/`format_reason`。
 - 使用 `format!` 时尽量内联变量（不写 `format!("{}", value)` 之外再 `let` 赋值）。
 - 路径计算应使用 `codex_utils_absolute_path::AbsolutePathBuf`，并对 `canonicalize` 失败的路径做 `to_path_buf()` 回退。
 - 所有新测试依然使用 `pretty_assertions::assert_eq`，避免在 e2e 中 `panic!`。
