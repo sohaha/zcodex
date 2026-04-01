@@ -933,7 +933,7 @@ impl BottomPane {
         self.pause_status_timer_for_modal();
         self.set_composer_input_enabled(
             /*enabled*/ false,
-            Some("Answer the questions to continue.".to_string()),
+            Some("请回答问题以继续。".to_string()),
         );
         self.push_view(Box::new(modal));
     }
@@ -974,10 +974,10 @@ impl BottomPane {
                     description: None,
                     instructions: match suggestion_type {
                         AppLinkSuggestionType::Install => {
-                            "Install this app in your browser, then return here.".to_string()
+                            "请在浏览器中安装此应用，然后返回此处。".to_string()
                         }
                         AppLinkSuggestionType::Enable => {
-                            "Enable this app to use it for the current request.".to_string()
+                            "请启用此应用以用于当前请求。".to_string()
                         }
                     },
                     url: install_url,
@@ -996,7 +996,7 @@ impl BottomPane {
             self.pause_status_timer_for_modal();
             self.set_composer_input_enabled(
                 /*enabled*/ false,
-                Some("Respond to the tool suggestion to continue.".to_string()),
+                Some("请响应工具建议以继续。".to_string()),
             );
             self.push_view(Box::new(view));
             return;
@@ -1012,7 +1012,7 @@ impl BottomPane {
         self.pause_status_timer_for_modal();
         self.set_composer_input_enabled(
             /*enabled*/ false,
-            Some("Respond to the MCP server request to continue.".to_string()),
+            Some("请响应 MCP 服务器请求以继续。".to_string()),
         );
         self.push_view(Box::new(modal));
     }

@@ -2,7 +2,7 @@
 source: tui/src/chatwidget/tests.rs
 expression: popup
 ---
-  Plugins
+  插件s
   Figma · Installed · ChatGPT Marketplace
   Turn Figma files into implementation context.
 
@@ -12,4 +12,4 @@ expression: popup
      Apps              Figma, Slack
      MCP Servers       figma-mcp, docs-mcp
 
-  Press esc to close.
+  按 esc to close.

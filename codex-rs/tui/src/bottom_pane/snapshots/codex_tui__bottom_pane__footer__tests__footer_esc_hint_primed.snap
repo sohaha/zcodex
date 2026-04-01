@@ -2,4 +2,4 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  esc again to edit previous message                                            "
+"  esc 再次编辑上一条消息                                            "

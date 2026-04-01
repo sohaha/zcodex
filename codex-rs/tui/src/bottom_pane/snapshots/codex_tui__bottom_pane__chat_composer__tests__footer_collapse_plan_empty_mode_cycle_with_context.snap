@@ -10,4 +10,4 @@ expression: terminal.backend()
 "                                                            "
 "                                                            "
 "                                                            "
-"  Plan mode (shift+tab to cycle)         100% context left  "
+"  计划模式 (shift+tab 切换模式)         100% 上下文剩余  "
