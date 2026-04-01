@@ -110,18 +110,13 @@ resolve_build_profile_dir() {
   printf '%s\n' "$profile"
 }
 
-resolve_codex_bin() {
-  local target_dir
+resolve_codex_bin_for_target_dir() {
+  local target_dir="$1"
+  shift
+
   local build_target
   local profile_dir
-  local slot
 
-  if [ -n "${CARGO_TARGET_DIR:-}" ]; then
-    target_dir="$CARGO_TARGET_DIR"
-  else
-    slot="$(bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" cargo build -p codex-cli --bin codex -j "$jobs" "$@")"
-    target_dir="$(bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot")"
-  fi
   build_target="$(resolve_build_target "$@")"
   profile_dir="$(resolve_build_profile_dir "$@")"
 
@@ -133,6 +128,38 @@ resolve_codex_bin() {
   printf '%s\n' "$target_dir/$profile_dir/codex"
 }
 
+resolve_active_cargo_target_dir() {
+  local target_dir="${CARGO_TARGET_DIR:-}"
+
+  if [ -n "$target_dir" ]; then
+    printf '%s\n' "$target_dir"
+    return
+  fi
+
+  printf '%s\n' "$repo_root/.cargo-target"
+}
+
+resolve_codex_bin() {
+  local target_dir
+  local slot
+
+  slot="$(bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" cargo build -p codex-cli --bin codex -j "$jobs" "$@")"
+
+  if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" = "1" ] && [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    target_dir="$CARGO_TARGET_DIR"
+  else
+    target_dir="$(bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot")"
+  fi
+
+  resolve_codex_bin_for_target_dir "$target_dir" "$@"
+}
+
+resolve_active_codex_bin() {
+  local target_dir
+  target_dir="$(resolve_active_cargo_target_dir)"
+  resolve_codex_bin_for_target_dir "$target_dir" "$@"
+}
+
 can_use_built_codex_for_rtk_build() {
   local built_codex_bin="$1"
 
@@ -140,16 +167,42 @@ can_use_built_codex_for_rtk_build() {
   "$built_codex_bin" rtk cargo build --help >/dev/null 2>&1
 }
 
+find_installed_codex_path() {
+  local installed_codex
+  local path_dir
+
+  installed_codex="$(command -v codex || true)"
+  if [ -n "$installed_codex" ]; then
+    printf '%s\n' "$installed_codex"
+    return 0
+  fi
+
+  IFS=':' read -r -a path_dirs <<< "${PATH:-}"
+  for path_dir in "${path_dirs[@]}"; do
+    if [ -z "$path_dir" ]; then
+      path_dir="."
+    fi
+
+    if [ -L "$path_dir/codex" ]; then
+      printf '%s\n' "$path_dir/codex"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 overwrite_installed_codex_if_present() {
   local built_codex_bin="$1"
   local installed_codex
   local built_codex_real
   local installed_codex_real
+  local install_target
   local installed_dir
   local temp_installed_dir
   local temp_installed_codex
 
-  installed_codex="$(command -v codex || true)"
+  installed_codex="$(find_installed_codex_path || true)"
   if [ -z "$installed_codex" ]; then
     return
   fi
@@ -160,12 +213,20 @@ overwrite_installed_codex_if_present() {
   fi
 
   built_codex_real="$(realpath "$built_codex_bin")"
-  installed_codex_real="$(realpath "$installed_codex")"
+  if ! installed_codex_real="$(realpath "$installed_codex" 2>/dev/null)"; then
+    installed_codex_real="$installed_codex"
+  fi
   if [ "$built_codex_real" = "$installed_codex_real" ]; then
     return
   fi
 
-  installed_dir="$(dirname "$installed_codex_real")"
+  install_target="$installed_codex_real"
+  if [ ! -e "$install_target" ]; then
+    install_target="$installed_codex"
+    echo "[build] PATH 中的 codex 指向缺失产物 $installed_codex_real，改为直接更新 $install_target" >&2
+  fi
+
+  installed_dir="$(dirname "$install_target")"
   if ! temp_installed_dir="$(mktemp -d "$installed_dir/.codex.tmp.XXXXXX")"; then
     echo "[build] 无法在 $installed_dir 创建临时目录，已跳过覆盖" >&2
     return
@@ -178,13 +239,13 @@ overwrite_installed_codex_if_present() {
     return
   fi
 
-  if ! mv -f "$temp_installed_codex" "$installed_codex_real"; then
+  if ! mv -f "$temp_installed_codex" "$install_target"; then
     rm -rf "$temp_installed_dir"
-    echo "[build] 无法原子替换 $installed_codex_real (可能正在运行)，已跳过覆盖" >&2
+    echo "[build] 无法原子替换 $install_target (可能正在运行)，已跳过覆盖" >&2
     return
   fi
   rmdir "$temp_installed_dir" 2>/dev/null || true
-  echo "[build] 已使用 $built_codex_bin 原子覆盖 $installed_codex_real" >&2
+  echo "[build] 已使用 $built_codex_bin 原子覆盖 $install_target" >&2
 }
 
 ensure_linux_build_deps() {
@@ -209,12 +270,16 @@ run_build() {
   local built_codex_bin="$1"
   shift
 
+  RUN_BUILD_CODEX_BIN="$built_codex_bin"
+
   if can_use_built_codex_for_rtk_build "$built_codex_bin"; then
     set +e
     "$script_dir/rs-ext" "$built_codex_bin" rtk cargo build -p codex-cli --bin codex -j "$jobs" "$@"
     local status=$?
     set -e
     if [ "$status" -eq 0 ]; then
+      built_codex_bin="$(resolve_active_codex_bin "$@")"
+      RUN_BUILD_CODEX_BIN="$built_codex_bin"
       overwrite_installed_codex_if_present "$built_codex_bin"
       return 0
     fi
@@ -293,10 +358,12 @@ EOF
   fi
 
   local codex_bin
+  local built_codex_bin
   codex_bin="$(resolve_codex_bin "$@")"
   run_build "$codex_bin" "$@"
+  built_codex_bin="$RUN_BUILD_CODEX_BIN"
   if [ "${CODEX_SKIP_ARTIFACT_SIZE_PRINT:-0}" != "1" ]; then
-    print_artifact_size "build" "$codex_bin"
+    print_artifact_size "build" "$built_codex_bin"
   fi
 }
 
