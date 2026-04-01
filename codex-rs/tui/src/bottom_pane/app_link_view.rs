@@ -119,19 +119,19 @@ impl AppLinkView {
             AppLinkScreen::Link => {
                 if self.is_installed {
                     vec![
-                        "Manage on ChatGPT",
+                        "在 ChatGPT 中管理",
                         if self.is_enabled {
-                            "Disable app"
+                            "禁用应用"
                         } else {
-                            "Enable app"
+                            "启用应用"
                         },
-                        "Back",
+                        "返回",
                     ]
                 } else {
-                    vec!["Install on ChatGPT", "Back"]
+                    vec!["在 ChatGPT 上安装", "返回"]
                 }
             }
-            AppLinkScreen::InstallConfirmation => vec!["I already Installed it", "Back"],
+            AppLinkScreen::InstallConfirmation => vec!["我已经安装了", "返回"],
         }
     }
 
@@ -315,11 +315,11 @@ impl AppLinkView {
         let usable_width = width.max(1) as usize;
         let mut lines: Vec<Line<'static>> = Vec::new();
 
-        lines.push(Line::from("Finish App Setup".bold()));
+        lines.push(Line::from("完成应用设置".bold()));
         lines.push(Line::from(""));
 
         for line in wrap(
-            "Complete app setup on ChatGPT in the browser window that just opened.",
+            "在刚打开的浏览器窗口中完成 ChatGPT 上的应用设置",
             usable_width,
         ) {
             lines.push(Line::from(line.into_owned()));
@@ -527,7 +527,7 @@ impl crate::render::renderable::Renderable for AppLinkView {
                 &action_rows,
                 &action_state,
                 action_rows.len().max(1),
-                "No actions",
+                "无操作",
             );
         }
 
@@ -591,7 +591,7 @@ mod tests {
                 app_id: "connector_1".to_string(),
                 title: "Notion".to_string(),
                 description: None,
-                instructions: "Manage app".to_string(),
+                instructions: "管理应用".to_string(),
                 url: "https://example.test/notion".to_string(),
                 is_installed: true,
                 is_enabled: true,
@@ -617,7 +617,7 @@ mod tests {
                 app_id: "connector_1".to_string(),
                 title: "Notion".to_string(),
                 description: None,
-                instructions: "Manage app".to_string(),
+                instructions: "管理应用".to_string(),
                 url: "https://example.test/notion".to_string(),
                 is_installed: true,
                 is_enabled: true,
@@ -656,7 +656,7 @@ mod tests {
                 app_id: "connector_1".to_string(),
                 title: "Notion".to_string(),
                 description: None,
-                instructions: "Manage app".to_string(),
+                instructions: "管理应用".to_string(),
                 url: url_like.to_string(),
                 is_installed: true,
                 is_enabled: true,
@@ -699,7 +699,7 @@ mod tests {
                 app_id: "connector_1".to_string(),
                 title: "Notion".to_string(),
                 description: None,
-                instructions: "Manage app".to_string(),
+                instructions: "管理应用".to_string(),
                 url: url.to_string(),
                 is_installed: true,
                 is_enabled: true,
