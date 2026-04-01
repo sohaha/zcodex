@@ -5445,7 +5445,7 @@ impl ChatWidget {
         }
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
             let message = format!(
-                "'/{}' is disabled while a task is in progress.",
+                "'/{}' 在任务进行中被禁用。",
                 cmd.command()
             );
             self.add_to_history(history_cell::new_error_event(message));

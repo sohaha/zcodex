@@ -2339,7 +2339,7 @@ impl ChatComposer {
             return false;
         }
         let message = format!(
-            "'/{}' is disabled while a task is in progress.",
+            "'/{}' 在任务进行中被禁用。",
             cmd.command()
         );
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
