@@ -283,6 +283,7 @@ async fn custom_provider_model_mismatch_does_not_emit_openai_safety_warning() ->
                 env_key: None,
                 env_key_instructions: None,
                 experimental_bearer_token: Some("relay-token".into()),
+                auth: None,
                 wire_api: WireApi::Responses,
                 query_params: None,
                 http_headers: None,
