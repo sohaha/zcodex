@@ -157,10 +157,10 @@ impl ApprovalOverlay {
                     additional_permissions.as_ref(),
                 ),
                 network_approval_context.as_ref().map_or_else(
-                    || "Would you like to run the following command?".to_string(),
+                    || "是否运行以下命令？".to_string(),
                     |network_approval_context| {
                         format!(
-                            "Do you want to approve network access to \"{}\"?",
+                            "是否允许访问 \"{}\" 的网络？",
                             network_approval_context.host
                         )
                     },
@@ -168,15 +168,15 @@ impl ApprovalOverlay {
             ),
             ApprovalRequest::Permissions { .. } => (
                 permissions_options(),
-                "Would you like to grant these permissions?".to_string(),
+                "是否授予这些权限？".to_string(),
             ),
             ApprovalRequest::ApplyPatch { .. } => (
                 patch_options(),
-                "Would you like to make the following edits?".to_string(),
+                "是否进行以下编辑？".to_string(),
             ),
             ApprovalRequest::McpElicitation { server_name, .. } => (
                 elicitation_options(),
-                format!("{server_name} needs your approval."),
+                format!("{server_name} 需要你的审批。"),
             ),
         };
 
@@ -288,11 +288,11 @@ impl ApprovalOverlay {
         };
         if request.thread_label().is_none() {
             let message = if granted_permissions.is_empty() {
-                "You did not grant additional permissions"
+                "未授予额外权限"
             } else if matches!(scope, PermissionGrantScope::Session) {
-                "You granted additional permissions for this session"
+                "已授予本次会话的额外权限"
             } else {
-                "You granted additional permissions"
+                "已授予额外权限"
             };
             self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                 crate::history_cell::PlainHistoryCell::new(vec![message.into()]),
@@ -482,15 +482,15 @@ fn approval_footer_hint(request: &ApprovalRequest) -> Line<'static> {
     let mut spans = vec![
         "Press ".into(),
         key_hint::plain(KeyCode::Enter).into(),
-        " to confirm or ".into(),
+        " 确认或 ".into(),
         key_hint::plain(KeyCode::Esc).into(),
-        " to cancel".into(),
+        " 取消".into(),
     ];
     if request.thread_label().is_some() {
         spans.extend([
-            " or ".into(),
+            " 或 ".into(),
             key_hint::plain(KeyCode::Char('o')).into(),
-            " to open thread".into(),
+            " 打开线程".into(),
         ]);
     }
     Line::from(spans)
@@ -509,20 +509,20 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             let mut header: Vec<Line<'static>> = Vec::new();
             if let Some(thread_label) = thread_label {
                 header.push(Line::from(vec![
-                    "Thread: ".into(),
+                    "线程：".into(),
                     thread_label.clone().bold(),
                 ]));
                 header.push(Line::from(""));
             }
             if let Some(reason) = reason {
-                header.push(Line::from(vec!["Reason: ".into(), reason.clone().italic()]));
+                header.push(Line::from(vec!["原因：".into(), reason.clone().italic()]));
                 header.push(Line::from(""));
             }
             if let Some(additional_permissions) = additional_permissions
                 && let Some(rule_line) = format_additional_permissions_rule(additional_permissions)
             {
                 header.push(Line::from(vec![
-                    "Permission rule: ".into(),
+                    "权限规则：".into(),
                     rule_line.cyan(),
                 ]));
                 header.push(Line::from(""));
@@ -546,18 +546,18 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             let mut header: Vec<Line<'static>> = Vec::new();
             if let Some(thread_label) = thread_label {
                 header.push(Line::from(vec![
-                    "Thread: ".into(),
+                    "线程：".into(),
                     thread_label.clone().bold(),
                 ]));
                 header.push(Line::from(""));
             }
             if let Some(reason) = reason {
-                header.push(Line::from(vec!["Reason: ".into(), reason.clone().italic()]));
+                header.push(Line::from(vec!["原因：".into(), reason.clone().italic()]));
                 header.push(Line::from(""));
             }
             if let Some(rule_line) = format_requested_permissions_rule(permissions) {
                 header.push(Line::from(vec![
-                    "Permission rule: ".into(),
+                    "权限规则：".into(),
                     rule_line.cyan(),
                 ]));
             }
@@ -573,7 +573,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             let mut header: Vec<Box<dyn Renderable>> = Vec::new();
             if let Some(thread_label) = thread_label {
                 header.push(Box::new(Line::from(vec![
-                    "Thread: ".into(),
+                    "线程：".into(),
                     thread_label.clone().bold(),
                 ])));
                 header.push(Box::new(Line::from("")));
@@ -583,7 +583,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             {
                 header.push(Box::new(
                     Paragraph::new(Line::from_iter([
-                        "Reason: ".into(),
+                        "原因：".into(),
                         reason.clone().italic(),
                     ]))
                     .wrap(Wrap { trim: false }),
@@ -602,13 +602,13 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             let mut lines = Vec::new();
             if let Some(thread_label) = thread_label {
                 lines.push(Line::from(vec![
-                    "Thread: ".into(),
+                    "线程：".into(),
                     thread_label.clone().bold(),
                 ]));
                 lines.push(Line::from(""));
             }
             lines.extend([
-                Line::from(vec!["Server: ".into(), server_name.clone().bold()]),
+                Line::from(vec!["服务器：".into(), server_name.clone().bold()]),
                 Line::from(""),
                 Line::from(message.clone()),
             ]);
@@ -650,9 +650,9 @@ fn exec_options(
         .filter_map(|decision| match decision {
             ReviewDecision::Approved => Some(ApprovalOption {
                 label: if network_approval_context.is_some() {
-                    "Yes, just this once".to_string()
+                    "仅此一次".to_string()
                 } else {
-                    "Yes, proceed".to_string()
+                    "允许继续".to_string()
                 },
                 decision: ApprovalDecision::Review(ReviewDecision::Approved),
                 display_shortcut: None,
@@ -669,7 +669,7 @@ fn exec_options(
 
                 Some(ApprovalOption {
                     label: format!(
-                        "Yes, and don't ask again for commands that start with `{rendered_prefix}`"
+                        "允许，且不再询问以 `{rendered_prefix}` 开头的命令"
                     ),
                     decision: ApprovalDecision::Review(
                         ReviewDecision::ApprovedExecpolicyAmendment {
@@ -682,11 +682,11 @@ fn exec_options(
             }
             ReviewDecision::ApprovedForSession => Some(ApprovalOption {
                 label: if network_approval_context.is_some() {
-                    "Yes, and allow this host for this conversation".to_string()
+                    "允许，本次会话不阻止此主机".to_string()
                 } else if additional_permissions.is_some() {
-                    "Yes, and allow these permissions for this session".to_string()
+                    "允许，本次会话授予这些权限".to_string()
                 } else {
-                    "Yes, and don't ask again for this command in this session".to_string()
+                    "允许，本次会话不再询问此命令".to_string()
                 },
                 decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
                 display_shortcut: None,
@@ -715,13 +715,13 @@ fn exec_options(
                 })
             }
             ReviewDecision::Denied => Some(ApprovalOption {
-                label: "No, continue without running it".to_string(),
+                label: "拒绝，不运行".to_string(),
                 decision: ApprovalDecision::Review(ReviewDecision::Denied),
                 display_shortcut: None,
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('d'))],
             }),
             ReviewDecision::Abort => Some(ApprovalOption {
-                label: "No, and tell Codex what to do differently".to_string(),
+                label: "拒绝，告诉 Codex 改怎么做".to_string(),
                 decision: ApprovalDecision::Review(ReviewDecision::Abort),
                 display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -776,19 +776,19 @@ pub(crate) fn format_requested_permissions_rule(
 fn patch_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
-            label: "Yes, proceed".to_string(),
+            label: "允许继续".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Approved),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "Yes, and don't ask again for these files".to_string(),
+            label: "允许，以后不再询问这些文件".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
-            label: "No, and tell Codex what to do differently".to_string(),
+            label: "拒绝，告诉 Codex 改怎么做".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Abort),
             display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -799,19 +799,19 @@ fn patch_options() -> Vec<ApprovalOption> {
 fn permissions_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
-            label: "Yes, grant these permissions".to_string(),
+            label: "授予这些权限".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Approved),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "Yes, grant these permissions for this session".to_string(),
+            label: "授予本次会话的权限".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
-            label: "No, continue without permissions".to_string(),
+            label: "拒绝，不授予权限".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Denied),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -822,19 +822,19 @@ fn permissions_options() -> Vec<ApprovalOption> {
 fn elicitation_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
-            label: "Yes, provide the requested info".to_string(),
+            label: "允许，提供请求的信息".to_string(),
             decision: ApprovalDecision::McpElicitation(ElicitationAction::Accept),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "No, but continue without it".to_string(),
+            label: "拒绝，不提供".to_string(),
             decision: ApprovalDecision::McpElicitation(ElicitationAction::Decline),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
         },
         ApprovalOption {
-            label: "Cancel this request".to_string(),
+            label: "取消此请求".to_string(),
             decision: ApprovalDecision::McpElicitation(ElicitationAction::Cancel),
             display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('c'))],

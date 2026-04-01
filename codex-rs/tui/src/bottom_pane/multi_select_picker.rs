@@ -59,7 +59,7 @@ use crate::text_formatting::truncate_text;
 const ITEM_NAME_TRUNCATE_LEN: usize = 21;
 
 /// Placeholder text shown in the search input when empty.
-const SEARCH_PLACEHOLDER: &str = "Type to search";
+const SEARCH_PLACEHOLDER: &str = "输入搜索";
 
 /// Prefix displayed before the search query (mimics a command prompt).
 const SEARCH_PROMPT_PREFIX: &str = "> ";
@@ -730,11 +730,11 @@ impl MultiSelectPickerBuilder {
             vec![
                 "Press ".into(),
                 key_hint::plain(KeyCode::Char(' ')).into(),
-                " to toggle; ".into(),
+                " 切换；".into(),
                 key_hint::plain(KeyCode::Enter).into(),
-                " to confirm and close; ".into(),
+                " 确认并关闭；".into(),
                 key_hint::plain(KeyCode::Esc).into(),
-                " to close".into(),
+                " 关闭".into(),
             ]
         } else {
             self.instructions

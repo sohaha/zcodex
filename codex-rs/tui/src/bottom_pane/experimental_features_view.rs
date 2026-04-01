@@ -51,9 +51,9 @@ impl ExperimentalFeaturesView {
         app_event_tx: AppEventSender,
     ) -> Self {
         let mut header = ColumnRenderable::new();
-        header.push(Line::from("Experimental features".bold()));
+        header.push(Line::from("实验性功能".bold()));
         header.push(Line::from(
-            "Toggle experimental features. Changes are saved to config.toml.".dim(),
+            "切换实验性功能。更改将保存到 config.toml。".dim(),
         ));
 
         let mut view = Self {
@@ -260,7 +260,7 @@ impl Renderable for ExperimentalFeaturesView {
                 &rows,
                 &self.state,
                 MAX_POPUP_ROWS,
-                "  No experimental features available for now",
+                "  暂无可用实验性功能",
             );
         }
 
@@ -293,8 +293,8 @@ fn experimental_popup_hint_line() -> Line<'static> {
     Line::from(vec![
         "Press ".into(),
         key_hint::plain(KeyCode::Char(' ')).into(),
-        " to select or ".into(),
+        " 选择或 ".into(),
         key_hint::plain(KeyCode::Enter).into(),
-        " to save for next conversation".into(),
+        " 保存到下次对话".into(),
     ])
 }

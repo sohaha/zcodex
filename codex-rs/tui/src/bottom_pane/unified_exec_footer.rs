@@ -50,7 +50,7 @@ impl UnifiedExecFooter {
         let count = self.processes.len();
         let plural = if count == 1 { "" } else { "s" };
         Some(format!(
-            "{count} background terminal{plural} running · /ps to view · /stop to close"
+            "{count} 个后台终端运行中 · /ps 查看 · /stop 关闭"
         ))
     }
 

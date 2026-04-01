@@ -156,7 +156,7 @@ fn compute_desc_col(
                         let mut spans = row.name_prefix_spans.clone();
                         spans.push(row.name.clone().into());
                         if row.disabled_reason.is_some() {
-                            spans.push(" (disabled)".dim());
+                            spans.push(" (已禁用)".dim());
                         }
                         Line::from(spans).width()
                     })
@@ -168,7 +168,7 @@ fn compute_desc_col(
                         let mut spans = row.name_prefix_spans.clone();
                         spans.push(row.name.clone().into());
                         if row.disabled_reason.is_some() {
-                            spans.push(" (disabled)".dim());
+                            spans.push(" (已禁用)".dim());
                         }
                         Line::from(spans).width()
                     })
@@ -416,7 +416,7 @@ fn build_full_line(row: &GenericDisplayRow, desc_col: usize) -> Line<'static> {
     let combined_description = match (&row.description, &row.disabled_reason) {
         (Some(desc), Some(reason)) => Some(format!("{desc} (disabled: {reason})")),
         (Some(desc), None) => Some(desc.clone()),
-        (None, Some(reason)) => Some(format!("disabled: {reason}")),
+        (None, Some(reason)) => Some(format!("已禁用: {reason}")),
         (None, None) => None,
     };
 

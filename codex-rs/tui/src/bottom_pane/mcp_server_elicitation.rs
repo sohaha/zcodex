@@ -45,8 +45,8 @@ use crate::render::renderable::Renderable;
 use crate::text_formatting::format_json_compact;
 use crate::text_formatting::truncate_text;
 
-const ANSWER_PLACEHOLDER: &str = "Type your answer";
-const OPTIONAL_ANSWER_PLACEHOLDER: &str = "Type your answer (optional)";
+            const ANSWER_PLACEHOLDER: &str = "输入你的回答";
+const OPTIONAL_ANSWER_PLACEHOLDER: &str = "输入你的回答（可选）";
 const FOOTER_SEPARATOR: &str = " | ";
 const MIN_COMPOSER_HEIGHT: u16 = 3;
 const MIN_OVERLAY_HEIGHT: u16 = 8;
@@ -291,9 +291,9 @@ impl McpServerElicitationFormRequest {
         {
             (McpServerElicitationResponseMode::FormContent, Vec::new())
         } else if requested_schema.is_null() || (is_tool_approval && is_empty_object_schema) {
-            let mut options = vec![McpServerElicitationOption {
-                label: "Allow".to_string(),
-                description: Some("Run the tool and continue.".to_string()),
+            let mut options = vec![                McpServerElicitationOption {
+                    label: "允许".to_string(),
+                    description: Some("运行工具并继续。".to_string()),
                 value: Value::String(APPROVAL_ACCEPT_ONCE_VALUE.to_string()),
             }];
             if is_tool_approval_action
@@ -302,10 +302,10 @@ impl McpServerElicitationFormRequest {
                     APPROVAL_PERSIST_SESSION_VALUE,
                 )
             {
-                options.push(McpServerElicitationOption {
-                    label: "Allow for this session".to_string(),
+                options.push(                McpServerElicitationOption {
+                    label: "本次会话允许".to_string(),
                     description: Some(
-                        "Run the tool and remember this choice for this session.".to_string(),
+                        "运行工具并在本次会话中记住此选择。".to_string(),
                     ),
                     value: Value::String(APPROVAL_ACCEPT_SESSION_VALUE.to_string()),
                 });
@@ -313,25 +313,25 @@ impl McpServerElicitationFormRequest {
             if is_tool_approval_action
                 && tool_approval_supports_persist_mode(meta.as_ref(), APPROVAL_PERSIST_ALWAYS_VALUE)
             {
-                options.push(McpServerElicitationOption {
-                    label: "Always allow".to_string(),
+                options.push(                McpServerElicitationOption {
+                    label: "始终允许".to_string(),
                     description: Some(
-                        "Run the tool and remember this choice for future tool calls.".to_string(),
+                        "运行工具并在后续调用中记住此选择。".to_string(),
                     ),
                     value: Value::String(APPROVAL_ACCEPT_ALWAYS_VALUE.to_string()),
                 });
             }
             if is_tool_approval_action {
-                options.push(McpServerElicitationOption {
-                    label: "Cancel".to_string(),
-                    description: Some("Cancel this tool call".to_string()),
+                options.push(                McpServerElicitationOption {
+                    label: "取消".to_string(),
+                    description: Some("取消此工具调用".to_string()),
                     value: Value::String(APPROVAL_CANCEL_VALUE.to_string()),
                 });
             } else {
                 options.extend([
                     McpServerElicitationOption {
-                        label: "Deny".to_string(),
-                        description: Some("Decline this tool call and continue.".to_string()),
+                        label: "拒绝".to_string(),
+                        description: Some("拒绝此工具调用并继续。".to_string()),
                         value: Value::String(APPROVAL_DECLINE_VALUE.to_string()),
                     },
                     McpServerElicitationOption {
@@ -986,27 +986,27 @@ impl McpServerElicitationOverlay {
         let is_last_field = self.current_index().saturating_add(1) >= self.field_count();
         if self.current_field_is_select() {
             if self.field_count() == 1 {
-                tips.push(FooterTip::highlighted("enter to submit"));
+                tips.push(FooterTip::highlighted("回车提交"));
             } else if is_last_field {
-                tips.push(FooterTip::highlighted("enter to submit all"));
+                tips.push(FooterTip::highlighted("回车全部提交"));
             } else {
-                tips.push(FooterTip::new("enter to submit answer"));
+                tips.push(FooterTip::new("回车提交回答"));
             }
         } else if self.field_count() == 1 {
-            tips.push(FooterTip::highlighted("enter to submit"));
+                tips.push(FooterTip::highlighted("回车提交"));
         } else if is_last_field {
-            tips.push(FooterTip::highlighted("enter to submit all"));
-        } else {
-            tips.push(FooterTip::new("enter to submit answer"));
+                tips.push(FooterTip::highlighted("回车全部提交"));
+            } else {
+                tips.push(FooterTip::new("回车提交回答"));
         }
         if self.field_count() > 1 {
             if self.current_field_is_select() {
-                tips.push(FooterTip::new("←/→ to navigate fields"));
+                tips.push(FooterTip::new("←/→ 切换字段"));
             } else {
-                tips.push(FooterTip::new("ctrl + p / ctrl + n change field"));
+                tips.push(FooterTip::new("ctrl + p / ctrl + n 切换字段"));
             }
         }
-        tips.push(FooterTip::new("esc to cancel"));
+        tips.push(FooterTip::new("esc 取消"));
         tips
     }
 
@@ -1146,7 +1146,7 @@ impl McpServerElicitationOverlay {
     fn submit_answers(&mut self) {
         self.save_current_draft();
         if let Some(idx) = self.first_required_unanswered_index() {
-            self.validation_error = Some("Answer required fields before submitting.".to_string());
+            self.validation_error = Some("提交前请填写必填字段。".to_string());
             self.jump_to_field(idx);
             return;
         }
@@ -1302,7 +1302,7 @@ impl McpServerElicitationOverlay {
                 state.selected_idx = Some(0);
             }
             state.ensure_visible(rows.len(), area.height as usize);
-            render_rows(area, buf, &rows, &state, rows.len().max(1), "No options");
+            render_rows(area, buf, &rows, &state, rows.len().max(1), "无选项");
             return;
         }
         if self.current_field_is_secret() {
@@ -1436,14 +1436,14 @@ impl Renderable for McpServerElicitationOverlay {
         let progress_line = if self.field_count() > 0 {
             let idx = self.current_index() + 1;
             let total = self.field_count();
-            let base = format!("Field {idx}/{total}");
+            let base = format!("字段 {idx}/{total}");
             if unanswered > 0 {
-                Line::from(format!("{base} ({unanswered} required unanswered)").dim())
+                Line::from(format!("{base}（{unanswered} 个必填未回答）").dim())
             } else {
                 Line::from(base.dim())
             }
         } else {
-            Line::from("No fields".dim())
+            Line::from("无字段".dim())
         };
         Paragraph::new(progress_line).render(progress_area, buf);
         self.render_prompt(prompt_area, buf);
