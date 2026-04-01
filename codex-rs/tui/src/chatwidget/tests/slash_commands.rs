@@ -2,6 +2,13 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn buddy_is_visible_by_default() {
+    let (chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    assert!(chat.bottom_pane.buddy_visible());
+}
+
+#[tokio::test]
 async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

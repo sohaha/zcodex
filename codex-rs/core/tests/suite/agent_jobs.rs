@@ -605,8 +605,7 @@ async fn spawn_agents_on_csv_retries_missing_reports_once() -> Result<()> {
     let output = fs::read_to_string(&output_path)?;
     let job_id = output
         .lines()
-        .skip(1)
-        .next()
+        .nth(1)
         .and_then(|line| {
             parse_simple_csv_line(line)
                 .iter()
@@ -666,8 +665,7 @@ async fn spawn_agents_on_csv_marks_job_failed_after_retry_exhaustion() -> Result
     let output = fs::read_to_string(&output_path)?;
     let job_id = output
         .lines()
-        .skip(1)
-        .next()
+        .nth(1)
         .and_then(|line| {
             parse_simple_csv_line(line)
                 .iter()

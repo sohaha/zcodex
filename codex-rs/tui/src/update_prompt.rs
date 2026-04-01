@@ -1,7 +1,6 @@
 #![cfg(not(debug_assertions))]
 
 use crate::history_cell::padded_emoji;
-use crate::key_hint;
 use crate::render::Insets;
 use crate::render::renderable::ColumnRenderable;
 use crate::render::renderable::Renderable;
@@ -191,7 +190,7 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push("");
         column.push(Line::from(vec![
             padded_emoji("  ✨").bold().cyan(),
-            "Update available!".bold(),
+            "发现可用更新！".bold(),
             " ".into(),
             format!(
                 "{current} -> {latest}",
@@ -203,7 +202,7 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push("");
         column.push(
             Line::from(vec![
-                "Release notes: ".dim(),
+                "更新日志：".dim(),
                 "https://github.com/openai/codex/releases/latest"
                     .dim()
                     .underlined(),
@@ -213,27 +212,23 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push("");
         column.push(selection_option_row(
             0,
-            format!("Update now (runs `{update_command}`)"),
+            format!("立即更新（将运行 `{update_command}`）"),
             self.highlighted == UpdateSelection::UpdateNow,
         ));
         column.push(selection_option_row(
             1,
-            "Skip".to_string(),
+            "暂不更新".to_string(),
             self.highlighted == UpdateSelection::NotNow,
         ));
         column.push(selection_option_row(
             2,
-            "Skip until next version".to_string(),
+            "跳过此版本（下个版本再提醒）".to_string(),
             self.highlighted == UpdateSelection::DontRemind,
         ));
         column.push("");
         column.push(
-            Line::from(vec![
-                "Press ".dim(),
-                key_hint::plain(KeyCode::Enter).into(),
-                " to continue".dim(),
-            ])
-            .inset(Insets::tlbr(0, 2, 0, 0)),
+            Line::from(vec!["按 ".dim(), "回车".dim(), " 继续".dim()])
+                .inset(Insets::tlbr(0, 2, 0, 0)),
         );
         column.render(area, buf);
     }

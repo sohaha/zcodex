@@ -10,13 +10,19 @@ use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::AgentMessageEvent;
+use codex_protocol::protocol::RolloutLine;
+use codex_protocol::protocol::SessionMeta;
+use codex_protocol::protocol::SessionMetaLine;
+use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
 use core_test_support::PathExt;
 use core_test_support::responses::mount_models_once;
 use pretty_assertions::assert_eq;
+use std::path::Path;
 use std::time::Duration;
 use tempfile::tempdir;
+use tokio::io::AsyncWriteExt;
 use wiremock::MockServer;
 
 fn user_msg(text: &str) -> ResponseItem {
@@ -40,6 +46,49 @@ fn assistant_msg(text: &str) -> ResponseItem {
         end_turn: None,
         phase: None,
     }
+}
+
+async fn write_rollout_with_items(
+    dir: &Path,
+    thread_id: ThreadId,
+    items: Vec<RolloutItem>,
+) -> std::io::Result<std::path::PathBuf> {
+    tokio::fs::create_dir_all(dir).await?;
+    let file_path = dir.join(format!("rollout-2025-01-01T00-00-00-{thread_id}.jsonl"));
+    let mut file = tokio::fs::File::create(&file_path).await?;
+    let meta = RolloutLine {
+        timestamp: "2025-01-01T00:00:00Z".to_string(),
+        item: RolloutItem::SessionMeta(SessionMetaLine {
+            meta: SessionMeta {
+                id: thread_id,
+                forked_from_id: None,
+                timestamp: "2025-01-01T00:00:00Z".to_string(),
+                cwd: std::path::PathBuf::from("."),
+                originator: "test-originator".to_string(),
+                cli_version: "test-version".to_string(),
+                source: SessionSource::Exec,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+                model_provider: None,
+                base_instructions: None,
+                dynamic_tools: None,
+                memory_mode: None,
+            },
+            git: None,
+        }),
+    };
+    file.write_all(format!("{}\n", serde_json::to_string(&meta)?).as_bytes())
+        .await?;
+    for item in items {
+        let line = RolloutLine {
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+            item,
+        };
+        file.write_all(format!("{}\n", serde_json::to_string(&line)?).as_bytes())
+            .await?;
+    }
+    Ok(file_path)
 }
 
 #[test]
@@ -771,28 +820,27 @@ async fn interrupted_fork_snapshot_uses_persisted_mid_turn_history_without_live_
         )),
     );
 
-    let source = manager
-        .resume_thread_with_history(
-            config.clone(),
-            InitialHistory::Forked(vec![
-                RolloutItem::ResponseItem(user_msg("hello")),
-                RolloutItem::ResponseItem(assistant_msg("partial")),
-            ]),
-            auth_manager,
-            /*persist_extended_history*/ false,
-            /*parent_trace*/ None,
-        )
-        .await
-        .expect("create source thread from partial history");
-    let source_path = source
-        .thread
-        .rollout_path()
-        .expect("source rollout path should exist");
+    let thread_id = ThreadId::new();
+    let source_dir = config
+        .codex_home
+        .join(crate::rollout::SESSIONS_SUBDIR)
+        .join("2025")
+        .join("01")
+        .join("01");
+    let source_path = write_rollout_with_items(
+        &source_dir,
+        thread_id,
+        vec![
+            RolloutItem::ResponseItem(user_msg("hello")),
+            RolloutItem::ResponseItem(assistant_msg("partial")),
+        ],
+    )
+    .await
+    .expect("write source rollout");
     let source_history = RolloutRecorder::get_rollout_history(&source_path)
         .await
         .expect("read source rollout history");
     assert!(snapshot_turn_state(&source_history).ends_mid_turn);
-    manager.remove_thread(&source.thread_id).await;
 
     let forked = manager
         .fork_thread(

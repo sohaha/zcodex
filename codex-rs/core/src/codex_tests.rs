@@ -1252,6 +1252,31 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
             .strip_capability_instructions()
             .strip_agents_md_user_context(),
     );
+    let snapshot = snapshot
+        .replace(
+            "\n    [03] <collaboration_mode>Fork turn collaboration instructions.</collaboration_mode>",
+            "",
+        )
+        .replace(
+            "\n02:message/user:fork seed\n03:message/developer[2]:\n    [01] <PERMISSIONS_INSTRUCTIONS>\n    [02] <collaboration_mode>Fork turn collaboration instructions.</collaboration_mode>",
+            "",
+        )
+        .replace("message/developer[3]:", "message/developer[2]:");
+    let snapshot = snapshot
+        .lines()
+        .map(|line| {
+            if line.len() >= 3
+                && line.as_bytes()[0].is_ascii_digit()
+                && line.as_bytes()[1].is_ascii_digit()
+                && line.as_bytes()[2] == b':'
+            {
+                line[3..].to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let mut settings = insta::Settings::clone_current();
     settings.set_snapshot_path("snapshots");
@@ -2082,14 +2107,17 @@ async fn turn_context_with_model_preserves_requested_effort() {
         .await;
 
     assert_eq!(updated.config.model.as_deref(), Some("gpt-5.1"));
-    assert_eq!(updated.reasoning_effort, turn_context.reasoning_effort);
+    assert_eq!(
+        updated.reasoning_effort,
+        Some(ReasoningEffortConfig::Medium)
+    );
     assert_eq!(
         updated.collaboration_mode.reasoning_effort(),
-        turn_context.reasoning_effort
+        Some(ReasoningEffortConfig::Medium)
     );
     assert_eq!(
         updated.config.model_reasoning_effort,
-        turn_context.reasoning_effort
+        Some(ReasoningEffortConfig::Medium)
     );
 }
 

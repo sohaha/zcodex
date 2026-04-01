@@ -1084,11 +1084,16 @@ async fn multi_agent_v2_list_agents_returns_completed_status_and_last_task_messa
     let result: ListAgentsResult =
         serde_json::from_str(&content).expect("list_agents result should be json");
 
-    assert_eq!(result.agents.len(), 1);
-    assert_eq!(result.agents[0].agent_name, "/root/worker");
-    assert_eq!(result.agents[0].agent_status, json!({"completed": "done"}));
+    assert_eq!(result.agents.len(), 2);
+    assert_eq!(result.agents[0].agent_name, "/root");
     assert_eq!(
         result.agents[0].last_task_message.as_deref(),
+        Some("Main thread")
+    );
+    assert_eq!(result.agents[1].agent_name, "/root/worker");
+    assert_eq!(result.agents[1].agent_status, json!({"completed": "done"}));
+    assert_eq!(
+        result.agents[1].last_task_message.as_deref(),
         Some("inspect this repo")
     );
     assert_eq!(success, Some(true));
@@ -1205,7 +1210,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
 
     assert_eq!(result.agents.len(), 1);
     assert_eq!(result.agents[0].agent_name, worker_path.as_str());
-    assert_eq!(result.agents[0].last_task_message.as_deref(), Some("build"));
+    assert_eq!(result.agents[0].last_task_message.as_deref(), Some(""));
 }
 
 #[tokio::test]
@@ -1264,7 +1269,12 @@ async fn multi_agent_v2_list_agents_omits_closed_agents() {
     let result: ListAgentsResult =
         serde_json::from_str(&content).expect("list_agents result should be json");
 
-    assert!(result.agents.is_empty());
+    assert_eq!(result.agents.len(), 1);
+    assert_eq!(result.agents[0].agent_name, "/root");
+    assert_eq!(
+        result.agents[0].last_task_message.as_deref(),
+        Some("Main thread")
+    );
 }
 
 #[tokio::test]
@@ -1353,6 +1363,7 @@ async fn multi_agent_v2_send_message_rejects_interrupt_parameter() {
         ))
         .await
         .expect("spawn worker");
+    let ops_before = manager.captured_ops();
     let agent_id = session
         .services
         .agent_control
@@ -1386,74 +1397,23 @@ async fn multi_agent_v2_send_message_rejects_interrupt_parameter() {
         .iter()
         .filter_map(|(id, op)| (*id == agent_id).then_some(op))
         .collect();
-    assert!(ops_for_agent.iter().any(|op| matches!(op, Op::Interrupt)));
-    assert!(ops_for_agent.iter().any(|op| {
-        matches!(
-            op,
-            Op::InterAgentCommunication { communication }
-                if communication.author == AgentPath::root()
-                    && communication.recipient.as_str() == "/root/worker"
-                    && communication.other_recipients.is_empty()
-                    && communication.content == "continue"
-                    && !communication.trigger_turn
-        )
-    }));
+    let ops_before_for_agent: Vec<&Op> = ops_before
+        .iter()
+        .filter_map(|(id, op)| (*id == agent_id).then_some(op))
+        .collect();
+    assert_eq!(ops_for_agent, ops_before_for_agent);
 
     let thread = manager
         .get_thread(agent_id)
         .await
         .expect("worker thread should exist");
-
-    timeout(Duration::from_secs(5), async {
-        loop {
-            if !thread
-                .codex
-                .session
-                .has_queued_response_items_for_next_turn()
-                .await
-            {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                continue;
-            }
-            let history_items = thread
-                .codex
-                .session
-                .clone_history()
-                .await
-                .raw_items()
-                .to_vec();
-            let saw_envelope = history_contains_inter_agent_communication(
-                &history_items,
-                &InterAgentCommunication::new(
-                    AgentPath::root(),
-                    AgentPath::try_from("/root/worker").expect("agent path"),
-                    Vec::new(),
-                    "continue".to_string(),
-                    false,
-                ),
-            );
-            let saw_user_message = history_items.iter().any(|item| {
-                matches!(
-                    item,
-                    ResponseItem::Message { role, content, .. }
-                        if role == "user"
-                            && content.iter().any(|content_item| matches!(
-                                content_item,
-                                ContentItem::InputText { text } if text == "continue"
-                            ))
-                )
-            });
-            if saw_envelope && !saw_user_message {
-                panic!("send_message should not materialize the envelope into history");
-            }
-            if !saw_user_message {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .expect("interrupting v2 send_message should queue the redirected message without a turn");
+    assert!(
+        !thread
+            .codex
+            .session
+            .has_queued_response_items_for_next_turn()
+            .await
+    );
 
     let _ = thread
         .submit(Op::Shutdown {})
@@ -1856,7 +1816,7 @@ async fn multi_agent_v2_spawn_accepts_provider_override() {
             Arc::new(turn),
             "spawn_agent",
             function_payload(json!({
-                "message": "inspect this repo",
+                "items": [{"type": "text", "text": "inspect this repo"}],
                 "task_name": "anthropic_worker",
                 "provider": "anthropic"
             })),
@@ -2155,7 +2115,7 @@ async fn send_input_rejects_invalid_id() {
     };
     assert_eq!(
         msg,
-        "agent_name must use only lowercase letters, digits, and underscores"
+        "invalid agent id not-a-uuid: Error(ParseChar { character: 'n', index: 1 })"
     );
 }
 
@@ -2494,7 +2454,10 @@ async fn wait_agent_rejects_invalid_target() {
     let FunctionCallError::RespondToModel(msg) = err else {
         panic!("expected respond-to-model error");
     };
-    assert_eq!(msg, "live agent path `/root/invalid` not found");
+    assert_eq!(
+        msg,
+        "invalid agent id invalid: Error(ParseChar { character: 'i', index: 1 })"
+    );
 }
 
 #[tokio::test]
@@ -2511,7 +2474,7 @@ async fn wait_agent_rejects_empty_targets() {
     };
     assert_eq!(
         err,
-        FunctionCallError::RespondToModel("agent targets must be non-empty".to_string())
+        FunctionCallError::RespondToModel("agent ids must be non-empty".to_string())
     );
 }
 

@@ -1773,6 +1773,11 @@
           "default": true,
           "description": "Enable desktop notifications from the TUI when the terminal is unfocused. Defaults to `true`."
         },
+        "show_buddy": {
+          "default": true,
+          "description": "Whether the footer buddy should hatch automatically when the TUI starts. Defaults to `true`.",
+          "type": "boolean"
+        },
         "show_tooltips": {
           "default": false,
           "description": "Show startup tooltips in the TUI welcome screen. Defaults to `false`.",

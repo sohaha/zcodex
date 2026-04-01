@@ -815,6 +815,11 @@ pub struct Tui {
     #[serde(default)]
     pub theme: Option<String>,
 
+    /// Whether the footer buddy should hatch automatically when the TUI starts.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub show_buddy: bool,
+
     /// Startup tooltip availability NUX state persisted by the TUI.
     #[serde(default)]
     pub model_availability_nux: ModelAvailabilityNuxConfig,

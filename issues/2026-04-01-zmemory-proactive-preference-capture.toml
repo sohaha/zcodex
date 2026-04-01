@@ -7,20 +7,20 @@ title = "固化稳定偏好主动写入 contract 与 canonical URI"
 scope = """
 为“稳定用户偏好主动写入 zmemory”收口首版 contract：明确哪些高确定性偏好信号会触发 durable write，
 它们分别落到 `core://my_user`、`core://agent`、`core://agent/my_user` 哪条 canonical URI，
-以及写入前查重、写入后验证、`create`/`update` 选择的最小规则。允许在 `codex-core` 中补最小 helper、策略枚举或内容模板，
+以及写入前查重、写入后验证、`create`/`update` 选择的最小规则。允许在 `codex-core` 中补最小 helper 或策略枚举，
 并为这些 contract 增加聚焦测试或断言，避免后续编排继续依赖隐式约定。
 本 issue 不把 write gate 真正接入 turn 运行时，也不扩展到模糊人格画像或低置信度偏好推断。
 """
-touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/src/memories/prompts.rs", "codex-rs/core/templates/zmemory/write_path.md", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/zmemory/src/config.rs"]
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/src/memories/*", "codex-rs/zmemory/src/config.rs", "codex-rs/zmemory/src/system_views.rs"]
 depends_on = []
 done_when = "首版 contract 明确覆盖用户称呼偏好、助手自称偏好、双方协作称呼约定三类高确定性长期偏好；工程师可以不靠猜测判断目标 URI、查重规则、create/update 选择与写后验证路径；相关聚焦断言能固定该 contract"
-validate_by = "补充 contract / prompt 相关聚焦测试后，运行仓库现有命令 cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet && cargo test -p codex-zmemory --quiet"
+validate_by = "补充稳定偏好 contract 的聚焦测试后，运行仓库现有命令 cargo test -p codex-core --quiet && cargo test -p codex-zmemory --quiet"
 regress_by = "none"
 regress_timing = "after_done"
-status = "todo"
+status = "in_progress"
 validate_status = "not_run"
 regress_status = "not_needed"
-notes = "none"
+notes = "执行策略：当前仅 a1 位于可执行前沿；虽已获多 agents 授权，但本轮不存在可安全并行的独立 issue，故先由主代理本地推进。能力适配：vbm recall 已执行；其余能力对当前单 issue contract 落地无额外实质收益。"
 
 [[issue]]
 id = "a2"

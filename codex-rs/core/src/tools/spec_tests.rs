@@ -351,6 +351,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         PLAN_TOOL.clone(),
         create_tldr_tool(),
         request_user_input_tool_spec(/*default_mode_request_user_input*/ false),
+        create_zmemory_tool(),
         create_apply_patch_freeform_tool(),
         ToolSpec::WebSearch {
             external_web_access: Some(true),
@@ -414,6 +415,7 @@ fn test_build_specs_collab_tools_enabled() {
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
     features.enable(Feature::Collab);
+    let _ = features.disable(Feature::MultiAgentV2);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -442,7 +444,7 @@ fn test_build_specs_collab_tools_enabled() {
     let JsonSchema::Object { properties, .. } = parameters else {
         panic!("spawn_agent should use object params");
     };
-    assert!(properties.contains_key("provider"));
+    assert!(properties.contains_key("model"));
     assert_lacks_tool_name(&tools, "spawn_agents_on_csv");
     assert_lacks_tool_name(&tools, "list_agents");
 
@@ -510,7 +512,7 @@ fn test_build_specs_multi_agent_v2_uses_task_names_and_hides_resume() {
     else {
         panic!("spawn_agent should use object params");
     };
-    assert!(properties.contains_key("provider"));
+    assert!(properties.contains_key("model"));
     assert!(properties.contains_key("task_name"));
     assert!(properties.contains_key("items"));
     assert!(properties.contains_key("fork_turns"));
@@ -901,7 +903,7 @@ fn zmemory_tool_requires_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.disable(Feature::MemoryTool);
+    features.disable(Feature::Zmemory);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1249,7 +1251,7 @@ fn get_memory_requires_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.disable(Feature::MemoryTool);
+    features.disable(Feature::Zmemory);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1721,6 +1723,7 @@ fn test_build_specs_gpt5_codex_default() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1745,6 +1748,7 @@ fn test_build_specs_gpt51_codex_default() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1771,6 +1775,7 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1797,6 +1802,7 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1821,6 +1827,7 @@ fn test_gpt_5_1_codex_max_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1845,6 +1852,7 @@ fn test_codex_5_1_mini_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1869,6 +1877,7 @@ fn test_gpt_5_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "web_search",
             "view_image",
             "spawn_agent",
@@ -1892,6 +1901,7 @@ fn test_gpt_5_1_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",
@@ -1918,6 +1928,7 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "apply_patch",
             "web_search",
             "view_image",

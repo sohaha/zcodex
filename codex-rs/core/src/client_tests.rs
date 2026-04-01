@@ -272,6 +272,45 @@ async fn official_openai_endpoint_enables_request_compression_without_openai_nam
     );
 }
 
+#[tokio::test]
+async fn chatgpt_backend_enables_request_compression_when_provider_requires_openai_auth() {
+    let provider = crate::ModelProviderInfo {
+        name: "OpenAI".to_string(),
+        model: None,
+        base_url: Some("https://chatgpt.com/backend-api/codex/v1".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        auth: None,
+        wire_api: crate::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        websocket_connect_timeout_ms: None,
+        requires_openai_auth: true,
+        supports_websockets: true,
+    };
+    let client = test_model_client_with_provider_and_auth(
+        provider,
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+    );
+
+    let client_setup = client
+        .current_client_setup()
+        .await
+        .expect("client setup should resolve");
+
+    assert_eq!(
+        client
+            .new_session()
+            .responses_request_compression(&client_setup.api_auth),
+        codex_api::requests::responses::Compression::Zstd
+    );
+}
+
 #[test]
 fn filter_tools_for_chat_provider_drops_hosted_only_tools() {
     let filtered = super::filter_tools_for_wire_api(

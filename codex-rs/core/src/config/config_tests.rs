@@ -298,6 +298,7 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line: None,
             terminal_title: None,
             theme: None,
+            show_buddy: true,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
                     ("gpt-bar".to_string(), 4),
@@ -340,7 +341,9 @@ enabled = true
 proxy_url = "http://127.0.0.1:43128"
 enable_socks5 = false
 allow_upstream_proxy = false
-allowed_domains = ["openai.com"]
+
+[permissions.workspace.network.domains]
+"openai.com" = "allow"
 "#;
     let cfg: ConfigToml =
         toml::from_str(toml).expect("TOML deserialization should succeed for permissions profiles");
@@ -992,9 +995,37 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             status_line: None,
             terminal_title: None,
             theme: None,
+            show_buddy: true,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
     );
+}
+
+#[test]
+fn tui_config_missing_show_buddy_defaults_to_enabled() {
+    let cfg = r#"
+[tui]
+"#;
+
+    let parsed =
+        toml::from_str::<ConfigToml>(cfg).expect("TUI config without show_buddy should succeed");
+    let tui = parsed.tui.expect("config should include tui section");
+
+    assert!(tui.show_buddy);
+}
+
+#[test]
+fn tui_config_deserializes_explicit_show_buddy_false() {
+    let cfg = r#"
+[tui]
+show_buddy = false
+"#;
+
+    let parsed =
+        toml::from_str::<ConfigToml>(cfg).expect("TUI config with show_buddy should succeed");
+    let tui = parsed.tui.expect("config should include tui section");
+
+    assert!(!tui.show_buddy);
 }
 
 #[test]
@@ -1011,6 +1042,44 @@ fn loaded_config_defaults_show_tooltips_to_disabled() -> std::io::Result<()> {
     )?;
 
     assert!(!config.show_tooltips);
+    Ok(())
+}
+
+#[test]
+fn loaded_config_defaults_show_buddy_to_enabled() -> std::io::Result<()> {
+    let fixture = create_test_fixture()?;
+
+    let config = Config::load_from_base_config_with_overrides(
+        fixture.cfg.clone(),
+        ConfigOverrides {
+            cwd: Some(fixture.cwd()),
+            ..Default::default()
+        },
+        fixture.codex_home(),
+    )?;
+
+    assert!(config.tui_show_buddy);
+    Ok(())
+}
+
+#[test]
+fn loaded_config_honors_explicit_show_buddy_false() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg: ConfigToml = toml::from_str(
+        r#"
+[tui]
+show_buddy = false
+"#,
+    )
+    .expect("TOML deserialization should succeed for tui.show_buddy");
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert!(!config.tui_show_buddy);
     Ok(())
 }
 
@@ -1815,13 +1884,13 @@ fn responses_websocket_features_do_not_change_wire_api() -> std::io::Result<()> 
 }
 
 #[test]
-fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
+fn user_defined_provider_can_supply_custom_anthropic_provider() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
     let cfg = ConfigToml {
-        model_provider: Some("anthropic".to_string()),
+        model_provider: Some("anthropic-custom".to_string()),
         model_providers: HashMap::from([(
-            "anthropic".to_string(),
+            "anthropic-custom".to_string(),
             ModelProviderInfo {
                 name: "Anthropic via Proxy".to_string(),
                 model: None,
@@ -1857,7 +1926,7 @@ fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
         codex_home.path().to_path_buf(),
     )?;
 
-    assert_eq!(config.model_provider_id, "anthropic");
+    assert_eq!(config.model_provider_id, "anthropic-custom");
     assert_eq!(config.model_provider.name, "Anthropic via Proxy");
     assert_eq!(
         config.model_provider.base_url.as_deref(),
@@ -1881,14 +1950,14 @@ fn user_defined_provider_overrides_builtin_anthropic() -> std::io::Result<()> {
 }
 
 #[test]
-fn provider_model_overrides_global_model() -> std::io::Result<()> {
+fn global_model_overrides_custom_provider_model() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
     let cfg = ConfigToml {
         model: Some("global-model".to_string()),
-        model_provider: Some("anthropic".to_string()),
+        model_provider: Some("anthropic-custom".to_string()),
         model_providers: HashMap::from([(
-            "anthropic".to_string(),
+            "anthropic-custom".to_string(),
             ModelProviderInfo {
                 name: "Anthropic via Proxy".to_string(),
                 model: Some("provider-model".to_string()),
@@ -1921,28 +1990,28 @@ fn provider_model_overrides_global_model() -> std::io::Result<()> {
         codex_home.path().to_path_buf(),
     )?;
 
-    assert_eq!(config.model.as_deref(), Some("provider-model"));
+    assert_eq!(config.model.as_deref(), Some("global-model"));
 
     Ok(())
 }
 
 #[test]
-fn profile_model_overrides_provider_model() -> std::io::Result<()> {
+fn profile_model_overrides_custom_provider_model() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cwd = TempDir::new()?;
     let cfg = ConfigToml {
         model: Some("global-model".to_string()),
-        profile: Some("anthropic".to_string()),
+        profile: Some("anthropic-custom".to_string()),
         profiles: HashMap::from([(
-            "anthropic".to_string(),
+            "anthropic-custom".to_string(),
             ConfigProfile {
                 model: Some("profile-model".to_string()),
-                model_provider: Some("anthropic".to_string()),
+                model_provider: Some("anthropic-custom".to_string()),
                 ..Default::default()
             },
         )]),
         model_providers: HashMap::from([(
-            "anthropic".to_string(),
+            "anthropic-custom".to_string(),
             ModelProviderInfo {
                 name: "Anthropic via Proxy".to_string(),
                 model: Some("provider-model".to_string()),
@@ -4639,6 +4708,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_terminal_title: None,
             tui_theme: None,
+            tui_show_buddy: true,
             otel: OtelConfig::default(),
         },
         o3_profile_config
@@ -4647,13 +4717,13 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
 }
 
 #[test]
-fn user_model_provider_can_override_builtin_openai() -> std::io::Result<()> {
+fn user_model_provider_can_supply_custom_openai_provider() -> std::io::Result<()> {
     let cfg: ConfigToml = toml::from_str(
         r#"
 model = "gpt-5"
-model_provider = "openai"
+model_provider = "openai-custom"
 
-[model_providers.openai]
+[model_providers.openai-custom]
 name = "OpenAI Chat"
 base_url = "https://api.openai.com/v1"
 env_key = "OPENAI_API_KEY"
@@ -4676,7 +4746,7 @@ wire_api = "chat"
         codex_home_temp_dir.path().to_path_buf(),
     )?;
 
-    assert_eq!(config.model_provider_id, "openai");
+    assert_eq!(config.model_provider_id, "openai-custom");
     assert_eq!(config.model_provider.name, "OpenAI Chat");
     assert_eq!(config.model_provider.wire_api, crate::WireApi::Chat);
     assert_eq!(
@@ -4684,7 +4754,7 @@ wire_api = "chat"
         Some("https://api.openai.com/v1")
     );
     assert_eq!(
-        config.model_providers["openai"].wire_api,
+        config.model_providers["openai-custom"].wire_api,
         crate::WireApi::Chat
     );
 
@@ -4831,6 +4901,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_show_buddy: true,
         otel: OtelConfig::default(),
     };
 
@@ -4976,6 +5047,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_show_buddy: true,
         otel: OtelConfig::default(),
     };
 
@@ -5107,6 +5179,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_show_buddy: true,
         otel: OtelConfig::default(),
     };
 
