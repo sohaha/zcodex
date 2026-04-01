@@ -87,6 +87,7 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 - semantic 默认开启，并在首次查询时按语言 lazy 建索引；首次 fresh build 会把 units/vector/manifest 落到 `.tldr/cache/semantic/<language>/`
 - semantic / status 对外 schema 已收口到稳定 view；更激进的 payload 控制仍可继续增强
 - semantic embedding 的 ONNX Runtime 现改为运行时动态加载；构建时不再静态链接预编译 ORT，但执行 semantic embedding 前需要让 `libonnxruntime.so` 可被动态加载器找到，或设置 `ORT_DYLIB_PATH=/path/to/libonnxruntime.so`
+- 若当前环境暂时无法提供可加载的 ORT 动态库，可在项目级 `.codex/tldr.toml` 中显式设置 `[semantic.embedding] enabled = false`；这样 `semantic` 仍可运行，但会退回非 embedding 路径，输出中会显示 `embedding used: false`
 
 ## agent-first 指引
 

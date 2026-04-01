@@ -1,0 +1,37 @@
+plan = "plan/2026-04-01-task-be008b4d.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "验证并固化 ONNX Runtime 缺库场景的环境规避边界"
+scope = """
+围绕 `tldr semantic` 的缺库故障，确认运行环境需要满足的最小 ONNX Runtime 动态库条件，并把可执行的规避路径固化为仓库内可追踪的说明或诊断边界。包含：复核 `ORT_DYLIB_PATH` 与动态链接器搜索路径要求；验证“提供可加载 `libonnxruntime.so`”或“显式关闭 semantic/embedding”两类规避路径是否能避免当前缺库错误；将确认后的环境前提、触发条件与操作边界写回到与 `native-tldr` 相关的文档或诊断说明中。此 issue 不负责修改 `tldr semantic` 的 panic 传播逻辑。
+"""
+touch_points = ["module:codex-native-tldr", "command:tldr", "codex-rs/native-tldr/README.md", "codex-rs/native-tldr/src/config.rs", "codex-rs/cli/src/tldr_cmd.rs"]
+depends_on = []
+done_when = "仓库中存在可追踪的运行边界说明，明确 `tldr semantic` 对 `libonnxruntime.so`/`ORT_DYLIB_PATH` 的要求、缺库时的触发条件、以及至少一种已验证的环境规避路径；并且相关说明不把 `Warm` 误写成致命点"
+validate_by = "在 `codex-rs` 目录复现并比对 `env -u ORT_DYLIB_PATH cargo run -p codex-cli -- tldr semantic --project . --lang rust repro` 的缺库行为；在具备有效动态库路径或显式关闭 semantic/embedding 的条件下重复验证，确认不再出现当前 `Failed to load ONNX Runtime dylib` 缺库报错"
+regress_by = "重新执行缺库复现与规避验证命令，并复查 `native-tldr` 相关说明，确认环境边界、规避路径和触发条件仍与实际行为一致"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_run"
+notes = "已完成。已用 `/workspace/.cargo-target/debug/codex tldr semantic --project /workspace/codex-rs --lang rust repro` 在当前环境复现缺库 panic：报错 `Failed to load ONNX Runtime dylib`。随后在临时项目中写入 `[semantic.embedding] enabled = false`，再次执行 `tldr semantic` 得到正常结果且输出 `embedding used: false`，确认这是一条已验证的环境规避路径。已把该边界补充到 `codex-rs/native-tldr/README.md`。本轮能力筛查结论为 none-applicable：当前子任务是本地环境复现、行为验证和文档写回，现有会话能力没有比主代理直接执行更低协调成本且更高确定性的适用项。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "将 semantic 缺库故障从 panic 收敛为显式错误"
+scope = """
+在 `tldr semantic -> native-tldr -> fastembed -> ort(load-dynamic)` 链路上补齐缺库故障的显式处理，避免 `libonnxruntime.so` 缺失时由第三方 `panic!` 直接打崩 codex。包含：为 semantic embedding 初始化增加可观察、可测试的错误收敛路径；保证缺库时返回显式错误或结构化失败，而不是 `JoinError::Panic`；必要时补齐受影响 crate 的定向测试。此 issue 不负责分发或内置 ONNX Runtime 动态库，也不把问题通过静默 fallback 掩盖为成功。
+"""
+touch_points = ["module:codex-native-tldr", "module:codex-core", "module:codex-cli", "codex-rs/native-tldr/src/semantic/embedder.rs", "codex-rs/native-tldr/src/tool_api.rs", "codex-rs/core/src/tools/parallel.rs", "codex-rs/core/src/codex.rs", "codex-rs/cli/src/tldr_cmd.rs"]
+depends_on = []
+done_when = "在缺少可加载 `libonnxruntime.so` 的环境中触发 `tldr semantic` 时，codex 不再因 ORT 初始化失败而整进程 panic，用户能收到显式且可观察的失败信息；同时受影响 Rust crate 已补齐最小必要的定向验证"
+validate_by = "在 `codex-rs` 目录运行受影响 crate 的定向测试，至少覆盖 `codex-native-tldr`，若改到 `codex-core` 或 `codex-cli` 则补充对应定向测试；并重复执行 `env -u ORT_DYLIB_PATH cargo run -p codex-cli -- tldr semantic --project . --lang rust repro`，确认结果为显式错误而非 panic"
+regress_by = "重新运行本 issue 涉及 crate 的定向测试，并在无 ORT 动态库环境下重复 `tldr semantic` 复现命令，确认不回退为 `JoinError::Panic` 或静默成功"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成。实现改动集中在 `codex-rs/native-tldr/src/semantic/embedder.rs`：在创建 `TextEmbedding` 前先按 `ORT_DYLIB_PATH`/默认文件名解析 ORT 动态库路径，并用 `dlopen + dlsym(\"OrtGetApiBase\")` 预检可加载性；缺库时直接返回显式 `anyhow` 错误，不再进入 `ort` 的 panic 路径。已补充最小单测覆盖缺库返回错误的行为。spec-reviewer 本地结论 PASS：改动范围与 issue 契约一致，没有引入静默 fallback。code-reviewer 本地结论 PASS：已用隔离 `CARGO_TARGET_DIR=/workspace/.cargo-target-cadence-a2` 运行 `cargo nextest run -p codex-native-tldr`，并执行 `env -u ORT_DYLIB_PATH RIPGREP_CONFIG_PATH=/dev/null CARGO_TARGET_DIR=/workspace/.cargo-target-cadence-a2 cargo run -p codex-cli -- tldr semantic --project /workspace/codex-rs --lang rust repro`；结果为普通错误 `semantic embedding backend requires ONNX Runtime dylib `libonnxruntime.so` to be loadable...`，未再出现 panic 或 `JoinError::Panic`。本轮能力筛查结论为 none-applicable：当前子任务是本地 Rust 代码修复、定向测试与复现验证，现有会话能力没有比主代理直接执行更低协调成本且更高确定性的适用项。"

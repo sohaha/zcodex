@@ -8,6 +8,15 @@ use fastembed::InitOptions;
 use fastembed::TextEmbedding;
 #[cfg(not(test))]
 use std::collections::BTreeMap;
+#[cfg(unix)]
+use std::ffi::CStr;
+#[cfg(unix)]
+use std::ffi::CString;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+#[cfg(not(test))]
+use std::path::PathBuf;
 #[cfg(not(test))]
 use std::sync::Arc;
 #[cfg(not(test))]
@@ -91,10 +100,12 @@ fn embed_with_fastembed(
         if let Some(handle) = guard.get(model) {
             Arc::clone(handle)
         } else {
+            ensure_onnxruntime_dylib_loadable()?;
             let handle = Arc::new(FastembedHandle {
-                inner: Mutex::new(TextEmbedding::try_new(InitOptions::new(embedding_model(
-                    model,
-                )?))?),
+                inner: Mutex::new(
+                    TextEmbedding::try_new(InitOptions::new(embedding_model(model)?))
+                        .context("initialize semantic embedding backend")?,
+                ),
             });
             guard.insert(model.to_string(), Arc::clone(&handle));
             handle
@@ -107,10 +118,11 @@ fn embed_with_fastembed(
             EmbeddingInputKind::Document => format!("passage: {input}"),
         })
         .collect::<Vec<_>>();
-    let vectors = handle
+    let mut embedding = handle
         .inner
         .lock()
-        .map_err(|_| anyhow::anyhow!("semantic embedder runtime lock poisoned"))?
+        .map_err(|_| anyhow::anyhow!("semantic embedder runtime lock poisoned"))?;
+    let vectors = embedding
         .embed(prefixed_inputs, None)
         .context("generate dense semantic embeddings")?;
     Ok(vectors
@@ -121,6 +133,108 @@ fn embed_with_fastembed(
 
 #[cfg(not(test))]
 static FASTEMBED_CACHE: OnceLock<Mutex<BTreeMap<String, Arc<FastembedHandle>>>> = OnceLock::new();
+
+#[cfg(not(test))]
+fn ensure_onnxruntime_dylib_loadable() -> Result<()> {
+    ensure_onnxruntime_dylib_loadable_at(&resolved_onnxruntime_dylib_path())
+}
+
+#[cfg(not(test))]
+fn resolved_onnxruntime_dylib_path() -> PathBuf {
+    let raw_path = std::env::var_os("ORT_DYLIB_PATH")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default_onnxruntime_dylib_name().into());
+
+    if raw_path.is_absolute() {
+        return raw_path;
+    }
+
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(parent) = current_exe.parent()
+    {
+        let relative = parent.join(&raw_path);
+        if relative.exists() {
+            return relative;
+        }
+    }
+
+    raw_path
+}
+
+#[cfg(not(test))]
+fn default_onnxruntime_dylib_name() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "onnxruntime.dll"
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        "libonnxruntime.so"
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        "libonnxruntime.dylib"
+    }
+}
+
+#[cfg(unix)]
+fn ensure_onnxruntime_dylib_loadable_at(path: &Path) -> Result<()> {
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .with_context(|| format!("invalid ONNX Runtime dylib path `{}`", path.display()))?;
+    let symbol = CString::new("OrtGetApiBase").expect("symbol literal must not contain NUL");
+
+    unsafe {
+        let _ = libc::dlerror();
+    }
+
+    let handle = unsafe { libc::dlopen(c_path.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) };
+    if handle.is_null() {
+        let detail = dlerror_message().unwrap_or_else(|| "unknown dlopen error".to_string());
+        return Err(anyhow::anyhow!(
+            "semantic embedding backend requires ONNX Runtime dylib `{}` to be loadable: {detail}",
+            path.display(),
+        ));
+    }
+
+    unsafe {
+        let _ = libc::dlerror();
+    }
+    let symbol_ptr = unsafe { libc::dlsym(handle, symbol.as_ptr()) };
+    let symbol_error = dlerror_message();
+    unsafe {
+        libc::dlclose(handle);
+    }
+
+    if symbol_ptr.is_null() {
+        let detail = symbol_error.unwrap_or_else(|| "missing `OrtGetApiBase` symbol".to_string());
+        return Err(anyhow::anyhow!(
+            "semantic embedding backend requires ONNX Runtime dylib `{}` to expose `OrtGetApiBase`: {detail}",
+            path.display(),
+        ));
+    }
+
+    Ok(())
+}
+
+#[cfg(all(not(test), not(unix)))]
+fn ensure_onnxruntime_dylib_loadable_at(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn dlerror_message() -> Option<String> {
+    let error = unsafe { libc::dlerror() };
+    if error.is_null() {
+        None
+    } else {
+        Some(
+            unsafe { CStr::from_ptr(error) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
 
 #[cfg(not(test))]
 fn embedding_model(model: &str) -> Result<EmbeddingModel> {
@@ -179,4 +293,35 @@ fn normalize(mut vector: Vec<f32>) -> Vec<f32> {
         }
     }
     vector
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn normalize_preserves_zero_vector() {
+        assert_eq!(normalize(vec![0.0, 0.0]), vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn normalize_scales_non_zero_vector() {
+        assert_eq!(normalize(vec![0.0, 5.0]), vec![0.0, 1.0]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_dylib_returns_error_instead_of_panicking() {
+        use super::ensure_onnxruntime_dylib_loadable_at;
+
+        let error = ensure_onnxruntime_dylib_loadable_at(std::path::Path::new(
+            "/definitely-missing/libonnxruntime.so",
+        ))
+        .expect_err("missing dylib should return an explicit error");
+
+        let message = error.to_string();
+        assert!(message.contains("requires ONNX Runtime dylib"));
+        assert!(message.contains("/definitely-missing/libonnxruntime.so"));
+    }
 }
