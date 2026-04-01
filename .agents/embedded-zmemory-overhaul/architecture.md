@@ -19,7 +19,7 @@ dependencies: [prd]
 - **架构模式**：内置式 Rust 单体能力增强，在 `codex-zmemory` 保持 embedded/local 动作层，在 `codex-core` 增加 memory orchestration 与 policy 层。
 - **技术栈**：Rust + `codex-zmemory` + `codex-core` + `codex-cli` + SQLite/FTS5；不引入 daemon、REST、独立服务。
 - **核心设计决策**：将问题拆成三层解决：`orchestrator`（何时 recall/write）、`governance`（boot/domain/URI/alias/trigger）、`diagnostics`（review/admin/current-workspace-vs-default semantics）。
-- **实施状态（2026-03-31）**：M1 已落地 recall gate、root/subagent memory 协议、`system://defaults|workspace`、CLI `export defaults|workspace` 与 core e2e；当前治理桥接仍采用 `stats/doctor/system://alias` 驱动的显式修复，而不是自动迁移。
+- **实施状态（2026-04-01）**：M1 已落地 recall gate、root/subagent memory 协议、`system://defaults|workspace`、CLI `export defaults|workspace` 与 core e2e；当前默认 DB 策略已进一步切到项目级默认库 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`，显式全局共享改为用户通过 `[zmemory].path` 主动配置；治理桥接仍采用 `stats/doctor/system://alias` 驱动的显式修复，而不是自动迁移。
 - **主要风险**：prompt 过强导致过度 recall、治理规则与实际节点脱节、默认产品事实与当前工作区事实混淆、subagent 写入污染 durable memory。
 - **项目结构**：重点改造 `codex-rs/core/src/codex.rs`、`codex-rs/core/src/memories/prompts.rs`、`codex-rs/core/templates/memories/zmemory_instructions.md`、`codex-rs/core/src/tools/spec.rs`、`codex-rs/zmemory/src/service.rs`、`codex-rs/zmemory/src/system_views.rs`、`codex-rs/cli/src/zmemory_cmd.rs`。
 
@@ -44,7 +44,7 @@ dependencies: [prd]
    - 关键节点缺自然问法 alias / trigger / 中文关键词
    - search 命中依赖技术摘要措辞，用户真实问法召回弱
 4. **产品默认值与工作区实际值容易混淆**
-   - 例如默认 workspace-hash DB 与显式 `zmemory_path` 覆盖
+   - 例如默认项目库与显式全局/自定义 `[zmemory].path` 覆盖
    - 若回答前不先区分“产品默认行为”和“当前工作区事实”，极易答错
 5. **review/admin 能力存在，但没有进入默认工作流**
    - `stats/doctor/export alias/glossary/recent` 已存在
@@ -275,7 +275,7 @@ core://agent/zmemory_review_playbook
 
 #### B. 当前工作区实际事实
 例如：
-- 当前工作区是否显式设置了 `zmemory_path`
+- 当前工作区是否显式设置了 `[zmemory].path`
 - 当前实际 `dbPath/source/reason`
 - 当前仓库使用哪些 project 域节点
 - 当前仓库 memory boot 是否完整
@@ -300,7 +300,7 @@ project://<repo>/memory_default_vs_workspace_diff
 | 节点 | alias 示例 | trigger 示例 |
 |------|------------|-------------|
 | `core://agent/zmemory_product_defaults` | `alias://memory/default-behavior` | `zmemory defaults`, `默认锚点`, `boot anchors` |
-| `project://repo/active_memory_runtime` | `alias://workspace/zmemory-config` | `current zmemory path`, `当前记忆库`, `显式 zmemory_path` |
+| `project://repo/active_memory_runtime` | `alias://workspace/zmemory-config` | `current zmemory path`, `当前记忆库`, `显式 [zmemory].path` |
 | `project://repo/architecture` | `alias://project/architecture` | `架构约束`, `module map`, `repo architecture` |
 
 ### 4.4 disclosure / priority 原则
