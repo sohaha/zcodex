@@ -148,6 +148,8 @@ pub struct ZmemoryOutputCommand {
 #[derive(Clone, Debug, ValueEnum)]
 pub enum ZmemoryExportTarget {
     Boot,
+    Defaults,
+    Workspace,
     Index,
     Recent,
     Glossary,
@@ -301,6 +303,8 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
 fn export_uri(command: &ZmemoryExportCommand) -> String {
     match command.target {
         ZmemoryExportTarget::Boot => "system://boot".to_string(),
+        ZmemoryExportTarget::Defaults => "system://defaults".to_string(),
+        ZmemoryExportTarget::Workspace => "system://workspace".to_string(),
         ZmemoryExportTarget::Index => match command.domain.as_deref() {
             Some(domain) => format!("system://index/{domain}"),
             None => "system://index".to_string(),
@@ -314,5 +318,32 @@ fn export_uri(command: &ZmemoryExportCommand) -> String {
             Some(limit) => format!("system://alias/{limit}"),
             None => "system://alias".to_string(),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    fn export_command(target: ZmemoryExportTarget) -> ZmemoryExportCommand {
+        ZmemoryExportCommand {
+            target,
+            domain: None,
+            limit: None,
+            output: ZmemoryOutputCommand::default(),
+        }
+    }
+
+    #[test]
+    fn export_uri_supports_defaults_and_workspace_views() {
+        assert_eq!(
+            export_uri(&export_command(ZmemoryExportTarget::Defaults)),
+            "system://defaults"
+        );
+        assert_eq!(
+            export_uri(&export_command(ZmemoryExportTarget::Workspace)),
+            "system://workspace"
+        );
     }
 }

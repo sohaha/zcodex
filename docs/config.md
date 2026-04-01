@@ -38,40 +38,41 @@ When Codex knows which client started the turn, the legacy notify JSON payload a
 
 ## Memories / zmemory
 
-Rust Codex CLI now enables the `memories` feature by default, so `zmemory`
-capabilities are available on a default startup without manually turning the
-feature on first.
+Rust Codex CLI now enables native memory and `zmemory` independently by
+default:
 
-To explicitly disable the default behavior for the current run:
+- `native_memories`: controls the built-in read-only memory pipeline and
+  `get_memory`
+- `zmemory`: controls the embedded writable SQLite-backed memory tool
+
+To explicitly disable one of them for the current run:
 
 ```shell
-codex --disable memories
+codex --disable native_memories
+codex --disable zmemory
 ```
 
-To disable it persistently in `~/.codex/config.toml`:
+To disable one persistently in `~/.codex/config.toml`:
 
 ```toml
 [features]
-memories = false
+native_memories = false
+zmemory = false
 ```
 
-The legacy alias `memory_tool = false` remains supported for backward
-compatibility, but `memories` is the recommended canonical key.
-
-To pin `zmemory` to a specific SQLite file, set `zmemory_path` in
-`~/.codex/config.toml`:
+`[memories]` only configures the native memory pipeline. `zmemory` now has its
+own config block:
 
 ```toml
-zmemory_path = "./agents/memory.db"
+[zmemory]
+path = "./agents/memory.db"
 ```
 
 - Absolute paths are used directly.
 - Relative paths are resolved against the active repo root when Codex is
   inside a git repository, otherwise against the current working directory.
-- When `zmemory_path` is unset, Codex isolates memories by workspace and stores
-  them under `$CODEX_HOME/zmemory/workspace-<hash>/zmemory.db`.
-- To keep using the legacy global database, set
-  `zmemory_path = "$CODEX_HOME/zmemory/zmemory.db"` explicitly.
+- When `[zmemory].path` is unset, Codex now uses the global-root default
+  database at `$CODEX_HOME/zmemory/zmemory.db`.
 
 You can verify the active resolution with:
 
@@ -88,17 +89,17 @@ level of `result` for quick checks):
 
 ```json
 {
-  "dbPath": "/home/me/.codex/zmemory/workspace-a1b2c3d4e5f6/zmemory.db",
-  "workspaceKey": "workspace-a1b2c3d4e5f6",
-  "source": "repoRoot",
-  "reason": "defaulted to repo root /workspace/my-repo"
+  "dbPath": "/home/me/.codex/zmemory/zmemory.db",
+  "workspaceKey": null,
+  "source": "globalRoot",
+  "reason": "defaulted to global root /home/me/.codex/zmemory/zmemory.db"
 }
 ```
 
 `system://workspace` is the runtime fact view for the active session. It adds
 fields such as `hasExplicitZmemoryPath`, `defaultDbPath`, `dbPathDiffers`,
 `bootHealthy`, and an embedded `boot` snapshot so you can tell whether the
-current workspace is using the default workspace-hash database or an explicit
+current session is using the global-root default database or an explicit
 override.
 
 `system://defaults` is the product-default fact view. It reports the default

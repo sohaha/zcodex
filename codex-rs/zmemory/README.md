@@ -26,11 +26,17 @@
 
 ## 存储
 
-- 默认数据库位置：`$CODEX_HOME/zmemory/workspace-<hash>/zmemory.db`
-- 当 `zmemory_path` 显式配置时：
+- 默认数据库位置：`$CODEX_HOME/zmemory/zmemory.db`
+- 当 `[zmemory].path` 显式配置时：
   - 绝对路径直接使用
   - 相对路径在 git 仓库内相对主 repo root 解析，非 git 目录相对当前 `cwd` 解析
-- 如需继续使用旧的全局数据库，请显式配置 `zmemory_path = "$CODEX_HOME/zmemory/zmemory.db"`
+- 配置入口：
+
+```toml
+[zmemory]
+path = "./agents/memory.db"
+```
+
 - 存储引擎：`SQLite + FTS5`
 - 为了降低环境依赖，当前使用 `rusqlite` 的 `bundled` sqlite
 
@@ -132,16 +138,16 @@ codex zmemory doctor --json
 
 ```json
 {
-  "dbPath": "/home/me/.codex/zmemory/workspace-a1b2c3d4e5f6/zmemory.db",
-  "workspaceKey": "workspace-a1b2c3d4e5f6",
-  "source": "repoRoot",
-  "reason": "defaulted to repo root /workspace/my-repo"
+  "dbPath": "/home/me/.codex/zmemory/zmemory.db",
+  "workspaceKey": null,
+  "source": "globalRoot",
+  "reason": "defaulted to global root /home/me/.codex/zmemory/zmemory.db"
 }
 ```
 
 - `dbPath`：当前实际使用的 sqlite 文件
-- `workspaceKey`：默认隔离模式下的工作区 key；显式 `zmemory_path` 时通常为 `null`
-- `source`：`explicit` / `repoRoot` / `cwd`
+- `workspaceKey`：当前仅在需要兼容旧路径合同或显式视图里保留字段；默认全局根与显式 `[zmemory].path` 场景通常为 `null`
+- `source`：`explicit` / `globalRoot`
 - `reason`：人类可读的解析原因
 
 建议的最小 review 顺序：
@@ -188,7 +194,7 @@ codex zmemory doctor --json
 
 ## 项目内参考
 
-- `docs/config.md`：查看 `memories` feature、`zmemory_path`、默认路径策略与 `system://workspace` / `system://defaults` 的用途。
+- `docs/config.md`：查看 `native_memories` / `zmemory` feature、`[zmemory]` 配置块、默认路径策略与 `system://workspace` / `system://defaults` 的用途。
 - `.agents/embedded-zmemory-overhaul/architecture.md`：查看 recall/orchestration、治理闭环和 defaults-vs-workspace 设计背景。
 - `.agents/embedded-zmemory-overhaul/qa-report.md`：查看当前验证命令、通过项和剩余风险。
 
