@@ -26,7 +26,7 @@
 
 ## 存储
 
-- 默认数据库位置：`$CODEX_HOME/zmemory/zmemory.db`
+- 默认数据库位置：`$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`
 - 当 `[zmemory].path` 显式配置时：
   - 绝对路径直接使用
   - 相对路径在 git 仓库内相对主 repo root 解析，非 git 目录相对当前 `cwd` 解析
@@ -35,6 +35,13 @@
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+```
+
+- 如果你想在多个项目间共享同一份库，请显式配置全局路径：
+
+```toml
+[zmemory]
+path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 ```
 
 - 存储引擎：`SQLite + FTS5`
@@ -138,16 +145,16 @@ codex zmemory doctor --json
 
 ```json
 {
-  "dbPath": "/home/me/.codex/zmemory/zmemory.db",
-  "workspaceKey": null,
-  "source": "globalRoot",
-  "reason": "defaulted to global root /home/me/.codex/zmemory/zmemory.db"
+  "dbPath": "/home/me/.codex/zmemory/projects/my-repo-a1b2c3d4e5f6/zmemory.db",
+  "workspaceKey": "my-repo-a1b2c3d4e5f6",
+  "source": "projectScoped",
+  "reason": "defaulted to project scope /home/me/.codex/zmemory/projects/my-repo-a1b2c3d4e5f6/zmemory.db from repo root /workspace/my-repo"
 }
 ```
 
 - `dbPath`：当前实际使用的 sqlite 文件
-- `workspaceKey`：当前仅在需要兼容旧路径合同或显式视图里保留字段；默认全局根与显式 `[zmemory].path` 场景通常为 `null`
-- `source`：`explicit` / `globalRoot`
+- `workspaceKey`：默认项目库的稳定项目 key；显式 `[zmemory].path` 场景通常为 `null`
+- `source`：`explicit` / `projectScoped`
 - `reason`：人类可读的解析原因
 
 建议的最小 review 顺序：

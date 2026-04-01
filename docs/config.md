@@ -71,8 +71,15 @@ path = "./agents/memory.db"
 - Absolute paths are used directly.
 - Relative paths are resolved against the active repo root when Codex is
   inside a git repository, otherwise against the current working directory.
-- When `[zmemory].path` is unset, Codex now uses the global-root default
-  database at `$CODEX_HOME/zmemory/zmemory.db`.
+- When `[zmemory].path` is unset, Codex now uses the project-scoped default
+  database at `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`.
+- If you want one shared global database across projects, configure it
+  explicitly:
+
+```toml
+[zmemory]
+path = "/absolute/path/to/.codex/zmemory/zmemory.db"
+```
 
 You can verify the active resolution with:
 
@@ -89,17 +96,17 @@ level of `result` for quick checks):
 
 ```json
 {
-  "dbPath": "/home/me/.codex/zmemory/zmemory.db",
-  "workspaceKey": null,
-  "source": "globalRoot",
-  "reason": "defaulted to global root /home/me/.codex/zmemory/zmemory.db"
+  "dbPath": "/home/me/.codex/zmemory/projects/my-repo-a1b2c3d4e5f6/zmemory.db",
+  "workspaceKey": "my-repo-a1b2c3d4e5f6",
+  "source": "projectScoped",
+  "reason": "defaulted to project scope /home/me/.codex/zmemory/projects/my-repo-a1b2c3d4e5f6/zmemory.db from repo root /workspace/my-repo"
 }
 ```
 
 `system://workspace` is the runtime fact view for the active session. It adds
 fields such as `hasExplicitZmemoryPath`, `defaultDbPath`, `dbPathDiffers`,
-`bootHealthy`, and an embedded `boot` snapshot so you can tell whether the
-current session is using the global-root default database or an explicit
+`defaultWorkspaceKey`, `bootHealthy`, and an embedded `boot` snapshot so you
+can tell whether the current session is using the default project database or an explicit
 override.
 
 `system://defaults` is the product-default fact view. It reports the default

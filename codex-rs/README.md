@@ -49,7 +49,8 @@ zmemory = false
 ```
 
 其中 `[memories]` 只服务原生 memory；`zmemory` 使用独立 `[zmemory]` 配置块，
-默认数据库位于 `$CODEX_HOME/zmemory/zmemory.db`。
+默认数据库位于 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`。
+如果你希望多个项目共享同一份库，请在 `~/.codex/config.toml` 里显式配置 `[zmemory].path` 指向全局 DB。
 
 ### Model Context Protocol 支持
 

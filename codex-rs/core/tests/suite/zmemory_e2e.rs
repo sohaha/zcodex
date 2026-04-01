@@ -236,8 +236,11 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
         payload["result"]["reason"],
         payload["result"]["pathResolution"]["reason"]
     );
-    assert_eq!(payload["result"]["pathResolution"]["source"], "globalRoot");
     assert_eq!(
+        payload["result"]["pathResolution"]["source"],
+        "projectScoped"
+    );
+    assert_ne!(
         payload["result"]["pathResolution"]["workspaceKey"],
         Value::Null
     );
@@ -604,6 +607,12 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
         json!(
             home.path()
                 .join("zmemory")
+                .join("projects")
+                .join(
+                    payload["result"]["view"]["defaultWorkspaceKey"]
+                        .as_str()
+                        .expect("default workspace key")
+                )
                 .join("zmemory.db")
                 .display()
                 .to_string()

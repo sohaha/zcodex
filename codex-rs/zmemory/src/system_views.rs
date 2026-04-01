@@ -1,6 +1,7 @@
 use crate::config::ZmemoryConfig;
 use crate::config::default_core_memory_uris;
 use crate::config::default_valid_domains;
+use crate::config::project_key_for_workspace;
 use crate::config::zmemory_db_path;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -162,17 +163,18 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
 }
 
 fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
-    let default_db_path = zmemory_db_path(config.codex_home());
+    let default_workspace_key = project_key_for_workspace(config.workspace_base());
+    let default_db_path = zmemory_db_path(config.codex_home(), config.workspace_base());
     Ok(json!({
         "view": "defaults",
         "validDomains": default_valid_domains(),
         "coreMemoryUris": default_core_memory_uris(),
         "defaultPathPolicy": {
-            "mode": "globalRoot",
+            "mode": "projectScoped",
             "dbPath": default_db_path.display().to_string(),
-            "workspaceKey": Value::Null,
-            "source": "globalRoot",
-            "reason": format!("defaulted to global root {}", default_db_path.display()),
+            "workspaceKey": default_workspace_key,
+            "source": "projectScoped",
+            "reason": format!("defaulted to project scope {}", default_db_path.display()),
         },
         "recommendedDomains": default_valid_domains(),
         "recommendedBootUris": default_core_memory_uris(),
@@ -186,7 +188,8 @@ fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
 
 fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let resolution = config.path_resolution();
-    let default_db_path = zmemory_db_path(config.codex_home());
+    let default_workspace_key = project_key_for_workspace(config.workspace_base());
+    let default_db_path = zmemory_db_path(config.codex_home(), config.workspace_base());
     let boot = read_boot_view(conn, config, usize::MAX)?;
     let boot_healthy = boot
         .get("missingUris")
@@ -201,7 +204,7 @@ fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Valu
         "source": resolution.source,
         "reason": resolution.reason.clone(),
         "hasExplicitZmemoryPath": matches!(resolution.source, crate::path_resolution::ZmemoryPathSource::Explicit),
-        "defaultWorkspaceKey": Value::Null,
+        "defaultWorkspaceKey": default_workspace_key,
         "defaultDbPath": default_db_path.display().to_string(),
         "dbPathDiffers": resolution.db_path != default_db_path,
         "validDomains": config.valid_domains(),

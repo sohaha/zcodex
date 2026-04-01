@@ -1,0 +1,82 @@
+plan = "plan/2026-04-01-zmemory-project-default-path.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "把 zmemory 默认路径从全局根改为项目级路径"
+scope = """
+调整 `codex-rs/zmemory` 的默认路径解析合同：当 `[zmemory].path` 未显式配置时，不再使用单一全局库，
+而是基于当前项目稳定解析出的项目锚点生成默认数据库路径。优先复用现有 `resolve_workspace_base`
+与 repo root / cwd 解析逻辑；如果仓库里没有可直接复用的稳定 `project-id` API，只允许补一个最小 helper。
+不在本 issue 中修改显式 `[zmemory].path` 的相对/绝对路径解析规则，也不在本 issue 中收口文档。
+"""
+touch_points = [
+  "module:codex-zmemory",
+  "codex-rs/zmemory/src/path_resolution.rs",
+  "codex-rs/zmemory/src/config.rs"
+]
+depends_on = []
+done_when = "未显式配置 `[zmemory].path` 时，zmemory 默认数据库稳定落到项目级路径；相同 repo root 与其 worktree 不会生成彼此冲突或漂移的默认路径；显式路径解析合同保持不变"
+validate_by = "更新路径解析相关测试后，运行仓库现有命令 cargo test -p codex-zmemory --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "本轮由主代理直接执行：当前改动集中在 `codex-zmemory` 默认路径合同，拆给子代理收益不高；可用能力适配结论为 none-applicable。实现前已按用户要求重新读取将要修改的文件。已完成：默认路径从全局根切到 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db`，默认 project key 基于 canonical workspace base 的稳定 slug+sha256 前缀生成；相同 repo root 与 worktree 会复用同一默认 DB，显式 `[zmemory].path` 的相对/绝对路径合同保持不变。验证：`cargo test -p codex-zmemory --quiet` 通过。自审：未修改显式路径解析逻辑，默认 project key 只依赖稳定项目锚点。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "同步 system view 与 core/cli 对默认项目路径合同的认知"
+scope = """
+在默认路径切到项目级后，同步 `system://defaults` / `system://workspace`、诊断字段与相关 core/cli 断言，
+确保运行时事实对象、`stats` / `doctor` / e2e 输出都准确表达新的默认路径策略。
+包含 `codex-rs/zmemory/src/system_views.rs`、`codex-rs/zmemory/src/service.rs`、相关 core e2e 与必要 CLI 断言；
+不在本 issue 中收口 README 与配置文档。
+"""
+touch_points = [
+  "module:codex-zmemory",
+  "module:codex-core",
+  "module:codex-cli",
+  "codex-rs/zmemory/src/system_views.rs",
+  "codex-rs/zmemory/src/service.rs",
+  "codex-rs/core/tests/suite/zmemory_e2e.rs",
+  "codex-rs/cli/src/zmemory_cmd.rs"
+]
+depends_on = ["a1"]
+done_when = "`system://defaults` / `system://workspace` 的 `defaultDbPath`、`source`、`reason`、`workspaceKey`、`dbPathDiffers` 等字段与默认项目路径策略一致，且 core/cli 对应断言可证明显式全局路径覆盖仍然成立"
+validate_by = "更新 system view 与 e2e/CLI 相关测试后，运行仓库现有命令 cargo test -p codex-zmemory --quiet && cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet && cargo test -p codex-cli export_uri_supports_defaults_and_workspace_views --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = "本 issue 依赖 a1 默认路径合同先稳定落地。已完成：`system://defaults` / `system://workspace`、`stats` / `doctor` 相关合同切换到默认项目路径语义，`defaultWorkspaceKey` 与 `defaultDbPath` 现在反映项目级默认库；core e2e 断言已同步为 `projectScoped` 与项目级默认路径。验证：`cargo test -p codex-zmemory --quiet` 通过；`cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet` 通过；`cargo test -p codex-cli export_uri_supports_defaults_and_workspace_views` 失败，失败原因是当前工作树里预存的 `codex-tui` 编译错误（`tui/src/chatwidget.rs:5566-5567` 类型不匹配 / `PathBuf` Display）阻塞了 `codex-cli` 编译，并非本次 zmemory 改动引入。自审：显式全局路径覆盖合同未改，`dbPathDiffers` / `hasExplicitZmemoryPath` 仍用于区分默认项目库与显式覆盖。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "收口文档与配置说明到默认项目库语义"
+scope = """
+在默认路径与 system view 合同落地后，同步更新 README、`docs/config.md` 与必要 CLI 说明，
+明确 `zmemory` 默认是项目知识库，若用户需要全局共享应显式配置 `[zmemory].path` 指向全局库。
+不重新设计 native memory，也不扩展额外迁移器或兼容桥接层。
+"""
+touch_points = [
+  "module:codex-zmemory",
+  "module:codex-core",
+  "module:codex-cli",
+  "docs/config.md",
+  "codex-rs/zmemory/README.md",
+  "codex-rs/README.md"
+]
+depends_on = ["a1", "a2"]
+done_when = "文档与说明明确写出默认项目库路径策略、显式全局配置方式，以及 `system://defaults` / `system://workspace` 的诊断用途，且与当前实现一致"
+validate_by = "人工核对 docs/config.md、codex-rs/zmemory/README.md、codex-rs/README.md 与实际实现一致；如相关说明或断言需要更新，再运行仓库现有命令 cargo test -p codex-zmemory --quiet && cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：`docs/config.md`、`codex-rs/zmemory/README.md`、`codex-rs/README.md` 已改为“默认项目库、全局需显式配置”的产品语义，并补充显式全局路径示例与新的诊断示例。验证：人工核对上述文档与当前实现一致；`cargo test -p codex-zmemory --quiet` 通过；`cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet` 通过。说明：本轮未改 `ConfigToml`/schema，因此未运行 `just write-config-schema`。"

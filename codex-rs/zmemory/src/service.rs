@@ -1666,7 +1666,7 @@ mod tests {
         assert_eq!(defaults["result"]["view"]["view"], "defaults");
         assert_eq!(
             defaults["result"]["view"]["defaultPathPolicy"]["mode"],
-            "globalRoot"
+            "projectScoped"
         );
         assert_eq!(
             defaults["result"]["view"]["defaultPathPolicy"]["dbPath"],
@@ -1674,10 +1674,22 @@ mod tests {
                 config
                     .codex_home()
                     .join("zmemory")
+                    .join("projects")
+                    .join(
+                        config
+                            .path_resolution()
+                            .workspace_key
+                            .as_deref()
+                            .expect("workspace key")
+                    )
                     .join("zmemory.db")
                     .display()
                     .to_string()
             )
+        );
+        assert_eq!(
+            defaults["result"]["view"]["defaultPathPolicy"]["workspaceKey"],
+            json!(config.path_resolution().workspace_key.clone())
         );
 
         let workspace = execute_action(
@@ -1690,9 +1702,13 @@ mod tests {
         )
         .expect("workspace view should succeed");
         assert_eq!(workspace["result"]["view"]["view"], "workspace");
-        assert_eq!(workspace["result"]["view"]["source"], "globalRoot");
+        assert_eq!(workspace["result"]["view"]["source"], "projectScoped");
         assert_eq!(workspace["result"]["view"]["hasExplicitZmemoryPath"], false);
         assert_eq!(workspace["result"]["view"]["dbPathDiffers"], false);
+        assert_eq!(
+            workspace["result"]["view"]["defaultWorkspaceKey"],
+            json!(config.path_resolution().workspace_key.clone())
+        );
         assert_eq!(
             workspace["result"]["view"]["defaultDbPath"],
             workspace["result"]["view"]["dbPath"]

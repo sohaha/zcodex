@@ -1,8 +1,11 @@
 use crate::path_resolution::ZmemoryPathResolution;
+use sha2::Digest;
+use sha2::Sha256;
 use std::path::Path;
 use std::path::PathBuf;
 
 pub(crate) const ZMEMORY_DIR: &str = "zmemory";
+pub(crate) const ZMEMORY_PROJECTS_DIR: &str = "projects";
 pub(crate) const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
 const VALID_DOMAINS_ENV: &str = "VALID_DOMAINS";
 const CORE_MEMORY_URIS_ENV: &str = "CORE_MEMORY_URIS";
@@ -114,8 +117,47 @@ impl ZmemorySettings {
     }
 }
 
-pub fn zmemory_db_path(codex_home: &Path) -> PathBuf {
+pub fn global_zmemory_db_path(codex_home: &Path) -> PathBuf {
     codex_home.join(ZMEMORY_DIR).join(ZMEMORY_DB_FILENAME)
+}
+
+pub fn project_key_for_workspace(workspace_base: &Path) -> String {
+    let workspace_label = workspace_base
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(sanitize_project_slug)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "workspace".to_string());
+
+    let digest = Sha256::digest(workspace_base.to_string_lossy().as_bytes());
+    let hash = format!("{digest:x}");
+    format!("{workspace_label}-{}", &hash[..12])
+}
+
+pub fn zmemory_db_path(codex_home: &Path, workspace_base: &Path) -> PathBuf {
+    codex_home
+        .join(ZMEMORY_DIR)
+        .join(ZMEMORY_PROJECTS_DIR)
+        .join(project_key_for_workspace(workspace_base))
+        .join(ZMEMORY_DB_FILENAME)
+}
+
+fn sanitize_project_slug(raw: &str) -> String {
+    let mut slug = String::with_capacity(raw.len());
+    let mut previous_was_separator = false;
+    for ch in raw.chars() {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch.to_ascii_lowercase());
+            previous_was_separator = false;
+        } else if !previous_was_separator {
+            slug.push('-');
+            previous_was_separator = true;
+        }
+    }
+    while slug.ends_with('-') {
+        slug.pop();
+    }
+    slug.trim_start_matches('-').to_string()
 }
 
 fn parse_csv(raw: Option<&str>, defaults: &[&str]) -> Vec<String> {
@@ -146,8 +188,11 @@ mod tests {
     use super::DEFAULT_VALID_DOMAINS;
     use super::ZMEMORY_DB_FILENAME;
     use super::ZMEMORY_DIR;
+    use super::ZMEMORY_PROJECTS_DIR;
     use super::ZmemoryConfig;
     use super::ZmemorySettings;
+    use super::global_zmemory_db_path;
+    use super::project_key_for_workspace;
     use super::zmemory_db_path;
     use crate::path_resolution::ZmemoryPathResolution;
     use crate::path_resolution::ZmemoryPathSource;
@@ -156,12 +201,33 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
-    fn db_path_uses_codex_home_subdirectory() {
+    fn db_path_uses_project_subdirectory() {
+        let codex_home = std::path::Path::new("/tmp/codex-home");
+        let workspace_base = std::path::Path::new("/tmp/workspace/demo-repo");
+        assert_eq!(
+            zmemory_db_path(codex_home, workspace_base),
+            codex_home
+                .join(ZMEMORY_DIR)
+                .join(ZMEMORY_PROJECTS_DIR)
+                .join(project_key_for_workspace(workspace_base))
+                .join(ZMEMORY_DB_FILENAME)
+        );
+    }
+
+    #[test]
+    fn global_db_path_still_uses_legacy_root_location() {
         let codex_home = std::path::Path::new("/tmp/codex-home");
         assert_eq!(
-            zmemory_db_path(codex_home),
+            global_zmemory_db_path(codex_home),
             codex_home.join(ZMEMORY_DIR).join(ZMEMORY_DB_FILENAME)
         );
+    }
+
+    #[test]
+    fn project_key_uses_slug_and_hash() {
+        let key = project_key_for_workspace(Path::new("/tmp/Workspace Demo"));
+        assert!(key.starts_with("workspace-demo-"));
+        assert_eq!(key.len(), "workspace-demo-".len() + 12);
     }
 
     #[test]
@@ -236,7 +302,7 @@ mod tests {
         ZmemoryPathResolution {
             db_path: PathBuf::from(db_path),
             workspace_key: None,
-            source: ZmemoryPathSource::GlobalRoot,
+            source: ZmemoryPathSource::ProjectScoped,
             canonical_base: None,
             reason: "test".to_string(),
         }

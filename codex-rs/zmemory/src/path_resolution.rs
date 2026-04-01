@@ -1,5 +1,7 @@
 use crate::config::ZMEMORY_DB_FILENAME;
 use crate::config::ZMEMORY_DIR;
+use crate::config::ZMEMORY_PROJECTS_DIR;
+use crate::config::project_key_for_workspace;
 use anyhow::Context;
 use anyhow::Result;
 use codex_git_utils::resolve_root_git_project_for_trust;
@@ -21,7 +23,7 @@ pub struct ZmemoryPathResolution {
 #[serde(rename_all = "camelCase")]
 pub enum ZmemoryPathSource {
     Explicit,
-    GlobalRoot,
+    ProjectScoped,
 }
 
 pub fn resolve_zmemory_path(
@@ -38,15 +40,24 @@ pub fn resolve_zmemory_path(
 
     let canonical_codex_home = canonicalize_existing_path(codex_home)
         .with_context(|| format!("canonicalize {}", codex_home.display()))?;
+    let canonical_workspace_base = resolve_workspace_base_path(cwd)?;
+    let workspace_key = project_key_for_workspace(&canonical_workspace_base);
     let db_path = canonical_codex_home
         .join(ZMEMORY_DIR)
+        .join(ZMEMORY_PROJECTS_DIR)
+        .join(&workspace_key)
         .join(ZMEMORY_DB_FILENAME);
-    let reason = format!("defaulted to global root {}", db_path.display());
+    let anchor_label = workspace_anchor_label(cwd);
+    let reason = format!(
+        "defaulted to project scope {} from {anchor_label} {}",
+        db_path.display(),
+        canonical_workspace_base.display()
+    );
 
     Ok(ZmemoryPathResolution {
         db_path,
-        workspace_key: None,
-        source: ZmemoryPathSource::GlobalRoot,
+        workspace_key: Some(workspace_key),
+        source: ZmemoryPathSource::ProjectScoped,
         canonical_base: None,
         reason,
     })
@@ -122,6 +133,7 @@ fn workspace_anchor_label(cwd: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::ZmemoryPathSource;
+    use super::project_key_for_workspace;
     use super::resolve_workspace_base_path;
     use super::resolve_zmemory_path;
     use pretty_assertions::assert_eq;
@@ -130,7 +142,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn defaults_to_global_root_path() {
+    fn defaults_to_project_scoped_path() {
         let temp = TempDir::new().expect("tempdir");
         let repo = temp.path().join("repo");
         let nested = repo.join("nested");
@@ -141,13 +153,22 @@ mod tests {
 
         let resolution = resolve_zmemory_path(&codex_home, &nested, None).expect("resolve path");
 
-        assert_eq!(resolution.source, ZmemoryPathSource::GlobalRoot);
+        let workspace_key =
+            project_key_for_workspace(&repo.canonicalize().expect("canonical repo"));
+        assert_eq!(resolution.source, ZmemoryPathSource::ProjectScoped);
         assert_eq!(
             resolution.db_path,
-            codex_home.join("zmemory").join("zmemory.db")
+            codex_home
+                .join("zmemory")
+                .join("projects")
+                .join(&workspace_key)
+                .join("zmemory.db")
         );
-        assert_eq!(resolution.workspace_key, None);
-        assert!(resolution.reason.contains("defaulted to global root"));
+        assert_eq!(
+            resolution.workspace_key.as_deref(),
+            Some(workspace_key.as_str())
+        );
+        assert!(resolution.reason.contains("defaulted to project scope"));
     }
 
     #[test]
@@ -253,5 +274,35 @@ mod tests {
 
         assert_eq!(resolution.source, ZmemoryPathSource::Explicit);
         assert_eq!(resolution.db_path, db_path);
+    }
+
+    #[test]
+    fn worktree_and_main_repo_share_same_default_project_key() {
+        let temp = TempDir::new().expect("tempdir");
+        let main_repo = temp.path().join("main");
+        let worktree = temp.path().join("wt");
+        let codex_home = temp.path().join("codex-home");
+        let worktrees_dir = main_repo.join(".git").join("worktrees").join("feature");
+        fs::create_dir_all(&worktrees_dir).expect("create worktrees dir");
+        fs::create_dir_all(main_repo.join("src")).expect("create main repo");
+        fs::create_dir_all(&worktree).expect("create worktree");
+        fs::create_dir_all(&codex_home).expect("create codex home");
+        fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", worktrees_dir.display()),
+        )
+        .expect("write .git file");
+
+        let main_resolution =
+            resolve_zmemory_path(&codex_home, main_repo.join("src").as_path(), None)
+                .expect("main repo resolution");
+        let worktree_resolution =
+            resolve_zmemory_path(&codex_home, &worktree, None).expect("worktree resolution");
+
+        assert_eq!(
+            main_resolution.workspace_key,
+            worktree_resolution.workspace_key
+        );
+        assert_eq!(main_resolution.db_path, worktree_resolution.db_path);
     }
 }
