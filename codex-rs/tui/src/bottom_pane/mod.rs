@@ -20,6 +20,8 @@ use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
 use crate::bottom_pane::pending_thread_approvals::PendingThreadApprovals;
 use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
+use crate::buddy::BuddyCommandResult;
+use crate::buddy::BuddyWidget;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::render::renderable::FlexRenderable;
@@ -188,6 +190,7 @@ pub(crate) struct BottomPane {
     pending_input_preview: PendingInputPreview,
     /// Inactive threads with pending approval requests.
     pending_thread_approvals: PendingThreadApprovals,
+    buddy: BuddyWidget,
     context_window_percent: Option<i64>,
     context_window_used_tokens: Option<i64>,
 }
@@ -237,6 +240,7 @@ impl BottomPane {
             unified_exec_footer: UnifiedExecFooter::new(),
             pending_input_preview: PendingInputPreview::new(),
             pending_thread_approvals: PendingThreadApprovals::new(),
+            buddy: BuddyWidget::new(),
             esc_backtrack_hint: false,
             animations_enabled,
             context_window_percent: None,
@@ -1120,6 +1124,9 @@ impl BottomPane {
             if let Some(status) = &self.status {
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(status));
             }
+            if self.buddy.is_visible() {
+                flex.push(/*flex*/ 0, RenderableItem::Borrowed(&self.buddy));
+            }
             // Avoid double-surfacing the same summary and avoid adding an extra
             // row while the status line is already visible.
             if self.status.is_none() && !self.unified_exec_footer.is_empty() {
@@ -1132,8 +1139,9 @@ impl BottomPane {
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty()
                 || !self.pending_input_preview.rejected_steers.is_empty();
-            let has_status_or_footer =
-                self.status.is_some() || !self.unified_exec_footer.is_empty();
+            let has_status_or_footer = self.status.is_some()
+                || !self.unified_exec_footer.is_empty()
+                || self.buddy.is_visible();
             let has_inline_previews = has_pending_thread_approvals || has_pending_input;
             if has_inline_previews && has_status_or_footer {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
@@ -1179,6 +1187,34 @@ impl BottomPane {
         if self.composer.set_active_agent_label(active_agent_label) {
             self.request_redraw();
         }
+    }
+
+    pub(crate) fn show_buddy(&mut self, seed: &str) -> BuddyCommandResult {
+        let result = self.buddy.show(seed);
+        self.request_redraw();
+        result
+    }
+
+    pub(crate) fn hide_buddy(&mut self) -> BuddyCommandResult {
+        let result = self.buddy.hide();
+        self.request_redraw();
+        result
+    }
+
+    pub(crate) fn pet_buddy(&mut self, seed: &str) -> BuddyCommandResult {
+        let result = self.buddy.pet(seed);
+        self.request_redraw();
+        self.request_redraw_in(BuddyWidget::feedback_duration());
+        result
+    }
+
+    pub(crate) fn buddy_status(&mut self, seed: &str) -> BuddyCommandResult {
+        self.buddy.status(seed)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn buddy_visible(&self) -> bool {
+        self.buddy.is_visible()
     }
 }
 

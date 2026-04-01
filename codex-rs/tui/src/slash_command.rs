@@ -41,6 +41,7 @@ pub enum SlashCommand {
     Title,
     Statusline,
     Theme,
+    Buddy,
     Mcp,
     Apps,
     Plugins,
@@ -90,6 +91,7 @@ impl SlashCommand {
             SlashCommand::Title => "configure which items appear in the terminal title",
             SlashCommand::Statusline => "configure which items appear in the status line",
             SlashCommand::Theme => "choose a syntax highlighting theme",
+            SlashCommand::Buddy => "hatch, pet, or hide the footer buddy",
             SlashCommand::Ps => "list background terminals",
             SlashCommand::Stop => "stop all background terminals",
             SlashCommand::MemoryDrop => "DO NOT USE",
@@ -133,6 +135,7 @@ impl SlashCommand {
                 | SlashCommand::Plan
                 | SlashCommand::Fast
                 | SlashCommand::SandboxReadRoot
+                | SlashCommand::Buddy
         )
     }
 
@@ -173,7 +176,8 @@ impl SlashCommand {
             | SlashCommand::Plugins
             | SlashCommand::Feedback
             | SlashCommand::Quit
-            | SlashCommand::Exit => true,
+            | SlashCommand::Exit
+            | SlashCommand::Buddy => true,
             SlashCommand::Rollout => true,
             SlashCommand::TestApproval => true,
             SlashCommand::Realtime => true,
@@ -219,5 +223,12 @@ mod tests {
     #[test]
     fn clean_alias_parses_to_stop_command() {
         assert_eq!(SlashCommand::from_str("clean"), Ok(SlashCommand::Stop));
+    }
+
+    #[test]
+    fn buddy_command_supports_inline_args() {
+        assert_eq!(SlashCommand::from_str("buddy"), Ok(SlashCommand::Buddy));
+        assert!(SlashCommand::Buddy.supports_inline_args());
+        assert!(SlashCommand::Buddy.available_during_task());
     }
 }

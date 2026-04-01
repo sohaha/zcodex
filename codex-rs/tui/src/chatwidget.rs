@@ -5358,6 +5358,9 @@ impl ChatWidget {
             SlashCommand::Theme => {
                 self.open_theme_picker();
             }
+            SlashCommand::Buddy => {
+                self.show_buddy_help();
+            }
             SlashCommand::Ps => {
                 self.add_ps_output();
             }
@@ -5551,8 +5554,44 @@ impl ChatWidget {
                     });
                 self.bottom_pane.drain_pending_submission_state();
             }
+            SlashCommand::Buddy => {
+                self.handle_buddy_command(trimmed);
+                self.bottom_pane.drain_pending_submission_state();
+            }
             _ => self.dispatch_command(cmd),
         }
+    }
+
+    fn buddy_seed(&self) -> String {
+        let cwd = self.current_cwd.as_ref().unwrap_or(&self.config.cwd);
+        format!("{}::{cwd}", self.config.codex_home.display())
+    }
+
+    fn show_buddy_help(&mut self) {
+        self.add_info_message(
+            "Buddy commands: `/buddy show`, `/buddy pet`, `/buddy hide`, `/buddy status`."
+                .to_string(),
+            Some("The buddy is deterministic per Codex home and current project.".to_string()),
+        );
+    }
+
+    fn handle_buddy_command(&mut self, args: &str) {
+        let seed = self.buddy_seed();
+        let result = match args {
+            "" | "help" => {
+                self.show_buddy_help();
+                return;
+            }
+            "show" | "hatch" => self.bottom_pane.show_buddy(&seed),
+            "pet" => self.bottom_pane.pet_buddy(&seed),
+            "hide" => self.bottom_pane.hide_buddy(),
+            "status" => self.bottom_pane.buddy_status(&seed),
+            _ => {
+                self.add_error_message("Usage: /buddy [show|pet|hide|status]".to_string());
+                return;
+            }
+        };
+        self.add_info_message(result.message, result.hint);
     }
 
     fn show_rename_prompt(&mut self) {

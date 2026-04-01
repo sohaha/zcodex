@@ -225,6 +225,45 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
 }
 
 #[tokio::test]
+async fn slash_buddy_show_then_pet_reports_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Buddy, "show".to_string(), Vec::new());
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one show info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Buddy hatched:"),
+        "unexpected show message: {rendered:?}"
+    );
+
+    chat.dispatch_command_with_args(SlashCommand::Buddy, "pet".to_string(), Vec::new());
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one pet info message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("You pet"),
+        "unexpected pet message: {rendered:?}"
+    );
+    assert!(chat.bottom_pane.buddy_visible());
+}
+
+#[tokio::test]
+async fn slash_buddy_rejects_unknown_subcommand() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Buddy, "zoom".to_string(), Vec::new());
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Usage: /buddy [show|pet|hide|status]"),
+        "unexpected error message: {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn slash_copy_uses_agent_message_item_when_turn_complete_omits_final_text() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
