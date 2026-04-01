@@ -118,6 +118,9 @@ If a direct `read <uri>` misses or `search` returns no matches, use
 that no durable memory exists at all; an unhealthy boot graph or missing
 triggers can mean the issue is recall coverage rather than missing data.
 
+For a dedicated `zmemory` usage guide covering commands, system views, and
+troubleshooting, see `docs/zmemory.md`.
+
 ## JSON Schema
 
 The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schema.json`.
