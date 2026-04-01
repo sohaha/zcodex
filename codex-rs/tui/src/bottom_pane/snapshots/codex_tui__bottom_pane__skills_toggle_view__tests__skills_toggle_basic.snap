@@ -11,4 +11,4 @@ expression: "render_lines(&view, 72)"
 › [x] Repo Scout        Summarize the repo layout                       
   [ ] Changelog Writer  Draft release notes                             
                                                                         
-  Press space or enter to toggle; esc to close
+  按 space or enter to toggle; esc to close

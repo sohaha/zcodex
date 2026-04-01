@@ -13,4 +13,4 @@ expression: "normalize_snapshot_paths(render_overlay_lines(&view, 120))"
   2. Yes, grant these permissions for this session (a)
   3. No, continue without permissions (n)
 
-  Press enter to confirm or esc to cancel
+  按 enter 确认或 esc to cancel

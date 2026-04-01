@@ -2,7 +2,7 @@
 source: tui/src/chatwidget/tests.rs
 expression: popup
 ---
-  Plugins
+  插件s
   Figma · Can be installed · ChatGPT Marketplace
   Data shared with this app is subject to the app's terms of service and privacy policy. Learn
   more.
@@ -14,4 +14,4 @@ expression: popup
      Apps             Figma, Slack
      MCP Servers      figma-mcp, docs-mcp
 
-  Press esc to close.
+  按 esc to close.
