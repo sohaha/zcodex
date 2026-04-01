@@ -9,7 +9,7 @@ In the codex-rs folder where the rust code lives:
 - Installing `cargo-nextest` does not change how `cargo test` works; `cargo test` still uses Cargo's default test runner unless you explicitly run `cargo nextest run` or a repo wrapper that invokes nextest.
 - Prefer repo-scoped Cargo config in `codex-rs/.cargo/config.toml` over `~/.cargo/config.toml` when the setting should apply only to this repository.
 - For faster repeated local Rust builds, prefer a persistent target dir plus `sccache`; in CNB/clouddev, keep `CARGO_TARGET_DIR`, `CARGO_INCREMENTAL`, `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`, and any linker-specific Rust flags exported from `.cnb.yml`.
-- Avoid running multiple `cargo` commands at the same time. Use one cargo process per workspace to prevent global lock contention (registry/index, target dir, and build cache). Prefer Cargo’s own parallelism (`-j`) within a single command instead of launching multiple commands concurrently.
+- Avoid running multiple `cargo` commands at the same time when they share the same workspace state (`target/`, incremental artifacts, registry/index cache, or build cache). When parallel Rust workflows materially improve iteration speed, isolate each process with its own `CARGO_TARGET_DIR`; if cache or index lock contention still shows up, also isolate `CARGO_HOME` and related cache directories. Prefer Cargo’s own parallelism (`-j`) inside a single command when isolation is not set up.
 - For faster local `codex-core` loops, prefer `just core-test-fast` (cache-first, uses `nextest` when available).
 - For faster local `codex-app-server` loops, prefer `just app-server-test-fast`.
 - For faster local `codex-native-tldr` loops, prefer `just native-tldr-test-fast`.
@@ -58,7 +58,7 @@ Run `just fmt` (in `codex-rs` directory) automatically after you have finished m
 2. Once those pass, if any changes were made in common, core, or protocol, ask the user before running the complete test suite; when approved, prefer `just test` or `cargo nextest run` if `cargo-nextest` is installed. Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. project-specific or individual tests can be run without asking the user.
 
 Before finalizing a large change to `codex-rs`, run `just fix -p <project>` (in `codex-rs` directory) to fix any linter issues in the code. Prefer scoping with `-p` to avoid slow workspace‑wide Clippy builds; only run `just fix` without `-p` if you changed shared crates. Do not re-run tests after running `fix` or `fmt`.
-- When running Rust commands (e.g. `just fix` or `cargo test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
+- When running Rust commands (e.g. `just fix` or `cargo test`) be patient with the command and never try to kill them using the PID. If concurrent runs are slow because they share Cargo state, prefer isolating their `CARGO_TARGET_DIR` and related caches rather than forcing them through the same locks.
 
 ## TUI style conventions
 
