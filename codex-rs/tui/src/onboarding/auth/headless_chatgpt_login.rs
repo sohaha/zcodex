@@ -129,9 +129,9 @@ pub(super) fn render_device_code_login(
     state: &ContinueWithDeviceCodeState,
 ) {
     let banner = if state.device_code.is_some() {
-        "Finish signing in via your browser"
+        "请在浏览器中完成登录"
     } else {
-        "Preparing device code login"
+        "正在准备设备码登录"
     };
 
     let mut spans = vec!["  ".into()];
@@ -149,7 +149,7 @@ pub(super) fn render_device_code_login(
 
     // Capture the verification URL for OSC 8 hyperlink marking after render.
     let verification_url = if let Some(device_code) = &state.device_code {
-        lines.push("  1. Open this link in your browser and sign in".into());
+        lines.push("  1. 在浏览器中打开此链接并登录".into());
         lines.push("".into());
         lines.push(Line::from(vec![
             "  ".into(),
@@ -157,7 +157,7 @@ pub(super) fn render_device_code_login(
         ]));
         lines.push("".into());
         lines.push(
-            "  2. Enter this one-time code after you are signed in (expires in 15 minutes)".into(),
+            "  2. 登录后输入此一次性验证码（15 分钟后过期）".into(),
         );
         lines.push("".into());
         lines.push(Line::from(vec![
@@ -166,19 +166,19 @@ pub(super) fn render_device_code_login(
         ]));
         lines.push("".into());
         lines.push(
-            "  Device codes are a common phishing target. Never share this code."
+            "  设备码是常见的钓鱼目标，请勿向他人分享此验证码。"
                 .dim()
                 .into(),
         );
         lines.push("".into());
         Some(device_code.verification_url.clone())
     } else {
-        lines.push("  Requesting a one-time code...".dim().into());
+        lines.push("  正在请求一次性验证码...".dim().into());
         lines.push("".into());
         None
     };
 
-    lines.push("  Press Esc to cancel".dim().into());
+    lines.push("  按 Esc 取消".dim().into());
     Paragraph::new(lines)
         .wrap(Wrap { trim: false })
         .render(area, buf);
