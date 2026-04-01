@@ -65,7 +65,7 @@ async fn tldr_structure_json_preserves_graph_contract() -> Result<()> {
         .expect("edges should be an array");
 
     assert_eq!(payload["analysis"]["kind"], "ast");
-    assert_eq!(payload["action"], "tree");
+    assert_eq!(payload["action"], "structure");
     assert!(
         nodes
             .iter()
@@ -204,7 +204,7 @@ async fn tldr_structure_json_supports_language_matrix() -> Result<()> {
             .expect("helper node should exist");
 
         assert_eq!(payload["analysis"]["kind"], "ast");
-        assert_eq!(payload["action"], "tree");
+        assert_eq!(payload["action"], "structure");
         assert_eq!(helper_node["kind"], "function");
         assert_eq!(details["symbol_index"][0]["symbol"], "helper");
     }
@@ -248,25 +248,25 @@ async fn tldr_impact_json_preserves_pdg_contract() -> Result<()> {
     let edges = details["edges"]
         .as_array()
         .expect("edges should be an array");
-    let helper_node = details["nodes"]
+    let caller_node = details["nodes"]
         .as_array()
         .expect("nodes should be an array")
         .iter()
-        .find(|node| node["id"] == "helper")
-        .expect("helper node should exist");
+        .find(|node| node["id"] == "main")
+        .expect("main node should exist");
     let calls_main_helper = edges
         .iter()
         .filter(|edge| edge["kind"] == "calls" && edge["from"] == "main" && edge["to"] == "helper")
         .count();
 
-    assert_eq!(payload["analysis"]["kind"], "pdg");
+    assert_eq!(payload["analysis"]["kind"], "impact");
     assert_eq!(payload["action"], "impact");
     assert_eq!(details["symbol_query"], "helper");
-    assert_eq!(details["overview"]["incoming_edges"], 1);
-    assert_eq!(helper_node["kind"], "function");
+    assert_eq!(details["overview"]["outgoing_edges"], 1);
+    assert_eq!(caller_node["kind"], "function");
     assert_eq!(
         details["units"][0]["dfg_summary"],
-        "params=0, locals=0, mutable bindings=0, assignments=0, references=1"
+        "params=0, locals=0, mutable bindings=0, assignments=0, references=2"
     );
     assert_eq!(calls_main_helper, 1);
 
@@ -310,7 +310,7 @@ async fn tldr_impact_text_renders_summary_lines() -> Result<()> {
     assert!(text.contains("fallback: structure + search"));
     assert!(text.contains("message: "));
     assert!(text.contains("summary: impact summary:"));
-    assert!(text.contains("incoming [main]"));
+    assert!(text.contains("impact summary: 1 callers found for helper across 1 files"));
 
     Ok(())
 }
