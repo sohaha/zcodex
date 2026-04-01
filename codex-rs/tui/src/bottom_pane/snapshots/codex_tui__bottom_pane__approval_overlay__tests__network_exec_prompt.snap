@@ -16,7 +16,7 @@ Buffer {
         "  3. Yes, and allow this host in the future (p)                                                     ",
         "  4. No, and tell Codex what to do differently (esc)                                                ",
         "                                                                                                    ",
-        "  Press enter to confirm or esc to cancel                                                           ",
+        "  按 enter 确认或 esc to cancel                                                           ",
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,

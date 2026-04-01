@@ -10,7 +10,7 @@ expression: "render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72))
 
   Use $ to insert this app into the prompt.
 
-  Enable this app to use it for the current request.
+  请启用此应用以用于当前请求。
   Newly installed apps can take a few minutes to appear in /apps.
 
 

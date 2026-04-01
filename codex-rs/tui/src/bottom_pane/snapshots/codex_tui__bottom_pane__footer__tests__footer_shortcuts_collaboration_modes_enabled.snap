@@ -2,9 +2,9 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  / for commands                             ! for shell commands               "
-"  ctrl + j for newline                       tab to queue message               "
-"  @ for file paths                           ctrl + v to paste images           "
-"  ctrl + g to edit in external editor        esc esc to edit previous message   "
-"  ctrl + c to exit                           shift + tab to change mode         "
-"                                             ctrl + t to view transcript        "
+"  / 命令                             ! shell 命令               "
+"  ctrl + j 换行                       tab 排队消息               "
+"  @ 文件路径                           ctrl + v 粘贴图片           "
+"  ctrl + g 外部编辑器编辑        esc esc 编辑上一条消息   "
+"  ctrl + c 退出                           shift + tab 切换模式         "
+"                                             ctrl + t 查看对话记录        "
