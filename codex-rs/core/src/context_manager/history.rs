@@ -178,6 +178,13 @@ impl ContextManager {
         self.items = items;
     }
 
+    pub(crate) fn replacement_reference_context_item(
+        items: &[ResponseItem],
+        reference_context_item: Option<TurnContextItem>,
+    ) -> Option<TurnContextItem> {
+        reference_context_item.filter(|_| replacement_contains_full_context_pair(items))
+    }
+
     /// Replace image content in the last turn if it originated from a tool output.
     /// Returns true when a tool image was replaced, false otherwise.
     pub(crate) fn replace_last_turn_images(&mut self, placeholder: &str) -> bool {
@@ -442,6 +449,30 @@ impl ContextManager {
         }
         cut_idx
     }
+}
+
+fn replacement_contains_full_context_pair(items: &[ResponseItem]) -> bool {
+    let mut has_contextual_developer_message = false;
+    let mut has_contextual_user_message = false;
+
+    for item in items {
+        let ResponseItem::Message { role, content, .. } = item else {
+            continue;
+        };
+
+        if role == "developer" && is_contextual_dev_message_content(content) {
+            has_contextual_developer_message = true;
+        }
+        if role == "user" && is_contextual_user_message_content(content) {
+            has_contextual_user_message = true;
+        }
+
+        if has_contextual_developer_message && has_contextual_user_message {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn truncate_function_output_payload(

@@ -81,6 +81,19 @@ impl SessionState {
         &mut self,
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
+    ) -> Option<TurnContextItem> {
+        let reference_context_item =
+            ContextManager::replacement_reference_context_item(&items, reference_context_item);
+        self.history.replace(items);
+        self.history
+            .set_reference_context_item(reference_context_item.clone());
+        reference_context_item
+    }
+
+    pub(crate) fn replace_history_preserving_reference_context(
+        &mut self,
+        items: Vec<ResponseItem>,
+        reference_context_item: Option<TurnContextItem>,
     ) {
         self.history.replace(items);
         self.history

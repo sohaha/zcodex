@@ -2192,7 +2192,11 @@ impl Session {
             InitialHistory::Resumed(resumed_history) => {
                 let rollout_items = resumed_history.history;
                 let previous_turn_settings = self
-                    .apply_rollout_reconstruction(&turn_context, &rollout_items)
+                    .apply_rollout_reconstruction(
+                        &turn_context,
+                        &rollout_items,
+                        /*preserve_reference_context_item*/ true,
+                    )
                     .await;
 
                 // If resuming, warn when the last recorded model differs from the current one.
@@ -2229,8 +2233,12 @@ impl Session {
                 }
             }
             InitialHistory::Forked(rollout_items) => {
-                self.apply_rollout_reconstruction(&turn_context, &rollout_items)
-                    .await;
+                self.apply_rollout_reconstruction(
+                    &turn_context,
+                    &rollout_items,
+                    /*preserve_reference_context_item*/ true,
+                )
+                .await;
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
@@ -2259,16 +2267,25 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
+        preserve_reference_context_item: bool,
     ) -> Option<PreviousTurnSettings> {
         let reconstructed_rollout = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
         let previous_turn_settings = reconstructed_rollout.previous_turn_settings.clone();
-        self.replace_history(
-            reconstructed_rollout.history,
-            reconstructed_rollout.reference_context_item,
-        )
-        .await;
+        if preserve_reference_context_item {
+            let mut state = self.state.lock().await;
+            state.replace_history_preserving_reference_context(
+                reconstructed_rollout.history,
+                reconstructed_rollout.reference_context_item,
+            );
+        } else {
+            self.replace_history(
+                reconstructed_rollout.history,
+                reconstructed_rollout.reference_context_item,
+            )
+            .await;
+        }
         self.set_previous_turn_settings(previous_turn_settings.clone())
             .await;
         previous_turn_settings
@@ -3410,9 +3427,9 @@ impl Session {
         &self,
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
-    ) {
+    ) -> Option<TurnContextItem> {
         let mut state = self.state.lock().await;
-        state.replace_history(items, reference_context_item);
+        state.replace_history(items, reference_context_item)
     }
 
     pub(crate) async fn replace_compacted_history(
@@ -3421,8 +3438,7 @@ impl Session {
         reference_context_item: Option<TurnContextItem>,
         compacted_item: CompactedItem,
     ) {
-        self.replace_history(items, reference_context_item.clone())
-            .await;
+        let reference_context_item = self.replace_history(items, reference_context_item).await;
 
         self.persist_rollout_items(&[RolloutItem::Compacted(compacted_item)])
             .await;
@@ -5198,8 +5214,12 @@ mod handlers {
         sess.persist_rollout_items(&[RolloutItem::EventMsg(rollback_msg.clone())])
             .await;
         sess.flush_rollout().await;
-        sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
-            .await;
+        sess.apply_rollout_reconstruction(
+            turn_context.as_ref(),
+            replay_items.as_slice(),
+            /*preserve_reference_context_item*/ false,
+        )
+        .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;
 
         sess.deliver_event_raw(Event {
