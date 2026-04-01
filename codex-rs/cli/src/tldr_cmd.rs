@@ -1397,7 +1397,6 @@ fn render_semantic_response_text(
         format!("indexed files: {}", response.indexed_files),
         format!("truncated: {}", response.truncated),
         format!("message: {}", response.message),
-        format!("embedding used: {}", response.embedding_used),
         format!("matches: {}", response.matches.len()),
     ];
     for (index, semantic_match) in response.matches.iter().enumerate() {

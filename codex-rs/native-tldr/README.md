@@ -87,7 +87,7 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 - semantic 默认开启，并在首次查询时按语言 lazy 建索引；首次 fresh build 会把 units/vector/manifest 落到 `.tldr/cache/semantic/<language>/`
 - semantic / status 对外 schema 已收口到稳定 view；更激进的 payload 控制仍可继续增强
 - semantic embedding 的 ONNX Runtime 现改为运行时动态加载；构建时不再静态链接预编译 ORT，但执行 semantic embedding 前需要让 `libonnxruntime.so` 可被动态加载器找到，或设置 `ORT_DYLIB_PATH=/path/to/libonnxruntime.so`
-- 若当前环境暂时无法提供可加载的 ORT 动态库，`semantic` 现在会自动回退到非 embedding 路径；命令仍会成功返回，但输出中会显示 `embedding used: false`，`message` 会写明本次是因为 embedding backend 不可用而降级
+- 若当前环境暂时无法提供可加载的 ORT 动态库，`semantic` 现在会自动回退到非 embedding 路径；命令仍会成功返回，普通 CLI 输出不会额外打断用户
 - 若希望始终禁用 embedding，可在项目级 `.codex/tldr.toml` 中显式设置 `[semantic.embedding] enabled = false`
 
 ## semantic embedding 安装与使用
@@ -124,9 +124,8 @@ export ORT_DYLIB_PATH=/opt/onnxruntime/lib/libonnxruntime.so
 
 - 不再 panic，也不会把整个 codex 进程打崩
 - `semantic` 会自动回退到非 embedding 路径
-- 文本输出会出现：
-  - `embedding used: false`
-  - `message: semantic embedding unavailable; fell back to lexical ranking: ...`
+- 默认的人类可读输出会继续按成功查询展示
+- 若消费 JSON / structured payload，仍可从 `embeddingUsed = false` 看出当前未使用 embedding
 - 如果你需要稳定、可预期地关闭 embedding，而不是依赖运行时自动降级，请显式配置：
 
 ```toml
@@ -136,11 +135,10 @@ enabled = false
 
 ### 推荐排障顺序
 
-1. 先看 `semantic` 输出里的 `embedding used`
-2. 若为 `false`，再看 `message` 是否写明 ORT 动态库不可加载
-3. 确认 `ORT_DYLIB_PATH` 是否指向真实文件
-4. 若未设置 `ORT_DYLIB_PATH`，确认系统动态库搜索路径里是否能找到 ONNX Runtime
-5. 若当前环境不方便提供 ORT，临时把 `[semantic.embedding] enabled = false`
+1. 若消费 JSON / structured payload，先看 `embeddingUsed`
+2. 确认 `ORT_DYLIB_PATH` 是否指向真实文件
+3. 若未设置 `ORT_DYLIB_PATH`，确认系统动态库搜索路径里是否能找到 ONNX Runtime
+4. 若当前环境不方便提供 ORT，临时把 `[semantic.embedding] enabled = false`
 
 ## agent-first 指引
 

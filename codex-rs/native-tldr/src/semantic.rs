@@ -587,28 +587,17 @@ impl SemanticIndexer {
         index: &SemanticIndex,
         query: String,
     ) -> Result<SemanticSearchResponse> {
-        let (query_vector, embedding_used, fallback_message) = if index.embedding_enabled {
+        let (query_vector, embedding_used) = if index.embedding_enabled {
             match self
                 .embedder
                 .embed_query(&query, index.embedding_dimensions)
             {
-                Ok(vector) => (Some(vector), true, None),
-                Err(error) if embedder::is_embedding_backend_unavailable(&error) => (
-                    None,
-                    false,
-                    Some(format!(
-                        "semantic embedding unavailable; fell back to lexical ranking: {}",
-                        error
-                            .chain()
-                            .last()
-                            .map(ToString::to_string)
-                            .unwrap_or_else(|| error.to_string())
-                    )),
-                ),
+                Ok(vector) => (Some(vector), true),
+                Err(error) if embedder::is_embedding_backend_unavailable(&error) => (None, false),
                 Err(error) => return Err(error).context("embed semantic search query"),
             }
         } else {
-            (None, false, None)
+            (None, false)
         };
         let mut matches: Vec<_> = index
             .units
@@ -657,8 +646,7 @@ impl SemanticIndexer {
             truncated,
             matches,
             embedding_used,
-            message: fallback_message
-                .unwrap_or_else(|| format!("semantic search returned {result_count} matches")),
+            message: format!("semantic search returned {result_count} matches"),
         })
     }
 
@@ -1527,7 +1515,7 @@ fn log() {
 
         assert_eq!(response.embedding_used, false);
         assert!(!response.matches.is_empty());
-        assert!(response.message.contains("fell back to lexical ranking"));
+        assert_eq!(response.message, "semantic search returned 2 matches");
     }
 
     #[test]
