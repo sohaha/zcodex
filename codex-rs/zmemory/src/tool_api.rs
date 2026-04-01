@@ -1,4 +1,5 @@
 use crate::config::ZmemoryConfig;
+use crate::path_resolution::resolve_workspace_base_path;
 use crate::path_resolution::resolve_zmemory_path;
 use crate::schema::DEFAULT_DOMAIN;
 use crate::service::execute_action;
@@ -164,7 +165,8 @@ pub fn run_zmemory_tool_with_context(
     args: ZmemoryToolCallParam,
 ) -> Result<ZmemoryToolResult> {
     let path_resolution = resolve_zmemory_path(codex_home, cwd, zmemory_path)?;
-    let config = ZmemoryConfig::new(codex_home, path_resolution);
+    let workspace_base = resolve_workspace_base_path(cwd)?;
+    let config = ZmemoryConfig::new(codex_home, workspace_base, path_resolution);
     let structured_content = execute_action(&config, &args)?;
     let text = render_summary(&structured_content);
     Ok(ZmemoryToolResult {
@@ -196,23 +198,33 @@ fn render_summary(payload: &serde_json::Value) -> String {
         .unwrap_or("unknown");
     let result = payload.get("result").unwrap_or(&serde_json::Value::Null);
     match action {
-        "read" => format!(
-            "read {}: {} children, {} keywords",
-            result
+        "read" => {
+            let uri = result
                 .get("uri")
                 .and_then(serde_json::Value::as_str)
-                .unwrap_or("unknown"),
-            result
-                .get("children")
-                .and_then(serde_json::Value::as_array)
-                .map(Vec::len)
-                .unwrap_or_default(),
-            result
-                .get("keywords")
-                .and_then(serde_json::Value::as_array)
-                .map(Vec::len)
-                .unwrap_or_default()
-        ),
+                .unwrap_or("unknown");
+            if let Some(view_name) = result
+                .get("view")
+                .and_then(|view| view.get("view"))
+                .and_then(serde_json::Value::as_str)
+            {
+                format!("read {uri}: {view_name} view")
+            } else {
+                format!(
+                    "read {uri}: {} children, {} keywords",
+                    result
+                        .get("children")
+                        .and_then(serde_json::Value::as_array)
+                        .map(Vec::len)
+                        .unwrap_or_default(),
+                    result
+                        .get("keywords")
+                        .and_then(serde_json::Value::as_array)
+                        .map(Vec::len)
+                        .unwrap_or_default()
+                )
+            }
+        }
         "search" => format!(
             "search {}: {} matches",
             result

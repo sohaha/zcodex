@@ -4,13 +4,8 @@ use anyhow::Context;
 use anyhow::Result;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use serde::Serialize;
-use sha2::Digest;
-use sha2::Sha256;
 use std::path::Path;
 use std::path::PathBuf;
-
-const WORKSPACE_PREFIX: &str = "workspace-";
-const WORKSPACE_KEY_LEN: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,8 +21,7 @@ pub struct ZmemoryPathResolution {
 #[serde(rename_all = "camelCase")]
 pub enum ZmemoryPathSource {
     Explicit,
-    RepoRoot,
-    Cwd,
+    GlobalRoot,
 }
 
 pub fn resolve_zmemory_path(
@@ -37,41 +31,29 @@ pub fn resolve_zmemory_path(
 ) -> Result<ZmemoryPathResolution> {
     if let Some(raw_path) = explicit_path {
         if raw_path.as_os_str().is_empty() {
-            anyhow::bail!("zmemory_path cannot be empty");
+            anyhow::bail!("zmemory.path cannot be empty");
         }
         return resolve_explicit_zmemory_path(cwd, raw_path);
     }
 
-    let (source, base) = resolve_workspace_base(cwd);
-    let canonical_base = canonicalize_existing_path(&base)
-        .with_context(|| format!("canonicalize {}", base.display()))?;
-    let workspace_key = format!(
-        "{WORKSPACE_PREFIX}{}",
-        workspace_key_for_path(&canonical_base)
-    );
-    let db_path = codex_home
+    let canonical_codex_home = canonicalize_existing_path(codex_home)
+        .with_context(|| format!("canonicalize {}", codex_home.display()))?;
+    let db_path = canonical_codex_home
         .join(ZMEMORY_DIR)
-        .join(&workspace_key)
         .join(ZMEMORY_DB_FILENAME);
-    let reason = match source {
-        ZmemoryPathSource::RepoRoot => {
-            format!("defaulted to repo root {}", canonical_base.display())
-        }
-        ZmemoryPathSource::Cwd => format!("defaulted to cwd {}", canonical_base.display()),
-        ZmemoryPathSource::Explicit => unreachable!("explicit paths return early"),
-    };
+    let reason = format!("defaulted to global root {}", db_path.display());
 
     Ok(ZmemoryPathResolution {
         db_path,
-        workspace_key: Some(workspace_key),
-        source,
-        canonical_base: Some(canonical_base),
+        workspace_key: None,
+        source: ZmemoryPathSource::GlobalRoot,
+        canonical_base: None,
         reason,
     })
 }
 
 fn resolve_explicit_zmemory_path(cwd: &Path, raw_path: &Path) -> Result<ZmemoryPathResolution> {
-    let (base_source, base) = resolve_workspace_base(cwd);
+    let base = resolve_workspace_base(cwd);
     let (db_path, canonical_base, source_reason) = if raw_path.is_absolute() {
         (
             canonicalize_file_path(raw_path)?,
@@ -82,16 +64,12 @@ fn resolve_explicit_zmemory_path(cwd: &Path, raw_path: &Path) -> Result<ZmemoryP
         let canonical_base_path = canonicalize_existing_path(&base)
             .with_context(|| format!("canonicalize {}", base.display()))?;
         let db_path = canonicalize_file_path(&canonical_base_path.join(raw_path))?;
-        let anchor_label = match base_source {
-            ZmemoryPathSource::RepoRoot => "repo root",
-            ZmemoryPathSource::Cwd => "cwd",
-            ZmemoryPathSource::Explicit => unreachable!("explicit path cannot anchor itself"),
-        };
+        let anchor_label = workspace_anchor_label(cwd);
         let source_reason = format!(
             "relative path resolved from {anchor_label} {}",
             canonical_base_path.display()
         );
-        (db_path, Some(canonical_base_path.clone()), source_reason)
+        (db_path, Some(canonical_base_path), source_reason)
     };
     let raw_display = raw_path.display();
 
@@ -100,16 +78,21 @@ fn resolve_explicit_zmemory_path(cwd: &Path, raw_path: &Path) -> Result<ZmemoryP
         workspace_key: None,
         source: ZmemoryPathSource::Explicit,
         canonical_base,
-        reason: format!("explicit zmemory_path `{raw_display}` via {source_reason}"),
+        reason: format!("explicit zmemory.path `{raw_display}` via {source_reason}"),
     })
 }
 
-fn resolve_workspace_base(cwd: &Path) -> (ZmemoryPathSource, PathBuf) {
+pub fn resolve_workspace_base(cwd: &Path) -> PathBuf {
     if let Some(repo_root) = resolve_root_git_project_for_trust(cwd) {
-        (ZmemoryPathSource::RepoRoot, repo_root)
+        repo_root
     } else {
-        (ZmemoryPathSource::Cwd, cwd.to_path_buf())
+        cwd.to_path_buf()
     }
+}
+
+pub fn resolve_workspace_base_path(cwd: &Path) -> Result<PathBuf> {
+    let base = resolve_workspace_base(cwd);
+    canonicalize_existing_path(&base).with_context(|| format!("canonicalize {}", base.display()))
 }
 
 fn canonicalize_existing_path(path: &Path) -> Result<PathBuf> {
@@ -128,26 +111,18 @@ fn canonicalize_file_path(path: &Path) -> Result<PathBuf> {
     Ok(canonical_parent.join(file_name))
 }
 
-fn workspace_key_for_path(path: &Path) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(path.to_string_lossy().as_bytes());
-    let digest = hasher.finalize();
-    let mut hex = String::with_capacity(WORKSPACE_KEY_LEN);
-    for byte in digest {
-        use std::fmt::Write as _;
-        let _ = write!(hex, "{byte:02x}");
-        if hex.len() >= WORKSPACE_KEY_LEN {
-            hex.truncate(WORKSPACE_KEY_LEN);
-            break;
-        }
+fn workspace_anchor_label(cwd: &Path) -> &'static str {
+    if resolve_root_git_project_for_trust(cwd).is_some() {
+        "repo root"
+    } else {
+        "cwd"
     }
-    hex
 }
 
 #[cfg(test)]
 mod tests {
-    use super::WORKSPACE_PREFIX;
     use super::ZmemoryPathSource;
+    use super::resolve_workspace_base_path;
     use super::resolve_zmemory_path;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -155,32 +130,28 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn defaults_to_repo_root_workspace_key() {
+    fn defaults_to_global_root_path() {
         let temp = TempDir::new().expect("tempdir");
         let repo = temp.path().join("repo");
         let nested = repo.join("nested");
+        let codex_home = temp.path().join("codex-home");
         fs::create_dir_all(repo.join(".git")).expect("create git dir");
         fs::create_dir_all(&nested).expect("create nested dir");
+        fs::create_dir_all(&codex_home).expect("create codex home");
 
-        let resolution = resolve_zmemory_path(temp.path(), &nested, None).expect("resolve path");
-        let canonical_repo = repo.canonicalize().expect("canonical repo");
+        let resolution = resolve_zmemory_path(&codex_home, &nested, None).expect("resolve path");
 
-        assert_eq!(resolution.source, ZmemoryPathSource::RepoRoot);
+        assert_eq!(resolution.source, ZmemoryPathSource::GlobalRoot);
         assert_eq!(
-            resolution.canonical_base.as_deref(),
-            Some(canonical_repo.as_path())
+            resolution.db_path,
+            codex_home.join("zmemory").join("zmemory.db")
         );
-        assert_eq!(
-            resolution
-                .workspace_key
-                .as_deref()
-                .map(|key| key.starts_with(WORKSPACE_PREFIX)),
-            Some(true)
-        );
+        assert_eq!(resolution.workspace_key, None);
+        assert!(resolution.reason.contains("defaulted to global root"));
     }
 
     #[test]
-    fn worktree_defaults_to_main_repo_root() {
+    fn worktree_workspace_base_resolves_to_main_repo_root() {
         let temp = TempDir::new().expect("tempdir");
         let main_repo = temp.path().join("main");
         let worktree = temp.path().join("wt");
@@ -193,31 +164,21 @@ mod tests {
         )
         .expect("write .git file");
 
-        let resolution = resolve_zmemory_path(temp.path(), &worktree, None).expect("resolve path");
+        let workspace_base = resolve_workspace_base_path(&worktree).expect("workspace base");
         let canonical_repo = main_repo.canonicalize().expect("canonical repo");
 
-        assert_eq!(resolution.source, ZmemoryPathSource::RepoRoot);
-        assert_eq!(
-            resolution.canonical_base.as_deref(),
-            Some(canonical_repo.as_path())
-        );
+        assert_eq!(workspace_base, canonical_repo);
     }
 
     #[test]
-    fn defaults_to_cwd_outside_git() {
+    fn workspace_base_defaults_to_cwd_outside_git() {
         let temp = TempDir::new().expect("tempdir");
         let cwd = temp.path().join("workspace");
         fs::create_dir_all(&cwd).expect("create cwd");
 
-        let resolution = resolve_zmemory_path(temp.path(), &cwd, None).expect("resolve path");
-        let canonical_cwd = cwd.canonicalize().expect("canonical cwd");
+        let workspace_base = resolve_workspace_base_path(&cwd).expect("workspace base");
 
-        assert_eq!(resolution.source, ZmemoryPathSource::Cwd);
-        assert_eq!(
-            resolution.canonical_base.as_deref(),
-            Some(canonical_cwd.as_path())
-        );
-        assert!(resolution.reason.contains("cwd"));
+        assert_eq!(workspace_base, cwd.canonicalize().expect("canonical cwd"));
     }
 
     #[test]

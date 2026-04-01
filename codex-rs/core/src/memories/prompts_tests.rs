@@ -92,3 +92,13 @@ async fn build_memory_tool_developer_instructions_renders_embedded_template() {
         1
     );
 }
+
+#[test]
+fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
+    let instructions = build_zmemory_tool_developer_instructions();
+
+    assert!(instructions.contains("## Zmemory"));
+    assert!(instructions.contains("separate from the native read-only memory folder"));
+    assert!(instructions.contains("read system://workspace"));
+    assert!(instructions.contains("read system://defaults"));
+}

@@ -31,6 +31,12 @@ static MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_TEMPLATE: LazyLock<Template> = LazyLoc
         "memories/read_path.md",
     )
 });
+static ZMEMORY_DEVELOPER_INSTRUCTIONS_TEMPLATE: LazyLock<Template> = LazyLock::new(|| {
+    parse_embedded_template(
+        include_str!("../../templates/zmemory/write_path.md"),
+        "zmemory/write_path.md",
+    )
+});
 
 fn parse_embedded_template(source: &'static str, template_name: &str) -> Template {
     match Template::parse(source) {
@@ -182,6 +188,12 @@ pub(crate) async fn build_memory_tool_developer_instructions(codex_home: &Path) 
             ("memory_summary", memory_summary.as_str()),
         ])
         .ok()
+}
+
+pub(crate) fn build_zmemory_tool_developer_instructions() -> String {
+    ZMEMORY_DEVELOPER_INSTRUCTIONS_TEMPLATE
+        .render(std::iter::empty::<(&str, &str)>())
+        .expect("embedded zmemory prompt template should render")
 }
 
 #[cfg(test)]

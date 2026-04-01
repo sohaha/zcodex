@@ -236,6 +236,11 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
         payload["result"]["reason"],
         payload["result"]["pathResolution"]["reason"]
     );
+    assert_eq!(payload["result"]["pathResolution"]["source"], "globalRoot");
+    assert_eq!(
+        payload["result"]["pathResolution"]["workspaceKey"],
+        Value::Null
+    );
 
     Ok(())
 }
@@ -542,7 +547,7 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
             .parent()
             .expect("explicit zmemory path should have a parent"),
     )?;
-    let mut builder = test_codex().with_home(home).with_config({
+    let mut builder = test_codex().with_home(Arc::clone(&home)).with_config({
         let explicit_db_path = explicit_db_path.clone();
         move |config| {
             config
@@ -594,6 +599,16 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
     assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
     assert_eq!(payload["result"]["view"]["source"], "explicit");
     assert_eq!(payload["result"]["view"]["dbPathDiffers"], true);
+    assert_eq!(
+        payload["result"]["view"]["defaultDbPath"],
+        json!(
+            home.path()
+                .join("zmemory")
+                .join("zmemory.db")
+                .display()
+                .to_string()
+        )
+    );
     assert_ne!(
         payload["result"]["view"]["dbPath"],
         payload["result"]["view"]["defaultDbPath"]

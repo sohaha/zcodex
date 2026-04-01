@@ -1,4 +1,7 @@
 use crate::config::ZmemoryConfig;
+use crate::config::default_core_memory_uris;
+use crate::config::default_valid_domains;
+use crate::config::zmemory_db_path;
 use anyhow::Result;
 use anyhow::anyhow;
 use rusqlite::Connection;
@@ -16,6 +19,8 @@ pub fn read_system_view(
 ) -> Result<Value> {
     match parse_system_view(view, limit)? {
         ParsedSystemView::Boot { limit } => read_boot_view(conn, config, limit),
+        ParsedSystemView::Defaults => read_defaults_view(config),
+        ParsedSystemView::Workspace => read_workspace_view(conn, config),
         ParsedSystemView::Index { domain, limit } => {
             read_index_view(conn, config, domain.as_deref(), limit)
         }
@@ -34,6 +39,8 @@ enum ParsedSystemView {
     Boot {
         limit: usize,
     },
+    Defaults,
+    Workspace,
     Index {
         domain: Option<String>,
         limit: usize,
@@ -56,6 +63,8 @@ impl ParsedSystemView {
     fn raw(&self) -> &str {
         match self {
             Self::Boot { .. } => "boot",
+            Self::Defaults => "defaults",
+            Self::Workspace => "workspace",
             Self::Index { .. } => "index",
             Self::Recent { .. } => "recent",
             Self::Glossary { .. } => "glossary",
@@ -79,6 +88,8 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
         "boot" if tail.is_empty() => Ok(ParsedSystemView::Boot {
             limit: default_limit,
         }),
+        "defaults" if tail.is_empty() => Ok(ParsedSystemView::Defaults),
+        "workspace" if tail.is_empty() => Ok(ParsedSystemView::Workspace),
         "index" if tail.is_empty() => Ok(ParsedSystemView::Index {
             domain: None,
             limit: default_limit,
@@ -147,6 +158,56 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
         "missingUris": missing_uris,
         "entryCount": entries.len(),
         "entries": entries,
+    }))
+}
+
+fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
+    let default_db_path = zmemory_db_path(config.codex_home());
+    Ok(json!({
+        "view": "defaults",
+        "validDomains": default_valid_domains(),
+        "coreMemoryUris": default_core_memory_uris(),
+        "defaultPathPolicy": {
+            "mode": "globalRoot",
+            "dbPath": default_db_path.display().to_string(),
+            "workspaceKey": Value::Null,
+            "source": "globalRoot",
+            "reason": format!("defaulted to global root {}", default_db_path.display()),
+        },
+        "recommendedDomains": default_valid_domains(),
+        "recommendedBootUris": default_core_memory_uris(),
+        "bootContract": {
+            "view": "boot",
+            "limitControlsAnchors": true,
+            "anchors": default_core_memory_uris(),
+        },
+    }))
+}
+
+fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
+    let resolution = config.path_resolution();
+    let default_db_path = zmemory_db_path(config.codex_home());
+    let boot = read_boot_view(conn, config, usize::MAX)?;
+    let boot_healthy = boot
+        .get("missingUris")
+        .and_then(Value::as_array)
+        .is_some_and(|missing| missing.is_empty());
+
+    Ok(json!({
+        "view": "workspace",
+        "workspaceBase": config.workspace_base().display().to_string(),
+        "dbPath": resolution.db_path.display().to_string(),
+        "workspaceKey": resolution.workspace_key.clone(),
+        "source": resolution.source,
+        "reason": resolution.reason.clone(),
+        "hasExplicitZmemoryPath": matches!(resolution.source, crate::path_resolution::ZmemoryPathSource::Explicit),
+        "defaultWorkspaceKey": Value::Null,
+        "defaultDbPath": default_db_path.display().to_string(),
+        "dbPathDiffers": resolution.db_path != default_db_path,
+        "validDomains": config.valid_domains(),
+        "coreMemoryUris": config.core_memory_uris(),
+        "boot": boot,
+        "bootHealthy": boot_healthy,
     }))
 }
 

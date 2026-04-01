@@ -10,9 +10,18 @@ const DEFAULT_VALID_DOMAINS: &[&str] = &["core"];
 const DEFAULT_CORE_MEMORY_URIS: &[&str] =
     &["core://agent", "core://my_user", "core://agent/my_user"];
 
+pub(crate) fn default_valid_domains() -> &'static [&'static str] {
+    DEFAULT_VALID_DOMAINS
+}
+
+pub(crate) fn default_core_memory_uris() -> &'static [&'static str] {
+    DEFAULT_CORE_MEMORY_URIS
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ZmemoryConfig {
     codex_home: PathBuf,
+    workspace_base: PathBuf,
     path_resolution: ZmemoryPathResolution,
     settings: ZmemorySettings,
 }
@@ -24,9 +33,14 @@ pub struct ZmemorySettings {
 }
 
 impl ZmemoryConfig {
-    pub fn new(codex_home: impl Into<PathBuf>, path_resolution: ZmemoryPathResolution) -> Self {
+    pub fn new(
+        codex_home: impl Into<PathBuf>,
+        workspace_base: impl Into<PathBuf>,
+        path_resolution: ZmemoryPathResolution,
+    ) -> Self {
         Self::new_with_settings(
             codex_home,
+            workspace_base,
             path_resolution,
             ZmemorySettings::from_env_vars(
                 std::env::var(VALID_DOMAINS_ENV).ok(),
@@ -37,11 +51,13 @@ impl ZmemoryConfig {
 
     pub fn new_with_settings(
         codex_home: impl Into<PathBuf>,
+        workspace_base: impl Into<PathBuf>,
         path_resolution: ZmemoryPathResolution,
         settings: ZmemorySettings,
     ) -> Self {
         Self {
             codex_home: codex_home.into(),
+            workspace_base: workspace_base.into(),
             path_resolution,
             settings,
         }
@@ -53,6 +69,10 @@ impl ZmemoryConfig {
 
     pub fn db_path(&self) -> &Path {
         &self.path_resolution.db_path
+    }
+
+    pub fn workspace_base(&self) -> &Path {
+        &self.workspace_base
     }
 
     pub fn path_resolution(&self) -> &ZmemoryPathResolution {
@@ -132,6 +152,7 @@ mod tests {
     use crate::path_resolution::ZmemoryPathResolution;
     use crate::path_resolution::ZmemoryPathSource;
     use pretty_assertions::assert_eq;
+    use std::path::Path;
     use std::path::PathBuf;
 
     #[test]
@@ -186,6 +207,7 @@ mod tests {
     fn config_allows_system_even_when_not_listed() {
         let config = ZmemoryConfig::new_with_settings(
             "/tmp/codex-home",
+            "/tmp/workspace",
             sample_resolution("/tmp/codex-home/zmemory/workspace-test/zmemory.db"),
             ZmemorySettings::from_env_vars(Some("writer".to_string()), None),
         );
@@ -200,20 +222,22 @@ mod tests {
         let resolution = sample_resolution("/tmp/workspace/memory.db");
         let config = ZmemoryConfig::new_with_settings(
             "/tmp/codex-home",
+            "/tmp/workspace",
             resolution.clone(),
             ZmemorySettings::from_env_vars(None, None),
         );
 
         assert_eq!(config.db_path(), resolution.db_path.as_path());
+        assert_eq!(config.workspace_base(), Path::new("/tmp/workspace"));
         assert_eq!(config.path_resolution(), &resolution);
     }
 
     fn sample_resolution(db_path: &str) -> ZmemoryPathResolution {
         ZmemoryPathResolution {
             db_path: PathBuf::from(db_path),
-            workspace_key: Some("workspace-test".to_string()),
-            source: ZmemoryPathSource::Cwd,
-            canonical_base: Some(PathBuf::from("/tmp/workspace")),
+            workspace_key: None,
+            source: ZmemoryPathSource::GlobalRoot,
+            canonical_base: None,
             reason: "test".to_string(),
         }
     }

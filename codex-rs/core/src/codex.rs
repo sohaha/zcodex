@@ -3544,6 +3544,9 @@ impl Session {
         {
             developer_sections.push(memory_prompt);
         }
+        if turn_context.features.enabled(Feature::Zmemory) {
+            developer_sections.push(build_zmemory_tool_developer_instructions());
+        }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
@@ -7538,6 +7541,7 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 }
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
+use crate::memories::prompts::build_zmemory_tool_developer_instructions;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]

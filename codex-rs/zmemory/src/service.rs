@@ -1192,6 +1192,7 @@ mod tests {
     use super::execute_action;
     use crate::config::ZmemoryConfig;
     use crate::config::ZmemorySettings;
+    use crate::path_resolution::resolve_workspace_base_path;
     use crate::path_resolution::resolve_zmemory_path;
     use crate::tool_api::ZmemoryToolAction;
     use crate::tool_api::ZmemoryToolCallParam;
@@ -1206,7 +1207,9 @@ mod tests {
         let dir = TempDir::new().expect("tempdir");
         let resolution =
             resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
-        let config = ZmemoryConfig::new(dir.path().to_path_buf(), resolution);
+        let workspace_base =
+            resolve_workspace_base_path(dir.path()).expect("resolve workspace base");
+        let config = ZmemoryConfig::new(dir.path().to_path_buf(), workspace_base, resolution);
         (dir, config)
     }
 
@@ -1214,8 +1217,14 @@ mod tests {
         let dir = TempDir::new().expect("tempdir");
         let resolution =
             resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
-        let config =
-            ZmemoryConfig::new_with_settings(dir.path().to_path_buf(), resolution, settings);
+        let workspace_base =
+            resolve_workspace_base_path(dir.path()).expect("resolve workspace base");
+        let config = ZmemoryConfig::new_with_settings(
+            dir.path().to_path_buf(),
+            workspace_base,
+            resolution,
+            settings,
+        );
         (dir, config)
     }
 
@@ -1644,6 +1653,55 @@ mod tests {
             boot["result"]["view"]["missingUris"][1],
             "core://agent/my_user"
         );
+
+        let defaults = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://defaults".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("defaults view should succeed");
+        assert_eq!(defaults["result"]["view"]["view"], "defaults");
+        assert_eq!(
+            defaults["result"]["view"]["defaultPathPolicy"]["mode"],
+            "globalRoot"
+        );
+        assert_eq!(
+            defaults["result"]["view"]["defaultPathPolicy"]["dbPath"],
+            json!(
+                config
+                    .codex_home()
+                    .join("zmemory")
+                    .join("zmemory.db")
+                    .display()
+                    .to_string()
+            )
+        );
+
+        let workspace = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://workspace".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("workspace view should succeed");
+        assert_eq!(workspace["result"]["view"]["view"], "workspace");
+        assert_eq!(workspace["result"]["view"]["source"], "globalRoot");
+        assert_eq!(workspace["result"]["view"]["hasExplicitZmemoryPath"], false);
+        assert_eq!(workspace["result"]["view"]["dbPathDiffers"], false);
+        assert_eq!(
+            workspace["result"]["view"]["defaultDbPath"],
+            workspace["result"]["view"]["dbPath"]
+        );
+        assert_eq!(
+            workspace["result"]["view"]["workspaceBase"],
+            json!(config.workspace_base().display().to_string())
+        );
+        assert_eq!(workspace["result"]["view"]["bootHealthy"], false);
 
         let index = execute_action(
             &config,

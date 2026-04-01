@@ -39,6 +39,7 @@ impl ZmemoryRepository {
 mod tests {
     use super::ZmemoryRepository;
     use crate::ZmemoryConfig;
+    use crate::path_resolution::resolve_workspace_base_path;
     use crate::path_resolution::resolve_zmemory_path;
     use anyhow::Result;
     use tempfile::TempDir;
@@ -50,7 +51,8 @@ mod tests {
         let codex_home = TempDir::new()?;
         let cwd = TempDir::new()?;
         let resolution = resolve_zmemory_path(codex_home.path(), cwd.path(), None)?;
-        let config = ZmemoryConfig::new(codex_home.path(), resolution.clone());
+        let workspace_base = resolve_workspace_base_path(cwd.path())?;
+        let config = ZmemoryConfig::new(codex_home.path(), workspace_base, resolution.clone());
 
         let repository = ZmemoryRepository::new(config);
         let _conn = repository.connect()?;
