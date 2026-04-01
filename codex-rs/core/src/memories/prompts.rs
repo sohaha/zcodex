@@ -1,6 +1,7 @@
 use crate::memories::memory_root;
 use crate::memories::phase_one;
 use crate::memories::storage::rollout_summary_file_stem_from_parts;
+use crate::memories::zmemory_contract::stable_preference_contract_markdown;
 use codex_protocol::openai_models::ModelInfo;
 use codex_state::Phase2InputSelection;
 use codex_state::Stage1Output;
@@ -191,8 +192,12 @@ pub(crate) async fn build_memory_tool_developer_instructions(codex_home: &Path) 
 }
 
 pub(crate) fn build_zmemory_tool_developer_instructions() -> String {
+    let stable_preference_contract = stable_preference_contract_markdown();
     ZMEMORY_DEVELOPER_INSTRUCTIONS_TEMPLATE
-        .render(std::iter::empty::<(&str, &str)>())
+        .render([(
+            "stable_preference_contract",
+            stable_preference_contract.as_str(),
+        )])
         .expect("embedded zmemory prompt template should render")
 }
 

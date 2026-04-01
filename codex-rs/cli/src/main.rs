@@ -75,7 +75,7 @@ use codex_terminal_detection::TerminalName;
     // `codex-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `codex` command name that users run.
     bin_name = "codex",
-    override_usage = "codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]"
+    override_usage = "codex [选项] [提示]\n       codex [选项] <命令> [参数]"
 )]
 struct MultitoolCli {
     #[clap(flatten)]
@@ -216,7 +216,7 @@ enum DebugAppServerSubcommand {
 #[derive(Debug, Parser)]
 struct DebugAppServerSendMessageV2Command {
     /// 要发送的用户消息。
-    #[arg(value_name = "USER_MESSAGE", required = true)]
+    #[arg(value_name = "用户消息", required = true)]
     user_message: String,
 }
 
@@ -224,7 +224,7 @@ struct DebugAppServerSendMessageV2Command {
 struct ResumeCommand {
     /// 会话 ID（UUID）或线程名。若能解析为 UUID，则优先按 UUID 处理。
     /// 省略时可用 --last 选择最近一次记录的会话。
-    #[arg(value_name = "SESSION_ID")]
+    #[arg(value_name = "会话ID")]
     session_id: Option<String>,
 
     /// 不显示选择器，直接继续最近一次会话。
@@ -246,7 +246,7 @@ struct ResumeCommand {
 struct ForkCommand {
     /// 会话 ID（UUID）。提供后会分叉该会话。
     /// 省略时可用 --last 选择最近一次记录的会话。
-    #[arg(value_name = "SESSION_ID")]
+    #[arg(value_name = "会话ID")]
     session_id: Option<String>,
 
     /// 不显示选择器，直接分叉最近一次会话。
@@ -310,7 +310,7 @@ struct LoginCommand {
 
     #[arg(
         long = "api-key",
-        value_name = "API_KEY",
+        value_name = "API密钥",
         help = "（已弃用）此前可直接传 API 密钥；现在会退出并提示改用 --with-api-key",
         hide = true
     )]
@@ -325,7 +325,7 @@ struct LoginCommand {
     issuer_base_url: Option<String>,
 
     /// 实验性：使用自定义 OAuth client ID（高级）
-    #[arg(long = "experimental_client-id", value_name = "CLIENT_ID", hide = true)]
+    #[arg(long = "experimental_client-id", value_name = "客户端ID", hide = true)]
     client_id: Option<String>,
 
     #[command(subcommand)]
@@ -398,11 +398,11 @@ enum AppServerSubcommand {
 #[derive(Debug, Args)]
 struct GenerateTsCommand {
     /// 输出目录（写入 TypeScript 文件）
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 
     /// 可选：用于格式化生成文件的 Prettier 可执行文件路径。
-    #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
+    #[arg(short = 'p', long = "prettier", value_name = "Prettier路径")]
     prettier: Option<PathBuf>,
 
     /// 在输出中包含实验性方法和字段。
@@ -413,7 +413,7 @@ struct GenerateTsCommand {
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
     /// 输出目录（写入 Schema 汇总文件）
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 
     /// 在输出中包含实验性方法和字段。
@@ -424,14 +424,14 @@ struct GenerateJsonSchemaCommand {
 #[derive(Debug, Args)]
 struct GenerateInternalJsonSchemaCommand {
     /// 输出目录（写入内部 JSON Schema 文件）
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 struct StdioToUdsCommand {
     /// 要连接的 Unix 域套接字路径。
-    #[arg(value_name = "SOCKET_PATH")]
+    #[arg(value_name = "套接字路径")]
     socket_path: PathBuf,
 }
 
@@ -448,8 +448,8 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
     }
 
     let mut lines = vec![format!(
-        "{}",
-        codex_protocol::protocol::FinalOutput::from(token_usage)
+        "Token 使用量：总计={} 输入={} 输出={}",
+        token_usage.total_tokens, token_usage.input_tokens, token_usage.output_tokens
     )];
 
     if let Some(resume_cmd) =
@@ -538,11 +538,11 @@ async fn run_debug_app_server_command(cmd: DebugAppServerCommand) -> anyhow::Res
 #[derive(Debug, Default, Parser, Clone)]
 struct FeatureToggles {
     /// 启用功能（可重复）。等价于 `-c features.<name>=true`。
-    #[arg(long = "enable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
+    #[arg(long = "enable", value_name = "功能", action = clap::ArgAction::Append, global = true)]
     enable: Vec<String>,
 
     /// 禁用功能（可重复）。等价于 `-c features.<name>=false`。
-    #[arg(long = "disable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
+    #[arg(long = "disable", value_name = "功能", action = clap::ArgAction::Append, global = true)]
     disable: Vec<String>,
 }
 
@@ -551,7 +551,7 @@ struct InteractiveRemoteOptions {
     /// 将基于 app-server 的 TUI 连接到远程应用服务器 WebSocket 端点。
     ///
     /// 支持格式：`ws://host:port` 或 `wss://host:port`。
-    #[arg(long = "remote", value_name = "ADDR")]
+    #[arg(long = "remote", value_name = "地址")]
     remote: Option<String>,
 }
 
@@ -1533,7 +1533,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
+                "Token 使用量：总计=2 输入=0 输出=2".to_string(),
                 "若要继续此会话，请运行 codex resume 123e4567-e89b-12d3-a456-426614174000"
                     .to_string(),
             ]
@@ -1558,7 +1558,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
+                "Token 使用量：总计=2 输入=0 输出=2".to_string(),
                 "若要继续此会话，请运行 codex resume my-thread".to_string(),
             ]
         );

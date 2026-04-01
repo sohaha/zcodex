@@ -6,7 +6,7 @@ const DEFAULT_CODEX_DMG_URL: &str = "https://persistent.oaistatic.com/codex-app-
 #[derive(Debug, Parser)]
 pub struct AppCommand {
     /// 要在 Codex Desktop 中打开的工作区路径。
-    #[arg(value_name = "PATH", default_value = ".")]
+    #[arg(value_name = "路径", default_value = ".")]
     pub path: PathBuf,
 
     /// 覆盖 macOS DMG 下载 URL（高级）。

@@ -99,6 +99,13 @@ fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
 
     assert!(instructions.contains("## Zmemory"));
     assert!(instructions.contains("separate from the native read-only memory folder"));
+    assert!(instructions.contains("Stable preference contract:"));
     assert!(instructions.contains("read system://workspace"));
     assert!(instructions.contains("read system://defaults"));
+    assert!(instructions.contains("`core://my_user`"));
+    assert!(instructions.contains("`core://agent`"));
+    assert!(instructions.contains("`core://agent/my_user`"));
+    assert!(instructions.contains("must never change the canonical target URI"));
+    assert!(instructions.contains("Use `create` only when that canonical URI is missing"));
+    assert!(instructions.contains("always `update` that same canonical node"));
 }

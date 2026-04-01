@@ -855,7 +855,8 @@ async fn apply_patch_cli_can_use_shell_command_output_as_patch_input() -> Result
                             "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand {encoded}"
                         )
                     } else {
-                        "cat source.txt".to_string()
+                        // Use compound shell syntax so the shell tool keeps the read raw.
+                        "cat source.txt | cat".to_string()
                     };
                     let args = json!({
                         "command": command,

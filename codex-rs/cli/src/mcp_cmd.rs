@@ -77,7 +77,7 @@ pub struct GetArgs {
 }
 
 #[derive(Debug, clap::Parser)]
-#[command(override_usage = "codex mcp add [OPTIONS] <NAME> (--url <URL> | -- <COMMAND>...)")]
+#[command(override_usage = "codex mcp add [选项] <名称> (--url <URL> | -- <命令>...)")]
 pub struct AddArgs {
     /// MCP 服务器配置的名称。
     pub name: String,
@@ -118,7 +118,7 @@ pub struct AddMcpStdioArgs {
     #[arg(
         long,
         value_parser = parse_env_pair,
-        value_name = "KEY=VALUE",
+        value_name = "键=值",
     )]
     pub env: Vec<(String, String)>,
 }
@@ -133,7 +133,7 @@ pub struct AddMcpStreamableHttpArgs {
     /// 仅适用于可流式 HTTP 服务器。
     #[arg(
         long = "bearer-token-env-var",
-        value_name = "ENV_VAR",
+        value_name = "环境变量",
         requires = "url"
     )]
     pub bearer_token_env_var: Option<String>,
@@ -151,7 +151,7 @@ pub struct LoginArgs {
     pub name: String,
 
     /// 要请求的 OAuth 权限范围列表（逗号分隔）。
-    #[arg(long, value_delimiter = ',', value_name = "SCOPE,SCOPE")]
+    #[arg(long, value_delimiter = ',', value_name = "范围,范围")]
     pub scopes: Vec<String>,
 }
 

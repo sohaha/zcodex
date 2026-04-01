@@ -758,3 +758,121 @@ async fn zmemory_function_error_returns_failure_without_json_block() -> Result<(
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_proactively_captures_explicit_naming_preferences() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到，指挥官。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("你现在开始称呼我\"指挥官\",你的名字是\"小白\"")
+        .await?;
+
+    let user_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        user_memory.structured_content["result"]["content"],
+        "The user prefers to be addressed as \"指挥官\"."
+    );
+
+    let agent_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        agent_memory.structured_content["result"]["content"],
+        "The assistant should refer to itself as \"小白\"."
+    );
+
+    let contract_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        contract_memory.structured_content["result"]["content"],
+        "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions."
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_does_not_proactively_capture_preferences_without_feature_flag() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = test_codex().build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("你现在开始称呼我\"指挥官\",你的名字是\"小白\"")
+        .await?;
+
+    let read_result = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    );
+    assert_eq!(
+        read_result
+            .expect_err("zmemory should not proactively persist preferences without the feature")
+            .to_string(),
+        "memory not found: core://my_user"
+    );
+
+    Ok(())
+}

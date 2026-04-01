@@ -13,3 +13,7 @@ memory that is separate from the native read-only memory folder.
   `read system://defaults` to compare product defaults.
 - Keep disclosures single-purpose so later `stats` and `doctor` review output
   stays actionable.
+
+Stable preference contract:
+
+{{ stable_preference_contract }}

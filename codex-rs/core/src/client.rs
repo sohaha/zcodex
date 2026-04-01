@@ -561,8 +561,9 @@ impl ModelClient {
         if self.state.provider.uses_provider_supplied_auth() {
             return None;
         }
-        matches!(auth_manager.auth_mode(), Some(AuthMode::Chatgpt))
-            .then(|| auth_manager.unauthorized_recovery())
+        (matches!(auth_manager.auth_mode(), Some(AuthMode::Chatgpt))
+            || auth_manager.has_external_auth())
+        .then(|| auth_manager.unauthorized_recovery())
     }
 
     /// Opens a websocket connection using the same header and telemetry wiring as normal turns.

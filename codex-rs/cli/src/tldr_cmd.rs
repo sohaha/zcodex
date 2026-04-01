@@ -179,7 +179,7 @@ pub struct TldrAnalyzeCommand {
     pub lang: CliLanguage,
 
     /// 目标符号名。
-    #[arg(value_name = "SYMBOL")]
+    #[arg(value_name = "符号")]
     pub symbol: Option<String>,
 
     /// 以 JSON 输出。
@@ -194,7 +194,7 @@ pub struct TldrExtractCommand {
     pub project: PathBuf,
 
     /// 目标文件路径。
-    #[arg(value_name = "PATH")]
+    #[arg(value_name = "路径")]
     pub path: PathBuf,
 
     /// 目标语言；未指定时按文件扩展名推断。
@@ -213,15 +213,15 @@ pub struct TldrSliceCommand {
     pub project: PathBuf,
 
     /// 目标文件路径。
-    #[arg(value_name = "PATH")]
+    #[arg(value_name = "路径")]
     pub path: PathBuf,
 
     /// 目标符号。
-    #[arg(value_name = "SYMBOL")]
+    #[arg(value_name = "符号")]
     pub symbol: String,
 
     /// 目标行号。
-    #[arg(value_name = "LINE")]
+    #[arg(value_name = "行号")]
     pub line: usize,
 
     /// 目标语言；未指定时按文件扩展名推断。
@@ -244,7 +244,7 @@ pub struct TldrChangeImpactCommand {
     pub lang: CliLanguage,
 
     /// 发生变更的路径列表。
-    #[arg(value_name = "PATH")]
+    #[arg(value_name = "路径")]
     pub paths: Vec<PathBuf>,
 
     /// 以 JSON 输出。
@@ -263,7 +263,7 @@ pub struct TldrImportersCommand {
     pub lang: CliLanguage,
 
     /// 模块或 import 片段。
-    #[arg(value_name = "MODULE")]
+    #[arg(value_name = "模块")]
     pub module: String,
 
     /// 以 JSON 输出。
@@ -282,7 +282,7 @@ pub struct TldrSemanticCommand {
     pub lang: CliLanguage,
 
     /// 自然语言查询。
-    #[arg(value_name = "QUERY")]
+    #[arg(value_name = "查询")]
     pub query: String,
 
     /// 以 JSON 输出。
@@ -312,7 +312,7 @@ pub struct TldrSearchCommand {
     pub lang: Option<CliLanguage>,
 
     /// 匹配模式。
-    #[arg(value_name = "PATTERN")]
+    #[arg(value_name = "模式")]
     pub pattern: String,
 
     /// 最多返回多少条结果。
@@ -331,7 +331,7 @@ pub struct TldrDiagnosticsCommand {
     pub project: PathBuf,
 
     /// 目标文件路径。
-    #[arg(value_name = "PATH")]
+    #[arg(value_name = "路径")]
     pub path: PathBuf,
 
     /// 目标语言；未指定时按文件扩展名推断。
@@ -339,7 +339,7 @@ pub struct TldrDiagnosticsCommand {
     pub lang: Option<CliLanguage>,
 
     /// 只运行这些诊断工具，可重复传入。
-    #[arg(long = "only-tool", value_name = "TOOL")]
+    #[arg(long = "only-tool", value_name = "工具")]
     pub only_tools: Vec<String>,
 
     /// 跳过 lint 类工具。
@@ -370,7 +370,7 @@ pub struct TldrDoctorCommand {
     pub lang: Option<CliLanguage>,
 
     /// 只检查这些工具，可重复传入。
-    #[arg(long = "only-tool", value_name = "TOOL")]
+    #[arg(long = "only-tool", value_name = "工具")]
     pub only_tools: Vec<String>,
 
     /// 不返回安装提示。

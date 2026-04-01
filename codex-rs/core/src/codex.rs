@@ -4774,6 +4774,9 @@ mod handlers {
             // new_turn_with_sub_id already emits the error event.
             return;
         };
+        if current_context.features.enabled(Feature::Zmemory) {
+            capture_stable_preference_memories(sess, &current_context, &items).await;
+        }
         sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
             .await;
         match sess
@@ -7625,6 +7628,7 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
 use crate::memories::prompts::build_zmemory_tool_developer_instructions;
+use crate::memories::zmemory_preferences::capture_stable_preference_memories;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]

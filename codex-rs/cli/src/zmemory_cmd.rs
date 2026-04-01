@@ -55,11 +55,11 @@ pub struct ZmemoryReadCommand {
 
 #[derive(Debug, Parser)]
 pub struct ZmemorySearchCommand {
-    #[arg(value_name = "QUERY")]
+    #[arg(value_name = "查询")]
     pub query: String,
     #[arg(long, value_name = "URI")]
     pub uri: Option<String>,
-    #[arg(long, value_name = "LIMIT")]
+    #[arg(long, value_name = "限制")]
     pub limit: Option<usize>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
@@ -69,15 +69,15 @@ pub struct ZmemorySearchCommand {
 pub struct ZmemoryCreateCommand {
     #[arg(value_name = "URI")]
     pub uri: Option<String>,
-    #[arg(long, value_name = "PARENT_URI")]
+    #[arg(long, value_name = "父URI")]
     pub parent_uri: Option<String>,
-    #[arg(long, value_name = "CONTENT")]
+    #[arg(long, value_name = "内容")]
     pub content: String,
-    #[arg(long, value_name = "TITLE")]
+    #[arg(long, value_name = "标题")]
     pub title: Option<String>,
-    #[arg(long, value_name = "PRIORITY")]
+    #[arg(long, value_name = "优先级")]
     pub priority: Option<i64>,
-    #[arg(long, value_name = "DISCLOSURE")]
+    #[arg(long, value_name = "披露")]
     pub disclosure: Option<String>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
@@ -87,17 +87,17 @@ pub struct ZmemoryCreateCommand {
 pub struct ZmemoryUpdateCommand {
     #[arg(value_name = "URI")]
     pub uri: String,
-    #[arg(long, value_name = "CONTENT")]
+    #[arg(long, value_name = "内容")]
     pub content: Option<String>,
-    #[arg(long, value_name = "OLD_STRING")]
+    #[arg(long, value_name = "旧文本")]
     pub old_string: Option<String>,
-    #[arg(long, value_name = "NEW_STRING")]
+    #[arg(long, value_name = "新文本")]
     pub new_string: Option<String>,
-    #[arg(long, value_name = "APPEND")]
+    #[arg(long, value_name = "追加")]
     pub append: Option<String>,
-    #[arg(long, value_name = "PRIORITY")]
+    #[arg(long, value_name = "优先级")]
     pub priority: Option<i64>,
-    #[arg(long, value_name = "DISCLOSURE")]
+    #[arg(long, value_name = "披露")]
     pub disclosure: Option<String>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
@@ -113,13 +113,13 @@ pub struct ZmemoryDeletePathCommand {
 
 #[derive(Debug, Parser)]
 pub struct ZmemoryAddAliasCommand {
-    #[arg(value_name = "NEW_URI")]
+    #[arg(value_name = "新URI")]
     pub new_uri: String,
-    #[arg(value_name = "TARGET_URI")]
+    #[arg(value_name = "目标URI")]
     pub target_uri: String,
-    #[arg(long, value_name = "PRIORITY")]
+    #[arg(long, value_name = "优先级")]
     pub priority: Option<i64>,
-    #[arg(long, value_name = "DISCLOSURE")]
+    #[arg(long, value_name = "披露")]
     pub disclosure: Option<String>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
@@ -129,9 +129,9 @@ pub struct ZmemoryAddAliasCommand {
 pub struct ZmemoryManageTriggersCommand {
     #[arg(value_name = "URI")]
     pub uri: String,
-    #[arg(long = "add", value_name = "KEYWORD")]
+    #[arg(long = "add", value_name = "关键词")]
     pub add: Vec<String>,
-    #[arg(long = "remove", value_name = "KEYWORD")]
+    #[arg(long = "remove", value_name = "关键词")]
     pub remove: Vec<String>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
@@ -141,7 +141,7 @@ pub struct ZmemoryManageTriggersCommand {
 pub struct ZmemoryOutputCommand {
     #[arg(long, default_value_t = false)]
     pub json: bool,
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "路径")]
     pub codex_home: Option<PathBuf>,
 }
 
@@ -160,9 +160,9 @@ pub enum ZmemoryExportTarget {
 pub struct ZmemoryExportCommand {
     #[arg(value_enum)]
     pub target: ZmemoryExportTarget,
-    #[arg(long, value_name = "DOMAIN")]
+    #[arg(long, value_name = "域")]
     pub domain: Option<String>,
-    #[arg(long, value_name = "LIMIT")]
+    #[arg(long, value_name = "限制")]
     pub limit: Option<usize>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,

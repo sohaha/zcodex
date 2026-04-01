@@ -14,6 +14,8 @@ mod storage;
 #[cfg(test)]
 mod tests;
 pub(crate) mod usage;
+pub(crate) mod zmemory_contract;
+pub(crate) mod zmemory_preferences;
 
 use codex_protocol::openai_models::ReasoningEffort;
 
