@@ -346,7 +346,7 @@ run_build() {
     local status=$?
     set -e
     if [ "$status" -eq 0 ]; then
-      built_codex_bin="$(resolve_active_codex_bin "$@")"
+      built_codex_bin="$(resolve_codex_bin "$@")"
       RUN_BUILD_CODEX_BIN="$built_codex_bin"
       overwrite_installed_codex_if_present "$built_codex_bin"
       return 0
