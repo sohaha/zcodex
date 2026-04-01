@@ -192,20 +192,78 @@ find_installed_codex_path() {
   return 1
 }
 
+is_dir_on_path() {
+  local dir="$1"
+
+  case ":${PATH:-}:" in
+    *":$dir:"*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+find_writable_user_path_dir() {
+  local path_dir
+
+  IFS=':' read -r -a path_dirs <<< "${PATH:-}"
+  for path_dir in "${path_dirs[@]}"; do
+    if [ -z "$path_dir" ]; then
+      path_dir="."
+    fi
+
+    case "$path_dir" in
+      "$HOME"/*)
+        if [ -d "$path_dir" ] && [ -w "$path_dir" ]; then
+          printf '%s\n' "$path_dir"
+          return 0
+        fi
+        ;;
+    esac
+  done
+
+  return 1
+}
+
+resolve_default_codex_install_target() {
+  local default_install_dir="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
+  local writable_user_path_dir
+
+  if [ -n "${CODEX_INSTALL_DIR:-}" ] || is_dir_on_path "$default_install_dir"; then
+    printf '%s\n' "$default_install_dir/codex"
+    return 0
+  fi
+
+  if writable_user_path_dir="$(find_writable_user_path_dir)"; then
+    printf '%s\n' "$writable_user_path_dir/codex"
+    return 0
+  fi
+
+  printf '%s\n' "$default_install_dir/codex"
+}
+
+resolve_codex_install_target() {
+  local installed_codex
+
+  installed_codex="$(find_installed_codex_path || true)"
+  if [ -n "$installed_codex" ]; then
+    printf '%s\n' "$installed_codex"
+    return 0
+  fi
+
+  resolve_default_codex_install_target
+}
+
 overwrite_installed_codex_if_present() {
   local built_codex_bin="$1"
-  local installed_codex
   local built_codex_real
   local installed_codex_real
   local install_target
   local installed_dir
   local temp_installed_dir
   local temp_installed_codex
-
-  installed_codex="$(find_installed_codex_path || true)"
-  if [ -z "$installed_codex" ]; then
-    return
-  fi
+  local install_mode="覆盖"
 
   if [ ! -x "$built_codex_bin" ]; then
     echo "[build] 构建成功，但未找到产物：$built_codex_bin" >&2
@@ -213,8 +271,9 @@ overwrite_installed_codex_if_present() {
   fi
 
   built_codex_real="$(realpath "$built_codex_bin")"
-  if ! installed_codex_real="$(realpath "$installed_codex" 2>/dev/null)"; then
-    installed_codex_real="$installed_codex"
+  install_target="$(resolve_codex_install_target)"
+  if ! installed_codex_real="$(realpath "$install_target" 2>/dev/null)"; then
+    installed_codex_real="$install_target"
   fi
   if [ "$built_codex_real" = "$installed_codex_real" ]; then
     return
@@ -222,11 +281,17 @@ overwrite_installed_codex_if_present() {
 
   install_target="$installed_codex_real"
   if [ ! -e "$install_target" ]; then
-    install_target="$installed_codex"
-    echo "[build] PATH 中的 codex 指向缺失产物 $installed_codex_real，改为直接更新 $install_target" >&2
+    install_target="$(resolve_codex_install_target)"
+    if [ -L "$install_target" ]; then
+      echo "[build] PATH 中的 codex 指向缺失产物 $installed_codex_real，改为直接更新 $install_target" >&2
+    else
+      install_mode="安装"
+      echo "[build] 未发现可覆盖的 codex，改为安装到 $install_target" >&2
+    fi
   fi
 
   installed_dir="$(dirname "$install_target")"
+  mkdir -p "$installed_dir"
   if ! temp_installed_dir="$(mktemp -d "$installed_dir/.codex.tmp.XXXXXX")"; then
     echo "[build] 无法在 $installed_dir 创建临时目录，已跳过覆盖" >&2
     return
@@ -245,7 +310,10 @@ overwrite_installed_codex_if_present() {
     return
   fi
   rmdir "$temp_installed_dir" 2>/dev/null || true
-  echo "[build] 已使用 $built_codex_bin 原子覆盖 $install_target" >&2
+  echo "[build] 已使用 $built_codex_bin 原子$install_mode到 $install_target" >&2
+  if ! is_dir_on_path "$installed_dir"; then
+    echo "[build] $installed_dir 当前不在 PATH 中；可运行: export PATH=\"$installed_dir:\$PATH\"" >&2
+  fi
 }
 
 ensure_linux_build_deps() {

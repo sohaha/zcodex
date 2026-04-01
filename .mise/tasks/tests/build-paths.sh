@@ -37,7 +37,10 @@ run_tests() {
   local built_codex_bin
   local installed_bin_dir
   local broken_target
+  local home_dir
+  local local_bin_dir
   local original_path
+  local original_home
   target_root="$(mktemp -d)"
   trap "rm -rf '$target_root'" EXIT
   debug_slot="$(bash "$repo_root/codex-rs/scripts/resolve-cargo-slot.sh" cargo build -p codex-cli --bin codex -j "$(nproc)")"
@@ -46,9 +49,13 @@ run_tests() {
   built_codex_bin="$target_root/built-codex"
   installed_bin_dir="$target_root/bin"
   broken_target="$target_root/missing/codex"
+  home_dir="$target_root/home"
+  local_bin_dir="$home_dir/.local/bin"
   original_path="$PATH"
+  original_home="${HOME:-}"
 
   mkdir -p "$installed_bin_dir"
+  mkdir -p "$local_bin_dir"
   printf '#!/usr/bin/env bash\nexit 0\n' >"$built_codex_bin"
   chmod +x "$built_codex_bin"
   ln -s "$broken_target" "$installed_bin_dir/codex"
@@ -108,7 +115,22 @@ run_tests() {
     "$(cat "$built_codex_bin")" \
     "broken PATH symlink should be replaced with the built codex binary"
 
+  export HOME="$home_dir"
+  export PATH="$local_bin_dir:$original_path"
+
+  overwrite_installed_codex_if_present "$built_codex_bin"
+
+  if [ ! -x "$local_bin_dir/codex" ]; then
+    echo "assertion failed: missing installed codex should be installed into a usable PATH dir" >&2
+    exit 1
+  fi
+  assert_file_contains \
+    "$local_bin_dir/codex" \
+    "$(cat "$built_codex_bin")" \
+    "missing installed codex should be installed into the preferred PATH dir"
+
   export PATH="$original_path"
+  export HOME="$original_home"
 }
 
 run_tests
