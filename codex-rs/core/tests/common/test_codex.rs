@@ -561,6 +561,7 @@ impl TestCodexBuilder {
         let mut config = load_default_config_for_test(home).await;
         config.cwd = absolute_path(cwd.path())?;
         config.model_provider = model_provider;
+        config.sync_active_model_provider();
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }

@@ -720,6 +720,12 @@ impl ConfigBuilder {
 }
 
 impl Config {
+    /// Keep the active provider entry aligned with `model_provider`.
+    pub fn sync_active_model_provider(&mut self) {
+        self.model_providers
+            .insert(self.model_provider_id.clone(), self.model_provider.clone());
+    }
+
     /// This is the preferred way to create an instance of [Config].
     pub async fn load_with_cli_overrides(
         cli_overrides: Vec<(String, TomlValue)>,

@@ -75,6 +75,14 @@ fn should_use_test_thread_manager_behavior() -> bool {
     FORCE_TEST_THREAD_MANAGER_BEHAVIOR.load(Ordering::Relaxed)
 }
 
+fn resolved_model_provider(config: &Config) -> ModelProviderInfo {
+    config
+        .model_providers
+        .get(&config.model_provider_id)
+        .cloned()
+        .unwrap_or_else(|| config.model_provider.clone())
+}
+
 struct TempCodexHomeGuard {
     path: PathBuf,
 }
@@ -227,7 +235,7 @@ impl ThreadManager {
         let codex_home = config.codex_home.clone();
         let model_catalog = config.model_catalog.clone();
         let model_catalog_merge = config.model_catalog_merge.clone();
-        let models_provider = config.model_provider.clone();
+        let models_provider = resolved_model_provider(config);
         let restriction_product = session_source.restriction_product();
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
@@ -862,7 +870,8 @@ impl ThreadManagerState {
             self.skills_manager.as_ref(),
             self.plugins_manager.as_ref(),
         );
-        let models_manager = if config.model_provider == self.models_provider
+        let models_provider = resolved_model_provider(&config);
+        let models_manager = if models_provider == self.models_provider
             && Arc::ptr_eq(&auth_manager, &self.auth_manager)
             && config.codex_home == self.codex_home
             && config.model_catalog == self.model_catalog
@@ -876,7 +885,7 @@ impl ThreadManagerState {
                 config.model_catalog.clone(),
                 config.model_catalog_merge.clone(),
                 self.collaboration_modes_config,
-                config.model_provider.clone(),
+                models_provider,
             ))
         };
         let CodexSpawnOk {
