@@ -5068,7 +5068,7 @@ impl ChatWidget {
             return true;
         }
 
-        let message = "Ctrl+L is disabled while a task is in progress.".to_string();
+        let message = "Ctrl+L 在任务进行中被禁用。".to_string();
         self.add_to_history(history_cell::new_error_event(message));
         self.request_redraw();
         false
@@ -5077,7 +5077,7 @@ impl ChatWidget {
     fn dispatch_command(&mut self, cmd: SlashCommand) {
         if !cmd.available_during_task() && self.bottom_pane.is_task_running() {
             let message = format!(
-                "'/{}' is disabled while a task is in progress.",
+                "'/{}' 在任务进行中被禁用。",
                 cmd.command()
             );
             self.add_to_history(history_cell::new_error_event(message));
@@ -5305,7 +5305,7 @@ impl ChatWidget {
             SlashCommand::Copy => {
                 let Some(text) = self.last_copyable_output.as_deref() else {
                     self.add_info_message(
-                        "`/copy` is unavailable before the first Codex output or right after a rollback."
+                        "`/copy` 在首次 Codex 输出之前或回滚后不可用。"
                             .to_string(),
                         /*hint*/ None,
                     );
