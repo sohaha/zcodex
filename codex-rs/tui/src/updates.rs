@@ -1,6 +1,5 @@
 #![cfg(not(debug_assertions))]
 
-use crate::repo_urls::LATEST_RELEASE_API_URL;
 use crate::update_action;
 use crate::update_action::UpdateAction;
 use chrono::DateTime;
@@ -58,6 +57,8 @@ struct VersionInfo {
 const VERSION_FILENAME: &str = "version.json";
 // We use the latest version from the cask if installation is via homebrew - homebrew does not immediately pick up the latest release and can lag behind.
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
+const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+
 #[derive(Deserialize, Debug, Clone)]
 struct ReleaseInfo {
     tag_name: String,
@@ -93,7 +94,7 @@ async fn check_for_update(version_file: &Path) -> anyhow::Result<()> {
             let ReleaseInfo {
                 tag_name: latest_tag_name,
             } = create_client()
-                .get(LATEST_RELEASE_API_URL)
+                .get(LATEST_RELEASE_URL)
                 .send()
                 .await?
                 .error_for_status()?
@@ -128,7 +129,7 @@ fn is_newer(latest: &str, current: &str) -> Option<bool> {
 
 fn extract_version_from_latest_tag(latest_tag_name: &str) -> anyhow::Result<String> {
     latest_tag_name
-        .strip_prefix('v')
+        .strip_prefix("rust-v")
         .map(str::to_owned)
         .ok_or_else(|| anyhow::anyhow!("Failed to parse latest tag name '{latest_tag_name}'"))
 }
@@ -198,14 +199,14 @@ mod tests {
     #[test]
     fn extracts_version_from_latest_tag() {
         assert_eq!(
-            extract_version_from_latest_tag("v1.5.0").expect("failed to parse version"),
+            extract_version_from_latest_tag("rust-v1.5.0").expect("failed to parse version"),
             "1.5.0"
         );
     }
 
     #[test]
-    fn latest_tag_without_supported_prefix_is_invalid() {
-        assert!(extract_version_from_latest_tag("1.5.0").is_err());
+    fn latest_tag_without_prefix_is_invalid() {
+        assert!(extract_version_from_latest_tag("v1.5.0").is_err());
     }
 
     #[test]

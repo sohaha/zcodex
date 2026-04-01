@@ -25,6 +25,7 @@ In the codex-rs folder where the rust code lives:
   - Do not add these comments for string or char literals unless the comment adds real clarity; those literals are intentionally exempt from the lint.
   - If you add one of these comments, the parameter name must exactly match the callee signature.
 - When possible, make `match` statements exhaustive and avoid wildcard arms.
+- Newly added traits should include doc comments that explain their role and how implementations are expected to use them.
 - When writing tests, prefer comparing the equality of entire objects over fields one by one.
 - When making a change that adds or changes an API, ensure that the documentation in the `docs/` folder is up to date if applicable.
 - If you change `ConfigToml` or nested config types, run `just write-config-schema` to update `codex-rs/core/config.schema.json`.
@@ -43,28 +44,29 @@ In the codex-rs folder where the rust code lives:
   - If a file exceeds roughly 800 LoC, add new functionality in a new module instead of extending
     the existing file unless there is a strong documented reason not to.
   - This rule applies especially to high-touch files that already attract unrelated changes, such
-    as `codex-rs/tui_app_server/src/app.rs`,
-    `codex-rs/tui_app_server/src/bottom_pane/chat_composer.rs`,
-    `codex-rs/tui_app_server/src/bottom_pane/footer.rs`,
-    `codex-rs/tui_app_server/src/chatwidget.rs`,
-    `codex-rs/tui_app_server/src/bottom_pane/mod.rs`, and similarly central orchestration modules.
+    as `codex-rs/tui/src/app.rs`,
+    `codex-rs/tui/src/bottom_pane/chat_composer.rs`,
+    `codex-rs/tui/src/bottom_pane/footer.rs`,
+    `codex-rs/tui/src/chatwidget.rs`,
+    `codex-rs/tui/src/bottom_pane/mod.rs`, and similarly central orchestration modules.
   - When extracting code from a large module, move the related tests and module/type docs toward
     the new implementation so the invariants stay close to the code that owns them.
 
 Run `just fmt` (in `codex-rs` directory) automatically after you have finished making Rust code changes; do not ask for approval to run it. Additionally, run the tests:
 
-1. Run the test for the specific project that was changed. If `cargo-nextest` is installed, prefer `cargo nextest run -p <crate>` or the repo's fast test wrapper for that crate; for example, if changes were made in `codex-rs/tui_app_server`, prefer `cargo nextest run -p codex-tui`. Use `cargo test -p <crate>` only when you specifically need behavior that nextest does not provide.
+1. Run the test for the specific project that was changed. If `cargo-nextest` is installed, prefer `cargo nextest run -p <crate>` or the repo's fast test wrapper for that crate; for example, if changes were made in `codex-rs/tui`, prefer `cargo nextest run -p codex-tui`. Use `cargo test -p <crate>` only when you specifically need behavior that nextest does not provide.
 2. Once those pass, if any changes were made in common, core, or protocol, ask the user before running the complete test suite; when approved, prefer `just test` or `cargo nextest run` if `cargo-nextest` is installed. Avoid `--all-features` for routine local runs because it expands the build matrix and can significantly increase `target/` disk usage; use it only when you specifically need full feature coverage. project-specific or individual tests can be run without asking the user.
 
 Before finalizing a large change to `codex-rs`, run `just fix -p <project>` (in `codex-rs` directory) to fix any linter issues in the code. Prefer scoping with `-p` to avoid slow workspace‑wide Clippy builds; only run `just fix` without `-p` if you changed shared crates. Do not re-run tests after running `fix` or `fmt`.
+- When running Rust commands (e.g. `just fix` or `cargo test`) be patient with the command and never try to kill them using the PID. Rust lock can make the execution slow, this is expected.
 
 ## TUI style conventions
 
-See `codex-rs/tui_app_server` file-local conventions and shared TUI rules in this document.
+See `codex-rs/tui` file-local conventions and shared TUI rules in this document.
 
 ## TUI code conventions
 
-- `codex-rs/tui_app_server` is the active TUI implementation. Treat `codex-rs/tui` as a compatibility shim unless a task explicitly targets it.
+- `codex-rs/tui` is the active TUI implementation. Treat lingering `codex-rs/tui_app_server` references as compatibility-era leftovers unless a task explicitly targets migration cleanup.
 
 - Use concise styling helpers from ratatui’s Stylize trait.
   - Basic spans: use "text".into()
@@ -96,7 +98,7 @@ See `codex-rs/tui_app_server` file-local conventions and shared TUI rules in thi
 
 ### Snapshot tests
 
-This repo uses snapshot tests (via `insta`), especially in `codex-rs/tui_app_server`, to validate rendered output.
+This repo uses snapshot tests (via `insta`), especially in `codex-rs/tui`, to validate rendered output.
 
 **Requirement:** any change that affects user-visible UI (including adding new UI) must include
 corresponding `insta` snapshot coverage (add a new snapshot test if one doesn't exist yet, or

@@ -85,9 +85,9 @@ impl WidgetRef for &WelcomeWidget {
         }
         lines.push(Line::from(vec![
             "  ".into(),
-            "欢迎使用 ".into(),
+            "Welcome to ".into(),
             "Codex".bold(),
-            "，OpenAI 的命令行编程助手".into(),
+            ", OpenAI's command-line coding agent".into(),
         ]));
 
         Paragraph::new(lines)
@@ -122,30 +122,38 @@ mod tests {
             for x in 0..buf.area.width {
                 row.push_str(buf[(x, y)].symbol());
             }
-            row.replace(' ', "").contains(needle)
+            row.contains(needle)
         })
     }
 
     #[test]
     fn welcome_renders_animation_on_first_draw() {
-        let widget = WelcomeWidget::new(false, FrameRequester::test_dummy(), true);
+        let widget = WelcomeWidget::new(
+            /*is_logged_in*/ false,
+            FrameRequester::test_dummy(),
+            /*animations_enabled*/ true,
+        );
         let area = Rect::new(0, 0, MIN_ANIMATION_WIDTH, MIN_ANIMATION_HEIGHT);
         let mut buf = Buffer::empty(area);
         let frame_lines = widget.animation.current_frame().lines().count() as u16;
         (&widget).render(area, &mut buf);
 
-        let welcome_row = row_containing(&buf, "欢迎使用");
+        let welcome_row = row_containing(&buf, "Welcome");
         assert_eq!(welcome_row, Some(frame_lines + 1));
     }
 
     #[test]
     fn welcome_skips_animation_below_height_breakpoint() {
-        let widget = WelcomeWidget::new(false, FrameRequester::test_dummy(), true);
+        let widget = WelcomeWidget::new(
+            /*is_logged_in*/ false,
+            FrameRequester::test_dummy(),
+            /*animations_enabled*/ true,
+        );
         let area = Rect::new(0, 0, MIN_ANIMATION_WIDTH, MIN_ANIMATION_HEIGHT - 1);
         let mut buf = Buffer::empty(area);
         (&widget).render(area, &mut buf);
 
-        let welcome_row = row_containing(&buf, "欢迎使用");
+        let welcome_row = row_containing(&buf, "Welcome");
         assert_eq!(welcome_row, Some(0));
     }
 
@@ -153,7 +161,11 @@ mod tests {
     fn ctrl_dot_changes_animation_variant() {
         let mut widget = WelcomeWidget {
             is_logged_in: false,
-            animation: AsciiAnimation::with_variants(FrameRequester::test_dummy(), &VARIANTS, 0),
+            animation: AsciiAnimation::with_variants(
+                FrameRequester::test_dummy(),
+                &VARIANTS,
+                /*variant_idx*/ 0,
+            ),
             animations_enabled: true,
             layout_area: Cell::new(None),
         };

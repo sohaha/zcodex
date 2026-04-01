@@ -2,4 +2,4 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  ? 查看快捷键                                                  剩余上下文 72%  " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (65, " "), (67, " "), (69, " "), (71, " "), (73, " ")]
+"  ? for shortcuts                                             72% context left  "

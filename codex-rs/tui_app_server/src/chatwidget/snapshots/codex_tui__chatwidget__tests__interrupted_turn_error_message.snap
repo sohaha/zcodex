@@ -1,5 +1,0 @@
----
-source: tui/src/chatwidget/tests.rs
-expression: last
----
-■ 对话已中断——请告诉模型接下来该如何调整。

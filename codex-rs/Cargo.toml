@@ -52,7 +52,7 @@ members = [
     "sandboxing",
     "stdio-to-uds",
     "otel",
-    "tui_app_server",
+    "tui",
     "tools",
     "v8-poc",
     "utils/absolute-path",
@@ -156,8 +156,7 @@ codex-stdio-to-uds = { path = "stdio-to-uds" }
 codex-test-macros = { path = "test-macros" }
 codex-terminal-detection = { path = "terminal-detection" }
 codex-tools = { path = "tools" }
-codex-tui = { path = "tui_app_server" }
-codex-tui-app-server = { package = "codex-tui", path = "tui_app_server" }
+codex-tui = { path = "tui" }
 codex-v8-poc = { path = "v8-poc" }
 codex-utils-absolute-path = { path = "utils/absolute-path" }
 codex-utils-approval-presets = { path = "utils/approval-presets" }

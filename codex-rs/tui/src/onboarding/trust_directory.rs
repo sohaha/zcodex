@@ -46,25 +46,23 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(Line::from(vec![
             "> ".into(),
-            "当前目录：".bold(),
+            "You are in ".bold(),
             self.cwd.to_string_lossy().to_string().into(),
         ]));
         column.push("");
 
         column.push(
             Paragraph::new(
-                "你信任此目录中的内容吗？处理不受信任的内容会显著增加提示词注入风险。".to_string(),
+                "Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt injection.".to_string(),
             )
-            .wrap(Wrap { trim: true })
-            .inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+                .wrap(Wrap { trim: true })
+                .inset(Insets::tlbr(/*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0)),
         );
         column.push("");
 
         let options: Vec<(&str, TrustDirectorySelection)> = vec![
-            ("是，继续", TrustDirectorySelection::Trust),
-            ("否，退出", TrustDirectorySelection::Quit),
+            ("Yes, continue", TrustDirectorySelection::Trust),
+            ("No, quit", TrustDirectorySelection::Quit),
         ];
 
         for (idx, (text, selection)) in options.iter().enumerate() {
@@ -91,12 +89,12 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(
             Line::from(vec![
-                "按 ".dim(),
+                "Press ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
                 if self.show_windows_create_sandbox_hint {
-                    " 继续并创建沙箱...".dim()
+                    " to continue and create a sandbox...".dim()
                 } else {
-                    " 继续".dim()
+                    " to continue".dim()
                 },
             ])
             .inset(Insets::tlbr(
@@ -148,7 +146,7 @@ impl TrustDirectoryWidget {
             resolve_root_git_project_for_trust(&self.cwd).unwrap_or_else(|| self.cwd.clone());
         if let Err(e) = set_project_trust_level(&self.codex_home, &target, TrustLevel::Trusted) {
             tracing::error!("Failed to set project trusted: {e:?}");
-            self.error = Some(format!("为 {} 设置信任失败：{e}", target.display()));
+            self.error = Some(format!("Failed to set trust for {}: {e}", target.display()));
         }
 
         self.selection = Some(TrustDirectorySelection::Trust);
@@ -216,7 +214,8 @@ mod tests {
             error: None,
         };
 
-        let mut terminal = Terminal::new(VT100Backend::new(70, 14)).expect("terminal");
+        let mut terminal =
+            Terminal::new(VT100Backend::new(/*width*/ 70, /*height*/ 14)).expect("terminal");
         terminal
             .draw(|f| (&widget).render_ref(f.area(), f.buffer_mut()))
             .expect("draw");

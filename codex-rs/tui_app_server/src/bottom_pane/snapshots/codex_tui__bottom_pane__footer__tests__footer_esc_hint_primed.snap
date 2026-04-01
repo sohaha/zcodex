@@ -1,5 +1,0 @@
----
-source: tui/src/bottom_pane/footer.rs
-expression: terminal.backend()
----
-"  esc 再按一次可编辑上一条消息                                                  " Hidden by multi-width symbols: [(7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " "), (25, " "), (27, " "), (29, " ")]

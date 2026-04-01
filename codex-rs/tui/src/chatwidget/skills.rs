@@ -31,8 +31,8 @@ impl ChatWidget {
     pub(crate) fn open_skills_menu(&mut self) {
         let items = vec![
             SelectionItem {
-                name: "查看技能".to_string(),
-                description: Some("提示：按 $ 可直接打开列表。".to_string()),
+                name: "List skills".to_string(),
+                description: Some("Tip: press $ to open this list directly.".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenSkillsList);
                 })],
@@ -40,8 +40,8 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "启用/禁用技能".to_string(),
-                description: Some("启用或禁用技能。".to_string()),
+                name: "Enable/Disable Skills".to_string(),
+                description: Some("Enable or disable skills.".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::OpenManageSkillsPopup);
                 })],
@@ -51,8 +51,8 @@ impl ChatWidget {
         ];
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("技能".to_string()),
-            subtitle: Some("选择操作".to_string()),
+            title: Some("Skills".to_string()),
+            subtitle: Some("Choose an action".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -61,7 +61,7 @@ impl ChatWidget {
 
     pub(crate) fn open_manage_skills_popup(&mut self) {
         if self.skills_all.is_empty() {
-            self.add_info_message("当前暂无可用技能。".to_string(), /*hint*/ None);
+            self.add_info_message("No skills available.".to_string(), /*hint*/ None);
             return;
         }
 
@@ -131,10 +131,9 @@ impl ChatWidget {
         if enabled_count == 0 && disabled_count == 0 {
             return;
         }
-        let hint = None;
         self.add_info_message(
-            format!("已启用 {enabled_count} 个技能，已禁用 {disabled_count} 个技能"),
-            hint,
+            format!("{enabled_count} skills enabled, {disabled_count} skills disabled"),
+            /*hint*/ None,
         );
     }
 
@@ -192,8 +191,6 @@ fn protocol_skill_to_core(skill: &ProtocolSkillMetadata) -> SkillMetadata {
                     .collect(),
             }),
         policy: None,
-        permission_profile: None,
-        managed_network_override: None,
         path_to_skills_md: skill.path.clone(),
         scope: skill.scope,
     }

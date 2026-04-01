@@ -85,10 +85,10 @@ impl PendingInputPreview {
                 &mut lines,
                 width,
                 Line::from(vec![
-                    "下次工具调用后将提交的消息".into(),
-                    "（按 ".dim(),
+                    "Messages to be submitted after next tool call".into(),
+                    " (press ".dim(),
                     key_hint::plain(KeyCode::Esc).into(),
-                    " 可中断并立即发送）".dim(),
+                    " to interrupt and send immediately)".dim(),
                 ]),
             );
 
@@ -107,7 +107,11 @@ impl PendingInputPreview {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
             }
-            Self::push_section_header(&mut lines, width, "本轮结束后将提交的消息".into());
+            Self::push_section_header(
+                &mut lines,
+                width,
+                "Messages to be submitted at end of turn".into(),
+            );
 
             for steer in &self.rejected_steers {
                 let wrapped = adaptive_wrap_lines(
@@ -124,7 +128,7 @@ impl PendingInputPreview {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
             }
-            Self::push_section_header(&mut lines, width, "已排队的后续消息".into());
+            Self::push_section_header(&mut lines, width, "Queued follow-up messages".into());
 
             for message in &self.queued_messages {
                 let wrapped = adaptive_wrap_lines(
@@ -146,7 +150,7 @@ impl PendingInputPreview {
                 Line::from(vec![
                     "    ".into(),
                     self.edit_binding.into(),
-                    " 编辑上一条排队消息".into(),
+                    " edit last queued message".into(),
                 ])
                 .dim(),
             );
@@ -179,14 +183,14 @@ mod tests {
     #[test]
     fn desired_height_empty() {
         let queue = PendingInputPreview::new();
-        assert_eq!(queue.desired_height(40), 0);
+        assert_eq!(queue.desired_height(/*width*/ 40), 0);
     }
 
     #[test]
     fn desired_height_one_message() {
         let mut queue = PendingInputPreview::new();
         queue.queued_messages.push("Hello, world!".to_string());
-        assert_eq!(queue.desired_height(40), 3);
+        assert_eq!(queue.desired_height(/*width*/ 40), 3);
     }
 
     #[test]

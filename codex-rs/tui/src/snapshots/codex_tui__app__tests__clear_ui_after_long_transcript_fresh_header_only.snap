@@ -2,9 +2,9 @@
 source: tui/src/app.rs
 expression: rendered
 ---
-╭─────────────────────────────────────────╮
-│ >_ OpenAI Codex (v<VERSION>)            │
-│                                         │
-│ 模型:     gpt-test high   /model 以切换 │
-│ 目录:     /tmp/project                  │
-╰─────────────────────────────────────────╯
+╭─────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v<VERSION>)                │
+│                                             │
+│ model:     gpt-test high   /model to change │
+│ directory: /tmp/project                     │
+╰─────────────────────────────────────────────╯

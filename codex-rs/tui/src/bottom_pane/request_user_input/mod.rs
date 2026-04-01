@@ -30,6 +30,7 @@ use crate::bottom_pane::selection_popup_common::measure_rows_height;
 use crate::history_cell;
 use crate::render::renderable::Renderable;
 
+#[cfg(test)]
 use codex_protocol::protocol::Op;
 use codex_protocol::request_user_input::RequestUserInputAnswer;
 use codex_protocol::request_user_input::RequestUserInputEvent;
@@ -37,21 +38,21 @@ use codex_protocol::request_user_input::RequestUserInputResponse;
 use codex_protocol::user_input::TextElement;
 use unicode_width::UnicodeWidthStr;
 
-const NOTES_PLACEHOLDER: &str = "添加备注";
-const ANSWER_PLACEHOLDER: &str = "输入你的回答（可选）";
+const NOTES_PLACEHOLDER: &str = "Add notes";
+const ANSWER_PLACEHOLDER: &str = "Type your answer (optional)";
 // Keep in sync with ChatComposer's minimum composer height.
 const MIN_COMPOSER_HEIGHT: u16 = 3;
-const SELECT_OPTION_PLACEHOLDER: &str = "选择一个选项后可添加备注";
+const SELECT_OPTION_PLACEHOLDER: &str = "Select an option to add notes";
 pub(super) const TIP_SEPARATOR: &str = " | ";
 pub(super) const DESIRED_SPACERS_BETWEEN_SECTIONS: u16 = 2;
-const OTHER_OPTION_LABEL: &str = "以上都不符合";
-const OTHER_OPTION_DESCRIPTION: &str = "可选：在备注中补充细节（Tab）。";
-const UNANSWERED_CONFIRM_TITLE: &str = "要在仍有未回答问题时提交吗？";
-const UNANSWERED_CONFIRM_GO_BACK: &str = "返回";
-const UNANSWERED_CONFIRM_GO_BACK_DESC: &str = "回到第一个未回答的问题。";
-const UNANSWERED_CONFIRM_SUBMIT: &str = "继续提交";
-const UNANSWERED_CONFIRM_SUBMIT_DESC_SINGULAR: &str = "题";
-const UNANSWERED_CONFIRM_SUBMIT_DESC_PLURAL: &str = "题";
+const OTHER_OPTION_LABEL: &str = "None of the above";
+const OTHER_OPTION_DESCRIPTION: &str = "Optionally, add details in notes (tab).";
+const UNANSWERED_CONFIRM_TITLE: &str = "Submit with unanswered questions?";
+const UNANSWERED_CONFIRM_GO_BACK: &str = "Go back";
+const UNANSWERED_CONFIRM_GO_BACK_DESC: &str = "Return to the first unanswered question.";
+const UNANSWERED_CONFIRM_SUBMIT: &str = "Proceed";
+const UNANSWERED_CONFIRM_SUBMIT_DESC_SINGULAR: &str = "question";
+const UNANSWERED_CONFIRM_SUBMIT_DESC_PLURAL: &str = "questions";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Focus {
@@ -431,32 +432,32 @@ impl RequestUserInputOverlay {
         let notes_visible = self.notes_ui_visible();
         if self.has_options() {
             if self.selected_option_index().is_some() && !notes_visible {
-                tips.push(FooterTip::highlighted("Tab 添加备注"));
+                tips.push(FooterTip::highlighted("tab to add notes"));
             }
             if self.selected_option_index().is_some() && notes_visible {
-                tips.push(FooterTip::new("Tab 或 Esc 清空备注"));
+                tips.push(FooterTip::new("tab or esc to clear notes"));
             }
         }
 
         let question_count = self.question_count();
         let is_last_question = self.current_index().saturating_add(1) >= question_count;
         let enter_tip = if question_count == 1 {
-            FooterTip::highlighted("Enter 提交当前回答")
+            FooterTip::highlighted("enter to submit answer")
         } else if is_last_question {
-            FooterTip::highlighted("Enter 提交全部")
+            FooterTip::highlighted("enter to submit all")
         } else {
-            FooterTip::new("Enter 提交当前回答")
+            FooterTip::new("enter to submit answer")
         };
         tips.push(enter_tip);
         if question_count > 1 {
             if self.has_options() && !self.focus_is_notes() {
-                tips.push(FooterTip::new("←/→ 切换问题"));
+                tips.push(FooterTip::new("←/→ to navigate questions"));
             } else if !self.has_options() {
-                tips.push(FooterTip::new("Ctrl+P / Ctrl+N 切换问题"));
+                tips.push(FooterTip::new("ctrl + p / ctrl + n change question"));
             }
         }
         if !(self.has_options() && notes_visible) {
-            tips.push(FooterTip::new("Esc 中断"));
+            tips.push(FooterTip::new("esc to interrupt"));
         }
         tips
     }
@@ -745,13 +746,12 @@ impl RequestUserInputOverlay {
                 },
             );
         }
-        self.app_event_tx
-            .send(AppEvent::CodexOp(Op::UserInputAnswer {
-                id: self.request.turn_id.clone(),
-                response: RequestUserInputResponse {
-                    answers: answers.clone(),
-                },
-            }));
+        self.app_event_tx.user_input_answer(
+            self.request.turn_id.clone(),
+            RequestUserInputResponse {
+                answers: answers.clone(),
+            },
+        );
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
             history_cell::RequestUserInputResultCell {
                 questions: self.request.questions.clone(),
@@ -790,7 +790,7 @@ impl RequestUserInputOverlay {
         } else {
             UNANSWERED_CONFIRM_SUBMIT_DESC_PLURAL
         };
-        format!("提交时仍有 {count} 个未回答{suffix}。")
+        format!("Submit with {count} unanswered {suffix}.")
     }
 
     fn first_unanswered_index(&self) -> Option<usize> {
@@ -1007,7 +1007,7 @@ impl BottomPaneView for RequestUserInputOverlay {
             }
             // TODO: Emit interrupted request_user_input results (including committed answers)
             // once core supports persisting them reliably without follow-up turn issues.
-            self.app_event_tx.send(AppEvent::CodexOp(Op::Interrupt));
+            self.app_event_tx.interrupt();
             self.done = true;
             return;
         }
@@ -1223,7 +1223,7 @@ impl BottomPaneView for RequestUserInputOverlay {
             self.close_unanswered_confirmation();
             // TODO: Emit interrupted request_user_input results (including committed answers)
             // once core supports persisting them reliably without follow-up turn issues.
-            self.app_event_tx.send(AppEvent::CodexOp(Op::Interrupt));
+            self.app_event_tx.interrupt();
             self.done = true;
             return CancellationEvent::Handled;
         }
@@ -1234,7 +1234,7 @@ impl BottomPaneView for RequestUserInputOverlay {
 
         // TODO: Emit interrupted request_user_input results (including committed answers)
         // once core supports persisting them reliably without follow-up turn issues.
-        self.app_event_tx.send(AppEvent::CodexOp(Op::Interrupt));
+        self.app_event_tx.interrupt();
         self.done = true;
         CancellationEvent::Handled
     }
@@ -1431,7 +1431,7 @@ mod tests {
                     description: "Select this when you specifically want to verify that navigating downward will keep the currently highlighted option visible, even when previous options consume many wrapped lines and would otherwise push the selection out of the viewport.".to_string(),
                 },
                 RequestUserInputQuestionOption {
-                    label: "以上都不符合".to_string(),
+                    label: "None of the above".to_string(),
                     description:
                         "Use this only if the previous long-form options do not apply.".to_string(),
                 },
@@ -1485,9 +1485,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "First")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         overlay.try_consume_user_input_request(request_event(
             "turn-2",
@@ -1511,9 +1511,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "First")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         overlay.try_consume_user_input_request(RequestUserInputEvent {
             call_id: "call-2".to_string(),
@@ -1538,9 +1538,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.submit_answers();
@@ -1560,9 +1560,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -1587,9 +1587,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -1629,9 +1629,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Char('2')));
@@ -1650,9 +1650,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer().expect("answer missing");
         assert_eq!(answer.options_state.selected_idx, Some(0));
@@ -1678,9 +1678,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         assert_eq!(overlay.current_index(), 0);
@@ -1704,9 +1704,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         assert_eq!(overlay.current_index(), 0);
@@ -1728,9 +1728,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         assert_eq!(overlay.current_index(), 0);
@@ -1752,19 +1752,19 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let tips = overlay.footer_tips();
         let tip_texts = tips.iter().map(|tip| tip.text.as_str()).collect::<Vec<_>>();
         assert_eq!(
             tip_texts,
             vec![
-                "Tab 添加备注",
-                "Enter 提交当前回答",
-                "←/→ 切换问题",
-                "Esc 中断",
+                "tab to add notes",
+                "enter to submit answer",
+                "←/→ to navigate questions",
+                "esc to interrupt",
             ]
         );
 
@@ -1773,7 +1773,7 @@ mod tests {
         let tip_texts = tips.iter().map(|tip| tip.text.as_str()).collect::<Vec<_>>();
         assert_eq!(
             tip_texts,
-            vec!["Tab 或 Esc 清空备注", "Enter 提交当前回答",]
+            vec!["tab or esc to clear notes", "enter to submit answer",]
         );
     }
 
@@ -1789,17 +1789,21 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
-        overlay.move_question(true);
+        overlay.move_question(/*next*/ true);
 
         let tips = overlay.footer_tips();
         let tip_texts = tips.iter().map(|tip| tip.text.as_str()).collect::<Vec<_>>();
         assert_eq!(
             tip_texts,
-            vec!["Enter 提交全部", "Ctrl+P / Ctrl+N 切换问题", "Esc 中断",]
+            vec![
+                "enter to submit all",
+                "ctrl + p / ctrl + n change question",
+                "esc to interrupt",
+            ]
         );
     }
 
@@ -1809,9 +1813,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(1);
@@ -1834,13 +1838,13 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         assert!(matches!(overlay.focus, Focus::Notes));
-        overlay.move_question(true);
+        overlay.move_question(/*next*/ true);
 
         assert!(matches!(overlay.focus, Focus::Options));
         assert_eq!(overlay.notes_ui_visible(), false);
@@ -1858,9 +1862,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay
@@ -1868,7 +1872,7 @@ mod tests {
             .set_text_content("freeform notes".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
 
-        overlay.move_question(true);
+        overlay.move_question(/*next*/ true);
 
         assert!(matches!(overlay.focus, Focus::Options));
         assert_eq!(overlay.notes_ui_visible(), false);
@@ -1898,9 +1902,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_without_options("q1", "Notes")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Esc));
@@ -1915,9 +1919,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Esc));
@@ -1932,9 +1936,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(0);
@@ -1960,9 +1964,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(0);
@@ -1995,9 +1999,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -2017,9 +2021,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(1);
@@ -2038,9 +2042,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(0);
@@ -2064,9 +2068,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(0);
@@ -2093,9 +2097,9 @@ mod tests {
         let overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         assert_eq!(overlay.unanswered_count(), 1);
@@ -2107,9 +2111,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(0);
@@ -2129,9 +2133,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay
@@ -2158,9 +2162,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -2175,9 +2179,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_without_options("q1", "Notes")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.submit_answers();
@@ -2196,9 +2200,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_without_options("q1", "Notes")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         overlay
             .composer
@@ -2227,9 +2231,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay
@@ -2240,12 +2244,12 @@ mod tests {
         assert_eq!(overlay.answers[0].answer_committed, true);
         let _ = rx.try_recv();
 
-        overlay.move_question(false);
+        overlay.move_question(/*next*/ false);
         overlay
             .composer
             .set_text_content("Edited".to_string(), Vec::new(), Vec::new());
         overlay.composer.move_cursor_to_end();
-        overlay.move_question(true);
+        overlay.move_question(/*next*/ true);
         assert_eq!(overlay.answers[0].answer_committed, false);
 
         overlay.submit_answers();
@@ -2264,16 +2268,16 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         {
             let answer = overlay.current_answer_mut().expect("answer missing");
             answer.options_state.selected_idx = Some(1);
         }
-        overlay.select_current_option(false);
+        overlay.select_current_option(/*committed*/ false);
         overlay
             .composer
             .set_text_content("Notes for option 2".to_string(), Vec::new(), Vec::new());
@@ -2312,9 +2316,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Down));
@@ -2341,14 +2345,14 @@ mod tests {
                 vec![question_with_options_and_other("q1", "Pick one")],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         let rows = overlay.option_rows();
         let other_row = rows.last().expect("expected none-of-the-above row");
-        assert_eq!(other_row.name, "  4. 以上都不符合");
+        assert_eq!(other_row.name, "  4. None of the above");
         assert_eq!(
             other_row.description.as_deref(),
             Some(OTHER_OPTION_DESCRIPTION)
@@ -2397,14 +2401,14 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         let large = "x".repeat(1_500);
         overlay.composer.handle_paste(large.clone());
-        overlay.move_question(true);
+        overlay.move_question(/*next*/ true);
 
         let draft = &overlay.answers[0].draft;
         assert_eq!(draft.pending_pastes.len(), 1);
@@ -2425,9 +2429,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         let large = "x".repeat(1_200);
@@ -2450,9 +2454,9 @@ mod tests {
         let overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Area")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let area = Rect::new(0, 0, 120, 16);
         insta::assert_snapshot!(
@@ -2467,9 +2471,9 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Area")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         {
             let answer = overlay.current_answer_mut().expect("answer missing");
@@ -2490,9 +2494,9 @@ mod tests {
         let overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Area")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let area = Rect::new(0, 0, 120, 10);
         insta::assert_snapshot!(
@@ -2510,9 +2514,9 @@ mod tests {
                 vec![question_with_wrapped_options("q1", "Next Step")],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         let width = 48u16;
@@ -2538,9 +2542,9 @@ mod tests {
                 vec![question_with_wrapped_options("q1", "Next Step")],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         let width = 110u16;
@@ -2570,9 +2574,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(0);
@@ -2604,9 +2608,9 @@ mod tests {
                 vec![question_with_wrapped_options("q1", "Next Step")],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         {
@@ -2637,9 +2641,9 @@ mod tests {
                 vec![question_with_very_long_option_text("q1", "Status")],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let area = Rect::new(0, 0, 120, 18);
         insta::assert_snapshot!(
@@ -2657,9 +2661,9 @@ mod tests {
                 vec![question_with_long_scroll_options("q1", "Scroll")],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(2);
@@ -2683,9 +2687,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let answer = overlay.current_answer_mut().expect("answer missing");
         answer.options_state.selected_idx = Some(1);
@@ -2708,37 +2712,37 @@ mod tests {
                 vec![RequestUserInputQuestion {
                     id: "q1".to_string(),
                     header: "Next Step".to_string(),
-                    question: "你接下来想做什么？".to_string(),
+                    question: "What would you like to do next?".to_string(),
                     is_other: false,
                     is_secret: false,
                     options: Some(vec![
                         RequestUserInputQuestionOption {
-                            label: "讨论代码改动（推荐）".to_string(),
-                            description: "一起过一遍计划并协作修改代码。".to_string(),
+                            label: "Discuss a code change (Recommended)".to_string(),
+                            description: "Walk through a plan and edit code together.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "运行测试".to_string(),
-                            description: "选择一个 crate 并运行其测试。".to_string(),
+                            label: "Run tests".to_string(),
+                            description: "Pick a crate and run its tests.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "审查差异".to_string(),
-                            description: "总结或审查当前改动。".to_string(),
+                            label: "Review a diff".to_string(),
+                            description: "Summarize or review current changes.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "重构".to_string(),
-                            description: "收紧结构并移除死代码。".to_string(),
+                            label: "Refactor".to_string(),
+                            description: "Tighten structure and remove dead code.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "完成交付".to_string(),
-                            description: "完成收尾并创建 PR。".to_string(),
+                            label: "Ship it".to_string(),
+                            description: "Finalize and open a PR.".to_string(),
                         },
                     ]),
                 }],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         {
             let answer = overlay.current_answer_mut().expect("answer missing");
@@ -2760,37 +2764,37 @@ mod tests {
                 vec![RequestUserInputQuestion {
                     id: "q1".to_string(),
                     header: "Next Step".to_string(),
-                    question: "你接下来想做什么？".to_string(),
+                    question: "What would you like to do next?".to_string(),
                     is_other: false,
                     is_secret: false,
                     options: Some(vec![
                         RequestUserInputQuestionOption {
-                            label: "讨论代码改动（推荐）".to_string(),
-                            description: "一起过一遍计划并协作修改代码。".to_string(),
+                            label: "Discuss a code change (Recommended)".to_string(),
+                            description: "Walk through a plan and edit code together.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "运行测试".to_string(),
-                            description: "选择一个 crate 并运行其测试。".to_string(),
+                            label: "Run tests".to_string(),
+                            description: "Pick a crate and run its tests.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "审查差异".to_string(),
-                            description: "总结或审查当前改动。".to_string(),
+                            label: "Review a diff".to_string(),
+                            description: "Summarize or review current changes.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "重构".to_string(),
-                            description: "收紧结构并移除死代码。".to_string(),
+                            label: "Refactor".to_string(),
+                            description: "Tighten structure and remove dead code.".to_string(),
                         },
                         RequestUserInputQuestionOption {
-                            label: "完成交付".to_string(),
-                            description: "完成收尾并创建 PR。".to_string(),
+                            label: "Ship it".to_string(),
+                            description: "Finalize and open a PR.".to_string(),
                         },
                     ]),
                 }],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         {
             let answer = overlay.current_answer_mut().expect("answer missing");
@@ -2809,9 +2813,9 @@ mod tests {
         let overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_without_options("q1", "Goal")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let area = Rect::new(0, 0, 120, 10);
         insta::assert_snapshot!(
@@ -2832,9 +2836,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
         let area = Rect::new(0, 0, 120, 15);
         insta::assert_snapshot!(
@@ -2855,11 +2859,11 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
-        overlay.move_question(true);
+        overlay.move_question(/*next*/ true);
         let area = Rect::new(0, 0, 120, 12);
         insta::assert_snapshot!(
             "request_user_input_multi_question_last",
@@ -2879,9 +2883,9 @@ mod tests {
                 ],
             ),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
 
         overlay.open_unanswered_confirmation();
@@ -2899,11 +2903,11 @@ mod tests {
         let mut overlay = RequestUserInputOverlay::new(
             request_event("turn-1", vec![question_with_options("q1", "Pick one")]),
             tx,
-            true,
-            false,
-            false,
+            /*has_input_focus*/ true,
+            /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
         );
-        overlay.select_current_option(false);
+        overlay.select_current_option(/*committed*/ false);
         overlay.focus = Focus::Notes;
         overlay
             .composer

@@ -156,7 +156,7 @@ fn compute_desc_col(
                         let mut spans = row.name_prefix_spans.clone();
                         spans.push(row.name.clone().into());
                         if row.disabled_reason.is_some() {
-                            spans.push(" （已禁用）".dim());
+                            spans.push(" (disabled)".dim());
                         }
                         Line::from(spans).width()
                     })
@@ -168,7 +168,7 @@ fn compute_desc_col(
                         let mut spans = row.name_prefix_spans.clone();
                         spans.push(row.name.clone().into());
                         if row.disabled_reason.is_some() {
-                            spans.push(" （已禁用）".dim());
+                            spans.push(" (disabled)".dim());
                         }
                         Line::from(spans).width()
                     })
@@ -414,9 +414,9 @@ fn adjust_start_for_wrapped_selection_visibility(
 /// dims the description.
 fn build_full_line(row: &GenericDisplayRow, desc_col: usize) -> Line<'static> {
     let combined_description = match (&row.description, &row.disabled_reason) {
-        (Some(desc), Some(reason)) => Some(format!("{desc} （已禁用：{reason}）")),
+        (Some(desc), Some(reason)) => Some(format!("{desc} (disabled: {reason})")),
         (Some(desc), None) => Some(desc.clone()),
-        (None, Some(reason)) => Some(format!("已禁用：{reason}")),
+        (None, Some(reason)) => Some(format!("disabled: {reason}")),
         (None, None) => None,
     };
 
@@ -470,7 +470,7 @@ fn build_full_line(row: &GenericDisplayRow, desc_col: usize) -> Line<'static> {
     }
 
     if row.disabled_reason.is_some() {
-        name_spans.push(" （已禁用）".dim());
+        name_spans.push(" (disabled)".dim());
     }
 
     let this_name_width = name_prefix_width + Line::from(name_spans.clone()).width();
@@ -863,7 +863,7 @@ mod tests {
             ..Default::default()
         };
 
-        let two_col = wrap_two_column_row(&row, 0, 1);
+        let two_col = wrap_two_column_row(&row, /*desc_col*/ 0, /*width*/ 1);
         assert_eq!(two_col.len(), 0);
     }
 }

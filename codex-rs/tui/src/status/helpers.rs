@@ -1,16 +1,13 @@
 use crate::exec_command::relativize_to_home;
+use crate::status::StatusAccountDisplay;
 use crate::text_formatting;
 use chrono::DateTime;
 use chrono::Local;
-use codex_core::AuthManager;
-use codex_core::auth::AuthMode as CoreAuthMode;
 use codex_core::config::Config;
 use codex_core::project_doc::discover_project_doc_paths;
 use codex_protocol::account::PlanType;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
-
-use super::account::StatusAccountDisplay;
 
 fn normalize_agents_display_path(path: &Path) -> String {
     dunce::simplified(path).display().to_string()
@@ -22,14 +19,14 @@ pub(crate) fn compose_model_display(
 ) -> (String, Vec<String>) {
     let mut details: Vec<String> = Vec::new();
     if let Some((_, effort)) = entries.iter().find(|(k, _)| *k == "reasoning effort") {
-        details.push(format!("推理 {}", localize_reasoning_effort(effort)));
+        details.push(format!("reasoning {}", effort.to_ascii_lowercase()));
     }
     if let Some((_, summary)) = entries.iter().find(|(k, _)| *k == "reasoning summaries") {
         let summary = summary.trim();
         if summary.eq_ignore_ascii_case("none") || summary.eq_ignore_ascii_case("off") {
-            details.push("摘要关闭".to_string());
+            details.push("summaries off".to_string());
         } else if !summary.is_empty() {
-            details.push(format!("摘要 {}", localize_reasoning_summary(summary)));
+            details.push(format!("summaries {}", summary.to_ascii_lowercase()));
         }
     }
 
@@ -44,9 +41,9 @@ pub(crate) fn compose_agents_summary(config: &Config) -> String {
                 let file_name = p
                     .file_name()
                     .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "<未知>".to_string());
+                    .unwrap_or_else(|| "<unknown>".to_string());
                 let display = if let Some(parent) = p.parent() {
-                    if parent == config.cwd {
+                    if parent == config.cwd.as_path() {
                         file_name.clone()
                     } else {
                         let mut cur = config.cwd.as_path();
@@ -75,30 +72,28 @@ pub(crate) fn compose_agents_summary(config: &Config) -> String {
                 rels.push(display);
             }
             if rels.is_empty() {
-                "<无>".to_string()
+                "<none>".to_string()
             } else {
                 rels.join(", ")
             }
         }
-        Err(_) => "<无>".to_string(),
+        Err(_) => "<none>".to_string(),
     }
 }
 
 pub(crate) fn compose_account_display(
-    auth_manager: &AuthManager,
-    plan: Option<PlanType>,
+    account_display: Option<&StatusAccountDisplay>,
 ) -> Option<StatusAccountDisplay> {
-    let auth = auth_manager.auth_cached()?;
+    account_display.cloned()
+}
 
-    match auth.auth_mode() {
-        CoreAuthMode::ApiKey => Some(StatusAccountDisplay::ApiKey),
-        CoreAuthMode::Chatgpt | CoreAuthMode::ChatgptAuthTokens => {
-            let email = auth.get_account_email();
-            let plan = plan
-                .map(|plan_type| title_case(format!("{plan_type:?}").as_str()))
-                .or_else(|| Some("未知".to_string()));
-            Some(StatusAccountDisplay::ChatGpt { email, plan })
-        }
+pub(crate) fn plan_type_display_name(plan_type: PlanType) -> String {
+    if plan_type.is_team_like() {
+        "Business".to_string()
+    } else if plan_type.is_business_like() {
+        "Enterprise".to_string()
+    } else {
+        title_case(format!("{plan_type:?}").as_str())
     }
 }
 
@@ -171,61 +166,45 @@ pub(crate) fn format_reset_timestamp(dt: DateTime<Local>, captured_at: DateTime<
     if dt.date_naive() == captured_at.date_naive() {
         time
     } else {
-        format!("{} {time}", dt.format("%-d %b"))
+        format!("{time} on {}", dt.format("%-d %b"))
     }
 }
 
-pub(crate) fn title_case(s: &str) -> String {
+fn title_case(s: &str) -> String {
     if s.is_empty() {
         return String::new();
     }
     let mut chars = s.chars();
-    let first = match chars.next() {
-        Some(c) => c,
-        None => return String::new(),
+    let Some(first) = chars.next() else {
+        return String::new();
     };
-    let rest: String = chars.as_str().to_ascii_lowercase();
+    let rest = chars.as_str().to_ascii_lowercase();
     first.to_uppercase().collect::<String>() + &rest
 }
 
-pub(crate) fn localize_reasoning_effort(value: &str) -> String {
-    if value.eq_ignore_ascii_case("none") || value.eq_ignore_ascii_case("default") {
-        "默认".to_string()
-    } else if value.eq_ignore_ascii_case("minimal") {
-        "极低".to_string()
-    } else if value.eq_ignore_ascii_case("low") {
-        "低".to_string()
-    } else if value.eq_ignore_ascii_case("medium") {
-        "中".to_string()
-    } else if value.eq_ignore_ascii_case("high") {
-        "高".to_string()
-    } else if value.eq_ignore_ascii_case("xhigh") {
-        "极高".to_string()
-    } else {
-        value.to_ascii_lowercase()
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
 
-pub(crate) fn localize_reasoning_summary(value: &str) -> String {
-    if value.eq_ignore_ascii_case("auto") {
-        "自动".to_string()
-    } else if value.eq_ignore_ascii_case("detailed") {
-        "详细".to_string()
-    } else if value.eq_ignore_ascii_case("brief") {
-        "简略".to_string()
-    } else {
-        value.to_ascii_lowercase()
-    }
-}
+    #[test]
+    fn plan_type_display_name_remaps_display_labels() {
+        let cases = [
+            (PlanType::Free, "Free"),
+            (PlanType::Go, "Go"),
+            (PlanType::Plus, "Plus"),
+            (PlanType::Pro, "Pro"),
+            (PlanType::Team, "Business"),
+            (PlanType::SelfServeBusinessUsageBased, "Business"),
+            (PlanType::Business, "Enterprise"),
+            (PlanType::EnterpriseCbpUsageBased, "Enterprise"),
+            (PlanType::Enterprise, "Enterprise"),
+            (PlanType::Edu, "Edu"),
+            (PlanType::Unknown, "Unknown"),
+        ];
 
-pub(crate) fn localize_approval_policy(value: &str) -> String {
-    if value.eq_ignore_ascii_case("on-request") {
-        "按需批准".to_string()
-    } else if value.eq_ignore_ascii_case("never") {
-        "从不".to_string()
-    } else if value.eq_ignore_ascii_case("unless-trusted") {
-        "仅未受信任时".to_string()
-    } else {
-        value.to_string()
+        for (plan_type, expected) in cases {
+            assert_eq!(plan_type_display_name(plan_type), expected);
+        }
     }
 }

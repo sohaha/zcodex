@@ -1,5 +1,0 @@
----
-source: tui/src/bottom_pane/footer.rs
-expression: terminal.backend()
----
-"                                                                                         计划模式 (shift+tab 切换模式)  " Hidden by multi-width symbols: [(90, " "), (92, " "), (94, " "), (96, " "), (110, " "), (112, " "), (114, " "), (116, " ")]

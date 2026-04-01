@@ -1,6 +1,0 @@
----
-source: tui/src/chatwidget/tests.rs
-expression: snapshot
----
-cells=1
-■ 对话已中断——请告诉模型接下来该如何调整。

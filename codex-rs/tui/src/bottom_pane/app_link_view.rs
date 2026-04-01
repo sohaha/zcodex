@@ -1,6 +1,7 @@
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ElicitationAction;
 use codex_protocol::mcp::RequestId as McpRequestId;
+#[cfg(test)]
 use codex_protocol::protocol::Op;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -118,19 +119,19 @@ impl AppLinkView {
             AppLinkScreen::Link => {
                 if self.is_installed {
                     vec![
-                        "在 ChatGPT 中管理",
+                        "Manage on ChatGPT",
                         if self.is_enabled {
-                            "禁用应用"
+                            "Disable app"
                         } else {
-                            "启用应用"
+                            "Enable app"
                         },
-                        "返回",
+                        "Back",
                     ]
                 } else {
-                    vec!["在 ChatGPT 中安装", "返回"]
+                    vec!["Install on ChatGPT", "Back"]
                 }
             }
-            AppLinkScreen::InstallConfirmation => vec!["我已安装", "返回"],
+            AppLinkScreen::InstallConfirmation => vec!["I already Installed it", "Back"],
         }
     }
 
@@ -150,16 +151,14 @@ impl AppLinkView {
         let Some(target) = self.elicitation_target.as_ref() else {
             return;
         };
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id: target.thread_id,
-            op: Op::ResolveElicitation {
-                server_name: target.server_name.clone(),
-                request_id: target.request_id.clone(),
-                decision,
-                content: None,
-                meta: None,
-            },
-        });
+        self.app_event_tx.resolve_elicitation(
+            target.thread_id,
+            target.server_name.clone(),
+            target.request_id.clone(),
+            decision,
+            /*content*/ None,
+            /*meta*/ None,
+        );
     }
 
     fn decline_tool_suggestion(&mut self) {
@@ -281,7 +280,7 @@ impl AppLinkView {
             lines.push(Line::from(""));
         }
         if self.is_installed {
-            for line in wrap("使用 $ 将此应用插入提示词。", usable_width) {
+            for line in wrap("Use $ to insert this app into the prompt.", usable_width) {
                 lines.push(Line::from(line.into_owned()));
             }
             lines.push(Line::from(""));
@@ -293,14 +292,16 @@ impl AppLinkView {
                 lines.push(Line::from(line.into_owned()));
             }
             for line in wrap(
-                "新安装的应用可能需要几分钟后才会出现在 /apps 中。",
+                "Newly installed apps can take a few minutes to appear in /apps.",
                 usable_width,
             ) {
                 lines.push(Line::from(line.into_owned()));
             }
             if !self.is_installed {
-                for line in wrap("安装后，使用 $ 将此应用插入提示词。", usable_width)
-                {
+                for line in wrap(
+                    "After installed, use $ to insert this app into the prompt.",
+                    usable_width,
+                ) {
                     lines.push(Line::from(line.into_owned()));
                 }
             }
@@ -314,24 +315,24 @@ impl AppLinkView {
         let usable_width = width.max(1) as usize;
         let mut lines: Vec<Line<'static>> = Vec::new();
 
-        lines.push(Line::from("完成应用设置".bold()));
+        lines.push(Line::from("Finish App Setup".bold()));
         lines.push(Line::from(""));
 
         for line in wrap(
-            "请在刚打开的浏览器窗口中，到 ChatGPT 完成应用设置。",
+            "Complete app setup on ChatGPT in the browser window that just opened.",
             usable_width,
         ) {
             lines.push(Line::from(line.into_owned()));
         }
         for line in wrap(
-            "如有需要，请先在那边登录，然后回到这里选择“我已完成安装”。",
+            "Sign in there if needed, then return here and select \"I already Installed it\".",
             usable_width,
         ) {
             lines.push(Line::from(line.into_owned()));
         }
 
         lines.push(Line::from(""));
-        lines.push(Line::from(vec!["设置链接：".dim()]));
+        lines.push(Line::from(vec!["Setup URL:".dim()]));
         let url_line = Line::from(vec![self.url.clone().cyan().underlined()]);
         lines.extend(adaptive_wrap_lines(
             vec![url_line],
@@ -373,17 +374,17 @@ impl AppLinkView {
 
     fn hint_line(&self) -> Line<'static> {
         Line::from(vec![
-            "使用 ".into(),
+            "Use ".into(),
             key_hint::plain(KeyCode::Tab).into(),
             " / ".into(),
             key_hint::plain(KeyCode::Up).into(),
             " ".into(),
             key_hint::plain(KeyCode::Down).into(),
-            " 移动，".into(),
+            " to move, ".into(),
             key_hint::plain(KeyCode::Enter).into(),
-            " 选择，".into(),
+            " to select, ".into(),
             key_hint::plain(KeyCode::Esc).into(),
-            " 关闭".into(),
+            " to close".into(),
         ])
     }
 }
@@ -526,7 +527,7 @@ impl crate::render::renderable::Renderable for AppLinkView {
                 &action_rows,
                 &action_state,
                 action_rows.len().max(1),
-                "无可用操作",
+                "No actions",
             );
         }
 
@@ -603,7 +604,7 @@ mod tests {
 
         assert_eq!(
             view.action_labels(),
-            vec!["在 ChatGPT 中管理", "禁用应用", "返回"]
+            vec!["Manage on ChatGPT", "Disable app", "Back"]
         );
     }
 
@@ -640,7 +641,7 @@ mod tests {
 
         assert_eq!(
             view.action_labels(),
-            vec!["在 ChatGPT 中管理", "启用应用", "返回"]
+            vec!["Manage on ChatGPT", "Enable app", "Back"]
         );
     }
 
@@ -668,7 +669,7 @@ mod tests {
         view.screen = AppLinkScreen::InstallConfirmation;
 
         let rendered: Vec<String> = view
-            .content_lines(40)
+            .content_lines(/*width*/ 40)
             .into_iter()
             .map(|line| {
                 line.spans
@@ -747,7 +748,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: Some("Plan events and schedules.".to_string()),
-                instructions: "请先在浏览器中安装此应用，然后回到这里。".to_string(),
+                instructions: "Install this app in your browser, then return here.".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: false,
                 is_enabled: false,
@@ -805,7 +806,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: None,
-                instructions: "请先在浏览器中安装此应用，然后回到这里。".to_string(),
+                instructions: "Install this app in your browser, then return here.".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: false,
                 is_enabled: false,
@@ -847,7 +848,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: Some("Plan events and schedules.".to_string()),
-                instructions: "请启用此应用以用于当前请求。".to_string(),
+                instructions: "Enable this app to use it for the current request.".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: true,
                 is_enabled: false,
@@ -897,7 +898,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: Some("Plan events and schedules.".to_string()),
-                instructions: "请先在浏览器中安装此应用，然后回到这里。".to_string(),
+                instructions: "Install this app in your browser, then return here.".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: false,
                 is_enabled: false,
@@ -910,7 +911,10 @@ mod tests {
 
         assert_snapshot!(
             "app_link_view_install_suggestion_with_reason",
-            render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72)))
+            render_snapshot(
+                &view,
+                Rect::new(0, 0, 72, view.desired_height(/*width*/ 72))
+            )
         );
     }
 
@@ -923,7 +927,7 @@ mod tests {
                 app_id: "connector_google_calendar".to_string(),
                 title: "Google Calendar".to_string(),
                 description: Some("Plan events and schedules.".to_string()),
-                instructions: "请启用此应用以用于当前请求。".to_string(),
+                instructions: "Enable this app to use it for the current request.".to_string(),
                 url: "https://example.test/google-calendar".to_string(),
                 is_installed: true,
                 is_enabled: false,
@@ -936,7 +940,10 @@ mod tests {
 
         assert_snapshot!(
             "app_link_view_enable_suggestion_with_reason",
-            render_snapshot(&view, Rect::new(0, 0, 72, view.desired_height(72)))
+            render_snapshot(
+                &view,
+                Rect::new(0, 0, 72, view.desired_height(/*width*/ 72))
+            )
         );
     }
 }

@@ -1,9 +1,0 @@
----
-source: tui_app_server/src/bottom_pane/feedback_view.rs
-expression: rendered
----
-▌ 补 充 说 明 （ 安 全 检 查 ）
-▌
-▌ （ 可 选 ） 说 明 被 拒 绝 的 内 容 ， 以 及 为 什 么 本 应 被 允 许
-
-按  enter 确 认 ， 按  esc 返 回

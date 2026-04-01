@@ -2,9 +2,9 @@
 source: tui/src/history_cell.rs
 expression: rendered
 ---
-• 已调用
+• Called
   └ search.find_docs({"query":"ratatui
         styling","limit":3})
-    在 styles.md 中找到样式指南，并在
-        CONTRIBUTING.md 中找到补充说明。
-    链接：file:///docs/styles.md
+    Found styling guidance in styles.md and
+        additional notes in CONTRIBUTING.md.
+    link: file:///docs/styles.md

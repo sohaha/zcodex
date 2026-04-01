@@ -2,10 +2,12 @@
 source: tui/src/history_cell.rs
 expression: rendered
 ---
-• 已调用
+• Called
   └ metrics.get_nearby_metric({"query":"
         very_long_query_that_needs_wrapp
         ing_to_display_properly_in_the_h
         istory","limit":1})
-    响应的第一行很长，需要换行显示。
-    第二行继续提供更多细节。
+    Line one of the response, which is
+        quite long and needs wrapping.
+    Line two continues the response with
+        more detail.

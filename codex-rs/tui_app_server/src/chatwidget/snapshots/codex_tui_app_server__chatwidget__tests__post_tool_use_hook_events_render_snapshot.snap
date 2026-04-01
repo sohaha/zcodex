@@ -1,9 +1,0 @@
----
-source: tui_app_server/src/chatwidget/tests.rs
-expression: combined
----
-• 正在运行 调用工具后 钩子: 正在预热 shell
-
-调用工具后 钩子（已完成）
-  警告：Heads up from the hook
-  钩子上下文：请记住启动检查清单。

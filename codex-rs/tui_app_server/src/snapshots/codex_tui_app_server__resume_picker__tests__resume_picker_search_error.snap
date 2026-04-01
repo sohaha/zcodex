@@ -1,5 +1,0 @@
----
-source: tui_app_server/src/resume_picker.rs
-expression: snapshot
----
-读取会话元数据失败：/tmp/missing.jsonl

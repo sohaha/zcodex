@@ -1,5 +1,6 @@
 ---
 source: tui/src/app.rs
+assertion_line: 9848
 expression: model_migration_copy_to_plain_text(&copy)
 ---
 **Codex 已升级，现已提供 gpt-5.3-codex。**

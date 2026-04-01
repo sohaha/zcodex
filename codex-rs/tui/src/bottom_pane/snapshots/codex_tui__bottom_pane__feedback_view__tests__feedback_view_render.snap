@@ -2,15 +2,16 @@
 source: tui/src/bottom_pane/feedback_view.rs
 expression: rendered
 ---
-  提交问题前，是否上传日志？
+  Do you want to upload logs before reporting issue?
 
-  日志可能包含本次 Codex 会话的完整对话历史
-  这些日志将保留 90 天，仅用于故障排查
+  Logs may include the full conversation history of this Codex process
+  These logs are retained for 90 days and are used solely for troubles
 
-  上传前你可以先查看日志的具体内容
+  You can review the exact content of the logs before they’re uploaded
   <LOG_PATH>
 
 
-› 1. 是      将当前 Codex 会话日志分享给团队用于故障排查。
-  2. 否
-  3. 取消
+› 1. Yes     Share the current Codex session logs with the team for
+             troubleshooting.
+  2. No
+  3. Cancel

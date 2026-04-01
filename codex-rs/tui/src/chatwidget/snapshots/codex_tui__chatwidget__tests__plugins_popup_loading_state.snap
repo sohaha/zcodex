@@ -2,4 +2,8 @@
 source: tui/src/chatwidget/tests.rs
 expression: popup
 ---
-插件正在加载可用插件...首次加载仅显示ChatGPT市场。›正在加载插件...市场列表准备好后会更新此处。
+  Plugins
+  Loading available plugins...
+  This first pass shows the ChatGPT marketplace only.
+
+›    Loading plugins...  This updates when the marketplace list is ready.

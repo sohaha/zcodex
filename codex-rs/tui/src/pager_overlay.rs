@@ -105,9 +105,9 @@ const KEY_CTRL_C: KeyBinding = key_hint::ctrl(KeyCode::Char('c'));
 
 // Common pager navigation hints rendered on the first line
 const PAGER_KEY_HINTS: &[(&[KeyBinding], &str)] = &[
-    (&[KEY_UP, KEY_DOWN], "滚动"),
-    (&[KEY_PAGE_UP, KEY_PAGE_DOWN], "翻页"),
-    (&[KEY_HOME, KEY_END], "跳转"),
+    (&[KEY_UP, KEY_DOWN], "to scroll"),
+    (&[KEY_PAGE_UP, KEY_PAGE_DOWN], "to page"),
+    (&[KEY_HOME, KEY_END], "to jump"),
 ];
 
 // Render a single line of key hints from (key(s), description) pairs.
@@ -458,7 +458,7 @@ impl TranscriptOverlay {
         Self {
             view: PagerView::new(
                 Self::render_cells(&transcript_cells, /*highlight_cell*/ None),
-                "会 话 记 录".to_string(),
+                "T R A N S C R I P T".to_string(),
                 usize::MAX,
             ),
             cells: transcript_cells,
@@ -670,13 +670,13 @@ impl TranscriptOverlay {
         let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
         render_key_hints(line1, buf, PAGER_KEY_HINTS);
 
-        let mut pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "退出")];
+        let mut pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
         if self.highlight_cell.is_some() {
-            pairs.push((&[KEY_ESC, KEY_LEFT], "编辑上一条"));
-            pairs.push((&[KEY_RIGHT], "编辑下一条"));
-            pairs.push((&[KEY_ENTER], "编辑消息"));
+            pairs.push((&[KEY_ESC, KEY_LEFT], "to edit prev"));
+            pairs.push((&[KEY_RIGHT], "to edit next"));
+            pairs.push((&[KEY_ENTER], "to edit message"));
         } else {
-            pairs.push((&[KEY_ESC], "编辑上一条"));
+            pairs.push((&[KEY_ESC], "to edit prev"));
         }
         render_key_hints(line2, buf, &pairs);
     }
@@ -741,7 +741,7 @@ impl StaticOverlay {
         let line1 = Rect::new(area.x, area.y, area.width, 1);
         let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
         render_key_hints(line1, buf, PAGER_KEY_HINTS);
-        let pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "退出")];
+        let pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
         render_key_hints(line2, buf, &pairs);
     }
 
@@ -858,15 +858,14 @@ mod tests {
         })]);
 
         // Render into a wide buffer so the footer hints aren't truncated.
-        let area = Rect::new(0, 0, 220, 10);
+        let area = Rect::new(0, 0, 120, 10);
         let mut buf = Buffer::empty(area);
         overlay.render(area, &mut buf);
 
         let s = buffer_to_text(&buf, area);
-        let compact = s.replace(' ', "");
         assert!(
-            compact.contains("编辑上一条"),
-            "expected '编辑上一条' hint in overlay footer, got: {s:?}"
+            s.contains("edit prev"),
+            "expected 'edit prev' hint in overlay footer, got: {s:?}"
         );
     }
 
@@ -878,15 +877,14 @@ mod tests {
         overlay.set_highlight_cell(Some(0));
 
         // Render into a wide buffer so the footer hints aren't truncated.
-        let area = Rect::new(0, 0, 220, 10);
+        let area = Rect::new(0, 0, 120, 10);
         let mut buf = Buffer::empty(area);
         overlay.render(area, &mut buf);
 
         let s = buffer_to_text(&buf, area);
-        let compact = s.replace(' ', "");
         assert!(
-            compact.contains("编辑下一条"),
-            "expected '编辑下一条' hint in overlay footer, got: {s:?}"
+            s.contains("edit next"),
+            "expected 'edit next' hint in overlay footer, got: {s:?}"
         );
     }
 
@@ -916,7 +914,7 @@ mod tests {
             lines: vec![Line::from("alpha")],
         })]);
         overlay.sync_live_tail(
-            40,
+            /*width*/ 40,
             Some(ActiveCellTranscriptKey {
                 revision: 1,
                 is_stream_continuation: false,
@@ -944,11 +942,11 @@ mod tests {
             animation_tick: None,
         };
 
-        overlay.sync_live_tail(40, Some(key), |_| {
+        overlay.sync_live_tail(/*width*/ 40, Some(key), |_| {
             calls.set(calls.get() + 1);
             Some(vec![Line::from("tail")])
         });
-        overlay.sync_live_tail(40, Some(key), |_| {
+        overlay.sync_live_tail(/*width*/ 40, Some(key), |_| {
             calls.set(calls.get() + 1);
             Some(vec![Line::from("tail2")])
         });
@@ -1014,8 +1012,8 @@ mod tests {
             vec!["bash".into(), "-lc".into(), "ls".into()],
             vec![ParsedCommand::Unknown { cmd: "ls".into() }],
             ExecCommandSource::Agent,
-            None,
-            true,
+            /*interaction_input*/ None,
+            /*animations_enabled*/ true,
         );
         exec_cell.complete_call(
             "exec-1",
@@ -1214,30 +1212,33 @@ mod tests {
     #[test]
     fn pager_view_content_height_counts_renderables() {
         let pv = PagerView::new(
-            vec![paragraph_block("a", 2), paragraph_block("b", 3)],
+            vec![
+                paragraph_block("a", /*lines*/ 2),
+                paragraph_block("b", /*lines*/ 3),
+            ],
             "T".to_string(),
-            0,
+            /*scroll_offset*/ 0,
         );
 
-        assert_eq!(pv.content_height(80), 5);
+        assert_eq!(pv.content_height(/*width*/ 80), 5);
     }
 
     #[test]
     fn pager_view_ensure_chunk_visible_scrolls_down_when_needed() {
         let mut pv = PagerView::new(
             vec![
-                paragraph_block("a", 1),
-                paragraph_block("b", 3),
-                paragraph_block("c", 3),
+                paragraph_block("a", /*lines*/ 1),
+                paragraph_block("b", /*lines*/ 3),
+                paragraph_block("c", /*lines*/ 3),
             ],
             "T".to_string(),
-            0,
+            /*scroll_offset*/ 0,
         );
         let area = Rect::new(0, 0, 20, 8);
 
         pv.scroll_offset = 0;
         let content_area = pv.content_area(area);
-        pv.ensure_chunk_visible(2, content_area);
+        pv.ensure_chunk_visible(/*idx*/ 2, content_area);
 
         let mut buf = Buffer::empty(area);
         pv.render(area, &mut buf);
@@ -1261,24 +1262,28 @@ mod tests {
     fn pager_view_ensure_chunk_visible_scrolls_up_when_needed() {
         let mut pv = PagerView::new(
             vec![
-                paragraph_block("a", 2),
-                paragraph_block("b", 3),
-                paragraph_block("c", 3),
+                paragraph_block("a", /*lines*/ 2),
+                paragraph_block("b", /*lines*/ 3),
+                paragraph_block("c", /*lines*/ 3),
             ],
             "T".to_string(),
-            0,
+            /*scroll_offset*/ 0,
         );
         let area = Rect::new(0, 0, 20, 3);
 
         pv.scroll_offset = 6;
-        pv.ensure_chunk_visible(0, area);
+        pv.ensure_chunk_visible(/*idx*/ 0, area);
 
         assert_eq!(pv.scroll_offset, 0);
     }
 
     #[test]
     fn pager_view_is_scrolled_to_bottom_accounts_for_wrapped_height() {
-        let mut pv = PagerView::new(vec![paragraph_block("a", 10)], "T".to_string(), 0);
+        let mut pv = PagerView::new(
+            vec![paragraph_block("a", /*lines*/ 10)],
+            "T".to_string(),
+            /*scroll_offset*/ 0,
+        );
         let area = Rect::new(0, 0, 20, 8);
         let mut buf = Buffer::empty(area);
 

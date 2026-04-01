@@ -1,9 +1,0 @@
----
-source: tui/src/history_cell.rs
-expression: rendered
----
-• 已执行 first_token_is_long
-  │ _enough_to_wrap
-  │ second_token_is_also_lon
-  │ … +1 lines
-  └ （无输出）

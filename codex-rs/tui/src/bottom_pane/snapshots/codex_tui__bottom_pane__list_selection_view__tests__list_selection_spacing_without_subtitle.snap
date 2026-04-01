@@ -3,9 +3,9 @@ source: tui/src/bottom_pane/list_selection_view.rs
 expression: render_lines(&view)
 ---
                                                 
-  选 择 权 限 模 式                                   
+  Select Approval Mode                          
                                                 
-› 1. 只 读 （ 当 前 ）   可 读 取 文 件                    
-  2. 完 全 访 问       可 编 辑 文 件                    
+› 1. Read Only (current)  Codex can read files  
+  2. Full Access          Codex can edit files  
                                                 
-  按  enter 确 认 ， 按  esc 返 回
+  Press enter to confirm or esc to go back

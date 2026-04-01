@@ -5,11 +5,14 @@ use std::path::PathBuf;
 use codex_app_server_protocol::McpElicitationEnumSchema;
 use codex_app_server_protocol::McpElicitationPrimitiveSchema;
 use codex_app_server_protocol::McpElicitationSingleSelectEnumSchema;
+use codex_app_server_protocol::McpServerElicitationRequest;
+use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::ElicitationAction;
 use codex_protocol::approvals::ElicitationRequest;
 use codex_protocol::approvals::ElicitationRequestEvent;
 use codex_protocol::mcp::RequestId as McpRequestId;
+#[cfg(test)]
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::TextElement;
 use crossterm::event::KeyCode;
@@ -25,7 +28,6 @@ use ratatui::widgets::Widget;
 use serde_json::Value;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::ChatComposer;
@@ -43,8 +45,8 @@ use crate::render::renderable::Renderable;
 use crate::text_formatting::format_json_compact;
 use crate::text_formatting::truncate_text;
 
-const ANSWER_PLACEHOLDER: &str = "输入你的回答";
-const OPTIONAL_ANSWER_PLACEHOLDER: &str = "输入你的回答（可选）";
+const ANSWER_PLACEHOLDER: &str = "Type your answer";
+const OPTIONAL_ANSWER_PLACEHOLDER: &str = "Type your answer (optional)";
 const FOOTER_SEPARATOR: &str = " | ";
 const MIN_COMPOSER_HEIGHT: u16 = 3;
 const MIN_OVERLAY_HEIGHT: u16 = 8;
@@ -201,6 +203,36 @@ impl FooterTip {
 }
 
 impl McpServerElicitationFormRequest {
+    pub(crate) fn from_app_server_request(
+        thread_id: ThreadId,
+        request_id: McpRequestId,
+        request: McpServerElicitationRequestParams,
+    ) -> Option<Self> {
+        let McpServerElicitationRequestParams {
+            server_name,
+            request,
+            ..
+        } = request;
+        let McpServerElicitationRequest::Form {
+            meta,
+            message,
+            requested_schema,
+        } = request
+        else {
+            return None;
+        };
+
+        let requested_schema = serde_json::to_value(requested_schema).ok()?;
+        Self::from_parts(
+            thread_id,
+            server_name,
+            request_id,
+            meta,
+            message,
+            requested_schema,
+        )
+    }
+
     pub(crate) fn from_event(
         thread_id: ThreadId,
         request: ElicitationRequestEvent,
@@ -214,6 +246,24 @@ impl McpServerElicitationFormRequest {
             return None;
         };
 
+        Self::from_parts(
+            thread_id,
+            request.server_name,
+            request.id,
+            meta,
+            message,
+            requested_schema,
+        )
+    }
+
+    fn from_parts(
+        thread_id: ThreadId,
+        server_name: String,
+        request_id: McpRequestId,
+        meta: Option<Value>,
+        message: String,
+        requested_schema: Value,
+    ) -> Option<Self> {
         let tool_suggestion = parse_tool_suggestion_request(meta.as_ref());
         let is_tool_approval = meta
             .as_ref()
@@ -242,8 +292,8 @@ impl McpServerElicitationFormRequest {
             (McpServerElicitationResponseMode::FormContent, Vec::new())
         } else if requested_schema.is_null() || (is_tool_approval && is_empty_object_schema) {
             let mut options = vec![McpServerElicitationOption {
-                label: "允许".to_string(),
-                description: Some("运行该工具并继续。".to_string()),
+                label: "Allow".to_string(),
+                description: Some("Run the tool and continue.".to_string()),
                 value: Value::String(APPROVAL_ACCEPT_ONCE_VALUE.to_string()),
             }];
             if is_tool_approval_action
@@ -253,8 +303,10 @@ impl McpServerElicitationFormRequest {
                 )
             {
                 options.push(McpServerElicitationOption {
-                    label: "本次会话允许".to_string(),
-                    description: Some("运行该工具，并在当前会话记住此选择。".to_string()),
+                    label: "Allow for this session".to_string(),
+                    description: Some(
+                        "Run the tool and remember this choice for this session.".to_string(),
+                    ),
                     value: Value::String(APPROVAL_ACCEPT_SESSION_VALUE.to_string()),
                 });
             }
@@ -262,27 +314,29 @@ impl McpServerElicitationFormRequest {
                 && tool_approval_supports_persist_mode(meta.as_ref(), APPROVAL_PERSIST_ALWAYS_VALUE)
             {
                 options.push(McpServerElicitationOption {
-                    label: "始终允许".to_string(),
-                    description: Some("运行该工具，并在后续工具调用中记住此选择。".to_string()),
+                    label: "Always allow".to_string(),
+                    description: Some(
+                        "Run the tool and remember this choice for future tool calls.".to_string(),
+                    ),
                     value: Value::String(APPROVAL_ACCEPT_ALWAYS_VALUE.to_string()),
                 });
             }
             if is_tool_approval_action {
                 options.push(McpServerElicitationOption {
-                    label: "取消".to_string(),
-                    description: Some("取消这次工具调用".to_string()),
+                    label: "Cancel".to_string(),
+                    description: Some("Cancel this tool call".to_string()),
                     value: Value::String(APPROVAL_CANCEL_VALUE.to_string()),
                 });
             } else {
                 options.extend([
                     McpServerElicitationOption {
-                        label: "拒绝".to_string(),
-                        description: Some("拒绝这次工具调用并继续。".to_string()),
+                        label: "Deny".to_string(),
+                        description: Some("Decline this tool call and continue.".to_string()),
                         value: Value::String(APPROVAL_DECLINE_VALUE.to_string()),
                     },
                     McpServerElicitationOption {
-                        label: "取消".to_string(),
-                        description: Some("取消这次工具调用".to_string()),
+                        label: "Cancel".to_string(),
+                        description: Some("Cancel this tool call".to_string()),
                         value: Value::String(APPROVAL_CANCEL_VALUE.to_string()),
                     },
                 ]);
@@ -309,8 +363,8 @@ impl McpServerElicitationFormRequest {
 
         Some(Self {
             thread_id,
-            server_name: request.server_name,
-            request_id: request.id,
+            server_name,
+            request_id,
             message,
             approval_display_params,
             response_mode,
@@ -546,7 +600,7 @@ fn parse_field(
             let options = [true, false]
                 .into_iter()
                 .map(|value| {
-                    let label = if value { "是" } else { "否" }.to_string();
+                    let label = if value { "True" } else { "False" }.to_string();
                     McpServerElicitationOption {
                         label,
                         description: None,
@@ -932,27 +986,27 @@ impl McpServerElicitationOverlay {
         let is_last_field = self.current_index().saturating_add(1) >= self.field_count();
         if self.current_field_is_select() {
             if self.field_count() == 1 {
-                tips.push(FooterTip::highlighted("Enter 提交"));
+                tips.push(FooterTip::highlighted("enter to submit"));
             } else if is_last_field {
-                tips.push(FooterTip::highlighted("Enter 提交全部"));
+                tips.push(FooterTip::highlighted("enter to submit all"));
             } else {
-                tips.push(FooterTip::new("Enter 提交当前回答"));
+                tips.push(FooterTip::new("enter to submit answer"));
             }
         } else if self.field_count() == 1 {
-            tips.push(FooterTip::highlighted("Enter 提交"));
+            tips.push(FooterTip::highlighted("enter to submit"));
         } else if is_last_field {
-            tips.push(FooterTip::highlighted("Enter 提交全部"));
+            tips.push(FooterTip::highlighted("enter to submit all"));
         } else {
-            tips.push(FooterTip::new("Enter 提交当前回答"));
+            tips.push(FooterTip::new("enter to submit answer"));
         }
         if self.field_count() > 1 {
             if self.current_field_is_select() {
-                tips.push(FooterTip::new("←/→ 切换字段"));
+                tips.push(FooterTip::new("←/→ to navigate fields"));
             } else {
-                tips.push(FooterTip::new("Ctrl+P / Ctrl+N 切换字段"));
+                tips.push(FooterTip::new("ctrl + p / ctrl + n change field"));
             }
         }
-        tips.push(FooterTip::new("Esc 取消"));
+        tips.push(FooterTip::new("esc to cancel"));
         tips
     }
 
@@ -1079,22 +1133,20 @@ impl McpServerElicitationOverlay {
     }
 
     fn dispatch_cancel(&self) {
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id: self.request.thread_id,
-            op: Op::ResolveElicitation {
-                server_name: self.request.server_name.clone(),
-                request_id: self.request.request_id.clone(),
-                decision: ElicitationAction::Cancel,
-                content: None,
-                meta: None,
-            },
-        });
+        self.app_event_tx.resolve_elicitation(
+            self.request.thread_id,
+            self.request.server_name.clone(),
+            self.request.request_id.clone(),
+            ElicitationAction::Cancel,
+            /*content*/ None,
+            /*meta*/ None,
+        );
     }
 
     fn submit_answers(&mut self) {
         self.save_current_draft();
         if let Some(idx) = self.first_required_unanswered_index() {
-            self.validation_error = Some("请先填写必填字段再提交。".to_string());
+            self.validation_error = Some("Answer required fields before submitting.".to_string());
             self.jump_to_field(idx);
             return;
         }
@@ -1119,16 +1171,14 @@ impl McpServerElicitationOverlay {
                     Some(APPROVAL_CANCEL_VALUE) => (ElicitationAction::Cancel, None),
                     _ => (ElicitationAction::Cancel, None),
                 };
-            self.app_event_tx.send(AppEvent::SubmitThreadOp {
-                thread_id: self.request.thread_id,
-                op: Op::ResolveElicitation {
-                    server_name: self.request.server_name.clone(),
-                    request_id: self.request.request_id.clone(),
-                    decision,
-                    content: None,
-                    meta,
-                },
-            });
+            self.app_event_tx.resolve_elicitation(
+                self.request.thread_id,
+                self.request.server_name.clone(),
+                self.request.request_id.clone(),
+                decision,
+                /*content*/ None,
+                meta,
+            );
             if let Some(next) = self.queue.pop_front() {
                 self.request = next;
                 self.reset_for_request();
@@ -1145,16 +1195,14 @@ impl McpServerElicitationOverlay {
             .enumerate()
             .filter_map(|(idx, field)| self.field_value(idx).map(|value| (field.id.clone(), value)))
             .collect::<serde_json::Map<_, _>>();
-        self.app_event_tx.send(AppEvent::SubmitThreadOp {
-            thread_id: self.request.thread_id,
-            op: Op::ResolveElicitation {
-                server_name: self.request.server_name.clone(),
-                request_id: self.request.request_id.clone(),
-                decision: ElicitationAction::Accept,
-                content: Some(Value::Object(content)),
-                meta: None,
-            },
-        });
+        self.app_event_tx.resolve_elicitation(
+            self.request.thread_id,
+            self.request.server_name.clone(),
+            self.request.request_id.clone(),
+            ElicitationAction::Accept,
+            Some(Value::Object(content)),
+            /*meta*/ None,
+        );
         if let Some(next) = self.queue.pop_front() {
             self.request = next;
             self.reset_for_request();
@@ -1254,7 +1302,7 @@ impl McpServerElicitationOverlay {
                 state.selected_idx = Some(0);
             }
             state.ensure_visible(rows.len(), area.height as usize);
-            render_rows(area, buf, &rows, &state, rows.len().max(1), "暂无选项");
+            render_rows(area, buf, &rows, &state, rows.len().max(1), "No options");
             return;
         }
         if self.current_field_is_secret() {
@@ -1274,7 +1322,7 @@ impl McpServerElicitationOverlay {
         let option_tip = if options_hidden {
             let selected = self.selected_option_index().unwrap_or(0).saturating_add(1);
             let total = self.options_len();
-            Some(FooterTip::new(format!("选项 {selected}/{total}")))
+            Some(FooterTip::new(format!("option {selected}/{total}")))
         } else {
             None
         };
@@ -1388,14 +1436,14 @@ impl Renderable for McpServerElicitationOverlay {
         let progress_line = if self.field_count() > 0 {
             let idx = self.current_index() + 1;
             let total = self.field_count();
-            let base = format!("字段 {idx}/{total}");
+            let base = format!("Field {idx}/{total}");
             if unanswered > 0 {
-                Line::from(format!("{base}（{unanswered} 个必填未答）").dim())
+                Line::from(format!("{base} ({unanswered} required unanswered)").dim())
             } else {
                 Line::from(base.dim())
             }
         } else {
-            Line::from("暂无字段".dim())
+            Line::from("No fields".dim())
         };
         Paragraph::new(progress_line).render(progress_area, buf);
         self.render_prompt(prompt_area, buf);
@@ -1740,19 +1788,19 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
-                            "description": "批准待处理操作。",
+                            "title": "Confirm",
+                            "description": "Approve the pending action.",
                         }
                     },
                     "required": ["confirmed"],
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
@@ -1763,23 +1811,23 @@ mod tests {
                 thread_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
-                message: "允许此请求吗？".to_string(),
+                message: "Allow this request?".to_string(),
                 approval_display_params: Vec::new(),
                 response_mode: McpServerElicitationResponseMode::FormContent,
                 fields: vec![McpServerElicitationField {
                     id: "confirmed".to_string(),
-                    label: "确认".to_string(),
-                    prompt: "批准待处理操作。".to_string(),
+                    label: "Confirm".to_string(),
+                    prompt: "Approve the pending action.".to_string(),
                     required: true,
                     input: McpServerElicitationFieldInput::Select {
                         options: vec![
                             McpServerElicitationOption {
-                                label: "是".to_string(),
+                                label: "True".to_string(),
                                 description: None,
                                 value: Value::Bool(true),
                             },
                             McpServerElicitationOption {
-                                label: "否".to_string(),
+                                label: "False".to_string(),
                                 description: None,
                                 value: Value::Bool(false),
                             },
@@ -1807,7 +1855,7 @@ mod tests {
                         }
                     },
                 }),
-                None,
+                /*meta*/ None,
             ),
         );
 
@@ -1819,7 +1867,7 @@ mod tests {
         let thread_id = ThreadId::default();
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
-            form_request("允许此请求吗？", Value::Null, None),
+            form_request("Allow this request?", Value::Null, /*meta*/ None),
         )
         .expect("expected approval fallback");
 
@@ -1829,7 +1877,7 @@ mod tests {
                 thread_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
-                message: "允许此请求吗？".to_string(),
+                message: "Allow this request?".to_string(),
                 approval_display_params: Vec::new(),
                 response_mode: McpServerElicitationResponseMode::ApprovalAction,
                 fields: vec![McpServerElicitationField {
@@ -1840,18 +1888,20 @@ mod tests {
                     input: McpServerElicitationFieldInput::Select {
                         options: vec![
                             McpServerElicitationOption {
-                                label: "允许".to_string(),
-                                description: Some("运行该工具并继续。".to_string()),
+                                label: "Allow".to_string(),
+                                description: Some("Run the tool and continue.".to_string()),
                                 value: Value::String(APPROVAL_ACCEPT_ONCE_VALUE.to_string()),
                             },
                             McpServerElicitationOption {
-                                label: "拒绝".to_string(),
-                                description: Some("拒绝这次工具调用并继续。".to_string(),),
+                                label: "Deny".to_string(),
+                                description: Some(
+                                    "Decline this tool call and continue.".to_string(),
+                                ),
                                 value: Value::String(APPROVAL_DECLINE_VALUE.to_string()),
                             },
                             McpServerElicitationOption {
-                                label: "取消".to_string(),
-                                description: Some("取消这次工具调用".to_string()),
+                                label: "Cancel".to_string(),
+                                description: Some("Cancel this tool call".to_string()),
                                 value: Value::String(APPROVAL_CANCEL_VALUE.to_string()),
                             },
                         ],
@@ -1869,9 +1919,13 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 empty_object_schema(),
-                tool_approval_meta(&[], None, None),
+                tool_approval_meta(
+                    &[],
+                    /*tool_params*/ None,
+                    /*tool_params_display*/ None,
+                ),
             ),
         )
         .expect("expected approval fallback");
@@ -1882,7 +1936,7 @@ mod tests {
                 thread_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
-                message: "允许此请求吗？".to_string(),
+                message: "Allow this request?".to_string(),
                 approval_display_params: Vec::new(),
                 response_mode: McpServerElicitationResponseMode::ApprovalAction,
                 fields: vec![McpServerElicitationField {
@@ -1893,13 +1947,13 @@ mod tests {
                     input: McpServerElicitationFieldInput::Select {
                         options: vec![
                             McpServerElicitationOption {
-                                label: "允许".to_string(),
-                                description: Some("运行该工具并继续。".to_string()),
+                                label: "Allow".to_string(),
+                                description: Some("Run the tool and continue.".to_string()),
                                 value: Value::String(APPROVAL_ACCEPT_ONCE_VALUE.to_string()),
                             },
                             McpServerElicitationOption {
-                                label: "取消".to_string(),
-                                description: Some("取消这次工具调用".to_string()),
+                                label: "Cancel".to_string(),
+                                description: Some("Cancel this tool call".to_string()),
                                 value: Value::String(APPROVAL_CANCEL_VALUE.to_string()),
                             },
                         ],
@@ -1980,7 +2034,7 @@ mod tests {
     fn empty_unmarked_schema_falls_back() {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
-            form_request("Empty form", empty_object_schema(), None),
+            form_request("Empty form", empty_object_schema(), /*meta*/ None),
         );
 
         assert_eq!(request, None);
@@ -2040,25 +2094,28 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
-                            "description": "批准待处理操作。",
+                            "title": "Confirm",
+                            "description": "Approve the pending action.",
                         }
                     },
                     "required": ["confirmed"],
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
-        let mut overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let mut overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
-        overlay.select_current_option(true);
+        overlay.select_current_option(/*committed*/ true);
         overlay.submit_answers();
 
         let event = rx.try_recv().expect("expected resolution");
@@ -2091,25 +2148,28 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[
                         APPROVAL_PERSIST_SESSION_VALUE,
                         APPROVAL_PERSIST_ALWAYS_VALUE,
                     ],
-                    None,
-                    None,
+                    /*tool_params*/ None,
+                    /*tool_params_display*/ None,
                 ),
             ),
         )
         .expect("expected approval fallback");
-        let mut overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let mut overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         if let Some(answer) = overlay.current_answer_mut() {
             answer.selection.selected_idx = Some(1);
         }
-        overlay.select_current_option(true);
+        overlay.select_current_option(/*committed*/ true);
         overlay.submit_answers();
 
         let event = rx.try_recv().expect("expected resolution");
@@ -2142,25 +2202,28 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[
                         APPROVAL_PERSIST_SESSION_VALUE,
                         APPROVAL_PERSIST_ALWAYS_VALUE,
                     ],
-                    None,
-                    None,
+                    /*tool_params*/ None,
+                    /*tool_params_display*/ None,
                 ),
             ),
         )
         .expect("expected approval fallback");
-        let mut overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let mut overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         if let Some(answer) = overlay.current_answer_mut() {
             answer.selection.selected_idx = Some(2);
         }
-        overlay.select_current_option(true);
+        overlay.select_current_option(/*committed*/ true);
         overlay.submit_answers();
 
         let event = rx.try_recv().expect("expected resolution");
@@ -2193,23 +2256,26 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
-                            "description": "批准待处理操作。",
+                            "title": "Confirm",
+                            "description": "Approve the pending action.",
                         }
                     },
                     "required": ["confirmed"],
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
-        let mut overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let mut overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         assert_eq!(overlay.on_ctrl_c(), CancellationEvent::Handled);
 
@@ -2246,11 +2312,11 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
+                            "title": "Confirm",
                         }
                     },
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
@@ -2263,11 +2329,11 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
+                            "title": "Confirm",
                         }
                     },
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
@@ -2280,24 +2346,27 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
+                            "title": "Confirm",
                         }
                     },
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
-        let mut overlay = McpServerElicitationOverlay::new(first, tx, true, false, false);
+        let mut overlay = McpServerElicitationOverlay::new(
+            first, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         overlay.try_consume_mcp_server_elicitation_request(second);
         overlay.try_consume_mcp_server_elicitation_request(third);
-        overlay.select_current_option(true);
+        overlay.select_current_option(/*committed*/ true);
         overlay.submit_answers();
 
         assert_eq!(overlay.request.message, "Second");
 
-        overlay.select_current_option(true);
+        overlay.select_current_option(/*committed*/ true);
         overlay.submit_answers();
 
         assert_eq!(overlay.request.message, "Third");
@@ -2309,23 +2378,26 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "确认",
-                            "description": "批准待处理操作。",
+                            "title": "Confirm",
+                            "description": "Approve the pending action.",
                         }
                     },
                     "required": ["confirmed"],
                 }),
-                None,
+                /*meta*/ None,
             ),
         )
         .expect("expected supported form");
-        let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_boolean_form",
@@ -2339,13 +2411,20 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 empty_object_schema(),
-                tool_approval_meta(&[], None, None),
+                tool_approval_meta(
+                    &[],
+                    /*tool_params*/ None,
+                    /*tool_params_display*/ None,
+                ),
             ),
         )
         .expect("expected approval fallback");
-        let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_approval_form_without_schema",
@@ -2359,20 +2438,23 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
             form_request(
-                "允许此请求吗？",
+                "Allow this request?",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[
                         APPROVAL_PERSIST_SESSION_VALUE,
                         APPROVAL_PERSIST_ALWAYS_VALUE,
                     ],
-                    None,
-                    None,
+                    /*tool_params*/ None,
+                    /*tool_params_display*/ None,
                 ),
             ),
         )
         .expect("expected approval fallback");
-        let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_approval_form_with_session_persist",
@@ -2422,7 +2504,10 @@ mod tests {
             ),
         )
         .expect("expected approval fallback");
-        let overlay = McpServerElicitationOverlay::new(request, tx, true, false, false);
+        let overlay = McpServerElicitationOverlay::new(
+            request, tx, /*has_input_focus*/ true, /*enhanced_keys_supported*/ false,
+            /*disable_paste_burst*/ false,
+        );
 
         insta::assert_snapshot!(
             "mcp_server_elicitation_approval_form_with_param_summary",
