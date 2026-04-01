@@ -242,6 +242,7 @@ async fn official_openai_endpoint_enables_request_compression_without_openai_nam
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
+        auth: None,
         wire_api: crate::WireApi::Responses,
         query_params: None,
         http_headers: None,

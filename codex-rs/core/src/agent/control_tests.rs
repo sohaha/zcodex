@@ -949,6 +949,7 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
             text_input("child task"),
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
+                parent_model: None,
                 depth: 1,
                 agent_path: None,
                 agent_nickname: None,

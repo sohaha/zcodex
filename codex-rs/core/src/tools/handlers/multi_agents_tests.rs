@@ -27,6 +27,7 @@ use crate::tasks::SessionTask;
 use crate::tasks::SessionTaskContext;
 use crate::tools::context::ToolOutput;
 use crate::tools::handlers::multi_agents_v2::AssignTaskHandler as AssignTaskHandlerV2;
+use crate::tools::handlers::multi_agents_v2::CloseAgentHandler as CloseAgentHandlerV2;
 use crate::tools::handlers::multi_agents_v2::ListAgentsHandler as ListAgentsHandlerV2;
 use crate::tools::handlers::multi_agents_v2::SendMessageHandler as SendMessageHandlerV2;
 use crate::tools::handlers::multi_agents_v2::SpawnAgentHandler as SpawnAgentHandlerV2;
@@ -969,6 +970,7 @@ async fn multi_agent_v2_send_message_accepts_root_target_from_child() {
             .into(),
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
+                parent_model: None,
                 depth: 1,
                 agent_path: Some(child_path.clone()),
                 agent_nickname: None,
@@ -982,6 +984,7 @@ async fn multi_agent_v2_send_message_accepts_root_target_from_child() {
     session.conversation_id = child_thread_id;
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: root.thread_id,
+        parent_model: None,
         depth: 1,
         agent_path: Some(child_path.clone()),
         agent_nickname: None,
@@ -1395,6 +1398,11 @@ async fn multi_agent_v2_send_message_rejects_interrupt_parameter() {
                     && !communication.trigger_turn
         )
     }));
+
+    let thread = manager
+        .get_thread(agent_id)
+        .await
+        .expect("worker thread should exist");
 
     timeout(Duration::from_secs(5), async {
         loop {

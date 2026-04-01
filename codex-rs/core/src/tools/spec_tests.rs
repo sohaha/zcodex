@@ -19,6 +19,7 @@ use codex_tools::FreeformTool;
 use codex_tools::ResponsesApiTool;
 use codex_tools::ResponsesApiWebSearchFilters;
 use codex_tools::ResponsesApiWebSearchUserLocation;
+use codex_tools::ShellToolOptions;
 use codex_tools::SpawnAgentToolOptions;
 use codex_tools::ViewImageToolOptions;
 use codex_tools::WaitAgentTimeoutOptions;
@@ -86,7 +87,7 @@ fn search_capable_model_info() -> ModelInfo {
 }
 
 fn windows_shell_safety_description() -> String {
-    format!("\n\n{}", super::windows_destructive_filesystem_guidance())
+    "\n\nWindows safety rules:\n- Do not compose destructive filesystem commands across shells. Do not enumerate paths in PowerShell and then pass them to `cmd /c`, batch builtins, or another shell for deletion or moving. Use one shell end-to-end, prefer native PowerShell cmdlets such as `Remove-Item` / `Move-Item` with `-LiteralPath`, and avoid string-built shell commands for file operations.\n- Before any recursive delete or move on Windows, verify the resolved absolute target paths stay within the intended workspace or explicitly named target directory. Never issue a recursive delete or move against a computed path if the final target has not been checked.".to_string()
 }
 
 #[test]
@@ -3044,7 +3045,9 @@ fn test_mcp_tool_anyof_defaults_to_string() {
 
 #[test]
 fn test_shell_tool() {
-    let tool = super::create_shell_tool(/*exec_permission_approvals_enabled*/ false);
+    let tool = super::create_shell_tool(ShellToolOptions {
+        exec_permission_approvals_enabled: false,
+    });
     let ToolSpec::Function(ResponsesApiTool {
         description, name, ..
     }) = &tool
@@ -3077,9 +3080,10 @@ Examples of valid command strings:
 
 #[test]
 fn test_exec_command_tool_windows_description_includes_shell_safety_guidance() {
-    let tool = super::create_exec_command_tool(
-        /*allow_login_shell*/ true, /*exec_permission_approvals_enabled*/ false,
-    );
+    let tool = super::create_exec_command_tool(CommandToolOptions {
+        allow_login_shell: true,
+        exec_permission_approvals_enabled: false,
+    });
     let ToolSpec::Function(ResponsesApiTool {
         description, name, ..
     }) = &tool
@@ -3102,7 +3106,9 @@ fn test_exec_command_tool_windows_description_includes_shell_safety_guidance() {
 
 #[test]
 fn shell_tool_with_request_permission_includes_additional_permissions() {
-    let tool = super::create_shell_tool(/*exec_permission_approvals_enabled*/ true);
+    let tool = super::create_shell_tool(ShellToolOptions {
+        exec_permission_approvals_enabled: true,
+    });
     let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = tool else {
         panic!("expected function tool");
     };
@@ -3135,7 +3141,7 @@ fn shell_tool_with_request_permission_includes_additional_permissions() {
 
 #[test]
 fn request_permissions_tool_includes_full_permission_schema() {
-    let tool = super::create_request_permissions_tool();
+    let tool = super::create_request_permissions_tool(request_permissions_tool_description());
     let ToolSpec::Function(ResponsesApiTool { parameters, .. }) = tool else {
         panic!("expected function tool");
     };
@@ -3182,9 +3188,10 @@ fn request_permissions_tool_includes_full_permission_schema() {
 
 #[test]
 fn test_shell_command_tool() {
-    let tool = super::create_shell_command_tool(
-        /*allow_login_shell*/ true, /*exec_permission_approvals_enabled*/ false,
-    );
+    let tool = super::create_shell_command_tool(CommandToolOptions {
+        allow_login_shell: true,
+        exec_permission_approvals_enabled: false,
+    });
     let ToolSpec::Function(ResponsesApiTool {
         description, name, ..
     }) = &tool
