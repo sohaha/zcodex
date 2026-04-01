@@ -843,7 +843,7 @@ fn zmemory_tool_requires_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.disable(Feature::MemoryTool);
+    features.disable(Feature::Zmemory);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1193,7 +1193,7 @@ fn get_memory_requires_feature_flag() {
     let config = test_config();
     let model_info = ModelsManager::construct_model_info_offline_for_tests("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.disable(Feature::MemoryTool);
+    features.disable(Feature::NativeMemories);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
@@ -1213,7 +1213,7 @@ fn get_memory_requires_feature_flag() {
     .build();
     assert!(
         !tools.iter().any(|t| t.spec.name() == "get_memory"),
-        "get_memory should be disabled when memory_tool feature is off"
+        "get_memory should be disabled when native memories feature is off"
     );
 }
 

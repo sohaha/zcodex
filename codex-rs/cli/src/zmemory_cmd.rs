@@ -284,7 +284,7 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
     let result = run_zmemory_tool_with_context(
         &codex_home,
         config.cwd.as_path(),
-        config.zmemory_path.as_deref(),
+        config.zmemory.path.as_deref(),
         args,
     )?;
     if output.json {

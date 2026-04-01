@@ -507,6 +507,26 @@ impl From<MemoriesToml> for MemoriesConfig {
     }
 }
 
+/// Zmemory settings loaded from config.toml.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ZmemoryToml {
+    /// Optional override for the `zmemory` database path.
+    pub path: Option<PathBuf>,
+}
+
+/// Effective zmemory settings after defaults are applied.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ZmemoryConfig {
+    pub path: Option<PathBuf>,
+}
+
+impl From<ZmemoryToml> for ZmemoryConfig {
+    fn from(toml: ZmemoryToml) -> Self {
+        Self { path: toml.path }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AppToolApproval {

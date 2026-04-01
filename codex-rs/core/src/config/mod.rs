@@ -28,6 +28,8 @@ use crate::config::types::Tui;
 use crate::config::types::UriBasedFileOpener;
 use crate::config::types::WindowsSandboxModeToml;
 use crate::config::types::WindowsToml;
+use crate::config::types::ZmemoryConfig;
+use crate::config::types::ZmemoryToml;
 use crate::config_loader::CloudRequirementsLoader;
 use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigLayerStackOrdering;
@@ -441,8 +443,8 @@ pub struct Config {
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
 
-    /// Optional override for the `zmemory` database path from `config.toml`.
-    pub zmemory_path: Option<PathBuf>,
+    /// Effective zmemory settings loaded from the dedicated config block.
+    pub zmemory: ZmemoryConfig,
 
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
@@ -1362,9 +1364,8 @@ pub struct ConfigToml {
     /// Memories subsystem settings.
     pub memories: Option<MemoriesToml>,
 
-    /// Optional override for the `zmemory` database path. Relative paths are
-    /// resolved later relative to the active workspace.
-    pub zmemory_path: Option<PathBuf>,
+    /// Zmemory subsystem settings.
+    pub zmemory: Option<ZmemoryToml>,
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
@@ -2621,7 +2622,7 @@ impl Config {
             agent_max_depth,
             agent_roles,
             memories: cfg.memories.unwrap_or_default().into(),
-            zmemory_path: cfg.zmemory_path.clone(),
+            zmemory: cfg.zmemory.unwrap_or_default().into(),
             agent_job_max_runtime_seconds,
             codex_home,
             sqlite_home,

@@ -172,7 +172,7 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
             .expect("test config should allow feature update");
         config
             .features
-            .enable(Feature::MemoryTool)
+            .enable(Feature::NativeMemories)
             .expect("test config should allow feature update");
         config.memories.max_raw_memories_for_consolidation = 1;
         config.memories.no_memories_if_mcp_or_web_search = true;
@@ -244,7 +244,7 @@ async fn web_search_pollution_moves_selected_thread_into_removed_phase2_inputs()
             .expect("test config should allow feature update");
         config
             .features
-            .enable(Feature::MemoryTool)
+            .enable(Feature::NativeMemories)
             .expect("test config should allow feature update");
         config.memories.max_raw_memories_for_consolidation = 1;
         config.memories.no_memories_if_mcp_or_web_search = true;
@@ -334,7 +334,7 @@ async fn build_test_codex(server: &wiremock::MockServer, home: Arc<TempDir>) -> 
             .expect("test config should allow feature update");
         config
             .features
-            .enable(Feature::MemoryTool)
+            .enable(Feature::NativeMemories)
             .expect("test config should allow feature update");
         config.memories.max_raw_memories_for_consolidation = 1;
     });

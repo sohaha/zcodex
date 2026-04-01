@@ -334,7 +334,7 @@ impl Session {
             // TODO(jif): drop this
             let tmp_mem = (
                 "tmp_mem_enabled",
-                if self.enabled(Feature::MemoryTool) {
+                if self.enabled(Feature::NativeMemories) {
                     "true"
                 } else {
                     "false"

@@ -50,7 +50,7 @@ impl ToolHandler for ZmemoryHandler {
             None => session.codex_home().await,
         };
 
-        let zmemory_path = turn.config.zmemory_path.as_deref();
+        let zmemory_path = turn.config.zmemory.path.as_deref();
         match run_zmemory_tool_with_context(&codex_home, turn.cwd.as_path(), zmemory_path, args) {
             Ok(result) => {
                 let json =

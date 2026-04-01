@@ -127,7 +127,9 @@ pub enum Feature {
     /// Persist rollout metadata to a local SQLite database.
     Sqlite,
     /// Enable startup memory extraction and file-backed memory consolidation.
-    MemoryTool,
+    NativeMemories,
+    /// Enable the embedded zmemory tool and related runtime integration.
+    Zmemory,
     /// Append additional AGENTS.md guidance to user instructions.
     ChildAgentsMd,
     /// Allow the model to request `detail: "original"` image outputs on supported models.
@@ -618,8 +620,14 @@ pub const FEATURES: &[FeatureSpec] = &[
         default_enabled: true,
     },
     FeatureSpec {
-        id: Feature::MemoryTool,
-        key: "memories",
+        id: Feature::NativeMemories,
+        key: "native_memories",
+        stage: Stage::Stable,
+        default_enabled: true,
+    },
+    FeatureSpec {
+        id: Feature::Zmemory,
+        key: "zmemory",
         stage: Stage::Stable,
         default_enabled: true,
     },

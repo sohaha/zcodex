@@ -121,9 +121,15 @@ fn tool_suggest_is_stable_and_enabled_by_default() {
 }
 
 #[test]
-fn memory_tool_is_stable_and_enabled_by_default() {
-    assert_eq!(Feature::MemoryTool.stage(), Stage::Stable);
-    assert_eq!(Feature::MemoryTool.default_enabled(), true);
+fn native_memories_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::NativeMemories.stage(), Stage::Stable);
+    assert_eq!(Feature::NativeMemories.default_enabled(), true);
+}
+
+#[test]
+fn zmemory_is_stable_and_enabled_by_default() {
+    assert_eq!(Feature::Zmemory.stage(), Stage::Stable);
+    assert_eq!(Feature::Zmemory.default_enabled(), true);
 }
 
 #[test]

@@ -3537,7 +3537,7 @@ impl Session {
             developer_sections.push(developer_instructions.to_string());
         }
         // Add developer instructions for memories.
-        if turn_context.features.enabled(Feature::MemoryTool)
+        if turn_context.features.enabled(Feature::NativeMemories)
             && turn_context.config.memories.use_memories
             && let Some(memory_prompt) =
                 build_memory_tool_developer_instructions(&turn_context.config.codex_home).await

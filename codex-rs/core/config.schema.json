@@ -418,16 +418,13 @@
             "js_repl_tools_only": {
               "type": "boolean"
             },
-            "memories": {
-              "type": "boolean"
-            },
-            "memory_tool": {
-              "type": "boolean"
-            },
             "multi_agent": {
               "type": "boolean"
             },
             "multi_agent_v2": {
+              "type": "boolean"
+            },
+            "native_memories": {
               "type": "boolean"
             },
             "personality": {
@@ -521,6 +518,9 @@
               "type": "boolean"
             },
             "web_search_request": {
+              "type": "boolean"
+            },
+            "zmemory": {
               "type": "boolean"
             }
           },
@@ -1876,6 +1876,17 @@
           "type": "string"
         }
       ]
+    },
+    "ZmemoryToml": {
+      "additionalProperties": false,
+      "description": "Zmemory settings loaded from config.toml.",
+      "properties": {
+        "path": {
+          "description": "Optional override for the `zmemory` database path.",
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
@@ -2098,16 +2109,13 @@
         "js_repl_tools_only": {
           "type": "boolean"
         },
-        "memories": {
-          "type": "boolean"
-        },
-        "memory_tool": {
-          "type": "boolean"
-        },
         "multi_agent": {
           "type": "boolean"
         },
         "multi_agent_v2": {
+          "type": "boolean"
+        },
+        "native_memories": {
           "type": "boolean"
         },
         "personality": {
@@ -2201,6 +2209,9 @@
           "type": "boolean"
         },
         "web_search_request": {
+          "type": "boolean"
+        },
+        "zmemory": {
           "type": "boolean"
         }
       },
@@ -2614,9 +2625,13 @@
       "description": "Tracks whether the Windows onboarding screen has been acknowledged.",
       "type": "boolean"
     },
-    "zmemory_path": {
-      "description": "Optional override for the `zmemory` database path. Relative paths are resolved later relative to the active workspace.",
-      "type": "string"
+    "zmemory": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ZmemoryToml"
+        }
+      ],
+      "description": "Zmemory subsystem settings."
     },
     "zsh_path": {
       "allOf": [

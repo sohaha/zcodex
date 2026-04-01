@@ -12,6 +12,7 @@ use crate::config::types::ModelAvailabilityNuxConfig;
 use crate::config::types::NotificationMethod;
 use crate::config::types::Notifications;
 use crate::config::types::ToolSuggestDiscoverableType;
+use crate::config::types::ZmemoryConfig;
 use crate::config_loader::RequirementSource;
 use assert_matches::assert_matches;
 use codex_config::CONFIG_TOML_FILE;
@@ -165,16 +166,19 @@ consolidation_model = "gpt-5"
 }
 
 #[test]
-fn test_toml_parsing_zmemory_path() {
+fn test_toml_parsing_zmemory_block() {
     let cfg: ConfigToml = toml::from_str(
         r#"
-zmemory_path = "./agents/memory.db"
+[zmemory]
+path = "./agents/memory.db"
 "#,
     )
     .expect("TOML deserialization should succeed");
 
     assert_eq!(
-        cfg.zmemory_path,
+        cfg.zmemory
+            .as_ref()
+            .and_then(|zmemory| zmemory.path.clone()),
         Some(std::path::PathBuf::from("./agents/memory.db"))
     );
 
@@ -188,10 +192,10 @@ zmemory_path = "./agents/memory.db"
         },
         codex_home.path().to_path_buf(),
     )
-    .expect("load config with zmemory_path");
+    .expect("load config with zmemory config");
 
     assert_eq!(
-        config.zmemory_path,
+        config.zmemory.path,
         Some(std::path::PathBuf::from("./agents/memory.db"))
     );
 }
@@ -4543,7 +4547,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
-            zmemory_path: None,
+            zmemory: ZmemoryConfig::default(),
             agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
             codex_home: fixture.codex_home(),
             sqlite_home: fixture.codex_home(),
@@ -4735,7 +4739,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory_path: None,
+        zmemory: ZmemoryConfig::default(),
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -4880,7 +4884,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory_path: None,
+        zmemory: ZmemoryConfig::default(),
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -5011,7 +5015,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory_path: None,
+        zmemory: ZmemoryConfig::default(),
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
