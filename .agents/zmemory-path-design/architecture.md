@@ -57,7 +57,7 @@ dependencies: [prd]
 | 模块 | 说明 | 改造要点 |
 |------|------|----------|
 | `codex-rs/zmemory/src/config.rs` | `ZmemoryConfig` 暴露 sqlite 路径；当前只依赖 `codex_home` | - 接收新的 `ZmemoryPathResolution`；<br/>- 暴露 `path_resolution()` 供 repository/service 读取；<br/>- 不在 config 内部重复做路径解析。 |
-| `codex-rs/zmemory/src/path_resolution.rs` | 新增 resolver 模块 | - 解析 `[zmemory].path` 的绝对/相对/默认策略；<br/>- 调用 git-utils 获取主仓库根；<br/>- 生成 `workspace_key` 与 `reason`。 |
+| `codex-rs/zmemory/src/path_resolution.rs` | 新增 resolver 模块 | - 解析 `[zmemory].path` 的绝对/相对/默认策略；<br/>- 调用 git-utils 获取主仓库根；<br/>- 生成稳定项目 key（实现字段名仍为 `workspace_key`）与 `reason`。 |
 | `codex-rs/zmemory/src/repository.rs` | `ZmemoryRepository::connect` 负责创建目录和打开 sqlite | - 保持目录创建逻辑；<br/>- 在 `connect` 之前确保 helper 已 canonicalize，并将 `project-key` 目录权限调整为 `0o755`；<br/>- 额外提供 `db_path_reason()` 方法供日志或 TUI 读取。 |
 | `codex-rs/zmemory/README.md` | 文档说明 database 位置和配置 | - 更新章节解释 `[zmemory].path` 语义、默认隔离逻辑、手动迁移旧文件；<br/>- 指出 CLI/TUI 如何通过 `doctor`/`stats` 校验当前路径。 |
 | CLI/core/TUI 启动 | `codex-cli`, `codex-app-server`/TUI/agent session 等 | - 在构建 `Session` 时调用统一 helper，传入 `cwd`、`project_config`、`codex_home`、`[zmemory].path` config；<br/>- 统一将最终 `db_path` 写入运行时 config，避免多个模块独立判断；<br/>- TUI/会话启动日志 (via `tracing::info!`) 输出 `[zmemory].path` 及决定原因；<br/>- 首版通过 `doctor`/`stats` 输出 `pathResolution` 供调查使用。 |
@@ -80,7 +80,7 @@ $CODEX_HOME/
 
 - `projects/<project-key>` 文件夹名建议固定前缀+定长 hex（例如 12 字符），避免直接从路径中截取目录名。
 - 当 `[zmemory].path` 显式配置为 `workspace/custom.db`（相对路径）时，解析结果位于 repo_root 或 cwd 的 `workspace` 子目录；log 中记录实际绝对路径。
-- 各 workspace key 可通过 `codex zmemory doctor --json` 或 `codex zmemory stats --json` 暴露，便于排查锁和权限问题。
+- 各稳定项目 key 会通过 `codex zmemory doctor --json` 或 `codex zmemory stats --json` 的 `workspaceKey` 字段暴露，便于排查锁和权限问题。
 
 ## 4. 数据模型
 
@@ -94,7 +94,7 @@ $CODEX_HOME/
 
 1. 新安装：`[zmemory].path` 未配置，则在 `$CODEX_HOME/zmemory/projects/<project-key>/zmemory.db` 创建数据库。
 2. 老用户升级：首版不尝试自动复制 `$CODEX_HOME/zmemory/zmemory.db`；若用户需要沿用旧库，应显式在配置文件中填入旧路径。
-3. 避免重复：若 repo/cwd 之间仅仅通过符号链接造成 canonical 结果相同，helper 会统一到同一个 workspace key，避免多个 path 指向不同数据库。
+3. 避免重复：若 repo/cwd 之间仅仅通过符号链接造成 canonical 结果相同，helper 会统一到同一个稳定项目 key（运行时字段名仍为 `workspaceKey`），避免多个 path 指向不同数据库。
 4. 首版不增加额外命令行 flag 或环境变量入口，避免外部入口膨胀；共享单库的需求仍通过配置文件中的 `[zmemory].path` 表达。
 
 ### 4.3 配置兼容策略
@@ -105,7 +105,7 @@ $CODEX_HOME/
 
 ## 5. API 设计
 
-- 新增内部结构 `ZmemoryPathResolution`（包含 `db_path`、`workspace_key`、`reason`），供 CLI/TUI/测试调用。该结构也可在日志/诊断输出中序列化。
+- 新增内部结构 `ZmemoryPathResolution`（包含 `db_path`、`workspace_key`、`reason`；其中 `workspace_key` 承载稳定项目 key），供 CLI/TUI/测试调用。该结构也可在日志/诊断输出中序列化。
 - 在命令行 `codex zmemory` 子命令中，仅通过统一配置读取 `[zmemory].path`；首版不为每个子命令增加独立 flag，避免接口膨胀。
 - `SessionConfig` 或 `Re`,  目前 `codex_state` 通过 `Session::get_config()` 读取 `cwd`，因此 helper 应接受 `AbsolutePathBuf`，以保持 `core` 层对于 `cwd` 的 `resolved` 版本一致。
 - 保持 `codex-rs/zmemory` crate 对外 API 简洁：只提供 `ZmemoryConfig::new_with_settings(codex_home, settings, path_resolution)`，不暴露 `project-key` 细节。
@@ -119,7 +119,7 @@ $CODEX_HOME/
 
 ### 6.2 git worktree 与 repo_root
 
-- 依赖现有 root-git-project 语义，其对 git worktree 会归并到主仓库根；因此首版默认让同一主仓库下的 worktree 共享一个 workspace key，与现有 trust/project 识别保持一致。
+- 依赖现有 root-git-project 语义，其对 git worktree 会归并到主仓库根；因此首版默认让同一主仓库下的 worktree 共享一个稳定项目 key（字段名仍为 `workspaceKey`），与现有 trust/project 识别保持一致。
 - `core` 中的 project/trust 只作为语义对齐参考，不再要求 helper 驻留在 `core` crate。
 
 ### 6.3 可观测性

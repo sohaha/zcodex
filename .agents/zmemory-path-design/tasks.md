@@ -72,7 +72,7 @@ dependencies: [prd, tech-review]
 | `codex-rs/zmemory/Cargo.toml` | 修改 | 新增对 `codex-git-utils` 的依赖 |
 
 **实现步骤**：
-1. **设计解析链**：接收 `codex_home` 路径、`turn.cwd`、可选 `[zmemory].path` 字符串，返回 `ZmemoryPathResolution { db_path, workspace_key, source, canonical_base, reason }`。
+1. **设计解析链**：接收 `codex_home` 路径、`turn.cwd`、可选 `[zmemory].path` 字符串，返回 `ZmemoryPathResolution { db_path, workspace_key, source, canonical_base, reason }`；其中 `workspace_key` 语义上表示稳定项目 key。
    ```rust
    pub fn resolve_zmemory_path(
        codex_home: &Path,
@@ -90,7 +90,7 @@ dependencies: [prd, tech-review]
 | TC-001-1 | `canonicalize` 后的主仓库根 hash 同一仓库稳定 | 单元测试 |
 | TC-001-2 | 相对路径在 git 仓库下相对于主仓库根操作 | 单元测试 |
 | TC-001-3 | 非 git 目录 fallback `cwd` 并输出 `reason` | 单元测试 |
-| TC-001-4 | 同一主仓库下的 worktree 共享同一个默认 `workspace_key` | 单元测试 |
+| TC-001-4 | 同一主仓库下的 worktree 共享同一个默认 `workspace_key`（稳定项目 key） | 单元测试 |
 
 **复杂度**：中
 
@@ -103,7 +103,7 @@ dependencies: [prd, tech-review]
 **完成标志**：
 - [ ] helper 模块编写完成并通过 `cargo test -p codex-zmemory path_resolution::tests`
 - [ ] `reason`/`source` 字段能描述 `repo_root`/`cwd`/`explicit` 三种情况
-- [ ] `workspace_key` 取 `sha256` 前 12 个 hex，不包含 `/` 等字符
+- [ ] `workspace_key` 取 `sha256` 前 12 个 hex，不包含 `/` 等字符，并稳定表示同一项目身份
 
 ---
 
@@ -136,7 +136,7 @@ dependencies: [prd, tech-review]
 - `db_path` 依赖 resolution，确保 `ZmemoryRepository` 可继续创建目录。
 
 **完成标志**：
-- [ ] `ZmemoryConfig` 返回包含 `workspace_key`/`reason` 的 resolution
+- [ ] `ZmemoryConfig` 返回包含 `workspace_key`/`reason` 的 resolution，其中 `workspace_key` 承载稳定项目 key
 - [ ] `new_with_settings` 明确要求调用方传入 resolution
 - [ ] 相关单元测试覆盖 `explicit` 与 `default` 场景
 
@@ -181,7 +181,7 @@ dependencies: [prd, tech-review]
 - service 输出仍然包含 `stats`，新的字段应嵌套在 `stats` 下方，不破坏现有 consumers。
 
 **完成标志**：
-- [ ] `ZmemoryRepository` 通过 `path_resolution` 记录 `workspace_key`
+- [ ] `ZmemoryRepository` 通过 `path_resolution` 记录 `workspace_key`（稳定项目 key）
 - [ ] `doctor_action`/`stats_action` JSON 包含 `pathResolution`
 - [ ] 相关单元测试覆盖新字段并使用 `pretty_assertions`
 
@@ -275,7 +275,7 @@ dependencies: [prd, tech-review]
 
 **实现步骤**：
 1. 在 helper 模块内添加 `#[cfg(test)]`，覆盖 `git 根`、`cwd`、`explicit` 三种输入。
-2. 扩展 zmemory config/repository/service 测试，断言 `ZmemoryConfig::path_resolution().workspace_key`、`service::doctor_action` 返回的 `pathResolution.source`。
+2. 扩展 zmemory config/repository/service 测试，断言 `ZmemoryConfig::path_resolution().workspace_key`（稳定项目 key）、`service::doctor_action` 返回的 `pathResolution.source`。
 3. CLI 与 tool e2e test 观察 `function_call_output`，确保 `codex zmemory doctor --json`/`stats --json` 归档 `pathResolution`。
 4. 覆盖主仓库根/worktree、显式旧全局库路径、以及相对路径指向尚不存在 DB 文件的解析测试。
 

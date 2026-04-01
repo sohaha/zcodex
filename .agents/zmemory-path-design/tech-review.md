@@ -79,7 +79,7 @@ dependencies: [prd, architecture]
 - [ ] 优先把 `doctor/stats` 的输出扩成 `dbPath` + `reason`，以便验证多个终端是否指向同一个 `project-key`；若后续仍不足，再评估是否新增专用查询子命令。  
 - [ ] 在 README 和 `codex-cli` 配置文档中补充 `[zmemory].path` 命名空间与默认哈希目录结构，避免协作时开发者仍以旧路径为准。  
 - [ ] 增加跨平台测试，特别是 `git worktree`、非 git 目录、`../` 相对路径，以及 Windows 驱动器大小写场景，确保 hash 生成逻辑不引入新目录。  
-- [ ] `ZmemoryPathResolution` 附带 `workspace_key`、`reason`、`canonical_base` 等字段，并让 `ZmemoryRepository`/CLI 记录日志，可以减轻未来排查锁/权限失败的时间。  
+- [ ] `ZmemoryPathResolution` 附带 `workspace_key`、`reason`、`canonical_base` 等字段（其中 `workspace_key` 实际承载稳定项目 key），并让 `ZmemoryRepository`/CLI 记录日志，可以减轻未来排查锁/权限失败的时间。  
 - [ ] 考虑在 `codex-rs/zmemory` 模块中增加一个轻量 helper（如 `pub fn resolve_zmemory_path(...) -> ZmemoryPathResolution`）供 unit test 与文档验证，而不是每次启动都直接拼 `codex_home`。  
 
 ## 6. 实施建议
@@ -124,9 +124,9 @@ codex-rs/
 ### 7.2 命名规范
 
 - **文件命名**：helper 文件名采用 `path_resolution.rs` 或 `zmemory_path.rs`，但必须留在 `codex-zmemory` crate 内，避免跨 crate 解析。
-- **组件命名**：`ZmemoryPathResolution`、`WorkspaceIdentity`（包含 `workspace_key`/`canonical_base`/`reason`）以及 `ZmemoryPathResolver`。
+- **组件命名**：`ZmemoryPathResolution`、`WorkspaceIdentity`（包含 `workspace_key`/`canonical_base`/`reason`，其中 `workspace_key` 承载稳定项目 key）以及 `ZmemoryPathResolver`。
 - **函数命名**：导出 `resolve_zmemory_path`/`hash_workspace_dir`，明显区分解析 vs hashing。
-- **变量命名**：hash 结果用 `workspace_key`，输入用 `canonical_base`/`raw_input`，上下文标记为 `source`（如 `RepoRoot`、`Cwd`、`Explicit`)。
+- **变量命名**：hash 结果继续用 `workspace_key`（语义上表示稳定项目 key），输入用 `canonical_base`/`raw_input`，上下文标记为 `source`（如 `RepoRoot`、`Cwd`、`Explicit`)。
 
 ### 7.3 代码风格
 
