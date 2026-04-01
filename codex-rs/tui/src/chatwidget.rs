@@ -5563,7 +5563,11 @@ impl ChatWidget {
     }
 
     fn buddy_seed(&self) -> String {
-        let cwd = self.current_cwd.as_ref().unwrap_or(&self.config.cwd);
+        let cwd = self
+            .current_cwd
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| self.config.cwd.display().to_string());
         format!("{}::{cwd}", self.config.codex_home.display())
     }
 
