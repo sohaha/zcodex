@@ -36,10 +36,35 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 path = "./agents/memory.db"
 ```
 
-`zmemory` 还会读取这些环境变量：
+完整 runtime profile 示例：
 
-- `VALID_DOMAINS`：可写域列表，默认 `core`
-- `CORE_MEMORY_URIS`：boot 锚点 URI，默认 `core://agent,core://my_user,core://agent/my_user`
+```toml
+[zmemory]
+path = "./agents/memory.db"
+valid_domains = ["core", "project", "notes"]
+core_memory_uris = [
+  "core://agent/coding_operating_manual",
+  "core://my_user/coding_preferences",
+  "core://agent/my_user/collaboration_contract",
+]
+```
+
+字段说明：
+
+- `path`：可选数据库路径覆盖
+- `valid_domains`：可选可写域列表覆盖
+- `core_memory_uris`：可选 boot 锚点覆盖
+
+优先级：
+
+1. `[zmemory]` 配置
+2. 环境变量 `VALID_DOMAINS` / `CORE_MEMORY_URIS`
+3. 产品默认值
+
+当前产品默认值：
+
+- `VALID_DOMAINS=core`
+- `CORE_MEMORY_URIS=core://agent,core://my_user,core://agent/my_user`
 
 `system` 是保留只读域，不需要写进 `VALID_DOMAINS`。
 
@@ -85,8 +110,8 @@ codex zmemory rebuild-search --json
 
 其中最重要的是：
 
-- `system://workspace`：当前会话实际使用的库、路径来源、boot 健康度、是否显式覆盖默认路径
-- `system://defaults`：产品默认值，不混入当前项目的实际覆盖状态
+- `system://workspace`：当前会话实际生效的 runtime profile；包含当前使用的库、路径来源、`validDomains`、`coreMemoryUris`、boot 健康度，以及是否显式覆盖默认路径
+- `system://defaults`：产品默认事实；只报告内置默认 domains、boot anchors 与默认路径策略，不混入当前项目或用户配置覆盖状态
 
 建议排查顺序：
 
@@ -130,6 +155,28 @@ codex zmemory rebuild-search --json
 
 很多时候问题是 recall coverage、alias 或 trigger 不足，而不是数据库里没有 durable
 memory。
+
+## 推荐的编码记忆配置
+
+如果你想把 `zmemory` 用作“编码协作型长期记忆”，推荐把项目知识与临时结论从 `core` 中拆开：
+
+```toml
+[zmemory]
+valid_domains = ["core", "project", "notes"]
+core_memory_uris = [
+  "core://agent/coding_operating_manual",
+  "core://my_user/coding_preferences",
+  "core://agent/my_user/collaboration_contract",
+]
+```
+
+建议约定：
+
+- `core://...`：长期稳定的协作规则
+- `project://<repo>/...`：项目级架构、约束、常见坑
+- `notes://...`：阶段性调试结论、迁移观察
+
+建议让 boot 只保留少量高价值 `core://...` 节点；不要把整份项目知识都塞进 boot。默认项目库路径保持不变，只有需要跨项目共享数据库时才显式配置 `[zmemory].path` 为全局路径。
 
 ## 设计边界
 

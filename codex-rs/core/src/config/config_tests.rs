@@ -171,15 +171,29 @@ fn test_toml_parsing_zmemory_block() {
         r#"
 [zmemory]
 path = "./agents/memory.db"
+valid_domains = ["core", "project", "notes"]
+core_memory_uris = [
+  "core://agent/coding_operating_manual",
+  "core://my_user/coding_preferences",
+]
 "#,
     )
     .expect("TOML deserialization should succeed");
 
     assert_eq!(
-        cfg.zmemory
-            .as_ref()
-            .and_then(|zmemory| zmemory.path.clone()),
-        Some(std::path::PathBuf::from("./agents/memory.db"))
+        cfg.zmemory,
+        Some(ZmemoryToml {
+            path: Some(std::path::PathBuf::from("./agents/memory.db")),
+            valid_domains: Some(vec![
+                "core".to_string(),
+                "project".to_string(),
+                "notes".to_string(),
+            ]),
+            core_memory_uris: Some(vec![
+                "core://agent/coding_operating_manual".to_string(),
+                "core://my_user/coding_preferences".to_string(),
+            ]),
+        })
     );
 
     let cwd = tempdir().expect("tempdir");
@@ -195,8 +209,19 @@ path = "./agents/memory.db"
     .expect("load config with zmemory config");
 
     assert_eq!(
-        config.zmemory.path,
-        Some(std::path::PathBuf::from("./agents/memory.db"))
+        config.zmemory,
+        ZmemoryConfig {
+            path: Some(std::path::PathBuf::from("./agents/memory.db")),
+            valid_domains: Some(vec![
+                "core".to_string(),
+                "project".to_string(),
+                "notes".to_string(),
+            ]),
+            core_memory_uris: Some(vec![
+                "core://agent/coding_operating_manual".to_string(),
+                "core://my_user/coding_preferences".to_string(),
+            ]),
+        }
     );
 }
 

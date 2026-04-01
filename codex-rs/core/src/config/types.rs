@@ -513,17 +513,36 @@ impl From<MemoriesToml> for MemoriesConfig {
 pub struct ZmemoryToml {
     /// Optional override for the `zmemory` database path.
     pub path: Option<PathBuf>,
+    /// Optional writable memory domains for the current runtime profile.
+    pub valid_domains: Option<Vec<String>>,
+    /// Optional boot anchor URIs for the current runtime profile.
+    pub core_memory_uris: Option<Vec<String>>,
 }
 
 /// Effective zmemory settings after defaults are applied.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ZmemoryConfig {
     pub path: Option<PathBuf>,
+    pub valid_domains: Option<Vec<String>>,
+    pub core_memory_uris: Option<Vec<String>>,
 }
 
 impl From<ZmemoryToml> for ZmemoryConfig {
     fn from(toml: ZmemoryToml) -> Self {
-        Self { path: toml.path }
+        Self {
+            path: toml.path,
+            valid_domains: toml.valid_domains,
+            core_memory_uris: toml.core_memory_uris,
+        }
+    }
+}
+
+impl ZmemoryConfig {
+    pub fn to_runtime_settings(&self) -> codex_zmemory::config::ZmemorySettings {
+        codex_zmemory::config::ZmemorySettings::from_config_over_env(
+            self.valid_domains.clone(),
+            self.core_memory_uris.clone(),
+        )
     }
 }
 

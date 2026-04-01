@@ -287,6 +287,7 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
         &codex_home,
         config.cwd.as_path(),
         config.zmemory.path.as_deref(),
+        Some(config.zmemory.to_runtime_settings()),
         args,
     )?;
     if output.json {

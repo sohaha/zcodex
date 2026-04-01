@@ -51,7 +51,13 @@ impl ToolHandler for ZmemoryHandler {
         };
 
         let zmemory_path = turn.config.zmemory.path.as_deref();
-        match run_zmemory_tool_with_context(&codex_home, turn.cwd.as_path(), zmemory_path, args) {
+        match run_zmemory_tool_with_context(
+            &codex_home,
+            turn.cwd.as_path(),
+            zmemory_path,
+            Some(turn.config.zmemory.to_runtime_settings()),
+            args,
+        ) {
             Ok(result) => {
                 let json =
                     serde_json::to_string_pretty(&result.structured_content).map_err(|err| {

@@ -1938,9 +1938,23 @@
       "additionalProperties": false,
       "description": "Zmemory settings loaded from config.toml.",
       "properties": {
+        "core_memory_uris": {
+          "description": "Optional boot anchor URIs for the current runtime profile.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "path": {
           "description": "Optional override for the `zmemory` database path.",
           "type": "string"
+        },
+        "valid_domains": {
+          "description": "Optional writable memory domains for the current runtime profile.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "type": "object"

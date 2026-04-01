@@ -35,6 +35,12 @@
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+valid_domains = ["core", "project", "notes"]
+core_memory_uris = [
+  "core://agent/coding_operating_manual",
+  "core://my_user/coding_preferences",
+  "core://agent/my_user/collaboration_contract",
+]
 ```
 
 - 如果你想在多个项目间共享同一份库，请显式配置全局路径：
@@ -49,8 +55,10 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 
 ## 域与 boot 基线
 
+- `[zmemory].valid_domains` / `[zmemory].core_memory_uris` 可直接声明 runtime profile
 - `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core`
 - `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent,core://my_user,core://agent/my_user`
+- 优先级：`[zmemory]` 配置 > 环境变量 > 产品默认值
 - `system` 是保留只读域，不需要写进 `VALID_DOMAINS`
 - 当读写到未知 domain 时，会返回 `unknown domain 'X'. valid domains: ...` 这种显式错误，便于 CLI / tool 调用方直接修正输入。
 
@@ -125,7 +133,7 @@ codex zmemory doctor --json
 
 `system://defaults` / `system://workspace` 用来显式区分“产品默认事实”和“当前工作区实际事实”：
 
-- `system://defaults`：返回产品默认 `validDomains` / `coreMemoryUris`、默认 DB path policy、推荐 coding-memory domains / boot anchors，以及 boot contract 的固定事实对象。
+- `system://defaults`：返回产品默认 `validDomains` / `coreMemoryUris`、默认 DB path policy 与 boot contract 固定事实对象；不会被用户配置改写。
 - `system://workspace`：返回当前实际 `dbPath/source/reason/workspaceKey/workspaceBase`、`hasExplicitZmemoryPath`、`defaultWorkspaceKey/defaultDbPath/dbPathDiffers`、runtime `validDomains/coreMemoryUris`，并内嵌 `boot` / `bootHealthy`。
 - 当问题是在问“现在到底用的是哪个记忆库”“这是产品默认还是当前仓库覆盖”时，应先读 `system://workspace`，再用 `system://defaults` 校对默认值。
 
@@ -226,3 +234,25 @@ codex zmemory doctor --json
 - `handoff`：当前仍由上层项目记忆或 agent 工作流负责，不在 `codex-zmemory` crate 内扩成新的会话管理接口
 
 这样做的目的，是让 `codex-zmemory` 继续只提供稳定的本地动作层，而把“什么时候读、什么时候写、什么时候整理”留给上层 skill 或项目流程编排。
+
+## 推荐的编码记忆配置
+
+推荐把 `zmemory` 作为项目级知识库使用：
+
+```toml
+[zmemory]
+valid_domains = ["core", "project", "notes"]
+core_memory_uris = [
+  "core://agent/coding_operating_manual",
+  "core://my_user/coding_preferences",
+  "core://agent/my_user/collaboration_contract",
+]
+```
+
+建议分层：
+
+- `core://...`：长期稳定的协作规则
+- `project://<repo>/...`：项目架构、模块图、测试入口、常见坑
+- `notes://...`：阶段性 debug 结论、迁移观察、待沉淀经验
+
+建议让 boot 只保留少量高价值 `core://...` 锚点，不要把整份项目知识全量塞进 `system://boot`。默认数据库仍是项目库；只有需要跨项目共享时，才显式把 `[zmemory].path` 指向全局 DB。

@@ -66,7 +66,25 @@ own config block:
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+valid_domains = ["core", "project", "notes"]
+core_memory_uris = [
+  "core://agent/coding_operating_manual",
+  "core://my_user/coding_preferences",
+  "core://agent/my_user/collaboration_contract",
+]
 ```
+
+`[zmemory]` fields:
+
+- `path`: optional database path override
+- `valid_domains`: optional runtime writable domains override
+- `core_memory_uris`: optional runtime boot anchor override
+
+Runtime precedence is:
+
+1. `[zmemory]` in `config.toml`
+2. environment variables (`VALID_DOMAINS`, `CORE_MEMORY_URIS`)
+3. product defaults
 
 - Absolute paths are used directly.
 - Relative paths are resolved against the active repo root when Codex is
@@ -107,11 +125,13 @@ level of `result` for quick checks):
 fields such as `hasExplicitZmemoryPath`, `defaultDbPath`, `dbPathDiffers`,
 `defaultWorkspaceKey`, `bootHealthy`, and an embedded `boot` snapshot so you
 can tell whether the current session is using the default project database or an explicit
-override.
+override. It always reports the currently effective runtime profile, including
+configured `validDomains` and `coreMemoryUris`.
 
 `system://defaults` is the product-default fact view. It reports the default
-`validDomains`, `coreMemoryUris`, default DB path policy, and the recommended
-coding-memory anchors without conflating them with the current workspace state.
+`validDomains`, `coreMemoryUris`, and default DB path policy without conflating
+those values with the current workspace state. User config changes the
+workspace/runtime view, not the defaults view.
 
 If a direct `read <uri>` misses or `search` returns no matches, use
 `system://workspace`, `stats`, `doctor`, and `system://alias` before concluding

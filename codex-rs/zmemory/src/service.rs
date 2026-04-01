@@ -1357,6 +1357,80 @@ mod tests {
     }
 
     #[test]
+    fn system_views_reflect_runtime_settings_without_changing_defaults() {
+        let (_dir, config) = config_with_settings(ZmemorySettings::from_sources(
+            Some(vec![
+                "core".to_string(),
+                "project".to_string(),
+                "notes".to_string(),
+            ]),
+            Some(vec![
+                "core://agent/coding_operating_manual".to_string(),
+                "core://my_user/coding_preferences".to_string(),
+                "core://agent/my_user/collaboration_contract".to_string(),
+            ]),
+            None,
+            None,
+        ));
+
+        let workspace = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://workspace".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("workspace view should succeed");
+        assert_eq!(
+            workspace["result"]["view"]["validDomains"],
+            json!(["core", "project", "notes"])
+        );
+        assert_eq!(
+            workspace["result"]["view"]["coreMemoryUris"],
+            json!([
+                "core://agent/coding_operating_manual",
+                "core://my_user/coding_preferences",
+                "core://agent/my_user/collaboration_contract"
+            ])
+        );
+
+        let boot = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://boot".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("boot view should succeed");
+        assert_eq!(boot["result"]["view"]["configuredUriCount"], 3);
+        assert_eq!(
+            boot["result"]["view"]["configuredUris"],
+            json!([
+                "core://agent/coding_operating_manual",
+                "core://my_user/coding_preferences",
+                "core://agent/my_user/collaboration_contract"
+            ])
+        );
+
+        let defaults = execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some("system://defaults".to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("defaults view should succeed");
+        assert_eq!(defaults["result"]["view"]["validDomains"], json!(["core"]));
+        assert_eq!(
+            defaults["result"]["view"]["coreMemoryUris"],
+            json!(["core://agent", "core://my_user", "core://agent/my_user"])
+        );
+    }
+
+    #[test]
     fn alias_and_manage_triggers_are_visible_in_read() {
         let (_dir, config) = config();
         execute_action(

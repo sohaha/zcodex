@@ -126,6 +126,7 @@ async fn zmemory_function_output_exposes_bounded_json_and_persists_memory() -> R
         test.home.path(),
         test.cwd_path(),
         None,
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
             uri: Some("core://agent-profile".to_string()),
@@ -309,6 +310,7 @@ async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
         test.home.path(),
         test.cwd_path(),
         None,
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
             uri: Some("core://team-salem".to_string()),
@@ -339,6 +341,7 @@ async fn zmemory_function_search_returns_bounded_json_for_existing_memory() -> R
     run_zmemory_tool_with_context(
         test.home.path(),
         test.cwd_path(),
+        None,
         None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -413,6 +416,7 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
         test.home.path(),
         test.cwd_path(),
         None,
+        None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
@@ -480,6 +484,7 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     run_zmemory_tool_with_context(
         test.home.path(),
         test.cwd_path(),
+        None,
         None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -628,6 +633,78 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
     );
     assert_eq!(payload["result"]["view"]["boot"]["view"], "boot");
     assert_eq!(payload["result"]["view"]["bootHealthy"], false);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+        config.zmemory.valid_domains = Some(vec![
+            "core".to_string(),
+            "project".to_string(),
+            "notes".to_string(),
+        ]);
+        config.zmemory.core_memory_uris = Some(vec![
+            "core://agent/coding_operating_manual".to_string(),
+            "core://my_user/coding_preferences".to_string(),
+            "core://agent/my_user/collaboration_contract".to_string(),
+        ]);
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-workspace-profile",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "read",
+                    "uri": "system://workspace"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("inspect configured zmemory runtime profile")
+        .await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-workspace-profile")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(
+        payload["result"]["view"]["validDomains"],
+        json!(["core", "project", "notes"])
+    );
+    assert_eq!(
+        payload["result"]["view"]["coreMemoryUris"],
+        json!([
+            "core://agent/coding_operating_manual",
+            "core://my_user/coding_preferences",
+            "core://agent/my_user/collaboration_contract"
+        ])
+    );
 
     Ok(())
 }

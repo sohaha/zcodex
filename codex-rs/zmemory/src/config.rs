@@ -45,10 +45,7 @@ impl ZmemoryConfig {
             codex_home,
             workspace_base,
             path_resolution,
-            ZmemorySettings::from_env_vars(
-                std::env::var(VALID_DOMAINS_ENV).ok(),
-                std::env::var(CORE_MEMORY_URIS_ENV).ok(),
-            ),
+            ZmemorySettings::from_config_over_env(None, None),
         )
     }
 
@@ -109,10 +106,39 @@ impl ZmemoryConfig {
 }
 
 impl ZmemorySettings {
+    pub fn from_config_over_env(
+        valid_domains: Option<Vec<String>>,
+        core_memory_uris: Option<Vec<String>>,
+    ) -> Self {
+        Self::from_sources(
+            valid_domains,
+            core_memory_uris,
+            std::env::var(VALID_DOMAINS_ENV).ok(),
+            std::env::var(CORE_MEMORY_URIS_ENV).ok(),
+        )
+    }
+
     pub fn from_env_vars(valid_domains: Option<String>, core_memory_uris: Option<String>) -> Self {
+        Self::from_sources(None, None, valid_domains, core_memory_uris)
+    }
+
+    pub fn from_sources(
+        valid_domains: Option<Vec<String>>,
+        core_memory_uris: Option<Vec<String>>,
+        env_valid_domains: Option<String>,
+        env_core_memory_uris: Option<String>,
+    ) -> Self {
         Self {
-            valid_domains: parse_csv(valid_domains.as_deref(), DEFAULT_VALID_DOMAINS),
-            core_memory_uris: parse_csv(core_memory_uris.as_deref(), DEFAULT_CORE_MEMORY_URIS),
+            valid_domains: parse_setting_values(
+                valid_domains.as_deref(),
+                env_valid_domains.as_deref(),
+                DEFAULT_VALID_DOMAINS,
+            ),
+            core_memory_uris: parse_setting_values(
+                core_memory_uris.as_deref(),
+                env_core_memory_uris.as_deref(),
+                DEFAULT_CORE_MEMORY_URIS,
+            ),
         }
     }
 }
@@ -160,23 +186,37 @@ fn sanitize_project_slug(raw: &str) -> String {
     slug.trim_start_matches('-').to_string()
 }
 
-fn parse_csv(raw: Option<&str>, defaults: &[&str]) -> Vec<String> {
-    let values = raw
-        .map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| value.to_lowercase())
-                .collect::<Vec<_>>()
-        })
+fn parse_setting_values(
+    configured: Option<&[String]>,
+    env_raw: Option<&str>,
+    defaults: &[&str],
+) -> Vec<String> {
+    let values = configured
+        .map(|values| normalize_values(values.iter().map(String::as_str)))
         .filter(|values| !values.is_empty())
-        .unwrap_or_else(|| defaults.iter().map(|value| value.to_string()).collect());
+        .or_else(|| {
+            env_raw
+                .map(|value| {
+                    normalize_values(
+                        value
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty()),
+                    )
+                })
+                .filter(|values| !values.is_empty())
+        })
+        .unwrap_or_else(|| normalize_values(defaults.iter().copied()));
 
+    values
+}
+
+fn normalize_values<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut deduped = Vec::new();
     for value in values {
-        if !deduped.contains(&value) {
-            deduped.push(value);
+        let normalized = value.trim().to_lowercase();
+        if !normalized.is_empty() && !deduped.contains(&normalized) {
+            deduped.push(normalized);
         }
     }
     deduped
@@ -265,6 +305,34 @@ mod tests {
                     "notes".to_string(),
                 ],
                 core_memory_uris: vec!["core://agent".to_string(), "core://my_user".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn settings_prefer_config_values_over_env() {
+        let settings = ZmemorySettings::from_sources(
+            Some(vec![
+                "core".to_string(),
+                "project".to_string(),
+                "CORE".to_string(),
+            ]),
+            Some(vec![
+                "core://agent/coding_operating_manual".to_string(),
+                "core://my_user/coding_preferences".to_string(),
+            ]),
+            Some("writer,notes".to_string()),
+            Some("core://agent,core://my_user".to_string()),
+        );
+
+        assert_eq!(
+            settings,
+            ZmemorySettings {
+                valid_domains: vec!["core".to_string(), "project".to_string()],
+                core_memory_uris: vec![
+                    "core://agent/coding_operating_manual".to_string(),
+                    "core://my_user/coding_preferences".to_string(),
+                ],
             }
         );
     }

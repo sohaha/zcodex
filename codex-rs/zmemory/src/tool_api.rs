@@ -1,4 +1,5 @@
 use crate::config::ZmemoryConfig;
+use crate::config::ZmemorySettings;
 use crate::path_resolution::resolve_workspace_base_path;
 use crate::path_resolution::resolve_zmemory_path;
 use crate::schema::DEFAULT_DOMAIN;
@@ -155,18 +156,24 @@ pub fn run_zmemory_tool(
     args: ZmemoryToolCallParam,
 ) -> Result<ZmemoryToolResult> {
     let cwd = std::env::current_dir()?;
-    run_zmemory_tool_with_context(codex_home, &cwd, None, args)
+    run_zmemory_tool_with_context(codex_home, &cwd, None, None, args)
 }
 
 pub fn run_zmemory_tool_with_context(
     codex_home: &Path,
     cwd: &Path,
     zmemory_path: Option<&Path>,
+    settings: Option<ZmemorySettings>,
     args: ZmemoryToolCallParam,
 ) -> Result<ZmemoryToolResult> {
     let path_resolution = resolve_zmemory_path(codex_home, cwd, zmemory_path)?;
     let workspace_base = resolve_workspace_base_path(cwd)?;
-    let config = ZmemoryConfig::new(codex_home, workspace_base, path_resolution);
+    let config = match settings {
+        Some(settings) => {
+            ZmemoryConfig::new_with_settings(codex_home, &workspace_base, path_resolution, settings)
+        }
+        None => ZmemoryConfig::new(codex_home, &workspace_base, path_resolution),
+    };
     let structured_content = execute_action(&config, &args)?;
     let text = render_summary(&structured_content);
     Ok(ZmemoryToolResult {
