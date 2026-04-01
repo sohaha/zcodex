@@ -10,7 +10,6 @@ pub(crate) mod shell_search_rewrite;
 
 pub(crate) use classification::ProblemKind;
 pub(crate) use context::AutoTldrContext;
-pub(crate) use context::build_subagent_tldr_guidance;
 pub(crate) use context::should_auto_warm_tldr;
 pub(crate) use directives::ToolRoutingDirectives;
 pub(crate) use directives::extract_tool_routing_directives;
