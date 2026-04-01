@@ -43,14 +43,14 @@ touch_points = [
   "codex-rs/zmemory/src/tool_api.rs"
 ]
 depends_on = []
-done_when = "embedded zmemory 能稳定导出 defaults/workspace 事实对象，并能表达显式 `zmemory_path` 与产品默认路径的差异"
+done_when = "embedded zmemory 能稳定导出 defaults/workspace 事实对象，并能表达显式 `[zmemory].path` 与产品默认路径的差异"
 validate_by = "Run existing repository command cargo test -p codex-zmemory --quiet"
 regress_by = "none"
 regress_timing = "after_done"
 status = "done"
 validate_status = "passed"
 regress_status = "not_needed"
-notes = "此 issue 只负责事实层与结构化输出，不把回答语义硬编码到提示文本。本轮由主代理直接执行：`system_views/service/tool_api` 契约需要连续判断，且当前回合未显式授权子代理。现已在 `codex-zmemory` 增加 `system://defaults` 与 `system://workspace`：前者导出产品默认 domains/boot/db-path policy，后者导出当前 workspace 的 dbPath/source/reason、显式 `zmemory_path`、runtime domains/boot、默认路径推导与 `dbPathDiffers`；`tool_api` 的 read summary 也会对 system view 给出更清晰摘要。验证已通过：`cargo nextest run -p codex-zmemory`。自审未发现额外阻塞问题。"
+notes = "此 issue 只负责事实层与结构化输出，不把回答语义硬编码到提示文本。本轮由主代理直接执行：`system_views/service/tool_api` 契约需要连续判断，且当前回合未显式授权子代理。现已在 `codex-zmemory` 增加 `system://defaults` 与 `system://workspace`：前者导出产品默认 domains/boot/db-path policy，后者导出当前 workspace 的 dbPath/source/reason、显式 `[zmemory].path`、runtime domains/boot、默认路径推导与 `dbPathDiffers`；`tool_api` 的 read summary 也会对 system view 给出更清晰摘要。验证已通过：`cargo nextest run -p codex-zmemory`。自审未发现额外阻塞问题。"
 
 [[issue]]
 id = "a3"
@@ -104,7 +104,7 @@ regress_timing = "after_done"
 status = "done"
 validate_status = "passed"
 regress_status = "passed"
-notes = "a1/a2/a3 已完成后，已在 `core/src/tools/spec.rs`、`core/src/tools/spec_tests.rs`、`core/tests/suite/zmemory_e2e.rs` 对齐新的 embedded zmemory runtime fact contract：tool spec 公开 `system://defaults|workspace`，e2e 覆盖 explicit `zmemory_path` 与产品默认路径的差异，并补了一个走 `--test all` 链路的 tool spec 文案断言，避免被无关的 core lib unit-test 编译问题阻塞。验证继续使用独立 `CARGO_HOME=/tmp/codex-cargo-home-zmemory-a3` 与 `CARGO_TARGET_DIR=/tmp/codex-cargo-target-zmemory-a3`；已通过 `cargo test -p codex-core --test all zmemory_prompt --quiet` 与 `cargo test -p codex-core --test all zmemory_ --quiet`。2026-04-01 执行阶段补做 issue 写回修复，移除重复的 `status` 行，恢复 TOML 合同可解析状态。"
+notes = "a1/a2/a3 已完成后，已在 `core/src/tools/spec.rs`、`core/src/tools/spec_tests.rs`、`core/tests/suite/zmemory_e2e.rs` 对齐新的 embedded zmemory runtime fact contract：tool spec 公开 `system://defaults|workspace`，e2e 覆盖 explicit `[zmemory].path` 与产品默认路径的差异，并补了一个走 `--test all` 链路的 tool spec 文案断言，避免被无关的 core lib unit-test 编译问题阻塞。验证继续使用独立 `CARGO_HOME=/tmp/codex-cargo-home-zmemory-a3` 与 `CARGO_TARGET_DIR=/tmp/codex-cargo-target-zmemory-a3`；已通过 `cargo test -p codex-core --test all zmemory_prompt --quiet` 与 `cargo test -p codex-core --test all zmemory_ --quiet`。2026-04-01 执行阶段补做 issue 写回修复，移除重复的 `status` 行，恢复 TOML 合同可解析状态。"
 
 [[issue]]
 id = "a5"

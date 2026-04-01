@@ -4,13 +4,13 @@
 > 只写已确认事实；若信息不清楚或需要假设，先回到对话澄清，不要把未确认内容写进计划。
 
 ## 背景
-- 当前状态：仓库当前用同一个 `Feature::MemoryTool` 同时控制原生 startup memory pipeline 与 `zmemory` tool 暴露；原生 memory 的 developer prompt 仍会注入只读 memory 指引；`zmemory` 仍通过 `zmemory_path` 和默认 workspace 隔离路径策略工作。
+- 改造前状态（规划时基线）：仓库当时用同一个 `Feature::MemoryTool` 同时控制原生 startup memory pipeline 与 `zmemory` tool 暴露；原生 memory 的 developer prompt 仍会注入只读 memory 指引；`zmemory` 当时仍通过顶层 `zmemory_path` 和默认 workspace 隔离路径策略工作。
 - 触发原因：用户明确要求原生 openai/codex 内置 memory 与 `zmemory` 在语义、feature、prompt、配置、启动流程和运行时行为上彻底解耦，并接受一次性 breaking change。
-- 预期影响：需要调整 feature 命名与接线、拆分 prompt 与配置归属、把 `zmemory` 从当前顶层 `zmemory_path` 入口迁移到独立配置块、重写 `zmemory` 默认路径策略、更新测试与文档，确保两套系统默认同时开启但彼此独立。
+- 预期影响：需要调整 feature 命名与接线、拆分 prompt 与配置归属、把 `zmemory` 从旧的顶层 `zmemory_path` 入口迁移到独立配置块、重写 `zmemory` 默认路径策略、更新测试与文档，确保两套系统默认同时开启但彼此独立。
 
 ## 目标
 - 目标结果：原生 memory 与 `zmemory` 各自拥有独立 feature、独立 prompt、独立配置入口和独立运行时控制逻辑；默认两者都开启，但开关和行为互不影响。
-- 完成定义（DoD）：关闭任一系统时另一套仍可工作；`[memories]` 仅服务原生 memory；顶层 `zmemory_path` 不再作为主入口，`zmemory` 改由独立配置块承载路径/开关；`zmemory` 默认落到全局根路径；prompt 不再混淆两套 memory 的只读/可写语义；相关代码、测试、文档同步更新。
+- 完成定义（DoD）：关闭任一系统时另一套仍可工作；`[memories]` 仅服务原生 memory；旧的顶层 `zmemory_path` 不再作为主入口，`zmemory` 改由独立 `[zmemory]` 配置块承载路径/开关；`zmemory` 默认落到全局根路径；prompt 不再混淆两套 memory 的只读/可写语义；相关代码、测试、文档同步更新。
 - 非目标：无条件保留旧 feature/旧路径策略的兼容桥接；扩展新的外部 memory 后端；修改与本次解耦无关的业务功能。
 
 ## 范围
@@ -28,17 +28,17 @@
 - 外部依赖（系统/人员/数据/权限等）：无额外外部系统依赖；实现期依赖仓库现有 Rust 测试与文档更新流程。
 
 ## 实施策略
-- 总体方案：先把“原生 memory”与“zmemory”从 feature gate 层拆开，再分别清理 prompt 注入与配置归属；随后把 `zmemory` 从顶层 `zmemory_path` 迁移到独立配置块并将默认路径策略改到全局根，最后补齐测试/文档并做回归验证，确认默认双开时两边互不影响。
-- 关键决策：拆分 `Feature::MemoryTool` 为两个独立 feature；保留 `[memories]` 给原生 memory；把当前顶层 `zmemory_path` 迁移为 `zmemory` 独立配置块的一部分并作为 breaking change 收口；`zmemory` 默认路径改为全局根；原生 memory prompt 与 `zmemory` prompt 各自独立维护。
-- 明确不采用的方案（如有）：不继续沿用单一 feature 同控两套系统；不让 `[memories]` 同时承载 `zmemory` 配置；不保留“workspace 隔离默认路径 + 通过显式 `zmemory_path` 才切全局根”的旧默认模型。
+- 总体方案：先把“原生 memory”与“zmemory”从 feature gate 层拆开，再分别清理 prompt 注入与配置归属；随后把 `zmemory` 从旧的顶层 `zmemory_path` 迁移到独立 `[zmemory]` 配置块并将默认路径策略改到全局根，最后补齐测试/文档并做回归验证，确认默认双开时两边互不影响。
+- 关键决策：拆分 `Feature::MemoryTool` 为两个独立 feature；保留 `[memories]` 给原生 memory；把旧的顶层 `zmemory_path` 迁移为独立 `[zmemory]` 配置块的一部分并作为 breaking change 收口；`zmemory` 默认路径改为全局根；原生 memory prompt 与 `zmemory` prompt 各自独立维护。
+- 明确不采用的方案（如有）：不继续沿用单一 feature 同控两套系统；不让 `[memories]` 同时承载 `zmemory` 配置；不保留“workspace 隔离默认路径 + 通过显式 `[zmemory].path` 才切全局根”的旧默认模型。
 
 ## 阶段拆分
 > 可按需增减阶段；简单任务可只保留一个阶段。
 
 ### 阶段一：梳理边界并拆分 feature / 配置归属
 - 目标：明确原生 memory 与 `zmemory` 的开关、配置与运行时入口归属，并完成代码接线拆分。
-- 交付物：新的 feature 定义与引用修改、原生 memory 仅依赖自己的 feature/配置、`zmemory` tool 仅依赖自己的 feature/配置的实现与测试更新、顶层 `zmemory_path` 迁移方案落到新的 `zmemory` 配置块。
-- 完成条件：原生 memory startup/prompt 不再读取 `zmemory` 的开关；`zmemory` tool 不再依赖原生 memory feature；顶层 `zmemory_path` 主入口已删除或迁移到 `zmemory` 独立配置块；相关单测能表达两边独立开关行为。
+- 交付物：新的 feature 定义与引用修改、原生 memory 仅依赖自己的 feature/配置、`zmemory` tool 仅依赖自己的 feature/配置的实现与测试更新、旧顶层 `zmemory_path` 的迁移方案落到新的 `[zmemory]` 配置块。
+- 完成条件：原生 memory startup/prompt 不再读取 `zmemory` 的开关；`zmemory` tool 不再依赖原生 memory feature；旧顶层 `zmemory_path` 主入口已删除或迁移到独立 `[zmemory]` 配置块；相关单测能表达两边独立开关行为。
 - 依赖：现有 feature/config 引用点清单与仓库测试基线。
 
 ### 阶段二：分离 prompt 与默认路径策略
@@ -65,7 +65,7 @@
 ## 风险与缓解
 - 关键风险：feature 拆分后遗漏某些接线点，导致默认行为变化或测试静默失效。
 - 触发信号：原生 memory 或 `zmemory` 的工具/启动测试在单独启停场景下失败；prompt 快照仍混入对方语义；配置解析仍沿用旧字段。
-- 缓解措施：先梳理所有 `Feature::MemoryTool` / `generate_memories` / `use_memories` / `zmemory_path` 引用点并分组改动；用 feature on/off 定点测试覆盖隔离边界；同步更新文档与 schema，避免文档代码漂移。
+- 缓解措施：先梳理所有 `Feature::MemoryTool` / `generate_memories` / `use_memories` / 旧 `zmemory_path` 引用点并分组改动；用 feature on/off 定点测试覆盖隔离边界；同步更新文档与 schema，避免文档代码漂移。
 - 回滚/恢复方案（如需要）：若阶段性改动导致默认行为不稳，可回滚到拆分前的 feature/config 接线，再分层重新提交；计划内不保留长期兼容层。
 
 ## 参考
