@@ -1,0 +1,85 @@
+plan = "plan/2026-04-01-sync-openai-codex-tui-mainline.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "融合上游核心与工具链冲突并保住本地运行契约"
+scope = """
+在独立 worktree 中先收口非 TUI 主体的上游同步冲突，包括 `codex-rs/core`、`codex-rs/cli`、`codex-rs/tools`、`codex-rs/app-server`、Cargo/Bazel/CI/`justfile` 等关键入口，目标是让采用上游 TUI 主实现前的基础协议、启动入口、构建脚本与本地现有能力保持兼容。包含必要的冲突融合与定向测试；不在本 issue 中完成 TUI 主实现迁移与兼容层限制移除。
+"""
+touch_points = [
+  "module:codex-core",
+  "module:codex-cli",
+  "module:codex-tools",
+  "module:codex-app-server",
+  "codex-rs/Cargo.toml",
+  "codex-rs/core/src/config/mod.rs",
+  "codex-rs/core/src/model_provider_info.rs",
+  "codex-rs/core/src/models_manager/manager.rs",
+  "codex-rs/core/src/tools/router.rs",
+  "codex-rs/core/src/tools/spec.rs",
+  "codex-rs/cli/src/main.rs",
+  "codex-rs/app-server/tests/common/models_cache.rs",
+  ".github/workflows/bazel.yml",
+  ".github/workflows/rust-ci.yml",
+  "justfile",
+  "tools/argument-comment-lint/*"
+]
+depends_on = []
+done_when = "非 TUI 关键冲突完成融合，采用上游 `codex-rs/tui` 前所依赖的 core/cli/tools/构建契约可编译、可测试，且不会回退当前本地分支已存在的关键运行能力"
+validate_by = "在 worktree 中完成冲突解决后，运行仓库现有命令对受影响 Rust crate 做定向验证；至少覆盖 `codex-core` 与直接受影响的 CLI/工具链入口，并记录无法在当前环境完成的检查"
+regress_by = "在 TUI 主实现迁移完成前，重新运行本 issue 中已通过的 core/CLI 定向命令，确认后续融合未破坏基础契约"
+regress_timing = "before_fanout"
+status = "in_progress"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "执行中：当前轮已完成 a1 的第一批非 TUI 冲突融合，并建立本地功能保留清单。已明确需要保留的本地能力包括：1）CLI 中 native-tldr / zmemory 相关入口与中文帮助；2）core 的 provider-specific model routing、chat/anthropic wire_api、request_permissions/tldr/zmemory tool spec；3）shell alias 并行支持与相关 multi-agent 行为；4）构建侧的 target-dir/cargo-home 隔离与 repo 专用 just 入口。worktree 中已先解决 `codex-rs/Cargo.toml`、`codex-rs/cli/src/main.rs`、`codex-rs/core/src/config/mod.rs`、`codex-rs/core/src/model_provider_info.rs`、`codex-rs/core/src/models_manager/manager.rs`、`codex-rs/core/src/models_manager/manager_tests.rs`、`codex-rs/core/src/tools/router.rs`、`codex-rs/core/src/tools/spec.rs`、`codex-rs/core/src/tools/spec_tests.rs`、`codex-rs/core/src/tools/handlers/multi_agents_tests.rs`、`codex-rs/app-server/tests/common/models_cache.rs`、`justfile` 与 argument-comment-lint 工具的冲突。当前仍未完成 `AGENTS.md` 与大批 `codex-rs/tui`/`codex-rs/tui_app_server` 冲突，因此 a1 尚未进入最终 validate_by；后续需在 a2 中继续以上游 `codex-rs/tui` 为主完成主实现迁移，并在完成后回头执行 a1 的定向编译/测试验证。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "将 `codex-rs/tui` 升级为主实现并迁移本地 TUI 能力"
+scope = """
+以上游 `codex-rs/tui` 为主线完成 TUI 冲突解决，移除仓库中把 `codex-rs/tui` 定义为兼容层的限制，并把当前本地分支在 `tui_app_server` 侧承载的必要功能、中文化文案、snapshot 与入口行为保留或等价迁移到新的主实现。包含 `AGENTS.md`、`codex-rs/README.md`、TUI 代码、快照与帮助文案更新；不在本 issue 中处理与本次同步无关的额外 UI 重构。
+"""
+touch_points = [
+  "module:codex-tui",
+  "module:codex-tui-app-server",
+  "AGENTS.md",
+  "codex-rs/README.md",
+  "codex-rs/tui/*",
+  "codex-rs/tui_app_server/*"
+]
+depends_on = ["a1"]
+done_when = "`codex-rs/tui` 成为仓库代码与文档层面的主 TUI 实现，兼容层表述已移除，本地现有 TUI 能力与用户可见中文化行为已在新主实现中保留或等价迁移，且相关 snapshot/测试与源码保持一致"
+validate_by = "运行仓库现有 TUI 定向验证命令与 snapshot 流程，优先覆盖 `codex-tui`；若源码文案或渲染输出变更，需审阅并接受预期的 snapshot 更新，同时人工核对新增用户可见文本已完成中文化"
+regress_by = "运行仓库现有 `codex-tui` 定向命令，并针对本轮保留清单中的关键能力做一次回归核对，确认迁移后没有明显功能丢失或英文文案回退"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "pass"
+regress_status = "not_run"
+notes = "执行时必须先建立功能保留清单，再做 TUI 侧融合；重点核对状态栏、弹窗、multi-agent、request-user-input、帮助/错误提示、CLI 到 TUI 的入口行为，以及本仓库已存在的中文化输出。不能仅通过修改 snapshot 掩盖源码行为变化。当前进展：`codex-rs/tui` 已按上游主线恢复并能通过 `mise exec -- cargo test -p codex-tui --no-run`；本轮进一步修复了 `history_cell` 中模型可用性 NUX 测试的前置条件漂移（上游默认 `show_tooltips = false`，因此测试需显式打开），并接受了对应快照更新。已验证 `mise exec -- cargo test -p codex-tui session_info_uses_availability_nux_tooltip_override -- --nocapture` 与 `mise exec -- cargo nextest run -p codex-tui --no-fail-fast` 均通过，说明当前 TUI 剩余阻塞已收口到通过状态。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "完成同步收口、验证总结、状态回写与回合并"
+scope = """
+在 a1 与 a2 完成后，收口本轮上游同步：执行必要格式化与补充验证，更新 `sync-openai-codex-pr` 的 `STATE.md`，产出结构化同步总结，安全合并回当前 `web` 分支并创建提交，同时更新 `.ai/memory/handoff.md` 与 `.ai/index/`。不在本 issue 中引入新的功能改动。
+"""
+touch_points = [
+  "/workspace/.codex/skills/sync-openai-codex-pr/STATE.md",
+  ".ai/memory/handoff.md",
+  ".ai/index/manifest.json",
+  ".ai/index/tags.json",
+  "/workspace/.worktrees/sync-openai-codex-20260401-104254"
+]
+depends_on = ["a1", "a2"]
+done_when = "本轮同步完成格式化与必要验证，`STATE.md` 回写为真实已落地的上游基线，结构化总结明确说明主要合并内容、冲突决策、影响范围与功能丢失风险，改动已安全合回原分支并提交，交接记忆与索引同步更新"
+validate_by = "在最终回合并前后执行最小必要校验：确认 worktree 无未解决冲突、目标验证命令已记录结果、主工作区只包含本次同步相关改动、`git status --short` 与提交内容一致"
+regress_by = "在主工作区完成回合并后，重新检查本轮已记录的关键验证结果与最终 diff/提交信息，确认 `STATE.md`、总结与实际落地代码一致"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "当前主工作区存在未提交改动，执行本 issue 时必须避免把无关改动误纳入同步提交；若最终无法安全回合并，需保持 `STATE.md` 为旧值并在 notes 中明确阻塞原因。"

@@ -1,0 +1,65 @@
+plan = "plan/2026-04-01-zmemory-configurable-runtime-profile.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "扩展 `[zmemory]` 配置块承载 runtime profile"
+scope = """
+在现有 `[zmemory].path` 基础上，扩展 `config.toml` 配置面，使用户可以声明 `valid_domains` 与 `core_memory_uris`，
+并把这些值接入 `codex-zmemory` 的 runtime settings 装配逻辑。需要同步更新 `codex-rs/core/src/config/*`
+中的配置类型与 schema，以及 `codex-rs/zmemory/src/config.rs` 的 settings 构造逻辑和优先级处理。
+本 issue 不修改 system views 的输出合同，也不在本 issue 中收口 README / docs 的推荐配置说明。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/src/config/types.rs", "codex-rs/core/src/config/mod.rs", "codex-rs/core/config.schema.json", "codex-rs/core/src/config/config_tests.rs", "codex-rs/zmemory/src/config.rs"]
+depends_on = []
+done_when = "`[zmemory]` 至少支持 `path`、`valid_domains`、`core_memory_uris` 三个字段；未配置时继续得到当前产品默认 runtime profile；显式配置时用户值能进入 `codex-zmemory` 的有效设置，并且优先级合同有测试覆盖"
+validate_by = "更新 config/schema/settings 相关测试后，运行仓库现有命令 just write-config-schema && cargo test -p codex-core config::tests:: --quiet && cargo test -p codex-zmemory --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "对齐 system views 与 boot 诊断到用户配置的 runtime profile"
+scope = """
+在 `[zmemory]` runtime profile 可配置后，对齐 `system://workspace`、`system://boot`、`system://defaults`、`stats`、`doctor`
+的输出合同，使当前 system 视图准确区分“当前用户配置事实”与“产品内置默认事实”。包含 `codex-rs/zmemory/src/system_views.rs`
+与 `service.rs` 的输出调整，以及必要的 core e2e / CLI / zmemory 断言更新。
+本 issue 不扩展新的 system view，也不把 `system://defaults` 改成用户默认值视图。
+"""
+touch_points = ["module:codex-zmemory", "module:codex-core", "module:codex-cli", "codex-rs/zmemory/src/system_views.rs", "codex-rs/zmemory/src/service.rs", "codex-rs/zmemory/src/tool_api.rs", "codex-rs/core/tests/suite/zmemory_e2e.rs", "codex-rs/cli/src/zmemory_cmd.rs"]
+depends_on = ["a1"]
+done_when = "用户配置 `valid_domains` / `core_memory_uris` 后，`system://workspace` 与 `system://boot` 能如实反映当前 runtime profile；`system://defaults` 继续只报告产品内置默认值；相关 `stats` / `doctor` / e2e / CLI 断言与该语义一致"
+validate_by = "更新 system view 与 runtime profile 相关测试后，运行仓库现有命令 cargo test -p codex-zmemory --quiet && cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet && cargo test -p codex-cli export_uri_supports_defaults_and_workspace_views --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "收口编码记忆推荐配置与文档说明"
+scope = """
+在配置面与 system view 合同稳定后，同步更新 `docs/config.md`、`docs/zmemory.md`、`codex-rs/zmemory/README.md`
+以及必要的示例文档，补充面向编码协作型长期记忆的推荐配置方案与判读说明。
+需要明确：`system://workspace` 报当前事实，`system://defaults` 报产品默认事实；默认项目库路径不变；
+如果用户要跨项目共享数据库，仍通过显式 `[zmemory].path` 配置实现。
+本 issue 不自动初始化推荐的 `core://...` / `project://...` / `notes://...` 节点内容。
+"""
+touch_points = ["module:codex-zmemory", "module:codex-core", "docs/config.md", "docs/zmemory.md", "docs/example-config.md", "codex-rs/zmemory/README.md"]
+depends_on = ["a1", "a2"]
+done_when = "文档准确描述 `[zmemory].valid_domains`、`[zmemory].core_memory_uris`、system views 的语义边界，以及推荐的编码记忆配置样板；相关说明与当前实现一致"
+validate_by = "人工核对 docs/config.md、docs/zmemory.md、docs/example-config.md、codex-rs/zmemory/README.md 与实际实现一致；如文档断言涉及代码路径调整，再运行仓库现有命令 cargo test -p codex-zmemory --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"

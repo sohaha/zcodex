@@ -80,7 +80,7 @@ $:
               CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=mold
           runner:
               tags: cnb:arch:amd64
-              cpus: 20
+              cpus: 25
           stages:
             - name: bootstrap rust speedup
               script: |
@@ -96,4 +96,4 @@ $:
                 set -eu
                 mkdir -p /root/.cnb/codex-session/zcodex
                 mkdir -p /root/.codex
-                ln -sfn /root/.cnb/codex-session/zcodex /root/.codex/session
+                ln -sfn /root/.cnb/codex-session/zcodex /root/.codex/sessions

@@ -1,0 +1,65 @@
+plan = "plan/2026-04-01-zmemory-proactive-preference-capture.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "固化稳定偏好主动写入 contract 与 canonical URI"
+scope = """
+为“稳定用户偏好主动写入 zmemory”收口首版 contract：明确哪些高确定性偏好信号会触发 durable write，
+它们分别落到 `core://my_user`、`core://agent`、`core://agent/my_user` 哪条 canonical URI，
+以及写入前查重、写入后验证、`create`/`update` 选择的最小规则。允许在 `codex-core` 中补最小 helper、策略枚举或内容模板，
+并为这些 contract 增加聚焦测试或断言，避免后续编排继续依赖隐式约定。
+本 issue 不把 write gate 真正接入 turn 运行时，也不扩展到模糊人格画像或低置信度偏好推断。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/src/memories/prompts.rs", "codex-rs/core/templates/zmemory/write_path.md", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/zmemory/src/config.rs"]
+depends_on = []
+done_when = "首版 contract 明确覆盖用户称呼偏好、助手自称偏好、双方协作称呼约定三类高确定性长期偏好；工程师可以不靠猜测判断目标 URI、查重规则、create/update 选择与写后验证路径；相关聚焦断言能固定该 contract"
+validate_by = "补充 contract / prompt 相关聚焦测试后，运行仓库现有命令 cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet && cargo test -p codex-zmemory --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "在 codex-core 落地稳定偏好主动写入编排"
+scope = """
+基于 a1 固化的 contract，在 `codex-core` 增加稳定偏好 write gate，使系统在识别到高确定性长期偏好时，
+不再只依赖模型临场决定是否调用 `zmemory`，而是通过受控编排走查重、读取当前活动库、再执行 `create` 或 `update` 的主动写入路径。
+需要把现有 `Feature::Zmemory` 接线、tool handler 或相关 orchestration 调用点串起来，并补至少一组端到端验证，证明明确称呼偏好会写入当前活动 `zmemory`。
+本 issue 不扩展到所有用户消息的通用偏好抽取，也不改变 `codex zmemory` CLI 的基础动作接口。
+"""
+touch_points = ["module:codex-core", "codex-rs/core/src/codex.rs", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/core/tests/suite/zmemory_e2e.rs", "codex-rs/core/src/tools/spec.rs"]
+depends_on = ["a1"]
+done_when = "在启用 `Feature::Zmemory` 时，系统对明确的稳定称呼偏好具备受控、可验证的主动写入路径；写入前会针对当前活动库执行读/查重，写入后可通过 `core://my_user`、`core://agent` 或 `core://agent/my_user` 读回验证；未启用 `Feature::Zmemory` 时不会错误触发该编排"
+validate_by = "补充主动写入编排的 e2e / focused tests 后，运行仓库现有命令 cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet && cargo test -p codex-core zmemory_tool_is_available_by_default --quiet && cargo test -p codex-core zmemory_tool_requires_feature_flag --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "收口提示词、文档与回归验证到主动写入语义"
+scope = """
+在主动写入编排稳定后，同步收口 `zmemory` developer instructions、相关 README / docs 与必要回归断言，
+明确区分“`codex-zmemory` 仍是动作层”与“主动写入策略由 `codex-core` 编排承担”的职责边界，
+并把当前活动数据库检查、核心 URI 验真路径和行为边界写清楚。
+本 issue 不新增额外 memory 域，也不把全部长期记忆治理工作一并纳入。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/templates/zmemory/write_path.md", "codex-rs/core/src/memories/prompts.rs", "codex-rs/zmemory/README.md", "docs/zmemory.md"]
+depends_on = ["a1", "a2"]
+done_when = "提示词与文档准确表达主动写入语义、职责边界和验证路径；相关回归断言可证明当前活动库与核心 URI 的行为说明和实现一致"
+validate_by = "更新提示词/文档/回归断言后，运行仓库现有命令 cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet && cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet；并人工核对 codex-rs/zmemory/README.md 与 docs/zmemory.md 和实现一致"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"

@@ -1,0 +1,56 @@
+plan = "plan/2026-04-01-codex-tui-pet-feature.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 `/buddy` 命令与宠物状态模型"
+scope = """
+在 `codex-rs/tui_app_server` 中新增 `/buddy` 命令入口，并补齐首版宠物状态模型、命令分发与最小必要持久化边界。包含：新增 slash command 枚举与 `ChatWidget` 分发处理；定义宠物稳定身份、交互状态和命令参数语义；如实现跨会话保留，则在 `[tui]` 配置下增加受控字段并接入配置读写/写回。此 issue 不负责底部宠物 UI 渲染和快照更新。
+"""
+touch_points = [
+  "module:codex-tui",
+  "module:codex-core",
+  "command:/buddy",
+  "codex-rs/tui_app_server/src/slash_command.rs",
+  "codex-rs/tui_app_server/src/chatwidget.rs",
+  "codex-rs/tui_app_server/src/app.rs",
+  "codex-rs/tui_app_server/src/app_event.rs",
+  "codex-rs/core/src/config/types.rs",
+  "codex-rs/core/src/config/edit.rs",
+  "codex-rs/core/config.schema.json"
+]
+depends_on = []
+done_when = "Rust TUI 能识别并处理 `/buddy` 命令，宠物身份与交互状态有明确运行态模型；若选择持久化，相关 `[tui]` 配置字段、写回逻辑与 schema 已同步，且不会把外观稀有度直接写死到配置中"
+validate_by = "在 `codex-rs` 目录运行针对 `codex-tui` 的定向测试命令，至少覆盖 slash command 解析/分发与新增宠物状态逻辑；若修改 `ConfigToml` 或嵌套类型，再执行 `just write-config-schema` 并补充受影响配置路径的定向测试"
+regress_by = "在后续 UI issue 完成前，重新运行本 issue 的 `codex-tui` 定向测试和配置相关定向测试，确认 `/buddy` 命令、状态模型与配置写回未被破坏"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "首版只允许最小必要持久化；如果执行中发现纯运行态方案已足够满足计划目标，可不新增配置字段，但需要保持 `/buddy` 命令语义与状态来源清晰可测。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "接入底部宠物展示与交互反馈"
+scope = """
+在 a1 提供的命令与状态基础上，把宠物接入 Rust TUI 的底部区域展示链路。包含：新增独立宠物渲染模块或辅助函数；在常见宽度下显示紧凑或展开形态；执行 `/buddy` 交互后产生可见反馈；补齐相关 UI 测试、快照与必要文档同步。此 issue 不扩展到 observer 评论、模型提示注入或 app-server 协议。
+"""
+touch_points = [
+  "module:codex-tui",
+  "codex-rs/tui_app_server/src/bottom_pane/*",
+  "codex-rs/tui_app_server/src/chatwidget.rs",
+  "codex-rs/tui_app_server/src/app.rs",
+  "codex-rs/tui_app_server/src/snapshots/*",
+  "codex-rs/tui_app_server/src/chatwidget/tests.rs",
+  "docs/tui-chat-composer.md"
+]
+depends_on = ["a1"]
+done_when = "底部区域能稳定显示宠物或其紧凑形态，`/buddy` 相关交互会触发用户可观察的状态变化或动画反馈，宽窄终端下布局不破坏现有输入区/状态栏行为，且受影响 UI 快照与必要文档已同步"
+validate_by = "在 `codex-rs` 目录执行 `just fmt`，然后运行 `cargo nextest run -p codex-tui`；若 UI 文本或渲染发生变化，审阅并接受对应 snapshot 更新，并手动检查 `/buddy` 交互与宽度切换下的底部布局表现"
+regress_by = "重新运行 `codex-tui` 定向测试与 snapshot 流程，重点回归 slash command 弹窗、底部状态栏/输入区、以及有无宠物时的底部渲染"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "若修改 `bottom_pane` 的状态机假设或 `chat_composer` 行为，必须按目录规则同步 `docs/tui-chat-composer.md`；执行中优先新增独立宠物模块，避免继续放大 `chatwidget.rs` 或 `footer.rs` 的耦合。"
