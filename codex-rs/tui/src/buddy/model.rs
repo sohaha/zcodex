@@ -6,8 +6,28 @@ use rand::SeedableRng;
 use ratatui::style::Stylize;
 use ratatui::text::Span;
 
+pub(crate) const TICK_DURATION: Duration = Duration::from_millis(500);
 pub(crate) const PET_FEEDBACK_DURATION: Duration = Duration::from_millis(2500);
-pub(crate) const REACTION_DURATION: Duration = Duration::from_millis(4000);
+pub(crate) const REACTION_DURATION: Duration = Duration::from_millis(10_000);
+pub(crate) const REACTION_FADE_WINDOW: Duration = Duration::from_millis(3_000);
+
+const IDLE_SEQUENCE: [BuddyFrame; 15] = [
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::FidgetUp,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::Blink,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::FidgetDown,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+    BuddyFrame::Rest,
+];
 
 const CAT_NAMES: &[&str] = &["Mochi", "Pixel", "Pico", "Nori", "Miso"];
 const FOX_NAMES: &[&str] = &["Ember", "Sable", "Maple", "Juniper", "Vixen"];
@@ -183,6 +203,53 @@ impl BuddySpecies {
             ],
         }
     }
+
+    pub(crate) fn teaser_lines(self) -> &'static [&'static str] {
+        match self {
+            Self::Cat => &[
+                "is loafing nearby. Try /buddy pet.",
+                "flicks an ear like it expects a hello.",
+            ],
+            Self::Fox => &[
+                "is watching the footer with suspicious charm.",
+                "tilts its head like it already knows your next move.",
+            ],
+            Self::Otter => &[
+                "surfaces with a pebble and a tiny grin.",
+                "is ready to trade good vibes for /buddy pet.",
+            ],
+            Self::Rabbit => &[
+                "does a small hop and waits for attention.",
+                "is here, alert, and extremely pettable.",
+            ],
+            Self::Owl => &[
+                "has taken a perch beside the composer.",
+                "blinks once, like a quiet code review invite.",
+            ],
+            Self::Dragon => &[
+                "is curled around the footer like a warm spark.",
+                "puffs a tiny ember that smells like ambition.",
+            ],
+            Self::Ghost => &[
+                "is drifting politely beside your prompt.",
+                "waves with exactly one translucent paw.",
+            ],
+            Self::Robot => &[
+                "boots into standby and requests one pet.",
+                "reports morale systems online and adorable.",
+            ],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BuddyFrame {
+    Rest,
+    Blink,
+    FidgetUp,
+    FidgetDown,
+    ExcitedA,
+    ExcitedB,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -492,6 +559,7 @@ pub(crate) enum BuddyReactionKind {
     Hatch,
     Return,
     Pet,
+    Teaser,
 }
 
 #[derive(Clone, Debug)]
@@ -502,45 +570,139 @@ pub(crate) struct BuddyReaction {
 }
 
 impl BuddyReaction {
-    fn is_active(&self) -> bool {
-        Instant::now() < self.until
+    fn is_active_at(&self, now: Instant) -> bool {
+        now < self.until
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct BuddyState {
     pub(crate) visible: bool,
     pub(crate) pet_count: u32,
     pub(crate) last_action: Option<BuddyLastAction>,
     pub(crate) reaction: Option<BuddyReaction>,
+    pub(crate) pet_started_at: Option<Instant>,
     pub(crate) pet_until: Option<Instant>,
+    tick_origin: Instant,
+}
+
+impl Default for BuddyState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            pet_count: 0,
+            last_action: None,
+            reaction: None,
+            pet_started_at: None,
+            pet_until: None,
+            tick_origin: Instant::now(),
+        }
+    }
 }
 
 impl BuddyState {
+    pub(crate) fn frame(&self) -> BuddyFrame {
+        self.frame_at(Instant::now())
+    }
+
+    pub(crate) fn frame_at(&self, now: Instant) -> BuddyFrame {
+        if self.is_petting_at(now) {
+            return if self.tick_at(now).is_multiple_of(2) {
+                BuddyFrame::ExcitedA
+            } else {
+                BuddyFrame::ExcitedB
+            };
+        }
+
+        IDLE_SEQUENCE[self.tick_at(now) as usize % IDLE_SEQUENCE.len()]
+    }
+
     pub(crate) fn is_petting(&self) -> bool {
+        self.is_petting_at(Instant::now())
+    }
+
+    pub(crate) fn is_petting_at(&self, now: Instant) -> bool {
         self.pet_until
-            .is_some_and(|until| Instant::now() < until && self.visible)
+            .is_some_and(|until| now < until && self.visible)
     }
 
     pub(crate) fn active_reaction(&self) -> Option<&BuddyReaction> {
+        self.active_reaction_at(Instant::now())
+    }
+
+    pub(crate) fn active_reaction_at(&self, now: Instant) -> Option<&BuddyReaction> {
         self.reaction
             .as_ref()
-            .filter(|reaction| reaction.is_active())
+            .filter(|reaction| reaction.is_active_at(now))
     }
 
     pub(crate) fn active_reaction_text(&self) -> Option<&str> {
-        self.active_reaction()
+        self.active_reaction_text_at(Instant::now())
+    }
+
+    pub(crate) fn active_reaction_text_at(&self, now: Instant) -> Option<&str> {
+        self.active_reaction_at(now)
             .map(|reaction| reaction.text.as_str())
     }
 
-    pub(crate) fn next_redraw_in(&self) -> Option<Duration> {
-        [
-            self.reaction.as_ref().map(|reaction| reaction.until),
-            self.pet_until,
-        ]
-        .into_iter()
-        .flatten()
-        .filter_map(|deadline| deadline.checked_duration_since(Instant::now()))
-        .min()
+    pub(crate) fn reaction_is_fading(&self) -> bool {
+        self.reaction_is_fading_at(Instant::now())
     }
+
+    pub(crate) fn reaction_is_fading_at(&self, now: Instant) -> bool {
+        self.active_reaction_at(now).is_some_and(|reaction| {
+            reaction
+                .until
+                .checked_duration_since(now)
+                .is_some_and(|remaining| remaining <= REACTION_FADE_WINDOW)
+        })
+    }
+
+    pub(crate) fn pet_burst_frame(&self) -> Option<usize> {
+        self.pet_burst_frame_at(Instant::now())
+    }
+
+    pub(crate) fn pet_burst_frame_at(&self, now: Instant) -> Option<usize> {
+        let started_at = self.pet_started_at?;
+        if !self.is_petting_at(now) {
+            return None;
+        }
+        let tick = now.duration_since(started_at).as_millis() / TICK_DURATION.as_millis();
+        Some((tick as usize).min(4))
+    }
+
+    pub(crate) fn next_redraw_in(&self) -> Option<Duration> {
+        let now = Instant::now();
+        let mut deadlines = Vec::new();
+
+        if self.visible {
+            deadlines.push(next_tick_deadline(self.tick_origin, now));
+        }
+
+        deadlines.extend(
+            [
+                self.active_reaction_at(now).map(|reaction| reaction.until),
+                self.pet_until.filter(|until| now < *until),
+            ]
+            .into_iter()
+            .flatten(),
+        );
+
+        deadlines
+            .into_iter()
+            .filter_map(|deadline| deadline.checked_duration_since(now))
+            .min()
+    }
+
+    fn tick_at(&self, now: Instant) -> u64 {
+        (now.duration_since(self.tick_origin).as_millis() / TICK_DURATION.as_millis()) as u64
+    }
+}
+
+fn next_tick_deadline(origin: Instant, now: Instant) -> Instant {
+    let elapsed = now.duration_since(origin).as_millis();
+    let tick = TICK_DURATION.as_millis();
+    let rem = elapsed % tick;
+    let delay = if rem == 0 { tick } else { tick - rem };
+    now + Duration::from_millis(delay as u64)
 }

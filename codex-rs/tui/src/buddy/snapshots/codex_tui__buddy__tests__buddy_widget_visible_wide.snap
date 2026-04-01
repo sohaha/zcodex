@@ -1,12 +1,14 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 261
 expression: snapshot_buffer(&buf)
 ---
-  o settles in with a stare that
-  | feels strangely managerial
-  ,_,
- ( x x )
- /)___(\\
-  Talon ★ common owl · visible
-  peak PATIENCE 69 · none · cross eyes · mood alert
+  .------------------------------------.
+  | settles in with a stare that feels |
+  | strangely managerial               |
+  '------------------------------------.
+    \
+    ,_,
+   ( x_x )
+   /)___(\\
+  Talon ★ common owl · visible · chatty
+  peak PATIENCE 69 · none · cross eyes · hatching · pets 0

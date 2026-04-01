@@ -7,12 +7,24 @@ use textwrap::Options;
 use crate::live_wrap::take_prefix_by_width;
 
 use super::model::BuddyBones;
+use super::model::BuddyEye;
+use super::model::BuddyFrame;
 use super::model::BuddyHat;
+use super::model::BuddyRarity;
+use super::model::BuddySpecies;
 use super::model::BuddyState;
 
 const MIN_RENDER_WIDTH: u16 = 12;
-const FULL_LAYOUT_WIDTH: u16 = 46;
-const MAX_BUBBLE_WIDTH: usize = 30;
+const FULL_LAYOUT_WIDTH: u16 = 58;
+const MAX_BUBBLE_WIDTH: usize = 34;
+const NARROW_QUIP_CAP: usize = 26;
+const PET_HEARTS: [&str; 5] = [
+    "   <3    <3   ",
+    "  <3  <3   <3 ",
+    " <3   <3  <3  ",
+    "<3  <3     <3 ",
+    ".   .   .    .",
+];
 
 pub(crate) fn render_lines(
     bones: &BuddyBones,
@@ -27,19 +39,26 @@ pub(crate) fn render_lines(
         return vec![render_narrow_line(bones, state, width)];
     }
 
+    render_wide_lines(bones, state, width)
+}
+
+fn render_wide_lines(bones: &BuddyBones, state: &BuddyState, width: u16) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     if let Some(text) = state.active_reaction_text() {
-        lines.extend(render_bubble(text, width));
+        lines.extend(render_bubble(text, width, state.reaction_is_fading()));
     }
-    if state.is_petting() {
-        lines.push(vec!["  ".into(), "<3".red(), "   ".into(), "<3".red()].into());
+    if let Some(frame) = state.pet_burst_frame() {
+        lines.push(Line::from(vec![
+            "  ".into(),
+            PET_HEARTS[frame].red().bold(),
+        ]));
     }
 
-    for sprite_line in sprite_lines(bones, state) {
-        lines.push(Line::from(vec![Span::styled(
-            sprite_line,
-            rarity_style(bones),
-        )]));
+    for sprite_line in sprite_lines(bones, state.frame()) {
+        lines.push(Line::from(vec![
+            "  ".into(),
+            Span::styled(sprite_line, rarity_style(bones)),
+        ]));
     }
 
     lines.push(render_identity_line(bones, state));
@@ -48,68 +67,113 @@ pub(crate) fn render_lines(
 }
 
 fn render_narrow_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Line<'static> {
-    let label = state
-        .active_reaction_text()
-        .map(|text| format!("\"{text}\""))
-        .unwrap_or_else(|| {
-            let shiny = if bones.shiny { " ✦" } else { "" };
-            format!(
-                "{} {} {}{}",
-                bones.name,
-                bones.rarity.stars(),
-                bones.species.label(),
-                shiny
-            )
-        });
-    let face = mini_face(bones, state);
-    let prefix = if state.is_petting() { "<3 " } else { "" };
+    let label = if let Some(text) = state.active_reaction_text() {
+        let quip = truncate_with_ellipsis(text, NARROW_QUIP_CAP as u16);
+        format!("\"{quip}\"")
+    } else {
+        let shiny = if bones.shiny { " *" } else { "" };
+        format!(
+            "{} {}{} {}",
+            bones.name,
+            bones.rarity.stars(),
+            shiny,
+            bones.species.label()
+        )
+    };
+    let face = mini_face(bones.species, state.frame());
+    let prefix = if state.pet_burst_frame().is_some() {
+        "<3 "
+    } else {
+        ""
+    };
     let plain = format!("{prefix}{face} {label}");
     let truncated = truncate_with_ellipsis(&plain, width);
-
     if truncated != plain {
         return Line::from(truncated);
     }
 
     let mut spans = Vec::new();
-    if state.is_petting() {
-        spans.push("<3 ".red());
+    if state.pet_burst_frame().is_some() {
+        spans.push("<3 ".red().bold());
     }
     spans.push(Span::styled(
         face.to_string(),
         rarity_style(bones).add_modifier(ratatui::style::Modifier::BOLD),
     ));
     spans.push(" ".into());
-    spans.push(bones.name.clone().cyan());
     if let Some(text) = state.active_reaction_text() {
-        spans.push(" ".into());
-        spans.push(format!("\"{text}\"").italic());
+        spans.push(format!("\"{text}\"").italic().into());
     } else {
+        spans.push(bones.name.clone().cyan().bold());
         spans.push(" ".into());
         spans.push(bones.rarity.stars_span());
-        spans.push(" ".into());
-        spans.push(bones.species.label().dim());
         if bones.shiny {
-            spans.push(" ✦".magenta().bold());
+            spans.push(" *".yellow().bold());
         }
     }
     Line::from(spans)
 }
 
-fn render_bubble(text: &str, width: u16) -> Vec<Line<'static>> {
-    let bubble_width = usize::from(width.saturating_sub(6)).clamp(16, MAX_BUBBLE_WIDTH);
+fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
+    let bubble_width = usize::from(width.saturating_sub(8)).clamp(18, MAX_BUBBLE_WIDTH);
     let wrapped = textwrap::wrap(text, Options::new(bubble_width));
-    wrapped
+    let body_width = wrapped
         .iter()
-        .enumerate()
-        .map(|(index, line)| {
-            let prefix = if index == 0 { "  o " } else { "  | " };
-            vec![prefix.dim(), line.to_string().italic()].into()
-        })
-        .collect()
+        .map(|line| line.len())
+        .max()
+        .unwrap_or_default();
+    let border = if fading {
+        Style::default().dim()
+    } else {
+        Style::default().cyan()
+    };
+    let text_style = if fading {
+        Style::default().dim().italic()
+    } else {
+        Style::default().italic()
+    };
+
+    let mut lines = Vec::with_capacity(wrapped.len() + 3);
+    lines.push(Line::from(vec![
+        "  ".into(),
+        Span::styled(format!(".{}.", "-".repeat(body_width + 2)), border),
+    ]));
+
+    for line in wrapped {
+        lines.push(Line::from(vec![
+            "  ".into(),
+            Span::styled("| ", border),
+            Span::styled(format!("{line:<body_width$}"), text_style),
+            Span::styled(" |", border),
+        ]));
+    }
+
+    lines.push(Line::from(vec![
+        "  ".into(),
+        Span::styled(format!("'{}.", "-".repeat(body_width + 2)), border),
+    ]));
+    lines.push(Line::from(vec![
+        "    ".into(),
+        Span::styled("\\".to_string(), border),
+    ]));
+    lines
 }
 
 fn render_identity_line(bones: &BuddyBones, state: &BuddyState) -> Line<'static> {
     let visibility = if state.visible { "visible" } else { "hidden" };
+    let mood = match state.frame() {
+        BuddyFrame::Blink => "blink",
+        BuddyFrame::FidgetUp | BuddyFrame::FidgetDown => "fidgety",
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => "thrilled",
+        BuddyFrame::Rest => {
+            if state.active_reaction_text().is_some() {
+                "chatty"
+            } else {
+                "settled"
+            }
+        }
+    };
+
     let mut spans = vec![
         "  ".into(),
         bones.name.clone().cyan().bold(),
@@ -121,166 +185,239 @@ fn render_identity_line(bones: &BuddyBones, state: &BuddyState) -> Line<'static>
         bones.species.label().dim(),
         " · ".dim(),
         visibility.dim(),
+        " · ".dim(),
+        mood.dim(),
     ];
     if bones.shiny {
         spans.push(" · ".dim());
-        spans.push("shiny".magenta().bold());
+        spans.push("shiny".yellow().bold());
     }
     Line::from(spans)
 }
 
 fn render_traits_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Line<'static> {
     let (primary_name, primary_value) = bones.stats.primary();
-    let mood = if state.is_petting() {
-        "delighted"
-    } else if state.visible {
-        "alert"
-    } else {
-        "resting"
-    };
+    let reaction = state
+        .active_reaction()
+        .map(|reaction| match reaction.kind {
+            super::model::BuddyReactionKind::Hatch => "hatching",
+            super::model::BuddyReactionKind::Return => "returning",
+            super::model::BuddyReactionKind::Pet => "purring",
+            super::model::BuddyReactionKind::Teaser => "teasing",
+        })
+        .unwrap_or("idle");
     let traits = format!(
-        "  peak {} {} · {} · {} eyes · mood {}",
+        "  peak {} {} · {} · {} eyes · {} · pets {}",
         primary_name.label(),
         primary_value,
         bones.hat.label(),
         bones.eye.label(),
-        mood
+        reaction,
+        state.pet_count
     );
-    let truncated = truncate_with_ellipsis(&traits, width);
-    Line::from(truncated.dim())
+    Line::from(truncate_with_ellipsis(&traits, width).dim())
 }
 
-fn sprite_lines(bones: &BuddyBones, state: &BuddyState) -> Vec<String> {
+fn sprite_lines(bones: &BuddyBones, frame: BuddyFrame) -> Vec<String> {
     let mut lines = Vec::new();
-    if let Some(hat) = hat_line(bones.hat) {
+    if let Some(hat) = hat_line(bones.hat, frame) {
         lines.push(hat.to_string());
     }
     lines.extend(match bones.species {
-        super::model::BuddySpecies::Cat => cat_lines(bones, state),
-        super::model::BuddySpecies::Fox => fox_lines(bones, state),
-        super::model::BuddySpecies::Otter => otter_lines(bones, state),
-        super::model::BuddySpecies::Rabbit => rabbit_lines(bones, state),
-        super::model::BuddySpecies::Owl => owl_lines(bones, state),
-        super::model::BuddySpecies::Dragon => dragon_lines(bones, state),
-        super::model::BuddySpecies::Ghost => ghost_lines(bones, state),
-        super::model::BuddySpecies::Robot => robot_lines(bones, state),
+        BuddySpecies::Cat => cat_lines(bones.eye, frame),
+        BuddySpecies::Fox => fox_lines(bones.eye, frame),
+        BuddySpecies::Otter => otter_lines(bones.eye, frame),
+        BuddySpecies::Rabbit => rabbit_lines(bones.eye, frame),
+        BuddySpecies::Owl => owl_lines(bones.eye, frame),
+        BuddySpecies::Dragon => dragon_lines(bones.eye, frame),
+        BuddySpecies::Ghost => ghost_lines(bones.eye, frame),
+        BuddySpecies::Robot => robot_lines(bones.eye, frame),
     });
     lines
 }
 
-fn hat_line(hat: BuddyHat) -> Option<&'static str> {
-    match hat {
-        BuddyHat::None => None,
-        BuddyHat::Crown => Some("   _/\\_   "),
-        BuddyHat::TopHat => Some("   _____   "),
-        BuddyHat::Halo => Some("   .---.   "),
-        BuddyHat::Wizard => Some("    /\\\\    "),
-        BuddyHat::Beanie => Some("   _____   "),
-        BuddyHat::Propeller => Some("  --(*)--  "),
+fn hat_line(hat: BuddyHat, frame: BuddyFrame) -> Option<&'static str> {
+    let lively = matches!(frame, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB);
+    match (hat, lively) {
+        (BuddyHat::None, _) => None,
+        (BuddyHat::Crown, false) => Some("   _/\\_   "),
+        (BuddyHat::Crown, true) => Some("  _/\\/\\_  "),
+        (BuddyHat::TopHat, false) => Some("   _____   "),
+        (BuddyHat::TopHat, true) => Some("  ._____.  "),
+        (BuddyHat::Halo, false) => Some("   .---.   "),
+        (BuddyHat::Halo, true) => Some("   .-o-.   "),
+        (BuddyHat::Wizard, false) => Some("    /\\\\    "),
+        (BuddyHat::Wizard, true) => Some("    /\\/    "),
+        (BuddyHat::Beanie, false) => Some("   _____   "),
+        (BuddyHat::Beanie, true) => Some("   _===_   "),
+        (BuddyHat::Propeller, false) => Some("  --(*)--  "),
+        (BuddyHat::Propeller, true) => Some("  ==(*)==  "),
     }
 }
 
-fn cat_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn cat_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = mouth(frame, "^", "w");
     [
-        "  /\\_/\\\\  ".to_string(),
-        format!(" ( {eye}{eye} ) "),
-        "  > ^ <   ".to_string(),
+        apply_offset("  /\\_/\\\\  ".to_string(), frame),
+        apply_offset(format!(" ( {eye}{eye} ) "), frame),
+        apply_offset(format!("  > {mouth} <  "), frame),
     ]
 }
 
-fn fox_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn fox_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = mouth(frame, "v", "w");
     [
-        " /\\   /\\\\ ".to_string(),
-        format!("( {eye} v {eye} )"),
-        " \\\\_---_//".to_string(),
+        apply_offset(" /\\   /\\\\ ".to_string(), frame),
+        apply_offset(format!("( {eye} {mouth} {eye} )"), frame),
+        apply_offset(" \\\\_---_//".to_string(), frame),
     ]
 }
 
-fn otter_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn otter_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = mouth(frame, "_", "u");
     [
-        "  .-\"\"-.  ".to_string(),
-        format!(" / {eye}  {eye} \\\\"),
-        " \\\\_====_/".to_string(),
+        apply_offset("  .-\"\"-.  ".to_string(), frame),
+        apply_offset(format!(" / {eye}  {eye} \\\\"), frame),
+        apply_offset(format!(" \\\\_={mouth}==_/"), frame),
     ]
 }
 
-fn rabbit_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn rabbit_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = mouth(frame, "^", "w");
     [
-        "  (\\ /)   ".to_string(),
-        format!(" ( {eye} {eye} ) "),
-        " /  ^  \\\\ ".to_string(),
+        apply_offset("  (\\ /)   ".to_string(), frame),
+        apply_offset(format!(" ( {eye} {eye} ) "), frame),
+        apply_offset(format!(" /  {mouth}  \\\\ "), frame),
     ]
 }
 
-fn owl_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn owl_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let brow = match frame {
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => "^",
+        _ => "_",
+    };
     [
-        "  ,_,     ".to_string(),
-        format!(" ( {eye} {eye} ) "),
-        " /)___(\\\\ ".to_string(),
+        apply_offset("  ,_,     ".to_string(), frame),
+        apply_offset(format!(" ( {eye}{brow}{eye} ) "), frame),
+        apply_offset(" /)___(\\\\ ".to_string(), frame),
     ]
 }
 
-fn dragon_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn dragon_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = mouth(frame, "~", "w");
     [
-        "  /\\_/\\\\  ".to_string(),
-        format!(" ( {eye} ~ {eye} )"),
-        "  \\\\_v_// ".to_string(),
+        apply_offset("  /\\_/\\\\  ".to_string(), frame),
+        apply_offset(format!(" ( {eye} {mouth} {eye} )"), frame),
+        apply_offset("  \\\\_v_// ".to_string(), frame),
     ]
 }
 
-fn ghost_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn ghost_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let fringe = match frame {
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => "~^~~~",
+        BuddyFrame::FidgetDown => "~~~~~",
+        _ => " ~~~ ",
+    };
     [
-        "  .---.   ".to_string(),
-        format!(" ( {eye} {eye} ) "),
-        " /~ ~~~\\\\ ".to_string(),
+        apply_offset("  .---.   ".to_string(), frame),
+        apply_offset(format!(" ( {eye} {eye} ) "), frame),
+        apply_offset(format!(" /{fringe}\\\\ "), frame),
     ]
 }
 
-fn robot_lines(bones: &BuddyBones, state: &BuddyState) -> [String; 3] {
-    let eye = bones.eye.glyph(state.is_petting());
+fn robot_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = match frame {
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => "=",
+        BuddyFrame::Blink => "-",
+        _ => "_",
+    };
     [
-        "  [---]   ".to_string(),
-        format!("  | {eye} {eye} | "),
-        "  /|___|\\\\ ".to_string(),
+        apply_offset("  [---]   ".to_string(), frame),
+        apply_offset(format!("  | {eye}{mouth}{eye} | "), frame),
+        apply_offset("  /|___|\\\\ ".to_string(), frame),
     ]
 }
 
-fn mini_face(bones: &BuddyBones, state: &BuddyState) -> &'static str {
-    let petting = state.is_petting();
-    match (bones.species, petting) {
-        (super::model::BuddySpecies::Cat, false) => "(=^.^=)",
-        (super::model::BuddySpecies::Cat, true) => "(=^w^=)",
-        (super::model::BuddySpecies::Fox, false) => "(/\\^.^/\\\\)",
-        (super::model::BuddySpecies::Fox, true) => "(/\\^w^/\\\\)",
-        (super::model::BuddySpecies::Otter, false) => "(o3o)",
-        (super::model::BuddySpecies::Otter, true) => "(o^^o)",
-        (super::model::BuddySpecies::Rabbit, false) => "(\\\\_//)",
-        (super::model::BuddySpecies::Rabbit, true) => "(\\\\^_^//)",
-        (super::model::BuddySpecies::Owl, false) => "(OvO)",
-        (super::model::BuddySpecies::Owl, true) => "(OwO)",
-        (super::model::BuddySpecies::Dragon, false) => "<:===>",
-        (super::model::BuddySpecies::Dragon, true) => "<:^^:>",
-        (super::model::BuddySpecies::Ghost, false) => "(~oo~)",
-        (super::model::BuddySpecies::Ghost, true) => "(~^^~)",
-        (super::model::BuddySpecies::Robot, false) => "[o_o]",
-        (super::model::BuddySpecies::Robot, true) => "[^_^]",
+fn mini_face(species: BuddySpecies, frame: BuddyFrame) -> &'static str {
+    match (species, frame) {
+        (BuddySpecies::Cat, BuddyFrame::Blink) => "(=-.-=)",
+        (BuddySpecies::Cat, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(=^w^=)",
+        (BuddySpecies::Cat, _) => "(=^.^=)",
+        (BuddySpecies::Fox, BuddyFrame::Blink) => "(/\\-.-/\\\\)",
+        (BuddySpecies::Fox, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(/\\^w^/\\\\)",
+        (BuddySpecies::Fox, _) => "(/\\^.^/\\\\)",
+        (BuddySpecies::Otter, BuddyFrame::Blink) => "(-3-)",
+        (BuddySpecies::Otter, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(o^^o)",
+        (BuddySpecies::Otter, _) => "(o3o)",
+        (BuddySpecies::Rabbit, BuddyFrame::Blink) => "(\\\\-.-//)",
+        (BuddySpecies::Rabbit, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(\\\\^w^//)",
+        (BuddySpecies::Rabbit, _) => "(\\\\_//)",
+        (BuddySpecies::Owl, BuddyFrame::Blink) => "(-v-)",
+        (BuddySpecies::Owl, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(OwO)",
+        (BuddySpecies::Owl, _) => "(OvO)",
+        (BuddySpecies::Dragon, BuddyFrame::Blink) => "<:-.-:>",
+        (BuddySpecies::Dragon, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "<:^w^:>",
+        (BuddySpecies::Dragon, _) => "<:==:>",
+        (BuddySpecies::Ghost, BuddyFrame::Blink) => "(~-~-)",
+        (BuddySpecies::Ghost, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(~^^~)",
+        (BuddySpecies::Ghost, _) => "(~oo~)",
+        (BuddySpecies::Robot, BuddyFrame::Blink) => "[-_-]",
+        (BuddySpecies::Robot, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "[^=^]",
+        (BuddySpecies::Robot, _) => "[o_o]",
+    }
+}
+
+fn eye_glyph(eye: BuddyEye, frame: BuddyFrame) -> &'static str {
+    match frame {
+        BuddyFrame::Blink => "-",
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => eye.glyph(true),
+        BuddyFrame::Rest | BuddyFrame::FidgetUp | BuddyFrame::FidgetDown => eye.glyph(false),
+    }
+}
+
+fn mouth(frame: BuddyFrame, calm: &'static str, excited: &'static str) -> &'static str {
+    match frame {
+        BuddyFrame::Blink => calm,
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => excited,
+        BuddyFrame::FidgetUp | BuddyFrame::FidgetDown | BuddyFrame::Rest => calm,
+    }
+}
+
+fn apply_offset(mut line: String, frame: BuddyFrame) -> String {
+    match frame {
+        BuddyFrame::FidgetUp => {
+            if !line.is_empty() {
+                line.remove(0);
+                line.push(' ');
+            }
+            line
+        }
+        BuddyFrame::FidgetDown => {
+            if !line.is_empty() {
+                line.pop();
+                line.insert(0, ' ');
+            }
+            line
+        }
+        BuddyFrame::Rest | BuddyFrame::Blink | BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => line,
     }
 }
 
 fn rarity_style(bones: &BuddyBones) -> Style {
     let base = match bones.rarity {
-        super::model::BuddyRarity::Common => Style::default(),
-        super::model::BuddyRarity::Uncommon => Style::default().green(),
-        super::model::BuddyRarity::Rare => Style::default().cyan(),
-        super::model::BuddyRarity::Epic => Style::default().magenta(),
-        super::model::BuddyRarity::Legendary => Style::default().magenta().bold(),
+        BuddyRarity::Common => Style::default(),
+        BuddyRarity::Uncommon => Style::default().green(),
+        BuddyRarity::Rare => Style::default().cyan(),
+        BuddyRarity::Epic => Style::default().magenta(),
+        BuddyRarity::Legendary => Style::default().yellow().bold(),
     };
     if bones.shiny { base.bold() } else { base }
 }

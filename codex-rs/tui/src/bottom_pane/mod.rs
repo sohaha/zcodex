@@ -1125,6 +1125,9 @@ impl BottomPane {
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(status));
             }
             if self.buddy.is_visible() {
+                if let Some(delay) = self.buddy.next_redraw_in() {
+                    self.request_redraw_in(delay);
+                }
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(&self.buddy));
             }
             // Avoid double-surfacing the same summary and avoid adding an extra
@@ -1220,6 +1223,9 @@ impl BottomPane {
     pub(crate) fn ensure_buddy_visible(&mut self, seed: &str) {
         self.buddy.ensure_visible(seed);
         self.request_redraw();
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
     }
 
     #[cfg(test)]

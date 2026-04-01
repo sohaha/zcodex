@@ -40,13 +40,23 @@ impl BuddyWidget {
     }
 
     pub(crate) fn ensure_visible(&mut self, seed: &str) {
-        let _ = self.ensure_bones(seed);
+        let was_hatched = self.bones.is_some();
+        let bones = self.ensure_bones(seed).clone();
         self.state.visible = true;
+        if !was_hatched && self.state.reaction.is_none() {
+            let now = Instant::now();
+            self.state.reaction = Some(BuddyReaction {
+                kind: BuddyReactionKind::Teaser,
+                text: reaction_text(&bones, BuddyReactionKind::Teaser, /*index*/ 0).to_string(),
+                until: now + REACTION_DURATION,
+            });
+        }
     }
 
     pub(crate) fn show(&mut self, seed: &str) -> BuddyCommandResult {
         let was_hatched = self.bones.is_some();
         let bones = self.ensure_bones(seed).clone();
+        let now = Instant::now();
         self.state.visible = true;
         let reaction_kind = if was_hatched {
             BuddyReactionKind::Return
@@ -57,7 +67,7 @@ impl BuddyWidget {
         self.state.reaction = Some(BuddyReaction {
             kind: reaction_kind,
             text: reaction_text.to_string(),
-            until: Instant::now() + REACTION_DURATION,
+            until: now + REACTION_DURATION,
         });
         self.state.last_action = Some(if was_hatched {
             BuddyLastAction::Reappeared
@@ -92,6 +102,7 @@ impl BuddyWidget {
             };
         };
         self.state.visible = false;
+        self.state.pet_started_at = None;
         self.state.pet_until = None;
         self.state.reaction = None;
         self.state.last_action = Some(BuddyLastAction::Hidden);
@@ -103,14 +114,16 @@ impl BuddyWidget {
 
     pub(crate) fn pet(&mut self, seed: &str) -> BuddyCommandResult {
         let bones = self.ensure_bones(seed).clone();
+        let now = Instant::now();
         self.state.visible = true;
         self.state.pet_count += 1;
-        self.state.pet_until = Some(Instant::now() + PET_FEEDBACK_DURATION);
+        self.state.pet_started_at = Some(now);
+        self.state.pet_until = Some(now + PET_FEEDBACK_DURATION);
         let reaction_text = reaction_text(&bones, BuddyReactionKind::Pet, self.state.pet_count - 1);
         self.state.reaction = Some(BuddyReaction {
             kind: BuddyReactionKind::Pet,
             text: reaction_text.to_string(),
-            until: Instant::now() + REACTION_DURATION,
+            until: now + REACTION_DURATION,
         });
         self.state.last_action = Some(BuddyLastAction::Petted);
 
@@ -141,6 +154,7 @@ impl BuddyWidget {
                 BuddyReactionKind::Hatch => "freshly hatched",
                 BuddyReactionKind::Return => "settled back in",
                 BuddyReactionKind::Pet => "very pleased",
+                BuddyReactionKind::Teaser => "waiting for attention",
             }
         } else if self.state.visible {
             "alert"
@@ -188,6 +202,7 @@ fn reaction_text(bones: &BuddyBones, kind: BuddyReactionKind, index: u32) -> &'s
         BuddyReactionKind::Hatch => bones.species.hatch_lines(),
         BuddyReactionKind::Return => bones.species.return_lines(),
         BuddyReactionKind::Pet => bones.species.pet_lines(),
+        BuddyReactionKind::Teaser => bones.species.teaser_lines(),
     };
     lines[index as usize % lines.len()]
 }
@@ -262,6 +277,17 @@ mod tests {
     }
 
     #[test]
+    fn startup_teaser_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        buddy.ensure_visible("codex-home::project");
+        let width = 60;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_startup_teaser", snapshot_buffer(&buf));
+    }
+
+    #[test]
     fn visible_buddy_narrow_snapshot() {
         let mut buddy = BuddyWidget::new();
         let _ = buddy.show("codex-home::project");
@@ -281,5 +307,12 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         buddy.render(Rect::new(0, 0, width, height), &mut buf);
         assert_snapshot!("buddy_widget_petted", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn visible_buddy_keeps_requesting_animation_frames() {
+        let mut buddy = BuddyWidget::new();
+        buddy.ensure_visible("codex-home::project");
+        assert!(buddy.next_redraw_in().is_some());
     }
 }
