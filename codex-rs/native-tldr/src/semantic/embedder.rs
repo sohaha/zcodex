@@ -19,9 +19,7 @@ use std::path::Path;
 use std::path::PathBuf;
 #[cfg(not(test))]
 use std::sync::Arc;
-#[cfg(not(test))]
 use std::sync::Mutex;
-#[cfg(not(test))]
 use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,6 +65,7 @@ impl SemanticEmbedder {
     ) -> Result<Vec<Vec<f32>>> {
         #[cfg(test)]
         {
+            maybe_fail_test_embedding()?;
             Ok(inputs
                 .iter()
                 .map(|input| fake_embed(input, kind, output_dims))
@@ -78,6 +77,15 @@ impl SemanticEmbedder {
             embed_with_fastembed(&self.model, inputs, kind, output_dims)
         }
     }
+}
+
+const ORT_BACKEND_UNAVAILABLE_MARKER: &str =
+    "semantic embedding backend requires ONNX Runtime dylib";
+
+pub(crate) fn is_embedding_backend_unavailable(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.to_string().contains(ORT_BACKEND_UNAVAILABLE_MARKER))
 }
 
 #[cfg(not(test))]
@@ -192,7 +200,7 @@ fn ensure_onnxruntime_dylib_loadable_at(path: &Path) -> Result<()> {
     if handle.is_null() {
         let detail = dlerror_message().unwrap_or_else(|| "unknown dlopen error".to_string());
         return Err(anyhow::anyhow!(
-            "semantic embedding backend requires ONNX Runtime dylib `{}` to be loadable: {detail}",
+            "{ORT_BACKEND_UNAVAILABLE_MARKER} `{}` to be loadable: {detail}",
             path.display(),
         ));
     }
@@ -209,7 +217,7 @@ fn ensure_onnxruntime_dylib_loadable_at(path: &Path) -> Result<()> {
     if symbol_ptr.is_null() {
         let detail = symbol_error.unwrap_or_else(|| "missing `OrtGetApiBase` symbol".to_string());
         return Err(anyhow::anyhow!(
-            "semantic embedding backend requires ONNX Runtime dylib `{}` to expose `OrtGetApiBase`: {detail}",
+            "{ORT_BACKEND_UNAVAILABLE_MARKER} `{}` to expose `OrtGetApiBase`: {detail}",
             path.display(),
         ));
     }
@@ -273,6 +281,31 @@ fn hash_token(token: &str) -> usize {
     token.bytes().fold(0usize, |acc, byte| {
         acc.wrapping_mul(31).wrapping_add(byte as usize)
     })
+}
+
+#[cfg(test)]
+static TEST_EMBEDDING_FAILURE: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+
+#[cfg(test)]
+pub(crate) fn set_test_embedding_failure(message: Option<&str>) {
+    let mut guard = TEST_EMBEDDING_FAILURE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .expect("test embedding failure lock should not be poisoned");
+    *guard = message.map(str::to_string);
+}
+
+#[cfg(test)]
+fn maybe_fail_test_embedding() -> Result<()> {
+    let guard = TEST_EMBEDDING_FAILURE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .expect("test embedding failure lock should not be poisoned");
+    if let Some(message) = guard.as_ref() {
+        Err(anyhow::anyhow!("{message}"))
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(not(test))]

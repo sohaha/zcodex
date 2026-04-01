@@ -587,14 +587,28 @@ impl SemanticIndexer {
         index: &SemanticIndex,
         query: String,
     ) -> Result<SemanticSearchResponse> {
-        let query_vector = if index.embedding_enabled {
-            Some(
-                self.embedder
-                    .embed_query(&query, index.embedding_dimensions)
-                    .context("embed semantic search query")?,
-            )
+        let (query_vector, embedding_used, fallback_message) = if index.embedding_enabled {
+            match self
+                .embedder
+                .embed_query(&query, index.embedding_dimensions)
+            {
+                Ok(vector) => (Some(vector), true, None),
+                Err(error) if embedder::is_embedding_backend_unavailable(&error) => (
+                    None,
+                    false,
+                    Some(format!(
+                        "semantic embedding unavailable; fell back to lexical ranking: {}",
+                        error
+                            .chain()
+                            .last()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| error.to_string())
+                    )),
+                ),
+                Err(error) => return Err(error).context("embed semantic search query"),
+            }
         } else {
-            None
+            (None, false, None)
         };
         let mut matches: Vec<_> = index
             .units
@@ -642,8 +656,9 @@ impl SemanticIndexer {
             indexed_files: index.indexed_files,
             truncated,
             matches,
-            embedding_used: index.embedding_enabled,
-            message: format!("semantic search returned {result_count} matches"),
+            embedding_used,
+            message: fallback_message
+                .unwrap_or_else(|| format!("semantic search returned {result_count} matches")),
         })
     }
 
@@ -1273,6 +1288,7 @@ mod tests {
     use super::SemanticEmbeddingConfig;
     use super::SemanticIndexer;
     use super::SemanticSearchRequest;
+    use super::embedder::set_test_embedding_failure;
     use super::reset_semantic_index_build_count;
     use super::semantic_index_build_count;
     use crate::lang_support::SupportedLanguage;
@@ -1467,6 +1483,85 @@ fn log() {
             .embedding_score
             .expect("embedding score should be available");
         assert!(score > 0.0);
+    }
+
+    #[test]
+    #[serial]
+    fn semantic_search_auto_falls_back_when_ort_backend_is_unavailable() {
+        set_test_embedding_failure(Some(
+            "semantic embedding backend requires ONNX Runtime dylib `libonnxruntime.so` to be loadable: missing",
+        ));
+
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(
+            src.join("vector.rs"),
+            r#"
+fn handle_request() {
+    log();
+}
+
+fn log() {
+    println!("ready");
+}
+"#,
+        )
+        .expect("vector fixture should write");
+
+        let config = SemanticConfig::default()
+            .with_enabled(true)
+            .with_embedding(SemanticEmbeddingConfig::new(true, 16));
+        let indexer = SemanticIndexer::new(config);
+        let response = indexer
+            .search(
+                tempdir.path(),
+                SemanticSearchRequest {
+                    language: SupportedLanguage::Rust,
+                    query: "handle_request".to_string(),
+                },
+            )
+            .expect("search should fall back instead of erroring");
+
+        set_test_embedding_failure(None);
+
+        assert_eq!(response.embedding_used, false);
+        assert!(!response.matches.is_empty());
+        assert!(response.message.contains("fell back to lexical ranking"));
+    }
+
+    #[test]
+    #[serial]
+    fn semantic_search_preserves_non_ort_embedding_errors() {
+        set_test_embedding_failure(Some("unexpected embedding failure"));
+
+        let tempdir = tempdir().expect("tempdir should exist");
+        let src = tempdir.path().join("src");
+        std::fs::create_dir_all(&src).expect("src dir should exist");
+        std::fs::write(src.join("vector.rs"), "fn handle_request() {}\n")
+            .expect("vector fixture should write");
+
+        let config = SemanticConfig::default()
+            .with_enabled(true)
+            .with_embedding(SemanticEmbeddingConfig::new(true, 16));
+        let indexer = SemanticIndexer::new(config);
+        let error = indexer
+            .search(
+                tempdir.path(),
+                SemanticSearchRequest {
+                    language: SupportedLanguage::Rust,
+                    query: "handle_request".to_string(),
+                },
+            )
+            .expect_err("non-ORT embedding failures should still surface");
+
+        set_test_embedding_failure(None);
+
+        assert!(
+            error
+                .chain()
+                .any(|cause| cause.to_string().contains("unexpected embedding failure"))
+        );
     }
 
     #[test]
