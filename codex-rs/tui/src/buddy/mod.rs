@@ -315,4 +315,16 @@ mod tests {
         buddy.ensure_visible("codex-home::project");
         assert!(buddy.next_redraw_in().is_some());
     }
+
+    #[test]
+    fn visible_buddy_idle_frames_change_over_time() {
+        let mut buddy = BuddyWidget::new();
+        buddy.ensure_visible("codex-home::project");
+        let start = Instant::now();
+        let first = buddy.state.frame_at(start);
+        let second = buddy.state.frame_at(start + model::TICK_DURATION);
+        let third = buddy.state.frame_at(start + model::TICK_DURATION * 2);
+        assert_ne!(first, second);
+        assert_ne!(second, third);
+    }
 }

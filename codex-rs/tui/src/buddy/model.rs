@@ -11,21 +11,18 @@ pub(crate) const PET_FEEDBACK_DURATION: Duration = Duration::from_millis(2500);
 pub(crate) const REACTION_DURATION: Duration = Duration::from_millis(10_000);
 pub(crate) const REACTION_FADE_WINDOW: Duration = Duration::from_millis(3_000);
 
-const IDLE_SEQUENCE: [BuddyFrame; 15] = [
-    BuddyFrame::Rest,
-    BuddyFrame::Rest,
-    BuddyFrame::Rest,
-    BuddyFrame::Rest,
+const IDLE_SEQUENCE: [BuddyFrame; 12] = [
     BuddyFrame::FidgetUp,
-    BuddyFrame::Rest,
-    BuddyFrame::Rest,
-    BuddyFrame::Rest,
-    BuddyFrame::Blink,
-    BuddyFrame::Rest,
     BuddyFrame::Rest,
     BuddyFrame::FidgetDown,
     BuddyFrame::Rest,
+    BuddyFrame::Blink,
     BuddyFrame::Rest,
+    BuddyFrame::FidgetUp,
+    BuddyFrame::Rest,
+    BuddyFrame::FidgetDown,
+    BuddyFrame::Rest,
+    BuddyFrame::Blink,
     BuddyFrame::Rest,
 ];
 

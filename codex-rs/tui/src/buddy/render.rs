@@ -379,7 +379,9 @@ fn eye_glyph(eye: BuddyEye, frame: BuddyFrame) -> &'static str {
     match frame {
         BuddyFrame::Blink => "-",
         BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => eye.glyph(true),
-        BuddyFrame::Rest | BuddyFrame::FidgetUp | BuddyFrame::FidgetDown => eye.glyph(false),
+        BuddyFrame::FidgetUp => "^",
+        BuddyFrame::FidgetDown => "~",
+        BuddyFrame::Rest => eye.glyph(false),
     }
 }
 
