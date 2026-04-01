@@ -26,8 +26,15 @@ npc:
   roles:
     - name: Open-Code
       <<: *prompt-avatar
+      
     - name: Open-Code-Ultra
       <<: *prompt-avatar
+
+    - name: Rust 专家
+      prompt: |
+        你是一位资深 Rust 工程师，擅长并发模型、内存优化和性能调优。
+        用中文回答，保持简洁专业。
+
     - name: Go 专家
       prompt: |
         你是一位资深 Go 后端工程师，擅长并发模型、内存优化和性能调优。
