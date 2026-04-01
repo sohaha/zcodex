@@ -1,0 +1,22 @@
+plan = "plan/2026-04-01-codex-cli-rg-ripgreprc-error.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "清理无效 RIPGREP_CONFIG_PATH 避免 Codex CLI 内 rg 报错"
+scope = """
+在 `codex-cli/bin/codex.js` 的启动入口增加对 `RIPGREP_CONFIG_PATH` 的显式校验：当该环境变量已设置但指向的配置文件不存在时，从传递给原生 `codex` 子进程的环境中移除该变量；保留其他环境变量与有效 ripgrep 配置不变。不在本 issue 中修改 ripgrep 上游行为，也不批量改写仓库里的 `rg` 调用点。
+"""
+touch_points = [
+  "module:codex-cli",
+  "codex-cli/bin/codex.js"
+]
+depends_on = []
+done_when = "Codex CLI 在父进程存在无效 RIPGREP_CONFIG_PATH 时不会再把该变量传给子进程，CLI 内部执行 rg 不再因缺失 ripgreprc 报错，且有效配置文件路径仍被保留"
+validate_by = "修改 `codex-cli/bin/codex.js` 后，用可复现命令验证：1）当 `RIPGREP_CONFIG_PATH` 指向不存在文件时，构造出的子进程环境中已移除该变量；2）当它指向存在文件时，变量仍被保留"
+regress_by = "运行同一组环境构造验证，分别覆盖未设置变量、无效路径、有效路径三种场景"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已在 `codex-cli/bin/codex.js` 增加 `sanitizeRipgrepConfig`，仅在 `RIPGREP_CONFIG_PATH` 指向不存在文件时从子进程环境中移除该变量；并通过 `realpathSync` 处理主模块判定，避免 symlink 启动回归。实现已通过 spec-reviewer 与 code-reviewer。验证已执行：1）`node --input-type=module` 导入并校验未设置/无效路径/有效路径三种场景；2）额外用 symlink 启动脚本验证 `main()` 仍会执行。深度分析结论：根因链为宿主环境中的坏 `RIPGREP_CONFIG_PATH` -> `codex-cli/bin/codex.js` 继承 `process.env` -> 原生 `codex` 默认继续透传环境 -> 内部 `rg` 在实际搜索时读取不存在配置并报错。归因判断为外部环境问题约 40%，CLI 边界未清洗约 60%。当前方案可用但不是最小文本改动；后续更优方向原本是为 `codex-cli` 补最小自动化测试；本轮已补 `codex-cli/test/codex.test.mjs` 与 `npm test` 入口，覆盖未设置/无效路径/有效路径三种场景。若后续再出现类似问题，再考虑把环境清理收口为本地纯函数模块。"

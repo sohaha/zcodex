@@ -6,6 +6,9 @@
     "codex": "bin/codex.js"
   },
   "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
   "engines": {
     "node": ">=16"
   },
