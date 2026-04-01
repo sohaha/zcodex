@@ -35,10 +35,11 @@ notes = "用户已确认允许一次性 breaking change；本 issue 需要把新
 [[issue]]
 id = "a2"
 sequence = 20
-title = "分离 prompt 语义并把 zmemory 默认路径改为全局根"
+title = "分离 prompt 语义并调整 zmemory 默认路径（历史：后续已被项目默认库取代）"
 scope = """
 让原生 memory prompt 与 `zmemory` prompt 各自独立，消除“只读 memory 指引”与 `zmemory` 可写 tool 语义混用；
-同时把 `codex-rs/zmemory` 的默认路径解析从 workspace 隔离模式改成全局根模式，并对齐相应的 runtime contract 与测试。
+该 issue 当时把 `codex-rs/zmemory` 的默认路径解析从 workspace 隔离模式改成全局根模式，并对齐相应的 runtime contract 与测试；
+该默认路径合同随后又在 `2026-04-01-zmemory-project-default-path` 中进一步收口为项目默认库。
 包含 `codex-rs/core/src/codex.rs`、相关 prompt 模板、`codex-rs/zmemory/src/path_resolution.rs` 与对应 core/zmemory 测试。
 不在本 issue 中完成最终文档与 schema 收口。
 """
@@ -54,14 +55,14 @@ touch_points = [
   "codex-rs/zmemory/src/service.rs"
 ]
 depends_on = ["a1"]
-done_when = "原生 memory prompt 与 `zmemory` prompt 已分离，模型上下文不再混淆两套 memory 的只读/可写语义，且 `zmemory` 在无显式配置时默认解析到全局根路径并由现有 runtime contract / 测试覆盖"
+done_when = "原生 memory prompt 与 `zmemory` prompt 已分离，模型上下文不再混淆两套 memory 的只读/可写语义；同时保留该 issue 的历史事实：它曾把 `zmemory` 默认路径切到全局根，并由当时的 runtime contract / 测试覆盖（当前最新默认路径以后续项目默认库合同为准）"
 validate_by = "更新 prompt/path/runtime 相关测试后，运行仓库现有命令 cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet && cargo test -p codex-zmemory --quiet"
 regress_by = "none"
 regress_timing = "after_done"
 status = "done"
 validate_status = "passed"
 regress_status = "not_needed"
-notes = "本 issue 只负责 prompt 语义与默认路径策略，不扩展新的 memory 产品能力；若 system view 或 path resolution 合同需要调整，应同步落到现有测试断言。本轮继续由主代理执行：`codex.rs` prompt 拼装与 `zmemory` 路径合同需要一起判断并同步测试，拆给子代理集成收益不高；可用能力适配仍为 none-applicable。用户已确认 `codex-rs/core/src/codex.rs` 的当前新增改动可作为继续实现 a2 的基线。已完成：新增独立 `zmemory` developer prompt，并在 `Feature::Zmemory` 开启时单独注入，使原生 memory 继续保持只读提示、`zmemory` 明确承担可写长期记忆语义；同时把 `zmemory` 默认路径从 workspace 隔离库改为 `$CODEX_HOME/zmemory/zmemory.db` 全局根，并补齐 `system://defaults` / `system://workspace` 运行时视图、read summary 文案与相关 core/zmemory 测试。验证：`cargo test -p codex-zmemory --quiet` 通过；`cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet` 通过；额外执行 `cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet` 通过。自审：确认默认路径解析不再生成 workspace key，显式 `zmemory.path` 仍保留 repo root/cwd 相对解析语义，且 `system://workspace` 会显式报告当前实际 db 与默认全局根差异。"
+notes = "本 issue 只负责 prompt 语义与默认路径策略，不扩展新的 memory 产品能力；若 system view 或 path resolution 合同需要调整，应同步落到现有测试断言。本轮继续由主代理执行：`codex.rs` prompt 拼装与 `zmemory` 路径合同需要一起判断并同步测试，拆给子代理集成收益不高；可用能力适配仍为 none-applicable。用户已确认 `codex-rs/core/src/codex.rs` 的当前新增改动可作为继续实现 a2 的基线。已完成：新增独立 `zmemory` developer prompt，并在 `Feature::Zmemory` 开启时单独注入，使原生 memory 继续保持只读提示、`zmemory` 明确承担可写长期记忆语义；同时把 `zmemory` 默认路径从 workspace 隔离库改为 `$CODEX_HOME/zmemory/zmemory.db` 全局根，并补齐 `system://defaults` / `system://workspace` 运行时视图、read summary 文案与相关 core/zmemory 测试。验证：`cargo test -p codex-zmemory --quiet` 通过；`cargo test -p codex-core --test all suite::zmemory_e2e:: --quiet` 通过；额外执行 `cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet` 通过。自审：确认当时的默认路径解析不再生成 workspace key，显式 `zmemory.path` 仍保留 repo root/cwd 相对解析语义，且 `system://workspace` 会显式报告当前实际 db 与默认全局根差异。补充说明：该全局根默认合同随后已在 `2026-04-01-zmemory-project-default-path` 中被新的项目默认库策略取代。"
 
 [[issue]]
 id = "a3"

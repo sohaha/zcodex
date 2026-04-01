@@ -124,7 +124,7 @@ dependencies: [prd, tech-review]
 **测试用例**：
 | 用例 ID | 描述 | 类型 |
 |---------|------|------|
-| TC-002-1 | 默认构造时返回 helper 的 `db_path`、workspace key | 单元测试 |
+| TC-002-1 | 默认构造时返回 helper 的 `db_path`、`workspace_key`（稳定项目 key） | 单元测试 |
 | TC-002-2 | 传入 `[zmemory].path` 覆盖，确保 `source=Explicit` | 单元测试 |
 
 **复杂度**：中

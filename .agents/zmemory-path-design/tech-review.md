@@ -35,9 +35,9 @@ dependencies: [prd, architecture]
 |------|------|------|
 | 架构合理性 | ⭐⭐⭐⭐ | 规划了 `[zmemory].path` 解析链与默认哈希目录，但 project identity 与 helper 归属尚未固定，决定不当会导致多端产生不同路径。 |
 | 技术选型 | ⭐⭐⭐⭐ | 继续用 rusqlite & codex_core 现有工具即可，唯一需新增的部分是 `PathBuf` canonical + hash helper；选择仍符合现有依赖。 |
-| 可扩展性 | ⭐⭐⭐⭐ | 统一 helper 后可由 CLI、TUI、app-server 复用解析逻辑；hash 前缀可拓展出清理/诊断命令。 |
+| 可扩展性 | ⭐⭐⭐⭐ | 统一 helper 后可由 CLI、TUI、app-server 复用解析逻辑；稳定项目 key 可拓展出清理/诊断命令。 |
 | 可维护性 | ⭐⭐⭐ | 目前 `ZmemoryConfig` 直接从 `codex_home` 拼路径，新增参数前需重构接口；如果不一起同步 CLI/core，未来回归排查难度会加。 |
-| 安全性 | ⭐⭐⭐⭐ | 使用 canonicalize + hashing 降低符号链接造成的跨 workspace 污染，但首版不应依赖 lowercase/casefold，也不应在解析失败时静默 fallback。 |
+| 安全性 | ⭐⭐⭐⭐ | 使用 canonicalize + hashing 降低符号链接造成的跨项目污染，但首版不应依赖 lowercase/casefold，也不应在解析失败时静默 fallback。 |
 
 **总体评价**：⚠️ 有条件通过
 
@@ -48,7 +48,7 @@ dependencies: [prd, architecture]
 | CLI/core/TUI/agent 各自单独实现 `[zmemory].path` 解析 | 中 | 所有入口 | 把 helper 放在 `codex-rs/zmemory` 内部公共模块，并由 CLI/handler/tool API 统一调用，所有端只处理 helper 返回的 `ZmemoryPathResolution`。 |
 | 对旧全局 `$CODEX_HOME/zmemory/zmemory.db` 的迁移逻辑冲突（PRD 要求手动，架构文档又提到自动复制） | 中 | 升级用户 | 选择一种策略并在架构与 PRD 同步说明：建议保留手动迁移／自定义 `[zmemory].path`，避免自动复制在权限或锁存在时失败；如果保留自动复制，必须在 PRD/README 明确优先级与 fallback。 |
 | 主仓库根/worktree 语义不一致导致默认库身份反复变化 | 高 | 同仓库多 worktree 用户 | 默认与现有主仓库根识别保持一致，让同一主仓库共享一个默认 DB；若未来要支持 worktree 单独隔离，作为后续增量需求。 |
-| Windows/canonicalize 处理不一致导致 hash 目录爆炸或多个 workspace 指向同一目录 | 低 | 跨平台 | 使用 canonical 后的原始路径作为哈希输入，不额外做 lowercase/casefold，并为 Windows 风格路径写 targeted tests。 |
+| Windows/canonicalize 处理不一致导致 hash 目录爆炸或多个项目指向同一目录 | 低 | 跨平台 | 使用 canonical 后的原始路径作为哈希输入，不额外做 lowercase/casefold，并为 Windows 风格路径写 targeted tests。 |
 
 ## 4. 技术可行性分析
 
