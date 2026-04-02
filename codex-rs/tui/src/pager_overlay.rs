@@ -105,9 +105,9 @@ const KEY_CTRL_C: KeyBinding = key_hint::ctrl(KeyCode::Char('c'));
 
 // Common pager navigation hints rendered on the first line
 const PAGER_KEY_HINTS: &[(&[KeyBinding], &str)] = &[
-    (&[KEY_UP, KEY_DOWN], "to scroll"),
-    (&[KEY_PAGE_UP, KEY_PAGE_DOWN], "to page"),
-    (&[KEY_HOME, KEY_END], "to jump"),
+    (&[KEY_UP, KEY_DOWN], "滚动"),
+    (&[KEY_PAGE_UP, KEY_PAGE_DOWN], "翻页"),
+    (&[KEY_HOME, KEY_END], "跳转"),
 ];
 
 // Render a single line of key hints from (key(s), description) pairs.
@@ -458,7 +458,7 @@ impl TranscriptOverlay {
         Self {
             view: PagerView::new(
                 Self::render_cells(&transcript_cells, /*highlight_cell*/ None),
-                "T R A N S C R I P T".to_string(),
+                "转 录".to_string(),
                 usize::MAX,
             ),
             cells: transcript_cells,
@@ -670,13 +670,13 @@ impl TranscriptOverlay {
         let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
         render_key_hints(line1, buf, PAGER_KEY_HINTS);
 
-        let mut pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
+        let mut pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "退出")];
         if self.highlight_cell.is_some() {
-            pairs.push((&[KEY_ESC, KEY_LEFT], "to edit prev"));
-            pairs.push((&[KEY_RIGHT], "to edit next"));
-            pairs.push((&[KEY_ENTER], "to edit message"));
+            pairs.push((&[KEY_ESC, KEY_LEFT], "编辑上一条"));
+            pairs.push((&[KEY_RIGHT], "编辑下一条"));
+            pairs.push((&[KEY_ENTER], "编辑消息"));
         } else {
-            pairs.push((&[KEY_ESC], "to edit prev"));
+            pairs.push((&[KEY_ESC], "编辑上一条"));
         }
         render_key_hints(line2, buf, &pairs);
     }
@@ -741,7 +741,7 @@ impl StaticOverlay {
         let line1 = Rect::new(area.x, area.y, area.width, 1);
         let line2 = Rect::new(area.x, area.y.saturating_add(1), area.width, 1);
         render_key_hints(line1, buf, PAGER_KEY_HINTS);
-        let pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "to quit")];
+        let pairs: Vec<(&[KeyBinding], &str)> = vec![(&[KEY_Q], "退出")];
         render_key_hints(line2, buf, &pairs);
     }
 
@@ -864,8 +864,8 @@ mod tests {
 
         let s = buffer_to_text(&buf, area);
         assert!(
-            s.contains("edit prev"),
-            "expected 'edit prev' hint in overlay footer, got: {s:?}"
+            s.contains("编辑上一条"),
+            "expected '编辑上一条' hint in overlay footer, got: {s:?}"
         );
     }
 
@@ -883,8 +883,8 @@ mod tests {
 
         let s = buffer_to_text(&buf, area);
         assert!(
-            s.contains("edit next"),
-            "expected 'edit next' hint in overlay footer, got: {s:?}"
+            s.contains("编辑下一条"),
+            "expected '编辑下一条' hint in overlay footer, got: {s:?}"
         );
     }
 
