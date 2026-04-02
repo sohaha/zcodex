@@ -85,10 +85,10 @@ impl PendingInputPreview {
                 &mut lines,
                 width,
                 Line::from(vec![
-                    "Messages to be submitted after next tool call".into(),
-                    " (press ".dim(),
+                    "将在下次工具调用后提交的消息".into(),
+                    "（按 ".dim(),
                     key_hint::plain(KeyCode::Esc).into(),
-                    " to interrupt and send immediately)".dim(),
+                    " 中断并立即发送）".dim(),
                 ]),
             );
 
@@ -110,7 +110,7 @@ impl PendingInputPreview {
             Self::push_section_header(
                 &mut lines,
                 width,
-                "Messages to be submitted at end of turn".into(),
+                "将在回合结束时提交的消息".into(),
             );
 
             for steer in &self.rejected_steers {
@@ -128,7 +128,7 @@ impl PendingInputPreview {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
             }
-            Self::push_section_header(&mut lines, width, "Queued follow-up messages".into());
+            Self::push_section_header(&mut lines, width, "排队的后续消息".into());
 
             for message in &self.queued_messages {
                 let wrapped = adaptive_wrap_lines(
@@ -150,7 +150,7 @@ impl PendingInputPreview {
                 Line::from(vec![
                     "    ".into(),
                     self.edit_binding.into(),
-                    " edit last queued message".into(),
+                    " 编辑上一条排队消息".into(),
                 ])
                 .dim(),
             );

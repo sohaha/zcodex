@@ -60,8 +60,7 @@ impl PendingThreadApprovals {
         lines.push(
             Line::from(vec![
                 "    ".into(),
-                "/agent".cyan().bold(),
-                " to switch threads".dim(),
+                "/agent 切换线程".dim(),
             ])
             .dim(),
         );
