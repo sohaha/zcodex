@@ -4,7 +4,7 @@ expression: normalize_snapshot_paths(rendered)
 ---
 • Waiting for background terminal (0s • esc 中 …
   └ cargo test -p codex-core -- --exact…
-(~oo~) "drifts up through the footer with impecc
+(~oo~) "礼 貌 地 从 底 栏 飘 上 来 。 "
 
 
 › Ask Codex to do anything

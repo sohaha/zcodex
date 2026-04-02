@@ -4,16 +4,15 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
 ⚠
-  .-----------------------------------.
-  | drifts up through the footer with |
-  | impeccable manners                |
-  '-----------------------------------.
+  .--------------------------------.
+  | 礼貌地从底栏飘上来。                     |
+  '--------------------------------.
     \
    .---.
   ( ^ ^ )
   / ~~~ \\
-  Echo ★ common ghost · visible · fidgety
-  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0
+  Echo ★ 常见 幽灵 · 可见 · 坐立不安
+  峰值 耐心 74 · 无 · 困倦眼 · 孵化中 · 抚摸 0
 
 
 › Ask Codex to do anything

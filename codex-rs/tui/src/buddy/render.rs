@@ -160,16 +160,16 @@ fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
 }
 
 fn render_identity_line(bones: &BuddyBones, state: &BuddyState) -> Line<'static> {
-    let visibility = if state.visible { "visible" } else { "hidden" };
+    let visibility = if state.visible { "可见" } else { "隐藏" };
     let mood = match state.frame() {
-        BuddyFrame::Blink => "blink",
-        BuddyFrame::FidgetUp | BuddyFrame::FidgetDown => "fidgety",
-        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => "thrilled",
+        BuddyFrame::Blink => "眨眼",
+        BuddyFrame::FidgetUp | BuddyFrame::FidgetDown => "坐立不安",
+        BuddyFrame::ExcitedA | BuddyFrame::ExcitedB => "兴奋",
         BuddyFrame::Rest => {
             if state.active_reaction_text().is_some() {
-                "chatty"
+                "健谈"
             } else {
-                "settled"
+                "安静"
             }
         }
     };
@@ -190,7 +190,7 @@ fn render_identity_line(bones: &BuddyBones, state: &BuddyState) -> Line<'static>
     ];
     if bones.shiny {
         spans.push(" · ".dim());
-        spans.push("shiny".yellow().bold());
+        spans.push("闪亮".yellow().bold());
     }
     Line::from(spans)
 }
@@ -200,14 +200,14 @@ fn render_traits_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Lin
     let reaction = state
         .active_reaction()
         .map(|reaction| match reaction.kind {
-            super::model::BuddyReactionKind::Hatch => "hatching",
-            super::model::BuddyReactionKind::Return => "returning",
-            super::model::BuddyReactionKind::Pet => "purring",
-            super::model::BuddyReactionKind::Teaser => "teasing",
+            super::model::BuddyReactionKind::Hatch => "孵化中",
+            super::model::BuddyReactionKind::Return => "回归中",
+            super::model::BuddyReactionKind::Pet => "呼噜中",
+            super::model::BuddyReactionKind::Teaser => "逗你",
         })
-        .unwrap_or("idle");
+        .unwrap_or("待机");
     let traits = format!(
-        "  peak {} {} · {} · {} eyes · {} · pets {}",
+        "  峰值 {} {} · {} · {}眼 · {} · 抚摸 {}",
         primary_name.label(),
         primary_value,
         bones.hat.label(),

@@ -236,7 +236,7 @@ async fn slash_buddy_show_then_pet_reports_state() {
     assert_eq!(cells.len(), 1, "expected one show info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Buddy hatched:") || rendered.contains("Buddy is back:"),
+        rendered.contains("小伙伴已孵化：") || rendered.contains("小伙伴回来了："),
         "unexpected show message: {rendered:?}"
     );
 
@@ -245,7 +245,7 @@ async fn slash_buddy_show_then_pet_reports_state() {
     assert_eq!(cells.len(), 1, "expected one pet info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("You pet"),
+        rendered.contains("你抚摸了"),
         "unexpected pet message: {rendered:?}"
     );
     assert!(chat.bottom_pane.buddy_visible());
@@ -261,11 +261,11 @@ async fn slash_buddy_status_reports_traits() {
     assert_eq!(cells.len(), 1, "expected one status info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Buddy status:"),
+        rendered.contains("小伙伴状态："),
         "unexpected status message: {rendered:?}"
     );
     assert!(
-        rendered.contains("Peak stat:"),
+        rendered.contains("峰值属性："),
         "expected trait details in status message: {rendered:?}"
     );
 }

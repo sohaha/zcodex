@@ -58,14 +58,14 @@ pub(crate) enum BuddySpecies {
 impl BuddySpecies {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Cat => "cat",
-            Self::Fox => "fox",
-            Self::Otter => "otter",
-            Self::Rabbit => "rabbit",
-            Self::Owl => "owl",
-            Self::Dragon => "dragon",
-            Self::Ghost => "ghost",
-            Self::Robot => "robot",
+            Self::Cat => "猫",
+            Self::Fox => "狐狸",
+            Self::Otter => "水獭",
+            Self::Rabbit => "兔子",
+            Self::Owl => "猫头鹰",
+            Self::Dragon => "龙",
+            Self::Ghost => "幽灵",
+            Self::Robot => "机器人",
         }
     }
 
@@ -85,118 +85,103 @@ impl BuddySpecies {
     pub(crate) fn hatch_lines(self) -> &'static [&'static str] {
         match self {
             Self::Cat => &[
-                "pads into the footer like it was always meant to be there",
-                "appears with the confidence of a cat that owns the terminal",
+                "踏进底栏，像本来就该在那儿。",
+                "带着一副主宰终端的猫式自信出现。",
             ],
             Self::Fox => &[
-                "arrives with a sideways glance and a perfect tail flick",
-                "steps out of the scrollback looking suspiciously pleased",
+                "斜瞥一眼，尾巴一甩就到了。",
+                "从回滚区走出来，满意得有点可疑。",
             ],
             Self::Otter => &[
-                "slides in like the footer is made of river stones",
-                "pops up carrying a suspiciously polished pebble",
+                "像在河石上滑行一样滑进底栏。",
+                "冒出来，嘴里叼着一块过分光滑的石子。",
             ],
             Self::Rabbit => &[
-                "hops into view and freezes only long enough to be adorable",
-                "lands in the footer with a tiny victorious bounce",
+                "蹦进视野，只停一会儿卖个萌。",
+                "落在底栏，带着一点小小的胜利跳。",
             ],
             Self::Owl => &[
-                "settles in with a stare that feels strangely managerial",
-                "glides into place and immediately looks unimpressed",
+                "安坐下来，那目光带着奇妙的管理气场。",
+                "滑翔到位，立刻露出不太买账的表情。",
             ],
             Self::Dragon => &[
-                "uncurls from a spark and claims the footer as a hoard",
-                "materializes with a tiny puff of theatrical smoke",
+                "从一簇火星中伸展开，把底栏当成宝库。",
+                "伴着一小撮戏剧性的烟雾现身。",
             ],
-            Self::Ghost => &[
-                "drifts up through the footer with impeccable manners",
-                "appears quietly, like it has always haunted this pane",
-            ],
-            Self::Robot => &[
-                "boots with a neat little chirp and zero wasted motion",
-                "folds into place with satisfying mechanical precision",
-            ],
+            Self::Ghost => &["礼貌地从底栏飘上来。", "安静现身，像一直在这块面板里徘徊。"],
+            Self::Robot => &["清脆启动，动作干净利落。", "以令人舒适的机械精准折叠到位。"],
         }
     }
 
     pub(crate) fn return_lines(self) -> &'static [&'static str] {
         match self {
             Self::Cat => &[
-                "pretends it never left and resumes supervising you",
-                "returns after deciding your work probably needs oversight",
+                "假装从未离开，继续监督你。",
+                "回来前就判断你的工作需要管一管。",
             ],
             Self::Fox => &[
-                "reappears like it already predicted this exact moment",
-                "returns with the exact amount of drama it thinks you deserve",
+                "再次出现，像早就预料到了这一刻。",
+                "按它认为你该得到的戏剧量回来了。",
             ],
             Self::Otter => &[
-                "bobs back into view, somehow still looking buoyant",
-                "returns and immediately improves the footer's mood",
+                "晃晃悠悠回到视野里，依然轻快。",
+                "回来就把底栏的气氛提亮了。",
             ],
-            Self::Rabbit => &[
-                "hops back in before the quiet gets awkward",
-                "returns with ears up and attention fully locked in",
-            ],
+            Self::Rabbit => &["趁安静变尴尬前蹦回来了。", "耳朵竖起，注意力全开地回来了。"],
             Self::Owl => &[
-                "returns to its perch with very visible judgment",
-                "reappears like a nightly code review has begun",
+                "回到栖木上，评判意味溢于言表。",
+                "再度出现，像夜间代码审查开始了。",
             ],
             Self::Dragon => &[
-                "returns with a low rumble and obvious self-importance",
-                "unfurls again as if summoned by unresolved ambition",
+                "带着低沉的轰鸣回归，自信得不容置疑。",
+                "像被未尽的野心召唤般再次舒展开。",
             ],
-            Self::Ghost => &[
-                "floats back in without disturbing a single byte",
-                "returns softly, but not subtly",
-            ],
-            Self::Robot => &[
-                "slots back into position with tidy precision",
-                "reappears after an apparently successful idle cycle",
-            ],
+            Self::Ghost => &["飘回来，一字节也没惊动。", "轻轻回来，但一点也不含蓄。"],
+            Self::Robot => &["精准地归位。", "在一次看似成功的待机循环后重新出现。"],
         }
     }
 
     pub(crate) fn pet_lines(self) -> &'static [&'static str] {
         match self {
             Self::Cat => &[
-                "leans into the scritches with immediate authority",
-                "purrs loud enough to vibrate the composer",
-                "half-closes its eyes and accepts your tribute",
+                "立刻带着威严贴上来求抚摸。",
+                "呼噜声大到让输入框都在震。",
+                "半眯着眼，接受你的供奉。",
             ],
             Self::Fox => &[
-                "acts aloof for one beat, then absolutely melts",
-                "flicks its tail and decides you may continue",
-                "looks smug about how effective that was",
+                "先高冷一秒，然后瞬间融化。",
+                "甩甩尾巴，批准你继续。",
+                "对效果很满意，表情很得意。",
             ],
             Self::Otter => &[
-                "does a tiny splashy wiggle right on dry land",
-                "offers you a perfectly smooth pebble in return",
-                "rolls onto its back in pure footer bliss",
+                "在干地上也抖出一点水花。",
+                "回赠你一颗光滑得过分的石子。",
+                "在底栏里幸福地翻了个身。",
             ],
             Self::Rabbit => &[
-                "does a tiny victory hop and settles closer",
-                "wiggles its nose in highly positive review",
-                "goes very still in that suspiciously happy rabbit way",
+                "小小胜利一跳，靠得更近。",
+                "鼻子一动，明显是好评。",
+                "以一种可疑的快乐方式安静下来。",
             ],
             Self::Owl => &[
-                "gives a solemn blink that somehow feels affectionate",
-                "ruffles its feathers and looks marginally less severe",
-                "accepts the pet like a dignified nocturnal monarch",
+                "郑重地眨了下眼，却莫名亲切。",
+                "抖抖羽毛，严厉程度稍减。",
+                "像尊贵的夜行君主一样接受抚摸。",
             ],
             Self::Dragon => &[
-                "lets out a pleased ember-sized huff",
-                "arches into the pet like a very smug furnace",
-                "briefly glows with suspiciously theatrical pride",
+                "吐出一缕满意的火星。",
+                "带着炉火般的得意贴了过来。",
+                "短暂发光，戏剧化地骄傲了一下。",
             ],
             Self::Ghost => &[
-                "shimmers happily without becoming any more tangible",
-                "spirals once in delighted little loops",
-                "goes translucent with obvious approval",
+                "开心地闪烁，但依旧摸不着。",
+                "开心地转了一圈小旋涡。",
+                "变得更透明，显然很满意。",
             ],
             Self::Robot => &[
-                "emits a pleased click and calibrates for more",
-                "logs the interaction as optimal morale maintenance",
-                "ticks through a tiny celebratory servo dance",
+                "发出满意的咔哒声，准备再来。",
+                "把这次互动记录为最佳士气维护。",
+                "小小庆祝式伺服舞蹈走一套。",
             ],
         }
     }
@@ -204,37 +189,22 @@ impl BuddySpecies {
     pub(crate) fn teaser_lines(self) -> &'static [&'static str] {
         match self {
             Self::Cat => &[
-                "is loafing nearby. Try /buddy pet.",
-                "flicks an ear like it expects a hello.",
+                "在附近趴成一团。试试 /buddy pet。",
+                "耳朵一动，像在等你打招呼。",
             ],
-            Self::Fox => &[
-                "is watching the footer with suspicious charm.",
-                "tilts its head like it already knows your next move.",
-            ],
+            Self::Fox => &["正用可疑的魅力盯着底栏。", "歪着头，好像已经知道你下一步。"],
             Self::Otter => &[
-                "surfaces with a pebble and a tiny grin.",
-                "is ready to trade good vibes for /buddy pet.",
+                "冒出水面，叼着石子微微一笑。",
+                "准备用好心情换一次 /buddy pet。",
             ],
-            Self::Rabbit => &[
-                "does a small hop and waits for attention.",
-                "is here, alert, and extremely pettable.",
-            ],
-            Self::Owl => &[
-                "has taken a perch beside the composer.",
-                "blinks once, like a quiet code review invite.",
-            ],
+            Self::Rabbit => &["轻轻一跳，等你注意。", "就在这儿，警觉又特别好摸。"],
+            Self::Owl => &["在输入框旁落了座。", "眨一下眼，像安静的代码审查邀请。"],
             Self::Dragon => &[
-                "is curled around the footer like a warm spark.",
-                "puffs a tiny ember that smells like ambition.",
+                "像一簇温暖的火星盘在底栏。",
+                "喷出一小撮带着野心味道的火星。",
             ],
-            Self::Ghost => &[
-                "is drifting politely beside your prompt.",
-                "waves with exactly one translucent paw.",
-            ],
-            Self::Robot => &[
-                "boots into standby and requests one pet.",
-                "reports morale systems online and adorable.",
-            ],
+            Self::Ghost => &["礼貌地漂浮在你的提示旁。", "用一只半透明的爪子挥了挥。"],
+            Self::Robot => &["进入待机并请求一次抚摸。", "报告士气系统在线且很可爱。"],
         }
     }
 }
@@ -261,11 +231,11 @@ pub(crate) enum BuddyEye {
 impl BuddyEye {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Dot => "dot",
-            Self::Spark => "spark",
-            Self::Cross => "cross",
-            Self::Wide => "wide",
-            Self::Sleepy => "sleepy",
+            Self::Dot => "点点",
+            Self::Spark => "星光",
+            Self::Cross => "叉叉",
+            Self::Wide => "圆眼",
+            Self::Sleepy => "困倦",
         }
     }
 
@@ -299,13 +269,13 @@ pub(crate) enum BuddyHat {
 impl BuddyHat {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::None => "none",
-            Self::Crown => "crown",
-            Self::TopHat => "top hat",
-            Self::Halo => "halo",
-            Self::Wizard => "wizard hat",
-            Self::Beanie => "beanie",
-            Self::Propeller => "propeller cap",
+            Self::None => "无",
+            Self::Crown => "王冠",
+            Self::TopHat => "高礼帽",
+            Self::Halo => "光环",
+            Self::Wizard => "巫师帽",
+            Self::Beanie => "毛线帽",
+            Self::Propeller => "螺旋帽",
         }
     }
 }
@@ -322,11 +292,11 @@ pub(crate) enum BuddyStatName {
 impl BuddyStatName {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Debugging => "DEBUGGING",
-            Self::Patience => "PATIENCE",
-            Self::Chaos => "CHAOS",
-            Self::Wisdom => "WISDOM",
-            Self::Snark => "SNARK",
+            Self::Debugging => "调试",
+            Self::Patience => "耐心",
+            Self::Chaos => "混沌",
+            Self::Wisdom => "智慧",
+            Self::Snark => "吐槽",
         }
     }
 }
@@ -397,11 +367,11 @@ pub(crate) enum BuddyRarity {
 impl BuddyRarity {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Common => "common",
-            Self::Uncommon => "uncommon",
-            Self::Rare => "rare",
-            Self::Epic => "epic",
-            Self::Legendary => "legendary",
+            Self::Common => "常见",
+            Self::Uncommon => "少见",
+            Self::Rare => "稀有",
+            Self::Epic => "史诗",
+            Self::Legendary => "传奇",
         }
     }
 

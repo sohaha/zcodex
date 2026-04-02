@@ -77,28 +77,28 @@ impl BuddyWidget {
 
         let message = if was_hatched {
             format!(
-                "Buddy is back: {} {}.",
+                "小伙伴回来了：{} {}。",
                 bones.short_summary(),
                 bones.rarity.stars()
             )
         } else {
             format!(
-                "Buddy hatched: {} {}.",
+                "小伙伴已孵化：{} {}。",
                 bones.short_summary(),
                 bones.rarity.stars()
             )
         };
         BuddyCommandResult {
             message,
-            hint: Some("Try `/buddy pet` to interact, or `/buddy status` for traits.".to_string()),
+            hint: Some("试试 `/buddy pet` 来互动，或用 `/buddy status` 查看特征。".to_string()),
         }
     }
 
     pub(crate) fn hide(&mut self) -> BuddyCommandResult {
         let Some(bones) = self.bones.as_ref() else {
             return BuddyCommandResult {
-                message: "Buddy has not hatched yet.".to_string(),
-                hint: Some("Use `/buddy show` to hatch one for this project.".to_string()),
+                message: "小伙伴还没孵化。".to_string(),
+                hint: Some("使用 `/buddy show` 为此项目孵化一个。".to_string()),
             };
         };
         self.state.visible = false;
@@ -107,8 +107,8 @@ impl BuddyWidget {
         self.state.reaction = None;
         self.state.last_action = Some(BuddyLastAction::Hidden);
         BuddyCommandResult {
-            message: format!("Buddy hidden: {}.", bones.short_summary()),
-            hint: Some("Use `/buddy show` to bring it back.".to_string()),
+            message: format!("小伙伴已隐藏：{}。", bones.short_summary()),
+            hint: Some("使用 `/buddy show` 让它回来。".to_string()),
         }
     }
 
@@ -128,42 +128,42 @@ impl BuddyWidget {
         self.state.last_action = Some(BuddyLastAction::Petted);
 
         BuddyCommandResult {
-            message: format!("You pet {}. {}", bones.name, reaction_text),
-            hint: Some("Use `/buddy status` to inspect rarity, traits, and mood.".to_string()),
+            message: format!("你抚摸了 {}。{}", bones.name, reaction_text),
+            hint: Some("用 `/buddy status` 查看稀有度、特征和心情。".to_string()),
         }
     }
 
     pub(crate) fn status(&self, _seed: &str) -> BuddyCommandResult {
         let Some(bones) = self.bones.as_ref() else {
             return BuddyCommandResult {
-                message: "Buddy has not hatched yet.".to_string(),
-                hint: Some("Use `/buddy show` to hatch one for this project.".to_string()),
+                message: "小伙伴还没孵化。".to_string(),
+                hint: Some("使用 `/buddy show` 为此项目孵化一个。".to_string()),
             };
         };
 
         let visibility = if self.state.visible {
-            "visible"
+            "可见"
         } else {
-            "hidden"
+            "隐藏"
         };
         let (primary_stat, primary_value) = bones.stats.primary();
         let mood = if self.state.is_petting() {
-            "delighted"
+            "开心"
         } else if let Some(reaction) = self.state.active_reaction() {
             match reaction.kind {
-                BuddyReactionKind::Hatch => "freshly hatched",
-                BuddyReactionKind::Return => "settled back in",
-                BuddyReactionKind::Pet => "very pleased",
-                BuddyReactionKind::Teaser => "waiting for attention",
+                BuddyReactionKind::Hatch => "刚孵化",
+                BuddyReactionKind::Return => "安顿好了",
+                BuddyReactionKind::Pet => "很满意",
+                BuddyReactionKind::Teaser => "等你关注",
             }
         } else if self.state.visible {
-            "alert"
+            "警觉"
         } else {
-            "resting offstage"
+            "幕后休息"
         };
-        let shiny = if bones.shiny { ", shiny" } else { "" };
+        let shiny = if bones.shiny { "，闪亮" } else { "" };
         let message = format!(
-            "Buddy status: {} {} ({visibility}{shiny}, {}, {} eyes, mood {mood}, pets {}). Peak stat: {} {}.",
+            "小伙伴状态：{} {}（{visibility}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。",
             bones.short_summary(),
             bones.rarity.stars(),
             bones.hat.label(),
@@ -175,8 +175,7 @@ impl BuddyWidget {
         BuddyCommandResult {
             message,
             hint: Some(
-                "Commands: `/buddy show`, `/buddy pet`, `/buddy hide`, `/buddy status`."
-                    .to_string(),
+                "命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
             ),
         }
     }
@@ -261,8 +260,8 @@ mod tests {
         let mut buddy = BuddyWidget::new();
         let _ = buddy.show("codex-home::project");
         let status = buddy.status("codex-home::project");
-        assert!(status.message.contains("Peak stat:"));
-        assert!(status.message.contains("visible"));
+        assert!(status.message.contains("峰值属性："));
+        assert!(status.message.contains("可见"));
     }
 
     #[test]

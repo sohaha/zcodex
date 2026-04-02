@@ -1302,12 +1302,12 @@ impl SessionHeaderHistoryCell {
 
     fn reasoning_label(&self) -> Option<&'static str> {
         self.reasoning_effort.map(|effort| match effort {
-            ReasoningEffortConfig::Minimal => "minimal",
-            ReasoningEffortConfig::Low => "low",
-            ReasoningEffortConfig::Medium => "medium",
-            ReasoningEffortConfig::High => "high",
-            ReasoningEffortConfig::XHigh => "xhigh",
-            ReasoningEffortConfig::None => "none",
+            ReasoningEffortConfig::Minimal => "极低",
+            ReasoningEffortConfig::Low => "低",
+            ReasoningEffortConfig::Medium => "中",
+            ReasoningEffortConfig::High => "高",
+            ReasoningEffortConfig::XHigh => "极高",
+            ReasoningEffortConfig::None => "无",
         })
     }
 }
@@ -1329,13 +1329,14 @@ impl HistoryCell for SessionHeaderHistoryCell {
         ];
 
         const CHANGE_MODEL_HINT_COMMAND: &str = "/model";
-        const CHANGE_MODEL_HINT_EXPLANATION: &str = " to change";
-        const DIR_LABEL: &str = "directory:";
-        let label_width = DIR_LABEL.len();
+        const CHANGE_MODEL_HINT_EXPLANATION: &str = " 修改";
+        const DIR_LABEL: &str = "目录:";
+        const MODEL_LABEL: &str = "模型:";
+        let label_width = DIR_LABEL.chars().count();
 
         let model_label = format!(
             "{model_label:<label_width$}",
-            model_label = "model:",
+            model_label = MODEL_LABEL,
             label_width = label_width
         );
         let reasoning_label = self.reasoning_label();
@@ -1350,7 +1351,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
             }
             if self.show_fast_status {
                 spans.push("   ".into());
-                spans.push(Span::styled("fast", self.model_style.magenta()));
+                spans.push(Span::styled("快速", self.model_style.magenta()));
             }
             spans.push("   ".dim());
             spans.push(CHANGE_MODEL_HINT_COMMAND.cyan());
@@ -3871,11 +3872,11 @@ mod tests {
         let lines = render_lines(&cell.display_lines(/*width*/ 80));
         let model_line = lines
             .iter()
-            .find(|line| line.contains("model:"))
+            .find(|line| line.contains("模型:"))
             .expect("model line");
 
-        assert!(model_line.contains("gpt-4o high   fast"));
-        assert!(model_line.contains("/model to change"));
+        assert!(model_line.contains("gpt-4o 高   快速"));
+        assert!(model_line.contains("/model 修改"));
     }
 
     #[test]
@@ -3891,11 +3892,11 @@ mod tests {
         let lines = render_lines(&cell.display_lines(/*width*/ 80));
         let model_line = lines
             .iter()
-            .find(|line| line.contains("model:"))
+            .find(|line| line.contains("模型:"))
             .expect("model line");
 
-        assert!(model_line.contains("gpt-4o high"));
-        assert!(!model_line.contains("fast"));
+        assert!(model_line.contains("gpt-4o 高"));
+        assert!(!model_line.contains("快速"));
     }
 
     #[test]

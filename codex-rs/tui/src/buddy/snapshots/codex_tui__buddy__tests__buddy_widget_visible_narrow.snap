@@ -1,6 +1,5 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 272
 expression: snapshot_buffer(&buf)
 ---
-(OvO) "settles in with a star…
+(OvO) "安 坐 下 来 ， 那 目 光 带 着 奇 …
