@@ -1082,6 +1082,74 @@ fn localize_help_output(output: String) -> String {
             "For more information, try '--help'.",
             "更多信息请使用 '--help'。",
         )
+        .replace("[PROMPT]", "[提示]")
+        .replace("<FILE>", "<文件>")
+        .replace("<MODEL>", "<模型>")
+        .replace("<OSS_PROVIDER>", "<提供方>")
+        .replace("<CONFIG_PROFILE>", "<配置文件>")
+        .replace("<SANDBOX_MODE>", "<沙箱策略>")
+        .replace("<APPROVAL_POLICY>", "<批准策略>")
+        .replace("<DIR>", "<目录>")
+        .replace("Optional user prompt to start the session", "可选的会话启动提示")
+        .replace(
+            "Optional image(s) to attach to the initial prompt",
+            "可选的初始提示附件图片",
+        )
+        .replace("Model the agent should use", "智能体应使用的模型")
+        .replace(
+            "Convenience flag to select the local open source model provider. Equivalent to -c model_provider=oss; verifies a local LM Studio or Ollama server is running",
+            "便捷标志，用于选择本地开源模型提供方。等价于 -c model_provider=oss；验证本地 LM Studio 或 Ollama 服务器是否正在运行",
+        )
+        .replace(
+            "Convenience flag to select the local open source model provider. Equivalent to -c model_provider=oss; verifies a\n          local LM Studio or Ollama server is running",
+            "便捷标志，用于选择本地开源模型提供方。等价于 -c model_provider=oss；验证本地 LM Studio 或 Ollama 服务器是否正在运行",
+        )
+        .replace(
+            "Specify which local provider to use (lmstudio or ollama). If not specified with --oss, will use config default or show selection",
+            "指定要使用的本地提供方（lmstudio 或 ollama）。如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择",
+        )
+        .replace(
+            "Specify which local provider to use (lmstudio or ollama). If not specified with --oss, will use config default\n          or show selection",
+            "指定要使用的本地提供方（lmstudio 或 ollama）。如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择",
+        )
+        .replace(
+            "Configuration profile from config.toml to specify default options",
+            "来自 config.toml 的配置配置文件，用于指定默认选项",
+        )
+        .replace(
+            "Select the sandbox policy to use when executing model-generated shell commands",
+            "选择执行模型生成的 shell 命令时要使用的沙箱策略",
+        )
+        .replace(
+            "Configure when the model requires human approval before executing a command",
+            "配置模型在执行命令前何时需要人工批准",
+        )
+        .replace(
+            "Convenience alias for low-friction sandboxed automatic execution (-a on-request, --sandbox workspace-write)",
+            "低摩擦沙箱自动执行的便捷别名（-a on-request, --sandbox workspace-write）",
+        )
+        .replace(
+            "Skip all confirmation prompts and execute commands without sandboxing. EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed",
+            "跳过所有确认提示并在无沙箱的情况下执行命令。极度危险。仅适用于在外部沙箱环境中运行",
+        )
+        .replace(
+            "Tell the agent to use the specified directory as its working root",
+            "告诉智能体使用指定目录作为其工作根目录",
+        )
+        .replace("Enable live web search.", "启用实时网络搜索。")
+        .replace(
+            "When enabled, the native Responses `web_search` tool is available to the model (no per‑call approval)",
+            "启用后，原生 Responses `web_search` 工具可供模型使用（无需每次调用批准）",
+        )
+        .replace(
+            "Additional directories that should be writable alongside the primary workspace",
+            "除主工作区外还应可写入的附加目录",
+        )
+        .replace("Disable alternate screen mode", "禁用备用屏幕模式")
+        .replace(
+            "Runs the TUI in inline mode, preserving terminal scrollback history. This is useful in terminal multiplexers like Zellij that follow the xterm spec strictly and disable scrollback in alternate screen buffers.",
+            "以内联模式运行 TUI，保留终端滚动历史记录。这在严格遵循 xterm 规范并禁用备用屏幕缓冲区中滚动的终端复用器（如 Zellij）中很有用。",
+        )
 }
 
 async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow::Result<()> {
