@@ -2,13 +2,14 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-02T05:37:12.882Z
-- 本轮摘要：合并翻译相关分支后，调整 TUI 测试以兼容中英文/双宽字符（pager overlay、welcome、resume picker、theme picker 等），更新 inline error 断言并接受快照，清理遗留 .snap.new；已通过 CARGO_TARGET_DIR=/workspace/.cargo-target-nextest cargo nextest run -p codex-tui。
+- 更新时间：2026-04-02T07:06:52.094Z
+- 本轮摘要：已完成 app-server zmemory 路径对齐收尾：补齐 turn cwd override 下 zmemory handler、稳定偏好主动写入、以及子线程 spawn/resume/agent_jobs 的 project-scoped zmemory 重载，并把未做的全局 project-layer config 通用重载记录为已知风险。
 
 ## 待确认问题
 
-- 暂无，若后续发现疑点请及时补充。
+- 暂无，后续若有其它 project-scoped config 直接消费 turn.config.*，需单独核对是否受同类问题影响。
 
 ## 下一步检查
 
-- 优先检查当前 diff、相关测试和受影响模块。
+- 后续新增 project-scoped 配置注入点时，先补 turn cwd override 场景验证
+- 继续关注 system://workspace 的 dbPath/source/reason 是否与项目配置一致
