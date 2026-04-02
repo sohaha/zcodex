@@ -262,7 +262,7 @@ fn plan_mode_prompt_notification_uses_dedicated_type_name() {
     ])));
     assert_eq!(
         notification.display(),
-        format!("Plan mode prompt: {PLAN_IMPLEMENTATION_TITLE}")
+        format!("Plan 模式提示：{PLAN_IMPLEMENTATION_TITLE}")
     );
 }
 
@@ -279,10 +279,7 @@ fn user_input_requested_notification_uses_dedicated_type_name() {
     assert!(!notification.allowed_for(&Notifications::Custom(vec![
         "approval-requested".to_string(),
     ])));
-    assert_eq!(
-        notification.display(),
-        "Question requested: Reasoning scope"
-    );
+    assert_eq!(notification.display(), "已请求问题：Reasoning scope");
 }
 
 #[tokio::test]
@@ -470,7 +467,7 @@ async fn submit_user_message_with_mode_errors_when_mode_changes_during_running_t
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        rendered.contains("Cannot switch collaboration mode while a turn is running."),
+        rendered.contains("当前回合运行中，无法切换协作模式。"),
         "expected running-turn error message, got: {rendered:?}"
     );
 }
@@ -492,7 +489,7 @@ async fn submit_user_message_blocks_when_thread_model_is_unavailable() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        rendered.contains("Thread model is unavailable."),
+        rendered.contains("当前线程模型不可用。"),
         "expected unavailable-model error, got: {rendered:?}"
     );
 }
@@ -1041,7 +1038,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("模型已切换为 gpt-5.1-codex-mini，推理级别 中，用于 Plan 模式。"),
+        plan_messages.contains("模型已切换为 gpt-5.1-codex-mini，推理级别 中，用于 计划 模式。"),
         "expected Plan-mode model switch notice, got: {plan_messages:?}"
     );
 
@@ -1055,7 +1052,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     let expected_default_message =
-        format!("模型已切换为 {default_model}，推理级别 默认，用于 Default 模式。");
+        format!("模型已切换为 {default_model}，推理级别 默认，用于 默认 模式。");
     assert!(
         default_messages.contains(&expected_default_message),
         "expected Default-mode model switch notice, got: {default_messages:?}"
@@ -1078,7 +1075,7 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("模型已切换为 gpt-5.3-codex，推理级别 中，用于 Plan 模式。"),
+        plan_messages.contains("模型已切换为 gpt-5.3-codex，推理级别 中，用于 计划 模式。"),
         "expected reasoning-change notice in Plan mode, got: {plan_messages:?}"
     );
 }

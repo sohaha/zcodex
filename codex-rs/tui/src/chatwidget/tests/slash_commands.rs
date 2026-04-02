@@ -393,7 +393,7 @@ async fn slash_stop_submits_background_terminal_cleanup() {
     assert_eq!(cells.len(), 1, "expected cleanup confirmation message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Stopping all background terminals."),
+        rendered.contains("正在停止所有后台终端。"),
         "expected cleanup confirmation, got {rendered:?}"
     );
 }
@@ -438,7 +438,7 @@ async fn slash_memory_drop_reports_stubbed_feature() {
     match event {
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(rendered.contains("Memory maintenance: Not available in TUI yet."));
+            assert!(rendered.contains("Memory maintenance: TUI 暂未提供。"));
         }
         other => panic!("expected InsertHistoryCell error, got {other:?}"),
     }
@@ -469,7 +469,7 @@ async fn slash_memory_update_reports_stubbed_feature() {
     match event {
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(rendered.contains("Memory maintenance: Not available in TUI yet."));
+            assert!(rendered.contains("Memory maintenance: TUI 暂未提供。"));
         }
         other => panic!("expected InsertHistoryCell error, got {other:?}"),
     }

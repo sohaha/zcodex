@@ -1018,7 +1018,7 @@ async fn review_popup_custom_prompt_action_sends_event() {
     // Open the preset selection popup
     chat.open_review_popup();
 
-    // Move selection down to the fourth item: "Custom review instructions"
+    // Move selection down to the fourth item: "自定义评审说明"
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
@@ -1254,7 +1254,7 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     // Verify child view is on top.
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("Custom review instructions"),
+        header.contains("自定义评审说明"),
         "expected custom prompt view header: {header:?}"
     );
 
@@ -1262,7 +1262,7 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("Select a review preset"),
+        header.contains("选择评审预设"),
         "expected to return to parent review popup: {header:?}"
     );
 
@@ -1290,7 +1290,7 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
     // Verify child view header.
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("Select a base branch"),
+        header.contains("选择基准分支"),
         "expected branch picker header: {header:?}"
     );
 
@@ -1298,7 +1298,7 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("Select a review preset"),
+        header.contains("选择评审预设"),
         "expected to return to parent review popup: {header:?}"
     );
 

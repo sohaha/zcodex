@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-02T09:32:31.593Z
-- 本轮摘要：汉化 TUI 启动头与 Buddy 文案（模型/目录/快速/推理级别、Buddy 状态/提示/描述/标签），更新相关测试断言与 snapshots；cargo nextest run -p codex-tui 通过。
+- 更新时间：2026-04-02T11:14:53.402Z
+- 本轮摘要：继续汉化 codex-rs/tui 用户可见文案，补齐计划弹窗、权限弹窗、模型推理弹窗、限额提醒、/ps、/status、diff/history/status 文案与相关测试快照；cargo nextest run -p codex-tui 通过，随后 just fix -p codex-tui 完成。
 
 ## 待确认问题
 

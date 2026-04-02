@@ -1334,9 +1334,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         const MODEL_LABEL: &str = "模型:";
         let label_width = DIR_LABEL.chars().count();
 
-        let model_label = format!(
-            "{MODEL_LABEL:<label_width$}"
-        );
+        let model_label = format!("{MODEL_LABEL:<label_width$}");
         let reasoning_label = self.reasoning_label();
         let model_spans: Vec<Span<'static>> = {
             let mut spans = vec![

@@ -86,12 +86,12 @@ impl ChatWidget {
                 .is_ok()
         {
             let label = if invalid_items.len() == 1 {
-                "item"
+                "项"
             } else {
-                "items"
+                "项"
             };
             let message = format!(
-                "Ignored invalid status line {label}: {}.",
+                "已忽略无效的状态栏{label}：{}。",
                 proper_join(invalid_items)
             );
             self.on_warning(message);
@@ -107,12 +107,12 @@ impl ChatWidget {
                 .is_ok()
         {
             let label = if invalid_items.len() == 1 {
-                "item"
+                "项"
             } else {
-                "items"
+                "项"
             };
             let message = format!(
-                "Ignored invalid terminal title {label}: {}.",
+                "已忽略无效的终端标题{label}：{}。",
                 proper_join(invalid_items)
             );
             self.on_warning(message);
@@ -447,15 +447,15 @@ impl ChatWidget {
                 if total <= 0 {
                     None
                 } else {
-                    Some(format!("{} used", format_tokens_compact(total)))
+                    Some(format!("已用 {}", format_tokens_compact(total)))
                 }
             }
             StatusLineItem::ContextRemaining => self
                 .status_line_context_remaining_percent()
-                .map(|remaining| format!("{remaining}% left")),
+                .map(|remaining| format!("剩余 {remaining}%")),
             StatusLineItem::ContextUsed => self
                 .status_line_context_used_percent()
-                .map(|used| format!("{used}% used")),
+                .map(|used| format!("已用 {used}%")),
             StatusLineItem::FiveHourLimit => {
                 let window = self
                     .rate_limit_snapshots_by_limit_id
@@ -475,27 +475,27 @@ impl ChatWidget {
                 let label = window
                     .and_then(|window| window.window_minutes)
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
+                    .unwrap_or_else(|| "每周".to_string());
                 self.status_line_limit_display(window, &label)
             }
             StatusLineItem::CodexVersion => Some(CODEX_CLI_VERSION.to_string()),
             StatusLineItem::ContextWindowSize => self
                 .status_line_context_window_size()
-                .map(|cws| format!("{} window", format_tokens_compact(cws))),
+                .map(|cws| format!("{} 窗口", format_tokens_compact(cws))),
             StatusLineItem::TotalInputTokens => Some(format!(
-                "{} in",
+                "{} 输入",
                 format_tokens_compact(self.status_line_total_usage().input_tokens)
             )),
             StatusLineItem::TotalOutputTokens => Some(format!(
-                "{} out",
+                "{} 输出",
                 format_tokens_compact(self.status_line_total_usage().output_tokens)
             )),
             StatusLineItem::SessionId => self.thread_id.map(|id| id.to_string()),
             StatusLineItem::FastMode => Some(
                 if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
-                    "Fast on".to_string()
+                    "快速 开".to_string()
                 } else {
-                    "Fast off".to_string()
+                    "快速 关".to_string()
                 },
             ),
         }
@@ -543,20 +543,20 @@ impl ChatWidget {
     /// as `Ready` regardless of the last active status bucket.
     pub(super) fn terminal_title_status_text(&self) -> String {
         if self.mcp_startup_status.is_some() {
-            return "Starting".to_string();
+            return "启动中".to_string();
         }
 
         match self.terminal_title_status_kind {
             TerminalTitleStatusKind::Working if !self.bottom_pane.is_task_running() => {
-                "Ready".to_string()
+                "就绪".to_string()
             }
             TerminalTitleStatusKind::WaitingForBackgroundTerminal
                 if !self.bottom_pane.is_task_running() =>
             {
-                "Ready".to_string()
+                "就绪".to_string()
             }
             TerminalTitleStatusKind::Thinking if !self.bottom_pane.is_task_running() => {
-                "Ready".to_string()
+                "就绪".to_string()
             }
             TerminalTitleStatusKind::Working => "处理中".to_string(),
             TerminalTitleStatusKind::WaitingForBackgroundTerminal => "等待中".to_string(),
@@ -620,7 +620,7 @@ impl ChatWidget {
         if total == 0 {
             return None;
         }
-        Some(format!("Tasks {completed}/{total}"))
+        Some(format!("任务 {completed}/{total}"))
     }
 
     /// Truncates a title segment by grapheme cluster and appends `...` when needed.

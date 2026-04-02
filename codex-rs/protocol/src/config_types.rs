@@ -416,10 +416,10 @@ pub const TUI_VISIBLE_COLLABORATION_MODES: [ModeKind; 2] = [ModeKind::Default, M
 impl ModeKind {
     pub const fn display_name(self) -> &'static str {
         match self {
-            Self::Plan => "Plan",
-            Self::Default => "Default",
-            Self::PairProgramming => "Pair Programming",
-            Self::Execute => "Execute",
+            Self::Plan => "计划",
+            Self::Default => "默认",
+            Self::PairProgramming => "结对编程",
+            Self::Execute => "执行",
         }
     }
 

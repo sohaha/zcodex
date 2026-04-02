@@ -96,11 +96,11 @@ async fn windows_auto_mode_prompt_requests_enabling_sandbox_feature() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     assert!(
-        popup.contains("requires Administrator permissions"),
+        popup.contains("需要管理员权限"),
         "expected auto mode prompt to mention Administrator permissions, popup: {popup}"
     );
     assert!(
-        popup.contains("Use non-admin sandbox"),
+        popup.contains("使用非管理员沙箱"),
         "expected auto mode prompt to include non-admin fallback option, popup: {popup}"
     );
 }
@@ -117,19 +117,19 @@ async fn startup_prompts_for_windows_sandbox_when_agent_requested() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     assert!(
-        popup.contains("requires Administrator permissions"),
+        popup.contains("需要管理员权限"),
         "expected startup prompt to mention Administrator permissions: {popup}"
     );
     assert!(
-        popup.contains("Set up default sandbox"),
+        popup.contains("设置默认沙箱"),
         "expected startup prompt to offer default sandbox setup: {popup}"
     );
     assert!(
-        popup.contains("Use non-admin sandbox"),
+        popup.contains("使用非管理员沙箱"),
         "expected startup prompt to offer non-admin fallback: {popup}"
     );
     assert!(
-        popup.contains("Quit"),
+        popup.contains("退出"),
         "expected startup prompt to offer quit action: {popup}"
     );
 }
