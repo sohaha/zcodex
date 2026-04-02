@@ -1,14 +1,18 @@
 use crate::codex::Session;
 use crate::codex::TurnContext;
+use crate::config::ConfigBuilder;
+use crate::config::types::ZmemoryConfig;
 use crate::memories::zmemory_contract::StablePreferenceMemory;
 use crate::protocol::EventMsg;
 use crate::protocol::WarningEvent;
+use codex_app_server_protocol::ConfigLayerSource;
 use codex_protocol::user_input::UserInput;
 use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
 use codex_zmemory::tool_api::run_zmemory_tool_with_context;
 use regex_lite::Regex;
 use serde_json::Value;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::LazyLock;
 use tracing::warn;
@@ -28,38 +32,105 @@ pub(crate) async fn capture_stable_preference_memories(
         return;
     };
 
-    if let Err(err) = inspect_workspace_runtime(turn_context) {
+    let zmemory_context = resolve_zmemory_context_for_turn(session, turn_context).await;
+
+    if let Err(err) = inspect_workspace_runtime(&zmemory_context, turn_context) {
         emit_capture_warning(session, turn_context, err.to_string()).await;
         return;
     }
 
     if capture.agent_name.is_none()
-        && let Ok(Some(content)) =
-            read_canonical_content(turn_context, StablePreferenceMemory::AgentSelfReference)
+        && let Ok(Some(content)) = read_canonical_content(
+            &zmemory_context,
+            turn_context,
+            StablePreferenceMemory::AgentSelfReference,
+        )
     {
         capture.agent_name = parse_name_from_memory_content(&content);
     }
     if capture.user_address.is_none()
-        && let Ok(Some(content)) =
-            read_canonical_content(turn_context, StablePreferenceMemory::UserAddressPreference)
+        && let Ok(Some(content)) = read_canonical_content(
+            &zmemory_context,
+            turn_context,
+            StablePreferenceMemory::UserAddressPreference,
+        )
     {
         capture.user_address = parse_name_from_memory_content(&content);
     }
 
     let writes = capture.into_writes();
     for (memory, content) in writes {
-        if let Err(err) = write_and_verify_canonical_memory(turn_context, memory, &content) {
+        if let Err(err) =
+            write_and_verify_canonical_memory(&zmemory_context, turn_context, memory, &content)
+        {
             emit_capture_warning(session, turn_context, err.to_string()).await;
         }
     }
 }
 
-fn inspect_workspace_runtime(turn_context: &TurnContext) -> anyhow::Result<()> {
+#[derive(Clone)]
+struct ResolvedZmemoryContext {
+    codex_home: PathBuf,
+    zmemory_config: ZmemoryConfig,
+}
+
+async fn resolve_zmemory_context_for_turn(
+    session: &Session,
+    turn_context: &TurnContext,
+) -> ResolvedZmemoryContext {
+    let session_config = session.get_config().await;
+    let current_zmemory_config = session_config.zmemory.clone();
+    let zmemory_origin = session_config
+        .config_layer_stack
+        .origins()
+        .remove("zmemory.path")
+        .map(|metadata| metadata.name);
+    let should_reload = session_config.cwd.as_path() != turn_context.cwd.as_path()
+        && matches!(
+            zmemory_origin,
+            None | Some(ConfigLayerSource::Project { .. })
+        );
+    let codex_home = turn_context.config.codex_home.clone();
+
+    if !should_reload {
+        return ResolvedZmemoryContext {
+            codex_home,
+            zmemory_config: current_zmemory_config,
+        };
+    }
+
+    let zmemory_config = match ConfigBuilder::default()
+        .codex_home(codex_home.clone())
+        .fallback_cwd(Some(turn_context.cwd.to_path_buf()))
+        .build()
+        .await
+    {
+        Ok(config) => config.zmemory,
+        Err(err) => {
+            warn!(
+                error = %err,
+                cwd = %turn_context.cwd.display(),
+                "failed to reload proactive zmemory config for current turn cwd; using session config"
+            );
+            current_zmemory_config
+        }
+    };
+
+    ResolvedZmemoryContext {
+        codex_home,
+        zmemory_config,
+    }
+}
+
+fn inspect_workspace_runtime(
+    zmemory_context: &ResolvedZmemoryContext,
+    turn_context: &TurnContext,
+) -> anyhow::Result<()> {
     run_zmemory_tool_with_context(
-        turn_context.config.codex_home.as_path(),
+        zmemory_context.codex_home.as_path(),
         turn_context.cwd.as_path(),
-        turn_context.config.zmemory.path.as_deref(),
-        Some(turn_context.config.zmemory.to_runtime_settings()),
+        zmemory_context.zmemory_config.path.as_deref(),
+        Some(zmemory_context.zmemory_config.to_runtime_settings()),
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
             uri: Some("system://workspace".to_string()),
@@ -70,11 +141,12 @@ fn inspect_workspace_runtime(turn_context: &TurnContext) -> anyhow::Result<()> {
 }
 
 fn write_and_verify_canonical_memory(
+    zmemory_context: &ResolvedZmemoryContext,
     turn_context: &TurnContext,
     memory: StablePreferenceMemory,
     content: &str,
 ) -> anyhow::Result<()> {
-    let existing_content = read_canonical_content(turn_context, memory)?;
+    let existing_content = read_canonical_content(zmemory_context, turn_context, memory)?;
     if existing_content.as_deref() == Some(content) {
         return Ok(());
     }
@@ -86,10 +158,10 @@ fn write_and_verify_canonical_memory(
     };
 
     run_zmemory_tool_with_context(
-        turn_context.config.codex_home.as_path(),
+        zmemory_context.codex_home.as_path(),
         turn_context.cwd.as_path(),
-        turn_context.config.zmemory.path.as_deref(),
-        Some(turn_context.config.zmemory.to_runtime_settings()),
+        zmemory_context.zmemory_config.path.as_deref(),
+        Some(zmemory_context.zmemory_config.to_runtime_settings()),
         ZmemoryToolCallParam {
             action,
             uri: Some(memory.uri().to_string()),
@@ -98,7 +170,7 @@ fn write_and_verify_canonical_memory(
         },
     )?;
 
-    let verified_content = read_canonical_content(turn_context, memory)?;
+    let verified_content = read_canonical_content(zmemory_context, turn_context, memory)?;
     anyhow::ensure!(
         verified_content.as_deref() == Some(content),
         "zmemory proactive capture verification failed for {}",
@@ -108,15 +180,16 @@ fn write_and_verify_canonical_memory(
 }
 
 fn read_canonical_content(
+    zmemory_context: &ResolvedZmemoryContext,
     turn_context: &TurnContext,
     memory: StablePreferenceMemory,
 ) -> anyhow::Result<Option<String>> {
     let uri = memory.uri();
     match run_zmemory_tool_with_context(
-        turn_context.config.codex_home.as_path(),
+        zmemory_context.codex_home.as_path(),
         turn_context.cwd.as_path(),
-        turn_context.config.zmemory.path.as_deref(),
-        Some(turn_context.config.zmemory.to_runtime_settings()),
+        zmemory_context.zmemory_config.path.as_deref(),
+        Some(zmemory_context.zmemory_config.to_runtime_settings()),
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
             uri: Some(uri.to_string()),

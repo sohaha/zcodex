@@ -962,6 +962,124 @@ async fn zmemory_proactively_captures_explicit_naming_preferences() -> Result<()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let workspace = TempDir::new()?;
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    let configured_db_path = workspace.path().join(".agents").join("memory.db");
+    fs::write(workspace.path().join(".git"), "gitdir: here")?;
+    fs::create_dir_all(&nested)?;
+    fs::create_dir_all(&dot_codex)?;
+    fs::create_dir_all(
+        configured_db_path
+            .parent()
+            .expect("configured zmemory path should have parent"),
+    )?;
+    fs::write(
+        dot_codex.join("config.toml"),
+        format!("[zmemory]\npath = \"{}\"\n", configured_db_path.display()),
+    )?;
+    fs::write(
+        test.home.path().join("config.toml"),
+        format!(
+            "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            workspace.path().display()
+        ),
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到，指挥官。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: Some(nested.clone()),
+            approval_policy: Some(AskForApproval::Never),
+            approvals_reviewer: None,
+            sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "你现在开始称呼我\"指挥官\",你的名字是\"小白\"".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+
+    let turn_id = wait_for_event_match(&test.codex, |event| match event {
+        EventMsg::TurnStarted(event) => Some(event.turn_id.clone()),
+        _ => None,
+    })
+    .await;
+    wait_for_event(&test.codex, |event| match event {
+        EventMsg::TurnComplete(event) => event.turn_id == turn_id,
+        _ => false,
+    })
+    .await;
+
+    let user_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        nested.as_path(),
+        Some(configured_db_path.as_path()),
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        user_memory.structured_content["result"]["content"],
+        "The user prefers to be addressed as \"指挥官\"."
+    );
+
+    let agent_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        nested.as_path(),
+        Some(configured_db_path.as_path()),
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        agent_memory.structured_content["result"]["content"],
+        "The assistant should refer to itself as \"小白\"."
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_does_not_proactively_capture_preferences_without_feature_flag() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
