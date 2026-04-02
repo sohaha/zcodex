@@ -54,6 +54,7 @@ use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -3472,7 +3473,9 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
     let mut expected = (*turn.config).clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
@@ -3510,7 +3513,9 @@ async fn build_agent_spawn_config_preserves_base_user_instructions() {
         text: "base".to_string(),
     };
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
 
     assert_eq!(config.user_instructions, base_config.user_instructions);
 }
@@ -3525,7 +3530,9 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_resume_config(&turn, 0).expect("resume config");
+    let config = build_agent_resume_config(&turn, 0)
+        .await
+        .expect("resume config");
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;
@@ -3549,4 +3556,48 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .set(turn.sandbox_policy.get().clone())
         .expect("sandbox policy set");
     assert_eq!(config, expected);
+}
+
+#[tokio::test]
+async fn build_agent_spawn_config_reloads_project_zmemory_for_turn_cwd() {
+    let (_session, mut turn) = make_session_and_context().await;
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    let configured_db_path = workspace.path().join(".agents").join("memory.db");
+    fs::write(workspace.path().join(".git"), "gitdir: here").expect("seed git marker");
+    fs::create_dir_all(&nested).expect("create nested dir");
+    fs::create_dir_all(&dot_codex).expect("create .codex dir");
+    fs::create_dir_all(
+        configured_db_path
+            .parent()
+            .expect("configured zmemory path should have parent"),
+    )
+    .expect("create zmemory parent dir");
+    fs::write(
+        dot_codex.join("config.toml"),
+        format!("[zmemory]\npath = \"{}\"\n", configured_db_path.display()),
+    )
+    .expect("write project config");
+    fs::create_dir_all(turn.config.codex_home.as_path()).expect("create codex home");
+    fs::write(
+        turn.config.codex_home.join("config.toml"),
+        format!(
+            "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            workspace.path().display()
+        ),
+    )
+    .expect("write home config");
+    turn.cwd = AbsolutePathBuf::try_from(nested).expect("nested path should be absolute");
+
+    let config = build_agent_spawn_config(
+        &BaseInstructions {
+            text: "base".to_string(),
+        },
+        &turn,
+    )
+    .await
+    .expect("spawn config");
+
+    assert_eq!(config.zmemory.path, Some(configured_db_path));
 }

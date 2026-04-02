@@ -149,7 +149,7 @@ async fn try_resume_closed_agent(
     receiver_thread_id: ThreadId,
     child_depth: i32,
 ) -> Result<(), FunctionCallError> {
-    let config = build_agent_resume_config(turn.as_ref(), child_depth)?;
+    let config = build_agent_resume_config(turn.as_ref(), child_depth).await?;
     session
         .services
         .agent_control

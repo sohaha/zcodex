@@ -2,6 +2,7 @@ use crate::agent::AgentStatus;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::config::Config;
+use crate::config::ConfigBuilder;
 use crate::error::CodexErr;
 use crate::function_tool::FunctionCallError;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
@@ -10,6 +11,7 @@ use crate::models_manager::manager::RefreshStrategy;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
+use codex_app_server_protocol::ConfigLayerSource;
 use codex_features::Feature;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
@@ -205,27 +207,27 @@ pub(crate) fn parse_collab_input(
 /// approval policy, sandbox, and cwd. Role-specific overrides are layered after this step;
 /// skipping this helper and cloning stale config state directly can send the child agent out with
 /// the wrong provider or runtime policy.
-pub(crate) fn build_agent_spawn_config(
+pub(crate) async fn build_agent_spawn_config(
     base_instructions: &BaseInstructions,
     turn: &TurnContext,
 ) -> Result<Config, FunctionCallError> {
-    let mut config = build_agent_shared_config(turn)?;
+    let mut config = build_agent_shared_config(turn).await?;
     config.base_instructions = Some(base_instructions.text.clone());
     Ok(config)
 }
 
-pub(crate) fn build_agent_resume_config(
+pub(crate) async fn build_agent_resume_config(
     turn: &TurnContext,
     child_depth: i32,
 ) -> Result<Config, FunctionCallError> {
-    let mut config = build_agent_shared_config(turn)?;
+    let mut config = build_agent_shared_config(turn).await?;
     apply_spawn_agent_overrides(&mut config, child_depth);
     // For resume, keep base instructions sourced from rollout/session metadata.
     config.base_instructions = None;
     Ok(config)
 }
 
-fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallError> {
+async fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallError> {
     let base_config = turn.config.clone();
     let mut config = (*base_config).clone();
     config.model = Some(turn.model_info.slug.clone());
@@ -235,9 +237,42 @@ fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallE
     config.model_reasoning_summary = Some(turn.reasoning_summary);
     config.developer_instructions = turn.developer_instructions.clone();
     config.compact_prompt = turn.compact_prompt.clone();
+    reload_project_scoped_zmemory_config(&mut config, turn).await;
     apply_spawn_agent_runtime_overrides(&mut config, turn)?;
 
     Ok(config)
+}
+
+async fn reload_project_scoped_zmemory_config(config: &mut Config, turn: &TurnContext) {
+    let zmemory_origin = config
+        .config_layer_stack
+        .origins()
+        .remove("zmemory.path")
+        .map(|metadata| metadata.name);
+    if !matches!(
+        zmemory_origin,
+        None | Some(ConfigLayerSource::Project { .. })
+    ) {
+        return;
+    }
+
+    match ConfigBuilder::default()
+        .codex_home(config.codex_home.clone())
+        .fallback_cwd(Some(turn.cwd.to_path_buf()))
+        .build()
+        .await
+    {
+        Ok(reloaded_config) => {
+            config.zmemory = reloaded_config.zmemory;
+        }
+        Err(err) => {
+            warn!(
+                error = %err,
+                cwd = %turn.cwd.display(),
+                "failed to reload child zmemory config for current turn cwd; using turn config"
+            );
+        }
+    }
 }
 
 /// Copies runtime-only turn state onto a child config before it is handed to `AgentControl`.

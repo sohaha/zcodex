@@ -65,7 +65,7 @@ impl ToolHandler for Handler {
             )
             .await;
         let mut config =
-            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref())?;
+            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref()).await?;
         apply_requested_spawn_agent_model_overrides(
             &session,
             turn.as_ref(),
