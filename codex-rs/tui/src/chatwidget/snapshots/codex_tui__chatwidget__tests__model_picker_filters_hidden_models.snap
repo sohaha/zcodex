@@ -2,9 +2,9 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Select Model and Effort
-  Access legacy models by running codex -m <model_name> or in your config.toml
+  选 择 模 型 与 推 理 级 别
+  可 通 过  `codex -m <model_name>` 或  `config.toml` 使 用 旧 模 型 。
 
 › 1. test-visible-model (当 前 )  test-visible-model description
 
-  Press enter to select reasoning effort, or esc to dismiss.
+  按  enter 选 择 推 理 级 别 ， 或 按  esc 关 闭 。

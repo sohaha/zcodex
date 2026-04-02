@@ -85,15 +85,7 @@ impl ChatWidget {
                 .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
         {
-            let label = if invalid_items.len() == 1 {
-                "项"
-            } else {
-                "项"
-            };
-            let message = format!(
-                "已忽略无效的状态栏{label}：{}。",
-                proper_join(invalid_items)
-            );
+            let message = format!("已忽略无效的状态栏项：{}。", proper_join(invalid_items));
             self.on_warning(message);
         }
     }
@@ -106,15 +98,7 @@ impl ChatWidget {
                 .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
         {
-            let label = if invalid_items.len() == 1 {
-                "项"
-            } else {
-                "项"
-            };
-            let message = format!(
-                "已忽略无效的终端标题{label}：{}。",
-                proper_join(invalid_items)
-            );
+            let message = format!("已忽略无效的终端标题项：{}。", proper_join(invalid_items));
             self.on_warning(message);
         }
     }
@@ -427,7 +411,7 @@ impl ChatWidget {
                 let fast_label = if self
                     .should_show_fast_status(self.current_model(), self.config.service_tier)
                 {
-                    " fast"
+                    " 快速"
                 } else {
                     ""
                 };

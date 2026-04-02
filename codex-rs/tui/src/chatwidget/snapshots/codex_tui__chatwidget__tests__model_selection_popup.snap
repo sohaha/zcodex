@@ -2,8 +2,8 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Select Model and Effort
-  Access legacy models by running codex -m <model_name> or in your config.toml
+  选 择 模 型 与 推 理 级 别
+  可 通 过  `codex -m <model_name>` 或  `config.toml` 使 用 旧 模 型 。
 
 › 1. gpt-5.3-codex (默 认 )  最 新 旗 舰 级 智 能 编 程 模 型 。
   2. gpt-5.4               最 新 旗 舰 级 智 能 编 程 模 型 。
@@ -12,4 +12,4 @@ expression: popup
   5. gpt-5.2               最 新 旗 舰 模 型 ， 在 知 识 、 推 理 和 编 程 方 面 均 有 提 升
   6. gpt-5.1-codex-mini    为  Codex 优 化 。 更 便 宜 、 更 快 ， 但 能 力 稍 弱 。
 
-  Press enter to select reasoning effort, or esc to dismiss.
+  按  enter 选 择 推 理 级 别 ， 或 按  esc 关 闭 。

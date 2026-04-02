@@ -2,10 +2,10 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Select Personality
-  Choose a communication style for Codex.
+  选 择 人 格
+  为  Codex 选 择 一 种 沟 通 风 格 。
 
-  1. Friendly          Warm, collaborative, and helpful.
-› 2. Pragmatic (当 前 )  Concise, task-focused, and direct.
+  1. 友 好          更 温 和 、 协 作 、 乐 于 帮 助 。
+› 2. 务 实  (当 前 )  更 简 洁 、 聚 焦 任 务 、 表 达 直 接 。
 
   按  enter 确 认 或 按  esc 返 回

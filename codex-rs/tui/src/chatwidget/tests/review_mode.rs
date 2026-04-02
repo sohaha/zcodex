@@ -1234,7 +1234,7 @@ async fn interrupted_turn_pending_steers_message_snapshot() {
     let info = cells
         .iter()
         .map(|cell| lines_to_single_string(cell))
-        .find(|line| line.contains("Model interrupted to submit steer instructions."))
+        .find(|line| line.contains("模型已中断，以便提交引导指令。"))
         .expect("expected steer interrupt info message to be inserted");
     assert_chatwidget_snapshot!("interrupted_turn_pending_steers_message", info);
 }
@@ -1254,7 +1254,7 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     // Verify child view is on top.
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("自定义评审说明"),
+        compact_rendered_text(&header).contains("自定义评审说明"),
         "expected custom prompt view header: {header:?}"
     );
 
@@ -1262,7 +1262,7 @@ async fn review_custom_prompt_escape_navigates_back_then_dismisses() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("选择评审预设"),
+        compact_rendered_text(&header).contains("选择评审预设"),
         "expected to return to parent review popup: {header:?}"
     );
 
@@ -1290,7 +1290,7 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
     // Verify child view header.
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("选择基准分支"),
+        compact_rendered_text(&header).contains("选择基准分支"),
         "expected branch picker header: {header:?}"
     );
 
@@ -1298,7 +1298,7 @@ async fn review_branch_picker_escape_navigates_back_then_dismisses() {
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let header = render_bottom_first_row(&chat, /*width*/ 60);
     assert!(
-        header.contains("选择评审预设"),
+        compact_rendered_text(&header).contains("选择评审预设"),
         "expected to return to parent review popup: {header:?}"
     );
 
