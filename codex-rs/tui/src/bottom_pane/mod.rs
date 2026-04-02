@@ -1375,7 +1375,7 @@ mod tests {
             r0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
         assert!(
-            !r0.contains("Working"),
+            !r0.contains("Working") && !r0.contains("处 理 中"),
             "overlay should not render above modal"
         );
     }
@@ -1426,7 +1426,7 @@ mod tests {
             row0.push(buf[(x, 0)].symbol().chars().next().unwrap_or(' '));
         }
         assert!(
-            row0.contains("Working"),
+            row0.contains("Working") || row0.contains("处 理 中"),
             "expected Working header after denial on row 0: {row0:?}"
         );
 
@@ -1472,7 +1472,10 @@ mod tests {
         pane.render(area, &mut buf);
 
         let bufs = snapshot_buffer(&buf);
-        assert!(bufs.contains("• Working"), "expected Working header");
+        assert!(
+            bufs.contains("• Working") || bufs.contains("• 处 理 中"),
+            "expected Working header"
+        );
     }
 
     #[test]
@@ -1555,7 +1558,12 @@ mod tests {
 
         let area = Rect::new(0, 0, width, after);
         let rendered = render_snapshot(&pane, area);
-        assert!(rendered.contains("background terminal running · /ps to view"));
+        let compact = rendered.replace(' ', "");
+        assert!(
+            compact.contains("后台终端运行中·/ps查看")
+                || compact.contains("backgroundterminalrunning·/pstoview"),
+            "expected unified exec summary; got {rendered:?}"
+        );
     }
 
     #[test]

@@ -2,4 +2,4 @@
 source: tui/src/history_cell.rs
 expression: rendered
 ---
-■ 消息超过最大长度 1048576 个字符（1048577 个）。
+■ Message exceeds the maximum length of 1048576 characters (1048577 provided).

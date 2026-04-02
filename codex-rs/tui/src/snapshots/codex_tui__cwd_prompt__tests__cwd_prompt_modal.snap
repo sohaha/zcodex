@@ -3,12 +3,12 @@ source: tui/src/cwd_prompt.rs
 expression: terminal.backend()
 ---
 
-Choose working directory to resume this session
+选择工作目录以恢复此会话
 
-  Session = latest cwd recorded in the resumed session                          
-  Current = your current working directory
+  会话 = 已已恢复会话中记录的最新目录                                           
+  当前 = 你当前的工作目录
 
-› 1. Use session directory (/Users/example/session)                             
-  2. Use current directory (/Users/example/current)
+› 1. 使用会话目录（/Users/example/session)                                      
+  2. 使用当前目录（/Users/example/current)
 
-  按 enter to continue
+  按 enter 继续

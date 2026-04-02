@@ -1,8 +1,8 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  插件s
+  Plugins
   Loading available plugins...
   This first pass shows the ChatGPT marketplace only.
 

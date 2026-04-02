@@ -3,19 +3,19 @@ source: tui/src/bottom_pane/status_line_setup.rs
 expression: "render_lines(&view, 72)"
 ---
                                                                         
-  Configure Status Line                                                 
-  Select which items to display in the status line.                     
+  配 置 状 态 栏                                                             
+  选 择 要 在 状 态 栏 中 显 示 的 项 目                                             
                                                                         
-  Type to search                                                        
+  输 入 搜 索                                                               
   >                                                                     
-› [x] model-name            Current model name                          
-  [x] current-dir           Current working directory                   
-  [x] git-branch            Current Git branch (omitted when unavaila…  
-  [ ] model-with-reasoning  Current model name with reasoning level     
-  [ ] project-root          Project root directory (omitted when unav…  
-  [ ] context-remaining     Percentage of context window remaining (o…  
-  [ ] context-used          Percentage of context window used (omitte…  
-  [ ] five-hour-limit       Remaining usage on 5-hour usage limit (om…  
+› [x] model-name            当 前 模 型 名 称                                 
+  [x] current-dir           当 前 工 作 目 录                                 
+  [x] git-branch            当 前  Git 分 支 （ 不 可 用 时 省 略 ）                
+  [ ] model-with-reasoning  当 前 模 型 名 称 及 推 理 级 别                       
+  [ ] project-root          项 目 根 目 录 （ 不 可 用 时 省 略 ）                   
+  [ ] context-remaining     上 下 文 窗 口 剩 余 百 分 比 （ 未 知 时 省 略 ）           
+  [ ] context-used          上 下 文 窗 口 已 用 百 分 比 （ 未 知 时 省 略 ）           
+  [ ] five-hour-limit       5 小 时 用 量 限 额 剩 余 （ 不 可 用 时 省 略 ）           
                                                                         
   gpt-5-codex · ~/codex-rs · jif/statusline-preview                     
-  Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc
+  使 用  ↑↓ 导 航 ， ←→ 移 动 ， 空 格 选 择 ， 回 车 确 认 ， Esc 取 消 。

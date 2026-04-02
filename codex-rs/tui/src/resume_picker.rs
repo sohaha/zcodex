@@ -1967,9 +1967,7 @@ mod tests {
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.inline_error = Some(String::from(
-            "Failed to read session metadata from /tmp/missing.jsonl",
-        ));
+        state.inline_error = Some(String::from("读取会话元数据失败：/tmp/missing.jsonl"));
 
         let width: u16 = 80;
         let height: u16 = 1;
@@ -2520,9 +2518,7 @@ mod tests {
         assert!(selection.is_none());
         assert_eq!(
             state.inline_error,
-            Some(String::from(
-                "Failed to read session metadata from /tmp/missing.jsonl"
-            ))
+            Some(String::from("读取会话元数据失败：/tmp/missing.jsonl"))
         );
     }
 

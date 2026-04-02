@@ -3,13 +3,13 @@ source: tui/src/bottom_pane/request_user_input/mod.rs
 expression: "render_snapshot(&overlay, area)"
 ---
                                                                                 
-  Submit with unanswered questions?                                             
-  2 unanswered questions                                                        
+  存 在 未 回 答 的 问 题 ， 是 否 提 交 ？                                                   
+  2 个 未 回 答 的 问 题                                                               
                                                                                 
-  › 1. Proceed  Submit with 2 unanswered questions.                             
-    2. Go back  Return to the first unanswered question.                        
-                                                                                
-                                                                                
+  › 1. 提 交   提 交  2 个 未 回 答 的 问 题 。                                             
+    2. 返 回   返 回 到 第 一 个 未 回 答 的 问 题                                            
                                                                                 
                                                                                 
-  Press enter to confirm or esc to go back
+                                                                                
+                                                                                
+  按  enter 确 认 或 按  esc 返 回

@@ -1,9 +1,19 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: terminal.backend()
+source: tui/src/chatwidget/tests/exec_flow.rs
+expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"• Working (0s • esc to interrupt) · 1 background terminal running · /ps to view…"
+"• 处理中 (0s • esc 中断) · 1 个后台终端运行中 · /ps 查看 · /stop 关闭           " Hidden by multi-width symbols: [(3, " "), (5, " "), (7, " "), (20, " "), (22, " "), (30, " "), (32, " "), (34, " "), (36, " "), (38, " "), (40, " "), (42, " "), (44, " "), (53, " "), (55, " "), (66, " "), (68, " ")]
+"  .-----------------------------------.                                         "
+"  | drifts up through the footer with |                                         "
+"  | impeccable manners                |                                         "
+"  '-----------------------------------.                                         "
+"    \                                                                           "
+"   .---.                                                                        "
+"  ( ^ ^ )                                                                       "
+"  / ~~~ \\                                                                      "
+"  Echo ★ common ghost · visible · fidgety                                       "
+"  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0                     "
 "                                                                                "
 "                                                                                "
 "› Ask Codex to do anything                                                      "

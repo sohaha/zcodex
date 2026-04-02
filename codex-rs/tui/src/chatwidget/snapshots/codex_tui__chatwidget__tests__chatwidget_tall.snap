@@ -1,26 +1,27 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: term.backend().vt100().screen().contents()
+source: tui/src/chatwidget/tests/status_and_layout.rs
+expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
-• Working (0s • esc to interrupt)
 
-• Queued follow-up messages
+• 处理中 (0s • esc 中断)
+  .-----------------------------------.
+  | drifts up through the footer with |
+  | impeccable manners                |
+  '-----------------------------------.
+    \
+   .---.
+  ( ^ ^ )
+  / ~~~ \\
+  Echo ★ common ghost · visible · fidgety
+  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0
+
+• 排队的后续消息
   ↳ Hello, world! 0
   ↳ Hello, world! 1
   ↳ Hello, world! 2
   ↳ Hello, world! 3
   ↳ Hello, world! 4
   ↳ Hello, world! 5
-  ↳ Hello, world! 6
-  ↳ Hello, world! 7
-  ↳ Hello, world! 8
-  ↳ Hello, world! 9
-  ↳ Hello, world! 10
-  ↳ Hello, world! 11
-  ↳ Hello, world! 12
-  ↳ Hello, world! 13
-  ↳ Hello, world! 14
-  ↳ Hello, world! 15
 
 › Ask Codex to do anything
 

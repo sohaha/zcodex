@@ -4,10 +4,9 @@ expression: terminal.backend()
 ---
 > 你当前位于 /workspace/project
 
-  你信任此目录的内容吗？处理不受信任的内容存在更高的提示
-  注入风险。
+  你信任此目录的内容吗？处理不受信任的内容存在更高的提示注入风险。
 
-› 1. 是，继续
+› 1. 是，继续                                                         
   2. 否，退出
 
-  按 enter 继续
+  Press enter 继续

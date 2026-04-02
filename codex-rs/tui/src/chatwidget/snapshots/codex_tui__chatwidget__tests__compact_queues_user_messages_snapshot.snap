@@ -1,11 +1,21 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: term.backend().vt100().screen().contents()
+source: tui/src/chatwidget/tests/slash_commands.rs
+expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
-• Working (0s • esc to interrupt)
 
-• Messages to be submitted at end of turn
-  ↳ Steer submitted while /compact was running.
+• 处理中 (0s • esc 中断)
+  .-----------------------------------.
+  | drifts up through the footer with |
+  | impeccable manners                |
+  '-----------------------------------.
+    \
+   .---.
+  ( ^ ^ )
+  / ~~~ \\
+  Echo ★ common ghost · visible · fidgety
+  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0
+
+• 回合结束后提交的消息
 
 › Ask Codex to do anything
 

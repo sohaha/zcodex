@@ -2,14 +2,14 @@
 source: tui/src/bottom_pane/mod.rs
 expression: "render_snapshot(&pane, area)"
 ---
-• Working (0s • esc to interrupt)               
+• Working (0s • esc 中 断 )                       
   └ First detail line                           
     Second detail line                          
                                                 
-• Queued follow-up messages                     
+• 排 队 的 后 续 消 息                                 
   ↳ Queued follow-up question                   
-    ⌥ + ↑ edit last queued message              
+    ⌥ + ↑ 编 辑 上 一 条 排 队 消 息                     
                                                 
 › Ask Codex to do anything                      
                                                 
-  ? 查看快捷键            100% 上下文剩余
+  ? 查 看 快 捷 键                  剩 余 上 下 文  100%

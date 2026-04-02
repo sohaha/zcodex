@@ -602,7 +602,7 @@ mod tests {
         let subtitle = theme_picker_subtitle(Some(&codex_home), Some(200));
 
         assert!(subtitle.contains("~"));
-        assert!(subtitle.contains("directory"));
+        assert!(subtitle.contains("目录"));
     }
 
     #[test]

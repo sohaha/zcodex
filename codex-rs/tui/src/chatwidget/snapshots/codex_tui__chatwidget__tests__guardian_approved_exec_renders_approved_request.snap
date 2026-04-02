@@ -1,9 +1,19 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: term.backend().vt100().screen().contents()
+source: tui/src/chatwidget/tests/mcp_guardian.rs
+expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
-✔ Auto-reviewer approved codex to run rm -f /tmp/guardian-approved.sqlite this
-  time
+
+✔
+  .-----------------------------------.
+  | drifts up through the footer with |
+  | impeccable manners                |
+  '-----------------------------------.
+    \
+   .---.
+  ( ^ ^ )
+  / ~~~ \\
+  Echo ★ common ghost · visible · fidgety
+  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0
 
 
 › Ask Codex to do anything

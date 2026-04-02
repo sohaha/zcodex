@@ -1,8 +1,8 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: popup
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+expression: strip_osc8_for_snapshot(&popup)
 ---
-  插件s
+  Plugins
   Figma · Can be installed · ChatGPT Marketplace
   Data shared with this app is subject to the app's terms of service and privacy policy. Learn
   more.
@@ -14,4 +14,4 @@ expression: popup
      Apps             Figma, Slack
      MCP Servers      figma-mcp, docs-mcp
 
-  按 esc to close.
+  Press esc to close.

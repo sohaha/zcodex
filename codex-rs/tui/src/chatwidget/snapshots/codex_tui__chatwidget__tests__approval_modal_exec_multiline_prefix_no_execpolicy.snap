@@ -1,16 +1,16 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/exec_flow.rs
 expression: contents
 ---
 
 
-  Would you like to run the following command?
+  是否运行以下命令？
 
   $ python - <<'PY'
   print('hello')
   PY
 
-› 1. Yes, proceed (y)
-  2. No, and tell Codex what to do differently (esc)
+› 1. 是，继续 (y)
+  2. 否，告诉 Codex 换个做法 (esc)
 
-  按 enter 确认或 esc to cancel
+  Press enter 确认或 esc 取消

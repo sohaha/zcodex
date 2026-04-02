@@ -1,17 +1,7 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: term.backend().vt100().screen().contents()
+source: tui/src/chatwidget/tests/status_and_layout.rs
+expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -36,9 +26,19 @@ expression: term.backend().vt100().screen().contents()
   └ Search Change Approved
     Read diff_render.rs
 
-• Investigating rendering code (0s • esc to interrupt)
+• Investigating rendering code (0s • esc 中断)
+  .-----------------------------------.
+  | drifts up through the footer with |
+  | impeccable manners                |
+  '-----------------------------------.
+    \
+   .---.
+  ( ^ ^ )
+  / ~~~ \\
+  Echo ★ common ghost · visible · fidgety
+  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0
 
 
 › Summarize recent commits
 
-  tab 排队消息                                       100% 上下文剩余
+  tab 排队消息                                                 剩余上下文 100%

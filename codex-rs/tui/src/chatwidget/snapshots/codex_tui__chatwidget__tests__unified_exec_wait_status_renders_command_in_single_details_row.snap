@@ -1,9 +1,10 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: rendered
+source: tui/src/chatwidget/tests/exec_flow.rs
+expression: normalize_snapshot_paths(rendered)
 ---
-• Waiting for background terminal (0s • esc to …
+• Waiting for background terminal (0s • esc 中 …
   └ cargo test -p codex-core -- --exact…
+(~oo~) "drifts up through the footer with impecc
 
 
 › Ask Codex to do anything

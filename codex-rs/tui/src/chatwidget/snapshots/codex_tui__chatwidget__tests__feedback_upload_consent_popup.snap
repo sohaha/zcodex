@@ -1,19 +1,18 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Upload logs?
+  是 否 上 传 日 志 ？
 
-  The following files will be sent:
+  以 下 文 件 将 被 发 送 ：
     • codex-logs.log
     • codex-connectivity-diagnostics.txt
 
-  Connectivity diagnostics
+  连 接 诊 断
     - OPENAI_BASE_URL is set and may affect connectivity.
       - OPENAI_BASE_URL = hello
 
-› 1. Yes  Share the current Codex session logs with the team for
-          troubleshooting.
-  2. No
+› 1. 是   分 享 当 前  Codex 会 话 日 志 给 团 队 以 排 查 问 题
+  2. 否
 
-  按 enter 确认或 esc 返回
+  按  enter 确 认 或 按  esc 返 回

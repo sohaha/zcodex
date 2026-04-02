@@ -3,11 +3,8 @@ use pretty_assertions::assert_eq;
 
 pub(super) async fn test_config() -> Config {
     // Start from the built-in defaults so tests do not inherit host/system config.
-    let codex_home = tempfile::Builder::new()
-        .prefix("chatwidget-tests-")
-        .tempdir()
-        .expect("tempdir")
-        .keep();
+    let codex_home = PathBuf::from(test_path_display("/tmp/codex-home"));
+    std::fs::create_dir_all(&codex_home).expect("create codex home");
     let mut config =
         Config::load_default_with_cli_overrides_for_codex_home(codex_home.clone(), Vec::new())
             .expect("config");

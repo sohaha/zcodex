@@ -122,7 +122,11 @@ mod tests {
             for x in 0..buf.area.width {
                 row.push_str(buf[(x, y)].symbol());
             }
-            row.contains(needle)
+            if row.contains(needle) {
+                return true;
+            }
+            let collapsed: String = row.chars().filter(|ch| *ch != ' ').collect();
+            collapsed.contains(needle)
         })
     }
 

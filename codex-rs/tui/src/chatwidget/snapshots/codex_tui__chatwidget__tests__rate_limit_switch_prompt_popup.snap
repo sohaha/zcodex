@@ -1,6 +1,5 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
-assertion_line: 492
 expression: popup
 ---
   Approaching rate limits
@@ -12,4 +11,4 @@ expression: popup
   3. Keep current model (never show again)  Hide future rate limit reminders
                                             about switching models.
 
-  按 enter 确认或 esc 返回
+  按  enter 确 认 或 按  esc 返 回

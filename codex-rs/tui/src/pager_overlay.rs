@@ -863,8 +863,9 @@ mod tests {
         overlay.render(area, &mut buf);
 
         let s = buffer_to_text(&buf, area);
+        let collapsed: String = s.chars().filter(|ch| *ch != ' ').collect();
         assert!(
-            s.contains("编辑上一条"),
+            collapsed.contains("编辑上一条"),
             "expected '编辑上一条' hint in overlay footer, got: {s:?}"
         );
     }
@@ -882,8 +883,9 @@ mod tests {
         overlay.render(area, &mut buf);
 
         let s = buffer_to_text(&buf, area);
+        let collapsed: String = s.chars().filter(|ch| *ch != ' ').collect();
         assert!(
-            s.contains("编辑下一条"),
+            collapsed.contains("编辑下一条"),
             "expected '编辑下一条' hint in overlay footer, got: {s:?}"
         );
     }

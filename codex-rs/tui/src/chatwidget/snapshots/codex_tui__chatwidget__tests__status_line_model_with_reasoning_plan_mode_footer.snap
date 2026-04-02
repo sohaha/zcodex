@@ -1,9 +1,20 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: terminal.backend()
+source: tui/src/chatwidget/tests/status_and_layout.rs
+expression: normalized_backend_snapshot(terminal.backend())
 ---
+"                                                                                "
+"  .-----------------------------------.                                         "
+"  | drifts up through the footer with |                                         "
+"  | impeccable manners                |                                         "
+"  '-----------------------------------.                                         "
+"    \                                                                           "
+"   .---.                                                                        "
+"  ( ^ ^ )                                                                       "
+"  / ~~~ \\                                                                      "
+"  Echo ★ common ghost · visible · fidgety                                       "
+"  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0                     "
 "                                                                                "
 "                                                                                "
 "› Ask Codex to do anything                                                      "
 "                                                                                "
-"  gpt-5.3-codex medium                          计划模式 (shift+tab 切换模式)  "
+"  gpt-5.3-codex medium                           计划模式 (shift+tab 切换模式)  " Hidden by multi-width symbols: [(50, " "), (52, " "), (54, " "), (56, " "), (70, " "), (72, " "), (74, " "), (76, " ")]

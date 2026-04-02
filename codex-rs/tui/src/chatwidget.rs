@@ -3845,9 +3845,7 @@ impl ChatWidget {
                                 .as_ref()
                                 .and_then(|thread_id| agents_states.get(&thread_id.to_string()))
                                 .map(app_server_collab_state_to_core)
-                                .unwrap_or_else(|| {
-                                    AgentStatus::Errored("Agent spawn failed".into())
-                                }),
+                                .unwrap_or_else(|| AgentStatus::Errored("代理生成失败".into())),
                         },
                         spawn_request.as_ref(),
                     ));
@@ -3912,9 +3910,7 @@ impl ChatWidget {
                                     .iter()
                                     .find_map(|thread_id| agents_states.get(thread_id))
                                     .map(app_server_collab_state_to_core)
-                                    .unwrap_or_else(|| {
-                                        AgentStatus::Errored("Agent resume failed".into())
-                                    }),
+                                    .unwrap_or_else(|| AgentStatus::Errored("代理恢复失败".into())),
                             },
                         ));
                     }
@@ -3973,9 +3969,7 @@ impl ChatWidget {
                                 .iter()
                                 .find_map(|thread_id| agents_states.get(thread_id))
                                 .map(app_server_collab_state_to_core)
-                                .unwrap_or_else(|| {
-                                    AgentStatus::Errored("Agent close failed".into())
-                                }),
+                                .unwrap_or_else(|| AgentStatus::Errored("代理关闭失败".into())),
                         },
                     ));
                 }
@@ -10996,7 +10990,7 @@ impl Notification {
         match self {
             Notification::AgentTurnComplete { response } => {
                 Notification::agent_turn_preview(response)
-                    .unwrap_or_else(|| "Agent turn complete".to_string())
+                    .unwrap_or_else(|| "代理回合完成".to_string())
             }
             Notification::ExecApprovalRequested { command } => {
                 format!(

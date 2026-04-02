@@ -1,9 +1,19 @@
 ---
-source: tui/src/chatwidget/tests.rs
-expression: terminal.backend()
+source: tui/src/chatwidget/tests/status_and_layout.rs
+expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"• Analyzing (0s • esc to interrupt)                                             "
+"• Analyzing (0s • esc 中断)                                                     " Hidden by multi-width symbols: [(23, " "), (25, " ")]
+"  .-----------------------------------.                                         "
+"  | drifts up through the footer with |                                         "
+"  | impeccable manners                |                                         "
+"  '-----------------------------------.                                         "
+"    \                                                                           "
+"   .---.                                                                        "
+"  ( ^ ^ )                                                                       "
+"  / ~~~ \\                                                                      "
+"  Echo ★ common ghost · visible · fidgety                                       "
+"  peak PATIENCE 74 · none · sleepy eyes · hatching · pets 0                     "
 "                                                                                "
 "                                                                                "
 "› Ask Codex to do anything                                                      "

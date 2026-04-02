@@ -111,9 +111,9 @@ mod tests {
 
         assert_snapshot!(
             snapshot_rows(&widget, /*width*/ 40).replace(' ', "."),
-            @r"
+            @"
         ..!.Approval.needed.in.Robie.[explorer].
-        ..../agent.to.switch.threads............
+        ..../agent.切.换.线.程......................
         "
         );
     }
@@ -122,7 +122,7 @@ mod tests {
     fn render_multiple_threads_snapshot() {
         let mut widget = PendingThreadApprovals::new();
         widget.set_threads(vec![
-            "Main [default]".to_string(),
+            "主线程 [默认]".to_string(),
             "Robie [explorer]".to_string(),
             "Inspector".to_string(),
             "Extra agent".to_string(),
@@ -130,12 +130,12 @@ mod tests {
 
         assert_snapshot!(
             snapshot_rows(&widget, /*width*/ 44).replace(' ', "."),
-            @r"
-        ..!.Approval.needed.in.Main.[default].......
+            @"
+        ..!.Approval.needed.in.主.线.程..[默.认.]........
         ..!.Approval.needed.in.Robie.[explorer].....
         ..!.Approval.needed.in.Inspector............
         ............................................
-        ..../agent.to.switch.threads................
+        ..../agent.切.换.线.程..........................
         "
         );
     }

@@ -1,12 +1,12 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  插件s
+  Plugins
   Browse plugins from available marketplaces.
   Installed 0 of 3 available plugins.
 
   sla
-› Slack  Available   按 Enter to view plugin details.
+› Slack  Available   Press Enter to view plugin details.
 
-  按 esc to close.
+  Press esc to close.

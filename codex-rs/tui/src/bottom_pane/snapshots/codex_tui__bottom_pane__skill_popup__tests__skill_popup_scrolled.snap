@@ -1,21 +1,20 @@
 ---
 source: tui/src/bottom_pane/skill_popup.rs
-assertion_line: 289
-expression: "render_popup(&popup, /*width*/ 72)"
+expression: "render_popup(&popup, 72)"
 ---
 Buffer {
     area: Rect { x: 0, y: 0, width: 72, height: 10 },
     content: [
-        "  Mention 01  [技能] Description 01                                    ",
-        "  Mention 02  [技能] Description 02                                    ",
-        "  Mention 03  [技能] Description 03                                    ",
-        "  Mention 04  [技能] Description 04                                    ",
-        "  Mention 05  [技能] Description 05                                    ",
-        "  Mention 06  [技能] Description 06                                    ",
-        "  Mention 07  [技能] Description 07                                    ",
-        "  Mention 08  [技能] Description 08                                    ",
+        "  Mention 01  [Skill] Description 01                                    ",
+        "  Mention 02  [Skill] Description 02                                    ",
+        "  Mention 03  [Skill] Description 03                                    ",
+        "  Mention 04  [Skill] Description 04                                    ",
+        "  Mention 05  [Skill] Description 05                                    ",
+        "  Mention 06  [Skill] Description 06                                    ",
+        "  Mention 07  [Skill] Description 07                                    ",
+        "  Mention 08  [Skill] Description 08                                    ",
         "                                                                        ",
-        "  按 enter to insert or esc to close                                 ",
+        "  按 enter 插入或 esc 关闭                                              ", // hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (23, " "), (25, " ")]
     ],
     styles: [
         x: 0, y: 0, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
@@ -35,9 +34,9 @@ Buffer {
         x: 36, y: 6, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
         x: 2, y: 7, fg: Cyan, bg: Reset, underline: Reset, modifier: BOLD,
         x: 36, y: 7, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 8, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 13, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
-        x: 27, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
-        x: 30, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 5, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 10, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
+        x: 18, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: DIM,
+        x: 21, y: 9, fg: Reset, bg: Reset, underline: Reset, modifier: NONE,
     ]
 }

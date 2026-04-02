@@ -720,15 +720,17 @@ async fn unified_exec_wait_status_header_updates_on_late_command_display() {
     });
 
     assert!(chat.active_cell.is_none());
-    assert_eq!(
-        chat.current_status.header,
-        "Waiting for background terminal"
+    assert!(
+        chat.current_status.header == "等待后台终端"
+            || chat.current_status.header == "Waiting for background terminal"
     );
     let status = chat
         .bottom_pane
         .status_widget()
         .expect("status indicator should be visible");
-    assert_eq!(status.header(), "Waiting for background terminal");
+    assert!(
+        status.header() == "等待后台终端" || status.header() == "Waiting for background terminal"
+    );
     assert_eq!(status.details(), Some("sleep 5"));
 }
 
@@ -1715,7 +1717,10 @@ async fn apply_patch_untrusted_shows_approval_modal() -> anyhow::Result<()> {
         for x in 0..area.width {
             row.push(buf[(x, y)].symbol().chars().next().unwrap_or(' '));
         }
-        if row.contains("Would you like to make the following edits?") {
+        let compact = row.replace(' ', "");
+        if row.contains("Would you like to make the following edits?")
+            || compact.contains("是否进行以下编辑？")
+        {
             contains_title = true;
             break;
         }

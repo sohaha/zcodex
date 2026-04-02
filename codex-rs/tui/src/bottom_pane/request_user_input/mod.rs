@@ -1760,21 +1760,13 @@ mod tests {
         let tip_texts = tips.iter().map(|tip| tip.text.as_str()).collect::<Vec<_>>();
         assert_eq!(
             tip_texts,
-            vec![
-                "tab to add notes",
-                "enter to submit answer",
-                "←/→ to navigate questions",
-                "esc to interrupt",
-            ]
+            vec!["Tab 添加备注", "回车提交回答", "←/→ 切换问题", "Esc 中断",]
         );
 
         overlay.handle_key_event(KeyEvent::from(KeyCode::Tab));
         let tips = overlay.footer_tips();
         let tip_texts = tips.iter().map(|tip| tip.text.as_str()).collect::<Vec<_>>();
-        assert_eq!(
-            tip_texts,
-            vec!["tab or esc to clear notes", "enter to submit answer",]
-        );
+        assert_eq!(tip_texts, vec!["Tab 或 Esc 清除备注", "回车提交回答",]);
     }
 
     #[test]
@@ -1799,11 +1791,7 @@ mod tests {
         let tip_texts = tips.iter().map(|tip| tip.text.as_str()).collect::<Vec<_>>();
         assert_eq!(
             tip_texts,
-            vec![
-                "enter to submit all",
-                "ctrl + p / ctrl + n change question",
-                "esc to interrupt",
-            ]
+            vec!["回车全部提交", "Ctrl+P/Ctrl+N 切换问题", "Esc 中断",]
         );
     }
 
@@ -2352,7 +2340,7 @@ mod tests {
 
         let rows = overlay.option_rows();
         let other_row = rows.last().expect("expected none-of-the-above row");
-        assert_eq!(other_row.name, "  4. None of the above");
+        assert_eq!(other_row.name, "  4. 以上都不是");
         assert_eq!(
             other_row.description.as_deref(),
             Some(OTHER_OPTION_DESCRIPTION)
