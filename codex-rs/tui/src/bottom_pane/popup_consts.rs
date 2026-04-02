@@ -14,7 +14,7 @@ pub(crate) fn standard_popup_hint_line() -> Line<'static> {
     Line::from(vec![
         "按 ".into(),
         key_hint::plain(KeyCode::Enter).into(),
-        " 确认或 ".into(),
+        " 确认或按 ".into(),
         key_hint::plain(KeyCode::Esc).into(),
         " 返回".into(),
     ])

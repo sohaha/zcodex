@@ -974,10 +974,10 @@ impl BottomPane {
                     description: None,
                     instructions: match suggestion_type {
                         AppLinkSuggestionType::Install => {
-                            "请在浏览器中安装此应用，然后返回此处。".to_string()
+                            "在浏览器中安装此应用，然后返回此处。".to_string()
                         }
                         AppLinkSuggestionType::Enable => {
-                            "请启用此应用以用于当前请求。".to_string()
+                            "启用此应用以便在当前请求中使用。".to_string()
                         }
                     },
                     url: install_url,

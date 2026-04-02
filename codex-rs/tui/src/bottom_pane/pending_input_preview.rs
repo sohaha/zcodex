@@ -85,10 +85,9 @@ impl PendingInputPreview {
                 &mut lines,
                 width,
                 Line::from(vec![
-                    "将在下次工具调用后提交的消息".into(),
-                    "（按 ".dim(),
+                    "下次工具调用后提交的消息（按 ".into(),
                     key_hint::plain(KeyCode::Esc).into(),
-                    " 中断并立即发送）".dim(),
+                    " 中断并发送）".dim(),
                 ]),
             );
 
@@ -110,7 +109,7 @@ impl PendingInputPreview {
             Self::push_section_header(
                 &mut lines,
                 width,
-                "将在回合结束时提交的消息".into(),
+                "回合结束后提交的消息".into(),
             );
 
             for steer in &self.rejected_steers {

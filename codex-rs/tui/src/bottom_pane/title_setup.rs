@@ -53,17 +53,17 @@ pub(crate) enum TerminalTitleItem {
 impl TerminalTitleItem {
     pub(crate) fn description(self) -> &'static str {
         match self {
-            TerminalTitleItem::AppName => "Codex app name",
-            TerminalTitleItem::Project => "Project name (falls back to current directory name)",
+            TerminalTitleItem::AppName => "Codex 应用名称",
+            TerminalTitleItem::Project => "项目名称（回退到当前目录名）",
             TerminalTitleItem::Spinner => {
-                "Animated task spinner (omitted while idle or when animations are off)"
+                "动画任务指示器（空闲或动画关闭时省略）"
             }
-            TerminalTitleItem::Status => "Compact session status text (Ready, Working, Thinking)",
-            TerminalTitleItem::Thread => "Current thread title (omitted until available)",
-            TerminalTitleItem::GitBranch => "Current Git branch (omitted when unavailable)",
-            TerminalTitleItem::Model => "Current model name",
+            TerminalTitleItem::Status => "会话状态文本（就绪/处理中/思考中）",
+            TerminalTitleItem::Thread => "当前线程标题（可用前省略）",
+            TerminalTitleItem::GitBranch => "当前 Git 分支（不可用时省略）",
+            TerminalTitleItem::Model => "当前模型名称",
             TerminalTitleItem::TaskProgress => {
-                "Latest task progress from update_plan (omitted until available)"
+                "最新任务进度（可用前省略）"
             }
         }
     }
@@ -77,8 +77,8 @@ impl TerminalTitleItem {
             TerminalTitleItem::AppName => "codex",
             TerminalTitleItem::Project => "my-project",
             TerminalTitleItem::Spinner => "⠋",
-            TerminalTitleItem::Status => "Working",
-            TerminalTitleItem::Thread => "Investigate flaky test",
+            TerminalTitleItem::Status => "处理中",
+            TerminalTitleItem::Thread => "排查不稳定测试",
             TerminalTitleItem::GitBranch => "feat/awesome-feature",
             TerminalTitleItem::Model => "gpt-5.2-codex",
             TerminalTitleItem::TaskProgress => "Tasks 2/5",
@@ -151,12 +151,12 @@ impl TerminalTitleSetupView {
 
         Self {
             picker: MultiSelectPicker::builder(
-                "Configure Terminal Title".to_string(),
-                Some("Select which items to display in the terminal title.".to_string()),
+                "配置终端标题".to_string(),
+                Some("选择要在终端标题中显示的项目".to_string()),
                 app_event_tx,
             )
             .instructions(vec![
-                "Use ↑↓ to navigate, ←→ to move, space to select, enter to confirm, esc to cancel."
+                "使用 ↑↓ 导航，←→ 移动，空格选择，回车确认，Esc 取消。"
                     .into(),
             ])
             .items(items)

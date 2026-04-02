@@ -290,7 +290,7 @@ impl ApprovalOverlay {
             let message = if granted_permissions.is_empty() {
                 "未授予额外权限"
             } else if matches!(scope, PermissionGrantScope::Session) {
-                "已授予本次会话的额外权限"
+                "已授予额外权限（本次会话有效）"
             } else {
                 "已授予额外权限"
             };
@@ -650,9 +650,9 @@ fn exec_options(
         .filter_map(|decision| match decision {
             ReviewDecision::Approved => Some(ApprovalOption {
                 label: if network_approval_context.is_some() {
-                    "仅此一次".to_string()
+                    "是，仅此一次".to_string()
                 } else {
-                    "允许继续".to_string()
+                    "是，继续".to_string()
                 },
                 decision: ApprovalDecision::Review(ReviewDecision::Approved),
                 display_shortcut: None,
@@ -669,7 +669,7 @@ fn exec_options(
 
                 Some(ApprovalOption {
                     label: format!(
-                        "允许，且不再询问以 `{rendered_prefix}` 开头的命令"
+                        "是，且不再询问以 `{rendered_prefix}` 开头的命令"
                     ),
                     decision: ApprovalDecision::Review(
                         ReviewDecision::ApprovedExecpolicyAmendment {
@@ -682,11 +682,11 @@ fn exec_options(
             }
             ReviewDecision::ApprovedForSession => Some(ApprovalOption {
                 label: if network_approval_context.is_some() {
-                    "允许，本次会话不阻止此主机".to_string()
+                    "是，允许此主机在本对话中使用".to_string()
                 } else if additional_permissions.is_some() {
-                    "允许，本次会话授予这些权限".to_string()
+                    "是，允许这些权限（本次会话有效）".to_string()
                 } else {
-                    "允许，本次会话不再询问此命令".to_string()
+                    "是，本次会话中不再询问此命令".to_string()
                 },
                 decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
                 display_shortcut: None,
@@ -697,11 +697,11 @@ fn exec_options(
             } => {
                 let (label, shortcut) = match network_policy_amendment.action {
                     NetworkPolicyRuleAction::Allow => (
-                        "Yes, and allow this host in the future".to_string(),
+                        "是，允许此主机（以后不再询问）".to_string(),
                         KeyCode::Char('p'),
                     ),
                     NetworkPolicyRuleAction::Deny => (
-                        "No, and block this host in the future".to_string(),
+                        "否，屏蔽此主机（以后不再询问）".to_string(),
                         KeyCode::Char('d'),
                     ),
                 };
@@ -715,13 +715,13 @@ fn exec_options(
                 })
             }
             ReviewDecision::Denied => Some(ApprovalOption {
-                label: "拒绝，不运行".to_string(),
+                label: "否，跳过不执行".to_string(),
                 decision: ApprovalDecision::Review(ReviewDecision::Denied),
                 display_shortcut: None,
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('d'))],
             }),
             ReviewDecision::Abort => Some(ApprovalOption {
-                label: "拒绝，告诉 Codex 改怎么做".to_string(),
+                label: "否，告诉 Codex 换个做法".to_string(),
                 decision: ApprovalDecision::Review(ReviewDecision::Abort),
                 display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -776,19 +776,19 @@ pub(crate) fn format_requested_permissions_rule(
 fn patch_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
-            label: "允许继续".to_string(),
+            label: "是，继续".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Approved),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "允许，以后不再询问这些文件".to_string(),
+            label: "是，且不再询问这些文件".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
-            label: "拒绝，告诉 Codex 改怎么做".to_string(),
+            label: "否，告诉 Codex 换个做法".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Abort),
             display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -799,19 +799,19 @@ fn patch_options() -> Vec<ApprovalOption> {
 fn permissions_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
-            label: "授予这些权限".to_string(),
+            label: "是，授予这些权限".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Approved),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "授予本次会话的权限".to_string(),
+            label: "是，授予这些权限（本次会话有效）".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::ApprovedForSession),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('a'))],
         },
         ApprovalOption {
-            label: "拒绝，不授予权限".to_string(),
+            label: "否，跳过不授予权限".to_string(),
             decision: ApprovalDecision::Review(ReviewDecision::Denied),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
@@ -822,19 +822,19 @@ fn permissions_options() -> Vec<ApprovalOption> {
 fn elicitation_options() -> Vec<ApprovalOption> {
     vec![
         ApprovalOption {
-            label: "允许，提供请求的信息".to_string(),
+            label: "是，提供所需信息".to_string(),
             decision: ApprovalDecision::McpElicitation(ElicitationAction::Accept),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('y'))],
         },
         ApprovalOption {
-            label: "拒绝，不提供".to_string(),
+            label: "否，跳过但不提供".to_string(),
             decision: ApprovalDecision::McpElicitation(ElicitationAction::Decline),
             display_shortcut: None,
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('n'))],
         },
         ApprovalOption {
-            label: "取消此请求".to_string(),
+            label: "取消请求".to_string(),
             decision: ApprovalDecision::McpElicitation(ElicitationAction::Cancel),
             display_shortcut: Some(key_hint::plain(KeyCode::Esc)),
             additional_shortcuts: vec![key_hint::plain(KeyCode::Char('c'))],

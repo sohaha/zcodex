@@ -213,7 +213,7 @@ const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;
 
 fn user_input_too_large_message(actual_chars: usize) -> String {
     format!(
-        "消息超过最大长度 {MAX_USER_INPUT_TEXT_CHARS} 个字符（当前 {actual_chars} 个）。"
+        "消息超过最大长度 {MAX_USER_INPUT_TEXT_CHARS} 个字符（已输入 {actual_chars} 个）。"
     )
 }
 
@@ -2091,7 +2091,7 @@ impl ChatComposer {
                         .is_some();
                 if !is_builtin {
                     let message = format!(
-                        r#"未识别的命令 '/{name}'。输入 "/" 查看支持的命令列表。"#
+                        r#"无法识别命令 '/{name}'。输入 \"/\" 查看支持的命令列表。"#
                     );
                     self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                         history_cell::new_info_event(message, /*hint*/ None),
@@ -3183,7 +3183,7 @@ impl ChatComposer {
                     .unwrap_or((plugin.config_name.as_str(), ""));
                 let mut capability_labels = Vec::new();
                 if plugin.has_skills {
-                    capability_labels.push("skills".to_string());
+                    capability_labels.push("技能".to_string());
                 }
                 if !plugin.mcp_server_names.is_empty() {
                     let mcp_server_count = plugin.mcp_server_names.len();
@@ -4357,7 +4357,7 @@ mod tests {
         let large = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 5);
         composer.handle_paste(large.clone());
         let char_count = large.chars().count();
-        let placeholder = format!("[Pasted Content {char_count} chars]");
+        let placeholder = format!("[已粘贴内容 {char_count} 字符]");
         assert_eq!(composer.textarea.text(), placeholder);
         assert_eq!(
             composer.pending_pastes,
@@ -4779,18 +4779,18 @@ mod tests {
 
         let mentions = composer.mention_items();
         assert_eq!(mentions.len(), 3);
-        assert_eq!(mentions[0].category_tag, Some("[Skill]".to_string()));
+        assert_eq!(mentions[0].category_tag, Some("[技能]".to_string()));
         assert_eq!(
             mentions[0].path,
             Some("/tmp/repo/google-calendar/SKILL.md".to_string())
         );
         assert_eq!(mentions[0].display_name, "Google Calendar".to_string());
-        assert_eq!(mentions[1].category_tag, Some("[Plugin]".to_string()));
+        assert_eq!(mentions[1].category_tag, Some("[插件]".to_string()));
         assert_eq!(
             mentions[1].path,
             Some("plugin://google-calendar@debug".to_string())
         );
-        assert_eq!(mentions[2].category_tag, Some("[App]".to_string()));
+        assert_eq!(mentions[2].category_tag, Some("[应用]".to_string()));
         assert_eq!(mentions[2].path, Some("app://google_calendar".to_string()));
     }
 
@@ -5596,7 +5596,7 @@ mod tests {
         let large = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 10);
         let needs_redraw = composer.handle_paste(large.clone());
         assert!(needs_redraw);
-        let placeholder = format!("[Pasted Content {} chars]", large.chars().count());
+        let placeholder = format!("[已粘贴内容 {} 字符]", large.chars().count());
         assert_eq!(composer.textarea.text(), placeholder);
         assert_eq!(composer.pending_pastes.len(), 1);
         assert_eq!(composer.pending_pastes[0].0, placeholder);
@@ -6459,7 +6459,7 @@ mod tests {
         );
 
         let large = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 5);
-        let placeholder = format!("[Pasted Content {} chars]", large.chars().count());
+        let placeholder = format!("[已粘贴内容 {} 字符]", large.chars().count());
 
         composer.handle_paste(large.clone());
         composer.insert_str(" @ma");
@@ -6533,7 +6533,7 @@ mod tests {
             .map(|(content, is_large)| {
                 composer.handle_paste(content.clone());
                 if *is_large {
-                    let placeholder = format!("[Pasted Content {} chars]", content.chars().count());
+                    let placeholder = format!("[已粘贴内容 {} 字符]", content.chars().count());
                     expected_text.push_str(&placeholder);
                     expected_pending_count += 1;
                 } else {
@@ -6548,19 +6548,19 @@ mod tests {
             states,
             vec![
                 (
-                    format!("[Pasted Content {} chars]", test_cases[0].0.chars().count()),
+                    format!("[已粘贴内容 {} 字符]", test_cases[0].0.chars().count()),
                     1
                 ),
                 (
                     format!(
-                        "[Pasted Content {} chars] and ",
+                        "[已粘贴内容 {} 字符] and ",
                         test_cases[0].0.chars().count()
                     ),
                     1
                 ),
                 (
                     format!(
-                        "[Pasted Content {} chars] and [Pasted Content {} chars]",
+                        "[已粘贴内容 {} 字符] and [已粘贴内容 {} 字符]",
                         test_cases[0].0.chars().count(),
                         test_cases[2].0.chars().count()
                     ),
@@ -6609,7 +6609,7 @@ mod tests {
             .map(|(content, is_large)| {
                 composer.handle_paste(content.clone());
                 if *is_large {
-                    let placeholder = format!("[Pasted Content {} chars]", content.chars().count());
+                    let placeholder = format!("[已粘贴内容 {} 字符]", content.chars().count());
                     current_pos += placeholder.len();
                 } else {
                     current_pos += content.len();
@@ -6645,7 +6645,7 @@ mod tests {
         assert_eq!(
             deletion_states,
             vec![
-                (" and [Pasted Content 1006 chars]".to_string(), 1),
+                (" and [已粘贴内容 1006 字符]".to_string(), 1),
                 (" and ".to_string(), 0),
             ]
         );
@@ -6670,7 +6670,7 @@ mod tests {
         );
 
         let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
-        let placeholder_base = format!("[Pasted Content {} chars]", paste.chars().count());
+        let placeholder_base = format!("[已粘贴内容 {} 字符]", paste.chars().count());
         let placeholder_second = format!("{placeholder_base} #2");
 
         composer.handle_paste(paste.clone());
@@ -6709,7 +6709,7 @@ mod tests {
         );
 
         let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
-        let base = format!("[Pasted Content {} chars]", paste.chars().count());
+        let base = format!("[已粘贴内容 {} 字符]", paste.chars().count());
         let second = format!("{base} #2");
         let third = format!("{base} #3");
 
@@ -6755,7 +6755,7 @@ mod tests {
         ];
 
         let paste = "x".repeat(LARGE_PASTE_CHAR_THRESHOLD + 4);
-        let placeholder = format!("[Pasted Content {} chars]", paste.chars().count());
+        let placeholder = format!("[已粘贴内容 {} 字符]", paste.chars().count());
 
         let states: Vec<_> = test_cases
             .into_iter()
@@ -7658,7 +7658,7 @@ mod tests {
         let flushed = composer.handle_paste_burst_flush(flush_time);
         assert!(flushed, "expected flush after stopping fast input");
 
-        let expected_placeholder = format!("[Pasted Content {count} chars]");
+        let expected_placeholder = format!("[已粘贴内容 {count} 字符]");
         assert_eq!(composer.textarea.text(), expected_placeholder);
         assert_eq!(composer.pending_pastes.len(), 1);
         assert_eq!(composer.pending_pastes[0].0, expected_placeholder);
@@ -7865,7 +7865,7 @@ mod tests {
             /*disable_paste_burst*/ false,
         );
 
-        let placeholder = "[Pasted Content 5 chars]".to_string();
+        let placeholder = "[已粘贴内容 5 字符]".to_string();
         composer.textarea.insert_element(&placeholder);
         composer
             .pending_pastes

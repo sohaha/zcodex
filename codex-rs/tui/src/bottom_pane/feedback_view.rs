@@ -431,8 +431,8 @@ pub(crate) fn feedback_selection_params(
 /// Build the selection popup params shown when feedback is disabled.
 pub(crate) fn feedback_disabled_params() -> super::SelectionViewParams {
     super::SelectionViewParams {
-        title: Some("反馈已禁用".to_string()),
-        subtitle: Some("此操作已被配置禁用。".to_string()),
+        title: Some("反馈功能已禁用".to_string()),
+        subtitle: Some("此操作已被配置禁用".to_string()),
         footer_hint: Some(standard_popup_hint_line()),
         items: vec![super::SelectionItem {
             name: "关闭".to_string(),
@@ -530,7 +530,7 @@ pub(crate) fn feedback_upload_consent_params(
             super::SelectionItem {
                 name: "是".to_string(),
                 description: Some(
-                    "分享当前 Codex 会话日志以供排查问题。"
+                    "分享当前 Codex 会话日志给团队以排查问题"
                         .to_string(),
                 ),
                 actions: vec![yes_action],

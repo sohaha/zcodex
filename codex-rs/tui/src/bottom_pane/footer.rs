@@ -848,15 +848,15 @@ fn build_columns(entries: Vec<Line<'static>>) -> Vec<Line<'static>> {
 pub(crate) fn context_window_line(percent: Option<i64>, used_tokens: Option<i64>) -> Line<'static> {
     if let Some(percent) = percent {
         let percent = percent.clamp(0, 100);
-        return Line::from(vec![Span::from(format!("{percent}% 上下文剩余")).dim()]);
+        return Line::from(vec![Span::from(format!("剩余上下文 {percent}%")).dim()]);
     }
 
     if let Some(tokens) = used_tokens {
         let used_fmt = format_tokens_compact(tokens);
-        return Line::from(vec![Span::from(format!("{used_fmt} 已使用")).dim()]);
+        return Line::from(vec![Span::from(format!("已用 {used_fmt}")).dim()]);
     }
 
-    Line::from(vec![Span::from("100% 上下文剩余").dim()])
+    Line::from(vec![Span::from("剩余上下文 100%").dim()])
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -948,7 +948,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
             condition: DisplayCondition::Always,
         }],
         prefix: "",
-        label: " 命令",
+        label: " 输入命令",
     },
     ShortcutDescriptor {
         id: ShortcutId::ShellCommands,
@@ -957,7 +957,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
             condition: DisplayCondition::Always,
         }],
         prefix: "",
-        label: " shell 命令",
+        label: " 输入 shell 命令",
     },
     ShortcutDescriptor {
         id: ShortcutId::InsertNewline,
@@ -990,7 +990,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
             condition: DisplayCondition::Always,
         }],
         prefix: "",
-        label: " 文件路径",
+        label: " 查看文件路径",
     },
     ShortcutDescriptor {
         id: ShortcutId::PasteImage,
@@ -1016,7 +1016,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
             condition: DisplayCondition::Always,
         }],
         prefix: "",
-        label: " 外部编辑器编辑",
+        label: " 在外部编辑器中编辑",
     },
     ShortcutDescriptor {
         id: ShortcutId::EditPrevious,
@@ -1043,7 +1043,7 @@ const SHORTCUTS: &[ShortcutDescriptor] = &[
             condition: DisplayCondition::Always,
         }],
         prefix: "",
-        label: " 查看对话记录",
+        label: " 查看记录",
     },
     ShortcutDescriptor {
         id: ShortcutId::ChangeMode,
