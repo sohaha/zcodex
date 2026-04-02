@@ -41,7 +41,9 @@ impl ToolHandler for Handler {
         let prompt = render_input_preview(&input_items);
         let session_source = turn.session_source.clone();
         let child_depth = next_thread_spawn_depth(&session_source);
-        let max_depth = turn.config.agent_max_depth;
+        let mut config =
+            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref()).await?;
+        let max_depth = config.agent_max_depth;
         if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
             return Err(FunctionCallError::RespondToModel(
                 "Agent depth limit reached. Solve the task yourself.".to_string(),
@@ -60,8 +62,6 @@ impl ToolHandler for Handler {
                 .into(),
             )
             .await;
-        let mut config =
-            build_agent_spawn_config(&session.get_base_instructions().await, turn.as_ref()).await?;
         apply_requested_spawn_agent_model_overrides(
             &session,
             turn.as_ref(),

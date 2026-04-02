@@ -10,6 +10,7 @@ use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::handlers::multi_agents::build_agent_spawn_config;
+use crate::tools::handlers::multi_agents_common::build_agent_shared_config;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
@@ -318,9 +319,10 @@ mod spawn_agents_on_csv {
         );
         let job_suffix = &job_id[..8];
         let job_name = format!("agent-job-{job_suffix}");
+        let effective_agent_config = build_agent_shared_config(turn.as_ref()).await?;
         let max_runtime_seconds = normalize_max_runtime_seconds(
             args.max_runtime_seconds
-                .or(turn.config.agent_job_max_runtime_seconds),
+                .or(effective_agent_config.agent_job_max_runtime_seconds),
         )?;
         let max_retries = normalize_max_retries(args.max_retries)?;
         let _job = db
@@ -362,8 +364,8 @@ mod spawn_agents_on_csv {
                     "failed to transition agent job {job_id} to running: {err}"
                 ))
             })?;
-        let max_threads = turn.config.agent_max_threads;
         let effective_concurrency = options.max_concurrency;
+        let max_threads = options.spawn_config.agent_max_threads;
         let message = format!(
             "agent job concurrency: job_id={job_id} requested={requested_concurrency:?} max_threads={max_threads:?} effective={effective_concurrency}"
         );
@@ -530,18 +532,18 @@ async fn build_runner_options(
     turn: &Arc<TurnContext>,
     requested_concurrency: Option<usize>,
 ) -> Result<JobRunnerOptions, FunctionCallError> {
+    let base_instructions = session.get_base_instructions().await;
+    let spawn_config = build_agent_spawn_config(&base_instructions, turn.as_ref()).await?;
     let session_source = turn.session_source.clone();
     let child_depth = next_thread_spawn_depth(&session_source);
-    let max_depth = turn.config.agent_max_depth;
+    let max_depth = spawn_config.agent_max_depth;
     if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
         return Err(FunctionCallError::RespondToModel(
             "agent depth limit reached; this session cannot spawn more subagents".to_string(),
         ));
     }
     let max_concurrency =
-        normalize_concurrency(requested_concurrency, turn.config.agent_max_threads);
-    let base_instructions = session.get_base_instructions().await;
-    let spawn_config = build_agent_spawn_config(&base_instructions, turn.as_ref()).await?;
+        normalize_concurrency(requested_concurrency, spawn_config.agent_max_threads);
     Ok(JobRunnerOptions {
         max_concurrency,
         spawn_config,

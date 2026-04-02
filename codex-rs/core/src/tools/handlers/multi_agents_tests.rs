@@ -3,6 +3,7 @@ use crate::AuthManager;
 use crate::CodexAuth;
 use crate::ThreadManager;
 use crate::built_in_model_providers;
+use crate::codex::TurnContext;
 use crate::codex::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::config::types::ShellEnvironmentPolicy;
@@ -3600,4 +3601,107 @@ async fn build_agent_spawn_config_reloads_project_zmemory_for_turn_cwd() {
     .expect("spawn config");
 
     assert_eq!(config.zmemory.path, Some(configured_db_path));
+}
+
+#[tokio::test]
+async fn build_agent_spawn_config_reloads_project_agent_settings_for_turn_cwd() {
+    let (_session, mut turn) = make_session_and_context().await;
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    fs::write(workspace.path().join(".git"), "gitdir: here").expect("seed git marker");
+    fs::create_dir_all(&nested).expect("create nested dir");
+    fs::create_dir_all(&dot_codex).expect("create .codex dir");
+    fs::write(
+        dot_codex.join("config.toml"),
+        r#"[agents]
+max_depth = 2
+max_threads = 5
+job_max_runtime_seconds = 42
+
+[agents.researcher]
+description = "Research role from project"
+"#,
+    )
+    .expect("write project config");
+    fs::create_dir_all(turn.config.codex_home.as_path()).expect("create codex home");
+    fs::write(
+        turn.config.codex_home.join("config.toml"),
+        format!(
+            "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            workspace.path().display()
+        ),
+    )
+    .expect("write home config");
+    turn.cwd = AbsolutePathBuf::try_from(nested).expect("nested path should be absolute");
+
+    let config = build_agent_spawn_config(
+        &BaseInstructions {
+            text: "base".to_string(),
+        },
+        &turn,
+    )
+    .await
+    .expect("spawn config");
+
+    assert_eq!(config.agent_max_depth, 2);
+    assert_eq!(config.agent_max_threads, Some(5));
+    assert_eq!(config.agent_job_max_runtime_seconds, Some(42));
+    assert_eq!(
+        config
+            .agent_roles
+            .get("researcher")
+            .and_then(|role| role.description.as_deref()),
+        Some("Research role from project")
+    );
+}
+
+#[tokio::test]
+async fn spawn_agent_uses_project_depth_limit_after_turn_cwd_override() {
+    let (mut session, mut turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    session.services.agent_control = manager.agent_control();
+
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    fs::write(workspace.path().join(".git"), "gitdir: here").expect("seed git marker");
+    fs::create_dir_all(&nested).expect("create nested dir");
+    fs::create_dir_all(&dot_codex).expect("create .codex dir");
+    fs::write(dot_codex.join("config.toml"), "[agents]\nmax_depth = 1\n")
+        .expect("write project config");
+    fs::create_dir_all(turn.config.codex_home.as_path()).expect("create codex home");
+    fs::write(
+        turn.config.codex_home.join("config.toml"),
+        format!(
+            "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            workspace.path().display()
+        ),
+    )
+    .expect("write home config");
+    turn.cwd = AbsolutePathBuf::try_from(nested).expect("nested path should be absolute");
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: session.conversation_id,
+        depth: 1,
+        parent_model: None,
+        agent_path: None,
+        agent_nickname: None,
+        agent_role: None,
+    });
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({"message": "hello"})),
+    );
+    let Err(err) = SpawnAgentHandler.handle(invocation).await else {
+        panic!("spawn should fail when project depth limit is exceeded");
+    };
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            "Agent depth limit reached. Solve the task yourself.".to_string()
+        )
+    );
 }

@@ -227,7 +227,9 @@ pub(crate) async fn build_agent_resume_config(
     Ok(config)
 }
 
-async fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallError> {
+pub(crate) async fn build_agent_shared_config(
+    turn: &TurnContext,
+) -> Result<Config, FunctionCallError> {
     let base_config = turn.config.clone();
     let mut config = (*base_config).clone();
     config.model = Some(turn.model_info.slug.clone());
@@ -237,22 +239,45 @@ async fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, Functio
     config.model_reasoning_summary = Some(turn.reasoning_summary);
     config.developer_instructions = turn.developer_instructions.clone();
     config.compact_prompt = turn.compact_prompt.clone();
-    reload_project_scoped_zmemory_config(&mut config, turn).await;
+    reload_project_scoped_config(&mut config, turn).await;
     apply_spawn_agent_runtime_overrides(&mut config, turn)?;
 
     Ok(config)
 }
 
-async fn reload_project_scoped_zmemory_config(config: &mut Config, turn: &TurnContext) {
-    let zmemory_origin = config
+fn project_scoped_origin(config: &Config, key: &str) -> Option<ConfigLayerSource> {
+    config
         .config_layer_stack
         .origins()
-        .remove("zmemory.path")
-        .map(|metadata| metadata.name);
-    if !matches!(
-        zmemory_origin,
+        .remove(key)
+        .map(|metadata| metadata.name)
+}
+
+fn should_reload_project_scoped_key(config: &Config, key: &str) -> bool {
+    matches!(
+        project_scoped_origin(config, key),
         None | Some(ConfigLayerSource::Project { .. })
-    ) {
+    )
+}
+
+async fn reload_project_scoped_config(config: &mut Config, turn: &TurnContext) {
+    if config.cwd.as_path() == turn.cwd.as_path() {
+        return;
+    }
+
+    let reload_zmemory = should_reload_project_scoped_key(config, "zmemory.path");
+    let reload_agent_max_threads = should_reload_project_scoped_key(config, "agents.max_threads");
+    let reload_agent_max_depth = should_reload_project_scoped_key(config, "agents.max_depth");
+    let reload_agent_job_max_runtime_seconds =
+        should_reload_project_scoped_key(config, "agents.job_max_runtime_seconds");
+    let reload_agent_roles = true;
+
+    if !(reload_zmemory
+        || reload_agent_max_threads
+        || reload_agent_max_depth
+        || reload_agent_job_max_runtime_seconds
+        || reload_agent_roles)
+    {
         return;
     }
 
@@ -263,13 +288,28 @@ async fn reload_project_scoped_zmemory_config(config: &mut Config, turn: &TurnCo
         .await
     {
         Ok(reloaded_config) => {
-            config.zmemory = reloaded_config.zmemory;
+            if reload_zmemory {
+                config.zmemory = reloaded_config.zmemory;
+            }
+            if reload_agent_max_threads {
+                config.agent_max_threads = reloaded_config.agent_max_threads;
+            }
+            if reload_agent_max_depth {
+                config.agent_max_depth = reloaded_config.agent_max_depth;
+            }
+            if reload_agent_job_max_runtime_seconds {
+                config.agent_job_max_runtime_seconds =
+                    reloaded_config.agent_job_max_runtime_seconds;
+            }
+            if reload_agent_roles {
+                config.agent_roles = reloaded_config.agent_roles;
+            }
         }
         Err(err) => {
             warn!(
                 error = %err,
                 cwd = %turn.cwd.display(),
-                "failed to reload child zmemory config for current turn cwd; using turn config"
+                "failed to reload project-scoped child agent config for current turn cwd; using turn config"
             );
         }
     }

@@ -1,6 +1,12 @@
 use super::*;
+use crate::codex::make_session_and_context;
+use crate::protocol::SessionSource;
+use crate::protocol::SubAgentSource;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::fs;
+use std::sync::Arc;
 
 #[test]
 fn parse_csv_supports_quotes_and_commas() {
@@ -59,4 +65,46 @@ fn ensure_unique_headers_rejects_duplicates() {
         err,
         FunctionCallError::RespondToModel("csv header path is duplicated".to_string())
     );
+}
+
+#[tokio::test]
+async fn build_runner_options_uses_project_agent_limits_after_turn_cwd_override() {
+    let (session, mut turn) = make_session_and_context().await;
+    let workspace = tempfile::tempdir().expect("workspace temp dir");
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    fs::write(workspace.path().join(".git"), "gitdir: here").expect("seed git marker");
+    fs::create_dir_all(&nested).expect("create nested dir");
+    fs::create_dir_all(&dot_codex).expect("create .codex dir");
+    fs::write(
+        dot_codex.join("config.toml"),
+        "[agents]\nmax_depth = 4\nmax_threads = 3\n",
+    )
+    .expect("write project config");
+    fs::create_dir_all(turn.config.codex_home.as_path()).expect("create codex home");
+    fs::write(
+        turn.config.codex_home.join("config.toml"),
+        format!(
+            "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            workspace.path().display()
+        ),
+    )
+    .expect("write home config");
+    turn.cwd = AbsolutePathBuf::try_from(nested).expect("nested path should be absolute");
+    turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_thread_id: session.conversation_id,
+        depth: 1,
+        parent_model: None,
+        agent_path: None,
+        agent_nickname: None,
+        agent_role: None,
+    });
+
+    let options = build_runner_options(&Arc::new(session), &Arc::new(turn), Some(8))
+        .await
+        .expect("runner options");
+
+    assert_eq!(options.max_concurrency, 3);
+    assert_eq!(options.spawn_config.agent_max_depth, 4);
+    assert_eq!(options.spawn_config.agent_max_threads, Some(3));
 }

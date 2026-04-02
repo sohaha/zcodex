@@ -1,5 +1,7 @@
 use super::*;
 use crate::agent::next_thread_spawn_depth;
+use crate::codex::TurnContext;
+use crate::config::Config;
 use std::sync::Arc;
 
 pub(crate) struct Handler;
@@ -35,7 +37,8 @@ impl ToolHandler for Handler {
             .get_agent_metadata(receiver_thread_id)
             .unwrap_or_default();
         let child_depth = next_thread_spawn_depth(&turn.session_source);
-        let max_depth = turn.config.agent_max_depth;
+        let resume_config = build_agent_resume_config(turn.as_ref(), child_depth).await?;
+        let max_depth = resume_config.agent_max_depth;
         if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
             return Err(FunctionCallError::RespondToModel(
                 "Agent depth limit reached. Solve the task yourself.".to_string(),
@@ -62,7 +65,15 @@ impl ToolHandler for Handler {
             .get_status(receiver_thread_id)
             .await;
         let (receiver_agent, error) = if matches!(status, AgentStatus::NotFound) {
-            match try_resume_closed_agent(&session, &turn, receiver_thread_id, child_depth).await {
+            match try_resume_closed_agent(
+                &session,
+                &turn,
+                receiver_thread_id,
+                child_depth,
+                resume_config,
+            )
+            .await
+            {
                 Ok(()) => {
                     status = session
                         .services
@@ -148,8 +159,8 @@ async fn try_resume_closed_agent(
     turn: &Arc<TurnContext>,
     receiver_thread_id: ThreadId,
     child_depth: i32,
+    config: Config,
 ) -> Result<(), FunctionCallError> {
-    let config = build_agent_resume_config(turn.as_ref(), child_depth).await?;
     session
         .services
         .agent_control
