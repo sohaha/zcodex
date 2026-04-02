@@ -78,15 +78,15 @@ pub enum SessionPickerAction {
 impl SessionPickerAction {
     fn title(self) -> &'static str {
         match self {
-            SessionPickerAction::Resume => "Resume a previous session",
-            SessionPickerAction::Fork => "Fork a previous session",
+            SessionPickerAction::Resume => "恢复之前的会话",
+            SessionPickerAction::Fork => "分叉之前的会话",
         }
     }
 
     fn action_label(self) -> &'static str {
         match self {
-            SessionPickerAction::Resume => "resume",
-            SessionPickerAction::Fork => "fork",
+            SessionPickerAction::Resume => "恢复",
+            SessionPickerAction::Fork => "分叉",
         }
     }
 
@@ -381,8 +381,8 @@ fn spawn_app_server_page_loader(
 /// Returns the human-readable column header for the given sort key.
 fn sort_key_label(sort_key: ThreadSortKey) -> &'static str {
     match sort_key {
-        ThreadSortKey::CreatedAt => "Created at",
-        ThreadSortKey::UpdatedAt => "Updated at",
+        ThreadSortKey::CreatedAt => "创建时间",
+        ThreadSortKey::UpdatedAt => "更新时间",
     }
 }
 
@@ -626,10 +626,10 @@ impl PickerState {
                     }
                     self.inline_error = Some(match path {
                         Some(path) => {
-                            format!("Failed to read session metadata from {}", path.display())
+                            format!("读取会话元数据失败：{}", path.display())
                         }
                         None => {
-                            String::from("Failed to read session metadata from selected session")
+                            String::from("读取所选会话元数据失败")
                         }
                     });
                     self.request_frame();
@@ -1058,7 +1058,7 @@ fn head_to_row(item: &ThreadItem) -> Row {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| String::from("(no message yet)"));
+        .unwrap_or_else(|| String::from("（暂无消息）"));
 
     Row {
         path: Some(item.path.clone()),
@@ -1084,7 +1084,7 @@ fn row_from_app_server_thread(thread: Thread) -> Option<Row> {
     Some(Row {
         path: thread.path,
         preview: if preview.is_empty() {
-            String::from("(no message yet)")
+            String::from("（暂无消息）")
         } else {
             preview.to_string()
         },
@@ -1159,7 +1159,7 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
         let header_line: Line = vec![
             state.action.title().bold().cyan(),
             "  ".into(),
-            "Sort:".dim(),
+            "排序：".dim(),
             " ".into(),
             sort_key_label(state.sort_key).magenta(),
         ]
@@ -1179,21 +1179,21 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
         let action_label = state.action.action_label();
         let hint_line: Line = vec![
             key_hint::plain(KeyCode::Enter).into(),
-            format!(" to {action_label} ").dim(),
+            format!(" {action_label} ").dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Esc).into(),
-            " to start new ".dim(),
+            " 新建 ".dim(),
             "    ".dim(),
             key_hint::ctrl(KeyCode::Char('c')).into(),
-            " to quit ".dim(),
+            " 退出 ".dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Tab).into(),
-            " to toggle sort ".dim(),
+            " 切换排序 ".dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Up).into(),
             "/".dim(),
             key_hint::plain(KeyCode::Down).into(),
-            " to browse".dim(),
+            " 浏览".dim(),
         ]
         .into();
         frame.render_widget_ref(hint_line, hint);
@@ -1205,9 +1205,9 @@ fn search_line(state: &PickerState) -> Line<'_> {
         return Line::from(error.red());
     }
     if state.query.is_empty() {
-        return Line::from("Type to search".dim());
+        return Line::from("输入搜索".dim());
     }
-    Line::from(format!("Search: {}", state.query))
+    Line::from(format!("搜索：{}", state.query))
 }
 
 fn render_list(
@@ -1337,7 +1337,7 @@ fn render_list(
     }
 
     if state.pagination.loading.is_pending() && y < area.y.saturating_add(area.height) {
-        let loading_line: Line = vec!["  ".into(), "Loading older sessions…".italic().dim()].into();
+        let loading_line: Line = vec!["  ".into(), "正在加载更早的会话…".italic().dim()].into();
         let rect = Rect::new(area.x, y, area.width, 1);
         frame.render_widget_ref(loading_line, rect);
     }
@@ -1348,27 +1348,27 @@ fn render_empty_state_line(state: &PickerState) -> Line<'static> {
         if state.search_state.is_active()
             || (state.pagination.loading.is_pending() && state.pagination.next_cursor.is_some())
         {
-            return vec!["Searching…".italic().dim()].into();
+            return vec!["搜索中…".italic().dim()].into();
         }
         if state.pagination.reached_scan_cap {
             let msg = format!(
-                "Search scanned first {} sessions; more may exist",
+                "已搜索前 {} 个会话；可能还有更多",
                 state.pagination.num_scanned_files
             );
             return vec![Span::from(msg).italic().dim()].into();
         }
-        return vec!["No results for your search".italic().dim()].into();
+        return vec!["未找到匹配结果".italic().dim()].into();
     }
 
     if state.all_rows.is_empty() && state.pagination.num_scanned_files == 0 {
-        return vec!["No sessions yet".italic().dim()].into();
+        return vec!["暂无会话".italic().dim()].into();
     }
 
     if state.pagination.loading.is_pending() {
-        return vec!["Loading older sessions…".italic().dim()].into();
+        return vec!["正在加载更早的会话…".italic().dim()].into();
     }
 
-    vec!["No sessions yet".italic().dim()].into()
+    vec!["暂无会话".italic().dim()].into()
 }
 
 fn human_time_ago(ts: DateTime<Utc>) -> String {
@@ -1377,32 +1377,16 @@ fn human_time_ago(ts: DateTime<Utc>) -> String {
     let secs = delta.num_seconds();
     if secs < 60 {
         let n = secs.max(0);
-        if n == 1 {
-            format!("{n} second ago")
-        } else {
-            format!("{n} seconds ago")
-        }
+        format!("{n} 秒前")
     } else if secs < 60 * 60 {
         let m = secs / 60;
-        if m == 1 {
-            format!("{m} minute ago")
-        } else {
-            format!("{m} minutes ago")
-        }
+        format!("{m} 分钟前")
     } else if secs < 60 * 60 * 24 {
         let h = secs / 3600;
-        if h == 1 {
-            format!("{h} hour ago")
-        } else {
-            format!("{h} hours ago")
-        }
+        format!("{h} 小时前")
     } else {
         let d = secs / (60 * 60 * 24);
-        if d == 1 {
-            format!("{d} day ago")
-        } else {
-            format!("{d} days ago")
-        }
+        format!("{d} 天前")
     }
 }
 
@@ -1436,7 +1420,7 @@ fn render_column_headers(
     if visibility.show_created {
         let label = format!(
             "{text:<width$}",
-            text = "Created at",
+            text = "创建时间",
             width = metrics.max_created_width
         );
         spans.push(Span::from(label).bold());
@@ -1445,7 +1429,7 @@ fn render_column_headers(
     if visibility.show_updated {
         let label = format!(
             "{text:<width$}",
-            text = "Updated at",
+            text = "更新时间",
             width = metrics.max_updated_width
         );
         spans.push(Span::from(label).bold());
@@ -1454,7 +1438,7 @@ fn render_column_headers(
     if visibility.show_branch {
         let label = format!(
             "{text:<width$}",
-            text = "Branch",
+            text = "分支",
             width = metrics.max_branch_width
         );
         spans.push(Span::from(label).bold());
@@ -1469,7 +1453,7 @@ fn render_column_headers(
         spans.push(Span::from(label).bold());
         spans.push("  ".into());
     }
-    spans.push("Conversation".bold());
+    spans.push("对话".bold());
     frame.render_widget_ref(Line::from(spans), area);
 }
 
@@ -1520,11 +1504,11 @@ fn calculate_column_metrics(rows: &[Row], include_cwd: bool) -> ColumnMetrics {
     }
 
     let mut labels: Vec<(String, String, String, String)> = Vec::with_capacity(rows.len());
-    let mut max_created_width = UnicodeWidthStr::width("Created at");
-    let mut max_updated_width = UnicodeWidthStr::width("Updated at");
-    let mut max_branch_width = UnicodeWidthStr::width("Branch");
+    let mut max_created_width = UnicodeWidthStr::width("创建时间");
+    let mut max_updated_width = UnicodeWidthStr::width("更新时间");
+    let mut max_branch_width = UnicodeWidthStr::width("分支");
     let mut max_cwd_width = if include_cwd {
-        UnicodeWidthStr::width("CWD")
+        UnicodeWidthStr::width("目录")
     } else {
         0
     };
