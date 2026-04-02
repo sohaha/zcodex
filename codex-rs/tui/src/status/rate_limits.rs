@@ -23,7 +23,7 @@ const STATUS_LIMIT_BAR_EMPTY: &str = "░";
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatusRateLimitRow {
-    /// Human-readable row label, such as `"5h limit"` or `"Credits"`.
+    /// Human-readable row label, such as `"5小时限额"` or `"额度"`.
     pub label: String,
     /// Value payload for the row.
     pub value: StatusRateLimitValue,
@@ -189,7 +189,7 @@ pub(crate) fn compose_rate_limit_data_many(
                 window
                     .window_minutes
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "5h".to_string())
+                    .unwrap_or_else(|| "5小时".to_string())
             })
             .map(|label| capitalize_first(&label));
         let secondary_label = snapshot
@@ -199,7 +199,7 @@ pub(crate) fn compose_rate_limit_data_many(
                 window
                     .window_minutes
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string())
+                    .unwrap_or_else(|| "每周".to_string())
             })
             .map(|label| capitalize_first(&label));
         let window_count =
@@ -208,7 +208,7 @@ pub(crate) fn compose_rate_limit_data_many(
 
         if show_limit_prefix && !combine_non_codex_single_limit {
             rows.push(StatusRateLimitRow {
-                label: format!("{limit_bucket_label} limit"),
+                label: format!("{limit_bucket_label} 限额"),
                 value: StatusRateLimitValue::Text(String::new()),
             });
         }
@@ -216,14 +216,14 @@ pub(crate) fn compose_rate_limit_data_many(
         if let Some(primary) = snapshot.primary.as_ref() {
             let label = if combine_non_codex_single_limit {
                 format!(
-                    "{} {} limit",
+                    "{} {}限额",
                     limit_bucket_label,
-                    primary_label.clone().unwrap_or_else(|| "5h".to_string())
+                    primary_label.clone().unwrap_or_else(|| "5小时".to_string())
                 )
             } else {
                 format!(
-                    "{} limit",
-                    primary_label.clone().unwrap_or_else(|| "5h".to_string())
+                    "{}限额",
+                    primary_label.clone().unwrap_or_else(|| "5小时".to_string())
                 )
             };
             rows.push(StatusRateLimitRow {
@@ -238,18 +238,18 @@ pub(crate) fn compose_rate_limit_data_many(
         if let Some(secondary) = snapshot.secondary.as_ref() {
             let label = if combine_non_codex_single_limit {
                 format!(
-                    "{} {} limit",
+                    "{} {}限额",
                     limit_bucket_label,
                     secondary_label
                         .clone()
-                        .unwrap_or_else(|| "weekly".to_string())
+                        .unwrap_or_else(|| "每周".to_string())
                 )
             } else {
                 format!(
-                    "{} limit",
+                    "{}限额",
                     secondary_label
                         .clone()
-                        .unwrap_or_else(|| "weekly".to_string())
+                        .unwrap_or_else(|| "每周".to_string())
                 )
             };
             rows.push(StatusRateLimitRow {
@@ -295,7 +295,7 @@ pub(crate) fn render_status_limit_progress_bar(percent_remaining: f64) -> String
 
 /// Formats a compact textual summary from remaining percentage.
 pub(crate) fn format_status_limit_summary(percent_remaining: f64) -> String {
-    format!("{percent_remaining:.0}% left")
+    format!("剩余 {percent_remaining:.0}%")
 }
 
 /// Builds a single `StatusRateLimitRow` for credits when the snapshot indicates
@@ -308,15 +308,15 @@ fn credit_status_row(credits: &CreditsSnapshotDisplay) -> Option<StatusRateLimit
     }
     if credits.unlimited {
         return Some(StatusRateLimitRow {
-            label: "Credits".to_string(),
-            value: StatusRateLimitValue::Text("Unlimited".to_string()),
+            label: "额度".to_string(),
+            value: StatusRateLimitValue::Text("无限".to_string()),
         });
     }
     let balance = credits.balance.as_ref()?;
     let display_balance = format_credit_balance(balance)?;
     Some(StatusRateLimitRow {
-        label: "Credits".to_string(),
-        value: StatusRateLimitValue::Text(format!("{display_balance} credits")),
+        label: "额度".to_string(),
+        value: StatusRateLimitValue::Text(format!("{display_balance} 额度")),
     })
 }
 
@@ -395,13 +395,13 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "5h limit".to_string(),
-                "Credits".to_string(),
-                "codex-other 5h limit".to_string(),
-                "Credits".to_string(),
+                "5小时限额".to_string(),
+                "额度".to_string(),
+                "codex-other 5小时限额".to_string(),
+                "额度".to_string(),
             ]
         );
-        assert_eq!(rows.iter().filter(|row| row.label == "Credits").count(), 2);
+        assert_eq!(rows.iter().filter(|row| row.label == "额度").count(), 2);
     }
 
     #[test]
@@ -431,9 +431,9 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "codex-other limit".to_string(),
-                "1h limit".to_string(),
-                "Weekly limit".to_string(),
+                "codex-other 限额".to_string(),
+                "1小时限额".to_string(),
+                "每周限额".to_string(),
             ]
         );
     }

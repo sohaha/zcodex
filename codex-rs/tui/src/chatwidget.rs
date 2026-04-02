@@ -508,10 +508,10 @@ impl RateLimitWarningState {
             if let Some(threshold) = highest_primary {
                 let limit_label = primary_window_minutes
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "5h".to_string());
+                    .unwrap_or_else(|| "5小时".to_string());
                 let remaining_percent = 100.0 - threshold;
                 warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
+                    "注意，你的{limit_label}限额剩余不足 {remaining_percent:.0}%。运行 /status 查看详情。"
                 ));
             }
         }
@@ -532,13 +532,13 @@ pub(crate) fn get_limits_duration(windows_minutes: i64) -> String {
     if windows_minutes <= MINUTES_PER_DAY.saturating_add(ROUNDING_BIAS_MINUTES) {
         let adjusted = windows_minutes.saturating_add(ROUNDING_BIAS_MINUTES);
         let hours = std::cmp::max(1, adjusted / MINUTES_PER_HOUR);
-        format!("{hours}h")
+        format!("{hours}小时")
     } else if windows_minutes <= MINUTES_PER_WEEK.saturating_add(ROUNDING_BIAS_MINUTES) {
-        "weekly".to_string()
+        "每周".to_string()
     } else if windows_minutes <= MINUTES_PER_MONTH.saturating_add(ROUNDING_BIAS_MINUTES) {
-        "monthly".to_string()
+        "每月".to_string()
     } else {
-        "annual".to_string()
+        "每年".to_string()
     }
 }
 
