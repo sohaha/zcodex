@@ -989,11 +989,11 @@ impl McpServerElicitationOverlay {
                 tips.push(FooterTip::new("回车提交回答"));
             }
         } else if self.field_count() == 1 {
-                tips.push(FooterTip::highlighted("回车提交"));
+            tips.push(FooterTip::highlighted("回车提交"));
         } else if is_last_field {
-                tips.push(FooterTip::highlighted("回车全部提交"));
-            } else {
-                tips.push(FooterTip::new("回车提交回答"));
+            tips.push(FooterTip::highlighted("回车全部提交"));
+        } else {
+            tips.push(FooterTip::new("回车提交回答"));
         }
         if self.field_count() > 1 {
             if self.current_field_is_select() {

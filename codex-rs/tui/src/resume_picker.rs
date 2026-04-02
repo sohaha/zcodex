@@ -628,9 +628,7 @@ impl PickerState {
                         Some(path) => {
                             format!("读取会话元数据失败：{}", path.display())
                         }
-                        None => {
-                            String::from("读取所选会话元数据失败")
-                        }
+                        None => String::from("读取所选会话元数据失败"),
                     });
                     self.request_frame();
                 }

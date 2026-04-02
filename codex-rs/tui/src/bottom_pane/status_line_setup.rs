@@ -106,28 +106,16 @@ impl StatusLineItem {
             StatusLineItem::CurrentDir => "当前工作目录",
             StatusLineItem::ProjectRoot => "项目根目录（不可用时省略）",
             StatusLineItem::GitBranch => "当前 Git 分支（不可用时省略）",
-            StatusLineItem::ContextRemaining => {
-                "上下文窗口剩余百分比（未知时省略）"
-            }
-            StatusLineItem::ContextUsed => {
-                "上下文窗口已用百分比（未知时省略）"
-            }
-            StatusLineItem::FiveHourLimit => {
-                "5 小时用量限额剩余（不可用时省略）"
-            }
-            StatusLineItem::WeeklyLimit => {
-                "每周用量限额剩余（不可用时省略）"
-            }
+            StatusLineItem::ContextRemaining => "上下文窗口剩余百分比（未知时省略）",
+            StatusLineItem::ContextUsed => "上下文窗口已用百分比（未知时省略）",
+            StatusLineItem::FiveHourLimit => "5 小时用量限额剩余（不可用时省略）",
+            StatusLineItem::WeeklyLimit => "每周用量限额剩余（不可用时省略）",
             StatusLineItem::CodexVersion => "Codex 应用版本",
-            StatusLineItem::ContextWindowSize => {
-                "上下文窗口总大小（token 数，未知时省略）"
-            }
+            StatusLineItem::ContextWindowSize => "上下文窗口总大小（token 数，未知时省略）",
             StatusLineItem::UsedTokens => "会话中已用 token 总数（为零时省略）",
             StatusLineItem::TotalInputTokens => "会话中已用输入 token 总数",
             StatusLineItem::TotalOutputTokens => "会话中已用输出 token 总数",
-            StatusLineItem::SessionId => {
-                "当前会话标识符（会话开始前省略）"
-            }
+            StatusLineItem::SessionId => "当前会话标识符（会话开始前省略）",
             StatusLineItem::FastMode => "Fast 模式是否启用",
         }
     }
@@ -224,8 +212,7 @@ impl StatusLineSetupView {
                 app_event_tx,
             )
             .instructions(vec![
-                "使用 ↑↓ 导航，←→ 移动，空格选择，回车确认，Esc 取消。"
-                    .into(),
+                "使用 ↑↓ 导航，←→ 移动，空格选择，回车确认，Esc 取消。".into(),
             ])
             .items(items)
             .enable_ordering()

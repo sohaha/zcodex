@@ -317,10 +317,7 @@ impl AuthModeWidget {
                 "  ".into(),
                 "使用 ChatGPT 登录即可在付费方案中使用 Codex".into(),
             ]),
-            Line::from(vec![
-                "  ".into(),
-                "或连接 API Key 以按用量计费".into(),
-            ]),
+            Line::from(vec!["  ".into(), "或连接 API Key 以按用量计费".into()]),
             "".into(),
         ];
 
@@ -491,11 +488,7 @@ impl AuthModeWidget {
     }
 
     fn render_chatgpt_success(&self, area: Rect, buf: &mut Buffer) {
-        let lines = vec![
-            "✓ 已通过 ChatGPT 账号登录"
-                .fg(Color::Green)
-                .into(),
-        ];
+        let lines = vec!["✓ 已通过 ChatGPT 账号登录".fg(Color::Green).into()];
 
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
@@ -533,11 +526,7 @@ impl AuthModeWidget {
         ];
         if state.prepopulated_from_env {
             intro_lines.push("  检测到 OPENAI_API_KEY 环境变量。".into());
-            intro_lines.push(
-                "  如需使用其他账号，可粘贴不同的 Key。"
-                    .dim()
-                    .into(),
-            );
+            intro_lines.push("  如需使用其他账号，可粘贴不同的 Key。".dim().into());
             intro_lines.push("".into());
         }
         Paragraph::new(intro_lines)
@@ -560,10 +549,8 @@ impl AuthModeWidget {
             )
             .render(input_area, buf);
 
-        let mut footer_lines: Vec<Line> = vec![
-            "  按 Enter 保存".dim().into(),
-            "  按 Esc 返回".dim().into(),
-        ];
+        let mut footer_lines: Vec<Line> =
+            vec!["  按 Enter 保存".dim().into(), "  按 Esc 返回".dim().into()];
         if let Some(error) = self.error_message() {
             footer_lines.push("".into());
             footer_lines.push(error.red().into());
@@ -714,9 +701,8 @@ impl AuthModeWidget {
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyConfigured;
                 }
                 Ok(other) => {
-                    *error.write().unwrap() = Some(format!(
-                        "意外的 account/login/start 响应：{other:?}"
-                    ));
+                    *error.write().unwrap() =
+                        Some(format!("意外的 account/login/start 响应：{other:?}"));
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyEntry(ApiKeyInputState {
                         value: api_key,
                         prepopulated_from_env: false,
@@ -781,9 +767,8 @@ impl AuthModeWidget {
                 }
                 Ok(other) => {
                     *sign_in_state.write().unwrap() = SignInState::PickMode;
-                    *error.write().unwrap() = Some(format!(
-                        "意外的 account/login/start 响应：{other:?}"
-                    ));
+                    *error.write().unwrap() =
+                        Some(format!("意外的 account/login/start 响应：{other:?}"));
                 }
                 Err(err) => {
                     *sign_in_state.write().unwrap() = SignInState::PickMode;

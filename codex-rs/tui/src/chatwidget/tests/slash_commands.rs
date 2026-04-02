@@ -151,9 +151,7 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
     let rendered = lines_to_single_string(&cells[0]);
     assert_chatwidget_snapshot!("slash_copy_no_output_info_message", rendered);
     assert!(
-        rendered.contains(
-            "`/copy` 在首次 Codex 输出之前或回滚后不可用。"
-        ),
+        rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
         "expected no-output message, got {rendered:?}"
     );
 }
@@ -224,9 +222,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
     assert_eq!(cells.len(), 1, "expected one info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains(
-            "`/copy` 在首次 Codex 输出之前或回滚后不可用。"
-        ),
+        rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
         "expected unavailable message, got {rendered:?}"
     );
 }
@@ -323,9 +319,7 @@ async fn slash_copy_uses_agent_message_item_when_turn_complete_omits_final_text(
     assert_eq!(cells.len(), 1, "expected one info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        !rendered.contains(
-            "`/copy` 在首次 Codex 输出之前或回滚后不可用。"
-        ),
+        !rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
         "expected copy state to be available, got {rendered:?}"
     );
     assert_eq!(
@@ -374,9 +368,7 @@ async fn slash_copy_does_not_return_stale_output_after_thread_rollback() {
     assert_eq!(cells.len(), 1, "expected one info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains(
-            "`/copy` 在首次 Codex 输出之前或回滚后不可用。"
-        ),
+        rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
         "expected rollback-cleared copy state message, got {rendered:?}"
     );
 }

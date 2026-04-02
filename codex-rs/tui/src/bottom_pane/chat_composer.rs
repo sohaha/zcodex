@@ -212,9 +212,7 @@ use std::time::Instant;
 const LARGE_PASTE_CHAR_THRESHOLD: usize = 1000;
 
 fn user_input_too_large_message(actual_chars: usize) -> String {
-    format!(
-        "消息超过最大长度 {MAX_USER_INPUT_TEXT_CHARS} 个字符（已输入 {actual_chars} 个）。"
-    )
+    format!("消息超过最大长度 {MAX_USER_INPUT_TEXT_CHARS} 个字符（已输入 {actual_chars} 个）。")
 }
 
 /// Result returned when the user interacts with the text area.
@@ -2090,9 +2088,8 @@ impl ChatComposer {
                     slash_commands::find_builtin_command(name, self.builtin_command_flags())
                         .is_some();
                 if !is_builtin {
-                    let message = format!(
-                        r#"无法识别命令 '/{name}'。输入 \"/\" 查看支持的命令列表。"#
-                    );
+                    let message =
+                        format!(r#"无法识别命令 '/{name}'。输入 \"/\" 查看支持的命令列表。"#);
                     self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
                         history_cell::new_info_event(message, /*hint*/ None),
                     )));
@@ -2338,10 +2335,7 @@ impl ChatComposer {
         if !self.is_task_running || cmd.available_during_task() {
             return false;
         }
-        let message = format!(
-            "'/{}' 在任务进行中被禁用。",
-            cmd.command()
-        );
+        let message = format!("'/{}' 在任务进行中被禁用。", cmd.command());
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
             history_cell::new_error_event(message),
         )));
@@ -6552,10 +6546,7 @@ mod tests {
                     1
                 ),
                 (
-                    format!(
-                        "[已粘贴内容 {} 字符] and ",
-                        test_cases[0].0.chars().count()
-                    ),
+                    format!("[已粘贴内容 {} 字符] and ", test_cases[0].0.chars().count()),
                     1
                 ),
                 (

@@ -529,10 +529,7 @@ pub(crate) fn feedback_upload_consent_params(
         items: vec![
             super::SelectionItem {
                 name: "是".to_string(),
-                description: Some(
-                    "分享当前 Codex 会话日志给团队以排查问题"
-                        .to_string(),
-                ),
+                description: Some("分享当前 Codex 会话日志给团队以排查问题".to_string()),
                 actions: vec![yes_action],
                 dismiss_on_select: true,
                 ..Default::default()

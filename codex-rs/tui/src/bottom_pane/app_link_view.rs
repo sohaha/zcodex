@@ -298,10 +298,8 @@ impl AppLinkView {
                 lines.push(Line::from(line.into_owned()));
             }
             if !self.is_installed {
-                for line in wrap(
-                    "安装后，使用 $ 将此应用插入到提示中。",
-                    usable_width,
-                ) {
+                for line in wrap("安装后，使用 $ 将此应用插入到提示中。", usable_width)
+                {
                     lines.push(Line::from(line.into_owned()));
                 }
             }

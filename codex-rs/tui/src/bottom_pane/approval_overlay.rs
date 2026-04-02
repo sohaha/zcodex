@@ -166,14 +166,12 @@ impl ApprovalOverlay {
                     },
                 ),
             ),
-            ApprovalRequest::Permissions { .. } => (
-                permissions_options(),
-                "是否授予这些权限？".to_string(),
-            ),
-            ApprovalRequest::ApplyPatch { .. } => (
-                patch_options(),
-                "是否进行以下编辑？".to_string(),
-            ),
+            ApprovalRequest::Permissions { .. } => {
+                (permissions_options(), "是否授予这些权限？".to_string())
+            }
+            ApprovalRequest::ApplyPatch { .. } => {
+                (patch_options(), "是否进行以下编辑？".to_string())
+            }
             ApprovalRequest::McpElicitation { server_name, .. } => (
                 elicitation_options(),
                 format!("{server_name} 需要你的审批。"),
@@ -521,10 +519,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
             if let Some(additional_permissions) = additional_permissions
                 && let Some(rule_line) = format_additional_permissions_rule(additional_permissions)
             {
-                header.push(Line::from(vec![
-                    "权限规则：".into(),
-                    rule_line.cyan(),
-                ]));
+                header.push(Line::from(vec!["权限规则：".into(), rule_line.cyan()]));
                 header.push(Line::from(""));
             }
             let full_cmd = strip_bash_lc_and_escape(command);
@@ -556,10 +551,7 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
                 header.push(Line::from(""));
             }
             if let Some(rule_line) = format_requested_permissions_rule(permissions) {
-                header.push(Line::from(vec![
-                    "权限规则：".into(),
-                    rule_line.cyan(),
-                ]));
+                header.push(Line::from(vec!["权限规则：".into(), rule_line.cyan()]));
             }
             Box::new(Paragraph::new(header).wrap(Wrap { trim: false }))
         }
@@ -582,11 +574,8 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
                 && !reason.is_empty()
             {
                 header.push(Box::new(
-                    Paragraph::new(Line::from_iter([
-                        "原因：".into(),
-                        reason.clone().italic(),
-                    ]))
-                    .wrap(Wrap { trim: false }),
+                    Paragraph::new(Line::from_iter(["原因：".into(), reason.clone().italic()]))
+                        .wrap(Wrap { trim: false }),
                 ));
                 header.push(Box::new(Line::from("")));
             }
@@ -668,9 +657,7 @@ fn exec_options(
                 }
 
                 Some(ApprovalOption {
-                    label: format!(
-                        "是，且不再询问以 `{rendered_prefix}` 开头的命令"
-                    ),
+                    label: format!("是，且不再询问以 `{rendered_prefix}` 开头的命令"),
                     decision: ApprovalDecision::Review(
                         ReviewDecision::ApprovedExecpolicyAmendment {
                             proposed_execpolicy_amendment: proposed_execpolicy_amendment.clone(),

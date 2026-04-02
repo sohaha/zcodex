@@ -15,8 +15,7 @@ const PAID_TOOLTIP_NON_MAC: &str = "*新功能* 2 倍速率限制，有效期至
 const FAST_TOOLTIP: &str = "*新功能* 使用 **/fast** 启用最快推理，消耗 2 倍套餐用量。";
 const OTHER_TOOLTIP: &str = "*新功能* 使用 **Codex App** 更快构建。运行 'codex app' 或访问 https://chatgpt.com/codex?app-landing-page=true";
 const OTHER_TOOLTIP_NON_MAC: &str = "*新功能* 使用 Codex 更快构建。";
-const FREE_GO_TOOLTIP: &str =
-    "*新功能* 限时免费使用 Codex —— 一起开始构建吧。";
+const FREE_GO_TOOLTIP: &str = "*新功能* 限时免费使用 Codex —— 一起开始构建吧。";
 
 const RAW_TOOLTIPS: &str = include_str!("../tooltips.txt");
 

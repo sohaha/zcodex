@@ -57,13 +57,7 @@ impl PendingThreadApprovals {
             lines.push(Line::from("    ...".dim().italic()));
         }
 
-        lines.push(
-            Line::from(vec![
-                "    ".into(),
-                "/agent 切换线程".dim(),
-            ])
-            .dim(),
-        );
+        lines.push(Line::from(vec!["    ".into(), "/agent 切换线程".dim()]).dim());
 
         Paragraph::new(lines).into()
     }

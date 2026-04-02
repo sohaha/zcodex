@@ -55,16 +55,12 @@ impl TerminalTitleItem {
         match self {
             TerminalTitleItem::AppName => "Codex 应用名称",
             TerminalTitleItem::Project => "项目名称（回退到当前目录名）",
-            TerminalTitleItem::Spinner => {
-                "动画任务指示器（空闲或动画关闭时省略）"
-            }
+            TerminalTitleItem::Spinner => "动画任务指示器（空闲或动画关闭时省略）",
             TerminalTitleItem::Status => "会话状态文本（就绪/处理中/思考中）",
             TerminalTitleItem::Thread => "当前线程标题（可用前省略）",
             TerminalTitleItem::GitBranch => "当前 Git 分支（不可用时省略）",
             TerminalTitleItem::Model => "当前模型名称",
-            TerminalTitleItem::TaskProgress => {
-                "最新任务进度（可用前省略）"
-            }
+            TerminalTitleItem::TaskProgress => "最新任务进度（可用前省略）",
         }
     }
 
@@ -156,8 +152,7 @@ impl TerminalTitleSetupView {
                 app_event_tx,
             )
             .instructions(vec![
-                "使用 ↑↓ 导航，←→ 移动，空格选择，回车确认，Esc 取消。"
-                    .into(),
+                "使用 ↑↓ 导航，←→ 移动，空格选择，回车确认，Esc 取消。".into(),
             ])
             .items(items)
             .enable_ordering()

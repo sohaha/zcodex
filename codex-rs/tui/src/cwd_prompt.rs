@@ -208,13 +208,11 @@ impl WidgetRef for &CwdPromptScreen {
         ]));
         column.push("");
         column.push(
-            Line::from(format!(
-                "会话 = 已{action_past}会话中记录的最新目录"
-            ))
-            .dim()
-            .inset(Insets::tlbr(
-                /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
-            )),
+            Line::from(format!("会话 = 已{action_past}会话中记录的最新目录"))
+                .dim()
+                .inset(Insets::tlbr(
+                    /*top*/ 0, /*left*/ 2, /*bottom*/ 0, /*right*/ 0,
+                )),
         );
         column.push(
             Line::from("当前 = 你当前的工作目录".dim()).inset(Insets::tlbr(

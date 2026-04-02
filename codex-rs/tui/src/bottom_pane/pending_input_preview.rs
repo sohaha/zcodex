@@ -106,11 +106,7 @@ impl PendingInputPreview {
             if !lines.is_empty() {
                 lines.push(Line::from(""));
             }
-            Self::push_section_header(
-                &mut lines,
-                width,
-                "回合结束后提交的消息".into(),
-            );
+            Self::push_section_header(&mut lines, width, "回合结束后提交的消息".into());
 
             for steer in &self.rejected_steers {
                 let wrapped = adaptive_wrap_lines(
