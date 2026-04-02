@@ -3,6 +3,11 @@
 
 use anyhow::Result;
 use codex_features::Feature;
+use codex_protocol::protocol::AskForApproval;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::Op;
+use codex_protocol::protocol::SandboxPolicy;
+use codex_protocol::user_input::UserInput;
 use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
 use codex_zmemory::tool_api::run_zmemory_tool_with_context;
@@ -15,9 +20,12 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
+use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_match;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
+use std::fs;
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -704,6 +712,123 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
             "core://my_user/coding_preferences",
             "core://agent/my_user/collaboration_contract"
         ])
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_workspace_view_uses_project_path_after_turn_cwd_override() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let workspace = TempDir::new()?;
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    let configured_db_path = workspace.path().join(".agents").join("memory.db");
+    fs::write(workspace.path().join(".git"), "gitdir: here")?;
+    fs::create_dir_all(&nested)?;
+    fs::create_dir_all(&dot_codex)?;
+    fs::create_dir_all(
+        configured_db_path
+            .parent()
+            .expect("configured zmemory path should have parent"),
+    )?;
+    fs::write(
+        dot_codex.join("config.toml"),
+        format!("[zmemory]\npath = \"{}\"\n", configured_db_path.display()),
+    )?;
+    fs::write(
+        test.home.path().join("config.toml"),
+        format!(
+            "[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            workspace.path().display()
+        ),
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-workspace-override",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "read",
+                    "uri": "system://workspace"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: Some(nested.clone()),
+            approval_policy: Some(AskForApproval::Never),
+            approvals_reviewer: None,
+            sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "inspect workspace memory runtime facts".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+
+    let turn_id = wait_for_event_match(&test.codex, |event| match event {
+        EventMsg::TurnStarted(event) => Some(event.turn_id.clone()),
+        _ => None,
+    })
+    .await;
+    wait_for_event(&test.codex, |event| match event {
+        EventMsg::TurnComplete(event) => event.turn_id == turn_id,
+        _ => false,
+    })
+    .await;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-workspace-override")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(
+        payload["result"]["view"]["dbPath"],
+        json!(configured_db_path.display().to_string())
+    );
+    assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
+    assert_eq!(payload["result"]["view"]["source"], "explicit");
+    assert_eq!(
+        payload["result"]["view"]["workspaceBase"],
+        json!(nested.display().to_string())
     );
 
     Ok(())

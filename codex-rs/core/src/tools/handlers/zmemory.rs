@@ -1,4 +1,7 @@
 use super::parse_arguments;
+use crate::codex::Session;
+use crate::config::ConfigBuilder;
+use crate::config::types::ZmemoryConfig;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -7,9 +10,11 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use anyhow::Result;
 use async_trait::async_trait;
+use codex_app_server_protocol::ConfigLayerSource;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
 use codex_zmemory::tool_api::run_zmemory_tool_with_context;
 use std::path::PathBuf;
+use tracing::warn;
 
 pub struct ZmemoryHandler;
 
@@ -50,12 +55,14 @@ impl ToolHandler for ZmemoryHandler {
             None => session.codex_home().await,
         };
 
-        let zmemory_path = turn.config.zmemory.path.as_deref();
+        let zmemory_config =
+            resolve_zmemory_config_for_turn(&session, &codex_home, &turn.cwd).await;
+        let zmemory_path = zmemory_config.path.as_deref();
         match run_zmemory_tool_with_context(
             &codex_home,
             turn.cwd.as_path(),
             zmemory_path,
-            Some(turn.config.zmemory.to_runtime_settings()),
+            Some(zmemory_config.to_runtime_settings()),
             args,
         ) {
             Ok(result) => {
@@ -72,6 +79,46 @@ impl ToolHandler for ZmemoryHandler {
                 ))
             }
             Err(err) => Ok(FunctionToolOutput::from_text(err.to_string(), Some(false))),
+        }
+    }
+}
+
+async fn resolve_zmemory_config_for_turn(
+    session: &Session,
+    codex_home: &std::path::Path,
+    turn_cwd: &std::path::Path,
+) -> ZmemoryConfig {
+    let session_config = session.get_config().await;
+    let current_zmemory_config = session_config.zmemory.clone();
+    let zmemory_origin = session_config
+        .config_layer_stack
+        .origins()
+        .remove("zmemory.path")
+        .map(|metadata| metadata.name);
+    let should_reload = session_config.cwd.as_path() != turn_cwd
+        && matches!(
+            zmemory_origin,
+            None | Some(ConfigLayerSource::Project { .. })
+        );
+
+    if !should_reload {
+        return current_zmemory_config;
+    }
+
+    match ConfigBuilder::default()
+        .codex_home(codex_home.to_path_buf())
+        .fallback_cwd(Some(turn_cwd.to_path_buf()))
+        .build()
+        .await
+    {
+        Ok(config) => config.zmemory,
+        Err(err) => {
+            warn!(
+                error = %err,
+                cwd = %turn_cwd.display(),
+                "failed to reload zmemory config for current turn cwd; using session config"
+            );
+            current_zmemory_config
         }
     }
 }

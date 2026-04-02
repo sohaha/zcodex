@@ -1,0 +1,189 @@
+# Cadence issue 模板
+# - 本文件是 issue 文件字段结构、默认值和注释示例的共享来源。
+# - 生命周期、确认点、交接和终态由 `references/cadence-lifecycle.md` 统一约束。
+# - `cadence_validate.js` / `cadence_validate.py` 提供机械化护栏：基础结构校验与执行阶段写回边界校验；优先使用 JS 版本以降低宿主机对 Python 环境的依赖，语义校验仍由各阶段技能、reviewer 和主代理负责。
+# - 写入实际 issue 文件时，必须替换所有占位值；不要保留空字符串或占位文本。
+# - 一个 plan 文件对应一个 issue 文件，路径形如 `issues/YYYY-MM-DD-feature-name.toml`。
+# - 文件必须能被直接解析为合法 TOML。
+
+# 对应 plan 文件的相对路径。必填且不能为空。
+plan = "plan/2026-04-01-app-server-zmemory-path-alignment.md"
+
+# 每个 `[[issue]]` 块代表一个可独立交付、可独立验证、可独立写回的结果单元。
+# 可按需继续添加 `[[issue]]` 块；默认执行顺序由 `sequence` 决定，文件中的先后顺序仅用于阅读展示。
+[[issue]]
+
+# 唯一标识。优先复用仓库既有约定；当仓库中还没有 issue 时，可使用 `a1`、`a2` ...
+id = "a1"
+
+# 默认执行顺序。必填正整数，且在同一文件内唯一。
+# 仅在多个 issue 同时满足依赖且都可执行时决定默认优先级；不替代 `depends_on`。
+sequence = 10
+
+# 简短标题。必填且不能为空。
+title = "确认 app-server zmemory 调用链与缺口"
+
+# 边界说明。必填且不能为空。
+# 需要清楚说明“做什么”和“不做什么”；长文本优先使用多行基础字符串。
+scope = """
+梳理 app-server -> core -> zmemory 的配置注入与 dbPath 解析链路，明确当前未对齐的分支/条件与引用位置。
+不修改代码、不调整其它工具行为。
+"""
+
+# 影响面。必填数组。
+# 允许值形式：
+# - "none"
+# - "external"
+# - "module:<name>"
+# - "api:<name>"
+# - "command:<name>"
+# - "schema:<name>"
+# - 可定位的路径或 glob
+touch_points = ["codex-rs/zmemory/src/path_resolution.rs", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/core/src/config/mod.rs", "codex-rs/core/src/config_loader/mod.rs", "codex-rs/app-server/src/codex_message_processor.rs"]
+
+# 硬依赖 issue id 列表。
+# 没有依赖时写空数组 `[]`；不要写字符串 "none"。
+depends_on = []
+
+# 完成定义。必填且不能为空。
+# 写结果，不写模糊过程。
+done_when = "已定位 dbPath 的决定链路与未对齐原因，并在 issue notes 记录关键注入点与条件分支引用。"
+
+# 主要验证入口。必填且不能为空。
+# 默认写项目测试命令；若仓库缺少验证载体，则按共享验证规则降级。
+validate_by = "对照计划中列出的源码位置，完成调用链梳理并在 notes 中列出注入点/缺口引用，确保与当前观察一致。"
+
+# 需要重新执行的回归验证。若没有，写 "none"。
+regress_by = "none"
+
+# 回归执行时机。允许值：
+# - "after_done": 默认值；等待所有 issue 的 `status` 都是 `done` 后再统一执行回归
+# - "before_fanout": 当前 issue 通过 `validate_by` 后，先完成回归再放开大批量下游依赖
+regress_timing = "after_done"
+
+# 开发状态。允许值：
+# - "todo"
+# - "in_progress"
+# - "done"
+# - "blocked"
+status = "done"
+
+# 主要验证状态。允许值：
+# - "not_run"
+# - "in_progress"
+# - "passed"
+# - "failed"
+validate_status = "passed"
+
+# 回归状态。允许值：
+# - "not_needed"
+# - "not_run"
+# - "in_progress"
+# - "passed"
+# - "failed"
+# 当 `regress_by = "none"` 时写 "not_needed"；否则初始化为 "not_run"。
+regress_status = "not_needed"
+
+# 补充说明。没有额外信息时写 "none"。
+# 如果 issue 被阻塞，需要在这里记录阻塞原因和解除条件。
+notes = """
+使用 tldr 与源码核对后确认链路：
+- app-server 在线程创建、resume、fork 时会通过 `derive_config_for_cwd(...)` 按 cwd 重建 Config。
+- app-server `turn_start` 仅提交 `Op::OverrideTurnContext` 更新 `SessionConfiguration.cwd`。
+- core `build_per_turn_config()` 只克隆线程初始 `original_config_do_not_use` 并覆写 cwd 等字段，不会按新 cwd 重跑 project 层配置解析。
+
+因此当线程创建时未加载目标项目配置，而后续 turn 才覆盖 cwd 时，`turn.config.zmemory.path` 会沿用线程初始值，导致 zmemory 落回默认库或旧项目路径。
+"""
+
+[[issue]]
+
+# 唯一标识。优先复用仓库既有约定；当仓库中还没有 issue 时，可使用 `a1`、`a2` ...
+id = "a2"
+
+# 默认执行顺序。必填正整数，且在同一文件内唯一。
+# 仅在多个 issue 同时满足依赖且都可执行时决定默认优先级；不替代 `depends_on`。
+sequence = 20
+
+# 简短标题。必填且不能为空。
+title = "对齐 app-server zmemory dbPath 并补充验证"
+
+# 边界说明。必填且不能为空。
+# 需要清楚说明“做什么”和“不做什么”；长文本优先使用多行基础字符串。
+scope = """
+在 app-server 触发的 zmemory 调用中，未显式覆盖时优先使用项目配置的 zmemory.path，并保持与 codex-cli 行为一致。
+仅对 zmemory 做最小对齐改动，列出可能同类工具清单但不改动其它工具。
+"""
+
+# 影响面。必填数组。
+# 允许值形式：
+# - "none"
+# - "external"
+# - "module:<name>"
+# - "api:<name>"
+# - "command:<name>"
+# - "schema:<name>"
+# - 可定位的路径或 glob
+touch_points = ["codex-rs/zmemory/src/path_resolution.rs", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/app-server/src/codex_message_processor.rs"]
+
+# 硬依赖 issue id 列表。
+# 没有依赖时写空数组 `[]`；不要写字符串 "none"。
+depends_on = ["a1"]
+
+# 完成定义。必填且不能为空。
+# 写结果，不写模糊过程。
+done_when = "app-server 触发的 zmemory 在无显式覆盖时落到项目配置的 zmemory.path，system://workspace 显示 dbPath 与配置一致，并列出可能同类工具清单（仅告知）。"
+
+# 主要验证入口。必填且不能为空。
+# 默认写项目测试命令；若仓库缺少验证载体，则按共享验证规则降级。
+validate_by = "通过 app-server 触发 zmemory system://workspace，确认 dbPath 与 /workspace/.codex/config.toml 的 zmemory.path 一致；同时确认配置加载链路无报错且 zmemory 调用成功。"
+
+# 需要重新执行的回归验证。若没有，写 "none"。
+regress_by = "none"
+
+# 回归执行时机。允许值：
+# - "after_done": 默认值；等待所有 issue 的 `status` 都是 `done` 后再统一执行回归
+# - "before_fanout": 当前 issue 通过 `validate_by` 后，先完成回归再放开大批量下游依赖
+regress_timing = "after_done"
+
+# 开发状态。允许值：
+# - "todo"
+# - "in_progress"
+# - "done"
+# - "blocked"
+status = "done"
+
+# 主要验证状态。允许值：
+# - "not_run"
+# - "in_progress"
+# - "passed"
+# - "failed"
+validate_status = "passed"
+
+# 回归状态。允许值：
+# - "not_needed"
+# - "not_run"
+# - "in_progress"
+# - "passed"
+# - "failed"
+# 当 `regress_by = "none"` 时写 "not_needed"；否则初始化为 "not_run"。
+regress_status = "not_needed"
+
+# 补充说明。没有额外信息时写 "none"。
+# 如果 issue 被阻塞，需要在这里记录阻塞原因和解除条件。
+notes = """
+在 `codex-rs/core/src/tools/handlers/zmemory.rs` 增加按当前 turn cwd 重新解析 zmemory 配置的最小补丁：
+- 仅在 `session_config.cwd != turn.cwd` 且当前 `zmemory.path` 来源为 Project 层或根本未命中 `zmemory.path` 时，使用 `ConfigBuilder::fallback_cwd(turn.cwd)` 重载 zmemory 配置。
+- 若当前值来自 User / SessionFlags 等非项目层，则保持原值，避免覆盖显式配置。
+- reload 失败时保留会话内现有 zmemory 配置并记录 warn。
+
+补充 e2e：`zmemory_function_workspace_view_uses_project_path_after_turn_cwd_override`，覆盖 app-server 同类的“先改 turn cwd，再触发 zmemory”场景，并验证 `system://workspace` 的 `dbPath` 对齐项目 `.codex/config.toml`。
+
+相关验证：
+- `cargo test -p codex-core --test all zmemory_function_workspace_view_uses_project_path_after_turn_cwd_override -- --nocapture`
+- `cargo test -p codex-core --test all zmemory_function_workspace_view_ -- --nocapture`
+
+可能同类但本次未改：
+- `codex-rs/core/src/tools/handlers/agent_jobs.rs`
+- `codex-rs/core/src/tools/handlers/multi_agents/*.rs`
+这些路径也直接消费 `turn.config.*`，若未来引入 project-scoped 的对应配置项，可能出现同类“turn cwd 已变，但线程初始 config 仍被复用”的问题。
+"""
