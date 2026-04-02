@@ -12,8 +12,6 @@ path = "src/lib.rs"
 [[bin]]
 name = "codex-write-config-schema"
 path = "src/bin/config_schema.rs"
-test = false
-bench = false
 
 [lints]
 workspace = true
@@ -40,10 +38,8 @@ codex-core-skills = { workspace = true }
 codex-exec-server = { workspace = true }
 codex-features = { workspace = true }
 codex-login = { workspace = true }
-codex-native-tldr = { workspace = true }
+codex-mcp = { workspace = true }
 codex-shell-command = { workspace = true }
-codex-skills = { workspace = true }
-codex-zmemory = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-hooks = { workspace = true }
@@ -54,7 +50,6 @@ codex-plugin = { workspace = true }
 codex-protocol = { workspace = true }
 codex-rollout = { workspace = true }
 codex-rmcp-client = { workspace = true }
-codex-rtk = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-state = { workspace = true }
 codex-terminal-detection = { workspace = true }
@@ -120,7 +115,6 @@ tracing = { workspace = true, features = ["log"] }
 url = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4", "v5"] }
 which = { workspace = true }
-wildmatch = { workspace = true }
 zip = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -152,9 +146,7 @@ codex-shell-escalation = { workspace = true }
 assert_cmd = { workspace = true }
 assert_matches = { workspace = true }
 codex-arg0 = { workspace = true }
-codex-otel = { workspace = true, features = [
-    "disable-default-metrics-exporter",
-] }
+codex-otel = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 core_test_support = { workspace = true }
 ctor = { workspace = true }

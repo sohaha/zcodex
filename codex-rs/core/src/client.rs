@@ -33,10 +33,8 @@ use std::sync::atomic::Ordering;
 use crate::api_bridge::CoreAuthProvider;
 use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
-use crate::auth::UnauthorizedRecovery;
 use crate::auth_env_telemetry::AuthEnvTelemetry;
 use crate::auth_env_telemetry::collect_auth_env_telemetry;
-use codex_api::ChatCompletionsClient as ApiChatCompletionsClient;
 use codex_api::CompactClient as ApiCompactClient;
 use codex_api::CompactionInput as ApiCompactionInput;
 use codex_api::MemoriesClient as ApiMemoriesClient;
@@ -61,6 +59,12 @@ use codex_api::create_text_param_for_request;
 use codex_api::error::ApiError;
 use codex_api::requests::responses::Compression;
 use codex_api::response_create_client_metadata;
+use codex_login::AuthManager;
+use codex_login::AuthMode;
+use codex_login::CodexAuth;
+use codex_login::RefreshTokenError;
+use codex_login::UnauthorizedRecovery;
+use codex_login::default_client::build_reqwest_client;
 use codex_otel::SessionTelemetry;
 use codex_otel::current_span_w3c_trace_context;
 
@@ -72,6 +76,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_tools::create_tools_json_for_responses_api;
 use eventsource_stream::Event;
@@ -92,15 +97,9 @@ use tracing::instrument;
 use tracing::trace;
 use tracing::warn;
 
-use crate::AuthManager;
-use crate::auth::AuthMode;
-use crate::auth::CodexAuth;
-use crate::auth::RefreshTokenError;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
-use crate::client_common::tools::ToolSpec;
-use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
 use crate::error::Result;
 use crate::flags::CODEX_RS_SSE_FIXTURE;
@@ -121,10 +120,7 @@ pub const X_CODEX_TURN_METADATA_HEADER: &str = "x-codex-turn-metadata";
 pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
-const ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR: &str =
-    "memory summarize is not supported for Anthropic providers";
 const RESPONSES_ENDPOINT: &str = "/responses";
-const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
 const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
 const MEMORIES_SUMMARIZE_ENDPOINT: &str = "/memories/trace_summarize";
 #[cfg(test)]
@@ -155,6 +151,7 @@ struct ModelClientState {
 /// Keeping this as a single bundle ensures prewarm and normal request paths
 /// share the same auth/provider setup flow.
 struct CurrentClientSetup {
+    auth: Option<CodexAuth>,
     api_provider: codex_api::Provider,
     api_auth: CoreAuthProvider,
 }
@@ -365,7 +362,7 @@ impl ModelClient {
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.api_auth.auth_mode(),
+                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
                 &client_setup.api_auth,
                 PendingUnauthorizedRetry::default(),
             ),
@@ -428,18 +425,13 @@ impl ModelClient {
         if raw_memories.is_empty() {
             return Ok(Vec::new());
         }
-        if self.state.provider.wire_api == WireApi::Anthropic {
-            return Err(CodexErr::UnsupportedOperation(
-                ANTHROPIC_MEMORIES_UNSUPPORTED_ERROR.to_string(),
-            ));
-        }
 
         let client_setup = self.current_client_setup().await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
         let request_telemetry = Self::build_request_telemetry(
             session_telemetry,
             AuthRequestTelemetryContext::new(
-                client_setup.api_auth.auth_mode(),
+                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
                 &client_setup.api_auth,
                 PendingUnauthorizedRetry::default(),
             ),
@@ -469,13 +461,11 @@ impl ModelClient {
         let mut extra_headers = ApiHeaderMap::new();
         if let SessionSource::SubAgent(sub) = &self.state.session_source {
             let subagent = match sub {
-                crate::protocol::SubAgentSource::Review => "review".to_string(),
-                crate::protocol::SubAgentSource::Compact => "compact".to_string(),
-                crate::protocol::SubAgentSource::MemoryConsolidation => {
-                    "memory_consolidation".to_string()
-                }
-                crate::protocol::SubAgentSource::ThreadSpawn { .. } => "collab_spawn".to_string(),
-                crate::protocol::SubAgentSource::Other(label) => label.clone(),
+                SubAgentSource::Review => "review".to_string(),
+                SubAgentSource::Compact => "compact".to_string(),
+                SubAgentSource::MemoryConsolidation => "memory_consolidation".to_string(),
+                SubAgentSource::ThreadSpawn { .. } => "collab_spawn".to_string(),
+                SubAgentSource::Other(label) => label.clone(),
             };
             if let Ok(val) = HeaderValue::from_str(&subagent) {
                 extra_headers.insert("x-openai-subagent", val);
@@ -540,30 +530,19 @@ impl ModelClient {
     /// lockstep when auth/provider resolution changes.
     async fn current_client_setup(&self) -> Result<CurrentClientSetup> {
         let auth = match self.state.auth_manager.as_ref() {
-            Some(manager) if !self.state.provider.uses_provider_supplied_auth() => {
-                manager.auth().await
-            }
-            Some(_) | None => None,
+            Some(manager) => manager.auth().await,
+            None => None,
         };
         let api_provider = self
             .state
             .provider
             .to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))?;
-        let api_auth = auth_provider_from_auth(auth, &self.state.provider)?;
+        let api_auth = auth_provider_from_auth(auth.clone(), &self.state.provider)?;
         Ok(CurrentClientSetup {
+            auth,
             api_provider,
             api_auth,
         })
-    }
-
-    fn unauthorized_recovery(&self) -> Option<UnauthorizedRecovery> {
-        let auth_manager = self.state.auth_manager.as_ref()?;
-        if self.state.provider.uses_provider_supplied_auth() {
-            return None;
-        }
-        (matches!(auth_manager.auth_mode(), Some(AuthMode::Chatgpt))
-            || auth_manager.has_external_auth())
-        .then(|| auth_manager.unauthorized_recovery())
     }
 
     /// Opens a websocket connection using the same header and telemetry wiring as normal turns.
@@ -594,7 +573,7 @@ impl ModelClient {
             websocket_connect_timeout,
             ApiWebSocketResponsesClient::new(api_provider, api_auth).connect(
                 headers,
-                crate::default_client::default_headers(),
+                codex_login::default_client::default_headers(),
                 turn_state,
                 Some(websocket_telemetry),
             ),
@@ -716,10 +695,7 @@ impl ModelClientSession {
     ) -> Result<ResponsesApiRequest> {
         let instructions = &prompt.base_instructions.text;
         let input = prompt.get_formatted_input();
-        let tools = create_tools_json_for_responses_api(&filter_tools_for_wire_api(
-            &prompt.tools,
-            provider.wire_api,
-        ))?;
+        let tools = create_tools_json_for_responses_api(&prompt.tools)?;
         let default_reasoning_effort = model_info.default_reasoning_level;
         let reasoning = if model_info.supports_reasoning_summaries {
             Some(Reasoning {
@@ -899,7 +875,7 @@ impl ModelClientSession {
             ))
         })?;
         let auth_context = AuthRequestTelemetryContext::new(
-            client_setup.api_auth.auth_mode(),
+            client_setup.auth.as_ref().map(CodexAuth::auth_mode),
             &client_setup.api_auth,
             PendingUnauthorizedRetry::default(),
         );
@@ -995,16 +971,10 @@ impl ModelClientSession {
             ))
     }
 
-    fn responses_request_compression(&self, api_auth: &CoreAuthProvider) -> Compression {
+    fn responses_request_compression(&self, auth: Option<&CodexAuth>) -> Compression {
         if self.client.state.enable_request_compression
-            && api_auth.is_chatgpt_auth()
-            && self.client.state.provider.wire_api == WireApi::Responses
-            && (self.client.state.provider.requires_openai_auth
-                || self
-                    .client
-                    .state
-                    .provider
-                    .uses_official_openai_responses_api())
+            && auth.is_some_and(CodexAuth::is_chatgpt_auth)
+            && self.client.state.provider.is_openai()
         {
             Compression::Zstd
         } else {
@@ -1051,13 +1021,16 @@ impl ModelClientSession {
             return Ok(stream);
         }
 
-        let mut auth_recovery = self.client.unauthorized_recovery();
+        let auth_manager = self.client.state.auth_manager.clone();
+        let mut auth_recovery = auth_manager
+            .as_ref()
+            .map(AuthManager::unauthorized_recovery);
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let transport = ReqwestTransport::new(build_reqwest_client());
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.api_auth.auth_mode(),
+                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
                 &client_setup.api_auth,
                 pending_retry,
             );
@@ -1067,7 +1040,7 @@ impl ModelClientSession {
                 RequestRouteTelemetry::for_endpoint(RESPONSES_ENDPOINT),
                 self.client.state.auth_env_telemetry.clone(),
             );
-            let compression = self.responses_request_compression(&client_setup.api_auth);
+            let compression = self.responses_request_compression(client_setup.auth.as_ref());
             let options = self.build_responses_options(turn_metadata_header, compression);
 
             let request = self.build_responses_request(
@@ -1079,97 +1052,6 @@ impl ModelClientSession {
                 service_tier,
             )?;
             let client = ApiResponsesClient::new(
-                transport,
-                client_setup.api_provider,
-                client_setup.api_auth,
-            )
-            .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-            let stream_result = client.stream_request(request, options).await;
-
-            match stream_result {
-                Ok(stream) => {
-                    let (stream, _) = map_response_stream(stream, session_telemetry.clone());
-                    return Ok(stream);
-                }
-                Err(ApiError::Transport(
-                    unauthorized_transport @ TransportError::Http { status, .. },
-                )) if status == StatusCode::UNAUTHORIZED => {
-                    pending_retry = PendingUnauthorizedRetry::from_recovery(
-                        handle_unauthorized(
-                            unauthorized_transport,
-                            &mut auth_recovery,
-                            session_telemetry,
-                        )
-                        .await?,
-                    );
-                    continue;
-                }
-                Err(err) => return Err(map_api_error(err)),
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[instrument(
-        name = "model_client.stream_chat_completions_api",
-        level = "info",
-        skip_all,
-        fields(
-            model = %model_info.slug,
-            wire_api = %self.client.state.provider.wire_api,
-            transport = "chat_completions_http",
-            http.method = "POST",
-            api.path = "chat/completions",
-            turn.has_metadata_header = turn_metadata_header.is_some()
-        )
-    )]
-    async fn stream_chat_completions_api(
-        &self,
-        prompt: &Prompt,
-        model_info: &ModelInfo,
-        session_telemetry: &SessionTelemetry,
-        effort: Option<ReasoningEffortConfig>,
-        summary: ReasoningSummaryConfig,
-        service_tier: Option<ServiceTier>,
-        turn_metadata_header: Option<&str>,
-    ) -> Result<ResponseStream> {
-        if let Some(path) = &*CODEX_RS_SSE_FIXTURE {
-            warn!(path, "Streaming from fixture");
-            let stream = codex_api::stream_from_fixture(
-                path,
-                self.client.state.provider.stream_idle_timeout(),
-            )
-            .map_err(map_api_error)?;
-            let (stream, _last_request_rx) = map_response_stream(stream, session_telemetry.clone());
-            return Ok(stream);
-        }
-
-        let mut auth_recovery = self.client.unauthorized_recovery();
-        let mut pending_retry = PendingUnauthorizedRetry::default();
-        loop {
-            let client_setup = self.client.current_client_setup().await?;
-            let transport = ReqwestTransport::new(build_reqwest_client());
-            let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.api_auth.auth_mode(),
-                &client_setup.api_auth,
-                pending_retry,
-            );
-            let (request_telemetry, sse_telemetry) = Self::build_streaming_telemetry(
-                session_telemetry,
-                request_auth_context,
-                RequestRouteTelemetry::for_endpoint(CHAT_COMPLETIONS_ENDPOINT),
-                self.client.state.auth_env_telemetry.clone(),
-            );
-            let options = self.build_responses_options(turn_metadata_header, Compression::None);
-            let request = self.build_responses_request(
-                &client_setup.api_provider,
-                prompt,
-                model_info,
-                effort,
-                summary,
-                service_tier,
-            )?;
-            let client = ApiChatCompletionsClient::new(
                 transport,
                 client_setup.api_provider,
                 client_setup.api_auth,
@@ -1227,16 +1109,20 @@ impl ModelClientSession {
         warmup: bool,
         request_trace: Option<W3cTraceContext>,
     ) -> Result<WebsocketStreamOutcome> {
-        let mut auth_recovery = self.client.unauthorized_recovery();
+        let auth_manager = self.client.state.auth_manager.clone();
+
+        let mut auth_recovery = auth_manager
+            .as_ref()
+            .map(AuthManager::unauthorized_recovery);
         let mut pending_retry = PendingUnauthorizedRetry::default();
         loop {
             let client_setup = self.client.current_client_setup().await?;
             let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.api_auth.auth_mode(),
+                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
                 &client_setup.api_auth,
                 pending_retry,
             );
-            let compression = self.responses_request_compression(&client_setup.api_auth);
+            let compression = self.responses_request_compression(client_setup.auth.as_ref());
 
             let options = self.build_responses_options(turn_metadata_header, compression);
             let request = self.build_responses_request(
@@ -1452,30 +1338,6 @@ impl ModelClientSession {
                 )
                 .await
             }
-            WireApi::Chat => {
-                self.stream_chat_completions_api(
-                    prompt,
-                    model_info,
-                    session_telemetry,
-                    effort,
-                    summary,
-                    service_tier,
-                    turn_metadata_header,
-                )
-                .await
-            }
-            WireApi::Anthropic => {
-                self.stream_responses_api(
-                    prompt,
-                    model_info,
-                    session_telemetry,
-                    effort,
-                    summary,
-                    service_tier,
-                    turn_metadata_header,
-                )
-                .await
-            }
         }
     }
 
@@ -1512,40 +1374,6 @@ fn build_ws_client_metadata(turn_metadata_header: Option<&str>) -> Option<HashMa
     let mut client_metadata = HashMap::new();
     client_metadata.insert(X_CODEX_TURN_METADATA_HEADER.to_string(), turn_metadata);
     Some(client_metadata)
-}
-
-fn filter_tools_for_wire_api(
-    tools: &[ToolSpec],
-    wire_api: codex_api::provider::WireApi,
-) -> Vec<ToolSpec> {
-    if wire_api != codex_api::provider::WireApi::Chat {
-        return tools.to_vec();
-    }
-
-    let mut disabled_tool_names = Vec::new();
-    let filtered = tools
-        .iter()
-        .filter(|tool| {
-            let supported = !matches!(
-                tool,
-                ToolSpec::WebSearch { .. } | ToolSpec::ImageGeneration { .. }
-            );
-            if !supported {
-                disabled_tool_names.push(tool.name().to_string());
-            }
-            supported
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-
-    if !disabled_tool_names.is_empty() {
-        warn!(
-            ?disabled_tool_names,
-            "disabling hosted-only tools for chat completions provider"
-        );
-    }
-
-    filtered
 }
 
 /// Builds the extra headers attached to Responses API requests.

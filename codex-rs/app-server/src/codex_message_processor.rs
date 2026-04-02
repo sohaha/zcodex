@@ -20,6 +20,7 @@ use crate::thread_status::resolve_thread_status;
 use chrono::DateTime;
 use chrono::SecondsFormat;
 use chrono::Utc;
+use codex_analytics::AnalyticsEventsClient;
 use codex_app_server_protocol::Account;
 use codex_app_server_protocol::AccountLoginCompletedNotification;
 use codex_app_server_protocol::AccountUpdatedNotification;
@@ -180,9 +181,7 @@ use codex_arg0::Arg0DispatchPaths;
 use codex_backend_client::Client as BackendClient;
 use codex_chatgpt::connectors;
 use codex_cloud_requirements::cloud_requirements_loader;
-use codex_core::AnalyticsEventsClient;
-use codex_core::AuthManager;
-use codex_core::CodexAuth;
+use codex_config::types::McpServerTransportConfig;
 use codex_core::CodexThread;
 use codex_core::Cursor as RolloutCursor;
 use codex_core::ForkSnapshot;
@@ -193,37 +192,26 @@ use codex_core::SteerInputError;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::ThreadManager;
 use codex_core::ThreadSortKey as CoreThreadSortKey;
-use codex_core::auth::AuthMode as CoreAuthMode;
-use codex_core::auth::CLIENT_ID;
-use codex_core::auth::login_with_api_key;
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
 use codex_core::config::NetworkProxyAuditMetadata;
 use codex_core::config::edit::ConfigEdit;
 use codex_core::config::edit::ConfigEditsBuilder;
-use codex_core::config::types::McpServerTransportConfig;
-use codex_core::config::types::ResumeModelSource;
 use codex_core::config_loader::CloudRequirementsLoadError;
 use codex_core::config_loader::CloudRequirementsLoadErrorCode;
 use codex_core::config_loader::CloudRequirementsLoader;
 use codex_core::config_loader::LoaderOverrides;
 use codex_core::config_loader::load_config_layers_state;
-use codex_core::default_client::set_default_client_residency_requirement;
 use codex_core::error::CodexErr;
 use codex_core::error::Result as CodexResult;
 use codex_core::exec::ExecCapturePolicy;
 use codex_core::exec::ExecExpiration;
 use codex_core::exec::ExecParams;
 use codex_core::exec_env::create_env;
-use codex_core::exec_env::prepend_arg0_helper_dir_to_path;
 use codex_core::find_archived_thread_path_by_id_str;
 use codex_core::find_thread_name_by_id;
 use codex_core::find_thread_names_by_ids;
 use codex_core::find_thread_path_by_id_str;
-use codex_core::mcp::auth::discover_supported_scopes;
-use codex_core::mcp::auth::resolve_oauth_scopes;
-use codex_core::mcp::collect_mcp_snapshot;
-use codex_core::mcp::group_tools_by_server;
 use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_core::parse_cursor;
 use codex_core::plugins::MarketplaceError;
@@ -239,9 +227,6 @@ use codex_core::read_head_for_summary;
 use codex_core::read_session_meta_line;
 use codex_core::rollout_date_parts;
 use codex_core::sandboxing::SandboxPermissions;
-use codex_core::state_db::StateDbHandle;
-use codex_core::state_db::get_state_db;
-use codex_core::state_db::reconcile_rollout;
 use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_core::windows_sandbox::WindowsSandboxSetupMode as CoreWindowsSandboxSetupMode;
 use codex_core::windows_sandbox::WindowsSandboxSetupRequest;
@@ -250,12 +235,22 @@ use codex_features::Feature;
 use codex_features::Stage;
 use codex_feedback::CodexFeedback;
 use codex_git_utils::git_diff_to_remote;
+use codex_login::AuthManager;
+use codex_login::AuthMode as CoreAuthMode;
+use codex_login::CLIENT_ID;
+use codex_login::CodexAuth;
 use codex_login::ServerOptions as LoginServerOptions;
 use codex_login::ShutdownHandle;
 use codex_login::auth::login_with_chatgpt_auth_tokens;
 use codex_login::complete_device_code_login;
+use codex_login::default_client::set_default_client_residency_requirement;
+use codex_login::login_with_api_key;
 use codex_login::request_device_code;
 use codex_login::run_login_server;
+use codex_mcp::mcp::auth::discover_supported_scopes;
+use codex_mcp::mcp::auth::resolve_oauth_scopes;
+use codex_mcp::mcp::collect_mcp_snapshot;
+use codex_mcp::mcp::group_tools_by_server;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ForcedLoginMethod;
@@ -286,6 +281,9 @@ use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use codex_protocol::user_input::UserInput as CoreInputItem;
 use codex_rmcp_client::perform_oauth_login_return_url;
+use codex_rollout::state_db::StateDbHandle;
+use codex_rollout::state_db::get_state_db;
+use codex_rollout::state_db::reconcile_rollout;
 use codex_state::StateRuntime;
 use codex_state::ThreadMetadata;
 use codex_state::ThreadMetadataBuilder;
@@ -1828,11 +1826,6 @@ impl CodexMessageProcessor {
             &self.config.permissions.shell_environment_policy,
             /*thread_id*/ None,
         );
-        prepend_arg0_helper_dir_to_path(
-            &mut env,
-            self.config.main_execve_wrapper_exe.as_deref(),
-            self.config.codex_linux_sandbox_exe.as_deref(),
-        );
         if let Some(env_overrides) = env_overrides {
             for (key, value) in env_overrides {
                 match value {
@@ -2217,6 +2210,7 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+
         let dynamic_tools = dynamic_tools.unwrap_or_default();
         let core_dynamic_tools = if dynamic_tools.is_empty() {
             Vec::new()
@@ -3736,6 +3730,7 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+
         let fallback_model_provider = config.model_provider_id.clone();
         let response_history = thread_history.clone();
 
@@ -3851,9 +3846,6 @@ impl CodexMessageProcessor {
         request_overrides: &mut Option<HashMap<String, serde_json::Value>>,
         typesafe_overrides: &mut ConfigOverrides,
     ) -> Option<ThreadMetadata> {
-        if !should_apply_persisted_resume_model_metadata(&self.config) {
-            return None;
-        }
         let InitialHistory::Resumed(resumed_history) = thread_history else {
             return None;
         };
@@ -4293,6 +4285,7 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+
         let fallback_model_provider = config.model_provider_id.clone();
 
         let NewThread {
@@ -5046,9 +5039,12 @@ impl CodexMessageProcessor {
                 return;
             }
         };
+        let mcp_config = config.to_mcp_config(self.thread_manager.plugins_manager().as_ref());
+        let auth = self.auth_manager.auth().await;
 
         tokio::spawn(async move {
-            Self::list_mcp_server_status_task(outgoing, request, params, config).await;
+            Self::list_mcp_server_status_task(outgoing, request, params, config, mcp_config, auth)
+                .await;
         });
     }
 
@@ -5057,8 +5053,15 @@ impl CodexMessageProcessor {
         request_id: ConnectionRequestId,
         params: ListMcpServerStatusParams,
         config: Config,
+        mcp_config: codex_mcp::mcp::McpConfig,
+        auth: Option<CodexAuth>,
     ) {
-        let snapshot = collect_mcp_snapshot(&config).await;
+        let snapshot = collect_mcp_snapshot(
+            &mcp_config,
+            auth.as_ref(),
+            request_id.request_id.to_string(),
+        )
+        .await;
 
         let tools_by_server = group_tools_by_server(&snapshot.tools);
 
@@ -7926,7 +7929,6 @@ fn merge_persisted_resume_metadata(
         return;
     }
 
-    typesafe_overrides.model_provider = Some(persisted_metadata.model_provider.clone());
     typesafe_overrides.model = persisted_metadata.model.clone();
 
     if let Some(reasoning_effort) = persisted_metadata.reasoning_effort {
@@ -7935,10 +7937,6 @@ fn merge_persisted_resume_metadata(
             serde_json::Value::String(reasoning_effort.to_string()),
         );
     }
-}
-
-fn should_apply_persisted_resume_model_metadata(config: &Config) -> bool {
-    !matches!(config.resume_model_source, ResumeModelSource::Current)
 }
 
 fn has_model_resume_override(
@@ -8614,7 +8612,6 @@ fn with_thread_spawn_agent_metadata(
             codex_protocol::protocol::SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth,
-                parent_model,
                 agent_path,
                 agent_nickname: existing_agent_nickname,
                 agent_role: existing_agent_role,
@@ -8623,7 +8620,6 @@ fn with_thread_spawn_agent_metadata(
             codex_protocol::protocol::SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth,
-                parent_model,
                 agent_path,
                 agent_nickname: agent_nickname.or(existing_agent_nickname),
                 agent_role: agent_role.or(existing_agent_role),
@@ -8790,7 +8786,7 @@ mod tests {
 
     #[test]
     fn config_load_error_leaves_non_cloud_requirements_failures_unmarked() {
-        let err = std::io::Error::other("必需的 MCP 服务器初始化失败");
+        let err = std::io::Error::other("required MCP servers failed to initialize");
 
         let error = config_load_error(&err);
 
@@ -8894,10 +8890,6 @@ mod tests {
         );
 
         assert_eq!(
-            typesafe_overrides.model_provider,
-            Some("mock_provider".to_string())
-        );
-        assert_eq!(
             typesafe_overrides.model,
             Some("gpt-5.1-codex-max".to_string())
         );
@@ -8930,7 +8922,6 @@ mod tests {
             &persisted_metadata,
         );
 
-        assert_eq!(typesafe_overrides.model_provider, None);
         assert_eq!(typesafe_overrides.model, Some("gpt-5.2-codex".to_string()));
         assert_eq!(
             request_overrides,
@@ -8959,7 +8950,6 @@ mod tests {
             &persisted_metadata,
         );
 
-        assert_eq!(typesafe_overrides.model_provider, None);
         assert_eq!(typesafe_overrides.model, None);
         assert_eq!(
             request_overrides,
@@ -9011,7 +9001,6 @@ mod tests {
             &persisted_metadata,
         );
 
-        assert_eq!(typesafe_overrides.model_provider, None);
         assert_eq!(typesafe_overrides.model, None);
         assert_eq!(
             request_overrides,
@@ -9036,62 +9025,9 @@ mod tests {
             &persisted_metadata,
         );
 
-        assert_eq!(
-            typesafe_overrides.model_provider,
-            Some("mock_provider".to_string())
-        );
         assert_eq!(typesafe_overrides.model, None);
         assert_eq!(request_overrides, None);
         Ok(())
-    }
-
-    async fn test_config_with_resume_model_source(
-        resume_model_source: Option<&str>,
-    ) -> std::io::Result<Config> {
-        let codex_home = TempDir::new().expect("temp dir");
-        let resume_model_source = resume_model_source
-            .map(|value| format!("resume_model_source = \"{value}\"\n"))
-            .unwrap_or_default();
-        std::fs::write(
-            codex_home.path().join("config.toml"),
-            format!(
-                r#"
-model = "gpt-5.2-codex"
-model_provider = "mock_provider"
-{resume_model_source}
-
-[model_providers.mock_provider]
-name = "Mock provider for test"
-base_url = "http://127.0.0.1:9/v1"
-wire_api = "responses"
-request_max_retries = 0
-stream_max_retries = 0
-"#,
-            ),
-        )?;
-        codex_core::config::ConfigBuilder::default()
-            .codex_home(codex_home.path().to_path_buf())
-            .build()
-            .await
-    }
-
-    #[tokio::test]
-    async fn should_apply_persisted_resume_model_metadata_defaults_to_safe_behavior() {
-        let config = test_config_with_resume_model_source(None)
-            .await
-            .expect("config should load");
-
-        assert!(should_apply_persisted_resume_model_metadata(&config));
-    }
-
-    #[tokio::test]
-    async fn should_apply_persisted_resume_model_metadata_respects_current_mode() {
-        let config = test_config_with_resume_model_source(Some("current"))
-            .await
-            .expect("config should load");
-
-        assert_eq!(config.resume_model_source, ResumeModelSource::Current);
-        assert!(!should_apply_persisted_resume_model_metadata(&config));
     }
 
     #[test]
@@ -9232,7 +9168,6 @@ stream_max_retries = 0
             source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
-                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -9327,7 +9262,6 @@ stream_max_retries = 0
             serde_json::to_string(&SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: ThreadId::from_string("ad7f0408-99b8-4f6e-a46f-bd0eec433370")?,
                 depth: 1,
-                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
