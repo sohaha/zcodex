@@ -2,14 +2,13 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-02T07:06:52.094Z
-- 本轮摘要：已完成 app-server zmemory 路径对齐收尾：补齐 turn cwd override 下 zmemory handler、稳定偏好主动写入、以及子线程 spawn/resume/agent_jobs 的 project-scoped zmemory 重载，并把未做的全局 project-layer config 通用重载记录为已知风险。
+- 更新时间：2026-04-02T09:32:31.593Z
+- 本轮摘要：汉化 TUI 启动头与 Buddy 文案（模型/目录/快速/推理级别、Buddy 状态/提示/描述/标签），更新相关测试断言与 snapshots；cargo nextest run -p codex-tui 通过。
 
 ## 待确认问题
 
-- 暂无，后续若有其它 project-scoped config 直接消费 turn.config.*，需单独核对是否受同类问题影响。
+- 暂无，若后续发现疑点请及时补充。
 
 ## 下一步检查
 
-- 后续新增 project-scoped 配置注入点时，先补 turn cwd override 场景验证
-- 继续关注 system://workspace 的 dbPath/source/reason 是否与项目配置一致
+- 优先检查当前 diff、相关测试和受影响模块。
