@@ -4675,6 +4675,7 @@ mod handlers {
     use codex_protocol::request_user_input::RequestUserInputResponse;
 
     use crate::context_manager::is_user_turn_boundary;
+    use crate::memories::zmemory_preferences::capture_stable_preference_memories;
     use codex_protocol::config_types::CollaborationMode;
     use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::Settings;
@@ -7628,7 +7629,6 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
 use crate::memories::prompts::build_zmemory_tool_developer_instructions;
-use crate::memories::zmemory_preferences::capture_stable_preference_memories;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]

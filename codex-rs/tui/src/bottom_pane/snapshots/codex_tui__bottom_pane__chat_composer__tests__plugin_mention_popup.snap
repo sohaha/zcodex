@@ -8,6 +8,6 @@ expression: terminal.backend()
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
-"  Sample 插件  [插件] 插件 that includes the Figma MCP server and Skills for common workflows "
+"  Sample Plugin  [插件] Plugin that includes the Figma MCP server and Skills for common workflows   " Hidden by multi-width symbols: [(19, " "), (21, " ")]
 "                                                                                                    "
-"  按 enter to insert or esc to close                                                             "
+"  按 enter 插入或 esc 关闭                                                                          " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (23, " "), (25, " ")]

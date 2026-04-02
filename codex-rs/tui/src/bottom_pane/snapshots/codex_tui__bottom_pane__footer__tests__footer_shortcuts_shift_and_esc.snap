@@ -2,9 +2,9 @@
 source: tui/src/bottom_pane/footer.rs
 expression: terminal.backend()
 ---
-"  / 命令                             ! shell 命令               "
-"  shift + enter 换行                  tab 排队消息               "
-"  @ 文件路径                           ctrl + v 粘贴图片           "
-"  ctrl + g 外部编辑器编辑        esc 再次编辑上一条消息 "
-"  ctrl + c 退出                                                              "
-"  ctrl + t 查看对话记录                                                   "
+"  / 输入命令                         ! 输入 shell 命令                          " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (40, " "), (42, " "), (51, " "), (53, " ")]
+"  shift + enter 换行                 tab 排队消息                               " Hidden by multi-width symbols: [(17, " "), (19, " "), (42, " "), (44, " "), (46, " "), (48, " ")]
+"  @ 查看文件路径                     ctrl + v 粘贴图片                          " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (47, " "), (49, " "), (51, " "), (53, " ")]
+"  ctrl + g 在外部编辑器中编辑        esc 再次编辑上一条消息                     " Hidden by multi-width symbols: [(12, " "), (14, " "), (16, " "), (18, " "), (20, " "), (22, " "), (24, " "), (26, " "), (28, " "), (42, " "), (44, " "), (46, " "), (48, " "), (50, " "), (52, " "), (54, " "), (56, " "), (58, " ")]
+"  ctrl + c 退出                                                                 " Hidden by multi-width symbols: [(12, " "), (14, " ")]
+"  ctrl + t 查看记录                                                             " Hidden by multi-width symbols: [(12, " "), (14, " "), (16, " "), (18, " ")]

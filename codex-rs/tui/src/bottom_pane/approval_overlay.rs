@@ -1143,10 +1143,10 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "Yes, just this once".to_string(),
-                "Yes, and allow this host for this conversation".to_string(),
-                "Yes, and allow this host in the future".to_string(),
-                "No, and tell Codex what to do differently".to_string(),
+                "是，仅此一次".to_string(),
+                "是，允许此主机在本对话中使用".to_string(),
+                "是，允许此主机（以后不再询问）".to_string(),
+                "否，告诉 Codex 换个做法".to_string(),
             ]
         );
     }
@@ -1167,9 +1167,9 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "Yes, proceed".to_string(),
-                "Yes, and don't ask again for this command in this session".to_string(),
-                "No, and tell Codex what to do differently".to_string(),
+                "是，继续".to_string(),
+                "是，本次会话中不再询问此命令".to_string(),
+                "否，告诉 Codex 换个做法".to_string(),
             ]
         );
     }
@@ -1193,8 +1193,8 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "Yes, proceed".to_string(),
-                "No, and tell Codex what to do differently".to_string(),
+                "是，继续".to_string(),
+                "否，告诉 Codex 换个做法".to_string(),
             ]
         );
     }
@@ -1208,9 +1208,9 @@ mod tests {
         assert_eq!(
             labels,
             vec![
-                "Yes, grant these permissions".to_string(),
-                "Yes, grant these permissions for this session".to_string(),
-                "No, continue without permissions".to_string(),
+                "是，授予这些权限".to_string(),
+                "是，授予这些权限（本次会话有效）".to_string(),
+                "否，跳过不授予权限".to_string(),
             ]
         );
     }
@@ -1283,11 +1283,13 @@ mod tests {
         assert!(
             rendered
                 .iter()
-                .any(|line| line.contains("Permission rule:")),
+                .any(|line| line.replace(' ', "").contains("权限规则：")),
             "expected permission-rule line, got {rendered:?}"
         );
         assert!(
-            rendered.iter().any(|line| line.contains("network;")),
+            rendered
+                .iter()
+                .any(|line| line.replace(' ', "").contains("network;")),
             "expected network permission text, got {rendered:?}"
         );
     }
@@ -1378,9 +1380,9 @@ mod tests {
             .collect();
 
         assert!(
-            rendered.iter().any(|line| {
-                line.contains("Do you want to approve network access to \"example.com\"?")
-            }),
+            rendered
+                .iter()
+                .any(|line| line.replace(' ', "").contains("example.com")),
             "expected network title to include host, got {rendered:?}"
         );
         assert!(

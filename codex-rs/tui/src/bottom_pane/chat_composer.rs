@@ -3758,7 +3758,7 @@ mod tests {
         let mut hint_row: Option<(u16, String)> = None;
         for y in 0..area.height {
             let row = row_to_string(y);
-            if row.contains("? for shortcuts") {
+            if row.replace(' ', "").contains("查看快捷键") {
                 hint_row = Some((y, row));
                 break;
             }

@@ -602,7 +602,7 @@ mod tests {
 
         assert_eq!(
             view.action_labels(),
-            vec!["在 ChatGPT 上管理", "禁用应用", "返回"]
+            vec!["在 ChatGPT 中管理", "禁用应用", "返回"]
         );
     }
 
@@ -639,7 +639,7 @@ mod tests {
 
         assert_eq!(
             view.action_labels(),
-            vec!["在 ChatGPT 上管理", "启用应用", "返回"]
+            vec!["在 ChatGPT 中管理", "启用应用", "返回"]
         );
     }
 

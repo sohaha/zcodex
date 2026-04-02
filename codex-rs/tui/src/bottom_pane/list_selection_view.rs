@@ -1180,7 +1180,7 @@ mod tests {
         let view = ListSelectionView::new(params, tx);
 
         let rendered = render_lines_in_area(&view, /*width*/ 94, /*height*/ 35);
-        assert!(rendered.contains("Move up/down to live preview themes"));
+        assert!(rendered.contains("上下移动可实时预览主题"));
     }
 
     #[test]

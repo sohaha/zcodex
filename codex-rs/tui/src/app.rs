@@ -9448,7 +9448,8 @@ guardian_approval = true
             }
         }
         assert!(rendered_cells.iter().any(|cell| {
-            cell.contains("• Feedback uploaded. Please open an issue using the following URL:")
+            cell.contains("• 反馈已上传。")
+                && cell.contains("请使用以下链接提交 Issue：")
                 && cell.contains("uploaded-thread")
         }));
     }

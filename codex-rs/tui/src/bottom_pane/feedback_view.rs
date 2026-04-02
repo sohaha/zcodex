@@ -316,10 +316,10 @@ pub(crate) fn feedback_success_cell(
     let issue_url = issue_url_for_category(category, thread_id, feedback_audience);
     let mut lines = vec![Line::from(match issue_url.as_ref() {
         Some(_) if feedback_audience == FeedbackAudience::OpenAiEmployee => {
-            format!("{prefix} 请在 #codex-feedback 中报告：")
+            format!("{prefix}请在 #codex-feedback 中报告：")
         }
-        Some(_) => format!("{prefix} 请使用以下链接提交 Issue："),
-        None => format!("{prefix} 感谢你的反馈！"),
+        Some(_) => format!("{prefix}请使用以下链接提交 Issue："),
+        None => format!("{prefix}感谢你的反馈！"),
     })];
     match issue_url {
         Some(url) if feedback_audience == FeedbackAudience::OpenAiEmployee => {

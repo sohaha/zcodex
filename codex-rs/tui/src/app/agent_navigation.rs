@@ -348,7 +348,7 @@ mod tests {
         );
         assert_eq!(
             state.active_agent_label(Some(main_thread_id), Some(main_thread_id)),
-            Some("Main [default]".to_string())
+            Some("主线程 [默认]".to_string())
         );
     }
 }

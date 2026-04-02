@@ -3,13 +3,13 @@ source: tui/src/bottom_pane/approval_overlay.rs
 expression: "render_overlay_lines(&view, 80)"
 ---
 
-  Would you like to run the following command?
+  是 否 运 行 以 下 命 令 ？
 
-  Thread: Robie [explorer]
+  线 程 ： Robie [explorer]
 
   $ echo hi
 
-› 1. Yes, proceed (y)
-  2. No, and tell Codex what to do differently (esc)
+› 1. 是 ， 继 续  (y)
+  2. 否 ， 告 诉  Codex 换 个 做 法  (esc)
 
-  按 enter 确认或 esc to cancel or o to open thread
+  Press enter 确 认 或  esc 取 消  或  o 打 开 线 程

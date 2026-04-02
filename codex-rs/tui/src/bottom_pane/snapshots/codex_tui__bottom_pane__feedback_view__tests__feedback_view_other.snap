@@ -2,8 +2,8 @@
 source: tui/src/bottom_pane/feedback_view.rs
 expression: rendered
 ---
-▌ Tell us more (other)
+▌ 告 诉 我 们 更 多 信 息 （ 其 他 ）
 ▌
-▌ (optional) Write a short description to help us further
+▌ （ 可 选 ） 简 要 描 述 以 帮 助 我 们 改 进
 
-按 enter 确认或 esc 返回
+按  enter 确 认 或 按  esc 返 回

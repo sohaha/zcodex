@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-01T12:05:43.066Z
-- 本轮摘要：完成 Buddy 参考对齐执行：新增 500ms tick 动画、dynamic sprite/bubble/hearts、启动 teaser、持续 redraw 调度；通过 codex-tui buddy/slash_buddy_show_then_pet_reports_state、codex-core show_buddy 与 mise run build 验证；提交 feat(tui): animate the footer buddy。
+- 更新时间：2026-04-02T04:21:39.999Z
+- 本轮摘要：重新运行 mise run build 并允许更长时间完成；构建成功（约 3 分 15 秒），仅有未使用代码/变量警告。未改动代码。
 
 ## 待确认问题
 

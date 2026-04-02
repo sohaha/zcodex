@@ -6,8 +6,8 @@ expression: terminal.backend()
 "› $goog                                                                 "
 "                                                                        "
 "                                                                        "
-"  Google Calendar  [插件] Connect Google Calendar for scheduling, ava…"
-"  Google Calendar  [技能] Find availability and plan event changes     "
-"  Google Calendar  [应用] Look up events and availability                "
+"  Google Calendar  [插件] Connect Google Calendar for scheduling, avail…" Hidden by multi-width symbols: [(21, " "), (23, " ")]
+"  Google Calendar  [技能] Find availability and plan event changes      " Hidden by multi-width symbols: [(21, " "), (23, " ")]
+"  Google Calendar  [应用] Look up events and availability               " Hidden by multi-width symbols: [(21, " "), (23, " ")]
 "                                                                        "
-"  按 enter to insert or esc to close                                 "
+"  按 enter 插入或 esc 关闭                                              " Hidden by multi-width symbols: [(3, " "), (12, " "), (14, " "), (16, " "), (23, " "), (25, " ")]
