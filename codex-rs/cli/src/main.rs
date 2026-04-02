@@ -75,7 +75,8 @@ use codex_terminal_detection::TerminalName;
     // `codex-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `codex` command name that users run.
     bin_name = "codex",
-    override_usage = "codex [选项] [提示]\n       codex [选项] <命令> [参数]"
+    override_usage = "codex [选项] [提示]\n       codex [选项] <命令> [参数]",
+    long_about = "Codex 命令行工具\n\n若未指定子命令，选项会转发到交互式命令行界面。"
 )]
 struct MultitoolCli {
     #[clap(flatten)]

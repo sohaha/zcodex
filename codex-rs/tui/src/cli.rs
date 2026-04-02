@@ -7,14 +7,18 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(version)]
 pub struct Cli {
-    /// Optional user prompt to start the session.
-    #[arg(value_name = "PROMPT", value_hint = clap::ValueHint::Other)]
+    /// 可选的会话启动提示。
+    #[arg(value_name = "提示", value_hint = clap::ValueHint::Other)]
     pub prompt: Option<String>,
-
-    /// Optional image(s) to attach to the initial prompt.
-    #[arg(long = "image", short = 'i', value_name = "FILE", value_delimiter = ',', num_args = 1..)]
+    /// 可选的初始提示附件图片。
+    #[arg(
+        long = "image",
+        short = 'i',
+        value_name = "文件",
+        value_delimiter = ',',
+        num_args = 1..
+    )]
     pub images: Vec<PathBuf>,
-
     // Internal controls set by the top-level `codex resume` subcommand.
     // These are not exposed as user flags on the base `codex` command.
     #[clap(skip)]
@@ -53,39 +57,39 @@ pub struct Cli {
     #[clap(skip)]
     pub fork_show_all: bool,
 
-    /// Model the agent should use.
+    /// 智能体应使用的模型。
     #[arg(long, short = 'm')]
     pub model: Option<String>,
 
-    /// Convenience flag to select the local open source model provider. Equivalent to -c
-    /// model_provider=oss; verifies a local LM Studio or Ollama server is running.
+    /// 便捷标志，用于选择本地开源模型提供方。等价于 -c
+    /// model_provider=oss；验证本地 LM Studio 或 Ollama 服务器是否正在运行。
     #[arg(long = "oss", default_value_t = false)]
     pub oss: bool,
 
-    /// Specify which local provider to use (lmstudio or ollama).
-    /// If not specified with --oss, will use config default or show selection.
+    /// 指定要使用的本地提供方（lmstudio 或 ollama）。
+    /// 如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择。
     #[arg(long = "local-provider")]
     pub oss_provider: Option<String>,
 
-    /// Configuration profile from config.toml to specify default options.
+    /// 来自 config.toml 的配置配置文件，用于指定默认选项。
     #[arg(long = "profile", short = 'p')]
     pub config_profile: Option<String>,
 
-    /// Select the sandbox policy to use when executing model-generated shell
-    /// commands.
+    /// 选择执行模型生成的 shell
+    /// 命令时要使用的沙箱策略。
     #[arg(long = "sandbox", short = 's')]
     pub sandbox_mode: Option<codex_utils_cli::SandboxModeCliArg>,
 
-    /// Configure when the model requires human approval before executing a command.
+    /// 配置模型在执行命令前何时需要人工批准。
     #[arg(long = "ask-for-approval", short = 'a')]
     pub approval_policy: Option<ApprovalModeCliArg>,
 
-    /// Convenience alias for low-friction sandboxed automatic execution (-a on-request, --sandbox workspace-write).
+    /// 低摩擦沙箱自动执行的便捷别名（-a on-request, --sandbox workspace-write）。
     #[arg(long = "full-auto", default_value_t = false)]
     pub full_auto: bool,
 
-    /// Skip all confirmation prompts and execute commands without sandboxing.
-    /// EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed.
+    /// 跳过所有确认提示并在无沙箱的情况下执行命令。
+    /// 极度危险。仅适用于在外部沙箱环境中运行。
     #[arg(
         long = "dangerously-bypass-approvals-and-sandbox",
         alias = "yolo",
@@ -94,23 +98,22 @@ pub struct Cli {
     )]
     pub dangerously_bypass_approvals_and_sandbox: bool,
 
-    /// Tell the agent to use the specified directory as its working root.
-    #[clap(long = "cd", short = 'C', value_name = "DIR")]
+    /// 告诉智能体使用指定目录作为其工作根目录。
+    #[clap(long = "cd", short = 'C', value_name = "目录")]
     pub cwd: Option<PathBuf>,
 
-    /// Enable live web search. When enabled, the native Responses `web_search` tool is available to the model (no per‑call approval).
+    /// 启用实时网络搜索。启用后，原生 Responses `web_search` 工具可供模型使用（无需每次调用批准）。
     #[arg(long = "search", default_value_t = false)]
     pub web_search: bool,
 
-    /// Additional directories that should be writable alongside the primary workspace.
-    #[arg(long = "add-dir", value_name = "DIR", value_hint = ValueHint::DirPath)]
+    /// 除主工作区外还应可写入的附加目录。
+    #[arg(long = "add-dir", value_name = "目录", value_hint = ValueHint::DirPath)]
     pub add_dir: Vec<PathBuf>,
 
-    /// Disable alternate screen mode
+    /// 禁用备用屏幕模式
     ///
-    /// Runs the TUI in inline mode, preserving terminal scrollback history. This is useful
-    /// in terminal multiplexers like Zellij that follow the xterm spec strictly and disable
-    /// scrollback in alternate screen buffers.
+    /// 以内联模式运行 TUI，保留终端滚动历史记录。这在严格遵循 xterm 规范并禁用
+    /// 备用屏幕缓冲区中滚动的终端复用器（如 Zellij）中很有用。
     #[arg(long = "no-alt-screen", default_value_t = false)]
     pub no_alt_screen: bool,
 
