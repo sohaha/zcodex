@@ -2339,7 +2339,7 @@ impl ChatComposer {
             return false;
         }
         let message = format!(
-            "'/{}' 在任务进行中不可用。",
+            "'/{}' 在任务进行中被禁用。",
             cmd.command()
         );
         self.app_event_tx.send(AppEvent::InsertHistoryCell(Box::new(
@@ -6164,7 +6164,7 @@ mod tests {
                     .map(|line| line.to_string())
                     .collect::<Vec<_>>()
                     .join("\n");
-                assert!(message.contains("disabled while a task is in progress"));
+                assert!(message.contains("在任务进行中被禁用"));
                 found_error = true;
                 break;
             }
