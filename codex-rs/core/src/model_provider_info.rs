@@ -5,22 +5,15 @@
 //!   2. User-defined entries inside `~/.codex/config.toml` under the `model_providers`
 //!      key. These override or extend the defaults at runtime.
 
-use crate::auth::AuthMode;
 use crate::error::EnvVarError;
 use codex_api::Provider as ApiProvider;
 use codex_api::provider::RetryConfig as ApiRetryConfig;
-use codex_api::provider::WireApi as ApiWireApi;
+use codex_login::AuthMode;
 use codex_protocol::config_types::ModelProviderAuthInfo;
 use http::HeaderMap;
 use http::header::HeaderName;
 use http::header::HeaderValue;
 use schemars::JsonSchema;
-use schemars::r#gen::SchemaGenerator;
-use schemars::schema::InstanceType;
-use schemars::schema::Metadata;
-use schemars::schema::Schema;
-use schemars::schema::SchemaObject;
-use schemars::schema::SubschemaValidation;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -37,89 +30,24 @@ const MAX_STREAM_MAX_RETRIES: u64 = 100;
 const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
-const ANTHROPIC_PROVIDER_NAME: &str = "Anthropic";
-const ANTHROPIC_API_VERSION: &str = "2023-06-01";
-pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
-pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
+const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
 pub(crate) const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub(crate) const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
 
 /// Wire protocol that the provider speaks.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
-    /// The Chat Completions API exposed by OpenAI at `/v1/chat/completions`.
-    Chat,
-    /// The Anthropic Messages API exposed at `/v1/messages`.
-    Anthropic,
-}
-
-impl JsonSchema for WireApi {
-    fn schema_name() -> String {
-        "WireApi".to_string()
-    }
-
-    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
-        let string_instance_type = Some(InstanceType::String.into());
-        let responses = Schema::Object(SchemaObject {
-            instance_type: string_instance_type.clone(),
-            metadata: Some(Box::new(Metadata {
-                description: Some(
-                    "The Responses API exposed by OpenAI at `/v1/responses`.".to_string(),
-                ),
-                ..Default::default()
-            })),
-            enum_values: Some(vec!["responses".into()]),
-            ..Default::default()
-        });
-        let chat = Schema::Object(SchemaObject {
-            instance_type: string_instance_type.clone(),
-            metadata: Some(Box::new(Metadata {
-                description: Some(
-                    "The Chat Completions API exposed by OpenAI at `/v1/chat/completions`."
-                        .to_string(),
-                ),
-                ..Default::default()
-            })),
-            enum_values: Some(vec!["chat".into()]),
-            ..Default::default()
-        });
-        let anthropic = Schema::Object(SchemaObject {
-            instance_type: string_instance_type,
-            metadata: Some(Box::new(Metadata {
-                description: Some(
-                    "The Anthropic Messages API exposed at `/v1/messages`.".to_string(),
-                ),
-                ..Default::default()
-            })),
-            enum_values: Some(vec!["anthropic".into()]),
-            ..Default::default()
-        });
-
-        Schema::Object(SchemaObject {
-            metadata: Some(Box::new(Metadata {
-                description: Some("Wire protocol that the provider speaks.".to_string()),
-                ..Default::default()
-            })),
-            subschemas: Some(Box::new(SubschemaValidation {
-                one_of: Some(vec![responses, chat, anthropic]),
-                ..Default::default()
-            })),
-            ..Default::default()
-        })
-    }
 }
 
 impl fmt::Display for WireApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Responses => "responses",
-            Self::Chat => "chat",
-            Self::Anthropic => "anthropic",
         };
         f.write_str(value)
     }
@@ -133,12 +61,8 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
-            "chat" => Ok(Self::Chat),
-            "anthropic" => Ok(Self::Anthropic),
-            _ => Err(serde::de::Error::unknown_variant(
-                &value,
-                &["responses", "chat", "anthropic"],
-            )),
+            "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
+            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
         }
     }
 }
@@ -149,9 +73,6 @@ impl<'de> Deserialize<'de> for WireApi {
 pub struct ModelProviderInfo {
     /// Friendly display name.
     pub name: String,
-    /// Optional default model slug to use when this provider is selected.
-    #[serde(default)]
-    pub model: Option<String>,
     /// Base URL for the provider's OpenAI-compatible API.
     pub base_url: Option<String>,
     /// Environment variable that stores the user's API key for this provider.
@@ -164,7 +85,6 @@ pub struct ModelProviderInfo {
     /// Value to use with `Authorization: Bearer <token>` header. Use of this
     /// config is discouraged in favor of `env_key` for security reasons, but
     /// this may be necessary when using this programmatically.
-    #[serde(alias = "api_key")]
     pub experimental_bearer_token: Option<String>,
 
     /// Command-backed bearer-token configuration for this provider.
@@ -214,19 +134,6 @@ pub struct ModelProviderInfo {
 }
 
 impl ModelProviderInfo {
-    pub(crate) fn configured_bearer_token(&self) -> Option<&str> {
-        self.experimental_bearer_token
-            .as_deref()
-            .filter(|token| !token.trim().is_empty())
-    }
-
-    pub(crate) fn uses_provider_supplied_auth(&self) -> bool {
-        self.env_key.is_some()
-            || self.configured_bearer_token().is_some()
-            || has_authorization_header(self.http_headers.as_ref())
-            || has_authorization_header(self.env_http_headers.as_ref())
-    }
-
     pub(crate) fn validate(&self) -> std::result::Result<(), String> {
         let Some(auth) = self.auth.as_ref() else {
             return Ok(());
@@ -288,57 +195,17 @@ impl ModelProviderInfo {
         &self,
         auth_mode: Option<AuthMode>,
     ) -> crate::error::Result<ApiProvider> {
-        let default_base_url = match self.wire_api {
-            WireApi::Responses if matches!(auth_mode, Some(AuthMode::Chatgpt)) => {
-                "https://chatgpt.com/backend-api/codex"
-            }
-            WireApi::Responses | WireApi::Chat => DEFAULT_OPENAI_BASE_URL,
-            WireApi::Anthropic => "https://api.anthropic.com/v1",
+        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
+            "https://chatgpt.com/backend-api/codex"
+        } else {
+            "https://api.openai.com/v1"
         };
         let base_url = self
             .base_url
             .clone()
             .unwrap_or_else(|| default_base_url.to_string());
 
-        let mut headers = self.build_header_map()?;
-        if self.wire_api == WireApi::Anthropic {
-            headers.insert(
-                HeaderName::from_static("anthropic-version"),
-                HeaderValue::from_static(ANTHROPIC_API_VERSION),
-            );
-
-            let has_authorization_header = headers.contains_key(http::header::AUTHORIZATION);
-            let configured_bearer_token = self.configured_bearer_token();
-            match self.api_key() {
-                Ok(Some(api_key)) => {
-                    if !has_authorization_header
-                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {api_key}"))
-                    {
-                        headers.insert(http::header::AUTHORIZATION, value);
-                    }
-                    if let Ok(value) = HeaderValue::try_from(api_key) {
-                        headers.insert(HeaderName::from_static("x-api-key"), value);
-                    }
-                }
-                Ok(None) => {
-                    if !has_authorization_header
-                        && let Some(token) = configured_bearer_token
-                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
-                    {
-                        headers.insert(http::header::AUTHORIZATION, value);
-                    }
-                }
-                Err(crate::error::CodexErr::EnvVar(_)) if configured_bearer_token.is_some() => {
-                    if !has_authorization_header
-                        && let Some(token) = configured_bearer_token
-                        && let Ok(value) = HeaderValue::try_from(format!("Bearer {token}"))
-                    {
-                        headers.insert(http::header::AUTHORIZATION, value);
-                    }
-                }
-                Err(err) => return Err(err),
-            }
-        }
+        let headers = self.build_header_map()?;
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
             base_delay: Duration::from_millis(200),
@@ -350,11 +217,6 @@ impl ModelProviderInfo {
         Ok(ApiProvider {
             name: self.name.clone(),
             base_url,
-            wire_api: match self.wire_api {
-                WireApi::Responses => ApiWireApi::Responses,
-                WireApi::Chat => ApiWireApi::Chat,
-                WireApi::Anthropic => ApiWireApi::Anthropic,
-            },
             query_params: self.query_params.clone(),
             headers,
             retry,
@@ -414,7 +276,6 @@ impl ModelProviderInfo {
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
-            model: None,
             base_url,
             env_key: None,
             env_key_instructions: None,
@@ -448,61 +309,13 @@ impl ModelProviderInfo {
         }
     }
 
-    pub fn create_anthropic_provider() -> ModelProviderInfo {
-        ModelProviderInfo {
-            name: ANTHROPIC_PROVIDER_NAME.into(),
-            model: None,
-            base_url: std::env::var("ANTHROPIC_BASE_URL")
-                .ok()
-                .filter(|v| !v.trim().is_empty()),
-            env_key: Some("ANTHROPIC_API_KEY".into()),
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            auth: None,
-            wire_api: WireApi::Anthropic,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            websocket_connect_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-        }
-    }
-
     pub fn is_openai(&self) -> bool {
         self.name == OPENAI_PROVIDER_NAME
-    }
-
-    pub fn uses_official_openai_api(&self) -> bool {
-        if matches!(self.wire_api, WireApi::Anthropic) {
-            return false;
-        }
-
-        self.base_url
-            .as_deref()
-            .map(str::trim)
-            .filter(|base_url| !base_url.is_empty())
-            .is_none_or(|base_url| base_url.trim_end_matches('/') == DEFAULT_OPENAI_BASE_URL)
-    }
-
-    pub fn uses_official_openai_responses_api(&self) -> bool {
-        self.wire_api == WireApi::Responses && self.uses_official_openai_api()
     }
 
     pub(crate) fn has_command_auth(&self) -> bool {
         self.auth.is_some()
     }
-}
-
-fn has_authorization_header<T>(headers: Option<&HashMap<String, T>>) -> bool {
-    headers.is_some_and(|headers| {
-        headers
-            .keys()
-            .any(|name| name.eq_ignore_ascii_case(http::header::AUTHORIZATION.as_str()))
-    })
 }
 
 pub const DEFAULT_LMSTUDIO_PORT: u16 = 1234;
@@ -519,13 +332,11 @@ pub fn built_in_model_providers(
     let openai_provider = P::create_openai_provider(openai_base_url);
 
     // We do not want to be in the business of adjucating which third-party
-    // providers are bundled with Codex CLI, so we only include the OpenAI,
-    // Anthropic, and open source ("oss") providers by default. Users are
-    // encouraged to add to `model_providers` in config.toml to add their own
-    // providers.
+    // providers are bundled with Codex CLI, so we only include the OpenAI and
+    // open source ("oss") providers by default. Users are encouraged to add to
+    // `model_providers` in config.toml to add their own providers.
     [
         (OPENAI_PROVIDER_ID, openai_provider),
-        (ANTHROPIC_PROVIDER_ID, P::create_anthropic_provider()),
         (
             OLLAMA_OSS_PROVIDER_ID,
             create_oss_provider(DEFAULT_OLLAMA_PORT, WireApi::Responses),
@@ -562,7 +373,6 @@ pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> Mod
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "gpt-oss".into(),
-        model: None,
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,

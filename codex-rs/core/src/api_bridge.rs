@@ -11,13 +11,12 @@ use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::auth::AuthMode;
-use crate::auth::CodexAuth;
 use crate::error::CodexErr;
 use crate::error::RetryLimitReachedError;
 use crate::error::UnexpectedResponseError;
 use crate::error::UsageLimitReachedError;
 use crate::model_provider_info::ModelProviderInfo;
+use codex_login::CodexAuth;
 
 pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
     match err {
@@ -64,8 +63,6 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
                         .contains("The image data you provided does not represent a valid image")
                     {
                         CodexErr::InvalidImageRequest()
-                    } else if is_context_window_bad_request(&body_text) {
-                        CodexErr::ContextWindowExceeded
                     } else {
                         CodexErr::InvalidRequest(body_text)
                     }
@@ -126,44 +123,6 @@ pub(crate) fn map_api_error(err: ApiError) -> CodexErr {
     }
 }
 
-fn is_context_window_bad_request(body_text: &str) -> bool {
-    if let Ok(value) = serde_json::from_str::<Value>(body_text) {
-        if value
-            .get("error")
-            .and_then(|error| error.get("code"))
-            .and_then(Value::as_str)
-            == Some("context_length_exceeded")
-        {
-            return true;
-        }
-
-        if let Some(message) = value
-            .get("error")
-            .and_then(|error| error.get("message"))
-            .and_then(Value::as_str)
-        {
-            return is_structured_context_window_message(message);
-        }
-    }
-
-    is_plaintext_context_window_message(body_text)
-}
-
-fn is_structured_context_window_message(message: &str) -> bool {
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("context window")
-        || normalized.contains("context length")
-        || normalized.contains("exceed context limit")
-        || ((normalized.contains("prompt is too long") || normalized.contains("input is too long"))
-            && normalized.contains("token")
-            && (normalized.contains("max") || normalized.contains("context")))
-}
-
-fn is_plaintext_context_window_message(message: &str) -> bool {
-    let normalized = message.to_ascii_lowercase();
-    normalized.contains("context window") || normalized.contains("context length")
-}
-
 const ACTIVE_LIMIT_HEADER: &str = "x-codex-active-limit";
 const REQUEST_ID_HEADER: &str = "x-request-id";
 const OAI_REQUEST_ID_HEADER: &str = "x-oai-request-id";
@@ -209,43 +168,30 @@ pub(crate) fn auth_provider_from_auth(
     auth: Option<CodexAuth>,
     provider: &ModelProviderInfo,
 ) -> crate::error::Result<CoreAuthProvider> {
-    if provider.wire_api == crate::model_provider_info::WireApi::Anthropic {
-        return Ok(CoreAuthProvider {
-            token: None,
-            account_id: None,
-            auth_mode: None,
-        });
-    }
-
     if let Some(api_key) = provider.api_key()? {
         return Ok(CoreAuthProvider {
             token: Some(api_key),
             account_id: None,
-            auth_mode: Some(AuthMode::ApiKey),
         });
     }
 
-    if let Some(token) = provider.configured_bearer_token() {
+    if let Some(token) = provider.experimental_bearer_token.clone() {
         return Ok(CoreAuthProvider {
-            token: Some(token.to_string()),
+            token: Some(token),
             account_id: None,
-            auth_mode: Some(AuthMode::ApiKey),
         });
     }
 
     if let Some(auth) = auth {
-        let auth_mode = auth.auth_mode();
         let token = auth.get_token()?;
         Ok(CoreAuthProvider {
             token: Some(token),
             account_id: auth.get_account_id(),
-            auth_mode: Some(auth_mode),
         })
     } else {
         Ok(CoreAuthProvider {
             token: None,
             account_id: None,
-            auth_mode: None,
         })
     }
 }
@@ -267,18 +213,9 @@ struct UsageErrorBody {
 pub(crate) struct CoreAuthProvider {
     token: Option<String>,
     account_id: Option<String>,
-    auth_mode: Option<AuthMode>,
 }
 
 impl CoreAuthProvider {
-    pub(crate) fn auth_mode(&self) -> Option<AuthMode> {
-        self.auth_mode
-    }
-
-    pub(crate) fn is_chatgpt_auth(&self) -> bool {
-        matches!(self.auth_mode, Some(AuthMode::Chatgpt))
-    }
-
     pub(crate) fn auth_header_attached(&self) -> bool {
         self.token
             .as_ref()
@@ -294,7 +231,6 @@ impl CoreAuthProvider {
         Self {
             token: token.map(str::to_string),
             account_id: account_id.map(str::to_string),
-            auth_mode: token.map(|_| AuthMode::ApiKey),
         }
     }
 }

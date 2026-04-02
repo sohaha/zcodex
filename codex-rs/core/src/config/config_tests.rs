@@ -1,21 +1,23 @@
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::edit::apply_blocking;
-use crate::config::types::ApprovalsReviewer;
-use crate::config::types::BundledSkillsConfig;
-use crate::config::types::FeedbackConfigToml;
-use crate::config::types::HistoryPersistence;
-use crate::config::types::McpServerTransportConfig;
-use crate::config::types::MemoriesConfig;
-use crate::config::types::MemoriesToml;
-use crate::config::types::ModelAvailabilityNuxConfig;
-use crate::config::types::NotificationMethod;
-use crate::config::types::Notifications;
-use crate::config::types::ToolSuggestDiscoverableType;
-use crate::config::types::ZmemoryConfig;
 use crate::config_loader::RequirementSource;
+use crate::plugins::PluginsManager;
 use assert_matches::assert_matches;
 use codex_config::CONFIG_TOML_FILE;
+use codex_config::types::AppToolApproval;
+use codex_config::types::ApprovalsReviewer;
+use codex_config::types::BundledSkillsConfig;
+use codex_config::types::FeedbackConfigToml;
+use codex_config::types::HistoryPersistence;
+use codex_config::types::McpServerToolConfig;
+use codex_config::types::McpServerTransportConfig;
+use codex_config::types::MemoriesConfig;
+use codex_config::types::MemoriesToml;
+use codex_config::types::ModelAvailabilityNuxConfig;
+use codex_config::types::NotificationMethod;
+use codex_config::types::Notifications;
+use codex_config::types::ToolSuggestDiscoverableType;
 use codex_features::Feature;
 use codex_features::FeaturesToml;
 use codex_protocol::permissions::FileSystemAccessMode;
@@ -28,6 +30,9 @@ use serde::Deserialize;
 use tempfile::tempdir;
 
 use super::*;
+use core_test_support::PathBufExt;
+use core_test_support::PathExt;
+use core_test_support::TempDirExt;
 use core_test_support::test_absolute_path;
 use pretty_assertions::assert_eq;
 
@@ -78,6 +83,23 @@ fn http_mcp(url: &str) -> McpServerConfig {
         oauth_resource: None,
         tools: HashMap::new(),
     }
+}
+
+#[test]
+fn load_config_normalizes_relative_cwd_override() -> std::io::Result<()> {
+    let expected_cwd = AbsolutePathBuf::relative_to_current_dir("nested")?;
+    let codex_home = tempdir()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides {
+            cwd: Some(PathBuf::from("nested")),
+            ..Default::default()
+        },
+        codex_home.abs().into_path_buf(),
+    )?;
+
+    assert_eq!(config.cwd, expected_cwd);
+    Ok(())
 }
 
 #[test]
@@ -161,66 +183,6 @@ consolidation_model = "gpt-5"
             min_rollout_idle_hours: 24,
             extract_model: Some("gpt-5-mini".to_string()),
             consolidation_model: Some("gpt-5".to_string()),
-        }
-    );
-}
-
-#[test]
-fn test_toml_parsing_zmemory_block() {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-[zmemory]
-path = "./agents/memory.db"
-valid_domains = ["core", "project", "notes"]
-core_memory_uris = [
-  "core://agent/coding_operating_manual",
-  "core://my_user/coding_preferences",
-]
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    assert_eq!(
-        cfg.zmemory,
-        Some(ZmemoryToml {
-            path: Some(std::path::PathBuf::from("./agents/memory.db")),
-            valid_domains: Some(vec![
-                "core".to_string(),
-                "project".to_string(),
-                "notes".to_string(),
-            ]),
-            core_memory_uris: Some(vec![
-                "core://agent/coding_operating_manual".to_string(),
-                "core://my_user/coding_preferences".to_string(),
-            ]),
-        })
-    );
-
-    let cwd = tempdir().expect("tempdir");
-    let codex_home = tempdir().expect("tempdir");
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..ConfigOverrides::default()
-        },
-        codex_home.path().to_path_buf(),
-    )
-    .expect("load config with zmemory config");
-
-    assert_eq!(
-        config.zmemory,
-        ZmemoryConfig {
-            path: Some(std::path::PathBuf::from("./agents/memory.db")),
-            valid_domains: Some(vec![
-                "core".to_string(),
-                "project".to_string(),
-                "notes".to_string(),
-            ]),
-            core_memory_uris: Some(vec![
-                "core://agent/coding_operating_manual".to_string(),
-                "core://my_user/coding_preferences".to_string(),
-            ]),
         }
     );
 }
@@ -318,12 +280,11 @@ fn config_toml_deserializes_model_availability_nux() {
             notifications: Notifications::default(),
             notification_method: NotificationMethod::default(),
             animations: true,
-            show_tooltips: false,
+            show_tooltips: true,
             alternate_screen: AltScreenMode::default(),
             status_line: None,
             terminal_title: None,
             theme: None,
-            show_buddy: true,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
                     ("gpt-bar".to_string(), 4),
@@ -555,7 +516,7 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
         codex_home.path().to_path_buf(),
     )?;
 
-    let memories_root = AbsolutePathBuf::try_from(codex_home.path().join("memories")).unwrap();
+    let memories_root = codex_home.path().join("memories").abs();
     assert_eq!(
         config.permissions.file_system_sandbox_policy,
         FileSystemSandboxPolicy::restricted(vec![
@@ -567,7 +528,7 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
             },
             FileSystemSandboxEntry {
                 path: FileSystemPath::Special {
-                    value: FileSystemSpecialPath::project_roots(None),
+                    value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
                 },
                 access: FileSystemAccessMode::Write,
             },
@@ -591,9 +552,7 @@ fn default_permissions_profile_populates_runtime_sandbox_policy() -> std::io::Re
             writable_roots: vec![memories_root],
             read_only_access: ReadOnlyAccess::Restricted {
                 include_platform_defaults: true,
-                readable_roots: vec![
-                    AbsolutePathBuf::try_from(cwd.path().join("docs")).expect("absolute docs path"),
-                ],
+                readable_roots: vec![cwd.path().join("docs").abs(),],
             },
             network_access: false,
             exclude_tmpdir_env_var: true,
@@ -771,7 +730,10 @@ fn permissions_profiles_allow_unknown_special_paths() -> std::io::Result<()> {
         config.permissions.file_system_sandbox_policy,
         FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
             path: FileSystemPath::Special {
-                value: FileSystemSpecialPath::unknown(":future_special_path", None),
+                value: FileSystemSpecialPath::unknown(
+                    ":future_special_path",
+                    /*subpath*/ None
+                ),
             },
             access: FileSystemAccessMode::Read,
         }]),
@@ -1015,97 +977,14 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             notifications: Notifications::Enabled(true),
             notification_method: NotificationMethod::Auto,
             animations: true,
-            show_tooltips: false,
+            show_tooltips: true,
             alternate_screen: AltScreenMode::Auto,
             status_line: None,
             terminal_title: None,
             theme: None,
-            show_buddy: true,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
     );
-}
-
-#[test]
-fn tui_config_missing_show_buddy_defaults_to_enabled() {
-    let cfg = r#"
-[tui]
-"#;
-
-    let parsed =
-        toml::from_str::<ConfigToml>(cfg).expect("TUI config without show_buddy should succeed");
-    let tui = parsed.tui.expect("config should include tui section");
-
-    assert!(tui.show_buddy);
-}
-
-#[test]
-fn tui_config_deserializes_explicit_show_buddy_false() {
-    let cfg = r#"
-[tui]
-show_buddy = false
-"#;
-
-    let parsed =
-        toml::from_str::<ConfigToml>(cfg).expect("TUI config with show_buddy should succeed");
-    let tui = parsed.tui.expect("config should include tui section");
-
-    assert!(!tui.show_buddy);
-}
-
-#[test]
-fn loaded_config_defaults_show_tooltips_to_disabled() -> std::io::Result<()> {
-    let fixture = create_test_fixture()?;
-
-    let config = Config::load_from_base_config_with_overrides(
-        fixture.cfg.clone(),
-        ConfigOverrides {
-            cwd: Some(fixture.cwd()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )?;
-
-    assert!(!config.show_tooltips);
-    Ok(())
-}
-
-#[test]
-fn loaded_config_defaults_show_buddy_to_enabled() -> std::io::Result<()> {
-    let fixture = create_test_fixture()?;
-
-    let config = Config::load_from_base_config_with_overrides(
-        fixture.cfg.clone(),
-        ConfigOverrides {
-            cwd: Some(fixture.cwd()),
-            ..Default::default()
-        },
-        fixture.codex_home(),
-    )?;
-
-    assert!(config.tui_show_buddy);
-    Ok(())
-}
-
-#[test]
-fn loaded_config_honors_explicit_show_buddy_false() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-[tui]
-show_buddy = false
-"#,
-    )
-    .expect("TOML deserialization should succeed for tui.show_buddy");
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert!(!config.tui_show_buddy);
-    Ok(())
 }
 
 #[test]
@@ -1121,10 +1000,10 @@ network_access = false  # This should be ignored.
     let sandbox_mode_override = None;
     let resolution = sandbox_full_access_cfg.derive_sandbox_policy(
         sandbox_mode_override,
-        None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
-        None,
+        /*sandbox_policy_constraint*/ None,
     );
     assert_eq!(resolution, SandboxPolicy::DangerFullAccess);
 
@@ -1140,10 +1019,10 @@ network_access = true  # This should be ignored.
     let sandbox_mode_override = None;
     let resolution = sandbox_read_only_cfg.derive_sandbox_policy(
         sandbox_mode_override,
-        None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
-        None,
+        /*sandbox_policy_constraint*/ None,
     );
     assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
 
@@ -1167,10 +1046,10 @@ exclude_slash_tmp = true
     let sandbox_mode_override = None;
     let resolution = sandbox_workspace_write_cfg.derive_sandbox_policy(
         sandbox_mode_override,
-        None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
-        None,
+        /*sandbox_policy_constraint*/ None,
     );
     if cfg!(target_os = "windows") {
         assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
@@ -1209,10 +1088,10 @@ trust_level = "trusted"
     let sandbox_mode_override = None;
     let resolution = sandbox_workspace_write_cfg.derive_sandbox_policy(
         sandbox_mode_override,
-        None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
-        None,
+        /*sandbox_policy_constraint*/ None,
     );
     if cfg!(target_os = "windows") {
         assert_eq!(resolution, SandboxPolicy::new_read_only_policy());
@@ -1390,7 +1269,7 @@ fn filter_mcp_servers_by_allowlist_allows_all_when_unset() {
         ("server-b".to_string(), http_mcp("https://example.com/b")),
     ]);
 
-    filter_mcp_servers_by_requirements(&mut servers, None);
+    filter_mcp_servers_by_requirements(&mut servers, /*mcp_requirements*/ None);
 
     assert_eq!(
         servers
@@ -1455,7 +1334,7 @@ fn add_dir_override_extends_workspace_writable_roots() -> std::io::Result<()> {
         temp_dir.path().to_path_buf(),
     )?;
 
-    let expected_backend = AbsolutePathBuf::try_from(backend).unwrap();
+    let expected_backend = backend.abs();
     if cfg!(target_os = "windows") {
         match config.permissions.sandbox_policy.get() {
             SandboxPolicy::ReadOnly { .. } => {}
@@ -1505,7 +1384,7 @@ fn workspace_write_always_includes_memories_root_once() -> std::io::Result<()> {
     let config = Config::load_from_base_config_with_overrides(
         ConfigToml {
             sandbox_workspace_write: Some(SandboxWorkspaceWrite {
-                writable_roots: vec![AbsolutePathBuf::from_absolute_path(&memories_root)?],
+                writable_roots: vec![memories_root.abs()],
                 ..Default::default()
             }),
             ..Default::default()
@@ -1528,7 +1407,7 @@ fn workspace_write_always_includes_memories_root_once() -> std::io::Result<()> {
             "expected memories root directory to exist at {}",
             memories_root.display()
         );
-        let expected_memories_root = AbsolutePathBuf::from_absolute_path(&memories_root)?;
+        let expected_memories_root = memories_root.abs();
         match config.permissions.sandbox_policy.get() {
             SandboxPolicy::WorkspaceWrite { writable_roots, .. } => {
                 assert_eq!(
@@ -1909,172 +1788,6 @@ fn responses_websocket_features_do_not_change_wire_api() -> std::io::Result<()> 
 }
 
 #[test]
-fn user_defined_provider_can_supply_custom_anthropic_provider() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    let cfg = ConfigToml {
-        model_provider: Some("anthropic-custom".to_string()),
-        model_providers: HashMap::from([(
-            "anthropic-custom".to_string(),
-            ModelProviderInfo {
-                name: "Anthropic via Proxy".to_string(),
-                model: None,
-                base_url: Some("https://proxy.example/v1".to_string()),
-                env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: crate::WireApi::Anthropic,
-                query_params: None,
-                http_headers: Some(HashMap::from([(
-                    "X-Proxy-Header".to_string(),
-                    "present".to_string(),
-                )])),
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-            },
-        )]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model_provider_id, "anthropic-custom");
-    assert_eq!(config.model_provider.name, "Anthropic via Proxy");
-    assert_eq!(
-        config.model_provider.base_url.as_deref(),
-        Some("https://proxy.example/v1")
-    );
-    assert_eq!(
-        config.model_provider.env_key.as_deref(),
-        Some("CUSTOM_ANTHROPIC_KEY")
-    );
-    assert_eq!(
-        config
-            .model_provider
-            .http_headers
-            .as_ref()
-            .and_then(|headers| headers.get("X-Proxy-Header"))
-            .map(String::as_str),
-        Some("present")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn global_model_overrides_custom_provider_model() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    let cfg = ConfigToml {
-        model: Some("global-model".to_string()),
-        model_provider: Some("anthropic-custom".to_string()),
-        model_providers: HashMap::from([(
-            "anthropic-custom".to_string(),
-            ModelProviderInfo {
-                name: "Anthropic via Proxy".to_string(),
-                model: Some("provider-model".to_string()),
-                base_url: Some("https://proxy.example/v1".to_string()),
-                env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: crate::WireApi::Anthropic,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-            },
-        )]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model.as_deref(), Some("global-model"));
-
-    Ok(())
-}
-
-#[test]
-fn profile_model_overrides_custom_provider_model() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cwd = TempDir::new()?;
-    let cfg = ConfigToml {
-        model: Some("global-model".to_string()),
-        profile: Some("anthropic-custom".to_string()),
-        profiles: HashMap::from([(
-            "anthropic-custom".to_string(),
-            ConfigProfile {
-                model: Some("profile-model".to_string()),
-                model_provider: Some("anthropic-custom".to_string()),
-                ..Default::default()
-            },
-        )]),
-        model_providers: HashMap::from([(
-            "anthropic-custom".to_string(),
-            ModelProviderInfo {
-                name: "Anthropic via Proxy".to_string(),
-                model: Some("provider-model".to_string()),
-                base_url: Some("https://proxy.example/v1".to_string()),
-                env_key: Some("CUSTOM_ANTHROPIC_KEY".to_string()),
-                env_key_instructions: None,
-                experimental_bearer_token: None,
-                auth: None,
-                wire_api: crate::WireApi::Anthropic,
-                query_params: None,
-                http_headers: None,
-                env_http_headers: None,
-                request_max_retries: None,
-                stream_max_retries: None,
-                stream_idle_timeout_ms: None,
-                websocket_connect_timeout_ms: None,
-                requires_openai_auth: false,
-                supports_websockets: false,
-            },
-        )]),
-        ..Default::default()
-    };
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd.path().to_path_buf()),
-            ..Default::default()
-        },
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model.as_deref(), Some("profile-model"));
-
-    Ok(())
-}
-
-#[test]
 fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
@@ -2112,7 +1825,7 @@ async fn managed_config_overrides_oauth_store_mode() -> anyhow::Result<()> {
         macos_managed_config_requirements_base64: None,
     };
 
-    let cwd = AbsolutePathBuf::try_from(codex_home.path())?;
+    let cwd = codex_home.path().abs();
     let config_layer_stack = load_config_layers_state(
         codex_home.path(),
         Some(cwd),
@@ -2185,7 +1898,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2215,7 +1928,7 @@ async fn replace_mcp_servers_round_trips_entries() -> anyhow::Result<()> {
     let empty = BTreeMap::new();
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(empty.clone())],
     )?;
     let loaded = load_global_mcp_servers(codex_home.path()).await?;
@@ -2242,7 +1955,7 @@ async fn managed_config_wins_over_cli_overrides() -> anyhow::Result<()> {
         macos_managed_config_requirements_base64: None,
     };
 
-    let cwd = AbsolutePathBuf::try_from(codex_home.path())?;
+    let cwd = codex_home.path().abs();
     let config_layer_stack = load_config_layers_state(
         codex_home.path(),
         Some(cwd),
@@ -2281,6 +1994,100 @@ startup_timeout_ms = 2500
     let servers = load_global_mcp_servers(codex_home.path()).await?;
     let docs = servers.get("docs").expect("docs entry");
     assert_eq!(docs.startup_timeout_sec, Some(Duration::from_millis(2500)));
+
+    Ok(())
+}
+
+#[test]
+fn mcp_servers_toml_parses_per_tool_approval_overrides() {
+    let config = toml::from_str::<ConfigToml>(
+        r#"
+[mcp_servers.docs]
+command = "docs-server"
+name = "Docs"
+
+[mcp_servers.docs.tools.search]
+approval_mode = "approve"
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+    let tool = config
+        .mcp_servers
+        .get("docs")
+        .and_then(|server| server.tools.get("search"))
+        .expect("docs/search tool config exists");
+
+    assert_eq!(
+        tool,
+        &McpServerToolConfig {
+            approval_mode: Some(AppToolApproval::Approve),
+        }
+    );
+}
+
+#[test]
+fn mcp_servers_toml_ignores_unknown_server_fields() {
+    let config = toml::from_str::<ConfigToml>(
+        r#"
+[mcp_servers.docs]
+command = "docs-server"
+trust_level = "trusted"
+"#,
+    )
+    .expect("unknown MCP server fields should be ignored");
+
+    assert_eq!(
+        config.mcp_servers.get("docs"),
+        Some(&stdio_mcp("docs-server"))
+    );
+}
+
+#[test]
+fn mcp_servers_toml_parses_tool_approval_override_for_reserved_name() {
+    let config = toml::from_str::<ConfigToml>(
+        r#"
+[mcp_servers.docs]
+command = "docs-server"
+
+[mcp_servers.docs.tools.command]
+approval_mode = "approve"
+"#,
+    )
+    .expect("TOML deserialization should succeed");
+    let tool = config
+        .mcp_servers
+        .get("docs")
+        .and_then(|server| server.tools.get("command"))
+        .expect("docs/command tool config exists");
+
+    assert_eq!(
+        tool,
+        &McpServerToolConfig {
+            approval_mode: Some(AppToolApproval::Approve),
+        }
+    );
+}
+
+#[test]
+fn to_mcp_config_preserves_apps_feature_from_config() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let mut config = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+
+    let mcp_config = config.to_mcp_config(&plugins_manager);
+    assert!(mcp_config.apps_enabled);
+
+    let _ = config.features.disable(Feature::Apps);
+    let mcp_config = config.to_mcp_config(&plugins_manager);
+    assert!(!mcp_config.apps_enabled);
+
+    let _ = config.features.enable(Feature::Apps);
+    let mcp_config = config.to_mcp_config(&plugins_manager);
+    assert!(mcp_config.apps_enabled);
 
     Ok(())
 }
@@ -2342,7 +2149,7 @@ async fn replace_mcp_servers_serializes_env_sorted() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2415,7 +2222,7 @@ async fn replace_mcp_servers_serializes_env_vars() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2468,7 +2275,7 @@ async fn replace_mcp_servers_serializes_cwd() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2519,7 +2326,7 @@ async fn replace_mcp_servers_streamable_http_serializes_bearer_token() -> anyhow
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2585,7 +2392,7 @@ async fn replace_mcp_servers_streamable_http_serializes_custom_headers() -> anyh
     )]);
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2665,7 +2472,7 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
     let serialized_with_optional = std::fs::read_to_string(&config_path)?;
@@ -2696,7 +2503,7 @@ async fn replace_mcp_servers_streamable_http_removes_optional_sections() -> anyh
     );
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2787,7 +2594,7 @@ async fn replace_mcp_servers_streamable_http_isolates_headers_between_servers() 
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2871,7 +2678,7 @@ async fn replace_mcp_servers_serializes_disabled_flag() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2918,7 +2725,7 @@ async fn replace_mcp_servers_serializes_required_flag() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -2965,7 +2772,7 @@ async fn replace_mcp_servers_serializes_tool_filters() -> anyhow::Result<()> {
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -3016,7 +2823,7 @@ async fn replace_mcp_servers_streamable_http_serializes_oauth_resource() -> anyh
 
     apply_blocking(
         codex_home.path(),
-        None,
+        /*profile*/ None,
         &[ConfigEdit::ReplaceMcpServers(servers.clone())],
     )?;
 
@@ -3164,28 +2971,13 @@ model = "gpt-5.1-codex"
     Ok(())
 }
 
-#[test]
-fn config_toml_parses_resume_model_source() {
-    let parsed: ConfigToml = toml::from_str(
-        r#"
-resume_model_source = "current"
-"#,
-    )
-    .expect("config should parse");
-
-    assert_eq!(
-        parsed.resume_model_source,
-        Some(crate::config::types::ResumeModelSource::Current)
-    );
-}
-
 #[tokio::test]
 async fn set_feature_enabled_updates_profile() -> anyhow::Result<()> {
     let codex_home = TempDir::new()?;
 
     ConfigEditsBuilder::new(codex_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", true)
+        .set_feature_enabled("guardian_approval", /*enabled*/ true)
         .apply()
         .await?;
 
@@ -3221,13 +3013,13 @@ async fn set_feature_enabled_persists_default_false_feature_disable_in_profile()
 
     ConfigEditsBuilder::new(codex_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", true)
+        .set_feature_enabled("guardian_approval", /*enabled*/ true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(codex_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", false)
+        .set_feature_enabled("guardian_approval", /*enabled*/ false)
         .apply()
         .await?;
 
@@ -3261,13 +3053,13 @@ async fn set_feature_enabled_profile_disable_overrides_root_enable() -> anyhow::
     let codex_home = TempDir::new()?;
 
     ConfigEditsBuilder::new(codex_home.path())
-        .set_feature_enabled("guardian_approval", true)
+        .set_feature_enabled("guardian_approval", /*enabled*/ true)
         .apply()
         .await?;
 
     ConfigEditsBuilder::new(codex_home.path())
         .with_profile(Some("dev"))
-        .set_feature_enabled("guardian_approval", false)
+        .set_feature_enabled("guardian_approval", /*enabled*/ false)
         .apply()
         .await?;
 
@@ -3306,7 +3098,11 @@ struct PrecedenceTestFixture {
 }
 
 impl PrecedenceTestFixture {
-    fn cwd(&self) -> PathBuf {
+    fn cwd(&self) -> AbsolutePathBuf {
+        self.cwd.abs()
+    }
+
+    fn cwd_path(&self) -> PathBuf {
         self.cwd.path().to_path_buf()
     }
 
@@ -3347,7 +3143,7 @@ fn loads_compact_prompt_from_file() -> std::io::Result<()> {
     std::fs::write(&prompt_path, "  summarize differently  ")?;
 
     let cfg = ConfigToml {
-        experimental_compact_prompt_file: Some(AbsolutePathBuf::from_absolute_path(prompt_path)?),
+        experimental_compact_prompt_file: Some(prompt_path.abs()),
         ..Default::default()
     };
 
@@ -3444,7 +3240,7 @@ fn load_config_rejects_missing_agent_role_config_file() -> std::io::Result<()> {
                 "researcher".to_string(),
                 AgentRoleToml {
                     description: Some("Research role".to_string()),
-                    config_file: Some(AbsolutePathBuf::from_absolute_path(missing_path)?),
+                    config_file: Some(missing_path.abs()),
                     nickname_candidates: None,
                 },
             )]),
@@ -4455,7 +4251,7 @@ fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     )?;
 
     let cfg = ConfigToml {
-        model_catalog_json: Some(AbsolutePathBuf::from_absolute_path(catalog_path)?),
+        model_catalog_json: Some(catalog_path.abs()),
         ..Default::default()
     };
 
@@ -4466,17 +4262,17 @@ fn model_catalog_json_loads_from_path() -> std::io::Result<()> {
     )?;
 
     assert_eq!(config.model_catalog, Some(catalog));
-    assert_eq!(config.model_catalog_merge, None);
     Ok(())
 }
 
+#[test]
 fn model_catalog_json_rejects_empty_catalog() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let catalog_path = codex_home.path().join("catalog.json");
     std::fs::write(&catalog_path, r#"{"models":[]}"#)?;
 
     let cfg = ConfigToml {
-        model_catalog_json: Some(AbsolutePathBuf::from_absolute_path(catalog_path)?),
+        model_catalog_json: Some(catalog_path.abs()),
         ..Default::default()
     };
 
@@ -4559,7 +4355,6 @@ model_verbosity = "high"
 
     let openai_custom_provider = ModelProviderInfo {
         name: "OpenAI custom".to_string(),
-        model: None,
         base_url: Some("https://api.openai.com/v1".to_string()),
         env_key: Some("OPENAI_API_KEY".to_string()),
         wire_api: crate::WireApi::Responses,
@@ -4577,7 +4372,8 @@ model_verbosity = "high"
         supports_websockets: false,
     };
     let model_provider_map = {
-        let mut model_provider_map = built_in_model_providers(/* openai_base_url */ None);
+        let mut model_provider_map =
+            built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None);
         model_provider_map.insert("openai-custom".to_string(), openai_custom_provider.clone());
         model_provider_map
     };
@@ -4615,7 +4411,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
 
     let o3_profile_overrides = ConfigOverrides {
         config_profile: Some("o3".to_string()),
-        cwd: Some(fixture.cwd()),
+        cwd: Some(fixture.cwd_path()),
         ..Default::default()
     };
     let o3_profile_config: Config = Config::load_from_base_config_with_overrides(
@@ -4645,13 +4441,11 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
                 windows_sandbox_mode: None,
                 windows_sandbox_private_desktop: true,
             },
-            auto_tldr_routing: AutoTldrRoutingMode::Safe,
             approvals_reviewer: ApprovalsReviewer::User,
-            enforce_residency: Constrained::allow_any(None),
+            enforce_residency: Constrained::allow_any(/*initial_value*/ None),
             user_instructions: None,
             notify: None,
-            cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
-                .expect("fixture cwd should be absolute"),
+            cwd: fixture.cwd(),
             cli_auth_credentials_store_mode: Default::default(),
             mcp_servers: Constrained::allow_any(HashMap::new()),
             mcp_oauth_credentials_store_mode: Default::default(),
@@ -4665,7 +4459,6 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
-            zmemory: ZmemoryConfig::default(),
             agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
             codex_home: fixture.codex_home(),
             sqlite_home: fixture.codex_home(),
@@ -4684,12 +4477,10 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             hide_agent_reasoning: false,
             show_raw_agent_reasoning: false,
             model_reasoning_effort: Some(ReasoningEffort::High),
-            resume_model_source: crate::config::types::ResumeModelSource::Disabled,
             plan_mode_reasoning_effort: None,
             model_reasoning_summary: Some(ReasoningSummary::Detailed),
             model_supports_reasoning_summaries: None,
             model_catalog: None,
-            model_catalog_merge: None,
             model_verbosity: None,
             personality: Some(Personality::Pragmatic),
             chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -4724,7 +4515,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_notifications: Default::default(),
             tui_notification_method: Default::default(),
             animations: true,
-            show_tooltips: false,
+            show_tooltips: true,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
             analytics_enabled: Some(true),
             feedback_enabled: true,
@@ -4733,56 +4524,10 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_terminal_title: None,
             tui_theme: None,
-            tui_show_buddy: true,
             otel: OtelConfig::default(),
         },
         o3_profile_config
     );
-    Ok(())
-}
-
-#[test]
-fn user_model_provider_can_supply_custom_openai_provider() -> std::io::Result<()> {
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-model = "gpt-5"
-model_provider = "openai-custom"
-
-[model_providers.openai-custom]
-name = "OpenAI Chat"
-base_url = "https://api.openai.com/v1"
-env_key = "OPENAI_API_KEY"
-wire_api = "chat"
-"#,
-    )
-    .expect("TOML deserialization should succeed");
-
-    let cwd_temp_dir = TempDir::new().unwrap();
-    let cwd = cwd_temp_dir.path().to_path_buf();
-    std::fs::write(cwd.join(".git"), "gitdir: nowhere")?;
-    let codex_home_temp_dir = TempDir::new().unwrap();
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides {
-            cwd: Some(cwd),
-            ..Default::default()
-        },
-        codex_home_temp_dir.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.model_provider_id, "openai-custom");
-    assert_eq!(config.model_provider.name, "OpenAI Chat");
-    assert_eq!(config.model_provider.wire_api, crate::WireApi::Chat);
-    assert_eq!(
-        config.model_provider.base_url.as_deref(),
-        Some("https://api.openai.com/v1")
-    );
-    assert_eq!(
-        config.model_providers["openai-custom"].wire_api,
-        crate::WireApi::Chat
-    );
-
     Ok(())
 }
 
@@ -4793,7 +4538,7 @@ fn metrics_exporter_defaults_to_statsig_when_missing() -> std::io::Result<()> {
     let config = Config::load_from_base_config_with_overrides(
         fixture.cfg.clone(),
         ConfigOverrides {
-            cwd: Some(fixture.cwd()),
+            cwd: Some(fixture.cwd_path()),
             ..Default::default()
         },
         fixture.codex_home(),
@@ -4809,7 +4554,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
 
     let gpt3_profile_overrides = ConfigOverrides {
         config_profile: Some("gpt3".to_string()),
-        cwd: Some(fixture.cwd()),
+        cwd: Some(fixture.cwd_path()),
         ..Default::default()
     };
     let gpt3_profile_config = Config::load_from_base_config_with_overrides(
@@ -4838,13 +4583,11 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
             windows_sandbox_mode: None,
             windows_sandbox_private_desktop: true,
         },
-        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         approvals_reviewer: ApprovalsReviewer::User,
-        enforce_residency: Constrained::allow_any(None),
+        enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         user_instructions: None,
         notify: None,
-        cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
-            .expect("fixture cwd should be absolute"),
+        cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: Default::default(),
@@ -4858,7 +4601,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory: ZmemoryConfig::default(),
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -4877,12 +4619,10 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
         model_reasoning_effort: None,
-        resume_model_source: crate::config::types::ResumeModelSource::Disabled,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
         model_catalog: None,
-        model_catalog_merge: None,
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -4917,7 +4657,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_notifications: Default::default(),
         tui_notification_method: Default::default(),
         animations: true,
-        show_tooltips: false,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         analytics_enabled: Some(true),
         feedback_enabled: true,
@@ -4926,7 +4666,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_show_buddy: true,
         otel: OtelConfig::default(),
     };
 
@@ -4935,7 +4674,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
     // Verify that loading without specifying a profile in ConfigOverrides
     // uses the default profile from the config file (which is "gpt3").
     let default_profile_overrides = ConfigOverrides {
-        cwd: Some(fixture.cwd()),
+        cwd: Some(fixture.cwd_path()),
         ..Default::default()
     };
 
@@ -4955,7 +4694,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
 
     let zdr_profile_overrides = ConfigOverrides {
         config_profile: Some("zdr".to_string()),
-        cwd: Some(fixture.cwd()),
+        cwd: Some(fixture.cwd_path()),
         ..Default::default()
     };
     let zdr_profile_config = Config::load_from_base_config_with_overrides(
@@ -4984,13 +4723,11 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
             windows_sandbox_mode: None,
             windows_sandbox_private_desktop: true,
         },
-        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         approvals_reviewer: ApprovalsReviewer::User,
-        enforce_residency: Constrained::allow_any(None),
+        enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         user_instructions: None,
         notify: None,
-        cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
-            .expect("fixture cwd should be absolute"),
+        cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: Default::default(),
@@ -5004,7 +4741,6 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory: ZmemoryConfig::default(),
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -5023,12 +4759,10 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
         model_reasoning_effort: None,
-        resume_model_source: crate::config::types::ResumeModelSource::Disabled,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: None,
         model_supports_reasoning_summaries: None,
         model_catalog: None,
-        model_catalog_merge: None,
         model_verbosity: None,
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -5063,7 +4797,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_notifications: Default::default(),
         tui_notification_method: Default::default(),
         animations: true,
-        show_tooltips: false,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         analytics_enabled: Some(false),
         feedback_enabled: true,
@@ -5072,7 +4806,6 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_show_buddy: true,
         otel: OtelConfig::default(),
     };
 
@@ -5087,7 +4820,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
 
     let gpt5_profile_overrides = ConfigOverrides {
         config_profile: Some("gpt5".to_string()),
-        cwd: Some(fixture.cwd()),
+        cwd: Some(fixture.cwd_path()),
         ..Default::default()
     };
     let gpt5_profile_config = Config::load_from_base_config_with_overrides(
@@ -5116,13 +4849,11 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
             windows_sandbox_mode: None,
             windows_sandbox_private_desktop: true,
         },
-        auto_tldr_routing: AutoTldrRoutingMode::Safe,
         approvals_reviewer: ApprovalsReviewer::User,
-        enforce_residency: Constrained::allow_any(None),
+        enforce_residency: Constrained::allow_any(/*initial_value*/ None),
         user_instructions: None,
         notify: None,
-        cwd: AbsolutePathBuf::from_absolute_path(fixture.cwd())
-            .expect("fixture cwd should be absolute"),
+        cwd: fixture.cwd(),
         cli_auth_credentials_store_mode: Default::default(),
         mcp_servers: Constrained::allow_any(HashMap::new()),
         mcp_oauth_credentials_store_mode: Default::default(),
@@ -5136,7 +4867,6 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         agent_max_depth: DEFAULT_AGENT_MAX_DEPTH,
         agent_roles: BTreeMap::new(),
         memories: MemoriesConfig::default(),
-        zmemory: ZmemoryConfig::default(),
         agent_job_max_runtime_seconds: DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS,
         codex_home: fixture.codex_home(),
         sqlite_home: fixture.codex_home(),
@@ -5155,12 +4885,10 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         hide_agent_reasoning: false,
         show_raw_agent_reasoning: false,
         model_reasoning_effort: Some(ReasoningEffort::High),
-        resume_model_source: crate::config::types::ResumeModelSource::Disabled,
         plan_mode_reasoning_effort: None,
         model_reasoning_summary: Some(ReasoningSummary::Detailed),
         model_supports_reasoning_summaries: None,
         model_catalog: None,
-        model_catalog_merge: None,
         model_verbosity: Some(Verbosity::High),
         personality: Some(Personality::Pragmatic),
         chatgpt_base_url: "https://chatgpt.com/backend-api/".to_string(),
@@ -5195,7 +4923,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_notifications: Default::default(),
         tui_notification_method: Default::default(),
         animations: true,
-        show_tooltips: false,
+        show_tooltips: true,
         model_availability_nux: ModelAvailabilityNuxConfig::default(),
         analytics_enabled: Some(true),
         feedback_enabled: true,
@@ -5204,7 +4932,6 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_show_buddy: true,
         otel: OtelConfig::default(),
     };
 
@@ -5260,7 +4987,7 @@ fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() -> any
     let config = Config::load_config_with_layer_stack(
         fixture.cfg.clone(),
         ConfigOverrides {
-            cwd: Some(fixture.cwd()),
+            cwd: Some(fixture.cwd_path()),
             ..Default::default()
         },
         fixture.codex_home(),
@@ -5465,11 +5192,11 @@ trust_level = "untrusted"
         .expect("TOML deserialization should succeed");
 
     let resolution = cfg.derive_sandbox_policy(
-        None,
-        None,
+        /*sandbox_mode_override*/ None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &PathBuf::from("/tmp/test"),
-        None,
+        /*sandbox_policy_constraint*/ None,
     );
 
     // Verify that untrusted projects get WorkspaceWrite (or ReadOnly on Windows due to downgrade)
@@ -5517,8 +5244,8 @@ fn derive_sandbox_policy_falls_back_to_constraint_value_for_implicit_defaults() 
     })?;
 
     let resolution = cfg.derive_sandbox_policy(
-        None,
-        None,
+        /*sandbox_mode_override*/ None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &project_path,
         Some(&constrained),
@@ -5557,8 +5284,8 @@ fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallback() 
     })?;
 
     let resolution = cfg.derive_sandbox_policy(
-        None,
-        None,
+        /*sandbox_mode_override*/ None,
+        /*profile_sandbox_mode*/ None,
         WindowsSandboxLevel::Disabled,
         &project_path,
         Some(&constrained),
@@ -5575,7 +5302,11 @@ fn derive_sandbox_policy_preserves_windows_downgrade_for_unsupported_fallback() 
 #[test]
 fn test_resolve_oss_provider_explicit_override() {
     let config_toml = ConfigToml::default();
-    let result = resolve_oss_provider(Some("custom-provider"), &config_toml, None);
+    let result = resolve_oss_provider(
+        Some("custom-provider"),
+        &config_toml,
+        /*config_profile*/ None,
+    );
     assert_eq!(result, Some("custom-provider".to_string()));
 }
 
@@ -5592,7 +5323,11 @@ fn test_resolve_oss_provider_from_profile() {
         ..Default::default()
     };
 
-    let result = resolve_oss_provider(None, &config_toml, Some("test-profile".to_string()));
+    let result = resolve_oss_provider(
+        /*explicit_provider*/ None,
+        &config_toml,
+        Some("test-profile".to_string()),
+    );
     assert_eq!(result, Some("profile-provider".to_string()));
 }
 
@@ -5603,7 +5338,11 @@ fn test_resolve_oss_provider_from_global_config() {
         ..Default::default()
     };
 
-    let result = resolve_oss_provider(None, &config_toml, None);
+    let result = resolve_oss_provider(
+        /*explicit_provider*/ None,
+        &config_toml,
+        /*config_profile*/ None,
+    );
     assert_eq!(result, Some("global-provider".to_string()));
 }
 
@@ -5618,14 +5357,22 @@ fn test_resolve_oss_provider_profile_fallback_to_global() {
         ..Default::default()
     };
 
-    let result = resolve_oss_provider(None, &config_toml, Some("test-profile".to_string()));
+    let result = resolve_oss_provider(
+        /*explicit_provider*/ None,
+        &config_toml,
+        Some("test-profile".to_string()),
+    );
     assert_eq!(result, Some("global-provider".to_string()));
 }
 
 #[test]
 fn test_resolve_oss_provider_none_when_not_configured() {
     let config_toml = ConfigToml::default();
-    let result = resolve_oss_provider(None, &config_toml, None);
+    let result = resolve_oss_provider(
+        /*explicit_provider*/ None,
+        &config_toml,
+        /*config_profile*/ None,
+    );
     assert_eq!(result, None);
 }
 
@@ -5709,89 +5456,6 @@ allow_login_shell = false
 
     assert!(!config.permissions.allow_login_shell);
     Ok(())
-}
-
-#[test]
-fn config_loads_auto_tldr_routing_from_toml() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-model = "gpt-5.1"
-auto_tldr_routing = "off"
-"#,
-    )
-    .expect("TOML deserialization should succeed for auto_tldr_routing");
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.auto_tldr_routing, AutoTldrRoutingMode::Off);
-    Ok(())
-}
-
-#[test]
-fn config_defaults_auto_tldr_routing_to_safe() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    let cfg: ConfigToml = toml::from_str(
-        r#"
-model = "gpt-5.1"
-"#,
-    )
-    .expect("TOML deserialization should succeed without auto_tldr_routing");
-
-    let config = Config::load_from_base_config_with_overrides(
-        cfg,
-        ConfigOverrides::default(),
-        codex_home.path().to_path_buf(),
-    )?;
-
-    assert_eq!(config.auto_tldr_routing, AutoTldrRoutingMode::Safe);
-    Ok(())
-}
-
-#[test]
-fn config_loads_all_auto_tldr_routing_modes_from_toml() {
-    let parse = |value: &str| {
-        let toml = format!(
-            r#"
-model = "gpt-5.1"
-auto_tldr_routing = "{value}"
-"#
-        );
-        toml::from_str::<ConfigToml>(&toml).expect("TOML deserialization should succeed")
-    };
-
-    assert_eq!(
-        parse("off").auto_tldr_routing,
-        Some(AutoTldrRoutingMode::Off)
-    );
-    assert_eq!(
-        parse("safe").auto_tldr_routing,
-        Some(AutoTldrRoutingMode::Safe)
-    );
-    assert_eq!(
-        parse("aggressive").auto_tldr_routing,
-        Some(AutoTldrRoutingMode::Aggressive)
-    );
-}
-
-#[test]
-fn config_rejects_invalid_auto_tldr_routing_value() {
-    let err = toml::from_str::<ConfigToml>(
-        r#"
-model = "gpt-5.1"
-auto_tldr_routing = "maybe"
-"#,
-    )
-    .expect_err("invalid auto_tldr_routing should fail");
-
-    assert!(
-        err.to_string().contains("auto_tldr_routing"),
-        "unexpected error: {err}"
-    );
 }
 
 #[test]
@@ -6103,12 +5767,6 @@ shell_tool = true
     );
 
     Ok(())
-}
-
-#[cfg(not(target_os = "linux"))]
-#[test]
-fn system_bwrap_warning_is_disabled_off_linux() {
-    assert!(system_bwrap_warning().is_none());
 }
 
 #[tokio::test]

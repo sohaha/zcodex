@@ -6,16 +6,22 @@ use pretty_assertions::assert_eq;
 
 use crate::codex::make_session_and_context;
 use crate::exec_env::create_env;
-use crate::exec_env::prepend_arg0_helper_dir_to_path;
-use crate::is_safe_command::is_known_safe_command;
-use crate::powershell::try_find_powershell_executable_blocking;
-use crate::powershell::try_find_pwsh_executable_blocking;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
 use crate::shell::ShellType;
 use crate::shell_snapshot::ShellSnapshot;
+use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolInvocation;
+use crate::tools::context::ToolPayload;
 use crate::tools::handlers::ShellCommandHandler;
-use std::collections::HashMap;
+use crate::tools::handlers::ShellHandler;
+use crate::tools::registry::ToolHandler;
+use crate::turn_diff_tracker::TurnDiffTracker;
+use codex_shell_command::is_safe_command::is_known_safe_command;
+use codex_shell_command::powershell::try_find_powershell_executable_blocking;
+use codex_shell_command::powershell::try_find_pwsh_executable_blocking;
+use serde_json::json;
+use tokio::sync::Mutex;
 use tokio::sync::watch;
 
 /// The logic for is_known_safe_command() has heuristics for known shells,
@@ -57,41 +63,12 @@ fn commands_generated_by_shell_command_handler_can_be_matched_by_is_known_safe_c
 }
 
 fn assert_safe(shell: &Shell, command: &str) {
-    assert!(is_known_safe_command(
-        &shell.derive_exec_args(command, /* use_login_shell */ true)
-    ));
-    assert!(is_known_safe_command(
-        &shell.derive_exec_args(command, /* use_login_shell */ false)
-    ));
-}
-
-fn assert_kept_raw(command: &str, _reason: &str) {
-    let routed = ShellCommandHandler::route_command(command);
-    assert_eq!(routed.command, command);
-    assert!(routed.env_assignments.is_empty());
-    assert!(routed.env_unsets.is_empty());
-    assert_eq!(routed.interaction_input, None);
-    assert_eq!(routed.model_output_prefix, None);
-}
-
-fn assert_rewritten(
-    command: &str,
-    rewritten_command: &str,
-    _display_command: &str,
-    env_assignments: &[&str],
-) {
-    let routed = ShellCommandHandler::route_command(command);
-    assert_eq!(routed.command, rewritten_command);
-    assert_eq!(
-        routed.env_assignments,
-        env_assignments
-            .iter()
-            .map(|value| (*value).to_string())
-            .collect::<Vec<_>>()
-    );
-    assert!(routed.env_unsets.is_empty());
-    assert_eq!(routed.interaction_input, Some(command.to_string()));
-    assert_eq!(routed.model_output_prefix, None);
+    assert!(is_known_safe_command(&shell.derive_exec_args(
+        command, /* use_login_shell */ /*use_login_shell*/ true
+    )));
+    assert!(is_known_safe_command(&shell.derive_exec_args(
+        command, /* use_login_shell */ /*use_login_shell*/ false
+    )));
 }
 
 #[tokio::test]
@@ -105,7 +82,9 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     let sandbox_permissions = SandboxPermissions::RequireEscalated;
     let justification = Some("because tests".to_string());
 
-    let expected_command = session.user_shell().derive_exec_args(&command, true);
+    let expected_command = session
+        .user_shell()
+        .derive_exec_args(&command, /*use_login_shell*/ true);
     let expected_cwd = turn_context.resolve_path(workdir.clone());
     let expected_env = create_env(
         &turn_context.shell_environment_policy,
@@ -128,7 +107,7 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
         &session,
         &turn_context,
         session.conversation_id,
-        true,
+        /*allow_login_shell*/ true,
     )
     .expect("login shells should be allowed");
 
@@ -144,180 +123,6 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
 }
 
 #[test]
-fn shell_handler_prepends_rtk_helper_dir_to_path() {
-    let mut env = std::collections::HashMap::from([(
-        "PATH".to_string(),
-        "/usr/local/bin:/usr/bin".to_string(),
-    )]);
-
-    prepend_arg0_helper_dir_to_path(
-        &mut env,
-        Some(std::path::Path::new("/tmp/codex-arg0/codex-execve-wrapper")),
-        None,
-    );
-
-    assert_eq!(
-        env.get("PATH"),
-        Some(&"/tmp/codex-arg0:/usr/local/bin:/usr/bin".to_string())
-    );
-}
-
-#[test]
-fn shell_command_handler_resolves_rtk_to_absolute_helper_path() {
-    let resolved = super::resolve_rtk_physical_command(
-        "nice -n 5 rtk git status",
-        Some(&std::path::PathBuf::from("/tmp/codex")),
-    );
-
-    assert_eq!(resolved, "nice -n 5 /tmp/codex rtk git status");
-}
-
-#[test]
-fn shell_command_handler_leaves_non_rtk_commands_unchanged_when_resolving_physical_path() {
-    let resolved = super::resolve_rtk_physical_command(
-        "git status",
-        Some(&std::path::PathBuf::from("/tmp/codex")),
-    );
-
-    assert_eq!(resolved, "git status");
-}
-
-#[test]
-fn shell_command_handler_applies_leading_env_assignments_to_exec_env() {
-    let mut env = HashMap::from([
-        ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
-        ("HOME".to_string(), "/root".to_string()),
-    ]);
-
-    super::apply_env_assignments(
-        &mut env,
-        &[
-            "PATH=/root/.cargo/bin:$PATH".to_string(),
-            "CODEX_HOME=${HOME}/.codex".to_string(),
-        ],
-    );
-
-    assert_eq!(
-        env.get("PATH"),
-        Some(&"/root/.cargo/bin:/usr/local/bin:/usr/bin".to_string())
-    );
-    assert_eq!(env.get("CODEX_HOME"), Some(&"/root/.codex".to_string()));
-}
-
-#[test]
-fn shell_command_handler_strips_simple_env_wrapper_into_exec_env() {
-    let mut env_assignments = Vec::new();
-    let mut env_unsets = Vec::new();
-    let command = super::strip_simple_env_wrapper(
-        "env FOO=1 BAR=$FOO rtk grep 'a|b' src/main.rs",
-        &mut env_assignments,
-        &mut env_unsets,
-    );
-
-    assert_eq!(command, Some("rtk grep 'a|b' src/main.rs".to_string()));
-    assert_eq!(
-        env_assignments,
-        vec!["FOO=1".to_string(), "BAR=$FOO".to_string()]
-    );
-    assert!(env_unsets.is_empty());
-}
-
-#[test]
-fn shell_command_handler_keeps_env_wrapper_with_flags_in_exec_command() {
-    let mut env_assignments = Vec::new();
-    let mut env_unsets = Vec::new();
-    let command = super::strip_simple_env_wrapper(
-        "env --chdir=repo FOO=1 rtk git status",
-        &mut env_assignments,
-        &mut env_unsets,
-    );
-
-    assert_eq!(command, None);
-    assert!(env_assignments.is_empty());
-    assert!(env_unsets.is_empty());
-}
-
-#[test]
-fn shell_command_handler_strips_env_wrapper_with_unset_into_exec_env() {
-    let mut env_assignments = Vec::new();
-    let mut env_unsets = Vec::new();
-    let command = super::strip_simple_env_wrapper(
-        "env -u FOO --unset=BAR BAZ=$HOME rtk git status",
-        &mut env_assignments,
-        &mut env_unsets,
-    );
-
-    assert_eq!(command, Some("rtk git status".to_string()));
-    assert_eq!(env_assignments, vec!["BAZ=$HOME".to_string()]);
-    assert_eq!(env_unsets, vec!["FOO".to_string(), "BAR".to_string()]);
-}
-
-#[test]
-fn shell_command_handler_applies_unsets_before_assignments() {
-    let mut env = HashMap::from([
-        ("PATH".to_string(), "/usr/local/bin:/usr/bin".to_string()),
-        ("FOO".to_string(), "old".to_string()),
-    ]);
-
-    super::apply_env_unsets(&mut env, &["FOO".to_string()]);
-    super::apply_env_assignments(&mut env, &["BAR=$FOO".to_string()]);
-
-    assert!(!env.contains_key("FOO"));
-    assert_eq!(env.get("BAR"), Some(&String::new()));
-}
-
-#[cfg(unix)]
-#[test]
-fn shell_command_handler_falls_back_to_path_codex_when_current_exe_is_gone() {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-
-    let temp_dir = tempfile::tempdir().expect("create tempdir");
-    let fake_codex = temp_dir.path().join("codex");
-    fs::write(&fake_codex, "#!/bin/sh\nexit 0\n").expect("write fake codex");
-    let mut permissions = fs::metadata(&fake_codex)
-        .expect("stat fake codex")
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&fake_codex, permissions).expect("chmod fake codex");
-
-    let resolved = ShellCommandHandler::resolve_codex_executable_path(
-        Some(std::path::Path::new(
-            "/root/.local/share/mise/installs/node/25.8.2/lib/node_modules/@openai/codex/bin/codex.js (deleted)",
-        )),
-        Some(temp_dir.path().to_string_lossy().as_ref()),
-        temp_dir.path(),
-    );
-
-    assert_eq!(resolved, Some(fake_codex));
-}
-
-#[cfg(unix)]
-#[test]
-fn shell_command_handler_resolves_relative_path_entries_from_workdir() {
-    use std::fs;
-    use std::os::unix::fs::PermissionsExt;
-
-    let temp_dir = tempfile::tempdir().expect("create tempdir");
-    let workdir = temp_dir.path().join("project");
-    let bin_dir = workdir.join("bin");
-    fs::create_dir_all(&bin_dir).expect("create bin dir");
-
-    let fake_codex = bin_dir.join("codex");
-    fs::write(&fake_codex, "#!/bin/sh\nexit 0\n").expect("write fake codex");
-    let mut permissions = fs::metadata(&fake_codex)
-        .expect("stat fake codex")
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(&fake_codex, permissions).expect("chmod fake codex");
-
-    let resolved =
-        ShellCommandHandler::resolve_codex_executable_path(None, Some("./bin"), workdir.as_path());
-
-    assert_eq!(resolved, Some(fake_codex));
-}
-
-#[test]
 fn shell_command_handler_respects_explicit_login_flag() {
     let (_tx, shell_snapshot) = watch::channel(Some(Arc::new(ShellSnapshot {
         path: PathBuf::from("/tmp/snapshot.sh"),
@@ -329,17 +134,24 @@ fn shell_command_handler_respects_explicit_login_flag() {
         shell_snapshot,
     };
 
-    let login_command = ShellCommandHandler::base_command(&shell, "echo login shell", true);
+    let login_command = ShellCommandHandler::base_command(
+        &shell,
+        "echo login shell",
+        /*use_login_shell*/ true,
+    );
     assert_eq!(
         login_command,
-        shell.derive_exec_args("echo login shell", true)
+        shell.derive_exec_args("echo login shell", /*use_login_shell*/ true)
     );
 
-    let non_login_command =
-        ShellCommandHandler::base_command(&shell, "echo non login shell", false);
+    let non_login_command = ShellCommandHandler::base_command(
+        &shell,
+        "echo non login shell",
+        /*use_login_shell*/ false,
+    );
     assert_eq!(
         non_login_command,
-        shell.derive_exec_args("echo non login shell", false)
+        shell.derive_exec_args("echo non login shell", /*use_login_shell*/ false)
     );
 }
 
@@ -362,20 +174,23 @@ async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
         &session,
         &turn_context,
         session.conversation_id,
-        false,
+        /*allow_login_shell*/ false,
     )
     .expect("non-login shells should still be allowed");
 
     assert_eq!(
         exec_params.command,
-        session.user_shell().derive_exec_args("echo hello", false)
+        session
+            .user_shell()
+            .derive_exec_args("echo hello", /*use_login_shell*/ false)
     );
 }
 
 #[test]
 fn shell_command_handler_rejects_login_when_disallowed() {
-    let err = ShellCommandHandler::resolve_use_login_shell(Some(true), false)
-        .expect_err("explicit login should be rejected");
+    let err =
+        ShellCommandHandler::resolve_use_login_shell(Some(true), /*allow_login_shell*/ false)
+            .expect_err("explicit login should be rejected");
 
     assert!(
         err.to_string()
@@ -384,273 +199,87 @@ fn shell_command_handler_rejects_login_when_disallowed() {
     );
 }
 
-#[test]
-fn shell_command_handler_routes_supported_commands_through_rtk() {
-    assert_eq!(
-        ShellCommandHandler::route_command("git status").command,
-        "rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("head -20 src/main.rs").command,
-        "rtk read src/main.rs --max-lines 20"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command git status").command,
-        "rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command -p git status").command,
-        "rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("git -C repo status").command,
-        "rtk git -C repo status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("cargo --manifest-path Cargo.toml test -p codex-core")
-            .command,
-        "rtk cargo --manifest-path Cargo.toml test -p codex-core"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("cargo +nightly test -p codex-core").command,
-        "rtk cargo '+nightly' test -p codex-core"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("git -c color.ui=always -C repo status").command,
-        "rtk git -c color.ui=always -C repo status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("git --git-dir .git --work-tree . status").command,
-        "rtk git --git-dir .git --work-tree . status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("nice -n 5 git status").command,
-        "nice -n 5 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("stdbuf -oL git status").command,
-        "stdbuf -oL rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("env --chdir=repo nice -n 5 git status").command,
-        "env --chdir=repo nice -n 5 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command nice -n 5 git status").command,
-        "nice -n 5 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command -p stdbuf -oL git status").command,
-        "stdbuf -oL rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command cargo +nightly test -p codex-core").command,
-        "rtk cargo '+nightly' test -p codex-core"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("/usr/bin/nice -n 5 git status").command,
-        "nice -n 5 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("ionice -c 3 git status").command,
-        "ionice -c 3 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command ionice -c2 git status").command,
-        "ionice -c2 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("nice -n 5 ionice -c2 git status").command,
-        "nice -n 5 ionice -c2 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("chrt -r 10 git status").command,
-        "chrt -r 10 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("command chrt -b 0 git status").command,
-        "chrt -b 0 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("nice -n 5 chrt -r 10 git status").command,
-        "nice -n 5 chrt -r 10 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("codex rtk command -p stdbuf -oL git status").command,
-        "stdbuf -oL rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command(
-            "codex rtk env --chdir=repo command nice -n 5 git status"
-        )
-        .command,
-        "env --chdir=repo nice -n 5 rtk git status"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command("codex rtk env FOO=1 command grep \"a|b\" src/main.rs")
-            .command,
-        "env FOO=1 rtk grep 'a|b' src/main.rs"
-    );
-    assert_eq!(
-        ShellCommandHandler::route_command(
-            "codex rtk command nice -n 5 git log --format='%h|%s' -1"
-        )
-        .command,
-        "nice -n 5 rtk git log '--format=%h|%s' -1"
-    );
-}
+#[tokio::test]
+async fn shell_pre_tool_use_payload_uses_joined_command() {
+    let payload = ToolPayload::LocalShell {
+        params: codex_protocol::models::ShellToolCallParams {
+            command: vec![
+                "bash".to_string(),
+                "-lc".to_string(),
+                "printf hi".to_string(),
+            ],
+            workdir: None,
+            timeout_ms: None,
+            sandbox_permissions: None,
+            prefix_rule: None,
+            additional_permissions: None,
+            justification: None,
+        },
+    };
+    let (session, turn) = make_session_and_context().await;
+    let handler = ShellHandler;
 
-#[test]
-fn shell_command_handler_leaves_compound_commands_raw() {
-    assert_kept_raw("git status | head", "contains compound shell syntax");
-}
-
-#[test]
-fn shell_command_handler_reports_missing_command_after_prefixes() {
-    assert_kept_raw("env -i", "missing command after prefixes");
-}
-
-#[test]
-fn shell_command_handler_records_original_command_when_rewritten() {
-    assert_rewritten(
-        "FOO=1 git status",
-        "rtk git status",
-        "FOO=1 codex rtk git status",
-        &["FOO=1"],
-    );
-    assert_rewritten(
-        "rg -n needle src/main.rs",
-        "rtk grep needle src/main.rs -n",
-        "codex rtk grep needle src/main.rs -n",
-        &[],
-    );
-    assert_rewritten(
-        "PATH=/root/.cargo/bin:$PATH cargo nextest run -p codex-cli",
-        "rtk cargo nextest run -p codex-cli",
-        "PATH=/root/.cargo/bin:$PATH codex rtk cargo nextest run -p codex-cli",
-        &["PATH=/root/.cargo/bin:$PATH"],
-    );
-}
-
-#[test]
-fn shell_command_handler_displays_wrapped_rewrites_with_codex_prefix() {
-    assert_rewritten(
-        "nice -n 5 git status",
-        "nice -n 5 rtk git status",
-        "nice -n 5 codex rtk git status",
-        &[],
-    );
-}
-
-#[test]
-fn shell_command_handler_reports_unsupported_wrapper_flags_as_raw() {
-    assert_kept_raw(
-        "env FOO=1 ionice -p 123 git status",
-        "command is not in the embedded RTK allowlist",
-    );
-}
-
-#[test]
-fn shell_command_handler_reports_parse_failures_as_raw() {
-    assert_kept_raw("git 'unterminated", "failed to parse shell words");
-}
-
-#[test]
-fn shell_command_handler_routes_quoted_literals_but_blocks_real_shell_syntax() {
-    let routed = ShellCommandHandler::route_command("grep 'a|b' src/main.rs");
-    assert_eq!(routed.command, "rtk grep 'a|b' src/main.rs");
-    assert!(routed.env_assignments.is_empty());
-    assert!(routed.env_unsets.is_empty());
     assert_eq!(
-        routed.interaction_input,
-        Some("grep 'a|b' src/main.rs".to_string())
-    );
-
-    let double_quoted = ShellCommandHandler::route_command("grep \"a|b\" src/main.rs");
-    assert_eq!(double_quoted.command, "rtk grep 'a|b' src/main.rs");
-
-    assert_kept_raw(
-        "grep \"$(pwd)\" src/main.rs",
-        "contains compound shell syntax",
-    );
-}
-
-#[test]
-fn shell_command_handler_normalizes_codex_rtk_help_commands() {
-    assert_rewritten("codex rtk --help", "rtk --help", "codex rtk --help", &[]);
-}
-
-#[test]
-fn shell_command_handler_keeps_codex_rtk_compounds_raw() {
-    assert_kept_raw(
-        "codex rtk git status | head",
-        "contains compound shell syntax",
-    );
-}
-
-#[test]
-fn shell_command_handler_keeps_sudo_commands_raw_even_with_prefixes() {
-    assert_kept_raw(
-        "env FOO=1 sudo git status",
-        "sudo commands are never auto-routed",
-    );
-}
-
-#[test]
-fn shell_command_handler_keeps_codex_rtk_passthrough_matrix_raw() {
-    assert_kept_raw(
-        "codex rtk tail -f src/main.rs",
-        "command shape is not supported by the embedded RTK rewriter",
-    );
-    assert_kept_raw("codex rtk env -i", "missing command after prefixes");
-    assert_kept_raw(
-        "codex rtk command chrt -m git status",
-        "command is not in the embedded RTK allowlist",
-    );
-}
-
-#[test]
-fn shell_command_handler_keeps_codex_rtk_shell_syntax_raw() {
-    let routed = ShellCommandHandler::route_command("codex rtk grep \"$(pwd)\" src/main.rs");
-    assert_eq!(routed.command, "codex rtk grep \"$(pwd)\" src/main.rs");
-    assert_eq!(routed.model_output_prefix, None);
-}
-
-#[test]
-fn shell_command_handler_leaves_unsupported_read_shapes_raw() {
-    assert_kept_raw(
-        "tail -f src/main.rs",
-        "command shape is not supported by the embedded RTK rewriter",
+        handler.pre_tool_use_payload(&ToolInvocation {
+            session: session.into(),
+            turn: turn.into(),
+            tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
+            call_id: "call-41".to_string(),
+            tool_name: "shell".to_string(),
+            tool_namespace: None,
+            payload,
+        }),
+        Some(crate::tools::registry::PreToolUsePayload {
+            command: "bash -lc 'printf hi'".to_string(),
+        })
     );
 }
 
 #[tokio::test]
-async fn snapshot_explicit_env_overrides_keep_helper_path() {
-    let (_session, mut turn_context) = make_session_and_context().await;
-    turn_context
-        .shell_environment_policy
-        .r#set
-        .insert("FOO".to_string(), "bar".to_string());
-
-    let dependency_env = HashMap::from([("OPENAI_API_KEY".to_string(), "secret".to_string())]);
-    let exec_env = HashMap::from([
-        (
-            "PATH".to_string(),
-            "/tmp/codex-arg0-helper:/usr/local/bin:/usr/bin".to_string(),
-        ),
-        ("OPENAI_API_KEY".to_string(), "secret".to_string()),
-    ]);
-
-    let overrides = crate::exec_env::explicit_snapshot_env_overrides(
-        &turn_context.shell_environment_policy.r#set,
-        &dependency_env,
-        &exec_env,
-    );
+async fn shell_command_pre_tool_use_payload_uses_raw_command() {
+    let payload = ToolPayload::Function {
+        arguments: json!({ "command": "printf shell command" }).to_string(),
+    };
+    let (session, turn) = make_session_and_context().await;
+    let handler = ShellCommandHandler {
+        backend: super::ShellCommandBackend::Classic,
+    };
 
     assert_eq!(
-        overrides.get("PATH"),
-        Some(&"/tmp/codex-arg0-helper:/usr/local/bin:/usr/bin".to_string())
+        handler.pre_tool_use_payload(&ToolInvocation {
+            session: session.into(),
+            turn: turn.into(),
+            tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
+            call_id: "call-42".to_string(),
+            tool_name: "shell_command".to_string(),
+            tool_namespace: None,
+            payload,
+        }),
+        Some(crate::tools::registry::PreToolUsePayload {
+            command: "printf shell command".to_string(),
+        })
     );
-    assert_eq!(overrides.get("FOO"), Some(&"bar".to_string()));
-    assert_eq!(overrides.get("OPENAI_API_KEY"), Some(&"secret".to_string()));
+}
+
+#[test]
+fn build_post_tool_use_payload_uses_tool_output_wire_value() {
+    let payload = ToolPayload::Function {
+        arguments: json!({ "command": "printf shell command" }).to_string(),
+    };
+    let output = FunctionToolOutput {
+        body: vec![],
+        success: Some(true),
+        post_tool_use_response: Some(json!("shell output")),
+    };
+    let handler = ShellCommandHandler {
+        backend: super::ShellCommandBackend::Classic,
+    };
+
+    assert_eq!(
+        handler.post_tool_use_payload("call-42", &payload, &output),
+        Some(crate::tools::registry::PostToolUsePayload {
+            command: "printf shell command".to_string(),
+            tool_response: json!("shell output"),
+        })
+    );
 }
