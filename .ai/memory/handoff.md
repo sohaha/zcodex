@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-02T05:05:04.869Z
-- 本轮摘要：生成 issues/2026-04-01-zmemory-proactive-write.toml，完成本地 issue-reviewer 审查与 cadence_validate 结构校验通过；当前停在 Cadence Issue Generation 确认点，等待用户确认进入 cadence-execution。
+- 更新时间：2026-04-02T05:37:12.882Z
+- 本轮摘要：合并翻译相关分支后，调整 TUI 测试以兼容中英文/双宽字符（pager overlay、welcome、resume picker、theme picker 等），更新 inline error 断言并接受快照，清理遗留 .snap.new；已通过 CARGO_TARGET_DIR=/workspace/.cargo-target-nextest cargo nextest run -p codex-tui。
 
 ## 待确认问题
 
