@@ -1,0 +1,66 @@
+plan = "plan/2026-04-01-zmemory-proactive-write.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "固化主动写入边界与 canonical URI 约定"
+scope = """
+为“稳定且低歧义的长期偏好主动写入 zmemory”收口首版 contract：明确哪些偏好信号允许主动写入，
+分别落到 `core://my_user`、`core://agent`、`core://agent/my_user` 哪条 canonical URI，
+以及写入前查重、`create`/`update` 选择、失败可观察与“不应写入”的最小规则。
+本 issue 允许补齐 `codex-core` 中承载该 contract 的最小帮助逻辑、提示词或断言，
+必要时同步 `codex-zmemory` 的 canonical 配置说明；不在本 issue 中接入 turn 级主动写入运行时。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/templates/zmemory/write_path.md", "codex-rs/zmemory/src/config.rs", "codex-rs/zmemory/README.md"]
+depends_on = []
+done_when = "用户称呼偏好、助手自称偏好、双方协作称呼约定三类高确定性长期偏好的目标 URI、查重规则、create/update 选择、失败表现与不落库边界都已明确，后续实现无需再靠猜测判断"
+validate_by = "补充或更新稳定偏好 contract 的定向断言后，运行仓库现有命令 cargo test -p codex-core zmemory_contract --quiet && cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet && cargo test -p codex-zmemory --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "2026-04-02 已完成 a1。本轮按用户要求仅在 zmemory 相关范围内推进，忽略现有 TUI 改动；未授权子代理，因此由主代理本地执行。spec-reviewer 结论：PASS，`codex-rs/core/src/memories/zmemory_contract.rs`、`codex-rs/core/templates/zmemory/write_path.md` 与 `codex-rs/core/src/memories/prompts.rs` 已固定 canonical URI、查重与 create/update contract。code-reviewer 结论：PASS，`codex-rs/core/src/memories/zmemory_preferences.rs` 已提供显式告警路径，未见与 a1 冲突的静默失败。验证已通过：`cargo test -p codex-core zmemory_contract --quiet && cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet && cargo test -p codex-zmemory --quiet`。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "在 codex-core 落地主动写入编排与当前活动库写入路径"
+scope = """
+基于 a1 固化的 contract，在 `codex-core` 增加窄范围的长期偏好 write gate：
+仅对“明确、稳定、低歧义”的偏好语句触发主动写入，先读取 `system://workspace` 与目标 canonical URI 查重，
+再决定执行 `create` 或 `update`，并保持失败显式、可观察。
+本 issue 包含 `Feature::Zmemory` 下的运行时接线、必要的 orchestration/handler 调整与定向 e2e；
+不扩展到非偏好类 durable memory，也不改变外部 `codex zmemory` CLI contract。
+"""
+touch_points = ["module:codex-core", "codex-rs/core/src/codex.rs", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/core/tests/suite/zmemory_e2e.rs"]
+depends_on = ["a1"]
+done_when = "启用 `Feature::Zmemory` 时，系统会把明确的稳定偏好写入 `system://workspace` 指向的当前活动库，并可通过 `core://my_user`、`core://agent`、`core://agent/my_user` 读回验证；未命中条件或未启用功能开关时不会误写"
+validate_by = "补充主动写入编排的定向 e2e/单测后，运行仓库现有命令 cargo test -p codex-core --test all zmemory_proactively_captures_explicit_naming_preferences --quiet && cargo test -p codex-core --test all zmemory_does_not_proactively_capture_preferences_without_feature_flag --quiet && cargo test -p codex-core zmemory_tool_requires_feature_flag --quiet"
+regress_by = "运行仓库现有命令 cargo test -p codex-core --test all zmemory_ --quiet && cargo test -p codex-core zmemory_tool_ --quiet，确认显式 zmemory tool contract 仍然可用且普通对话不会误触发主动写入"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "2026-04-02 已完成 a2。本轮按用户要求仅在 zmemory 相关范围内推进，忽略现有 TUI 改动；未授权子代理，因此由主代理本地执行。spec-reviewer 结论：PASS，`codex-rs/core/src/codex.rs` 已在 user input 路径上以 `Feature::Zmemory` 作为主动写入 gate，`codex-rs/core/src/memories/zmemory_preferences.rs` 已执行 `system://workspace` 检查、canonical URI 查重、create/update 选择与写后回读验证。code-reviewer 结论：PASS，先前失败来自 e2e 断言前提过时，而不是运行时误写；已在 `codex-rs/core/tests/suite/zmemory_e2e.rs` 显式关闭 feature，修复“未启用 feature”验证语义。验证已通过：`cargo test -p codex-core --test all zmemory_proactively_captures_explicit_naming_preferences --quiet && cargo test -p codex-core --test all zmemory_does_not_proactively_capture_preferences_without_feature_flag --quiet && cargo test -p codex-core zmemory_tool_requires_feature_flag --quiet`。回归已通过：`cargo test -p codex-core --test all zmemory_ --quiet && cargo test -p codex-core zmemory_tool_ --quiet`。存在与本 issue 无关的现有 dead_code warning，但未阻塞本轮行为验证。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐提示词、文档与验证说明到主动写入语义"
+scope = """
+在主动写入编排稳定后，同步收口 `zmemory` developer instructions、README 与相关配置/使用文档，
+明确“`codex-zmemory` 仍是动作层，而主动写入策略位于 `codex-core` 编排层”的职责边界，
+并把当前活动库检查、canonical URI 写后验证路径与失败可观察性写清楚。
+本 issue 包含必要的文档更新与回归断言；不顺带扩展到更泛化的 durable memory 自动 capture 治理。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/templates/zmemory/write_path.md", "codex-rs/zmemory/README.md", "docs/zmemory.md", "docs/config.md"]
+depends_on = ["a1", "a2"]
+done_when = "提示词与文档准确表达主动写入语义、职责边界、当前活动库验证方式和失败表现，相关断言与实现保持一致"
+validate_by = "更新提示词与文档后，运行仓库现有命令 cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet && cargo test -p codex-core --test all zmemory_ --quiet；并人工核对 codex-rs/zmemory/README.md、docs/zmemory.md、docs/config.md 与实现一致"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "2026-04-02 已完成 a3。本轮重新核对 `codex-rs/core/templates/zmemory/write_path.md`、`docs/config.md`、`docs/zmemory.md`、`codex-rs/zmemory/README.md` 后确认：文档已明确 `codex-zmemory` 仍是动作层，主动写入由 `codex-core` 编排承担；canonical URI、当前活动库检查、写后验证与失败可观察性均与当前实现一致。主代理本地完成 spec-reviewer/code-reviewer：PASS，未发现文档与实现漂移。验证已通过：`cargo test -p codex-core build_zmemory_tool_developer_instructions_renders_embedded_template --quiet`，并人工核对上述文档片段与当前实现一致。"
