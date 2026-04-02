@@ -2,13 +2,11 @@
 source: tui/src/chatwidget/tests/permissions.rs
 expression: popup
 ---
-  Update Model Permissions
+  更 新 权 限 设 置
 
-› 1. Default      Codex can read and edit files in the current workspace, and
-                  run commands. Approval is required to access the internet or
-                  edit other files.
-  2. Full Access  Codex can edit files outside this workspace and access the
-                  internet without asking for approval. Exercise caution when
-                  using.
+› 1. 默 认       Codex 可 以 读 取 和 编 辑 当 前 工 作 区 中 的 文 件 ， 也 可 以 运 行 命 令 。 访 问 互
+               联 网 或 编 辑 其 他 文 件 前 需 要 审 批 。
+  2. 完 全 访 问   Codex 可 以 编 辑 当 前 工 作 区 之 外 的 文 件 ， 并 可 在 无 需 审 批 的 情 况 下 访 问
+               互 联 网 。 使 用 时 请 谨 慎 。
 
   按  enter 确 认 或 按  esc 返 回

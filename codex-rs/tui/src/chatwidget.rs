@@ -237,18 +237,18 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::debug;
 use tracing::warn;
 
-const DEFAULT_MODEL_DISPLAY_NAME: &str = "loading";
-const PLAN_IMPLEMENTATION_TITLE: &str = "Implement this plan?";
-const PLAN_IMPLEMENTATION_YES: &str = "Yes, implement this plan";
-const PLAN_IMPLEMENTATION_NO: &str = "No, stay in Plan mode";
-const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "Implement the plan.";
-const MULTI_AGENT_ENABLE_TITLE: &str = "Enable subagents?";
-const MULTI_AGENT_ENABLE_YES: &str = "Yes, enable";
-const MULTI_AGENT_ENABLE_NO: &str = "Not now";
-const MULTI_AGENT_ENABLE_NOTICE: &str = "Subagents will be enabled in the next session.";
-const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "Apply reasoning change";
-const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "Apply to Plan mode override";
-const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "Apply to global default and Plan mode override";
+const DEFAULT_MODEL_DISPLAY_NAME: &str = "加载中";
+const PLAN_IMPLEMENTATION_TITLE: &str = "实现这个计划？";
+const PLAN_IMPLEMENTATION_YES: &str = "是，开始实现";
+const PLAN_IMPLEMENTATION_NO: &str = "否，继续保持 Plan 模式";
+const PLAN_IMPLEMENTATION_CODING_MESSAGE: &str = "实现这个计划。";
+const MULTI_AGENT_ENABLE_TITLE: &str = "启用子代理？";
+const MULTI_AGENT_ENABLE_YES: &str = "是，启用";
+const MULTI_AGENT_ENABLE_NO: &str = "暂不";
+const MULTI_AGENT_ENABLE_NOTICE: &str = "子代理将在下一个会话中启用。";
+const PLAN_MODE_REASONING_SCOPE_TITLE: &str = "应用推理级别变更";
+const PLAN_MODE_REASONING_SCOPE_PLAN_ONLY: &str = "仅应用到 Plan 模式覆盖项";
+const PLAN_MODE_REASONING_SCOPE_ALL_MODES: &str = "应用到全局默认值和 Plan 模式覆盖项";
 const CONNECTORS_SELECTION_VIEW_ID: &str = "connectors-selection";
 const TUI_STUB_MESSAGE: &str = "Not available in TUI yet.";
 
@@ -489,10 +489,10 @@ impl RateLimitWarningState {
             if let Some(threshold) = highest_secondary {
                 let limit_label = secondary_window_minutes
                     .map(get_limits_duration)
-                    .unwrap_or_else(|| "weekly".to_string());
+                    .unwrap_or_else(|| "每周".to_string());
                 let remaining_percent = 100.0 - threshold;
                 warnings.push(format!(
-                    "Heads up, you have less than {remaining_percent:.0}% of your {limit_label} limit left. Run /status for a breakdown."
+                    "注意，你的{limit_label}限额剩余不足 {remaining_percent:.0}%。运行 /status 查看详情。"
                 ));
             }
         }
@@ -2423,12 +2423,12 @@ impl ChatWidget {
                 })];
                 (actions, None)
             }
-            None => (Vec::new(), Some("Default mode unavailable".to_string())),
+            None => (Vec::new(), Some("Default 模式当前不可用".to_string())),
         };
         let items = vec![
             SelectionItem {
                 name: PLAN_IMPLEMENTATION_YES.to_string(),
-                description: Some("Switch to Default and start coding.".to_string()),
+                description: Some("切换到 Default 模式并开始编码。".to_string()),
                 selected_description: None,
                 is_current: false,
                 actions: implement_actions,
@@ -2438,7 +2438,7 @@ impl ChatWidget {
             },
             SelectionItem {
                 name: PLAN_IMPLEMENTATION_NO.to_string(),
-                description: Some("Continue planning with the model.".to_string()),
+                description: Some("继续用当前模型完善计划。".to_string()),
                 selected_description: None,
                 is_current: false,
                 actions: Vec::new(),
@@ -2514,9 +2514,7 @@ impl ChatWidget {
         let items = vec![
             SelectionItem {
                 name: MULTI_AGENT_ENABLE_YES.to_string(),
-                description: Some(
-                    "Save the setting now. You will need a new session to use it.".to_string(),
-                ),
+                description: Some("立即保存设置。需要开启新会话后才能使用。".to_string()),
                 actions: vec![Box::new(|tx| {
                     tx.send(AppEvent::UpdateFeatureFlags {
                         updates: vec![(Feature::Collab, true)],
@@ -2530,7 +2528,7 @@ impl ChatWidget {
             },
             SelectionItem {
                 name: MULTI_AGENT_ENABLE_NO.to_string(),
-                description: Some("Keep subagents disabled.".to_string()),
+                description: Some("继续保持子代理关闭。".to_string()),
                 dismiss_on_select: true,
                 ..Default::default()
             },
@@ -2538,7 +2536,7 @@ impl ChatWidget {
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             title: Some(MULTI_AGENT_ENABLE_TITLE.to_string()),
-            subtitle: Some("Subagents are currently disabled in your config.".to_string()),
+            subtitle: Some("你的当前配置中已禁用子代理。".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -7739,14 +7737,14 @@ impl ChatWidget {
             tx.send(AppEvent::PersistRateLimitSwitchPromptHidden);
         })];
         let description = if preset.description.is_empty() {
-            Some("Uses fewer credits for upcoming turns.".to_string())
+            Some("后续回合将使用更少额度。".to_string())
         } else {
             Some(preset.description)
         };
 
         let items = vec![
             SelectionItem {
-                name: format!("Switch to {switch_model}"),
+                name: format!("切换到 {switch_model}"),
                 description,
                 selected_description: None,
                 is_current: false,
@@ -7755,7 +7753,7 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Keep current model".to_string(),
+                name: "保留当前模型".to_string(),
                 description: None,
                 selected_description: None,
                 is_current: false,
@@ -7764,10 +7762,8 @@ impl ChatWidget {
                 ..Default::default()
             },
             SelectionItem {
-                name: "Keep current model (never show again)".to_string(),
-                description: Some(
-                    "Hide future rate limit reminders about switching models.".to_string(),
-                ),
+                name: "保留当前模型（不再提示）".to_string(),
+                description: Some("隐藏未来有关切换模型的限额提醒。".to_string()),
                 selected_description: None,
                 is_current: false,
                 actions: never_actions,
@@ -7777,8 +7773,8 @@ impl ChatWidget {
         ];
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Approaching rate limits".to_string()),
-            subtitle: Some(format!("Switch to {switch_model} for lower credit usage?")),
+            title: Some("接近限额".to_string()),
+            subtitle: Some(format!("切换到 {switch_model} 以减少额度消耗？")),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -8312,39 +8308,36 @@ impl ChatWidget {
         effort: Option<ReasoningEffortConfig>,
     ) {
         let reasoning_phrase = match effort {
-            Some(ReasoningEffortConfig::None) => "no reasoning".to_string(),
+            Some(ReasoningEffortConfig::None) => "无推理".to_string(),
             Some(selected_effort) => {
-                format!(
-                    "{} reasoning",
-                    Self::reasoning_effort_label(selected_effort).to_lowercase()
-                )
+                format!("{}推理", Self::reasoning_effort_label(selected_effort))
             }
-            None => "the selected reasoning".to_string(),
+            None => "所选推理级别".to_string(),
         };
-        let plan_only_description = format!("Always use {reasoning_phrase} in Plan mode.");
+        let plan_only_description = format!("始终在 Plan 模式中使用{reasoning_phrase}。");
         let plan_reasoning_source = if let Some(plan_override) =
             self.config.plan_mode_reasoning_effort
         {
             format!(
-                "user-chosen Plan override ({})",
-                Self::reasoning_effort_label(plan_override).to_lowercase()
+                "用户选择的 Plan 覆盖项（{}）",
+                Self::reasoning_effort_label(plan_override)
             )
         } else if let Some(plan_mask) = collaboration_modes::plan_mask(self.model_catalog.as_ref())
         {
             match plan_mask.reasoning_effort.flatten() {
                 Some(plan_effort) => format!(
-                    "built-in Plan default ({})",
-                    Self::reasoning_effort_label(plan_effort).to_lowercase()
+                    "内置的 Plan 默认值（{}）",
+                    Self::reasoning_effort_label(plan_effort)
                 ),
-                None => "built-in Plan default (no reasoning)".to_string(),
+                None => "内置的 Plan 默认值（无推理）".to_string(),
             }
         } else {
-            "built-in Plan default".to_string()
+            "内置的 Plan 默认值".to_string()
         };
         let all_modes_description = format!(
-            "Set the global default reasoning level and the Plan mode override. This replaces the current {plan_reasoning_source}."
+            "设置全局默认推理级别和 Plan 模式覆盖项。这会替换当前的 {plan_reasoning_source}。"
         );
-        let subtitle = format!("Choose where to apply {reasoning_phrase}.");
+        let subtitle = format!("选择将{reasoning_phrase}应用到哪里。");
 
         let plan_only_actions: Vec<SelectionAction> = vec![Box::new({
             let model = model.clone();
@@ -8414,7 +8407,7 @@ impl ChatWidget {
         };
         let warning_text = warn_effort.map(|effort| {
             let effort_label = Self::reasoning_effort_label(effort);
-            format!("⚠ {effort_label} reasoning effort can quickly consume Plus plan rate limits.")
+            format!("⚠ {effort_label}推理级别会很快消耗 Plus 套餐限额。")
         });
         let warn_for_model = preset.model.starts_with("gpt-5.1-codex")
             || preset.model.starts_with("gpt-5.1-codex-max")
@@ -8489,7 +8482,7 @@ impl ChatWidget {
             let effort = choice.display;
             let mut effort_label = Self::reasoning_effort_label(effort).to_string();
             if choice.stored == default_choice {
-                effort_label.push_str(" (default)");
+                effort_label.push_str(" (默认)");
             }
 
             let description = choice
@@ -8546,9 +8539,7 @@ impl ChatWidget {
         }
 
         let mut header = ColumnRenderable::new();
-        header.push(Line::from(
-            format!("Select Reasoning Level for {model_slug}").bold(),
-        ));
+        header.push(Line::from(format!("选择 {model_slug} 的推理级别").bold()));
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
@@ -8561,12 +8552,12 @@ impl ChatWidget {
 
     fn reasoning_effort_label(effort: ReasoningEffortConfig) -> &'static str {
         match effort {
-            ReasoningEffortConfig::None => "None",
-            ReasoningEffortConfig::Minimal => "Minimal",
-            ReasoningEffortConfig::Low => "Low",
-            ReasoningEffortConfig::Medium => "Medium",
-            ReasoningEffortConfig::High => "High",
-            ReasoningEffortConfig::XHigh => "Extra high",
+            ReasoningEffortConfig::None => "无",
+            ReasoningEffortConfig::Minimal => "极低",
+            ReasoningEffortConfig::Low => "低",
+            ReasoningEffortConfig::Medium => "中",
+            ReasoningEffortConfig::High => "高",
+            ReasoningEffortConfig::XHigh => "极高",
         }
     }
 
@@ -8628,12 +8619,11 @@ impl ChatWidget {
                 continue;
             }
             let base_name = if preset.id == "auto" && windows_degraded_sandbox_enabled {
-                "Default (non-admin sandbox)".to_string()
+                "默认（非管理员沙箱）".to_string()
             } else {
                 preset.label.to_string()
             };
-            let base_description =
-                Some(preset.description.replace(" (Identical to Agent mode)", ""));
+            let base_description = Some(preset.description.replace("（与 Agent 模式相同）", ""));
             let approval_disabled_reason = match self
                 .config
                 .permissions
@@ -8737,9 +8727,9 @@ impl ChatWidget {
 
                 if guardian_approval_enabled {
                     items.push(SelectionItem {
-                        name: "Guardian Approvals".to_string(),
+                        name: "Guardian 审批".to_string(),
                         description: Some(
-                            "Same workspace-write permissions as Default, but eligible `on-request` approvals are routed through the guardian reviewer subagent."
+                            "与“默认”相同的 workspace-write 权限，但符合条件的 `on-request` 审批会交由 Guardian 审核子代理处理。"
                                 .to_string(),
                         ),
                         is_current: current_review_policy == ApprovalsReviewer::GuardianSubagent
@@ -8751,7 +8741,7 @@ impl ChatWidget {
                         actions: Self::approval_preset_actions(
                             preset.approval,
                             preset.sandbox.clone(),
-                            "Guardian Approvals".to_string(),
+                            "Guardian 审批".to_string(),
                             ApprovalsReviewer::GuardianSubagent,
                         ),
                         dismiss_on_select: true,
@@ -8779,7 +8769,7 @@ impl ChatWidget {
 
         let footer_note = show_elevate_sandbox_hint.then(|| {
             vec![
-                "The non-admin sandbox protects your files and prevents network access under most circumstances. However, it carries greater risk if prompt injected. To upgrade to the default sandbox, run ".dim(),
+                "非管理员沙箱会在大多数情况下保护你的文件并阻止网络访问，但在提示词注入场景下风险更高。若要升级到默认沙箱，请运行 ".dim(),
                 "/setup-default-sandbox".cyan(),
                 ".".dim(),
             ]
@@ -8787,7 +8777,7 @@ impl ChatWidget {
         });
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Update Model Permissions".to_string()),
+            title: Some("更新权限设置".to_string()),
             footer_note,
             footer_hint: Some(standard_popup_hint_line()),
             items,
@@ -8843,10 +8833,7 @@ impl ChatWidget {
             tx.send(AppEvent::UpdateSandboxPolicy(sandbox_clone));
             tx.send(AppEvent::UpdateApprovalsReviewer(approvals_reviewer));
             tx.send(AppEvent::InsertHistoryCell(Box::new(
-                history_cell::new_info_event(
-                    format!("Permissions updated to {label}"),
-                    /*hint*/ None,
-                ),
+                history_cell::new_info_event(format!("权限已更新为 {label}"), /*hint*/ None),
             )));
         })]
     }
@@ -9910,22 +9897,22 @@ impl ChatWidget {
         if previous_mode != next_mode
             && (previous_model != next_model || previous_effort != next_effort)
         {
-            let mut message = format!("Model changed to {next_model}");
+            let mut message = format!("模型已切换为 {next_model}");
             if !next_model.starts_with("codex-auto-") {
                 let reasoning_label = match next_effort {
-                    Some(ReasoningEffortConfig::Minimal) => "minimal",
-                    Some(ReasoningEffortConfig::Low) => "low",
-                    Some(ReasoningEffortConfig::Medium) => "medium",
-                    Some(ReasoningEffortConfig::High) => "high",
-                    Some(ReasoningEffortConfig::XHigh) => "xhigh",
-                    None | Some(ReasoningEffortConfig::None) => "default",
+                    Some(ReasoningEffortConfig::Minimal) => "极低",
+                    Some(ReasoningEffortConfig::Low) => "低",
+                    Some(ReasoningEffortConfig::Medium) => "中",
+                    Some(ReasoningEffortConfig::High) => "高",
+                    Some(ReasoningEffortConfig::XHigh) => "极高",
+                    None | Some(ReasoningEffortConfig::None) => "默认",
                 };
-                message.push(' ');
+                message.push_str("，推理级别 ");
                 message.push_str(reasoning_label);
             }
-            message.push_str(" for ");
+            message.push_str("，用于 ");
             message.push_str(next_mode.display_name());
-            message.push_str(" mode.");
+            message.push_str(" 模式。");
             self.add_info_message(message, /*hint*/ None);
         }
         self.request_redraw();

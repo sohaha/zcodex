@@ -294,13 +294,13 @@ impl StatusHistoryCell {
             && *config.permissions.sandbox_policy.get()
                 == SandboxPolicy::new_workspace_write_policy()
         {
-            "Default".to_string()
+            "默认".to_string()
         } else if config.permissions.approval_policy.value() == AskForApproval::Never
             && *config.permissions.sandbox_policy.get() == SandboxPolicy::DangerFullAccess
         {
-            "Full Access".to_string()
+            "完全访问".to_string()
         } else {
-            format!("Custom ({sandbox}, {approval})")
+            format!("自定义 ({sandbox}, {approval})")
         };
         let agents_summary = compose_agents_summary(config);
         let model_provider = format_model_provider(config);
@@ -410,10 +410,9 @@ impl StatusHistoryCell {
                 let mut lines =
                     self.rate_limit_row_lines(rows_data, available_inner_width, formatter);
                 if state.refreshing_rate_limits {
-                    lines.push(formatter.line(
-                        "提示",
-                        vec![Span::from("正在后台刷新限额...").dim()],
-                    ));
+                    lines.push(
+                        formatter.line("提示", vec![Span::from("正在后台刷新限额...").dim()]),
+                    );
                 }
                 lines
             }
@@ -600,9 +599,7 @@ impl HistoryCell for StatusHistoryCell {
                 .underlined(),
             Span::from(" 获取最新").cyan(),
         ]);
-        let note_second_line = Line::from(vec![
-            Span::from("限额与额度信息").cyan(),
-        ]);
+        let note_second_line = Line::from(vec![Span::from("限额与额度信息").cyan()]);
         let note_lines = adaptive_wrap_lines(
             [note_first_line, note_second_line],
             RtOptions::new(available_inner_width),

@@ -1336,7 +1336,7 @@ async fn review_ended_keeps_unified_exec_processes() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        combined.contains("Background terminals"),
+        combined.contains("后台终端"),
         "expected /ps to remain available after review-ended abort; got {combined:?}"
     );
     assert!(

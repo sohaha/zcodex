@@ -2,10 +2,10 @@
 source: tui/src/chatwidget/tests/popups_and_settings.rs
 expression: popup
 ---
-  Enable subagents?
-  Subagents are currently disabled in your config.
+  启 用 子 代 理 ？
+  你 的 当 前 配 置 中 已 禁 用 子 代 理 。
 
-› 1. Yes, enable  Save the setting now. You will need a new session to use it.
-  2. Not now      Keep subagents disabled.
+› 1. 是 ， 启 用   立 即 保 存 设 置 。 需 要 开 启 新 会 话 后 才 能 使 用 。
+  2. 暂 不       继 续 保 持 子 代 理 关 闭 。
 
   按  enter 确 认 或 按  esc 返 回

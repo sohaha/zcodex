@@ -173,9 +173,10 @@ async fn plan_mode_reasoning_override_is_marked_current_in_reasoning_popup() {
     chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(popup.contains("Low (current)"));
+    let compact_popup = compact_rendered_text(&popup);
+    assert!(compact_popup.contains("低(当前)"));
     assert!(
-        !popup.contains("High (current)"),
+        !compact_popup.contains("高(当前)"),
         "expected Plan override to drive current reasoning label, got: {popup}"
     );
 }
@@ -400,11 +401,12 @@ async fn plan_reasoning_scope_popup_mentions_selected_reasoning() {
     );
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(popup.contains("Choose where to apply medium reasoning."));
-    assert!(popup.contains("Always use medium reasoning in Plan mode."));
-    assert!(popup.contains("Apply to Plan mode override"));
-    assert!(popup.contains("Apply to global default and Plan mode override"));
-    assert!(popup.contains("user-chosen Plan override (low)"));
+    let compact_popup = compact_rendered_text(&popup);
+    assert!(compact_popup.contains("选择将中推理应用到哪里。"));
+    assert!(compact_popup.contains("始终在Plan模式中使用中推理。"));
+    assert!(compact_popup.contains("仅应用到Plan模式覆盖项"));
+    assert!(compact_popup.contains("应用到全局默认值和Plan模式覆盖项"));
+    assert!(compact_popup.contains("用户选择的Plan覆盖项（低）"));
 }
 
 #[tokio::test]
@@ -416,7 +418,7 @@ async fn plan_reasoning_scope_popup_mentions_built_in_plan_default_when_no_overr
     );
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
-    assert!(popup.contains("built-in Plan default (medium)"));
+    assert!(compact_rendered_text(&popup).contains("内置的Plan默认值（中）"));
 }
 
 #[tokio::test]
@@ -570,7 +572,7 @@ async fn plan_implementation_popup_skips_replayed_turn_complete() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected no plan popup for replayed turn, got {popup:?}"
     );
 }
@@ -593,7 +595,7 @@ async fn plan_implementation_popup_shows_once_when_replay_precedes_live_turn_com
     })]);
     let replay_popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !replay_popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&replay_popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected no prompt for replayed turn completion, got {replay_popup:?}"
     );
 
@@ -607,14 +609,14 @@ async fn plan_implementation_popup_shows_once_when_replay_precedes_live_turn_com
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected prompt for first live turn completion after replay, got {popup:?}"
     );
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     let dismissed_popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !dismissed_popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&dismissed_popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected prompt to dismiss on Esc, got {dismissed_popup:?}"
     );
 
@@ -627,7 +629,7 @@ async fn plan_implementation_popup_shows_once_when_replay_precedes_live_turn_com
     });
     let duplicate_popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !duplicate_popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&duplicate_popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected no prompt for duplicate live completion, got {duplicate_popup:?}"
     );
 }
@@ -646,7 +648,7 @@ async fn plan_implementation_popup_skips_when_messages_queued() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected no plan popup with queued messages, got {popup:?}"
     );
 }
@@ -671,7 +673,7 @@ async fn plan_implementation_popup_skips_without_proposed_plan() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected no plan popup without proposed plan output, got {popup:?}"
     );
 }
@@ -691,7 +693,7 @@ async fn plan_implementation_popup_shows_after_proposed_plan_output() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected plan popup after proposed plan output, got {popup:?}"
     );
 }
@@ -732,7 +734,7 @@ async fn plan_implementation_popup_skips_when_steer_follows_proposed_plan() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected no plan popup after a steer follows the plan, got {popup:?}"
     );
 }
@@ -777,7 +779,7 @@ async fn plan_implementation_popup_shows_after_new_plan_follows_steer() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected plan popup after a newer plan follows the steer, got {popup:?}"
     );
 }
@@ -804,11 +806,11 @@ async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Approaching rate limits"),
+        compact_rendered_text(&popup).contains("接近限额"),
         "expected rate limit popup, got {popup:?}"
     );
     assert!(
-        !popup.contains(PLAN_IMPLEMENTATION_TITLE),
+        !compact_rendered_text(&popup).contains(PLAN_IMPLEMENTATION_TITLE),
         "expected plan popup to be skipped, got {popup:?}"
     );
 }
@@ -1039,7 +1041,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("Model changed to gpt-5.1-codex-mini medium for Plan mode."),
+        plan_messages.contains("模型已切换为 gpt-5.1-codex-mini，推理级别 中，用于 Plan 模式。"),
         "expected Plan-mode model switch notice, got: {plan_messages:?}"
     );
 
@@ -1053,7 +1055,7 @@ async fn mode_switch_surfaces_model_change_notification_when_effective_model_cha
         .collect::<Vec<_>>()
         .join("\n");
     let expected_default_message =
-        format!("Model changed to {default_model} default for Default mode.");
+        format!("模型已切换为 {default_model}，推理级别 默认，用于 Default 模式。");
     assert!(
         default_messages.contains(&expected_default_message),
         "expected Default-mode model switch notice, got: {default_messages:?}"
@@ -1076,7 +1078,7 @@ async fn mode_switch_surfaces_reasoning_change_notification_when_model_stays_sam
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        plan_messages.contains("Model changed to gpt-5.3-codex medium for Plan mode."),
+        plan_messages.contains("模型已切换为 gpt-5.3-codex，推理级别 中，用于 Plan 模式。"),
         "expected reasoning-change notice in Plan mode, got: {plan_messages:?}"
     );
 }

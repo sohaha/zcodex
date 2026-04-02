@@ -1253,7 +1253,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "Cannot disable Guardian Approvals in this profile because `approvals_reviewer` is configured outside the active profile.".to_string(),
+                        "无法在当前 profile 中禁用 Guardian 审批，因为 `approvals_reviewer` 配置在活动 profile 之外。".to_string(),
                     );
                 continue;
             }
@@ -1286,7 +1286,7 @@ impl App {
                             .into(),
                     });
                     if previous_approvals_reviewer != guardian_approvals_preset.approvals_reviewer {
-                        permissions_history_label = Some("Guardian Approvals");
+                        permissions_history_label = Some("Guardian 审批");
                     }
                 } else if !effective_enabled {
                     if profile_approvals_reviewer_configured || self.active_profile.is_none() {
@@ -1296,7 +1296,7 @@ impl App {
                     }
                     feature_config.approvals_reviewer = ApprovalsReviewer::User;
                     if previous_approvals_reviewer != ApprovalsReviewer::User {
-                        permissions_history_label = Some("Default");
+                        permissions_history_label = Some("默认");
                     }
                 }
                 approvals_reviewer_override = Some(feature_config.approvals_reviewer);
@@ -1309,7 +1309,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.approval_policy,
-                    "Failed to enable Guardian Approvals",
+                    "启用 Guardian 审批失败",
                     "failed to set guardian approvals approval policy on staged config",
                 ) {
                     continue;
@@ -1317,7 +1317,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut feature_config,
                     guardian_approvals_preset.sandbox_policy.clone(),
-                    "Failed to enable Guardian Approvals",
+                    "启用 Guardian 审批失败",
                     "failed to set guardian approvals sandbox policy on staged config",
                 ) {
                     continue;
@@ -1374,7 +1374,7 @@ impl App {
                 "failed to set guardian approvals sandbox policy on chat config"
             );
             self.chat_widget
-                .add_error_message(format!("Failed to enable Guardian Approvals: {err}"));
+                .add_error_message(format!("启用 Guardian 审批失败：{err}"));
         }
 
         if approval_policy_override.is_some()
@@ -1433,10 +1433,8 @@ impl App {
         }
 
         if let Some(label) = permissions_history_label {
-            self.chat_widget.add_info_message(
-                format!("Permissions updated to {label}"),
-                /*hint*/ None,
-            );
+            self.chat_widget
+                .add_info_message(format!("权限已更新为 {label}"), /*hint*/ None);
         }
     }
 
@@ -7648,7 +7646,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Subagents will be enabled in the next session."));
+        assert!(rendered.contains("子代理将在下一个会话中启用。"));
         Ok(())
     }
 
@@ -7725,7 +7723,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Guardian Approvals"));
+        assert!(rendered.contains("权限已更新为 Guardian 审批"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(config.contains("guardian_approval = true"));
@@ -7816,7 +7814,7 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限已更新为 默认"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -8098,7 +8096,7 @@ guardian_approval = true
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Permissions updated to Default"));
+        assert!(rendered.contains("权限已更新为 默认"));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
         assert!(!config.contains("guardian_approval = true"));
@@ -8164,7 +8162,7 @@ guardian_approval = true
                 AppEvent::InsertHistoryCell(cell) => cell
                     .display_lines(/*width*/ 120)
                     .iter()
-                    .any(|line| line.to_string().contains("Permissions updated to")),
+                    .any(|line| line.to_string().contains("权限已更新为")),
                 _ => false,
             }),
             "blocking disable with inherited guardian review should not emit a permissions history update: {app_events:?}"

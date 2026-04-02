@@ -678,11 +678,11 @@ impl HistoryCell for UnifiedExecProcessesCell {
         let wrap_width = width as usize;
         let max_processes = 16usize;
         let mut out: Vec<Line<'static>> = Vec::new();
-        out.push(vec!["Background terminals".bold()].into());
+        out.push(vec!["后台终端".bold()].into());
         out.push("".into());
 
         if self.processes.is_empty() {
-            out.push("  • No background terminals running.".italic().into());
+            out.push("  • 没有后台终端在运行。".italic().into());
             return out;
         }
 
@@ -1335,9 +1335,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let label_width = DIR_LABEL.chars().count();
 
         let model_label = format!(
-            "{model_label:<label_width$}",
-            model_label = MODEL_LABEL,
-            label_width = label_width
+            "{MODEL_LABEL:<label_width$}"
         );
         let reasoning_label = self.reasoning_label();
         let model_spans: Vec<Span<'static>> = {
@@ -1555,7 +1553,7 @@ impl HistoryCell for McpToolCallCell {
                 }
                 Err(err) => {
                     let err_text = format_and_truncate_tool_result(
-                        &format!("Error: {err}"),
+                        &format!("错误：{err}"),
                         TOOL_CALL_MAX_LINES,
                         width as usize,
                     );
@@ -1601,9 +1599,9 @@ pub(crate) fn new_active_mcp_tool_call(
 
 fn web_search_header(completed: bool) -> &'static str {
     if completed {
-        "Searched"
+        "已搜索"
     } else {
-        "Searching the web"
+        "正在联网搜索"
     }
 }
 
@@ -2396,7 +2394,7 @@ pub(crate) struct ProposedPlanStreamCell {
 impl HistoryCell for ProposedPlanCell {
     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
         let mut lines: Vec<Line<'static>> = Vec::new();
-        lines.push(vec!["• ".dim(), "Proposed Plan".bold()].into());
+        lines.push(vec!["• ".dim(), "建议计划".bold()].into());
         lines.push(Line::from(" "));
 
         let mut plan_lines: Vec<Line<'static>> = vec![Line::from(" ")];
@@ -3524,7 +3522,7 @@ mod tests {
         assert_eq!(
             rendered,
             vec![
-                "• Searched example search query with several generic words to".to_string(),
+                "• 已搜索 example search query with several generic words to".to_string(),
                 "  exercise wrapping".to_string(),
             ]
         );
@@ -3543,7 +3541,7 @@ mod tests {
         );
         let rendered = render_lines(&cell.display_lines(/*width*/ 64));
 
-        assert_eq!(rendered, vec!["• Searched short query".to_string()]);
+        assert_eq!(rendered, vec!["• 已搜索 short query".to_string()]);
     }
 
     #[test]

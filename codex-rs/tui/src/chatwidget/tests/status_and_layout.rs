@@ -99,7 +99,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
         })
-        .find(|line| line.contains("Context window"))
+        .find(|line| line.contains("上下文窗口"))
         .expect("context window line");
 
     assert!(
@@ -182,18 +182,10 @@ async fn rate_limit_warnings_emit_thresholds() {
     assert_eq!(
         warnings,
         vec![
-            String::from(
-                "Heads up, you have less than 25% of your 5h limit left. Run /status for a breakdown."
-            ),
-            String::from(
-                "Heads up, you have less than 25% of your weekly limit left. Run /status for a breakdown.",
-            ),
-            String::from(
-                "Heads up, you have less than 5% of your 5h limit left. Run /status for a breakdown."
-            ),
-            String::from(
-                "Heads up, you have less than 5% of your weekly limit left. Run /status for a breakdown.",
-            ),
+            String::from("注意，你的5小时限额剩余不足 25%。运行 /status 查看详情。"),
+            String::from("注意，你的每周限额剩余不足 25%。运行 /status 查看详情。",),
+            String::from("注意，你的5小时限额剩余不足 5%。运行 /status 查看详情。"),
+            String::from("注意，你的每周限额剩余不足 5%。运行 /status 查看详情。",),
         ],
         "expected one warning per limit for the highest crossed threshold"
     );
@@ -213,7 +205,7 @@ async fn test_rate_limit_warnings_monthly() {
     assert_eq!(
         warnings,
         vec![String::from(
-            "Heads up, you have less than 25% of your monthly limit left. Run /status for a breakdown.",
+            "注意，你的每月限额剩余不足 25%。运行 /status 查看详情。",
         ),],
         "expected one warning per limit for the highest crossed threshold"
     );

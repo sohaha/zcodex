@@ -1194,7 +1194,7 @@ async fn approval_modal_exec_multiline_prefix_hides_execpolicy_option_snapshot()
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw approval modal (multiline prefix)");
     let contents = terminal.backend().vt100().screen().contents();
-    assert!(!contents.contains("don't ask again"));
+    assert!(!contents.contains("不再询问以 `"));
     assert_chatwidget_snapshot!(
         "approval_modal_exec_multiline_prefix_no_execpolicy",
         contents
@@ -1274,7 +1274,7 @@ async fn interrupt_preserves_unified_exec_processes() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        combined.contains("Background terminals"),
+        combined.contains("后台终端"),
         "expected /ps to remain available after interrupt; got {combined:?}"
     );
     assert!(
@@ -1346,7 +1346,7 @@ async fn turn_complete_keeps_unified_exec_processes() {
         .collect::<Vec<_>>()
         .join("\n");
     assert!(
-        combined.contains("Background terminals"),
+        combined.contains("后台终端"),
         "expected /ps to remain available after turn complete; got {combined:?}"
     );
     assert!(
@@ -1424,8 +1424,8 @@ async fn apply_patch_events_emit_history_cells() {
     assert!(!cells.is_empty(), "expected apply block cell to be sent");
     let blob = lines_to_single_string(cells.last().unwrap());
     assert!(
-        blob.contains("Added foo.txt") || blob.contains("Edited foo.txt"),
-        "expected single-file header with filename (Added/Edited): {blob:?}"
+        blob.contains("新增 foo.txt") || blob.contains("修改 foo.txt"),
+        "expected single-file header with filename (新增/修改): {blob:?}"
     );
 
     // 3) End apply success -> success cell
@@ -1500,7 +1500,7 @@ async fn apply_patch_manual_approval_adjusts_header() {
     assert!(!cells.is_empty(), "expected apply block cell to be sent");
     let blob = lines_to_single_string(cells.last().unwrap());
     assert!(
-        blob.contains("Added foo.txt") || blob.contains("Edited foo.txt"),
+        blob.contains("新增 foo.txt") || blob.contains("修改 foo.txt"),
         "expected apply summary header for foo.txt: {blob:?}"
     );
 }

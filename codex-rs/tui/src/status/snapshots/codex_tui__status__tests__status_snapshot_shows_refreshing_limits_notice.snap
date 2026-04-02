@@ -1,24 +1,23 @@
 ---
 source: tui/src/status/tests.rs
-assertion_line: 765
 expression: sanitized
 ---
 /status
 
-╭───────────────────────────────────────────────────────────────────────╮
-│  >_ OpenAI Codex (v0.0.0)                                             │
-│                                                                       │
-│ Visit https://chatgpt.com/codex/settings/usage for up-to-date         │
-│ information on rate limits and credits                                │
-│                                                                       │
-│  Model:            gpt-5.1-codex-max (reasoning none, summaries auto) │
-│  Directory: [[workspace]]                                             │
-│  Permissions:      Custom (read-only, on-request)                     │
-│  Agents.md:        ../AGENTS.md                                       │
-│                                                                       │
-│  Token usage:      750 total  (500 input + 250 output)                │
-│  Context window:   100% left (750 used / 272K)                        │
-│  5h limit:         [███████████░░░░░░░░░] 55% left (resets 08:24)     │
-│  Weekly limit:     [██████████████░░░░░░] 70% left (resets 08:54)     │
-│  Notice:           refreshing limits in background...                 │
-╰───────────────────────────────────────────────────────────────────────╯
+╭─────────────────────────────────────────────────────────────╮
+│  >_ OpenAI Codex (v0.0.0)                                   │
+│                                                             │
+│ 访问 https://chatgpt.com/codex/settings/usage 获取最新      │
+│ 限额与额度信息                                              │
+│                                                             │
+│  模型:         gpt-5.1-codex-max (推理 无, 总结 自动)       │
+│  目录:         /workspace/tests                             │
+│  权限:         自定义 (read-only, on-request)               │
+│  Agents.md:    ../AGENTS.md                                 │
+│                                                             │
+│  Token 用量:   750 总计  (500 输入 + 250 输出)              │
+│  上下文窗口:   剩余 100% (750 已用 / 272K)                  │
+│  5小时限额:    [███████████░░░░░░░░░] 剩余 55% (重置 08:24) │
+│  每周限额:     [██████████████░░░░░░] 剩余 70% (重置 08:54) │
+│  提示:         正在后台刷新限额...                          │
+╰─────────────────────────────────────────────────────────────╯

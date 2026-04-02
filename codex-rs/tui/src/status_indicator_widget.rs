@@ -40,7 +40,7 @@ pub(crate) enum StatusDetailsCapitalization {
 
 /// Displays a single-line in-progress status with optional wrapped details.
 pub(crate) struct StatusIndicatorWidget {
-    /// Animated header text (defaults to "Working").
+    /// Animated header text (defaults to "处理中").
     header: String,
     details: Option<String>,
     details_max_lines: usize,
@@ -123,7 +123,7 @@ impl StatusIndicatorWidget {
             });
     }
 
-    /// Update the inline suffix text shown after `({elapsed} • esc to interrupt)`.
+    /// Update the inline suffix text shown after `({elapsed} • Esc 中断)`.
     ///
     /// Callers should provide plain, already-contextualized text. Passing
     /// verbose status prose here can cause frequent width truncation and hide

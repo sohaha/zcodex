@@ -167,7 +167,7 @@ async fn live_app_server_file_change_item_started_preserves_changes() {
     assert!(!cells.is_empty(), "expected patch history to be rendered");
     let transcript = lines_to_single_string(cells.last().expect("patch cell"));
     assert!(
-        transcript.contains("Added foo.txt") || transcript.contains("Edited foo.txt"),
+        transcript.contains("新增 foo.txt") || transcript.contains("修改 foo.txt"),
         "expected patch summary to include foo.txt, got: {transcript}"
     );
 }

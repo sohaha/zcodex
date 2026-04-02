@@ -102,7 +102,7 @@ fn render_narrow_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Lin
     ));
     spans.push(" ".into());
     if let Some(text) = state.active_reaction_text() {
-        spans.push(format!("\"{text}\"").italic().into());
+        spans.push(format!("\"{text}\"").italic());
     } else {
         spans.push(bones.name.clone().cyan().bold());
         spans.push(" ".into());

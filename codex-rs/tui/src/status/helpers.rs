@@ -19,7 +19,8 @@ pub(crate) fn compose_model_display(
 ) -> (String, Vec<String>) {
     let mut details: Vec<String> = Vec::new();
     if let Some((_, effort)) = entries.iter().find(|(k, _)| *k == "reasoning effort") {
-        let effort_label = match effort.trim().to_ascii_lowercase().as_str() {
+        let effort_lower = effort.trim().to_ascii_lowercase();
+        let effort_label = match effort_lower.as_str() {
             "minimal" => "极低",
             "low" => "低",
             "medium" => "中",
@@ -35,7 +36,8 @@ pub(crate) fn compose_model_display(
         if summary.eq_ignore_ascii_case("none") || summary.eq_ignore_ascii_case("off") {
             details.push("总结 关闭".to_string());
         } else if !summary.is_empty() {
-            let summary_label = match summary.to_ascii_lowercase().as_str() {
+            let summary_lower = summary.to_ascii_lowercase();
+            let summary_label = match summary_lower.as_str() {
                 "auto" => "自动",
                 "detailed" => "详细",
                 other => other,

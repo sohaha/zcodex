@@ -478,7 +478,7 @@ impl Renderable for ApprovalOverlay {
 
 fn approval_footer_hint(request: &ApprovalRequest) -> Line<'static> {
     let mut spans = vec![
-        "Press ".into(),
+        "按 ".into(),
         key_hint::plain(KeyCode::Enter).into(),
         " 确认或 ".into(),
         key_hint::plain(KeyCode::Esc).into(),
@@ -727,7 +727,7 @@ pub(crate) fn format_additional_permissions_rule(
         .and_then(|network| network.enabled)
         .unwrap_or(false)
     {
-        parts.push("network".to_string());
+        parts.push("网络".to_string());
     }
     if let Some(file_system) = additional_permissions.file_system.as_ref() {
         if let Some(read) = file_system.read.as_ref() {
@@ -736,7 +736,7 @@ pub(crate) fn format_additional_permissions_rule(
                 .map(|path| format!("`{}`", path.display()))
                 .collect::<Vec<_>>()
                 .join(", ");
-            parts.push(format!("read {reads}"));
+            parts.push(format!("读取 {reads}"));
         }
         if let Some(write) = file_system.write.as_ref() {
             let writes = write
@@ -744,13 +744,13 @@ pub(crate) fn format_additional_permissions_rule(
                 .map(|path| format!("`{}`", path.display()))
                 .collect::<Vec<_>>()
                 .join(", ");
-            parts.push(format!("write {writes}"));
+            parts.push(format!("写入 {writes}"));
         }
     }
     if parts.is_empty() {
         None
     } else {
-        Some(parts.join("; "))
+        Some(parts.join("；"))
     }
 }
 
@@ -1289,7 +1289,7 @@ mod tests {
         assert!(
             rendered
                 .iter()
-                .any(|line| line.replace(' ', "").contains("network;")),
+                .any(|line| line.replace(' ', "").contains("网络；")),
             "expected network permission text, got {rendered:?}"
         );
     }
@@ -1390,7 +1390,7 @@ mod tests {
             "network prompt should not show command line, got {rendered:?}"
         );
         assert!(
-            !rendered.iter().any(|line| line.contains("don't ask again")),
+            !rendered.iter().any(|line| line.contains("不再询问以 `")),
             "network prompt should not show execpolicy option, got {rendered:?}"
         );
     }

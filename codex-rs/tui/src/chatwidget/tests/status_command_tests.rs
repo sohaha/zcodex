@@ -15,7 +15,7 @@ async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgp
         other => panic!("expected status output before refresh request, got {other:?}"),
     };
     assert!(
-        rendered.contains("refreshing limits"),
+        rendered.contains("正在刷新限额"),
         "expected /status to explain the background refresh, got: {rendered}"
     );
     let request_id = match rx.try_recv() {
@@ -43,7 +43,7 @@ async fn status_command_updates_rendered_cell_after_rate_limit_refresh() {
 
     let initial = lines_to_single_string(&cell.display_lines(/*width*/ 80));
     assert!(
-        initial.contains("refreshing limits"),
+        initial.contains("正在刷新限额"),
         "expected initial /status output to show refresh notice, got: {initial}"
     );
 
@@ -56,7 +56,7 @@ async fn status_command_updates_rendered_cell_after_rate_limit_refresh() {
         "expected refreshed /status output to change"
     );
     assert!(
-        !updated.contains("refreshing limits"),
+        !updated.contains("正在刷新限额"),
         "expected refresh notice to clear after background update, got: {updated}"
     );
 }
@@ -107,11 +107,11 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
     let first_after_failure = lines_to_single_string(&first_cell.display_lines(/*width*/ 80));
     let second_still_refreshing = lines_to_single_string(&second_cell.display_lines(/*width*/ 80));
     assert!(
-        !first_after_failure.contains("refreshing limits"),
+        !first_after_failure.contains("正在刷新限额"),
         "expected first status cell to stop refreshing after its request completed, got: {first_after_failure}"
     );
     assert!(
-        second_still_refreshing.contains("refreshing limits"),
+        second_still_refreshing.contains("正在刷新限额"),
         "expected later status cell to keep refreshing until its own request completes, got: {second_still_refreshing}"
     );
 
@@ -120,7 +120,7 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
 
     let second_after_success = lines_to_single_string(&second_cell.display_lines(/*width*/ 80));
     assert!(
-        !second_after_success.contains("refreshing limits"),
+        !second_after_success.contains("正在刷新限额"),
         "expected second status cell to refresh once its own request completed, got: {second_after_success}"
     );
 }

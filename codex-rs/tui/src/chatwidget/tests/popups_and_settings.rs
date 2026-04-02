@@ -1498,7 +1498,7 @@ async fn multi_agent_enable_prompt_updates_feature_and_emits_notice() {
         other => panic!("expected InsertHistoryCell event, got {other:?}"),
     };
     let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 120));
-    assert!(rendered.contains("Subagents will be enabled in the next session."));
+    assert!(rendered.contains("子代理将在下一个会话中启用。"));
 }
 
 #[tokio::test]
@@ -1688,12 +1688,13 @@ async fn reasoning_popup_shows_extra_high_with_space() {
     chat.open_reasoning_popup(preset);
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let compact_popup = compact_rendered_text(&popup);
     assert!(
-        popup.contains("Extra high"),
-        "expected popup to include 'Extra high'; popup: {popup}"
+        compact_popup.contains("极高"),
+        "expected popup to include '极高'; popup: {popup}"
     );
     assert!(
-        !popup.contains("Extrahigh"),
+        !compact_popup.contains("Extrahigh"),
         "expected popup not to include 'Extrahigh'; popup: {popup}"
     );
 }
@@ -1725,7 +1726,7 @@ async fn single_reasoning_option_skips_selection() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        !popup.contains("Select Reasoning Level"),
+        !compact_rendered_text(&popup).contains("选择model-with-single-reasoning的推理级别"),
         "expected reasoning selection popup to be skipped"
     );
 
@@ -1803,11 +1804,11 @@ async fn reasoning_popup_escape_returns_to_model_popup() {
     chat.open_reasoning_popup(preset);
 
     let before_escape = render_bottom_popup(&chat, /*width*/ 80);
-    assert!(before_escape.contains("Select Reasoning Level"));
+    assert!(compact_rendered_text(&before_escape).contains("选择gpt-5.1-codex-max的推理级别"));
 
     chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
     let after_escape = render_bottom_popup(&chat, /*width*/ 80);
     assert!(after_escape.contains("Select Model"));
-    assert!(!after_escape.contains("Select Reasoning Level"));
+    assert!(!compact_rendered_text(&after_escape).contains("选择gpt-5.1-codex-max的推理级别"));
 }

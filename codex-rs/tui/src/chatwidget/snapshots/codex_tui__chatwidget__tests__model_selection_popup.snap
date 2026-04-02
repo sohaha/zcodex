@@ -5,11 +5,11 @@ expression: popup
   Select Model and Effort
   Access legacy models by running codex -m <model_name> or in your config.toml
 
-› 1. gpt-5.3-codex (default)  最 新 旗 舰 级 智 能 编 程 模 型 。
-  2. gpt-5.4                  最 新 旗 舰 级 智 能 编 程 模 型 。
-  3. gpt-5.2-codex            旗 舰 级 智 能 编 程 模 型 。
-  4. gpt-5.1-codex-max        为  Codex 优 化 的 旗 舰 模 型 ， 兼 顾 深 度 与 速 度 。
-  5. gpt-5.2                  最 新 旗 舰 模 型 ， 在 知 识 、 推 理 和 编 程 方 面 均 有 提 升
-  6. gpt-5.1-codex-mini       为  Codex 优 化 。 更 便 宜 、 更 快 ， 但 能 力 稍 弱 。
+› 1. gpt-5.3-codex (默 认 )  最 新 旗 舰 级 智 能 编 程 模 型 。
+  2. gpt-5.4               最 新 旗 舰 级 智 能 编 程 模 型 。
+  3. gpt-5.2-codex         旗 舰 级 智 能 编 程 模 型 。
+  4. gpt-5.1-codex-max     为  Codex 优 化 的 旗 舰 模 型 ， 兼 顾 深 度 与 速 度 。
+  5. gpt-5.2               最 新 旗 舰 模 型 ， 在 知 识 、 推 理 和 编 程 方 面 均 有 提 升
+  6. gpt-5.1-codex-mini    为  Codex 优 化 。 更 便 宜 、 更 快 ， 但 能 力 稍 弱 。
 
   Press enter to select reasoning effort, or esc to dismiss.

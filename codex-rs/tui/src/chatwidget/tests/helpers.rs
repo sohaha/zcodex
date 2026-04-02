@@ -78,6 +78,10 @@ pub(super) fn normalized_backend_snapshot<T: std::fmt::Display>(value: &T) -> St
         .join("\n")
 }
 
+pub(super) fn compact_rendered_text(text: &str) -> String {
+    text.chars().filter(|char| !char.is_whitespace()).collect()
+}
+
 pub(super) fn invalid_value(
     candidate: impl Into<String>,
     allowed: impl Into<String>,

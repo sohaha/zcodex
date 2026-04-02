@@ -32,7 +32,7 @@ async fn approvals_selection_popup_snapshot_windows_degraded_sandbox() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Default (non-admin sandbox)"),
+        popup.contains("默认（非管理员沙箱）"),
         "expected degraded sandbox label in approvals popup: {popup}"
     );
     assert!(
@@ -40,7 +40,7 @@ async fn approvals_selection_popup_snapshot_windows_degraded_sandbox() {
         "expected setup hint in approvals popup: {popup}"
     );
     assert!(
-        popup.contains("non-admin sandbox"),
+        popup.contains("非管理员沙箱"),
         "expected degraded sandbox note in approvals popup: {popup}"
     );
 }
@@ -61,7 +61,7 @@ async fn preset_matching_accepts_workspace_write_with_extra_roots() {
 
     assert!(
         ChatWidget::preset_matches_current(AskForApproval::OnRequest, &current_sandbox, &preset),
-        "WorkspaceWrite with extra roots should still match the Default preset"
+        "WorkspaceWrite with extra roots should still match the 默认 preset"
     );
     assert!(
         !ChatWidget::preset_matches_current(AskForApproval::Never, &current_sandbox, &preset),
@@ -217,7 +217,7 @@ async fn approvals_popup_navigation_skips_disabled() {
         .expect("render approvals popup after disabled selection");
     let screen = terminal.backend().vt100().screen().contents();
     assert!(
-        screen.contains("Update Model Permissions"),
+        compact_rendered_text(&screen).contains("更新权限设置"),
         "popup should remain open after selecting a disabled entry"
     );
     assert!(
@@ -278,7 +278,7 @@ async fn permissions_selection_emits_history_cell_when_selection_changes() {
     );
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Permissions updated to"),
+        rendered.contains("权限已更新为"),
         "expected permissions selection history message, got: {rendered}"
     );
 }
@@ -328,7 +328,7 @@ async fn permissions_selection_history_snapshot_full_access_to_default() {
     chat.open_permissions_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     chat.handle_key_event(KeyEvent::from(KeyCode::Up));
-    if popup.contains("Guardian Approvals") {
+    if popup.contains("Guardian 审批") {
         chat.handle_key_event(KeyEvent::from(KeyCode::Up));
     }
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
@@ -379,7 +379,7 @@ async fn permissions_selection_emits_history_cell_when_current_is_selected() {
     );
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Permissions updated to"),
+        rendered.contains("权限已更新为"),
         "expected permissions update history message, got: {rendered}"
     );
 }
@@ -399,8 +399,8 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled() 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
     assert!(
-        !popup.contains("Guardian Approvals"),
-        "expected Guardian Approvals to stay hidden until the experimental feature is enabled: {popup}"
+        !popup.contains("Guardian 审批"),
+        "expected Guardian 审批 to stay hidden until the experimental feature is enabled: {popup}"
     );
 }
 
@@ -431,8 +431,8 @@ async fn permissions_selection_hides_guardian_approvals_when_feature_disabled_ev
     let popup = render_bottom_popup(&chat, /*width*/ 120);
 
     assert!(
-        !popup.contains("Guardian Approvals"),
-        "expected Guardian Approvals to stay hidden when the experimental feature is disabled: {popup}"
+        !popup.contains("Guardian 审批"),
+        "expected Guardian 审批 to stay hidden when the experimental feature is disabled: {popup}"
     );
 }
 
@@ -474,10 +474,11 @@ async fn permissions_selection_marks_guardian_approvals_current_after_session_co
 
     chat.open_permissions_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let compact_popup = compact_rendered_text(&popup);
 
     assert!(
-        popup.contains("Guardian Approvals (current)"),
-        "expected Guardian Approvals to be current after SessionConfigured sync: {popup}"
+        compact_popup.contains("Guardian审批(当前)"),
+        "expected Guardian 审批 to be current after SessionConfigured sync: {popup}"
     );
 }
 
@@ -528,10 +529,11 @@ async fn permissions_selection_marks_guardian_approvals_current_with_custom_work
 
     chat.open_permissions_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let compact_popup = compact_rendered_text(&popup);
 
     assert!(
-        popup.contains("Guardian Approvals (current)"),
-        "expected Guardian Approvals to be current even with custom workspace-write details: {popup}"
+        compact_popup.contains("Guardian审批(当前)"),
+        "expected Guardian 审批 to be current even with custom workspace-write details: {popup}"
     );
 }
 
@@ -566,7 +568,7 @@ async fn permissions_selection_can_disable_guardian_approvals() {
             event,
             AppEvent::UpdateApprovalsReviewer(ApprovalsReviewer::User)
         )),
-        "expected selecting Default from Guardian Approvals to switch back to manual approval review: {events:?}"
+        "expected selecting 默认 from Guardian 审批 to switch back to manual approval review: {events:?}"
     );
     assert!(
         !events
@@ -600,20 +602,18 @@ async fn permissions_selection_sends_approvals_reviewer_in_override_turn_context
 
     chat.open_permissions_popup();
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let compact_popup = compact_rendered_text(&popup);
     assert!(
-        popup
-            .lines()
-            .any(|line| line.contains("(current)") && line.contains('›')),
+        compact_popup.contains("›1.默认(当前)"),
         "expected permissions popup to open with the current preset selected: {popup}"
     );
 
     chat.handle_key_event(KeyEvent::from(KeyCode::Down));
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let compact_popup = compact_rendered_text(&popup);
     assert!(
-        popup
-            .lines()
-            .any(|line| line.contains("Guardian Approvals") && line.contains('›')),
-        "expected one Down from Default to select Guardian Approvals: {popup}"
+        compact_popup.contains("›2.Guardian审批"),
+        "expected one Down from 默认 to select Guardian 审批: {popup}"
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
 
@@ -704,7 +704,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
         lines_to_single_string(&cells_after_confirmation[0])
     };
     assert!(
-        rendered.contains("Permissions updated to Full Access"),
+        rendered.contains("权限已更新为 完全访问"),
         "expected full access update history message, got: {rendered}"
     );
 }

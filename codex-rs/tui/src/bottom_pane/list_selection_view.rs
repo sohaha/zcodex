@@ -364,9 +364,9 @@ impl ListSelectionView {
                     let prefix = if is_selected { '›' } else { ' ' };
                     let name = item.name.as_str();
                     let marker = if item.is_current {
-                        " (current)"
+                        " (当前)"
                     } else if item.is_default {
-                        " (default)"
+                        " (默认)"
                     } else {
                         ""
                     };

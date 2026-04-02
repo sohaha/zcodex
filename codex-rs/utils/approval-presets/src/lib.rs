@@ -23,22 +23,22 @@ pub fn builtin_approval_presets() -> Vec<ApprovalPreset> {
     vec![
         ApprovalPreset {
             id: "read-only",
-            label: "Read Only",
-            description: "Codex can read files in the current workspace. Approval is required to edit files or access the internet.",
+            label: "只读",
+            description: "Codex 可以读取当前工作区中的文件。编辑文件或访问互联网前需要审批。",
             approval: AskForApproval::OnRequest,
             sandbox: SandboxPolicy::new_read_only_policy(),
         },
         ApprovalPreset {
             id: "auto",
-            label: "Default",
-            description: "Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files. (Identical to Agent mode)",
+            label: "默认",
+            description: "Codex 可以读取和编辑当前工作区中的文件，也可以运行命令。访问互联网或编辑其他文件前需要审批。（与 Agent 模式相同）",
             approval: AskForApproval::OnRequest,
             sandbox: SandboxPolicy::new_workspace_write_policy(),
         },
         ApprovalPreset {
             id: "full-access",
-            label: "Full Access",
-            description: "Codex can edit files outside this workspace and access the internet without asking for approval. Exercise caution when using.",
+            label: "完全访问",
+            description: "Codex 可以编辑当前工作区之外的文件，并可在无需审批的情况下访问互联网。使用时请谨慎。",
             approval: AskForApproval::Never,
             sandbox: SandboxPolicy::DangerFullAccess,
         },

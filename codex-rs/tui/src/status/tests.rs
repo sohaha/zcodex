@@ -219,10 +219,10 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
     let rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
     let permissions_line = rendered_lines
         .iter()
-        .find(|line| line.contains("Permissions:"))
+        .find(|line| line.contains("权限:"))
         .expect("permissions line");
     let permissions_text = permissions_line
-        .split("Permissions:")
+        .split("权限:")
         .nth(1)
         .map(str::trim)
         .map(|text| text.trim_end_matches('│'))
@@ -230,7 +230,7 @@ async fn status_permissions_non_default_workspace_write_is_custom() {
 
     assert_eq!(
         permissions_text,
-        Some("Custom (workspace-write with network access, on-request)")
+        Some("自定义 (workspace-write with network access, on-request)")
     );
 }
 
@@ -394,8 +394,8 @@ async fn status_snapshot_shows_unlimited_credits() {
     assert!(
         rendered
             .iter()
-            .any(|line| line.contains("Credits:") && line.contains("Unlimited")),
-        "expected Credits: Unlimited line, got {rendered:?}"
+            .any(|line| line.contains("额度:") && line.contains("无限")),
+        "expected 额度: 无限 line, got {rendered:?}"
     );
 }
 
@@ -443,8 +443,8 @@ async fn status_snapshot_shows_positive_credits() {
     assert!(
         rendered
             .iter()
-            .any(|line| line.contains("Credits:") && line.contains("13 credits")),
-        "expected Credits line with rounded credits, got {rendered:?}"
+            .any(|line| line.contains("额度:") && line.contains("13 额度")),
+        "expected 额度 line with rounded credits, got {rendered:?}"
     );
 }
 
@@ -1078,11 +1078,11 @@ async fn status_context_window_uses_last_usage() {
     let rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
     let context_line = rendered_lines
         .into_iter()
-        .find(|line| line.contains("Context window"))
+        .find(|line| line.contains("上下文窗口"))
         .expect("context line");
 
     assert!(
-        context_line.contains("13.7K used / 272K"),
+        context_line.contains("13.7K 已用 / 272K"),
         "expected context line to reflect last usage tokens, got: {context_line}"
     );
     assert!(
