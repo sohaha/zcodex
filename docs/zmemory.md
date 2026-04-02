@@ -183,6 +183,28 @@ core_memory_uris = [
 - `zmemory` 使用独立 SQLite，不写入 `codex-state` 的 state DB
 - `zmemory` 不替换原生 `core/memories` 启动摘要流程
 - CLI 与 core tool 共用同一套 `tool_api / service / schema`
+- `codex-zmemory` 只提供动作层；“哪些内容应主动写入”由 `codex-core` 等上层编排决定
+
+## 稳定偏好主动写入
+
+当 `Feature::Zmemory` 开启时，`codex-core` 会对高确定性的长期称呼偏好执行受控主动写入；这不是 `codex-zmemory` crate 自己的自治行为。
+
+- 目标节点：
+  - `core://my_user`：用户称呼偏好
+  - `core://agent`：助手自称偏好
+  - `core://agent/my_user`：双方协作称呼约定
+- 写入前：
+  - 先看 `system://workspace`，确认当前活动数据库
+  - 再读目标 canonical URI，避免重复创建
+- 写入规则：
+  - 目标不存在时使用 `create`
+  - 目标已存在且是同一主题修订时使用 `update`
+- 写入后：
+  - 再次 `read` 对应 canonical URI，确认内容已落到当前活动库
+- 失败表现：
+  - 上层会发出可观察 warning，不会静默伪成功
+
+当前首批只覆盖“明确、稳定、低歧义”的命名/称呼偏好，不应把一次性临时指令或短期上下文误当长期记忆。
 
 ## 更多参考
 

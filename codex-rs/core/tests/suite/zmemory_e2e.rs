@@ -966,7 +966,13 @@ async fn zmemory_does_not_proactively_capture_preferences_without_feature_flag()
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let test = test_codex().build(&server).await?;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .disable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
 
     mount_sse_once(
         &server,

@@ -235,6 +235,22 @@ codex zmemory doctor --json
 
 这样做的目的，是让 `codex-zmemory` 继续只提供稳定的本地动作层，而把“什么时候读、什么时候写、什么时候整理”留给上层 skill 或项目流程编排。
 
+## 稳定偏好主动写入
+
+当 `codex-core` 启用 `Feature::Zmemory` 时，上层运行时会只针对“明确、稳定、低歧义”的称呼/自称偏好触发主动写入；`codex-zmemory` 本身仍只负责动作执行，不负责决定何时落库。
+
+- 主动写入前：上层会先读 `system://workspace` 确认当前活动库，再读目标 canonical URI 查重
+- canonical URI：`core://my_user`（用户称呼偏好）、`core://agent`（助手自称偏好）、`core://agent/my_user`（双方协作称呼约定）
+- 写入规则：目标节点不存在时用 `create`，已存在且是同一主题修订时用 `update`
+- 写入后验证：再次 `read` 对应 canonical URI，确认内容已落到当前活动库
+- 失败表现：上层会发出可观察 warning；不会把“已记住”伪装成成功
+
+如果问题是在排查“为什么这次没有自动记住称呼偏好”，先检查：
+
+1. 当前会话是否启用了 `Feature::Zmemory`
+2. `system://workspace` 是否指向预期数据库
+3. 当前输入是否属于明确、稳定、低歧义的偏好表达，而不是一次性临时指令
+
 ## 推荐的编码记忆配置
 
 推荐把 `zmemory` 作为项目级知识库使用：

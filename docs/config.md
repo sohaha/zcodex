@@ -128,6 +128,14 @@ can tell whether the current session is using the default project database or an
 override. It always reports the currently effective runtime profile, including
 configured `validDomains` and `coreMemoryUris`.
 
+When `Feature::Zmemory` is enabled, `codex-core` may proactively persist
+high-confidence naming/addressing preferences into the active `zmemory`
+database. That orchestration still uses the normal `zmemory` action layer:
+inspect `system://workspace` first, then read/write the canonical URIs
+`core://my_user`, `core://agent`, and `core://agent/my_user`, and finally read
+back the written URI for verification. Failures are surfaced as observable
+warnings rather than silent success.
+
 `system://defaults` is the product-default fact view. It reports the default
 `validDomains`, `coreMemoryUris`, and default DB path policy without conflating
 those values with the current workspace state. User config changes the
