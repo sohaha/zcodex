@@ -1135,7 +1135,8 @@ impl BottomPane {
                 if let Some(delay) = self.buddy.next_redraw_in() {
                     self.request_redraw_in(delay);
                 }
-                flex.push(/*flex*/ 0, BuddyBubble::new(&self.buddy));
+                let bubble: Box<dyn Renderable> = Box::new(BuddyBubble::new(&self.buddy));
+                flex.push(/*flex*/ 0, bubble);
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(&self.buddy));
             }
             // Avoid double-surfacing the same summary and avoid adding an extra

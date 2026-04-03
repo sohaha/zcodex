@@ -512,11 +512,6 @@ pub struct Tui {
     #[serde(default)]
     pub theme: Option<String>,
 
-    /// Whether the footer buddy should hatch automatically when the TUI starts.
-    /// Defaults to `true`.
-    #[serde(default = "default_true")]
-    pub show_buddy: bool,
-
     /// Buddy-specific configuration.
     #[serde(default)]
     pub buddy: Option<TuiBuddy>,

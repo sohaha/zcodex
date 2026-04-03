@@ -300,6 +300,22 @@
       ],
       "type": "string"
     },
+    "BuddySoul": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "personality": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "personality"
+      ],
+      "type": "object"
+    },
     "BundledSkillsConfig": {
       "additionalProperties": false,
       "properties": {
@@ -1720,43 +1736,6 @@
       ],
       "type": "string"
     },
-    "BuddySoul": {
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "personality": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "personality"
-      ],
-      "type": "object"
-    },
-    "TuiBuddy": {
-      "additionalProperties": false,
-      "description": "Buddy-specific configuration.",
-      "properties": {
-        "reactions_enabled": {
-          "default": true,
-          "description": "Whether AI-driven buddy reactions are enabled. Defaults to `true`.",
-          "type": "boolean"
-        },
-        "soul": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/BuddySoul"
-            }
-          ],
-          "default": null,
-          "description": "Persisted AI soul for the buddy (global)."
-        }
-      },
-      "type": "object"
-    },
     "Tui": {
       "additionalProperties": false,
       "description": "Collection of settings that are specific to the TUI.",
@@ -1774,6 +1753,15 @@
           "default": true,
           "description": "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`.",
           "type": "boolean"
+        },
+        "buddy": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TuiBuddy"
+            }
+          ],
+          "default": null,
+          "description": "Buddy-specific configuration."
         },
         "model_availability_nux": {
           "allOf": [
@@ -1801,15 +1789,6 @@
           ],
           "default": true,
           "description": "Enable desktop notifications from the TUI when the terminal is unfocused. Defaults to `true`."
-        },
-        "buddy": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/TuiBuddy"
-            }
-          ],
-          "default": null,
-          "description": "Buddy-specific configuration."
         },
         "show_buddy": {
           "default": true,
@@ -1841,6 +1820,26 @@
           "default": null,
           "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection. Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.",
           "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "TuiBuddy": {
+      "additionalProperties": false,
+      "properties": {
+        "reactions_enabled": {
+          "default": true,
+          "description": "Whether AI-driven buddy reactions are enabled. Defaults to `true`.",
+          "type": "boolean"
+        },
+        "soul": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BuddySoul"
+            }
+          ],
+          "default": null,
+          "description": "Persisted AI soul for the buddy (global)."
         }
       },
       "type": "object"

@@ -358,9 +358,6 @@ pub struct Config {
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
 
-    /// Whether the footer buddy should hatch automatically when the TUI starts.
-    pub tui_show_buddy: bool,
-
     /// Whether AI-driven buddy reactions are enabled.
     pub tui_buddy_reactions_enabled: bool,
 
@@ -2792,7 +2789,6 @@ impl Config {
             tui_status_line: cfg.tui.as_ref().and_then(|t| t.status_line.clone()),
             tui_terminal_title: cfg.tui.as_ref().and_then(|t| t.terminal_title.clone()),
             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
-            tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
             tui_buddy_reactions_enabled: cfg
                 .tui
                 .as_ref()
