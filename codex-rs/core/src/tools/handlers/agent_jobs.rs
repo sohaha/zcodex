@@ -4,7 +4,6 @@ use crate::agent::status::is_final;
 use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::config::Config;
-use crate::error::CodexErr;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
 use crate::tools::context::ToolInvocation;
@@ -14,8 +13,8 @@ use crate::tools::handlers::multi_agents_common::build_agent_shared_config;
 use crate::tools::handlers::parse_arguments;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
-use async_trait::async_trait;
 use codex_protocol::ThreadId;
+use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
@@ -181,7 +180,6 @@ impl JobProgressEmitter {
     }
 }
 
-#[async_trait]
 impl ToolHandler for BatchJobHandler {
     type Output = FunctionToolOutput;
 
