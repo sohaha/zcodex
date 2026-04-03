@@ -100,3 +100,4 @@ __pycache__/
 
 /codex
 .tmp/
+.cargo-target/

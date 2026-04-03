@@ -276,6 +276,18 @@ mod tests {
     }
 
     #[test]
+    fn buddy_bubble_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let width = 60;
+        let bubble = BuddyBubble::new(&buddy);
+        let height = bubble.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        bubble.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_bubble", snapshot_buffer(&buf));
+    }
+
+    #[test]
     fn startup_teaser_snapshot() {
         let mut buddy = BuddyWidget::new();
         buddy.ensure_visible("codex-home::project");

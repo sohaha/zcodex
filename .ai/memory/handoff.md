@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-02T12:18:51.695Z
-- 本轮摘要：继续补齐 codex-rs/tui 剩余汉化：统一状态栏/终端标题状态文本、MCP 启动告警、协作/评审相关测试断言，并更新相关 chatwidget 快照；已执行 just fmt、cargo nextest run -p codex-tui -p codex-protocol、just fix -p codex-tui，随后提交 chore(tui): localize more status and review text。
+- 更新时间：2026-04-03T10:03:26.154Z
+- 本轮摘要：查看 job 69825985962 仍因链接缺少 libm；判断 CARGO_ENCODED_RUSTFLAGS 置空覆盖了 RUSTFLAGS，链接命令无 -lm。更新 nmtx/.github/workflows/codex.yml：设置 CARGO_ENCODED_RUSTFLAGS=-C\x1flink-arg=-lm；提交 commit 2b9f220。
 
 ## 待确认问题
 

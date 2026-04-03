@@ -252,6 +252,8 @@ fn hat_line(hat: BuddyHat, frame: BuddyFrame) -> Option<&'static str> {
         (BuddyHat::Beanie, true) => Some("   _===_   "),
         (BuddyHat::Propeller, false) => Some("  --(*)--  "),
         (BuddyHat::Propeller, true) => Some("  ==(*)==  "),
+        (BuddyHat::TinyDuck, false) => Some("   ,>    "),
+        (BuddyHat::TinyDuck, true) => Some("   ,>    "),
     }
 }
 
@@ -346,6 +348,97 @@ fn robot_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
     ]
 }
 
+fn duck_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  __     ".to_string(), frame),
+        apply_offset(format!(" ( {eye}> )  "), frame),
+        apply_offset("  `--'   ".to_string(), frame),
+    ]
+}
+
+fn blob_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  .--.   ".to_string(), frame),
+        apply_offset(format!(" ( {eye}{eye} )  "), frame),
+        apply_offset("  `--'   ".to_string(), frame),
+    ]
+}
+
+fn octopus_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  .--.   ".to_string(), frame),
+        apply_offset(format!(" ( {eye}{eye} )  "), frame),
+        apply_offset(" /\\/\\/\\  ".to_string(), frame),
+    ]
+}
+
+fn penguin_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  .--.   ".to_string(), frame),
+        apply_offset(format!(" ( {eye}>{eye} ) "), frame),
+        apply_offset(" /(   )\\ ".to_string(), frame),
+    ]
+}
+
+fn turtle_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  _--_   ".to_string(), frame),
+        apply_offset(format!(" ( {eye}_{eye} ) "), frame),
+        apply_offset(" /____\\ ".to_string(), frame),
+    ]
+}
+
+fn axolotl_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset(" }~   ~{ ".to_string(), frame),
+        apply_offset(format!(" ( {eye}..{eye} )"), frame),
+        apply_offset("  \\__/   ".to_string(), frame),
+    ]
+}
+
+fn capybara_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  n___n  ".to_string(), frame),
+        apply_offset(format!(" ( {eye}  {eye} )"), frame),
+        apply_offset(" ( 00 ) ".to_string(), frame),
+    ]
+}
+
+fn cactus_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset("  _| |_  ".to_string(), frame),
+        apply_offset(format!(" | {eye} {eye} | "), frame),
+        apply_offset("  |_|_|  ".to_string(), frame),
+    ]
+}
+
+fn mushroom_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset(" .-o-.   ".to_string(), frame),
+        apply_offset(" (____)  ".to_string(), frame),
+        apply_offset(format!("  |{eye}{eye}|   "), frame),
+    ]
+}
+
+fn chonk_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    let mouth = mouth(frame, ".", "o");
+    [
+        apply_offset(" /\\___/\\ ".to_string(), frame),
+        apply_offset(format!("( {eye}   {eye} )"), frame),
+        apply_offset(format!(" (  {mouth}  ) "), frame),
+    ]
+}
+
 fn mini_face(species: BuddySpecies, frame: BuddyFrame) -> &'static str {
     match (species, frame) {
         (BuddySpecies::Cat, BuddyFrame::Blink) => "(=-.-=)",
@@ -372,6 +465,36 @@ fn mini_face(species: BuddySpecies, frame: BuddyFrame) -> &'static str {
         (BuddySpecies::Robot, BuddyFrame::Blink) => "[-_-]",
         (BuddySpecies::Robot, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "[^=^]",
         (BuddySpecies::Robot, _) => "[o_o]",
+        (BuddySpecies::Duck, BuddyFrame::Blink) => "(->)",
+        (BuddySpecies::Duck, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^>)",
+        (BuddySpecies::Duck, _) => "(o>)",
+        (BuddySpecies::Blob, BuddyFrame::Blink) => "(-_-)",
+        (BuddySpecies::Blob, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^_^)",
+        (BuddySpecies::Blob, _) => "(o_o)",
+        (BuddySpecies::Octopus, BuddyFrame::Blink) => "~(- -)~",
+        (BuddySpecies::Octopus, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "~(^_^)~",
+        (BuddySpecies::Octopus, _) => "~(o_o)~",
+        (BuddySpecies::Penguin, BuddyFrame::Blink) => "(- > -)",
+        (BuddySpecies::Penguin, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^>^)",
+        (BuddySpecies::Penguin, _) => "(o>o)",
+        (BuddySpecies::Turtle, BuddyFrame::Blink) => "[-_-]",
+        (BuddySpecies::Turtle, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "[^_^]",
+        (BuddySpecies::Turtle, _) => "[o_o]",
+        (BuddySpecies::Axolotl, BuddyFrame::Blink) => "} -.- {",
+        (BuddySpecies::Axolotl, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "}^.^{",
+        (BuddySpecies::Axolotl, _) => "}o.o{",
+        (BuddySpecies::Capybara, BuddyFrame::Blink) => "( - - )",
+        (BuddySpecies::Capybara, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^ ^)",
+        (BuddySpecies::Capybara, _) => "(o o)",
+        (BuddySpecies::Cactus, BuddyFrame::Blink) => "|- -|",
+        (BuddySpecies::Cactus, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "|^ ^|",
+        (BuddySpecies::Cactus, _) => "|o o|",
+        (BuddySpecies::Mushroom, BuddyFrame::Blink) => "|- -|",
+        (BuddySpecies::Mushroom, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "|^ ^|",
+        (BuddySpecies::Mushroom, _) => "|o o|",
+        (BuddySpecies::Chonk, BuddyFrame::Blink) => "(-.-)",
+        (BuddySpecies::Chonk, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^.^)",
+        (BuddySpecies::Chonk, _) => "(o.o)",
     }
 }
 

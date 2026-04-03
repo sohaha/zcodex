@@ -20,6 +20,7 @@ use crate::app_event_sender::AppEventSender;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
 use crate::bottom_pane::pending_thread_approvals::PendingThreadApprovals;
 use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
+use crate::buddy::BuddyBubble;
 use crate::buddy::BuddyCommandResult;
 use crate::buddy::BuddyWidget;
 use crate::key_hint;
@@ -1133,6 +1134,7 @@ impl BottomPane {
                 if let Some(delay) = self.buddy.next_redraw_in() {
                     self.request_redraw_in(delay);
                 }
+                flex.push(/*flex*/ 0, BuddyBubble::new(&self.buddy));
                 flex.push(/*flex*/ 0, RenderableItem::Borrowed(&self.buddy));
             }
             // Avoid double-surfacing the same summary and avoid adding an extra
