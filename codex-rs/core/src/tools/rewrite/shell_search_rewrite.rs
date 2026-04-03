@@ -78,8 +78,8 @@ fn extract_search_query(command: &str) -> Option<SearchQuery> {
     let tokens = shlex::split(command)?;
     let tail = match tokens.as_slice() {
         [head, tail @ ..] if head == "rg" || head == "grep" => tail,
-        [head, next, tail @ ..] if head == "rtk" && next == "grep" => tail,
-        [head, next, third, tail @ ..] if head == "codex" && next == "rtk" && third == "grep" => {
+        [head, next, tail @ ..] if head == "ztok" && next == "grep" => tail,
+        [head, next, third, tail @ ..] if head == "codex" && next == "ztok" && third == "grep" => {
             tail
         }
         _ => return None,
@@ -316,7 +316,7 @@ mod tests {
     fn intercepts_structural_rg_searches_with_tldr_context_suggestion() {
         let interception = maybe_intercept_shell_search(
             "rg -n create_tldr_tool src/main.rs",
-            "rtk grep create_tldr_tool src/main.rs -n",
+            "ztok grep create_tldr_tool src/main.rs -n",
             Path::new("/workspace/codex-rs"),
             &ToolRoutingDirectives::default(),
         )
@@ -367,7 +367,7 @@ mod tests {
 
         let interception = maybe_intercept_shell_search(
             "rg -g '*.rs' create_tldr_tool src",
-            "rtk grep -g '*.rs' create_tldr_tool src",
+            "ztok grep -g '*.rs' create_tldr_tool src",
             src_dir.as_path(),
             &ToolRoutingDirectives::default(),
         )
@@ -399,7 +399,7 @@ mod tests {
     fn factual_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
             "rg default_timeout src",
-            "rtk grep default_timeout src",
+            "ztok grep default_timeout src",
             Path::new("/workspace/codex-rs"),
             &ToolRoutingDirectives {
                 problem_kind: ProblemKind::Factual,
@@ -414,7 +414,7 @@ mod tests {
     fn regex_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
             "rg 'foo.*bar' src",
-            "rtk grep 'foo.*bar' src",
+            "ztok grep 'foo.*bar' src",
             Path::new("/workspace/codex-rs"),
             &ToolRoutingDirectives::default(),
         );

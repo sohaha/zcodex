@@ -1,0 +1,40 @@
+plan = "plan/2026-04-03-rtk-ztok-rename.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "完成 rtk→ztok 的核心命令与 crate 重命名"
+scope = """
+覆盖 Rust 代码中 rtk 子命令入口、alias 逻辑、嵌入式命令改写、crate/目录/包名及其依赖路径的改名；
+不保留 rtk 兼容入口或重定向；不改动上游 rtk 项目。
+"""
+touch_points = ["codex-rs/cli", "codex-rs/rtk", "codex-rs/arg0", "codex-rs/core", "codex-rs/Cargo.toml", "codex-rs/Cargo.lock", "codex-rs/README.md", "codex-rs/core/README.md", "codex-rs/core/templates/compact/rtk_instructions.md"]
+depends_on = []
+done_when = "CLI 子命令与嵌入式重写逻辑统一为 ztok，crate/目录/依赖路径一致更新，且无 rtk 兼容入口残留"
+validate_by = "运行仓库现有命令 cd /workspace/codex-rs && just fmt && cargo test -p codex-cli，验证 CLI 与核心改名路径"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = "已完成改名实现；验证命令 `cd /workspace/codex-rs && just fmt && cargo test -p codex-cli` 中 `cargo test -p codex-cli` 因 codex-core 的 Buddy* 未定义而失败，需先修复相关编译错误后重试。2026-04-03 再次运行 `cargo test -p codex-cli` 超时且仍报 BuddySoul/BuddyReaction 等缺失。按用户要求不再验证，validate_status 保持 failed。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "更新 rtk 相关测试与文档为 ztok"
+scope = """
+更新 rtk 相关测试与文档文本，包括 codex-rs/cli/tests/rtk.rs、README 与提示文本；
+同步更新 .codex/skills/upgrade-rtk/SKILL.md 中的估计说明与命名。
+不新增上游功能，不引入新的兼容入口。
+"""
+touch_points = ["codex-rs/cli/tests/rtk.rs", "codex-rs/README.md", "codex-rs/core/README.md", "codex-rs/core/templates/compact/rtk_instructions.md", ".codex/skills/upgrade-rtk/SKILL.md"]
+depends_on = ["a1"]
+done_when = "测试与文档中的 rtk 文案和路径全部改为 ztok，upgrade-rtk 技能估计说明同步更新"
+validate_by = "运行仓库现有命令 cd /workspace/codex-rs && cargo test -p codex-cli，验证测试覆盖与文档引用不影响构建"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = "文档与测试已同步更新；依赖 a1 验证，但同一验证命令因 codex-core 的 Buddy* 未定义而失败，待修复后重试。2026-04-03 再次运行 `cargo test -p codex-cli` 超时且仍报 BuddySoul/BuddyReaction 等缺失。按用户要求不再验证，validate_status 保持 failed。"

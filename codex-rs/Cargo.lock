@@ -1751,7 +1751,6 @@ dependencies = [
  "codex-protocol",
  "codex-responses-api-proxy",
  "codex-rmcp-client",
- "codex-rtk",
  "codex-sandboxing",
  "codex-state",
  "codex-stdio-to-uds",
@@ -1762,6 +1761,7 @@ dependencies = [
  "codex-utils-path",
  "codex-windows-sandbox",
  "codex-zmemory",
+ "codex-ztok",
  "libc",
  "once_cell",
  "owo-colors",
@@ -2696,27 +2696,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-rtk"
-version = "0.30.0"
-dependencies = [
- "anyhow",
- "chardetng",
- "clap",
- "dirs",
- "encoding_rs",
- "ignore",
- "lazy_static",
- "regex",
- "serde",
- "serde_json",
- "shlex",
- "tempfile",
- "thiserror 2.0.18",
- "walkdir",
- "which 8.0.0",
-]
-
-[[package]]
 name = "codex-sandboxing"
 version = "0.0.0"
 dependencies = [
@@ -3208,6 +3187,27 @@ dependencies = [
  "tracing",
  "tracing-test",
  "uuid",
+]
+
+[[package]]
+name = "codex-ztok"
+version = "0.30.0"
+dependencies = [
+ "anyhow",
+ "chardetng",
+ "clap",
+ "dirs",
+ "encoding_rs",
+ "ignore",
+ "lazy_static",
+ "regex",
+ "serde",
+ "serde_json",
+ "shlex",
+ "tempfile",
+ "thiserror 2.0.18",
+ "walkdir",
+ "which 8.0.0",
 ]
 
 [[package]]

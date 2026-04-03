@@ -103,15 +103,15 @@ cargo build --release -p codex-cli --features tldr
 要以非交互方式运行 Codex，可执行 `codex exec PROMPT`（也可通过 `stdin` 传入 prompt）。Codex 会处理任务直到完成并退出，输出会直接打印到终端。你可以设置 `RUST_LOG` 以查看更多日志。
 使用 `codex exec --ephemeral ...` 可在不持久化会话产物的情况下运行。
 
-### shell_command 的内嵌 RTK 路由
+### shell_command 的内嵌 ZTOK 路由
 
-Rust CLI 当前不再向模型暴露 `rtk_*` tools。对于 `shell_command` 的一部分
-安全命令形态，`codex-core` 会在内部直接改写到嵌入式 `rtk ...`
+Rust CLI 当前不再向模型暴露 `ztok_*` tools。对于 `shell_command` 的一部分
+安全命令形态，`codex-core` 会在内部直接改写到嵌入式 `ztok ...`
 过滤层，以减少噪声输出；只有简单单文件的 `cat/head/tail` 会改写为
-`rtk read ...`，而未加引号的 pipe / redirect / command substitution /
+`ztok read ...`，而未加引号的 pipe / redirect / command substitution /
 backgrounding 等复杂 shell 语法仍会保留原始命令执行。被路由的命令在事件/
-输出里会显示成逻辑命令 `codex rtk ...`，但实际执行时会解析到当前 `codex`
-二进制的绝对路径再进入 `rtk`，避免登录 shell 初始化把注入的 `PATH` 覆盖掉。
+输出里会显示成逻辑命令 `codex ztok ...`，但实际执行时会解析到当前 `codex`
+二进制的绝对路径再进入 `ztok`，避免登录 shell 初始化把注入的 `PATH` 覆盖掉。
 更详细的实现说明见 [`core/README.md`](./core/README.md)。
 
 ### 体验 Codex 沙箱

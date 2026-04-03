@@ -12,7 +12,7 @@ use tempfile::TempDir;
 
 const APPLY_PATCH_ARG0: &str = "apply_patch";
 const MISSPELLED_APPLY_PATCH_ARG0: &str = "applypatch";
-const RTK_ARG0: &str = "rtk";
+const ZTOK_ARG0: &str = "ztok";
 #[cfg(unix)]
 const EXECVE_WRAPPER_ARG0: &str = "codex-execve-wrapper";
 const LOCK_FILENAME: &str = ".lock";
@@ -293,7 +293,7 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
     for &filename in &[
         APPLY_PATCH_ARG0,
         MISSPELLED_APPLY_PATCH_ARG0,
-        RTK_ARG0,
+        ZTOK_ARG0,
         #[cfg(target_os = "linux")]
         CODEX_LINUX_SANDBOX_ARG0,
         #[cfg(unix)]
@@ -318,10 +318,10 @@ pub fn prepend_path_entry_for_codex_aliases() -> std::io::Result<Arg0PathEntryGu
 "#,
                         exe.display()
                     )
-                } else if filename == RTK_ARG0 {
+                } else if filename == ZTOK_ARG0 {
                     format!(
                         r#"@echo off
-"{}" rtk %*
+"{}" ztok %*
 "#,
                         exe.display()
                     )

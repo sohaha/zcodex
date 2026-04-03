@@ -602,19 +602,19 @@ mod tests {
             vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "FOO=1 rtk git status".to_string(),
+                "FOO=1 ztok git status".to_string(),
             ],
             Some(vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "FOO=1 codex rtk git status".to_string(),
+                "FOO=1 codex ztok git status".to_string(),
             ]),
             turn.cwd.to_path_buf(),
             ExecCommandSource::Agent,
             true,
             Some("FOO=1 git status".to_string()),
             Some(
-                "[shell_command routed via embedded RTK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex rtk git status"
+                "[shell_command routed via embedded ZTOK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex ztok git status"
                     .to_string(),
             ),
         );
@@ -627,7 +627,7 @@ mod tests {
             vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "FOO=1 codex rtk git status".to_string(),
+                "FOO=1 codex ztok git status".to_string(),
             ]
         );
         assert_eq!(
@@ -642,8 +642,8 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-        assert!(result.contains("[shell_command routed via embedded RTK]"));
-        assert!(result.contains("rewritten: FOO=1 codex rtk git status"));
+        assert!(result.contains("[shell_command routed via embedded ZTOK]"));
+        assert!(result.contains("rewritten: FOO=1 codex ztok git status"));
         assert!(result.contains("ok"));
 
         let end = recv_exec_end(&mut rx).await;
@@ -653,25 +653,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shell_emitter_never_exposes_absolute_rtk_exec_path() {
+    async fn shell_emitter_never_exposes_absolute_ztok_exec_path() {
         let (session, turn, mut rx) = make_session_and_context_with_rx().await;
         let emitter = ToolEmitter::shell(
             vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "/tmp/codex rtk git status".to_string(),
+                "/tmp/codex ztok git status".to_string(),
             ],
             Some(vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "codex rtk git status".to_string(),
+                "codex ztok git status".to_string(),
             ]),
             turn.cwd.to_path_buf(),
             ExecCommandSource::Agent,
             true,
             Some("git status".to_string()),
             Some(
-                "[shell_command routed via embedded RTK]\noriginal: git status\nrewritten: codex rtk git status"
+                "[shell_command routed via embedded ZTOK]\noriginal: git status\nrewritten: codex ztok git status"
                     .to_string(),
             ),
         );
@@ -684,7 +684,7 @@ mod tests {
             vec![
                 "bash".to_string(),
                 "-lc".to_string(),
-                "codex rtk git status".to_string(),
+                "codex ztok git status".to_string(),
             ]
         );
         assert!(!begin.command.join(" ").contains("/tmp/codex"));
@@ -696,7 +696,7 @@ mod tests {
             ..ExecToolCallOutput::default()
         };
         let result = emitter.finish(ctx, Ok(output)).await.expect("shell output");
-        assert!(result.contains("rewritten: codex rtk git status"));
+        assert!(result.contains("rewritten: codex ztok git status"));
         assert!(!result.contains("/tmp/codex"));
 
         let end = recv_exec_end(&mut rx).await;

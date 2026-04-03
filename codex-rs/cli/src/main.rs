@@ -23,8 +23,6 @@ use codex_exec::Command as ExecCommand;
 use codex_exec::ReviewArgs;
 use codex_execpolicy::ExecPolicyCheckCommand;
 use codex_responses_api_proxy::Args as ResponsesApiProxyArgs;
-use codex_rtk::alias_name as rtk_alias_name;
-use codex_rtk::is_alias_invocation as is_rtk_alias_invocation;
 use codex_state::StateRuntime;
 use codex_state::state_db_path;
 use codex_tui::AppExitInfo;
@@ -32,6 +30,8 @@ use codex_tui::Cli as TuiCli;
 use codex_tui::ExitReason;
 use codex_tui::update_action::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
+use codex_ztok::alias_name as ztok_alias_name;
+use codex_ztok::is_alias_invocation as is_ztok_alias_invocation;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use std::io::Write;
@@ -114,7 +114,7 @@ enum Subcommand {
     Mcp(McpCli),
 
     /// 运行 Token 优化的命令包装器。
-    Rtk(RtkArgs),
+    Ztok(ZtokArgs),
 
     /// 运行原生 TLDR 代码上下文分析命令。
     Tldr(TldrCli),
@@ -181,7 +181,7 @@ struct CompletionCommand {
 
 #[derive(Debug, Args)]
 #[command(disable_help_flag = true, disable_version_flag = true)]
-struct RtkArgs {
+struct ZtokArgs {
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<std::ffi::OsString>,
 }
@@ -670,8 +670,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
         }
-        Some(Subcommand::Rtk(rtk_cli)) => {
-            codex_rtk::run_from_os_args(rtk_cli.args)?;
+        Some(Subcommand::Ztok(ztok_cli)) => {
+            codex_ztok::run_from_os_args(ztok_cli.args)?;
         }
         Some(Subcommand::Tldr(tldr_cli)) => {
             reject_remote_mode_for_subcommand(root_remote.as_deref(), "tldr")?;
@@ -980,10 +980,10 @@ fn parse_multitool_cli_from_env() -> MultitoolCli {
         return MultitoolCli::parse();
     }
 
-    let parsed_args = if is_rtk_alias_invocation(&raw_args[0]) {
+    let parsed_args = if is_ztok_alias_invocation(&raw_args[0]) {
         let mut injected_args = Vec::with_capacity(raw_args.len() + 1);
         injected_args.push(raw_args[0].clone());
-        injected_args.push(rtk_alias_name().into());
+        injected_args.push(ztok_alias_name().into());
         injected_args.extend(raw_args.into_iter().skip(1));
         injected_args
     } else {
@@ -991,7 +991,7 @@ fn parse_multitool_cli_from_env() -> MultitoolCli {
     };
 
     let mut cli = parse_multitool_cli(parsed_args.clone());
-    restore_rtk_explicit_double_dash(&parsed_args, &mut cli);
+    restore_ztok_explicit_double_dash(&parsed_args, &mut cli);
     cli
 }
 
@@ -1011,28 +1011,28 @@ where
     }
 }
 
-fn restore_rtk_explicit_double_dash(raw_args: &[std::ffi::OsString], cli: &mut MultitoolCli) {
-    let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand.as_mut() else {
+fn restore_ztok_explicit_double_dash(raw_args: &[std::ffi::OsString], cli: &mut MultitoolCli) {
+    let Some(Subcommand::Ztok(ztok_cli)) = cli.subcommand.as_mut() else {
         return;
     };
 
-    if rtk_cli.args.first().is_some_and(|arg| arg == "--") {
+    if ztok_cli.args.first().is_some_and(|arg| arg == "--") {
         return;
     }
 
-    if rtk_subcommand_uses_explicit_double_dash(raw_args, rtk_cli.args.len()) {
-        rtk_cli.args.insert(0, "--".into());
+    if ztok_subcommand_uses_explicit_double_dash(raw_args, ztok_cli.args.len()) {
+        ztok_cli.args.insert(0, "--".into());
     }
 }
 
-fn rtk_subcommand_uses_explicit_double_dash(
+fn ztok_subcommand_uses_explicit_double_dash(
     raw_args: &[std::ffi::OsString],
-    rtk_arg_count: usize,
+    ztok_arg_count: usize,
 ) -> bool {
     raw_args.iter().enumerate().skip(1).any(|(index, arg)| {
-        arg == rtk_alias_name()
+        arg == ztok_alias_name()
             && raw_args.get(index + 1).is_some_and(|next| next == "--")
-            && raw_args.len().saturating_sub(index + 2) == rtk_arg_count
+            && raw_args.len().saturating_sub(index + 2) == ztok_arg_count
     })
 }
 
@@ -1972,10 +1972,10 @@ mod tests {
     }
 
     #[test]
-    fn rtk_parse_restores_explicit_double_dash_for_raw_wrapper_commands() {
+    fn ztok_parse_restores_explicit_double_dash_for_raw_wrapper_commands() {
         let raw_args = vec![
             std::ffi::OsString::from("codex"),
-            std::ffi::OsString::from("rtk"),
+            std::ffi::OsString::from("ztok"),
             std::ffi::OsString::from("--"),
             std::ffi::OsString::from("env"),
             std::ffi::OsString::from("FOO=1"),
@@ -1983,25 +1983,25 @@ mod tests {
             std::ffi::OsString::from("status"),
         ];
         let mut cli = parse_multitool_cli(raw_args.clone());
-        restore_rtk_explicit_double_dash(&raw_args, &mut cli);
+        restore_ztok_explicit_double_dash(&raw_args, &mut cli);
 
-        let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand else {
-            panic!("expected rtk subcommand");
+        let Some(Subcommand::Ztok(ztok_cli)) = cli.subcommand else {
+            panic!("expected ztok subcommand");
         };
 
-        assert_eq!(rtk_cli.args, vec!["--", "env", "FOO=1", "git", "status",]);
+        assert_eq!(ztok_cli.args, vec!["--", "env", "FOO=1", "git", "status",]);
     }
 
     #[test]
-    fn rtk_parse_does_not_inject_double_dash_without_explicit_boundary() {
-        let cli = parse_multitool_cli(["codex", "rtk", "env", "FOO=1", "git", "status"]);
+    fn ztok_parse_does_not_inject_double_dash_without_explicit_boundary() {
+        let cli = parse_multitool_cli(["codex", "ztok", "env", "FOO=1", "git", "status"]);
 
-        let Some(Subcommand::Rtk(rtk_cli)) = cli.subcommand else {
-            panic!("expected rtk subcommand");
+        let Some(Subcommand::Ztok(ztok_cli)) = cli.subcommand else {
+            panic!("expected ztok subcommand");
         };
 
         assert_eq!(
-            rtk_cli.args,
+            ztok_cli.args,
             vec![
                 std::ffi::OsString::from("env"),
                 std::ffi::OsString::from("FOO=1"),

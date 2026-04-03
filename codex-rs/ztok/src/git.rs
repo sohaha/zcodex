@@ -1,0 +1,2224 @@
+use crate::tracking;
+use crate::utils::resolved_command;
+use anyhow::Context;
+use anyhow::Result;
+use std::ffi::OsString;
+use std::process::Command;
+
+#[derive(Debug, Clone)]
+pub enum GitCommand {
+    Diff,
+    Log,
+    Status,
+    Show,
+    Add,
+    Commit,
+    Push,
+    Pull,
+    Branch,
+    Fetch,
+    Stash { subcommand: Option<String> },
+    Worktree,
+}
+
+/// 创建带全局选项的 git Command（如 `-C`、`-c`、`--git-dir`、`--work-tree`），
+/// 并将这些选项放在所有子命令参数之前。
+fn git_cmd(global_args: &[String]) -> Command {
+    let mut cmd = resolved_command("git");
+    for arg in global_args {
+        cmd.arg(arg);
+    }
+    cmd
+}
+
+pub fn run(
+    cmd: GitCommand,
+    args: &[String],
+    max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
+    match cmd {
+        GitCommand::Diff => run_diff(args, max_lines, verbose, global_args),
+        GitCommand::Log => run_log(args, max_lines, verbose, global_args),
+        GitCommand::Status => run_status(args, verbose, global_args),
+        GitCommand::Show => run_show(args, max_lines, verbose, global_args),
+        GitCommand::Add => run_add(args, verbose, global_args),
+        GitCommand::Commit => run_commit(args, verbose, global_args),
+        GitCommand::Push => run_push(args, verbose, global_args),
+        GitCommand::Pull => run_pull(args, verbose, global_args),
+        GitCommand::Branch => run_branch(args, verbose, global_args),
+        GitCommand::Fetch => run_fetch(args, verbose, global_args),
+        GitCommand::Stash { subcommand } => {
+            run_stash(subcommand.as_deref(), args, verbose, global_args)
+        }
+        GitCommand::Worktree => run_worktree(args, verbose, global_args),
+    }
+}
+
+fn run_diff(
+    args: &[String],
+    max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    // 检查用户是否想看 stat 输出
+    let wants_stat = args
+        .iter()
+        .any(|arg| arg == "--stat" || arg == "--numstat" || arg == "--shortstat");
+
+    // 检查用户是否想要紧凑 diff（ZTOK 默认行为）
+    let wants_compact = !args.iter().any(|arg| arg == "--no-compact");
+
+    if wants_stat || !wants_compact {
+        // 用户想看 stat，或明确要求不要压缩，直接透传
+        let mut cmd = git_cmd(global_args);
+        cmd.arg("diff");
+        for arg in args {
+            cmd.arg(arg);
+        }
+
+        let output = cmd.output().context("运行 git diff 失败")?;
+
+        if !output.status.success() {
+            let stderr = crate::utils::decode_output(&output.stderr);
+            eprintln!("{stderr}");
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+
+        let stdout = crate::utils::decode_output(&output.stdout);
+        println!("{}", stdout.trim());
+
+        timer.track(
+            &format!("git diff {}", args.join(" ")),
+            &format!("ztok git diff {} (passthrough)", args.join(" ")),
+            &stdout,
+            &stdout,
+        );
+
+        return Ok(());
+    }
+
+    // ZTOK 默认行为：先显示 stat，再显示压缩后的 diff
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("diff").arg("--stat");
+
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("运行 git diff 失败")?;
+    let stat_stdout = crate::utils::decode_output(&output.stdout);
+
+    if verbose > 0 {
+        eprintln!("Git diff 摘要：");
+    }
+
+    // 先输出 stat 摘要
+    println!("{}", stat_stdout.trim());
+
+    // 再获取实际 diff 并压缩
+    let mut diff_cmd = git_cmd(global_args);
+    diff_cmd.arg("diff");
+    for arg in args {
+        diff_cmd.arg(arg);
+    }
+
+    let diff_output = diff_cmd.output().context("运行 git diff 失败")?;
+    let diff_stdout = crate::utils::decode_output(&diff_output.stdout);
+
+    let mut final_output = stat_stdout.to_string();
+    if !diff_stdout.is_empty() {
+        println!("\n--- 变更 ---");
+        let compacted = compact_diff(&diff_stdout, max_lines.unwrap_or(500));
+        println!("{compacted}");
+        final_output.push_str("\n--- 变更 ---\n");
+        final_output.push_str(&compacted);
+    }
+
+    timer.track(
+        &format!("git diff {}", args.join(" ")),
+        &format!("ztok git diff {}", args.join(" ")),
+        &format!("{stat_stdout}\n{diff_stdout}"),
+        &final_output,
+    );
+
+    Ok(())
+}
+
+fn run_show(
+    args: &[String],
+    max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    // 如果用户只想要 --stat 或 --format，则直接透传
+    let wants_stat_only = args
+        .iter()
+        .any(|arg| arg == "--stat" || arg == "--numstat" || arg == "--shortstat");
+
+    let wants_format = args
+        .iter()
+        .any(|arg| arg.starts_with("--pretty") || arg.starts_with("--format"));
+
+    // `git show rev:path` 输出的是 blob，而不是 commit diff。
+    // 这种模式下应直接透传，避免 compact-show 步骤造成重复输出。
+    let wants_blob_show = args.iter().any(|arg| is_blob_show_arg(arg));
+
+    if wants_stat_only || wants_format || wants_blob_show {
+        let mut cmd = git_cmd(global_args);
+        cmd.arg("show");
+        for arg in args {
+            cmd.arg(arg);
+        }
+        let output = cmd.output().context("运行 git show 失败")?;
+        if !output.status.success() {
+            let stderr = crate::utils::decode_output(&output.stderr);
+            eprintln!("{stderr}");
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+        let stdout = crate::utils::decode_output(&output.stdout);
+        if wants_blob_show {
+            print!("{stdout}");
+        } else {
+            println!("{}", stdout.trim());
+        }
+
+        timer.track(
+            &format!("git show {}", args.join(" ")),
+            &format!("ztok git show {} (passthrough)", args.join(" ")),
+            &stdout,
+            &stdout,
+        );
+
+        return Ok(());
+    }
+
+    // 获取原始输出用于统计
+    let mut raw_cmd = git_cmd(global_args);
+    raw_cmd.arg("show");
+    for arg in args {
+        raw_cmd.arg(arg);
+    }
+    let raw_output = raw_cmd
+        .output()
+        .map(|o| crate::utils::decode_output(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    // 第 1 步：单行 commit 摘要
+    let mut summary_cmd = git_cmd(global_args);
+    summary_cmd.args(["show", "--no-patch", "--pretty=format:%h %s (%ar) <%an>"]);
+    for arg in args {
+        summary_cmd.arg(arg);
+    }
+    let summary_output = summary_cmd.output().context("运行 git show 失败")?;
+    if !summary_output.status.success() {
+        let stderr = crate::utils::decode_output(&summary_output.stderr);
+        eprintln!("{stderr}");
+        std::process::exit(summary_output.status.code().unwrap_or(1));
+    }
+    let summary = crate::utils::decode_output(&summary_output.stdout);
+    println!("{}", summary.trim());
+
+    // 第 2 步：--stat 摘要
+    let mut stat_cmd = git_cmd(global_args);
+    stat_cmd.args(["show", "--stat", "--pretty=format:"]);
+    for arg in args {
+        stat_cmd.arg(arg);
+    }
+    let stat_output = stat_cmd.output().context("运行 git show --stat 失败")?;
+    let stat_stdout = crate::utils::decode_output(&stat_output.stdout);
+    let stat_text = stat_stdout.trim();
+    if !stat_text.is_empty() {
+        println!("{stat_text}");
+    }
+
+    // 第 3 步：压缩后的 diff
+    let mut diff_cmd = git_cmd(global_args);
+    diff_cmd.args(["show", "--pretty=format:"]);
+    for arg in args {
+        diff_cmd.arg(arg);
+    }
+    let diff_output = diff_cmd.output().context("运行 git show（diff）失败")?;
+    let diff_stdout = crate::utils::decode_output(&diff_output.stdout);
+    let diff_text = diff_stdout.trim();
+
+    let mut final_output = summary.to_string();
+    if !diff_text.is_empty() {
+        if verbose > 0 {
+            println!("\n--- 变更 ---");
+        }
+        let compacted = compact_diff(diff_text, max_lines.unwrap_or(500));
+        println!("{compacted}");
+        final_output.push_str(&format!("\n{compacted}"));
+    }
+
+    timer.track(
+        &format!("git show {}", args.join(" ")),
+        &format!("ztok git show {}", args.join(" ")),
+        &raw_output,
+        &final_output,
+    );
+
+    Ok(())
+}
+
+fn is_blob_show_arg(arg: &str) -> bool {
+    // 识别 `rev:path` 形式的参数，同时忽略 `--pretty=format:...` 这类 flag。
+    !arg.starts_with('-') && arg.contains(':')
+}
+
+pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
+    let mut result = Vec::new();
+    let mut current_file = String::new();
+    let mut added = 0;
+    let mut removed = 0;
+    let mut in_hunk = false;
+    let mut hunk_lines = 0;
+    let max_hunk_lines = 30;
+    let mut was_truncated = false;
+
+    for line in diff.lines() {
+        if line.starts_with("diff --git") {
+            // 新文件段
+            if !current_file.is_empty() && (added > 0 || removed > 0) {
+                result.push(format!("  +{added} -{removed}"));
+            }
+            current_file = line.split(" b/").nth(1).unwrap_or("unknown").to_string();
+            result.push(format!("\n{current_file}"));
+            added = 0;
+            removed = 0;
+            in_hunk = false;
+        } else if line.starts_with("@@") {
+            // 新 hunk
+            in_hunk = true;
+            hunk_lines = 0;
+            let hunk_info = line.split("@@").nth(1).unwrap_or("").trim();
+            result.push(format!("  @@ {hunk_info} @@"));
+        } else if in_hunk {
+            if line.starts_with('+') && !line.starts_with("+++") {
+                added += 1;
+                if hunk_lines < max_hunk_lines {
+                    result.push(format!("  {line}"));
+                    hunk_lines += 1;
+                }
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                removed += 1;
+                if hunk_lines < max_hunk_lines {
+                    result.push(format!("  {line}"));
+                    hunk_lines += 1;
+                }
+            } else if hunk_lines < max_hunk_lines && !line.starts_with("\\") {
+                // 上下文行
+                if hunk_lines > 0 {
+                    result.push(format!("  {line}"));
+                    hunk_lines += 1;
+                }
+            }
+
+            if hunk_lines == max_hunk_lines {
+                result.push("  ... (truncated)".to_string());
+                hunk_lines += 1;
+                was_truncated = true;
+            }
+        }
+
+        if result.len() >= max_lines {
+            result.push("\n... (更多变更已截断)".to_string());
+            was_truncated = true;
+            break;
+        }
+    }
+
+    if !current_file.is_empty() && (added > 0 || removed > 0) {
+        result.push(format!("  +{added} -{removed}"));
+    }
+
+    if was_truncated {
+        result.push("[full diff: ztok git diff --no-compact]".to_string());
+    }
+
+    result.join("\n")
+}
+
+fn run_log(
+    args: &[String],
+    _max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("log");
+
+    // 检查用户是否提供了 format 相关 flag
+    let has_format_flag = args.iter().any(|arg| {
+        arg.starts_with("--oneline") || arg.starts_with("--pretty") || arg.starts_with("--format")
+    });
+
+    // 检查用户是否提供了 limit 相关 flag（-N、-n N、--max-count=N、--max-count N）
+    let has_limit_flag = args.iter().any(|arg| {
+        (arg.starts_with('-') && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit()))
+            || arg == "-n"
+            || arg.starts_with("--max-count")
+    });
+
+    // 仅在用户未显式指定时才应用 ZTOK 默认值
+    // 使用 %b（body）保留 commit 正文首行，给 agent 提供更多上下文
+    // （如 BREAKING CHANGE、Closes #xxx、设计说明）
+    if !has_format_flag {
+        cmd.args(["--pretty=format:%h %s (%ar) <%an>%n%b%n---END---"]);
+    }
+
+    // 决定 limit：若用户显式传入 -N 则尊重用户，否则使用合理默认值
+    let (limit, user_set_limit) = if has_limit_flag {
+        // 用户显式传入 -N / -n N / --max-count=N：尊重用户选择
+        let n = parse_user_limit(args).unwrap_or(10);
+        (n, true)
+    } else if has_format_flag {
+        // --oneline / --pretty 但没有 -N：说明用户想要紧凑输出，可适当放宽数量
+        cmd.arg("-50");
+        (50, false)
+    } else {
+        // 完全没传 flag：默认 10 条
+        cmd.arg("-10");
+        (10, false)
+    };
+
+    // 仅当用户未显式要求 merge commit 时才添加 --no-merges
+    let wants_merges = args
+        .iter()
+        .any(|arg| arg == "--merges" || arg == "--min-parents=2");
+    if !wants_merges {
+        cmd.arg("--no-merges");
+    }
+
+    // 透传所有用户参数
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("运行 git log 失败")?;
+
+    if !output.status.success() {
+        let stderr = crate::utils::decode_output(&output.stderr);
+        eprintln!("{stderr}");
+        // 透传 git 的退出码
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
+
+    let stdout = crate::utils::decode_output(&output.stdout);
+
+    if verbose > 0 {
+        eprintln!("Git log 输出：");
+    }
+
+    // 后处理：截断过长消息；只有 ZTOK 自己设定默认值时才限制行数
+    let filtered = filter_log_output(&stdout, limit, user_set_limit, has_format_flag);
+    println!("{filtered}");
+
+    timer.track(
+        &format!("git log {}", args.join(" ")),
+        &format!("ztok git log {}", args.join(" ")),
+        &stdout,
+        &filtered,
+    );
+
+    Ok(())
+}
+
+/// 过滤 git log 输出：截断过长消息，并控制行数。
+/// 从 git log 参数中解析用户指定的 limit。
+/// 支持：`-20`、`-n 20`、`--max-count=20`、`--max-count 20`
+fn parse_user_limit(args: &[String]) -> Option<usize> {
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        // -20（数字与 flag 合并的形式）
+        if arg.starts_with('-')
+            && arg.len() > 1
+            && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
+            && let Ok(n) = arg[1..].parse::<usize>()
+        {
+            return Some(n);
+        }
+        // -n 20（双 token 形式）
+        if arg == "-n"
+            && let Some(next) = iter.next()
+            && let Ok(n) = next.parse::<usize>()
+        {
+            return Some(n);
+        }
+        // --max-count=20
+        if let Some(rest) = arg.strip_prefix("--max-count=")
+            && let Ok(n) = rest.parse::<usize>()
+        {
+            return Some(n);
+        }
+        // --max-count 20（双 token 形式）
+        if arg == "--max-count"
+            && let Some(next) = iter.next()
+            && let Ok(n) = next.parse::<usize>()
+        {
+            return Some(n);
+        }
+    }
+    None
+}
+
+/// 当 `user_set_limit` 为 true 时，表示用户显式给 git log 传了 `-N`。
+/// 此时不再额外裁剪行数（因为 git 已经只返回 N 条 commit），同时将
+/// 截断阈值放宽到 120 个字符，以保留 LLM 在 rebase/squash 场景下
+/// 需要的 commit 上下文。
+fn filter_log_output(
+    output: &str,
+    limit: usize,
+    user_set_limit: bool,
+    user_format: bool,
+) -> String {
+    let truncate_width = if user_set_limit { 120 } else { 80 };
+
+    // 当用户指定了自己的格式（--oneline、--pretty、--format）时，
+    // ZTOK 不会注入 ---END--- 标记，因此改用简单的按行截断。
+    if user_format {
+        let lines: Vec<&str> = output.lines().collect();
+        let max_lines = if user_set_limit { lines.len() } else { limit };
+        return lines
+            .iter()
+            .take(max_lines)
+            .map(|l| truncate_line(l, truncate_width))
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+
+    // ZTOK 注入格式时：按 ---END--- 分隔成 commit 块
+    let commits: Vec<&str> = output.split("---END---").collect();
+    let max_commits = if user_set_limit { commits.len() } else { limit };
+
+    let mut result = Vec::new();
+    for block in commits.iter().take(max_commits) {
+        let block = block.trim();
+        if block.is_empty() {
+            continue;
+        }
+        let mut lines = block.lines();
+        // 第一行是头部：hash subject (date) <author>
+        let header = match lines.next() {
+            Some(h) => truncate_line(h.trim(), truncate_width),
+            None => continue,
+        };
+        // 剩余行是正文：只保留第一条非空行
+        let body_line = lines.map(str::trim).find(|l| {
+            !l.is_empty() && !l.starts_with("Signed-off-by:") && !l.starts_with("Co-authored-by:")
+        });
+
+        match body_line {
+            Some(body) => {
+                let truncated_body = truncate_line(body, truncate_width);
+                result.push(format!("{header}\n  {truncated_body}"));
+            }
+            None => result.push(header),
+        }
+    }
+
+    result.join("\n").trim().to_string()
+}
+
+/// 将单行截断到 `width` 个字符，必要时追加 `...`
+fn truncate_line(line: &str, width: usize) -> String {
+    if line.chars().count() > width {
+        let truncated: String = line.chars().take(width - 3).collect();
+        format!("{truncated}...")
+    } else {
+        line.to_string()
+    }
+}
+
+/// 将 porcelain 输出格式化为紧凑的 ZTOK status 展示
+fn format_status_output(porcelain: &str) -> String {
+    let lines: Vec<&str> = porcelain.lines().collect();
+
+    if lines.is_empty() {
+        return "干净 — 没有可提交内容".to_string();
+    }
+
+    let mut output = String::new();
+
+    // 解析分支信息
+    if let Some(branch_line) = lines.first()
+        && branch_line.starts_with("##")
+    {
+        let branch = branch_line.trim_start_matches("## ");
+        output.push_str(&format!("* {branch}\n"));
+    }
+
+    // 按类型统计变更
+    let mut staged = 0;
+    let mut modified = 0;
+    let mut untracked = 0;
+    let mut conflicts = 0;
+
+    let mut staged_files = Vec::new();
+    let mut modified_files = Vec::new();
+    let mut untracked_files = Vec::new();
+
+    for line in lines.iter().skip(1) {
+        if line.len() < 3 {
+            continue;
+        }
+        let status = line.get(0..2).unwrap_or("  ");
+        let file = line.get(3..).unwrap_or("");
+
+        match status.chars().next().unwrap_or(' ') {
+            'M' | 'A' | 'D' | 'R' | 'C' => {
+                staged += 1;
+                staged_files.push(file);
+            }
+            'U' => conflicts += 1,
+            _ => {}
+        }
+
+        match status.chars().nth(1).unwrap_or(' ') {
+            'M' | 'D' => {
+                modified += 1;
+                modified_files.push(file);
+            }
+            _ => {}
+        }
+
+        if status == "??" {
+            untracked += 1;
+            untracked_files.push(file);
+        }
+    }
+
+    // 生成摘要
+    if staged > 0 {
+        output.push_str(&format!("+ 已暂存：{staged} 个文件\n"));
+        for f in staged_files.iter().take(5) {
+            output.push_str(&format!("   {f}\n"));
+        }
+        if staged_files.len() > 5 {
+            output.push_str(&format!("   ... +{} 个\n", staged_files.len() - 5));
+        }
+    }
+
+    if modified > 0 {
+        output.push_str(&format!("~ 已修改：{modified} 个文件\n"));
+        for f in modified_files.iter().take(5) {
+            output.push_str(&format!("   {f}\n"));
+        }
+        if modified_files.len() > 5 {
+            output.push_str(&format!("   ... +{} 个\n", modified_files.len() - 5));
+        }
+    }
+
+    if untracked > 0 {
+        output.push_str(&format!("? 未跟踪：{untracked} 个文件\n"));
+        for f in untracked_files.iter().take(3) {
+            output.push_str(&format!("   {f}\n"));
+        }
+        if untracked_files.len() > 3 {
+            output.push_str(&format!("   ... +{} 个\n", untracked_files.len() - 3));
+        }
+    }
+
+    if conflicts > 0 {
+        output.push_str(&format!("冲突：{conflicts} 个文件\n"));
+    }
+
+    if staged == 0 && modified == 0 && untracked == 0 && conflicts == 0 {
+        output.push_str("干净 — 没有可提交内容\n");
+    }
+
+    output.trim_end().to_string()
+}
+
+/// 对带用户参数的 git status 做最小化过滤
+fn filter_status_with_args(output: &str) -> String {
+    let mut result = Vec::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+
+        // 跳过空行
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        // 跳过 git 提示信息，这些提示可能出现在开头或行内
+        if trimmed.starts_with("(use \"git")
+            || trimmed.starts_with("(create/copy files")
+            || trimmed.contains("(use \"git add")
+            || trimmed.contains("(use \"git restore")
+        {
+            continue;
+        }
+
+        // 特殊情况：工作区干净
+        if trimmed.contains("nothing to commit") && trimmed.contains("working tree clean") {
+            result.push(trimmed.to_string());
+            break;
+        }
+
+        result.push(line.to_string());
+    }
+
+    if result.is_empty() {
+        "干净".to_string()
+    } else {
+        result.join("\n")
+    }
+}
+
+fn run_status(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    // 如果用户传入了 flag，则只做最小化过滤
+    if !args.is_empty() {
+        let output = git_cmd(global_args)
+            .arg("status")
+            .args(args)
+            .output()
+            .context("运行 git status 失败")?;
+
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
+
+        if !output.status.success() {
+            if !stderr.trim().is_empty() {
+                eprint!("{stderr}");
+            }
+            let raw = stdout.to_string();
+            timer.track(
+                &format!("git status {}", args.join(" ")),
+                &format!("ztok git status {}", args.join(" ")),
+                &raw,
+                &raw,
+            );
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+
+        if verbose > 0 || !stderr.is_empty() {
+            eprint!("{stderr}");
+        }
+
+        // 应用最小化过滤：去掉 ANSI、提示信息和空行
+        let filtered = filter_status_with_args(&stdout);
+        print!("{filtered}");
+
+        timer.track(
+            &format!("git status {}", args.join(" ")),
+            &format!("ztok git status {}", args.join(" ")),
+            &stdout,
+            &filtered,
+        );
+
+        return Ok(());
+    }
+
+    // ZTOK 默认紧凑模式（未提供参数）
+    // 获取原始 git status 用于统计
+    let raw_output = git_cmd(global_args)
+        .args(["status"])
+        .output()
+        .map(|o| crate::utils::decode_output(&o.stdout).to_string())
+        .unwrap_or_default();
+
+    let output = git_cmd(global_args)
+        .args(["status", "--porcelain", "-b"])
+        .output()
+        .context("运行 git status 失败")?;
+
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+
+    if !stderr.is_empty() && stderr.contains("not a git repository") {
+        let message = "不是 git 仓库".to_string();
+        eprintln!("{message}");
+        timer.track("git status", "ztok git status", &raw_output, &message);
+        std::process::exit(output.status.code().unwrap_or(128));
+    }
+
+    let formatted = format_status_output(&stdout);
+
+    println!("{formatted}");
+
+    // 记录统计信息
+    timer.track("git status", "ztok git status", &raw_output, &formatted);
+
+    Ok(())
+}
+
+fn run_add(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("add");
+
+    // 所有参数直接透传给 git（例如 -A、-p、--all 等）
+    if args.is_empty() {
+        cmd.arg(".");
+    } else {
+        for arg in args {
+            cmd.arg(arg);
+        }
+    }
+
+    let output = cmd.output().context("运行 git add 失败")?;
+
+    if verbose > 0 {
+        eprintln!("已执行 git add");
+    }
+
+    let raw_output = format!(
+        "{}\n{}",
+        crate::utils::decode_output(&output.stdout),
+        crate::utils::decode_output(&output.stderr)
+    );
+
+    if output.status.success() {
+        // 统计已添加内容
+        let status_output = git_cmd(global_args)
+            .args(["diff", "--cached", "--stat", "--shortstat"])
+            .output()
+            .context("检查暂存文件失败")?;
+
+        let stat = crate::utils::decode_output(&status_output.stdout);
+        let compact = if stat.trim().is_empty() {
+            "已完成（没有可添加内容）".to_string()
+        } else {
+            // 解析 "1 file changed, 5 insertions(+)" 这类格式
+            let short = stat.lines().last().unwrap_or("").trim();
+            if short.is_empty() {
+                "已完成".to_string()
+            } else {
+                format!("已暂存 {short}")
+            }
+        };
+
+        println!("{compact}");
+
+        timer.track(
+            &format!("git add {}", args.join(" ")),
+            &format!("ztok git add {}", args.join(" ")),
+            &raw_output,
+            &compact,
+        );
+    } else {
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
+        eprintln!("失败：git add");
+        if !stderr.trim().is_empty() {
+            eprintln!("{stderr}");
+        }
+        if !stdout.trim().is_empty() {
+            eprintln!("{stdout}");
+        }
+        // 透传 git 的退出码
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
+fn build_commit_command(args: &[String], global_args: &[String]) -> Command {
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("commit");
+    for arg in args {
+        cmd.arg(arg);
+    }
+    cmd
+}
+
+fn run_commit(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    let original_cmd = format!("git commit {}", args.join(" "));
+
+    if verbose > 0 {
+        eprintln!("{original_cmd}");
+    }
+
+    let output = build_commit_command(args, global_args)
+        .output()
+        .context("运行 git commit 失败")?;
+
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let raw_output = format!("{stdout}\n{stderr}");
+
+    if output.status.success() {
+        // 从类似 "[main abc1234] message" 的输出里提取 commit hash
+        let compact = if let Some(line) = stdout.lines().next() {
+            if let Some(hash_start) = line.find(' ') {
+                let hash = line[1..hash_start].split(' ').next_back().unwrap_or("");
+                if !hash.is_empty() && hash.len() >= 7 {
+                    format!("已提交 {}", &hash[..7.min(hash.len())])
+                } else {
+                    "已提交".to_string()
+                }
+            } else {
+                "已提交".to_string()
+            }
+        } else {
+            "已提交".to_string()
+        };
+
+        println!("{compact}");
+
+        timer.track(&original_cmd, "ztok git commit", &raw_output, &compact);
+    } else {
+        if stderr.contains("nothing to commit") || stdout.contains("nothing to commit") {
+            println!("无可提交内容");
+            timer.track(
+                &original_cmd,
+                "ztok git commit",
+                &raw_output,
+                "无可提交内容",
+            );
+        } else {
+            if !stderr.trim().is_empty() {
+                eprint!("{stderr}");
+            }
+            if !stdout.trim().is_empty() {
+                eprint!("{stdout}");
+            }
+            timer.track(&original_cmd, "ztok git commit", &raw_output, &raw_output);
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+    }
+
+    Ok(())
+}
+
+fn run_push(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("运行：git push");
+    }
+
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("push");
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("运行 git push 失败")?;
+
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let raw = format!("{stdout}{stderr}");
+
+    if output.status.success() {
+        let compact = if stderr.contains("Everything up-to-date") {
+            "已是最新".to_string()
+        } else {
+            let mut result = String::new();
+            for line in stderr.lines() {
+                if line.contains("->") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 3 {
+                        result = format!("已推送 {}", parts[parts.len() - 1]);
+                        break;
+                    }
+                }
+            }
+            if !result.is_empty() {
+                result
+            } else {
+                "已推送".to_string()
+            }
+        };
+
+        println!("{compact}");
+
+        timer.track(
+            &format!("git push {}", args.join(" ")),
+            &format!("ztok git push {}", args.join(" ")),
+            &raw,
+            &compact,
+        );
+    } else {
+        eprintln!("失败：git push");
+        if !stderr.trim().is_empty() {
+            eprintln!("{stderr}");
+        }
+        if !stdout.trim().is_empty() {
+            eprintln!("{stdout}");
+        }
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
+fn run_pull(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("运行：git pull");
+    }
+
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("pull");
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("运行 git pull 失败")?;
+
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let raw_output = format!("{stdout}\n{stderr}");
+
+    if output.status.success() {
+        let compact =
+            if stdout.contains("Already up to date") || stdout.contains("Already up-to-date") {
+                "已是最新".to_string()
+            } else {
+                // 统计变更文件数
+                let mut files = 0;
+                let mut insertions = 0;
+                let mut deletions = 0;
+
+                for line in stdout.lines() {
+                    if line.contains("file") && line.contains("changed") {
+                        // 解析 "3 files changed, 10 insertions(+), 2 deletions(-)" 这类格式
+                        for part in line.split(',') {
+                            let part = part.trim();
+                            if part.contains("file") {
+                                files = part
+                                    .split_whitespace()
+                                    .next()
+                                    .and_then(|n| n.parse().ok())
+                                    .unwrap_or(0);
+                            } else if part.contains("insertion") {
+                                insertions = part
+                                    .split_whitespace()
+                                    .next()
+                                    .and_then(|n| n.parse().ok())
+                                    .unwrap_or(0);
+                            } else if part.contains("deletion") {
+                                deletions = part
+                                    .split_whitespace()
+                                    .next()
+                                    .and_then(|n| n.parse().ok())
+                                    .unwrap_or(0);
+                            }
+                        }
+                    }
+                }
+
+                if files > 0 {
+                    format!("已更新 {files} 个文件 +{insertions} -{deletions}")
+                } else {
+                    "已更新".to_string()
+                }
+            };
+
+        println!("{compact}");
+
+        timer.track(
+            &format!("git pull {}", args.join(" ")),
+            &format!("ztok git pull {}", args.join(" ")),
+            &raw_output,
+            &compact,
+        );
+    } else {
+        eprintln!("失败：git pull");
+        if !stderr.trim().is_empty() {
+            eprintln!("{stderr}");
+        }
+        if !stdout.trim().is_empty() {
+            eprintln!("{stdout}");
+        }
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
+
+    Ok(())
+}
+
+fn run_branch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("运行：git branch");
+    }
+
+    // 检测写操作：删除、重命名、复制、upstream 跟踪等
+    let has_action_flag = args.iter().any(|a| {
+        a == "-d"
+            || a == "-D"
+            || a == "-m"
+            || a == "-M"
+            || a == "-c"
+            || a == "-C"
+            || a == "--set-upstream-to"
+            || a.starts_with("--set-upstream-to=")
+            || a == "-u"
+            || a == "--unset-upstream"
+            || a == "--edit-description"
+    });
+
+    let has_show_flag = args.iter().any(|a| a == "--show-current");
+
+    // 检测列表模式 flag
+    let has_list_flag = args.iter().any(|a| {
+        a == "-a"
+            || a == "--all"
+            || a == "-r"
+            || a == "--remotes"
+            || a == "--list"
+            || a == "--merged"
+            || a == "--no-merged"
+            || a == "--contains"
+            || a == "--no-contains"
+            || a == "--format"
+            || a.starts_with("--format=")
+            || a == "--sort"
+            || a.starts_with("--sort=")
+            || a == "--points-at"
+            || a.starts_with("--points-at=")
+    });
+
+    // 检测位置参数（非 flag）—— 这通常表示要创建分支
+    let has_positional_arg = args.iter().any(|a| !a.starts_with('-'));
+
+    if has_show_flag {
+        let mut cmd = git_cmd(global_args);
+        cmd.arg("branch");
+        for arg in args {
+            cmd.arg(arg);
+        }
+        let output = cmd.output().context("运行 git branch 失败")?;
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let combined = format!("{stdout}{stderr}");
+        let trimmed = stdout.trim();
+
+        timer.track(
+            &format!("git branch {}", args.join(" ")),
+            &format!("ztok git branch {}", args.join(" ")),
+            &combined,
+            trimmed,
+        );
+
+        if output.status.success() {
+            println!("{trimmed}");
+        } else {
+            eprintln!("失败：git branch {}", args.join(" "));
+            if !stderr.trim().is_empty() {
+                eprintln!("{stderr}");
+            }
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+        return Ok(());
+    }
+
+    // 写操作：带动作 flag，或带位置参数且没有 list flag（即创建分支）
+    if has_action_flag || (has_positional_arg && !has_list_flag) {
+        let mut cmd = git_cmd(global_args);
+        cmd.arg("branch");
+        for arg in args {
+            cmd.arg(arg);
+        }
+        let output = cmd.output().context("运行 git branch 失败")?;
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let combined = format!("{stdout}{stderr}");
+
+        let msg = if output.status.success() {
+            "已完成"
+        } else {
+            &combined
+        };
+
+        timer.track(
+            &format!("git branch {}", args.join(" ")),
+            &format!("ztok git branch {}", args.join(" ")),
+            &combined,
+            msg,
+        );
+
+        if output.status.success() {
+            println!("已完成");
+        } else {
+            eprintln!("失败：git branch {}", args.join(" "));
+            if !stderr.trim().is_empty() {
+                eprintln!("{stderr}");
+            }
+            if !stdout.trim().is_empty() {
+                eprintln!("{stdout}");
+            }
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+        return Ok(());
+    }
+
+    // 列表模式：显示紧凑分支列表
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("branch");
+    if !has_list_flag {
+        cmd.arg("-a");
+    }
+    cmd.arg("--no-color");
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("运行 git branch 失败")?;
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let raw = stdout.to_string();
+
+    if !output.status.success() {
+        let stderr = crate::utils::decode_output(&output.stderr);
+        if !stderr.trim().is_empty() {
+            eprint!("{stderr}");
+        }
+        timer.track(
+            &format!("git branch {}", args.join(" ")),
+            &format!("ztok git branch {}", args.join(" ")),
+            &raw,
+            &raw,
+        );
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
+
+    let filtered = filter_branch_output(&stdout);
+    println!("{filtered}");
+
+    timer.track(
+        &format!("git branch {}", args.join(" ")),
+        &format!("ztok git branch {}", args.join(" ")),
+        &raw,
+        &filtered,
+    );
+
+    Ok(())
+}
+
+fn filter_branch_output(output: &str) -> String {
+    let mut current = String::new();
+    let mut local: Vec<String> = Vec::new();
+    let mut remote: Vec<String> = Vec::new();
+
+    for line in output.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if let Some(branch) = line.strip_prefix("* ") {
+            current = branch.to_string();
+        } else if line.starts_with("remotes/origin/") {
+            let branch = line.strip_prefix("remotes/origin/").unwrap_or(line);
+            // 跳过 HEAD 指针
+            if branch.starts_with("HEAD ") {
+                continue;
+            }
+            remote.push(branch.to_string());
+        } else {
+            local.push(line.to_string());
+        }
+    }
+
+    let mut result = Vec::new();
+    result.push(format!("* {current}"));
+
+    if !local.is_empty() {
+        for b in &local {
+            result.push(format!("  {b}"));
+        }
+    }
+
+    if !remote.is_empty() {
+        // 过滤掉本地已存在的远端分支
+        let remote_only: Vec<&String> = remote
+            .iter()
+            .filter(|r| *r != &current && !local.contains(r))
+            .collect();
+        if !remote_only.is_empty() {
+            result.push(format!("  仅远端（{}）：", remote_only.len()));
+            for b in remote_only.iter().take(10) {
+                result.push(format!("    {b}"));
+            }
+            if remote_only.len() > 10 {
+                result.push(format!("    ... +{} 个", remote_only.len() - 10));
+            }
+        }
+    }
+
+    result.join("\n")
+}
+
+fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("运行：git fetch");
+    }
+
+    let mut cmd = git_cmd(global_args);
+    cmd.arg("fetch");
+    for arg in args {
+        cmd.arg(arg);
+    }
+
+    let output = cmd.output().context("运行 git fetch 失败")?;
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let stderr = crate::utils::decode_output(&output.stderr);
+    let raw = format!("{stdout}{stderr}");
+
+    if !output.status.success() {
+        eprintln!("失败：git fetch");
+        if !stderr.trim().is_empty() {
+            eprintln!("{stderr}");
+        }
+        std::process::exit(output.status.code().unwrap_or(1));
+    }
+
+    // 从 stderr 统计新引用数量（git fetch 会把输出写到 stderr）
+    let new_refs: usize = stderr
+        .lines()
+        .filter(|l| l.contains("->") || l.contains("[new"))
+        .count();
+
+    let msg = if new_refs > 0 {
+        format!("已拉取（{new_refs} 个新引用）")
+    } else {
+        "已拉取".to_string()
+    };
+
+    println!("{msg}");
+    timer.track("git fetch", "ztok git fetch", &raw, &msg);
+
+    Ok(())
+}
+
+fn run_stash(
+    subcommand: Option<&str>,
+    args: &[String],
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("运行：git stash {subcommand:?}");
+    }
+
+    match subcommand {
+        Some("list") => {
+            let output = git_cmd(global_args)
+                .args(["stash", "list"])
+                .output()
+                .context("运行 git stash list 失败")?;
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let raw = stdout.to_string();
+
+            if stdout.trim().is_empty() {
+                let msg = "无 stash";
+                println!("{msg}");
+                timer.track("git stash list", "ztok git stash list", &raw, msg);
+                return Ok(());
+            }
+
+            let filtered = filter_stash_list(&stdout);
+            println!("{filtered}");
+            timer.track("git stash list", "ztok git stash list", &raw, &filtered);
+        }
+        Some("show") => {
+            let mut cmd = git_cmd(global_args);
+            cmd.args(["stash", "show", "-p"]);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            let output = cmd.output().context("运行 git stash show 失败")?;
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let raw = stdout.to_string();
+
+            let filtered = if stdout.trim().is_empty() {
+                let msg = "空 stash";
+                println!("{msg}");
+                msg.to_string()
+            } else {
+                let compacted = compact_diff(&stdout, /*max_lines*/ 100);
+                println!("{compacted}");
+                compacted
+            };
+
+            timer.track("git stash show", "ztok git stash show", &raw, &filtered);
+        }
+        Some(sub @ ("pop" | "apply" | "drop" | "push")) => {
+            let mut cmd = git_cmd(global_args);
+            cmd.args(["stash", sub]);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            let output = cmd.output().context("运行 git stash 失败")?;
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let stderr = crate::utils::decode_output(&output.stderr);
+            let combined = format!("{stdout}{stderr}");
+
+            let msg = if output.status.success() {
+                let msg = format!("已执行 stash {sub}");
+                println!("{msg}");
+                msg
+            } else {
+                eprintln!("失败：git stash {sub}");
+                if !stderr.trim().is_empty() {
+                    eprintln!("{stderr}");
+                }
+                combined.clone()
+            };
+
+            timer.track(
+                &format!("git stash {sub}"),
+                &format!("ztok git stash {sub}"),
+                &combined,
+                &msg,
+            );
+
+            if !output.status.success() {
+                std::process::exit(output.status.code().unwrap_or(1));
+            }
+        }
+        Some(sub) => {
+            let mut cmd = git_cmd(global_args);
+            cmd.args(["stash", sub]);
+            for arg in args {
+                cmd.arg(arg);
+            }
+            let output = cmd.output().context("运行 git stash 失败")?;
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let stderr = crate::utils::decode_output(&output.stderr);
+            let combined = format!("{stdout}{stderr}");
+
+            let msg = if output.status.success() {
+                let msg = format!("已执行 stash {sub}");
+                println!("{msg}");
+                msg
+            } else {
+                eprintln!("失败：git stash {sub}");
+                if !stderr.trim().is_empty() {
+                    eprintln!("{stderr}");
+                }
+                combined.clone()
+            };
+
+            timer.track(
+                &format!("git stash {sub}"),
+                &format!("ztok git stash {sub}"),
+                &combined,
+                &msg,
+            );
+
+            if !output.status.success() {
+                std::process::exit(output.status.code().unwrap_or(1));
+            }
+        }
+        None => {
+            // 默认行为：git stash（即 push）
+            let mut cmd = git_cmd(global_args);
+            cmd.arg("stash");
+            for arg in args {
+                cmd.arg(arg);
+            }
+            let output = cmd.output().context("运行 git stash 失败")?;
+            let stdout = crate::utils::decode_output(&output.stdout);
+            let stderr = crate::utils::decode_output(&output.stderr);
+            let combined = format!("{stdout}{stderr}");
+
+            let msg = if output.status.success() {
+                if stdout.contains("No local changes") {
+                    let msg = "无可 stash 内容";
+                    println!("{msg}");
+                    msg.to_string()
+                } else {
+                    let msg = "已 stash";
+                    println!("{msg}");
+                    msg.to_string()
+                }
+            } else {
+                eprintln!("失败：git stash");
+                if !stderr.trim().is_empty() {
+                    eprintln!("{stderr}");
+                }
+                combined.clone()
+            };
+
+            timer.track("git stash", "ztok git stash", &combined, &msg);
+
+            if !output.status.success() {
+                std::process::exit(output.status.code().unwrap_or(1));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn filter_stash_list(output: &str) -> String {
+    // 格式示例："stash@{0}: WIP on main: abc1234 commit message"
+    let mut result = Vec::new();
+    for line in output.lines() {
+        if let Some(colon_pos) = line.find(": ") {
+            let index = &line[..colon_pos];
+            let rest = &line[colon_pos + 2..];
+            // 紧凑化：如果存在 "WIP on branch:" 前缀则去掉
+            let message = if let Some(second_colon) = rest.find(": ") {
+                rest[second_colon + 2..].trim()
+            } else {
+                rest.trim()
+            };
+            result.push(format!("{index}: {message}"));
+        } else {
+            result.push(line.to_string());
+        }
+    }
+    result.join("\n")
+}
+
+fn run_worktree(args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("运行：git worktree list");
+    }
+
+    // 如果参数里包含 "add"、"remove"、"prune" 等动作，则直接透传
+    let has_action = args.iter().any(|a| {
+        a == "add" || a == "remove" || a == "prune" || a == "lock" || a == "unlock" || a == "move"
+    });
+
+    if has_action {
+        let mut cmd = git_cmd(global_args);
+        cmd.arg("worktree");
+        for arg in args {
+            cmd.arg(arg);
+        }
+        let output = cmd.output().context("运行 git worktree 失败")?;
+        let stdout = crate::utils::decode_output(&output.stdout);
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let combined = format!("{stdout}{stderr}");
+
+        let msg = if output.status.success() {
+            "已完成"
+        } else {
+            &combined
+        };
+
+        timer.track(
+            &format!("git worktree {}", args.join(" ")),
+            &format!("ztok git worktree {}", args.join(" ")),
+            &combined,
+            msg,
+        );
+
+        if output.status.success() {
+            println!("已完成");
+        } else {
+            eprintln!("失败：git worktree {}", args.join(" "));
+            if !stderr.trim().is_empty() {
+                eprintln!("{stderr}");
+            }
+            std::process::exit(output.status.code().unwrap_or(1));
+        }
+        return Ok(());
+    }
+
+    // 默认：列表模式
+    let output = git_cmd(global_args)
+        .args(["worktree", "list"])
+        .output()
+        .context("运行 git worktree list 失败")?;
+
+    let stdout = crate::utils::decode_output(&output.stdout);
+    let raw = stdout.to_string();
+
+    let filtered = filter_worktree_list(&stdout);
+    println!("{filtered}");
+    timer.track("git worktree list", "ztok git worktree", &raw, &filtered);
+
+    Ok(())
+}
+
+fn filter_worktree_list(output: &str) -> String {
+    let home = dirs::home_dir()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let mut result = Vec::new();
+    for line in output.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        // 格式示例："/path/to/worktree  abc1234 [branch]"
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 {
+            let mut path = parts[0].to_string();
+            if !home.is_empty() && path.starts_with(&home) {
+                path = format!("~{}", &path[home.len()..]);
+            }
+            let hash = parts[1];
+            let branch = parts[2..].join(" ");
+            result.push(format!("{path} {hash} {branch}"));
+        } else {
+            result.push(line.to_string());
+        }
+    }
+    result.join("\n")
+}
+
+/// 对不支持的 git 子命令直接透传执行
+pub fn run_passthrough(args: &[OsString], global_args: &[String], verbose: u8) -> Result<()> {
+    let timer = tracking::TimedExecution::start();
+
+    if verbose > 0 {
+        eprintln!("git 透传：{args:?}");
+    }
+    let status = git_cmd(global_args)
+        .args(args)
+        .status()
+        .context("运行 git 失败")?;
+
+    let args_str = tracking::args_display(args);
+    timer.track_passthrough(
+        &format!("git {args_str}"),
+        &format!("ztok git {args_str} (passthrough)"),
+    );
+
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_git_cmd_no_global_args() {
+        let cmd = git_cmd(&[]);
+        let program = cmd.get_program().to_string_lossy().to_string();
+        // 在 Windows 上，resolved_command 会返回完整路径（例如 "C:\Program Files\Git\bin\git.exe"）
+        let basename = std::path::Path::new(&program)
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert_eq!(basename, "git");
+        assert!(cmd.get_args().next().is_none());
+    }
+
+    #[test]
+    fn test_git_cmd_with_directory() {
+        let global_args = vec!["-C".to_string(), "/tmp".to_string()];
+        let cmd = git_cmd(&global_args);
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args, vec!["-C", "/tmp"]);
+    }
+
+    #[test]
+    fn test_git_cmd_with_multiple_global_args() {
+        let global_args = vec![
+            "-C".to_string(),
+            "/tmp".to_string(),
+            "-c".to_string(),
+            "user.name=test".to_string(),
+            "--git-dir".to_string(),
+            "/foo/.git".to_string(),
+        ];
+        let cmd = git_cmd(&global_args);
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(
+            args,
+            vec![
+                "-C",
+                "/tmp",
+                "-c",
+                "user.name=test",
+                "--git-dir",
+                "/foo/.git"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_git_cmd_with_boolean_flags() {
+        let global_args = vec!["--no-pager".to_string(), "--bare".to_string()];
+        let cmd = git_cmd(&global_args);
+        let args: Vec<_> = cmd.get_args().collect();
+        assert_eq!(args, vec!["--no-pager", "--bare"]);
+    }
+
+    #[test]
+    fn test_compact_diff() {
+        let diff = r#"diff --git a/foo.rs b/foo.rs
+--- a/foo.rs
++++ b/foo.rs
+@@ -1,3 +1,4 @@
+ fn main() {
++    println!("hello");
+ }
+"#;
+        let result = compact_diff(diff, 100);
+        assert!(result.contains("foo.rs"));
+        assert!(result.contains("+"));
+    }
+
+    #[test]
+    fn test_compact_diff_increased_hunk_limit() {
+        // 构造一个包含 25 条变更行的 hunk —— 在 limit=30 时不应被截断
+        let mut diff =
+            "diff --git a/big.rs b/big.rs\n--- a/big.rs\n+++ b/big.rs\n@@ -1,25 +1,25 @@\n"
+                .to_string();
+        for i in 1..=25 {
+            diff.push_str(&format!("+line{i}\n"));
+        }
+        let result = compact_diff(&diff, 500);
+        assert!(
+            !result.contains("... (truncated)"),
+            "在 `max_hunk_lines=30` 时，25 行内容不应被截断"
+        );
+        assert!(result.contains("+line25"));
+    }
+
+    #[test]
+    fn test_compact_diff_increased_total_limit() {
+        // 构造一个跨多个文件、共 150 行输出的 diff —— 不应在 100 行处被截断
+        let mut diff = String::new();
+        for f in 1..=5 {
+            diff.push_str(&format!("diff --git a/file{f}.rs b/file{f}.rs\n--- a/file{f}.rs\n+++ b/file{f}.rs\n@@ -1,20 +1,20 @@\n"));
+            for i in 1..=20 {
+                diff.push_str(&format!("+line{f}_{i}\n"));
+            }
+        }
+        let result = compact_diff(&diff, 500);
+        assert!(
+            !result.contains("更多变更已截断"),
+            "5 个文件各 20 行时，不应超过 `max_lines=500`"
+        );
+    }
+
+    #[test]
+    fn test_is_blob_show_arg() {
+        assert!(is_blob_show_arg("develop:modules/pairs_backtest.py"));
+        assert!(is_blob_show_arg("HEAD:src/main.rs"));
+        assert!(!is_blob_show_arg("--pretty=format:%h"));
+        assert!(!is_blob_show_arg("--format=short"));
+        assert!(!is_blob_show_arg("HEAD"));
+    }
+
+    #[test]
+    fn test_filter_branch_output() {
+        let output = "* main\n  feature/auth\n  fix/bug-123\n  remotes/origin/HEAD -> origin/main\n  remotes/origin/main\n  remotes/origin/feature/auth\n  remotes/origin/release/v2\n";
+        let result = filter_branch_output(output);
+        assert!(result.contains("* main"));
+        assert!(result.contains("feature/auth"));
+        assert!(result.contains("fix/bug-123"));
+        // “仅远端”应显示 release/v2，而不显示 main 或 feature/auth（这些本地已存在）
+        assert!(result.contains("仅远端"));
+        assert!(result.contains("release/v2"));
+    }
+
+    #[test]
+    fn test_filter_branch_no_remotes() {
+        let output = "* main\n  develop\n";
+        let result = filter_branch_output(output);
+        assert!(result.contains("* main"));
+        assert!(result.contains("develop"));
+        assert!(!result.contains("仅远端"));
+    }
+
+    #[test]
+    fn test_filter_stash_list() {
+        let output =
+            "stash@{0}: WIP on main: abc1234 fix login\nstash@{1}: On feature: def5678 wip\n";
+        let result = filter_stash_list(output);
+        assert!(result.contains("stash@{0}: abc1234 fix login"));
+        assert!(result.contains("stash@{1}: def5678 wip"));
+    }
+
+    #[test]
+    fn test_filter_worktree_list() {
+        let output =
+            "/home/user/project  abc1234 [main]\n/home/user/worktrees/feat  def5678 [feature]\n";
+        let result = filter_worktree_list(output);
+        assert!(result.contains("abc1234"));
+        assert!(result.contains("[main]"));
+        assert!(result.contains("[feature]"));
+    }
+
+    #[test]
+    fn test_format_status_output_clean() {
+        let porcelain = "";
+        let result = format_status_output(porcelain);
+        assert_eq!(result, "干净 — 没有可提交内容");
+    }
+
+    #[test]
+    fn test_format_status_output_modified_files() {
+        let porcelain = "## main...origin/main\n M src/main.rs\n M src/lib.rs\n";
+        let result = format_status_output(porcelain);
+        assert!(result.contains("* main...origin/main"));
+        assert!(result.contains("~ 已修改：2 个文件"));
+        assert!(result.contains("src/main.rs"));
+        assert!(result.contains("src/lib.rs"));
+        assert!(!result.contains("已暂存"));
+        assert!(!result.contains("未跟踪"));
+    }
+
+    #[test]
+    fn test_format_status_output_untracked_files() {
+        let porcelain = "## feature/new\n?? temp.txt\n?? debug.log\n?? test.sh\n";
+        let result = format_status_output(porcelain);
+        assert!(result.contains("* feature/new"));
+        assert!(result.contains("? 未跟踪：3 个文件"));
+        assert!(result.contains("temp.txt"));
+        assert!(result.contains("debug.log"));
+        assert!(result.contains("test.sh"));
+        assert!(!result.contains("已修改"));
+    }
+
+    #[test]
+    fn test_format_status_output_mixed_changes() {
+        let porcelain = r#"## main
+M  staged.rs
+ M modified.rs
+A  added.rs
+?? untracked.txt
+"#;
+        let result = format_status_output(porcelain);
+        assert!(result.contains("* main"));
+        assert!(result.contains("+ 已暂存：2 个文件"));
+        assert!(result.contains("staged.rs"));
+        assert!(result.contains("added.rs"));
+        assert!(result.contains("~ 已修改：1 个文件"));
+        assert!(result.contains("modified.rs"));
+        assert!(result.contains("? 未跟踪：1 个文件"));
+        assert!(result.contains("untracked.txt"));
+    }
+
+    #[test]
+    fn test_format_status_output_truncation() {
+        // 验证：当已暂存文件超过 5 个时，应显示 "... +N 个"
+        let porcelain = r#"## main
+M  file1.rs
+M  file2.rs
+M  file3.rs
+M  file4.rs
+M  file5.rs
+M  file6.rs
+M  file7.rs
+"#;
+        let result = format_status_output(porcelain);
+        assert!(result.contains("+ 已暂存：7 个文件"));
+        assert!(result.contains("file1.rs"));
+        assert!(result.contains("file5.rs"));
+        assert!(result.contains("... +2 个"));
+        assert!(!result.contains("file6.rs"));
+        assert!(!result.contains("file7.rs"));
+    }
+
+    #[test]
+    fn test_run_passthrough_accepts_args() {
+        // 验证 run_passthrough 能通过编译且签名正确
+        let _args: Vec<OsString> = vec![OsString::from("tag"), OsString::from("--list")];
+        // 编译期验证该函数存在且签名正确
+    }
+
+    #[test]
+    fn test_filter_log_output() {
+        let output = "abc1234 This is a commit message (2 days ago) <author>\n\n---END---\ndef5678 Another commit (1 week ago) <other>\n\n---END---\n";
+        let result = filter_log_output(output, 10, false, false);
+        assert!(result.contains("abc1234"));
+        assert!(result.contains("def5678"));
+        assert_eq!(result.lines().count(), 2);
+    }
+
+    #[test]
+    fn test_filter_log_output_with_body() {
+        // 带正文的 commit：第一条非 trailer 正文应以缩进形式保留
+        let output = "abc1234 feat: add feature (2 days ago) <author>\nBREAKING CHANGE: removed old API\nSigned-off-by: Author <a@b.com>\n---END---\ndef5678 fix: typo (1 day ago) <other>\n\n---END---\n";
+        let result = filter_log_output(output, 10, false, false);
+        assert!(result.contains("abc1234"));
+        assert!(result.contains("BREAKING CHANGE: removed old API"));
+        assert!(!result.contains("Signed-off-by:"));
+        // `def5678` 没有正文，只应保留头部
+        assert!(result.contains("def5678"));
+        // 共 3 行：头部 1、带缩进的正文 1、头部 2
+        assert_eq!(result.lines().count(), 3);
+    }
+
+    #[test]
+    fn test_filter_log_output_skips_trailers() {
+        // 如果正文只有 trailer，则不应生成正文行
+        let output = "abc1234 chore: bump (1 day ago) <bot>\nSigned-off-by: Bot <bot@ci>\nCo-authored-by: Human <h@b>\n---END---\n";
+        let result = filter_log_output(output, 10, false, false);
+        assert!(result.contains("abc1234"));
+        assert!(!result.contains("Signed-off-by:"));
+        assert!(!result.contains("Co-authored-by:"));
+        assert_eq!(result.lines().count(), 1);
+    }
+
+    #[test]
+    fn test_filter_log_output_truncate_long() {
+        let long_line = "abc1234 ".to_string() + &"x".repeat(100) + " (2 days ago) <author>";
+        let result = filter_log_output(&long_line, 10, false, false);
+        assert!(result.chars().count() < long_line.chars().count());
+        assert!(result.contains("..."));
+        assert!(result.chars().count() <= 80);
+    }
+
+    #[test]
+    fn test_filter_log_output_cap_lines() {
+        let output = (0..20)
+            .map(|i| format!("hash{i} message {i} (1 day ago) <author>\n\n---END---"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let result = filter_log_output(&output, 5, false, false);
+        assert_eq!(result.lines().count(), 5);
+    }
+
+    #[test]
+    fn test_filter_log_output_user_limit_no_cap() {
+        // 当用户显式传入 -N 时，应返回全部 N 行（不再二次截断）
+        let output = (0..20)
+            .map(|i| format!("hash{i} message {i} (1 day ago) <author>\n\n---END---"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let result = filter_log_output(&output, 20, true, false);
+        assert_eq!(
+            result.lines().count(),
+            20,
+            "用户传入 -20 时应返回完整的 20 行"
+        );
+    }
+
+    #[test]
+    fn test_filter_log_output_user_limit_wider_truncation() {
+        // 当用户显式传入 -N 时，120 字符以内的行不应被截断
+        let line_90_chars = format!("abc1234 {} (2 days ago) <author>", "x".repeat(60));
+        assert!(line_90_chars.chars().count() > 80);
+        assert!(line_90_chars.chars().count() < 120);
+
+        let result_default = filter_log_output(&line_90_chars, 10, false, false);
+        let result_user = filter_log_output(&line_90_chars, 10, true, false);
+
+        // 默认会在 80 字符处截断
+        assert!(result_default.contains("..."), "默认应在 80 个字符处截断");
+        // 用户自定义 limit 时会使用更宽的阈值（120 字符）
+        assert!(
+            !result_user.contains("..."),
+            "用户自定义 limit 时不应截断 90 字符的行"
+        );
+    }
+
+    #[test]
+    fn test_parse_user_limit_combined() {
+        let args: Vec<String> = vec!["-20".into()];
+        assert_eq!(parse_user_limit(&args), Some(20));
+    }
+
+    #[test]
+    fn test_parse_user_limit_n_space() {
+        let args: Vec<String> = vec!["-n".into(), "15".into()];
+        assert_eq!(parse_user_limit(&args), Some(15));
+    }
+
+    #[test]
+    fn test_parse_user_limit_max_count_eq() {
+        let args: Vec<String> = vec!["--max-count=30".into()];
+        assert_eq!(parse_user_limit(&args), Some(30));
+    }
+
+    #[test]
+    fn test_parse_user_limit_max_count_space() {
+        let args: Vec<String> = vec!["--max-count".into(), "25".into()];
+        assert_eq!(parse_user_limit(&args), Some(25));
+    }
+
+    #[test]
+    fn test_parse_user_limit_none() {
+        let args: Vec<String> = vec!["--oneline".into()];
+        assert_eq!(parse_user_limit(&args), None);
+    }
+
+    #[test]
+    fn test_filter_log_output_token_savings() {
+        fn count_tokens(text: &str) -> usize {
+            text.split_whitespace().count()
+        }
+        // 模拟冗长的 git log 输出（默认格式，包含完整元数据）
+        let input = (0..20)
+            .map(|i| {
+                format!(
+                    "commit abc123{i:02x}\nAuthor: User Name <user@example.com>\nDate:   Mon Mar 10 10:00:00 2026 +0000\n\n    fix: commit message number {i}\n\n    Extended body with details about the change.\n"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = filter_log_output(&input, 10, false, false);
+        let savings = 100.0 - (count_tokens(&output) as f64 / count_tokens(&input) as f64 * 100.0);
+        assert!(
+            savings >= 60.0,
+            "预期节省至少 60% token，实际为 {savings:.1}%"
+        );
+    }
+
+    #[test]
+    fn test_filter_status_with_args() {
+        let output = r#"On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/main.rs
+
+no changes added to commit (use "git add" and/or "git commit -a")
+"#;
+        let result = filter_status_with_args(output);
+        eprintln!("Result:\n{result}");
+        assert!(result.contains("On branch main"));
+        assert!(result.contains("modified:   src/main.rs"));
+        assert!(
+            !result.contains("(use \"git"),
+            "结果中不应包含 git 提示信息"
+        );
+    }
+
+    #[test]
+    fn test_filter_status_with_args_clean() {
+        let output = "nothing to commit, working tree clean\n";
+        let result = filter_status_with_args(output);
+        assert!(result.contains("nothing to commit"));
+    }
+
+    #[test]
+    fn test_filter_log_output_multibyte() {
+        // 泰文字符通常每个占 3 字节；这里构造“字节数很多但字符数不多”的一行
+        let thai_msg = format!("abc1234 {} (2 days ago) <author>", "ก".repeat(30));
+        let result = filter_log_output(&thai_msg, 10, false, false);
+        // 不应 panic
+        assert!(result.contains("abc1234"));
+        // 这一行包含 30 个泰文字符和其他文本，总字符数仍未超过阈值
+        // `truncate_line` 现在按字符数而非字节数计算
+        // 因此这里不应发生截断
+        assert!(result.contains("abc1234"));
+    }
+
+    #[test]
+    fn test_filter_log_output_emoji() {
+        let emoji_msg = "abc1234 🎉🎊🎈🎁🎂🎄🎃🎆🎇✨🎉🎊🎈🎁🎂🎄🎃🎆🎇✨ (1 day ago) <user>";
+        let result = filter_log_output(emoji_msg, 10, false, false);
+        // 不应 panic
+        // 20 个 emoji 加上约 30 个其他字符，总长度约 50，小于 80，无需截断
+        assert!(result.contains("abc1234"));
+    }
+
+    #[test]
+    fn test_format_status_output_thai_filename() {
+        let porcelain = "## main\n M สวัสดี.txt\n?? ทดสอบ.rs\n";
+        let result = format_status_output(porcelain);
+        // 不应 panic
+        assert!(result.contains("* main"));
+        assert!(result.contains("สวัสดี.txt"));
+        assert!(result.contains("ทดสอบ.rs"));
+    }
+
+    #[test]
+    fn test_format_status_output_emoji_filename() {
+        let porcelain = "## main\nA  🎉-party.txt\n M 日本語ファイル.rs\n";
+        let result = format_status_output(porcelain);
+        assert!(result.contains("* main"));
+    }
+
+    /// 回归测试：`--oneline` 等用户自定义格式 flag 必须保留所有 commit。
+    /// 修复前，`filter_log_output` 会按 `---END---` 分割，但用户自定义格式下并不存在该标记，
+    /// 导致最终只剩下 2 条 commit。
+    #[test]
+    fn test_filter_log_output_user_format_oneline() {
+        let oneline_output = "abc1234 feat: add feature\n\
+                              def5678 fix: typo\n\
+                              ghi9012 chore: bump deps\n\
+                              jkl3456 docs: update readme\n\
+                              mno7890 test: add tests\n";
+
+        let result = filter_log_output(oneline_output, 10, false, true);
+        // 5 行都必须保留下来，不能因为没有 ---END--- 而错误分割
+        assert_eq!(result.lines().count(), 5);
+        assert!(result.contains("abc1234"));
+        assert!(result.contains("mno7890"));
+    }
+
+    #[test]
+    fn test_filter_log_output_user_format_with_limit() {
+        let oneline_output = "abc1234 feat: add feature\n\
+                              def5678 fix: typo\n\
+                              ghi9012 chore: bump deps\n\
+                              jkl3456 docs: update readme\n\
+                              mno7890 test: add tests\n";
+
+        // `user_set_limit=true` 表示尊重全部输出行数（不设上限）
+        let result = filter_log_output(oneline_output, 3, true, true);
+        assert_eq!(result.lines().count(), 5);
+
+        // `user_set_limit=false` 表示按 `limit` 截断
+        let result = filter_log_output(oneline_output, 3, false, true);
+        assert_eq!(result.lines().count(), 3);
+    }
+
+    /// 回归测试：`git branch <name>` 必须执行“创建”，而不是“列出”。
+    /// 修复前，位置参数会误落入列表模式并自动追加 `-a`，
+    /// 从而把创建操作变成按模式过滤的列表输出（静默 no-op）。
+    #[test]
+    #[ignore] // Integration test: requires git repo
+    fn test_branch_creation_not_swallowed() {
+        let branch = "test-ztok-create-branch-regression";
+        // 通过 run_branch 创建分支
+        run_branch(&[branch.to_string()], 0, &[]).expect("`run_branch` 应执行成功");
+        // 验证分支确实存在
+        let output = Command::new("git")
+            .args(["branch", "--list", branch])
+            .output()
+            .expect("`git branch --list` 应执行成功");
+        let stdout = crate::utils::decode_output(&output.stdout);
+        assert!(
+            stdout.contains(branch),
+            "分支 `{branch}` 未被创建，`run_branch` 静默吞掉了创建操作"
+        );
+        // 清理
+        let _ = Command::new("git").args(["branch", "-d", branch]).output();
+    }
+
+    /// 回归测试：`git branch <name> <commit>` 必须能基于指定 commit 创建分支。
+    #[test]
+    #[ignore] // Integration test: requires git repo
+    fn test_branch_creation_from_commit() {
+        let branch = "test-ztok-create-from-commit";
+        run_branch(&[branch.to_string(), "HEAD".to_string()], 0, &[])
+            .expect("带起始点的 `run_branch` 应执行成功");
+        let output = Command::new("git")
+            .args(["branch", "--list", branch])
+            .output()
+            .expect("`git branch --list` 应执行成功");
+        let stdout = crate::utils::decode_output(&output.stdout);
+        assert!(
+            stdout.contains(branch),
+            "分支 `{branch}` 未能基于指定 commit 创建"
+        );
+        let _ = Command::new("git").args(["branch", "-d", branch]).output();
+    }
+
+    #[test]
+    fn test_commit_single_message() {
+        let args = vec!["-m".to_string(), "fix: typo".to_string()];
+        let cmd = build_commit_command(&args, &[]);
+        let cmd_args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(cmd_args, vec!["commit", "-m", "fix: typo"]);
+    }
+
+    #[test]
+    fn test_commit_multiple_messages() {
+        let args = vec![
+            "-m".to_string(),
+            "feat: add multi-paragraph support".to_string(),
+            "-m".to_string(),
+            "This allows git commit -m \"title\" -m \"body\".".to_string(),
+        ];
+        let cmd = build_commit_command(&args, &[]);
+        let cmd_args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(
+            cmd_args,
+            vec![
+                "commit",
+                "-m",
+                "feat: add multi-paragraph support",
+                "-m",
+                "This allows git commit -m \"title\" -m \"body\"."
+            ]
+        );
+    }
+
+    // #327：`git commit -am "msg"` 必须把 `-am` 原样透传给 git
+    #[test]
+    fn test_commit_am_flag() {
+        let args = vec!["-am".to_string(), "quick fix".to_string()];
+        let cmd = build_commit_command(&args, &[]);
+        let cmd_args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(cmd_args, vec!["commit", "-am", "quick fix"]);
+    }
+
+    #[test]
+    fn test_commit_amend() {
+        let args = vec![
+            "--amend".to_string(),
+            "-m".to_string(),
+            "new msg".to_string(),
+        ];
+        let cmd = build_commit_command(&args, &[]);
+        let cmd_args: Vec<_> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().to_string())
+            .collect();
+        assert_eq!(cmd_args, vec!["commit", "--amend", "-m", "new msg"]);
+    }
+
+    #[test]
+    #[ignore] // 需要先执行 `cargo build`，可用 `cargo test --ignored` 运行
+    fn test_git_status_not_a_repo_exits_nonzero() {
+        // 在非 git 仓库目录中执行 ztok git status
+        let tmp = std::env::temp_dir().join("ztok_test_not_a_repo");
+        let _ = std::fs::create_dir_all(&tmp);
+
+        // 构造测试二进制路径
+        let bin_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("debug")
+            .join("ztok");
+        assert!(
+            bin_path.exists(),
+            "未在 {bin_path:?} 找到调试二进制，请先运行 `cargo build`"
+        );
+        let output = std::process::Command::new(&bin_path)
+            .args(["git", "status"])
+            .current_dir(&tmp)
+            .output()
+            .expect("运行 ztok 失败");
+
+        // 应返回非零退出码（git 通常返回 128）
+        assert!(
+            !output.status.success(),
+            "预期在仓库外执行 git status 时返回非零退出码，实际得到 {:?}",
+            output.status.code()
+        );
+
+        // 错误信息应出现在 stderr，而不是 stdout
+        let stderr = crate::utils::decode_output(&output.stderr);
+        let stdout = crate::utils::decode_output(&output.stdout);
+        assert!(
+            stderr.to_lowercase().contains("not a git repository"),
+            "期望 stderr 中包含 'not a git repository'，实际 stderr={stderr:?}, stdout={stdout:?}"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}

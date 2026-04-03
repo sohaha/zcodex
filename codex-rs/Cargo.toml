@@ -50,7 +50,7 @@ members = [
     "rollout",
     "rmcp-client",
     "responses-api-proxy",
-    "rtk",
+    "ztok",
     "sandboxing",
     "stdio-to-uds",
     "otel",
@@ -148,7 +148,7 @@ codex-plugin = { path = "plugin" }
 codex-process-hardening = { path = "process-hardening" }
 codex-protocol = { path = "protocol" }
 codex-responses-api-proxy = { path = "responses-api-proxy" }
-codex-rtk = { path = "rtk" }
+codex-ztok = { path = "ztok" }
 codex-rmcp-client = { path = "rmcp-client" }
 codex-rollout = { path = "rollout" }
 codex-sandboxing = { path = "sandboxing" }
