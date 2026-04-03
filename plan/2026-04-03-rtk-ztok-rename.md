@@ -1,18 +1,18 @@
-# rtk 子命令重命名为 ztok
+# ztok 子命令重命名落地
 
 > 不适用项写 `无`，不要留空。
 > 只写已确认事实；若信息不清楚或需要假设，先回到对话澄清，不要把未确认内容写进计划。
 
 ## 背景
-- 当前状态：仓库内存在广泛的 `rtk` 子命令实现、别名、测试与文档引用。
+- 当前状态：仓库内存在广泛的 `ztok` 子命令实现、别名、测试与文档引用。
 - 触发原因：用户要求将本地子命令从 `rtk` 重命名为 `ztok`，且不保留 `rtk` 兼容别名，并同步更新 `upgrade-rtk` 技能中的相关估计说明。
 - 预期影响：CLI 子命令、嵌入式命令重写、提示文案、测试与文档需整体更新，涉及 Rust 多 crate 与技能文档。
 
 ## 目标
-- 目标结果：`rtk` 子命令与相关引用在本仓库内全面改为 `ztok`，且不保留 `rtk` 兼容入口；`upgrade-rtk` 技能文本同步调整。
+- 目标结果：`ztok` 子命令与相关引用在本仓库内全面改为 `ztok`，且不保留 `rtk` 兼容入口；`upgrade-rtk` 技能文本同步调整。
 - 完成定义（DoD）：
   - CLI 入口、alias 逻辑、嵌入式命令改写、测试与文档均改为 `ztok`。
-  - `codex-rtk` crate 与目录/包名按需改名为 `codex-ztok` 并可编译通过。
+  - `codex-ztok` crate 与目录/包名按需改名并可编译通过。
   - `upgrade-rtk` 技能文本反映新的命名与估计说明。
   - 通过约定的最小验证步骤。
 - 非目标：
@@ -21,16 +21,16 @@
 
 ## 范围
 - 范围内：
-  - Rust 代码、测试、文档与脚本中所有 `rtk` 子命令/命名引用的本地重命名。
-  - `codex-rs/rtk` crate 与相关依赖路径重命名。
+  - Rust 代码、测试、文档与脚本中所有 `ztok` 子命令/命名引用的本地重命名。
+  - `codex-rs/ztok` crate 与相关依赖路径重命名。
   - `upgrade-rtk` 技能文本中的估计/说明更新。
 - 范围外：
   - 上游 `rtk-ai/rtk` 代码或命名。
   - 与 `rtk` 无关的功能改造。
 
 ## 影响
-- 受影响模块：`codex-rs/cli`、`codex-rs/rtk`、`codex-rs/arg0`、`codex-rs/core`、相关测试与文档、`/workspace/.codex/skills/upgrade-rtk`。
-- 受影响接口/命令：`codex rtk ...` 改为 `codex ztok ...`，以及直接 `rtk` 调用改为 `ztok` 调用。
+- 受影响模块：`codex-rs/cli`、`codex-rs/ztok`、`codex-rs/arg0`、`codex-rs/core`、相关测试与文档、`/workspace/.codex/skills/upgrade-rtk`。
+- 受影响接口/命令：`codex ztok ...`，以及直接 `ztok` 调用。
 - 受影响数据/模式：无。
 - 受影响用户界面/行为：CLI 命令名称与提示输出改为 `ztok`。
 
@@ -84,11 +84,11 @@
 
 ## 参考
 - codex-rs/cli/src/main.rs
-- codex-rs/rtk/Cargo.toml
+- codex-rs/ztok/Cargo.toml
 - codex-rs/arg0/src/lib.rs
 - codex-rs/core/src/tools/events.rs
 - codex-rs/core/src/tools/rewrite/shell_search_rewrite.rs
 - codex-rs/core/templates/compact/rtk_instructions.md
-- codex-rs/cli/tests/rtk.rs
+- codex-rs/cli/tests/ztok.rs
 - .version/rtk.toml
 - .codex/skills/upgrade-rtk/SKILL.md
