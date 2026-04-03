@@ -76,7 +76,7 @@ async fn app_server_mcp_startup_failure_renders_warning_history() {
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -86,8 +86,8 @@ async fn app_server_mcp_startup_failure_renders_warning_history() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(failure_text.contains("MCP client for `alpha` failed to start: handshake failed"));
-    assert!(!failure_text.contains("MCP startup incomplete"));
+    assert!(failure_text.contains("`alpha` 的 MCP 客户端启动失败: handshake failed"));
+    assert!(!failure_text.contains("MCP 启动未完成"));
     assert!(chat.bottom_pane.is_task_running());
 
     chat.handle_server_notification(
@@ -116,7 +116,7 @@ async fn app_server_mcp_startup_failure_renders_warning_history() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_eq!(summary_text, "⚠ MCP startup incomplete (failed: alpha)\n");
+    assert_eq!(summary_text, "⚠ MCP 启动未完成（失败：alpha）\n");
     assert!(!chat.bottom_pane.is_task_running());
 
     let width: u16 = 120;
@@ -162,7 +162,7 @@ async fn app_server_mcp_startup_lag_settles_startup_and_ignores_late_updates() {
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -184,9 +184,9 @@ async fn app_server_mcp_startup_lag_settles_startup_and_ignores_late_updates() {
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP startup interrupted"));
+    assert!(summary_text.contains("MCP 启动已中断"));
     assert!(summary_text.contains("beta"));
-    assert!(summary_text.contains("MCP startup incomplete (failed: alpha)"));
+    assert!(summary_text.contains("MCP 启动未完成（失败：alpha）"));
     assert!(!chat.bottom_pane.is_task_running());
 
     chat.handle_server_notification(
@@ -226,7 +226,7 @@ async fn app_server_mcp_startup_after_lag_can_settle_without_starting_updates() 
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -235,7 +235,7 @@ async fn app_server_mcp_startup_after_lag_can_settle_without_starting_updates() 
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(failure_text.contains("MCP client for `alpha` failed to start: handshake failed"));
+    assert!(failure_text.contains("`alpha` 的 MCP 客户端启动失败: handshake failed"));
     assert!(chat.bottom_pane.is_task_running());
 
     chat.handle_server_notification(
@@ -251,7 +251,7 @@ async fn app_server_mcp_startup_after_lag_can_settle_without_starting_updates() 
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_eq!(summary_text, "⚠ MCP startup incomplete (failed: alpha)\n");
+    assert_eq!(summary_text, "⚠ MCP 启动未完成（失败：alpha）\n");
     assert!(!chat.bottom_pane.is_task_running());
 }
 
@@ -273,7 +273,7 @@ async fn app_server_mcp_startup_after_lag_preserves_partial_terminal_only_round(
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -295,7 +295,7 @@ async fn app_server_mcp_startup_after_lag_preserves_partial_terminal_only_round(
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -318,8 +318,8 @@ async fn app_server_mcp_startup_after_lag_preserves_partial_terminal_only_round(
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP client for `alpha` failed to start: handshake failed"));
-    assert!(summary_text.contains("MCP startup incomplete (failed: alpha)"));
+    assert!(summary_text.contains("`alpha` 的 MCP 客户端启动失败: handshake failed"));
+    assert!(summary_text.contains("MCP 启动未完成（失败：alpha）"));
     assert!(!chat.bottom_pane.is_task_running());
 }
 
@@ -341,7 +341,7 @@ async fn app_server_mcp_startup_next_round_discards_stale_terminal_updates() {
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -363,9 +363,7 @@ async fn app_server_mcp_startup_next_round_discards_stale_terminal_updates() {
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some(
-                "MCP client for `alpha` failed to start: stale handshake failed".to_string(),
-            ),
+            error: Some("`alpha` 的 MCP 客户端启动失败: stale handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -432,7 +430,7 @@ async fn app_server_mcp_startup_next_round_keeps_terminal_statuses_after_startin
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -441,7 +439,7 @@ async fn app_server_mcp_startup_next_round_keeps_terminal_statuses_after_startin
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(failure_text.contains("MCP client for `alpha` failed to start: handshake failed"));
+    assert!(failure_text.contains("`alpha` 的 MCP 客户端启动失败: handshake failed"));
 
     chat.handle_server_notification(
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
@@ -467,7 +465,7 @@ async fn app_server_mcp_startup_next_round_keeps_terminal_statuses_after_startin
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert_eq!(summary_text, "⚠ MCP startup incomplete (failed: alpha)\n");
+    assert_eq!(summary_text, "⚠ MCP 启动未完成（失败：alpha）\n");
     assert!(!chat.bottom_pane.is_task_running());
 }
 
@@ -493,7 +491,7 @@ async fn app_server_mcp_startup_next_round_with_empty_expected_servers_reactivat
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "runtime".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `runtime` failed to start: handshake failed".to_string()),
+            error: Some("`runtime` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -502,8 +500,8 @@ async fn app_server_mcp_startup_next_round_with_empty_expected_servers_reactivat
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP client for `runtime` failed to start: handshake failed"));
-    assert!(summary_text.contains("MCP startup incomplete (failed: runtime)"));
+    assert!(summary_text.contains("`runtime` 的 MCP 客户端启动失败: handshake failed"));
+    assert!(summary_text.contains("MCP 启动未完成（失败：runtime）"));
     assert!(!chat.bottom_pane.is_task_running());
 }
 
@@ -520,7 +518,7 @@ async fn app_server_mcp_startup_after_lag_with_empty_expected_servers_preserves_
     chat.on_mcp_startup_update(McpStartupUpdateEvent {
         server: "runtime".to_string(),
         status: McpStartupStatus::Failed {
-            error: "MCP client for `runtime` failed to start: handshake failed".to_string(),
+            error: "`runtime` 的 MCP 客户端启动失败: handshake failed".to_string(),
         },
     });
 
@@ -528,7 +526,7 @@ async fn app_server_mcp_startup_after_lag_with_empty_expected_servers_preserves_
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(warning_text.contains("MCP client for `runtime` failed to start: handshake failed"));
+    assert!(warning_text.contains("`runtime` 的 MCP 客户端启动失败: handshake failed"));
     assert!(chat.bottom_pane.is_task_running());
 
     chat.finish_mcp_startup_after_lag();
@@ -537,7 +535,7 @@ async fn app_server_mcp_startup_after_lag_with_empty_expected_servers_preserves_
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP startup incomplete (failed: runtime)"));
+    assert!(summary_text.contains("MCP 启动未完成（失败：runtime）"));
     assert!(!chat.bottom_pane.is_task_running());
 }
 
@@ -554,7 +552,7 @@ async fn app_server_mcp_startup_after_lag_includes_runtime_servers_with_expected
     chat.on_mcp_startup_update(McpStartupUpdateEvent {
         server: "runtime".to_string(),
         status: McpStartupStatus::Failed {
-            error: "MCP client for `runtime` failed to start: handshake failed".to_string(),
+            error: "`runtime` 的 MCP 客户端启动失败: handshake failed".to_string(),
         },
     });
 
@@ -562,7 +560,7 @@ async fn app_server_mcp_startup_after_lag_includes_runtime_servers_with_expected
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(warning_text.contains("MCP client for `runtime` failed to start: handshake failed"));
+    assert!(warning_text.contains("`runtime` 的 MCP 客户端启动失败: handshake failed"));
     assert!(chat.bottom_pane.is_task_running());
 
     chat.finish_mcp_startup_after_lag();
@@ -571,7 +569,7 @@ async fn app_server_mcp_startup_after_lag_includes_runtime_servers_with_expected
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP startup incomplete (failed: runtime)"));
+    assert!(summary_text.contains("MCP 启动未完成（失败：runtime）"));
     assert!(!chat.bottom_pane.is_task_running());
 }
 
@@ -593,7 +591,7 @@ async fn app_server_mcp_startup_next_round_after_lag_can_settle_without_starting
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -615,9 +613,7 @@ async fn app_server_mcp_startup_next_round_after_lag_can_settle_without_starting
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some(
-                "MCP client for `alpha` failed to start: stale handshake failed".to_string(),
-            ),
+            error: Some("`alpha` 的 MCP 客户端启动失败: stale handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -629,7 +625,7 @@ async fn app_server_mcp_startup_next_round_after_lag_can_settle_without_starting
         ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
             name: "alpha".to_string(),
             status: McpServerStartupState::Failed,
-            error: Some("MCP client for `alpha` failed to start: handshake failed".to_string()),
+            error: Some("`alpha` 的 MCP 客户端启动失败: handshake failed".to_string()),
         }),
         /*replay_kind*/ None,
     );
@@ -654,7 +650,7 @@ async fn app_server_mcp_startup_next_round_after_lag_can_settle_without_starting
         .iter()
         .map(|lines| lines_to_single_string(lines))
         .collect::<String>();
-    assert!(summary_text.contains("MCP client for `alpha` failed to start: handshake failed"));
-    assert!(summary_text.contains("MCP startup incomplete (failed: alpha)"));
+    assert!(summary_text.contains("`alpha` 的 MCP 客户端启动失败: handshake failed"));
+    assert!(summary_text.contains("MCP 启动未完成（失败：alpha）"));
     assert!(!chat.bottom_pane.is_task_running());
 }

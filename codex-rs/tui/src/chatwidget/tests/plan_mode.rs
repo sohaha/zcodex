@@ -1089,7 +1089,7 @@ async fn collab_slash_command_opens_picker_and_updates_mode() {
     chat.dispatch_command(SlashCommand::Collab);
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Select Collaboration Mode"),
+        compact_rendered_text(&popup).contains("选择协作模式"),
         "expected collaboration picker: {popup}"
     );
 
