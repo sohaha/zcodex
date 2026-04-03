@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-#MISE description="清理 sohaha/zcodex 仓库已完成的 GitHub Actions 运行记录"
+#MISE description="清理 sohaha/nmtx 仓库已完成的 GitHub Actions 运行记录"
 set -euo pipefail
 
-repo="sohaha/zcodex"
+repo="sohaha/nmtx"
 per_page=100
 confirm_delete=0
 field_separator=$'\037'
