@@ -388,6 +388,40 @@
         }
       ]
     },
+    "BuddyReactionNotification": {
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "BuddySoulGeneratedNotification": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "personality": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "personality",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ByteRange": {
       "properties": {
         "end": {
@@ -4137,6 +4171,46 @@
         "params"
       ],
       "title": "Thread/name/updatedNotification",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "method": {
+          "enum": [
+            "buddy/soulGenerated"
+          ],
+          "title": "Buddy/soulGeneratedNotificationMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/BuddySoulGeneratedNotification"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "title": "Buddy/soulGeneratedNotification",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "method": {
+          "enum": [
+            "buddy/reaction"
+          ],
+          "title": "Buddy/reactionNotificationMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/BuddyReactionNotification"
+        }
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "title": "Buddy/reactionNotification",
       "type": "object"
     },
     {

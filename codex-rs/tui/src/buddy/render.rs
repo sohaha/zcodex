@@ -26,26 +26,44 @@ const PET_HEARTS: [&str; 5] = [
     ".   .   .    .",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BuddyRenderMode {
+    InlineBubble,
+    NoBubble,
+}
+
+pub(crate) fn full_layout_width() -> u16 {
+    FULL_LAYOUT_WIDTH
+}
+
 pub(crate) fn render_lines(
     bones: &BuddyBones,
+    name: &str,
     state: &BuddyState,
     width: u16,
+    mode: BuddyRenderMode,
 ) -> Vec<Line<'static>> {
     if width < MIN_RENDER_WIDTH {
         return Vec::new();
     }
 
     if width < FULL_LAYOUT_WIDTH {
-        return vec![render_narrow_line(bones, state, width)];
+        return vec![render_narrow_line(bones, name, state, width)];
     }
 
-    render_wide_lines(bones, state, width)
+    render_wide_lines(bones, name, state, width, mode)
 }
 
-fn render_wide_lines(bones: &BuddyBones, state: &BuddyState, width: u16) -> Vec<Line<'static>> {
+fn render_wide_lines(
+    bones: &BuddyBones,
+    name: &str,
+    state: &BuddyState,
+    width: u16,
+    mode: BuddyRenderMode,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if let Some(text) = state.active_reaction_text() {
-        lines.extend(render_bubble(text, width, state.reaction_is_fading()));
+    if mode == BuddyRenderMode::InlineBubble {
+        lines.extend(render_bubble_lines(bones, state, width));
     }
     if let Some(frame) = state.pet_burst_frame() {
         lines.push(Line::from(vec![
@@ -61,12 +79,17 @@ fn render_wide_lines(bones: &BuddyBones, state: &BuddyState, width: u16) -> Vec<
         ]));
     }
 
-    lines.push(render_identity_line(bones, state));
+    lines.push(render_identity_line(bones, name, state));
     lines.push(render_traits_line(bones, state, width));
     lines
 }
 
-fn render_narrow_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Line<'static> {
+fn render_narrow_line(
+    bones: &BuddyBones,
+    name: &str,
+    state: &BuddyState,
+    width: u16,
+) -> Line<'static> {
     let label = if let Some(text) = state.active_reaction_text() {
         let quip = truncate_with_ellipsis(text, NARROW_QUIP_CAP as u16);
         format!("\"{quip}\"")
@@ -74,7 +97,7 @@ fn render_narrow_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Lin
         let shiny = if bones.shiny { " *" } else { "" };
         format!(
             "{} {}{} {}",
-            bones.name,
+            name,
             bones.rarity.stars(),
             shiny,
             bones.species.label()
@@ -104,7 +127,7 @@ fn render_narrow_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Lin
     if let Some(text) = state.active_reaction_text() {
         spans.push(format!("\"{text}\"").italic());
     } else {
-        spans.push(bones.name.clone().cyan().bold());
+        spans.push(name.to_string().cyan().bold());
         spans.push(" ".into());
         spans.push(bones.rarity.stars_span());
         if bones.shiny {
@@ -112,6 +135,17 @@ fn render_narrow_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Lin
         }
     }
     Line::from(spans)
+}
+
+pub(crate) fn render_bubble_lines(
+    _bones: &BuddyBones,
+    state: &BuddyState,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let Some(text) = state.active_reaction_text() else {
+        return Vec::new();
+    };
+    render_bubble(text, width, state.reaction_is_fading())
 }
 
 fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
@@ -159,7 +193,7 @@ fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_identity_line(bones: &BuddyBones, state: &BuddyState) -> Line<'static> {
+fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> Line<'static> {
     let visibility = if state.visible { "可见" } else { "隐藏" };
     let mood = match state.frame() {
         BuddyFrame::Blink => "眨眼",
@@ -176,7 +210,7 @@ fn render_identity_line(bones: &BuddyBones, state: &BuddyState) -> Line<'static>
 
     let mut spans = vec![
         "  ".into(),
-        bones.name.clone().cyan().bold(),
+        name.to_string().cyan().bold(),
         " ".into(),
         bones.rarity.stars_span(),
         " ".into(),
@@ -204,6 +238,7 @@ fn render_traits_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Lin
             super::model::BuddyReactionKind::Return => "回归中",
             super::model::BuddyReactionKind::Pet => "呼噜中",
             super::model::BuddyReactionKind::Teaser => "逗你",
+            super::model::BuddyReactionKind::Observe => "观察中",
         })
         .unwrap_or("待机");
     let traits = format!(
@@ -232,6 +267,16 @@ fn sprite_lines(bones: &BuddyBones, frame: BuddyFrame) -> Vec<String> {
         BuddySpecies::Dragon => dragon_lines(bones.eye, frame),
         BuddySpecies::Ghost => ghost_lines(bones.eye, frame),
         BuddySpecies::Robot => robot_lines(bones.eye, frame),
+        BuddySpecies::Duck => duck_lines(bones.eye, frame),
+        BuddySpecies::Blob => blob_lines(bones.eye, frame),
+        BuddySpecies::Octopus => octopus_lines(bones.eye, frame),
+        BuddySpecies::Penguin => penguin_lines(bones.eye, frame),
+        BuddySpecies::Turtle => turtle_lines(bones.eye, frame),
+        BuddySpecies::Axolotl => axolotl_lines(bones.eye, frame),
+        BuddySpecies::Capybara => capybara_lines(bones.eye, frame),
+        BuddySpecies::Cactus => cactus_lines(bones.eye, frame),
+        BuddySpecies::Mushroom => mushroom_lines(bones.eye, frame),
+        BuddySpecies::Chonk => chonk_lines(bones.eye, frame),
     });
     lines
 }

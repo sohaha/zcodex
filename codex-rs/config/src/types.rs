@@ -512,9 +512,38 @@ pub struct Tui {
     #[serde(default)]
     pub theme: Option<String>,
 
+    /// Whether the footer buddy should hatch automatically when the TUI starts.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub show_buddy: bool,
+
+    /// Buddy-specific configuration.
+    #[serde(default)]
+    pub buddy: Option<TuiBuddy>,
+
     /// Startup tooltip availability NUX state persisted by the TUI.
     #[serde(default)]
     pub model_availability_nux: ModelAvailabilityNuxConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct TuiBuddy {
+    /// Whether AI-driven buddy reactions are enabled.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub reactions_enabled: bool,
+
+    /// Persisted AI soul for the buddy (global).
+    #[serde(default)]
+    pub soul: Option<BuddySoul>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct BuddySoul {
+    pub name: String,
+    pub personality: String,
 }
 
 const fn default_true() -> bool {

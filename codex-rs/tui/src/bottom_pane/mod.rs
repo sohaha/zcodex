@@ -30,6 +30,7 @@ use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
 use crate::tui::FrameRequester;
 use bottom_pane_view::BottomPaneView;
+use codex_config::types::BuddySoul;
 use codex_core::plugins::PluginCapabilitySummary;
 use codex_core::skills::model::SkillMetadata;
 use codex_features::Features;
@@ -1221,6 +1222,21 @@ impl BottomPane {
             self.request_redraw_in(delay);
         }
         result
+    }
+
+    pub(crate) fn react_buddy(&mut self, seed: &str, text: String) {
+        if self.buddy.react(seed, text) {
+            self.request_redraw();
+            if let Some(delay) = self.buddy.next_redraw_in() {
+                self.request_redraw_in(delay);
+            }
+        }
+    }
+
+    pub(crate) fn set_buddy_soul(&mut self, soul: Option<BuddySoul>) {
+        if self.buddy.set_soul(soul) {
+            self.request_redraw();
+        }
     }
 
     pub(crate) fn buddy_status(&mut self, seed: &str) -> BuddyCommandResult {

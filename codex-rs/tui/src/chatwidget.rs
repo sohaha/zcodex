@@ -68,6 +68,8 @@ use crate::terminal_title::set_terminal_title;
 use crate::text_formatting::proper_join;
 use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::AppSummary;
+use codex_app_server_protocol::BuddyReactionNotification;
+use codex_app_server_protocol::BuddySoulGeneratedNotification;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::CollabAgentState as AppServerCollabAgentState;
 use codex_app_server_protocol::CollabAgentStatus as AppServerCollabAgentStatus;
@@ -93,6 +95,7 @@ use codex_app_server_protocol::TurnPlanStepStatus;
 use codex_app_server_protocol::TurnStatus;
 use codex_chatgpt::connectors;
 use codex_config::types::ApprovalsReviewer;
+use codex_config::types::BuddySoul;
 use codex_config::types::Notifications;
 use codex_config::types::WindowsSandboxModeToml;
 use codex_core::config::Config;
@@ -6351,6 +6354,15 @@ impl ChatWidget {
                     }
                 }
             }
+            ServerNotification::BuddySoulGenerated(notification) => {
+                let soul = BuddySoul {
+                    name: notification.name,
+                    personality: notification.personality,
+                };
+                self.config.tui_buddy_soul = Some(soul.clone());
+                self.bottom_pane.set_buddy_soul(Some(soul));
+                self.request_redraw();
+            }
             ServerNotification::TurnStarted(_) => {
                 self.last_non_retry_error = None;
                 if !matches!(replay_kind, Some(ReplayKind::ResumeInitialMessages)) {
@@ -6379,6 +6391,12 @@ impl ChatWidget {
                 }
             }
             ServerNotification::ReasoningSummaryPartAdded(_) => self.on_reasoning_section_break(),
+            ServerNotification::BuddyReaction(notification) => {
+                if !from_replay && self.config.tui_buddy_reactions_enabled {
+                    let seed = self.buddy_seed();
+                    self.bottom_pane.react_buddy(&seed, notification.text);
+                }
+            }
             ServerNotification::TerminalInteraction(notification) => {
                 self.on_terminal_interaction(TerminalInteractionEvent {
                     call_id: notification.item_id,

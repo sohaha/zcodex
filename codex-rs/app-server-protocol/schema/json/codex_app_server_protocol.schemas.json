@@ -3552,6 +3552,46 @@
           "properties": {
             "method": {
               "enum": [
+                "buddy/soulGenerated"
+              ],
+              "title": "Buddy/soulGeneratedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/BuddySoulGeneratedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Buddy/soulGeneratedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "buddy/reaction"
+              ],
+              "title": "Buddy/reactionNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/BuddyReactionNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Buddy/reactionNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "thread/tokenUsage/updated"
               ],
               "title": "Thread/tokenUsage/updatedNotificationMethod",
@@ -5491,6 +5531,44 @@
             "type": "string"
           }
         ]
+      },
+      "BuddyReactionNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "threadId"
+        ],
+        "title": "BuddyReactionNotification",
+        "type": "object"
+      },
+      "BuddySoulGeneratedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "personality": {
+            "type": "string"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "personality",
+          "threadId"
+        ],
+        "title": "BuddySoulGeneratedNotification",
+        "type": "object"
       },
       "ByteRange": {
         "properties": {

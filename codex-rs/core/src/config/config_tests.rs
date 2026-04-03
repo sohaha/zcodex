@@ -286,6 +286,8 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line: None,
             terminal_title: None,
             theme: None,
+            show_buddy: true,
+            buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
                     ("gpt-bar".to_string(), 4),
@@ -984,6 +986,8 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             status_line: None,
             terminal_title: None,
             theme: None,
+            show_buddy: true,
+            buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
     );
@@ -4531,6 +4535,9 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_terminal_title: None,
             tui_theme: None,
+            tui_show_buddy: true,
+            tui_buddy_reactions_enabled: true,
+            tui_buddy_soul: None,
             otel: OtelConfig::default(),
         },
         o3_profile_config
@@ -4677,6 +4684,9 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_show_buddy: true,
+        tui_buddy_reactions_enabled: true,
+        tui_buddy_soul: None,
         otel: OtelConfig::default(),
     };
 
