@@ -914,7 +914,6 @@
           "type": "object"
         },
         "model": {
-          "default": null,
           "description": "Optional default model slug to use when this provider is selected.",
           "type": "string"
         },
@@ -1518,14 +1517,6 @@
         }
       ]
     },
-    "ResumeModelSource": {
-      "enum": [
-        "disabled",
-        "persisted",
-        "current"
-      ],
-      "type": "string"
-    },
     "SandboxMode": {
       "enum": [
         "read-only",
@@ -1776,12 +1767,12 @@
         },
         "show_buddy": {
           "default": true,
-          "description": "Whether the footer buddy should hatch automatically when the TUI starts. Defaults to `true`.",
+          "description": "Show the buddy widget in the TUI. Defaults to `true`.",
           "type": "boolean"
         },
         "show_tooltips": {
-          "default": false,
-          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `false`.",
+          "default": true,
+          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `true`.",
           "type": "boolean"
         },
         "status_line": {
@@ -1947,8 +1938,12 @@
           "type": "array"
         },
         "path": {
-          "description": "Optional override for the `zmemory` database path.",
-          "type": "string"
+          "allOf": [
+            {
+              "$ref": "#/definitions/AbsolutePathBuf"
+            }
+          ],
+          "description": "Optional override for the `zmemory` database path."
         },
         "valid_domains": {
           "description": "Optional writable memory domains for the current runtime profile.",
@@ -2442,7 +2437,7 @@
         "$ref": "#/definitions/ModelProviderInfo"
       },
       "default": {},
-      "description": "User-defined provider entries that extend or override the built-in list.",
+      "description": "User-defined provider entries that extend the built-in list. Built-in IDs cannot be overridden.",
       "type": "object"
     },
     "model_reasoning_effort": {
@@ -2570,14 +2565,6 @@
       ],
       "default": null,
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
-    },
-    "resume_model_source": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/ResumeModelSource"
-        }
-      ],
-      "description": "Controls whether resume uses the persisted model or the current config."
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",

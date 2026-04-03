@@ -317,6 +317,7 @@ fn filter_tools_for_chat_provider_drops_hosted_only_tools() {
         &[
             ToolSpec::Function(ResponsesApiTool {
                 name: "read_file".to_string(),
+                model: None,
                 description: "Read".to_string(),
                 strict: false,
                 defer_loading: None,
@@ -366,6 +367,7 @@ fn build_responses_request_for_chat_provider_omits_hosted_only_tools() {
     ]);
     let provider = codex_api::Provider {
         name: "mock".to_string(),
+        model: None,
         base_url: "https://example.com/v1".to_string(),
         wire_api: codex_api::provider::WireApi::Chat,
         query_params: None,

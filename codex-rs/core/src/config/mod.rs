@@ -114,11 +114,13 @@ mod permissions;
 pub mod profile;
 pub mod schema;
 pub mod service;
+pub mod types;
 pub use codex_config::Constrained;
 pub use codex_config::ConstraintError;
 pub use codex_config::ConstraintResult;
 pub use codex_network_proxy::NetworkProxyAuditMetadata;
 pub use codex_sandboxing::system_bwrap_warning;
+pub use codex_tools::AutoTldrRoutingMode;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
@@ -325,6 +327,9 @@ pub struct Config {
     /// Show startup tooltips in the TUI welcome screen.
     pub show_tooltips: bool,
 
+    /// Show the buddy widget in the TUI.
+    pub tui_show_buddy: bool,
+
     /// Persisted startup availability NUX state for model tooltips.
     pub model_availability_nux: ModelAvailabilityNuxConfig,
 
@@ -413,6 +418,12 @@ pub struct Config {
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
 
+    /// Zmemory subsystem settings.
+    pub zmemory: types::ZmemoryConfig,
+
+    /// Runtime policy for automatically rewriting code-search tool calls to native tldr.
+    pub auto_tldr_routing: AutoTldrRoutingMode,
+
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
     pub codex_home: PathBuf,
@@ -480,6 +491,9 @@ pub struct Config {
     /// Optional full model catalog loaded from `model_catalog_json`.
     /// When set, this replaces the bundled catalog for the current process.
     pub model_catalog: Option<ModelsResponse>,
+
+    /// Optional overlay model catalog merged on top of the bundled catalog.
+    pub model_catalog_merge: Option<ModelsResponse>,
 
     /// Optional verbosity control for GPT-5 models (Responses API `text.verbosity`).
     pub model_verbosity: Option<Verbosity>,
@@ -705,6 +719,12 @@ impl Config {
             apps_enabled: self.features.enabled(Feature::Apps),
             configured_mcp_servers,
             plugin_capability_summaries: loaded_plugins.capability_summaries().to_vec(),
+        }
+    }
+
+    pub fn sync_active_model_provider(&mut self) {
+        if let Some(provider) = self.model_providers.get(&self.model_provider_id) {
+            self.model_provider = provider.clone();
         }
     }
 
@@ -1354,6 +1374,12 @@ pub struct ConfigToml {
 
     /// Memories subsystem settings.
     pub memories: Option<MemoriesToml>,
+
+    /// Zmemory subsystem settings.
+    pub zmemory: Option<types::ZmemoryToml>,
+
+    /// Runtime policy for automatically rewriting code-search tool calls to native tldr.
+    pub auto_tldr_routing: Option<AutoTldrRoutingMode>,
 
     /// User-level skill config entries keyed by SKILL.md path.
     pub skills: Option<SkillsConfig>,
@@ -2276,6 +2302,8 @@ impl Config {
         let web_search_mode = resolve_web_search_mode(&cfg, &config_profile, &features)
             .unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg, &config_profile);
+        let auto_tldr_routing = cfg.auto_tldr_routing.unwrap_or_default();
+        let zmemory = types::ZmemoryConfig::from_toml(cfg.zmemory.clone());
 
         let agent_roles =
             agent_roles::load_agent_roles(&cfg, &config_layer_stack, &mut startup_warnings)?;
@@ -2642,6 +2670,8 @@ impl Config {
             agent_max_depth,
             agent_roles,
             memories: cfg.memories.unwrap_or_default().into(),
+            zmemory,
+            auto_tldr_routing,
             agent_job_max_runtime_seconds,
             codex_home,
             sqlite_home,
@@ -2674,6 +2704,7 @@ impl Config {
                 .or(cfg.model_reasoning_summary),
             model_supports_reasoning_summaries: cfg.model_supports_reasoning_summaries,
             model_catalog,
+            model_catalog_merge: None,
             model_verbosity: config_profile.model_verbosity.or(cfg.model_verbosity),
             chatgpt_base_url: config_profile
                 .chatgpt_base_url
@@ -2737,6 +2768,7 @@ impl Config {
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
+            tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
             model_availability_nux: cfg
                 .tui
                 .as_ref()

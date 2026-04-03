@@ -246,6 +246,7 @@ impl ThreadManager {
                     codex_home,
                     auth_manager.clone(),
                     config.model_catalog.clone(),
+                    config.model_catalog_merge.clone(),
                     collaboration_modes_config,
                     openai_models_provider,
                 )),

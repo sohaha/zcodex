@@ -474,6 +474,11 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub show_tooltips: bool,
 
+    /// Show the buddy widget in the TUI.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub show_buddy: bool,
+
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
     /// - `auto` (default): Disable alternate screen in Zellij, enable elsewhere.

@@ -479,9 +479,12 @@ impl ShellHandler {
         let source = ExecCommandSource::Agent;
         let emitter = ToolEmitter::shell(
             exec_params.command.clone(),
+            /*display_command*/ None,
             exec_params.cwd.clone(),
             source,
             freeform,
+            /*interaction_input*/ None,
+            /*model_output_prefix*/ None,
         );
         let event_ctx = ToolEventCtx::new(
             session.as_ref(),

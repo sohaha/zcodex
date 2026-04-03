@@ -60,6 +60,9 @@ pub mod utils;
 pub use utils::path_utils;
 pub mod personality_migration;
 pub mod plugins;
+pub mod protocol {
+    pub use codex_protocol::protocol::*;
+}
 mod provider_auth;
 pub(crate) mod mentions {
     pub(crate) use crate::plugins::build_connector_slug_counts;

@@ -8612,6 +8612,7 @@ fn with_thread_spawn_agent_metadata(
             codex_protocol::protocol::SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth,
+                parent_model,
                 agent_path,
                 agent_nickname: existing_agent_nickname,
                 agent_role: existing_agent_role,
@@ -8620,6 +8621,7 @@ fn with_thread_spawn_agent_metadata(
             codex_protocol::protocol::SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth,
+                parent_model,
                 agent_path,
                 agent_nickname: agent_nickname.or(existing_agent_nickname),
                 agent_role: agent_role.or(existing_agent_role),

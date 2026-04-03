@@ -456,6 +456,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
         status: None,
         call_id: "legacy-js-call".to_string(),
         name: "js_repl".to_string(),
+        model: None,
         input: "console.log('legacy image flow')".to_string(),
     };
     let legacy_image_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
@@ -484,6 +485,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
             item: RolloutItem::ResponseItem(ResponseItem::CustomToolCallOutput {
                 call_id: "legacy-js-call".to_string(),
                 name: None,
+                model: None,
                 output: FunctionCallOutputPayload::from_text("legacy js_repl stdout".to_string()),
             }),
         },
@@ -610,6 +612,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::ResponseItem(ResponseItem::FunctionCall {
                 id: None,
                 name: "view_image".to_string(),
+                model: None,
                 namespace: None,
                 arguments: "{\"path\":\"/tmp/example.webp\"}".to_string(),
                 call_id: function_call_id.to_string(),
@@ -634,6 +637,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                 status: Some("completed".to_string()),
                 call_id: custom_call_id.to_string(),
                 name: "js_repl".to_string(),
+                model: None,
                 input: "console.log('image flow')".to_string(),
             }),
         },
@@ -642,6 +646,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::ResponseItem(ResponseItem::CustomToolCallOutput {
                 call_id: custom_call_id.to_string(),
                 name: None,
+                model: None,
                 output: FunctionCallOutputPayload::from_content_items(vec![
                     FunctionCallOutputContentItem::InputImage {
                         image_url: image_url.to_string(),
@@ -2114,6 +2119,7 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     prompt.input.push(ResponseItem::FunctionCall {
         id: Some("function-id".into()),
         name: "do_thing".into(),
+        model: None,
         namespace: None,
         arguments: "{}".into(),
         call_id: "function-call-id".into(),
@@ -2139,11 +2145,13 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         status: Some("completed".into()),
         call_id: "custom-tool-call-id".into(),
         name: "custom_tool".into(),
+        model: None,
         input: "{}".into(),
     });
     prompt.input.push(ResponseItem::CustomToolCallOutput {
         call_id: "custom-tool-call-id".into(),
         name: None,
+        model: None,
         output: FunctionCallOutputPayload::from_text("ok".into()),
     });
 

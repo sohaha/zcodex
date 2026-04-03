@@ -14,6 +14,9 @@ use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -29,6 +32,33 @@ pub enum ToolUserShellType {
     PowerShell,
     Sh,
     Cmd,
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoTldrRoutingMode {
+    Off,
+    #[default]
+    Safe,
+    Aggressive,
+}
+
+impl AutoTldrRoutingMode {
+    pub fn is_off(self) -> bool {
+        matches!(self, Self::Off)
+    }
+
+    pub fn uses_last_tldr_context(self) -> bool {
+        matches!(self, Self::Aggressive)
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Safe => "safe",
+            Self::Aggressive => "aggressive",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -87,6 +117,7 @@ pub struct ToolsConfig {
     pub shell_command_backend: ShellCommandBackendConfig,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
     pub allow_login_shell: bool,
+    pub auto_tldr_routing: AutoTldrRoutingMode,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
     pub web_search_mode: Option<WebSearchMode>,
     pub web_search_config: Option<WebSearchConfig>,
@@ -201,6 +232,7 @@ impl ToolsConfig {
             shell_command_backend,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,
             allow_login_shell: true,
+            auto_tldr_routing: AutoTldrRoutingMode::default(),
             apply_patch_tool_type,
             web_search_mode: *web_search_mode,
             web_search_config: None,
@@ -233,6 +265,11 @@ impl ToolsConfig {
 
     pub fn with_allow_login_shell(mut self, allow_login_shell: bool) -> Self {
         self.allow_login_shell = allow_login_shell;
+        self
+    }
+
+    pub fn with_auto_tldr_routing(mut self, auto_tldr_routing: AutoTldrRoutingMode) -> Self {
+        self.auto_tldr_routing = auto_tldr_routing;
         self
     }
 

@@ -48,6 +48,7 @@ codex-login = { workspace = true }
 codex-mcp = { workspace = true }
 codex-protocol = { workspace = true }
 codex-app-server-protocol = { workspace = true }
+codex-api = { workspace = true }
 codex-feedback = { workspace = true }
 codex-rmcp-client = { workspace = true }
 codex-rollout = { workspace = true }
@@ -59,15 +60,18 @@ codex-utils-json-to-toml = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 constant_time_eq = { workspace = true }
+eventsource-stream = { workspace = true }
 futures = { workspace = true }
 hmac = { workspace = true }
 jsonwebtoken = { workspace = true }
 owo-colors = { workspace = true, features = ["supports-colors"] }
+reqwest = { workspace = true, features = ["rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tempfile = { workspace = true }
 time = { workspace = true }
+tokio-stream = { workspace = true }
 toml = { workspace = true }
 tokio = { workspace = true, features = [
     "io-std",
@@ -95,7 +99,6 @@ codex-utils-cargo-bin = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 pretty_assertions = { workspace = true }
-reqwest = { workspace = true, features = ["rustls-tls"] }
 rmcp = { workspace = true, default-features = false, features = [
     "elicitation",
     "server",

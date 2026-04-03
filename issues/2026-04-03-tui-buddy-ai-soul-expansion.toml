@@ -1,0 +1,58 @@
+plan = "plan/2026-04-03-tui-buddy-ai-soul-expansion.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "新增 Buddy AI Soul 配置与持久化"
+scope = """
+新增全局 Buddy AI Soul 配置结构（名字与性格等元数据）并持久化到 ~/.codex/config.toml，补齐 schema 与默认值，保证旧配置兼容与可读取。
+不包含核心提示注入、上下文反应生成与 TUI 渲染改动。
+"""
+touch_points = ["module:config", "module:core", "codex-rs/config/src/types.rs", "codex-rs/core/src/config/mod.rs", "codex-rs/core/config.schema.json"]
+depends_on = []
+done_when = "config.toml 可保存并读取 AI Soul（全局），schema 更新且旧配置无破坏性变更"
+validate_by = "运行仓库现有命令 cargo nextest run -p codex-config"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "系统提示集成与上下文感知反应链路"
+scope = """
+在 core 侧注入 companionIntroText（避免重复注入），并新增观察者链路：采集编程上下文 + AI Soul，调用模型生成短反应文本并下发给 TUI。
+不包含 TUI 物种/精灵扩展与浮动气泡布局。
+"""
+touch_points = ["module:core", "module:protocol", "codex-rs/core/src", "codex-rs/protocol/src"]
+depends_on = ["a1"]
+done_when = "系统提示仅注入一次且可控；上下文反应可生成并可靠传递给 TUI，失败时回退固定台词"
+validate_by = "运行仓库现有命令 cargo nextest run -p codex-core"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "TUI Buddy 扩展物种与浮动气泡"
+scope = """
+在 TUI 中扩展 Buddy 物种/眼睛/帽子与 ASCII 精灵，接入 AI Soul 展示并新增底部浮动气泡槽位；保持窄终端降级渲染。
+不包含 core 侧提示注入与反应生成逻辑。
+"""
+touch_points = ["module:tui", "codex-rs/tui/src/buddy", "codex-rs/tui/src/bottom_pane", "codex-rs/tui/src/chatwidget.rs"]
+depends_on = ["a1", "a2"]
+done_when = "Buddy 扩展物种与浮动气泡显示可用，窄终端降级正常，快照已更新"
+validate_by = "更新快照后运行仓库现有命令 cargo nextest run -p codex-tui"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
