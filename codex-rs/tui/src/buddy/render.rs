@@ -80,7 +80,6 @@ fn render_wide_lines(
     }
 
     lines.push(render_identity_line(bones, name, state));
-    lines.push(render_traits_line(bones, state, width));
     lines
 }
 
@@ -227,30 +226,6 @@ fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> L
         spans.push("闪亮".yellow().bold());
     }
     Line::from(spans)
-}
-
-fn render_traits_line(bones: &BuddyBones, state: &BuddyState, width: u16) -> Line<'static> {
-    let (primary_name, primary_value) = bones.stats.primary();
-    let reaction = state
-        .active_reaction()
-        .map(|reaction| match reaction.kind {
-            super::model::BuddyReactionKind::Hatch => "孵化中",
-            super::model::BuddyReactionKind::Return => "回归中",
-            super::model::BuddyReactionKind::Pet => "呼噜中",
-            super::model::BuddyReactionKind::Teaser => "逗你",
-            super::model::BuddyReactionKind::Observe => "观察中",
-        })
-        .unwrap_or("待机");
-    let traits = format!(
-        "  峰值 {} {} · {} · {}眼 · {} · 抚摸 {}",
-        primary_name.label(),
-        primary_value,
-        bones.hat.label(),
-        bones.eye.label(),
-        reaction,
-        state.pet_count
-    );
-    Line::from(truncate_with_ellipsis(&traits, width).dim())
 }
 
 fn sprite_lines(bones: &BuddyBones, frame: BuddyFrame) -> Vec<String> {
