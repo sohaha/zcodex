@@ -30,12 +30,6 @@ use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
-use crate::api_bridge::CoreAuthProvider;
-use crate::api_bridge::auth_provider_from_auth;
-use crate::api_bridge::map_api_error;
-use crate::auth_env_telemetry::AuthEnvTelemetry;
-use crate::auth_env_telemetry::collect_auth_env_telemetry;
-use codex_api::ChatCompletionsClient as ApiChatCompletionsClient;
 use codex_api::CompactClient as ApiCompactClient;
 use codex_api::CompactionInput as ApiCompactionInput;
 use codex_api::MemoriesClient as ApiMemoriesClient;
@@ -60,8 +54,8 @@ use codex_api::create_text_param_for_request;
 use codex_api::error::ApiError;
 use codex_api::requests::responses::Compression;
 use codex_api::response_create_client_metadata;
+use codex_app_server_protocol::AuthMode;
 use codex_login::AuthManager;
-use codex_login::AuthMode;
 use codex_login::CodexAuth;
 use codex_login::RefreshTokenError;
 use codex_login::UnauthorizedRecovery;
@@ -101,19 +95,26 @@ use tracing::warn;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
 use crate::client_common::ResponseStream;
-use crate::error::CodexErr;
-use crate::error::Result;
 use crate::flags::CODEX_RS_SSE_FIXTURE;
-use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::WireApi;
-use crate::provider_auth::auth_manager_for_provider;
-use crate::response_debug_context::extract_response_debug_context;
-use crate::response_debug_context::extract_response_debug_context_from_api_error;
-use crate::response_debug_context::telemetry_api_error_message;
-use crate::response_debug_context::telemetry_transport_error_message;
-use crate::util::FeedbackRequestTags;
 use crate::util::emit_feedback_auth_recovery_tags;
-use crate::util::emit_feedback_request_tags_with_auth_env;
+use codex_api::api_bridge::CoreAuthProvider;
+use codex_api::api_bridge::map_api_error;
+use codex_feedback::FeedbackRequestTags;
+use codex_feedback::emit_feedback_request_tags_with_auth_env;
+use codex_login::api_bridge::auth_provider_from_auth;
+use codex_login::auth_env_telemetry::AuthEnvTelemetry;
+use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
+use codex_login::provider_auth::auth_manager_for_provider;
+#[cfg(test)]
+use codex_model_provider_info::DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
+use codex_protocol::error::CodexErr;
+use codex_protocol::error::Result;
+use codex_response_debug_context::extract_response_debug_context;
+use codex_response_debug_context::extract_response_debug_context_from_api_error;
+use codex_response_debug_context::telemetry_api_error_message;
+use codex_response_debug_context::telemetry_transport_error_message;
 
 pub const OPENAI_BETA_HEADER: &str = "OpenAI-Beta";
 pub const X_CODEX_TURN_STATE_HEADER: &str = "x-codex-turn-state";
@@ -122,12 +123,11 @@ pub const X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER: &str =
     "x-responsesapi-include-timing-metrics";
 const RESPONSES_WEBSOCKETS_V2_BETA_HEADER_VALUE: &str = "responses_websockets=2026-02-06";
 const RESPONSES_ENDPOINT: &str = "/responses";
-const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
 const RESPONSES_COMPACT_ENDPOINT: &str = "/responses/compact";
 const MEMORIES_SUMMARIZE_ENDPOINT: &str = "/memories/trace_summarize";
 #[cfg(test)]
 pub(crate) const WEBSOCKET_CONNECT_TIMEOUT: Duration =
-    Duration::from_millis(crate::model_provider_info::DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS);
+    Duration::from_millis(DEFAULT_WEBSOCKET_CONNECT_TIMEOUT_MS);
 
 /// Session-scoped state shared by all [`ModelClient`] clones.
 ///
@@ -1084,95 +1084,6 @@ impl ModelClientSession {
         }
     }
 
-    /// Streams a turn via the OpenAI Chat Completions API.
-    ///
-    /// Reuses the Responses request shape and converts it to chat completions
-    /// payloads on the codex-api side.
-    #[allow(clippy::too_many_arguments)]
-    #[instrument(
-        name = "model_client.stream_chat_completions_api",
-        level = "info",
-        skip_all,
-        fields(
-            model = %model_info.slug,
-            wire_api = %self.client.state.provider.wire_api,
-            transport = "chat_completions_http",
-            http.method = "POST",
-            api.path = "chat/completions",
-            turn.has_metadata_header = turn_metadata_header.is_some()
-        )
-    )]
-    async fn stream_chat_completions_api(
-        &self,
-        prompt: &Prompt,
-        model_info: &ModelInfo,
-        session_telemetry: &SessionTelemetry,
-        effort: Option<ReasoningEffortConfig>,
-        summary: ReasoningSummaryConfig,
-        service_tier: Option<ServiceTier>,
-        turn_metadata_header: Option<&str>,
-    ) -> Result<ResponseStream> {
-        let auth_manager = self.client.state.auth_manager.clone();
-        let mut auth_recovery = auth_manager
-            .as_ref()
-            .map(AuthManager::unauthorized_recovery);
-        let mut pending_retry = PendingUnauthorizedRetry::default();
-        loop {
-            let client_setup = self.client.current_client_setup().await?;
-            let transport = ReqwestTransport::new(build_reqwest_client());
-            let request_auth_context = AuthRequestTelemetryContext::new(
-                client_setup.auth.as_ref().map(CodexAuth::auth_mode),
-                &client_setup.api_auth,
-                pending_retry,
-            );
-            let (request_telemetry, sse_telemetry) = Self::build_streaming_telemetry(
-                session_telemetry,
-                request_auth_context,
-                RequestRouteTelemetry::for_endpoint(CHAT_COMPLETIONS_ENDPOINT),
-                self.client.state.auth_env_telemetry.clone(),
-            );
-            let compression = self.responses_request_compression(client_setup.auth.as_ref());
-            let options = self.build_responses_options(turn_metadata_header, compression);
-
-            let request = self.build_responses_request(
-                &client_setup.api_provider,
-                prompt,
-                model_info,
-                effort,
-                summary,
-                service_tier,
-            )?;
-            let client = ApiChatCompletionsClient::new(
-                transport,
-                client_setup.api_provider,
-                client_setup.api_auth,
-            )
-            .with_telemetry(Some(request_telemetry), Some(sse_telemetry));
-            let stream_result = client.stream_request(request, options).await;
-
-            match stream_result {
-                Ok(stream) => {
-                    let (stream, _) = map_response_stream(stream, session_telemetry.clone());
-                    return Ok(stream);
-                }
-                Err(ApiError::Transport(
-                    unauthorized_transport @ TransportError::Http { status, .. },
-                )) if status == StatusCode::UNAUTHORIZED => {
-                    pending_retry = PendingUnauthorizedRetry::from_recovery(
-                        handle_unauthorized(
-                            unauthorized_transport,
-                            &mut auth_recovery,
-                            session_telemetry,
-                        )
-                        .await?,
-                    );
-                    continue;
-                }
-                Err(err) => return Err(map_api_error(err)),
-            }
-        }
-    }
-
     /// Streams a turn via the Responses API over WebSocket transport.
     #[allow(clippy::too_many_arguments)]
     #[instrument(
@@ -1418,30 +1329,6 @@ impl ModelClientSession {
                     }
                 }
 
-                self.stream_responses_api(
-                    prompt,
-                    model_info,
-                    session_telemetry,
-                    effort,
-                    summary,
-                    service_tier,
-                    turn_metadata_header,
-                )
-                .await
-            }
-            WireApi::Chat => {
-                self.stream_chat_completions_api(
-                    prompt,
-                    model_info,
-                    session_telemetry,
-                    effort,
-                    summary,
-                    service_tier,
-                    turn_metadata_header,
-                )
-                .await
-            }
-            WireApi::Anthropic => {
                 self.stream_responses_api(
                     prompt,
                     model_info,

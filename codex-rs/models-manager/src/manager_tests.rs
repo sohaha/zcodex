@@ -1,14 +1,15 @@
 use super::*;
-use crate::config::ConfigBuilder;
-use crate::model_provider_info::WireApi;
+use crate::ModelsManagerConfig;
 use base64::Engine as _;
 use chrono::Utc;
 use codex_api::TransportError;
 use codex_login::AuthCredentialsStoreMode;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
+use codex_model_provider_info::WireApi;
 use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::responses::mount_models_once;
 use http::HeaderMap;
 use http::StatusCode;
@@ -34,6 +35,9 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::header_regex;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
+
+#[path = "model_info_overrides_tests.rs"]
+mod model_info_overrides_tests;
 
 fn remote_model(slug: &str, display: &str, priority: i32) -> ModelInfo {
     remote_model_with_visibility(slug, display, priority, "list")
@@ -84,51 +88,12 @@ fn assert_models_contain(actual: &[ModelInfo], expected: &[ModelInfo]) {
 fn provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "mock".into(),
-        model: None,
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: None,
         auth: None,
         wire_api: WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: Some(0),
-        stream_max_retries: Some(0),
-        stream_idle_timeout_ms: Some(5_000),
-        websocket_connect_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    }
-}
-
-fn provider_with_bearer_for(base_url: String) -> ModelProviderInfo {
-    ModelProviderInfo {
-        experimental_bearer_token: Some("test-token".into()),
-        auth: None,
-        ..provider_for(base_url)
-    }
-}
-
-fn provider_with_env_key_for(base_url: String, wire_api: WireApi) -> ModelProviderInfo {
-    ModelProviderInfo {
-        env_key: Some("CODEX_TEST_PROVIDER_API_KEY".into()),
-        wire_api,
-        ..provider_for(base_url)
-    }
-}
-
-fn anthropic_provider_for(base_url: String) -> ModelProviderInfo {
-    ModelProviderInfo {
-        name: "mock-anthropic".into(),
-        model: None,
-        base_url: Some(base_url),
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        auth: None,
-        wire_api: WireApi::Anthropic,
         query_params: None,
         http_headers: None,
         env_http_headers: None,
@@ -151,10 +116,12 @@ impl ProviderAuthScript {
     fn new(tokens: &[&str]) -> std::io::Result<Self> {
         let tempdir = tempfile::tempdir()?;
         let tokens_file = tempdir.path().join("tokens.txt");
+        // `cmd.exe`'s `set /p` treats LF-only input as one line, so use CRLF on Windows.
+        let token_line_ending = if cfg!(windows) { "\r\n" } else { "\n" };
         let mut token_file_contents = String::new();
         for token in tokens {
             token_file_contents.push_str(token);
-            token_file_contents.push('\n');
+            token_file_contents.push_str(token_line_ending);
         }
         std::fs::write(&tokens_file, token_file_contents)?;
 
@@ -181,23 +148,28 @@ mv tokens.next tokens.txt
 
         #[cfg(windows)]
         let (command, args) = {
-            let script_path = tempdir.path().join("print-token.ps1");
+            let script_path = tempdir.path().join("print-token.cmd");
             std::fs::write(
                 &script_path,
-                r#"$lines = @(Get-Content -Path tokens.txt)
-if ($lines.Count -eq 0) { exit 1 }
-Write-Output $lines[0]
-$lines | Select-Object -Skip 1 | Set-Content -Path tokens.txt
+                r#"@echo off
+setlocal EnableExtensions DisableDelayedExpansion
+set "first_line="
+<tokens.txt set /p "first_line="
+if not defined first_line exit /b 1
+setlocal EnableDelayedExpansion
+echo(!first_line!
+endlocal
+more +1 tokens.txt > tokens.next
+move /y tokens.next tokens.txt >nul
 "#,
             )?;
             (
-                "powershell".to_string(),
+                "cmd.exe".to_string(),
                 vec![
-                    "-NoProfile".to_string(),
-                    "-ExecutionPolicy".to_string(),
-                    "Bypass".to_string(),
-                    "-File".to_string(),
-                    ".\\print-token.ps1".to_string(),
+                    "/d".to_string(),
+                    "/s".to_string(),
+                    "/c".to_string(),
+                    ".\\print-token.cmd".to_string(),
                 ],
             )
         };
@@ -210,12 +182,18 @@ $lines | Select-Object -Skip 1 | Set-Content -Path tokens.txt
     }
 
     fn auth_config(&self) -> ModelProviderAuthInfo {
+        let timeout_ms = if cfg!(windows) {
+            // Process startup can be slow on loaded Windows CI workers.
+            10_000
+        } else {
+            2_000
+        };
         ModelProviderAuthInfo {
             command: self.command.clone(),
             args: self.args.clone(),
-            timeout_ms: NonZeroU64::new(/*value*/ 1_000).unwrap(),
+            timeout_ms: NonZeroU64::new(timeout_ms).unwrap(),
             refresh_interval_ms: 60_000,
-            cwd: match codex_utils_absolute_path::AbsolutePathBuf::try_from(self.tempdir.path()) {
+            cwd: match AbsolutePathBuf::try_from(self.tempdir.path()) {
                 Ok(cwd) => cwd,
                 Err(err) => panic!("tempdir should be absolute: {err}"),
             },
@@ -267,17 +245,12 @@ where
 #[tokio::test]
 async fn get_model_info_tracks_fallback_usage() {
     let codex_home = tempdir().expect("temp dir");
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("load default test config");
+    let config = ModelsManagerConfig::default();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::new(
         codex_home.path().to_path_buf(),
         auth_manager,
-        None,
-        None,
+        /*model_catalog*/ None,
         CollaborationModesConfig::default(),
     );
     let known_slug = manager
@@ -302,12 +275,8 @@ async fn get_model_info_tracks_fallback_usage() {
 #[tokio::test]
 async fn get_model_info_uses_custom_catalog() {
     let codex_home = tempdir().expect("temp dir");
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("load default test config");
-    let mut overlay = remote_model("gpt-overlay", "Overlay", 0);
+    let config = ModelsManagerConfig::default();
+    let mut overlay = remote_model("gpt-overlay", "Overlay", /*priority*/ 0);
     overlay.supports_image_detail_original = true;
 
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
@@ -317,7 +286,6 @@ async fn get_model_info_uses_custom_catalog() {
         Some(ModelsResponse {
             models: vec![overlay],
         }),
-        None,
         CollaborationModesConfig::default(),
     );
 
@@ -336,12 +304,8 @@ async fn get_model_info_uses_custom_catalog() {
 #[tokio::test]
 async fn get_model_info_matches_namespaced_suffix() {
     let codex_home = tempdir().expect("temp dir");
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("load default test config");
-    let mut remote = remote_model("gpt-image", "Image", 0);
+    let config = ModelsManagerConfig::default();
+    let mut remote = remote_model("gpt-image", "Image", /*priority*/ 0);
     remote.supports_image_detail_original = true;
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::new(
@@ -350,7 +314,6 @@ async fn get_model_info_matches_namespaced_suffix() {
         Some(ModelsResponse {
             models: vec![remote],
         }),
-        None,
         CollaborationModesConfig::default(),
     );
     let namespaced_model = "custom/gpt-image".to_string();
@@ -365,17 +328,12 @@ async fn get_model_info_matches_namespaced_suffix() {
 #[tokio::test]
 async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
     let codex_home = tempdir().expect("temp dir");
-    let config = ConfigBuilder::default()
-        .codex_home(codex_home.path().to_path_buf())
-        .build()
-        .await
-        .expect("load default test config");
+    let config = ModelsManagerConfig::default();
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
     let manager = ModelsManager::new(
         codex_home.path().to_path_buf(),
         auth_manager,
-        None,
-        None,
+        /*model_catalog*/ None,
         CollaborationModesConfig::default(),
     );
     let known_slug = manager
@@ -397,8 +355,8 @@ async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
 async fn refresh_available_models_sorts_by_priority() {
     let server = MockServer::start().await;
     let remote_models = vec![
-        remote_model("priority-low", "Low", 1),
-        remote_model("priority-high", "High", 0),
+        remote_model("priority-low", "Low", /*priority*/ 1),
+        remote_model("priority-high", "High", /*priority*/ 0),
     ];
     let models_mock = mount_models_once(
         &server,
@@ -492,7 +450,7 @@ async fn refresh_available_models_uses_provider_auth_token() {
 #[tokio::test]
 async fn refresh_available_models_uses_cache_when_fresh() {
     let server = MockServer::start().await;
-    let remote_models = vec![remote_model("cached", "Cached", 5)];
+    let remote_models = vec![remote_model("cached", "Cached", /*priority*/ 5)];
     let models_mock = mount_models_once(
         &server,
         ModelsResponse {
@@ -533,7 +491,7 @@ async fn refresh_available_models_uses_cache_when_fresh() {
 #[tokio::test]
 async fn refresh_available_models_refetches_when_cache_stale() {
     let server = MockServer::start().await;
-    let initial_models = vec![remote_model("stale", "Stale", 1)];
+    let initial_models = vec![remote_model("stale", "Stale", /*priority*/ 1)];
     let initial_mock = mount_models_once(
         &server,
         ModelsResponse {
@@ -566,7 +524,7 @@ async fn refresh_available_models_refetches_when_cache_stale() {
         .await
         .expect("cache manipulation succeeds");
 
-    let updated_models = vec![remote_model("fresh", "Fresh", 9)];
+    let updated_models = vec![remote_model("fresh", "Fresh", /*priority*/ 9)];
     server.reset().await;
     let refreshed_mock = mount_models_once(
         &server,
@@ -596,7 +554,7 @@ async fn refresh_available_models_refetches_when_cache_stale() {
 #[tokio::test]
 async fn refresh_available_models_refetches_when_version_mismatch() {
     let server = MockServer::start().await;
-    let initial_models = vec![remote_model("old", "Old", 1)];
+    let initial_models = vec![remote_model("old", "Old", /*priority*/ 1)];
     let initial_mock = mount_models_once(
         &server,
         ModelsResponse {
@@ -623,13 +581,13 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
     manager
         .cache_manager
         .mutate_cache_for_test(|cache| {
-            let client_version = crate::models_manager::client_version_to_whole();
+            let client_version = crate::client_version_to_whole();
             cache.client_version = Some(format!("{client_version}-mismatch"));
         })
         .await
         .expect("cache mutation succeeds");
 
-    let updated_models = vec![remote_model("new", "New", 2)];
+    let updated_models = vec![remote_model("new", "New", /*priority*/ 2)];
     server.reset().await;
     let refreshed_mock = mount_models_once(
         &server,
@@ -659,7 +617,11 @@ async fn refresh_available_models_refetches_when_version_mismatch() {
 #[tokio::test]
 async fn refresh_available_models_drops_removed_remote_models() {
     let server = MockServer::start().await;
-    let initial_models = vec![remote_model("remote-old", "Remote Old", 1)];
+    let initial_models = vec![remote_model(
+        "remote-old",
+        "Remote Old",
+        /*priority*/ 1,
+    )];
     let initial_mock = mount_models_once(
         &server,
         ModelsResponse {
@@ -685,7 +647,11 @@ async fn refresh_available_models_drops_removed_remote_models() {
         .expect("initial refresh succeeds");
 
     server.reset().await;
-    let refreshed_models = vec![remote_model("remote-new", "Remote New", 1)];
+    let refreshed_models = vec![remote_model(
+        "remote-new",
+        "Remote New",
+        /*priority*/ 1,
+    )];
     let refreshed_mock = mount_models_once(
         &server,
         ModelsResponse {
@@ -729,7 +695,7 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
     let models_mock = mount_models_once(
         &server,
         ModelsResponse {
-            models: vec![remote_model(dynamic_slug, "No Auth", 1)],
+            models: vec![remote_model(dynamic_slug, "No Auth", /*priority*/ 1)],
         },
     )
     .await;
@@ -737,7 +703,7 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
     let codex_home = tempdir().expect("temp dir");
     let auth_manager = Arc::new(AuthManager::new(
         codex_home.path().to_path_buf(),
-        false,
+        /*enable_codex_api_key_env*/ false,
         AuthCredentialsStoreMode::File,
     ));
     let provider = provider_for(server.uri());
@@ -765,420 +731,6 @@ async fn refresh_available_models_skips_network_without_chatgpt_auth() {
     );
 }
 
-#[tokio::test]
-async fn refresh_available_models_uses_provider_supplied_auth() {
-    let server = MockServer::start().await;
-    let dynamic_slug = "dynamic-model-only-for-provider-auth";
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: vec![remote_model(dynamic_slug, "Provider Auth", 1)],
-        },
-    )
-    .await;
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = Arc::new(AuthManager::new(
-        codex_home.path().to_path_buf(),
-        false,
-        AuthCredentialsStoreMode::File,
-    ));
-    let provider = provider_with_bearer_for(server.uri());
-    let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
-
-    manager
-        .refresh_available_models(RefreshStrategy::Online)
-        .await
-        .expect("refresh should use provider-supplied auth");
-    let cached_remote = manager.get_remote_models().await;
-    assert!(
-        cached_remote
-            .iter()
-            .any(|candidate| candidate.slug == dynamic_slug),
-        "provider-supplied auth should allow /models refresh"
-    );
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "provider-supplied auth should trigger one /models request"
-    );
-}
-
-#[tokio::test]
-async fn refresh_available_models_uses_env_key_auth_for_chat_provider() {
-    const SUBPROCESS_ENV: &str = "CODEX_TEST_CHAT_MODELS_REFRESH_SUBPROCESS";
-    const BASE_URL_ENV: &str = "CODEX_TEST_CHAT_MODELS_REFRESH_BASE_URL";
-
-    if std::env::var_os(SUBPROCESS_ENV).is_none() {
-        let server = MockServer::start().await;
-        let dynamic_slug = "dynamic-model-only-for-chat-env-key";
-        let models_mock = mount_models_once(
-            &server,
-            ModelsResponse {
-                models: vec![remote_model(dynamic_slug, "Chat Env Key", 1)],
-            },
-        )
-        .await;
-
-        let output = std::process::Command::new(
-            std::env::current_exe().expect("test binary path should resolve"),
-        )
-        .arg("--exact")
-        .arg("models_manager::manager::tests::refresh_available_models_uses_env_key_auth_for_chat_provider")
-        .env(SUBPROCESS_ENV, "1")
-        .env(BASE_URL_ENV, server.uri())
-        .env("CODEX_TEST_PROVIDER_API_KEY", "provider-env-key")
-        .output()
-        .expect("subprocess should run");
-
-        assert!(
-            output.status.success(),
-            "subprocess failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            models_mock.requests().len(),
-            1,
-            "chat provider env_key auth should trigger one /models request"
-        );
-        return;
-    }
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = Arc::new(AuthManager::new(
-        codex_home.path().to_path_buf(),
-        false,
-        AuthCredentialsStoreMode::File,
-    ));
-    let base_url = std::env::var(BASE_URL_ENV).expect("subprocess base URL should be set");
-    let provider = provider_with_env_key_for(base_url, WireApi::Chat);
-    let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
-
-    manager
-        .refresh_available_models(RefreshStrategy::Online)
-        .await
-        .expect("chat provider env_key auth should allow /models refresh");
-    let cached_remote = manager.get_remote_models().await;
-    assert!(
-        cached_remote
-            .iter()
-            .any(|candidate| candidate.slug == "dynamic-model-only-for-chat-env-key"),
-        "chat provider env_key auth should allow /models refresh"
-    );
-}
-
-#[tokio::test]
-async fn overlay_catalog_keeps_remote_refresh_enabled() {
-    let server = MockServer::start().await;
-    let response_models = vec![remote_model("remote-only", "Remote Only", 1)];
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: response_models.clone(),
-        },
-    )
-    .await;
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let overlay_model = remote_model("overlay-only", "Overlay Only", 0);
-    let provider = provider_for(server.uri());
-    let manager = ModelsManager::new_with_provider(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        None,
-        Some(ModelsResponse {
-            models: vec![overlay_model.clone()],
-        }),
-        CollaborationModesConfig::default(),
-        provider,
-    );
-
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
-
-    assert!(
-        available.iter().any(|model| model.model == "remote-only"),
-        "remote model should still be discoverable"
-    );
-    assert!(
-        available
-            .iter()
-            .any(|model| model.model == overlay_model.slug),
-        "overlay model should be listed"
-    );
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "overlay-only config should not disable /models refresh"
-    );
-}
-
-#[tokio::test]
-async fn overlay_catalog_overrides_matching_remote_slug() {
-    let server = MockServer::start().await;
-    let response_models = vec![remote_model("shared-model", "Remote Shared", 1)];
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: response_models,
-        },
-    )
-    .await;
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager =
-        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
-    let mut overlay_model = remote_model("shared-model", "Overlay Shared", 0);
-    overlay_model.supports_image_detail_original = true;
-    let provider = provider_for(server.uri());
-    let manager = ModelsManager::new_with_provider(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        None,
-        Some(ModelsResponse {
-            models: vec![overlay_model.clone()],
-        }),
-        CollaborationModesConfig::default(),
-        provider,
-    );
-
-    manager
-        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
-        .await
-        .expect("refresh succeeds");
-    let merged_model = manager
-        .get_remote_models()
-        .await
-        .into_iter()
-        .find(|model| model.slug == overlay_model.slug)
-        .expect("merged model should exist");
-
-    assert_eq!(merged_model.display_name, overlay_model.display_name);
-    assert!(merged_model.supports_image_detail_original);
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "refresh should still fetch /models before applying overlay"
-    );
-}
-
-#[tokio::test]
-async fn anthropic_provider_keeps_bundled_catalog() {
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for("https://anthropic.example/v1".to_string());
-    let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
-
-    let remote_models = manager.get_remote_models().await;
-
-    assert!(
-        remote_models
-            .iter()
-            .all(|candidate| candidate.slug.starts_with("claude-")),
-        "anthropic provider should start from the bundled Claude catalog"
-    );
-}
-
-#[tokio::test]
-async fn anthropic_provider_fetches_remote_models_when_uncached() {
-    let server = MockServer::start().await;
-    let remote_only_model = remote_model("claude-proxy-custom", "Claude Proxy Custom", 0);
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: vec![remote_only_model.clone()],
-        },
-    )
-    .await;
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
-    let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
-
-    manager
-        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
-        .await
-        .expect("anthropic refresh should succeed");
-
-    let remote_models = manager.get_remote_models().await;
-    assert!(
-        remote_models
-            .iter()
-            .any(|candidate| candidate.slug == remote_only_model.slug),
-        "anthropic refresh should merge remote /models entries"
-    );
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "anthropic provider should fetch /models when no custom catalog is configured"
-    );
-}
-
-#[tokio::test]
-async fn anthropic_provider_ignores_shared_models_cache() {
-    let server = MockServer::start().await;
-    let remote_only_model = remote_model("claude-remote-only", "Claude Remote Only", 0);
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: vec![remote_only_model.clone()],
-        },
-    )
-    .await;
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
-    let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
-    manager
-        .cache_manager
-        .persist_cache(
-            &[remote_model("gpt-cached", "Cached GPT", 0)],
-            None,
-            crate::models_manager::client_version_to_whole(),
-            "responses:https://api.openai.com/v1".to_string(),
-        )
-        .await;
-
-    manager
-        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
-        .await
-        .expect("anthropic refresh should succeed");
-
-    let remote_models = manager.get_remote_models().await;
-    assert!(
-        remote_models
-            .iter()
-            .any(|candidate| candidate.slug == remote_only_model.slug),
-        "anthropic provider should ignore cached OpenAI models and use fresh remote results"
-    );
-    assert!(
-        remote_models
-            .iter()
-            .all(|candidate| candidate.slug != "gpt-cached"),
-        "anthropic provider should ignore cached OpenAI models"
-    );
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "anthropic refresh should fetch /models instead of reusing shared cache"
-    );
-}
-
-#[tokio::test]
-async fn anthropic_provider_uses_matching_cache_for_online_if_uncached() {
-    let server = MockServer::start().await;
-    let cached_model = remote_model("claude-cached", "Claude Cached", 0);
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
-    let manager = ModelsManager::with_provider_for_tests(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        provider,
-    );
-    manager
-        .cache_manager
-        .persist_cache(
-            std::slice::from_ref(&cached_model),
-            None,
-            crate::models_manager::client_version_to_whole(),
-            format!("anthropic:{}/v1", server.uri()),
-        )
-        .await;
-
-    manager
-        .refresh_available_models(RefreshStrategy::OnlineIfUncached)
-        .await
-        .expect("anthropic cache load should succeed");
-
-    let remote_models = manager.get_remote_models().await;
-    assert!(
-        remote_models
-            .iter()
-            .any(|candidate| candidate.slug == cached_model.slug),
-        "anthropic provider should accept matching provider cache"
-    );
-    let requests = server.received_requests().await.unwrap_or_default();
-    assert!(
-        requests.is_empty(),
-        "matching anthropic cache should avoid a network fetch"
-    );
-}
-
-#[tokio::test]
-async fn anthropic_provider_applies_overlay_catalog() {
-    let server = MockServer::start().await;
-    let remote_only_model = remote_model("claude-remote-base", "Claude Remote Base", 1);
-    let models_mock = mount_models_once(
-        &server,
-        ModelsResponse {
-            models: vec![remote_only_model],
-        },
-    )
-    .await;
-
-    let codex_home = tempdir().expect("temp dir");
-    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
-    let provider = anthropic_provider_for(format!("{}/v1", server.uri()));
-    let overlay_model = remote_model("claude-proxy-custom", "Claude Proxy Custom", 0);
-    let manager = ModelsManager::new_with_provider(
-        codex_home.path().to_path_buf(),
-        auth_manager,
-        None,
-        Some(ModelsResponse {
-            models: vec![overlay_model.clone()],
-        }),
-        CollaborationModesConfig::default(),
-        provider,
-    );
-
-    let available = manager.list_models(RefreshStrategy::OnlineIfUncached).await;
-    let remote_models = manager.get_remote_models().await;
-
-    assert!(
-        available
-            .iter()
-            .any(|model| model.model == overlay_model.slug),
-        "overlay model should be exposed in picker presets"
-    );
-    assert!(
-        remote_models
-            .iter()
-            .any(|candidate| candidate.slug == overlay_model.slug),
-        "overlay model should be merged into the anthropic catalog"
-    );
-    assert_eq!(
-        models_mock.requests().len(),
-        1,
-        "anthropic overlay config should not disable /models refresh"
-    );
-}
-
 #[test]
 fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
     let tags = Arc::new(Mutex::new(BTreeMap::new()));
@@ -1190,7 +742,7 @@ fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
         auth_mode: Some(TelemetryAuthMode::Chatgpt.to_string()),
         auth_header_attached: true,
         auth_header_name: Some("authorization"),
-        auth_env: crate::auth_env_telemetry::AuthEnvTelemetry {
+        auth_env: codex_login::AuthEnvTelemetry {
             openai_api_key_env_present: false,
             codex_api_key_env_present: false,
             codex_api_key_env_enabled: false,
@@ -1214,7 +766,7 @@ fn models_request_telemetry_emits_auth_env_feedback_tags_on_failure() {
             .unwrap(),
     );
     telemetry.on_request(
-        1,
+        /*attempt*/ 1,
         Some(StatusCode::UNAUTHORIZED),
         Some(&TransportError::Http {
             status: StatusCode::UNAUTHORIZED,
@@ -1288,8 +840,10 @@ fn build_available_models_picks_default_after_hiding_hidden_models() {
         provider,
     );
 
-    let hidden_model = remote_model_with_visibility("hidden", "Hidden", 0, "hide");
-    let visible_model = remote_model_with_visibility("visible", "Visible", 1, "list");
+    let hidden_model =
+        remote_model_with_visibility("hidden", "Hidden", /*priority*/ 0, "hide");
+    let visible_model =
+        remote_model_with_visibility("visible", "Visible", /*priority*/ 1, "list");
 
     let expected_hidden = ModelPreset::from(hidden_model.clone());
     let mut expected_visible = ModelPreset::from(visible_model.clone());
@@ -1302,9 +856,8 @@ fn build_available_models_picks_default_after_hiding_hidden_models() {
 
 #[test]
 fn bundled_models_json_roundtrips() {
-    let file_contents = include_str!("../../models.json");
-    let response: ModelsResponse =
-        serde_json::from_str(file_contents).expect("bundled models.json should deserialize");
+    let response = crate::bundled_models_response()
+        .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"));
 
     let serialized =
         serde_json::to_string(&response).expect("bundled models.json should serialize");

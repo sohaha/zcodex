@@ -11,7 +11,6 @@ use tracing::trace_span;
 
 use crate::codex::Session;
 use crate::codex::TurnContext;
-use crate::error::CodexErr;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::AbortedToolOutput;
 use crate::tools::context::SharedTurnDiffTracker;
@@ -21,6 +20,7 @@ use crate::tools::rewrite::rewrite_tool_call;
 use crate::tools::router::ToolCall;
 use crate::tools::router::ToolCallSource;
 use crate::tools::router::ToolRouter;
+use codex_protocol::error::CodexErr;
 use codex_protocol::models::ResponseInputItem;
 use codex_tools::ToolSpec;
 

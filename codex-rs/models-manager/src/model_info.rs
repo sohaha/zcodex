@@ -11,12 +11,11 @@ use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::WebSearchToolType;
 use codex_protocol::openai_models::default_input_modalities;
 
-use crate::config::Config;
-use codex_features::Feature;
+use crate::config::ModelsManagerConfig;
 use codex_utils_output_truncation::approx_bytes_for_tokens;
 use tracing::warn;
 
-pub const BASE_INSTRUCTIONS: &str = include_str!("../../prompt.md");
+pub const BASE_INSTRUCTIONS: &str = include_str!("../prompt.md");
 const DEFAULT_PERSONALITY_HEADER: &str = "You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user's goals.";
 const LOCAL_FRIENDLY_TEMPLATE: &str =
     "You optimize for team morale and being a supportive teammate as much as code quality.";
@@ -28,7 +27,7 @@ const ANTHROPIC_REASONING_LEVELS: [ReasoningEffort; 3] = [
     ReasoningEffort::High,
 ];
 
-pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> ModelInfo {
+pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
     if let Some(supports_reasoning_summaries) = config.model_supports_reasoning_summaries
         && supports_reasoning_summaries
     {
@@ -57,7 +56,7 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
     if let Some(base_instructions) = &config.base_instructions {
         model.base_instructions = base_instructions.clone();
         model.model_messages = None;
-    } else if !config.features.enabled(Feature::Personality) {
+    } else if !config.personality_enabled {
         model.model_messages = None;
     }
 
@@ -65,7 +64,7 @@ pub(crate) fn with_config_overrides(mut model: ModelInfo, config: &Config) -> Mo
 }
 
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
-pub(crate) fn model_info_from_slug(slug: &str) -> ModelInfo {
+pub fn model_info_from_slug(slug: &str) -> ModelInfo {
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
     ModelInfo {
         slug: slug.to_string(),

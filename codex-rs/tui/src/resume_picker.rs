@@ -78,15 +78,15 @@ pub enum SessionPickerAction {
 impl SessionPickerAction {
     fn title(self) -> &'static str {
         match self {
-            SessionPickerAction::Resume => "恢复之前的会话",
-            SessionPickerAction::Fork => "分叉之前的会话",
+            SessionPickerAction::Resume => "Resume a previous session",
+            SessionPickerAction::Fork => "Fork a previous session",
         }
     }
 
     fn action_label(self) -> &'static str {
         match self {
-            SessionPickerAction::Resume => "恢复",
-            SessionPickerAction::Fork => "分叉",
+            SessionPickerAction::Resume => "resume",
+            SessionPickerAction::Fork => "fork",
         }
     }
 
@@ -381,8 +381,8 @@ fn spawn_app_server_page_loader(
 /// Returns the human-readable column header for the given sort key.
 fn sort_key_label(sort_key: ThreadSortKey) -> &'static str {
     match sort_key {
-        ThreadSortKey::CreatedAt => "创建时间",
-        ThreadSortKey::UpdatedAt => "更新时间",
+        ThreadSortKey::CreatedAt => "Created at",
+        ThreadSortKey::UpdatedAt => "Updated at",
     }
 }
 
@@ -626,9 +626,11 @@ impl PickerState {
                     }
                     self.inline_error = Some(match path {
                         Some(path) => {
-                            format!("读取会话元数据失败：{}", path.display())
+                            format!("Failed to read session metadata from {}", path.display())
                         }
-                        None => String::from("读取所选会话元数据失败"),
+                        None => {
+                            String::from("Failed to read session metadata from selected session")
+                        }
                     });
                     self.request_frame();
                 }
@@ -789,9 +791,6 @@ impl PickerState {
             let Some(thread_id) = row.thread_id else {
                 continue;
             };
-            if row.thread_name.is_some() {
-                continue;
-            }
             if self.thread_name_cache.contains_key(&thread_id) {
                 continue;
             }
@@ -815,11 +814,14 @@ impl PickerState {
             let Some(thread_id) = row.thread_id else {
                 continue;
             };
-            let thread_name = self.thread_name_cache.get(&thread_id).cloned().flatten();
-            if row.thread_name == thread_name {
+            let Some(thread_name) = self.thread_name_cache.get(&thread_id).cloned().flatten()
+            else {
+                continue;
+            };
+            if row.thread_name.as_ref() == Some(&thread_name) {
                 continue;
             }
-            row.thread_name = thread_name;
+            row.thread_name = Some(thread_name);
             updated = true;
         }
 
@@ -1056,7 +1058,7 @@ fn head_to_row(item: &ThreadItem) -> Row {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string)
-        .unwrap_or_else(|| String::from("（暂无消息）"));
+        .unwrap_or_else(|| String::from("(no message yet)"));
 
     Row {
         path: Some(item.path.clone()),
@@ -1082,7 +1084,7 @@ fn row_from_app_server_thread(thread: Thread) -> Option<Row> {
     Some(Row {
         path: thread.path,
         preview: if preview.is_empty() {
-            String::from("（暂无消息）")
+            String::from("(no message yet)")
         } else {
             preview.to_string()
         },
@@ -1157,7 +1159,7 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
         let header_line: Line = vec![
             state.action.title().bold().cyan(),
             "  ".into(),
-            "排序：".dim(),
+            "Sort:".dim(),
             " ".into(),
             sort_key_label(state.sort_key).magenta(),
         ]
@@ -1177,21 +1179,21 @@ fn draw_picker(tui: &mut Tui, state: &PickerState) -> std::io::Result<()> {
         let action_label = state.action.action_label();
         let hint_line: Line = vec![
             key_hint::plain(KeyCode::Enter).into(),
-            format!(" {action_label} ").dim(),
+            format!(" to {action_label} ").dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Esc).into(),
-            " 新建 ".dim(),
+            " to start new ".dim(),
             "    ".dim(),
             key_hint::ctrl(KeyCode::Char('c')).into(),
-            " 退出 ".dim(),
+            " to quit ".dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Tab).into(),
-            " 切换排序 ".dim(),
+            " to toggle sort ".dim(),
             "    ".dim(),
             key_hint::plain(KeyCode::Up).into(),
             "/".dim(),
             key_hint::plain(KeyCode::Down).into(),
-            " 浏览".dim(),
+            " to browse".dim(),
         ]
         .into();
         frame.render_widget_ref(hint_line, hint);
@@ -1203,9 +1205,9 @@ fn search_line(state: &PickerState) -> Line<'_> {
         return Line::from(error.red());
     }
     if state.query.is_empty() {
-        return Line::from("输入搜索".dim());
+        return Line::from("Type to search".dim());
     }
-    Line::from(format!("搜索：{}", state.query))
+    Line::from(format!("Search: {}", state.query))
 }
 
 fn render_list(
@@ -1335,7 +1337,7 @@ fn render_list(
     }
 
     if state.pagination.loading.is_pending() && y < area.y.saturating_add(area.height) {
-        let loading_line: Line = vec!["  ".into(), "正在加载更早的会话…".italic().dim()].into();
+        let loading_line: Line = vec!["  ".into(), "Loading older sessions…".italic().dim()].into();
         let rect = Rect::new(area.x, y, area.width, 1);
         frame.render_widget_ref(loading_line, rect);
     }
@@ -1346,27 +1348,26 @@ fn render_empty_state_line(state: &PickerState) -> Line<'static> {
         if state.search_state.is_active()
             || (state.pagination.loading.is_pending() && state.pagination.next_cursor.is_some())
         {
-            return vec!["搜索中…".italic().dim()].into();
+            return vec!["Searching…".italic().dim()].into();
         }
         if state.pagination.reached_scan_cap {
             let msg = format!(
-                "已搜索前 {} 个会话；可能还有更多",
+                "Search scanned first {} sessions; more may exist",
                 state.pagination.num_scanned_files
             );
             return vec![Span::from(msg).italic().dim()].into();
         }
-        return vec!["未找到匹配结果".italic().dim()].into();
-    }
-
-    if state.all_rows.is_empty() && state.pagination.num_scanned_files == 0 {
-        return vec!["暂无会话".italic().dim()].into();
+        return vec!["No results for your search".italic().dim()].into();
     }
 
     if state.pagination.loading.is_pending() {
-        return vec!["正在加载更早的会话…".italic().dim()].into();
+        if state.all_rows.is_empty() && state.pagination.num_scanned_files == 0 {
+            return vec!["Loading sessions…".italic().dim()].into();
+        }
+        return vec!["Loading older sessions…".italic().dim()].into();
     }
 
-    vec!["暂无会话".italic().dim()].into()
+    vec!["No sessions yet".italic().dim()].into()
 }
 
 fn human_time_ago(ts: DateTime<Utc>) -> String {
@@ -1375,16 +1376,32 @@ fn human_time_ago(ts: DateTime<Utc>) -> String {
     let secs = delta.num_seconds();
     if secs < 60 {
         let n = secs.max(0);
-        format!("{n} 秒前")
+        if n == 1 {
+            format!("{n} second ago")
+        } else {
+            format!("{n} seconds ago")
+        }
     } else if secs < 60 * 60 {
         let m = secs / 60;
-        format!("{m} 分钟前")
+        if m == 1 {
+            format!("{m} minute ago")
+        } else {
+            format!("{m} minutes ago")
+        }
     } else if secs < 60 * 60 * 24 {
         let h = secs / 3600;
-        format!("{h} 小时前")
+        if h == 1 {
+            format!("{h} hour ago")
+        } else {
+            format!("{h} hours ago")
+        }
     } else {
         let d = secs / (60 * 60 * 24);
-        format!("{d} 天前")
+        if d == 1 {
+            format!("{d} day ago")
+        } else {
+            format!("{d} days ago")
+        }
     }
 }
 
@@ -1418,7 +1435,7 @@ fn render_column_headers(
     if visibility.show_created {
         let label = format!(
             "{text:<width$}",
-            text = "创建时间",
+            text = "Created at",
             width = metrics.max_created_width
         );
         spans.push(Span::from(label).bold());
@@ -1427,7 +1444,7 @@ fn render_column_headers(
     if visibility.show_updated {
         let label = format!(
             "{text:<width$}",
-            text = "更新时间",
+            text = "Updated at",
             width = metrics.max_updated_width
         );
         spans.push(Span::from(label).bold());
@@ -1436,7 +1453,7 @@ fn render_column_headers(
     if visibility.show_branch {
         let label = format!(
             "{text:<width$}",
-            text = "分支",
+            text = "Branch",
             width = metrics.max_branch_width
         );
         spans.push(Span::from(label).bold());
@@ -1451,7 +1468,7 @@ fn render_column_headers(
         spans.push(Span::from(label).bold());
         spans.push("  ".into());
     }
-    spans.push("对话".bold());
+    spans.push("Conversation".bold());
     frame.render_widget_ref(Line::from(spans), area);
 }
 
@@ -1502,11 +1519,11 @@ fn calculate_column_metrics(rows: &[Row], include_cwd: bool) -> ColumnMetrics {
     }
 
     let mut labels: Vec<(String, String, String, String)> = Vec::with_capacity(rows.len());
-    let mut max_created_width = UnicodeWidthStr::width("创建时间");
-    let mut max_updated_width = UnicodeWidthStr::width("更新时间");
-    let mut max_branch_width = UnicodeWidthStr::width("分支");
+    let mut max_created_width = UnicodeWidthStr::width("Created at");
+    let mut max_updated_width = UnicodeWidthStr::width("Updated at");
+    let mut max_branch_width = UnicodeWidthStr::width("Branch");
     let mut max_cwd_width = if include_cwd {
-        UnicodeWidthStr::width("目录")
+        UnicodeWidthStr::width("CWD")
     } else {
         0
     };
@@ -1967,7 +1984,9 @@ mod tests {
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.inline_error = Some(String::from("读取会话元数据失败：/tmp/missing.jsonl"));
+        state.inline_error = Some(String::from(
+            "Failed to read session metadata from /tmp/missing.jsonl",
+        ));
 
         let width: u16 = 80;
         let height: u16 = 1;
@@ -2256,6 +2275,57 @@ mod tests {
         assert_snapshot!("resume_picker_thread_names", snapshot);
     }
 
+    #[tokio::test]
+    async fn update_thread_names_prefers_local_session_index_names() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let thread_id =
+            ThreadId::from_string("11111111-1111-1111-1111-111111111111").expect("thread id");
+        let session_index_entry = json!({
+            "id": thread_id,
+            "thread_name": "Saved session name",
+            "updated_at": "2025-01-01T00:00:00Z",
+        });
+        std::fs::write(
+            tempdir.path().join("session_index.jsonl"),
+            format!("{session_index_entry}\n"),
+        )
+        .expect("write session index");
+
+        let loader: PageLoader = Arc::new(|_| {});
+        let mut state = PickerState::new(
+            tempdir.path().to_path_buf(),
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+
+        state.all_rows = vec![Row {
+            path: Some(PathBuf::from("/tmp/a.jsonl")),
+            preview: String::from("First prompt"),
+            thread_id: Some(thread_id),
+            thread_name: Some(String::from("stale backend title")),
+            created_at: None,
+            updated_at: None,
+            cwd: None,
+            git_branch: None,
+        }];
+        state.filtered_rows = state.all_rows.clone();
+
+        state.update_thread_names().await;
+
+        assert_eq!(
+            state.all_rows[0].thread_name,
+            Some(String::from("Saved session name"))
+        );
+        assert_eq!(
+            state.filtered_rows[0].display_preview(),
+            "Saved session name"
+        );
+    }
+
     #[test]
     fn pageless_scrolling_deduplicates_and_keeps_order() {
         let loader: PageLoader = Arc::new(|_| {});
@@ -2518,7 +2588,9 @@ mod tests {
         assert!(selection.is_none());
         assert_eq!(
             state.inline_error,
-            Some(String::from("读取会话元数据失败：/tmp/missing.jsonl"))
+            Some(String::from(
+                "Failed to read session metadata from /tmp/missing.jsonl"
+            ))
         );
     }
 
@@ -2567,6 +2639,7 @@ mod tests {
         let thread_id = ThreadId::new();
         let thread = Thread {
             id: thread_id.to_string(),
+            forked_from_id: None,
             preview: String::from("remote thread"),
             ephemeral: false,
             model_provider: String::from("openai"),

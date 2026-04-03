@@ -1,34 +1,33 @@
 use super::cache::ModelsCacheManager;
-use crate::api_bridge::auth_provider_from_auth;
-use crate::api_bridge::map_api_error;
-use crate::auth_env_telemetry::AuthEnvTelemetry;
-use crate::auth_env_telemetry::collect_auth_env_telemetry;
-use crate::config::Config;
-use crate::error::CodexErr;
-use crate::error::Result as CoreResult;
-use crate::model_provider_info::ModelProviderInfo;
-use crate::model_provider_info::WireApi;
-use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use crate::models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets;
-use crate::models_manager::model_info;
-use crate::provider_auth::required_auth_manager_for_provider;
-use crate::response_debug_context::extract_response_debug_context;
-use crate::response_debug_context::telemetry_transport_error_message;
-use crate::util::FeedbackRequestTags;
-use crate::util::emit_feedback_request_tags_with_auth_env;
+use crate::collaboration_mode_presets::CollaborationModesConfig;
+use crate::collaboration_mode_presets::builtin_collaboration_mode_presets;
+use crate::config::ModelsManagerConfig;
+use crate::model_info;
 use codex_api::ModelsClient;
 use codex_api::RequestTelemetry;
 use codex_api::ReqwestTransport;
 use codex_api::TransportError;
+use codex_api::api_bridge::map_api_error;
+use codex_app_server_protocol::AuthMode;
+use codex_feedback::FeedbackRequestTags;
+use codex_feedback::emit_feedback_request_tags_with_auth_env;
+use codex_login::AuthEnvTelemetry;
 use codex_login::AuthManager;
-use codex_login::AuthMode;
 use codex_login::CodexAuth;
+use codex_login::auth_provider_from_auth;
+use codex_login::collect_auth_env_telemetry;
 use codex_login::default_client::build_reqwest_client;
+use codex_login::required_auth_manager_for_provider;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
+use codex_protocol::error::CodexErr;
+use codex_protocol::error::Result as CoreResult;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_response_debug_context::extract_response_debug_context;
+use codex_response_debug_context::telemetry_transport_error_message;
 use http::HeaderMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -178,7 +177,6 @@ enum CatalogMode {
 pub struct ModelsManager {
     remote_models: RwLock<Vec<ModelInfo>>,
     catalog_mode: CatalogMode,
-    catalog_overlay: Option<Vec<ModelInfo>>,
     collaboration_modes_config: CollaborationModesConfig,
     auth_manager: Arc<AuthManager>,
     etag: RwLock<Option<String>>,
@@ -196,14 +194,12 @@ impl ModelsManager {
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
-        model_catalog_merge: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
     ) -> Self {
         Self::new_with_provider(
             codex_home,
             auth_manager,
             model_catalog,
-            model_catalog_merge,
             collaboration_modes_config,
             ModelProviderInfo::create_openai_provider(/*base_url*/ None),
         )
@@ -214,7 +210,6 @@ impl ModelsManager {
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
-        model_catalog_merge: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
         provider: ModelProviderInfo,
     ) -> Self {
@@ -226,15 +221,12 @@ impl ModelsManager {
         } else {
             CatalogMode::Default
         };
-        let catalog_overlay = model_catalog_merge.map(|catalog| catalog.models);
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| Self::load_bundled_models(&provider));
-        let remote_models = Self::apply_catalog_overlay(remote_models, catalog_overlay.as_deref());
+            .unwrap_or_else(|| Self::load_remote_models_from_file().unwrap_or_default());
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
-            catalog_overlay,
             collaboration_modes_config,
             auth_manager,
             etag: RwLock::new(None),
@@ -318,7 +310,7 @@ impl ModelsManager {
     // todo(aibrahim): look if we can tighten it to pub(crate)
     /// Look up model metadata, applying remote overrides and config adjustments.
     #[instrument(level = "info", skip(self, config), fields(model = model))]
-    pub async fn get_model_info(&self, model: &str, config: &Config) -> ModelInfo {
+    pub async fn get_model_info(&self, model: &str, config: &ModelsManagerConfig) -> ModelInfo {
         let remote_models = self.get_remote_models().await;
         Self::construct_model_info_from_candidates(model, &remote_models, config)
     }
@@ -362,7 +354,7 @@ impl ModelsManager {
     fn construct_model_info_from_candidates(
         model: &str,
         candidates: &[ModelInfo],
-        config: &Config,
+        config: &ModelsManagerConfig,
     ) -> ModelInfo {
         // First use the normal longest-prefix match. If that misses, allow a narrowly scoped
         // retry for namespaced slugs like `custom/gpt-5.3-codex`.
@@ -383,7 +375,7 @@ impl ModelsManager {
     /// Refresh models if the provided ETag differs from the cached ETag.
     ///
     /// Uses `Online` strategy to fetch latest models when ETags differ.
-    pub(crate) async fn refresh_if_new_etag(&self, etag: String) {
+    pub async fn refresh_if_new_etag(&self, etag: String) {
         let current_etag = self.get_etag().await;
         if current_etag.clone().is_some() && current_etag.as_deref() == Some(etag.as_str()) {
             if let Err(err) = self.cache_manager.renew_cache_ttl().await {
@@ -403,37 +395,14 @@ impl ModelsManager {
             return Ok(());
         }
 
-        if self.provider.wire_api == WireApi::Anthropic {
-            return match refresh_strategy {
-                RefreshStrategy::Offline => {
-                    self.try_load_cache(/*allow_legacy_without_provider_cache_key*/ false)
-                        .await;
-                    Ok(())
-                }
-                RefreshStrategy::OnlineIfUncached => {
-                    if self
-                        .try_load_cache(/*allow_legacy_without_provider_cache_key*/ false)
-                        .await
-                    {
-                        info!("models cache: using cached anthropic models for OnlineIfUncached");
-                        return Ok(());
-                    }
-                    self.fetch_and_update_models().await
-                }
-                RefreshStrategy::Online => self.fetch_and_update_models().await,
-            };
-        }
-
-        let can_refresh_remotely = self.auth_manager.auth_mode() == Some(AuthMode::Chatgpt)
-            || self.provider.uses_provider_supplied_auth()
-            || self.provider.has_command_auth();
-        if !can_refresh_remotely {
+        if self.auth_manager.auth_mode() != Some(AuthMode::Chatgpt)
+            && !self.provider.has_command_auth()
+        {
             if matches!(
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
             ) {
-                self.try_load_cache(/*allow_legacy_without_provider_cache_key*/ true)
-                    .await;
+                self.try_load_cache().await;
             }
             return Ok(());
         }
@@ -441,16 +410,12 @@ impl ModelsManager {
         match refresh_strategy {
             RefreshStrategy::Offline => {
                 // Only try to load from cache, never fetch
-                self.try_load_cache(/*allow_legacy_without_provider_cache_key*/ true)
-                    .await;
+                self.try_load_cache().await;
                 Ok(())
             }
             RefreshStrategy::OnlineIfUncached => {
                 // Try cache first, fall back to online if unavailable
-                if self
-                    .try_load_cache(/*allow_legacy_without_provider_cache_key*/ true)
-                    .await
-                {
+                if self.try_load_cache().await {
                     info!("models cache: using cached models for OnlineIfUncached");
                     return Ok(());
                 }
@@ -485,7 +450,7 @@ impl ModelsManager {
         let client = ModelsClient::new(transport, api_provider, api_auth)
             .with_telemetry(Some(request_telemetry));
 
-        let client_version = crate::models_manager::client_version_to_whole();
+        let client_version = crate::client_version_to_whole();
         let (models, etag) = timeout(
             MODELS_REFRESH_TIMEOUT,
             client.list_models(&client_version, HeaderMap::new()),
@@ -497,7 +462,7 @@ impl ModelsManager {
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
         self.cache_manager
-            .persist_cache(&models, etag, client_version, self.provider_cache_key())
+            .persist_cache(&models, etag, client_version)
             .await;
         Ok(())
     }
@@ -508,7 +473,7 @@ impl ModelsManager {
 
     /// Replace the cached remote models and rebuild the derived presets list.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let mut existing_models = Self::load_bundled_models(&self.provider);
+        let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
         for model in models {
             if let Some(existing_index) = existing_models
                 .iter()
@@ -519,61 +484,20 @@ impl ModelsManager {
                 existing_models.push(model);
             }
         }
-        *self.remote_models.write().await =
-            Self::apply_catalog_overlay(existing_models, self.catalog_overlay.as_deref());
+        *self.remote_models.write().await = existing_models;
     }
 
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
-        let file_contents = include_str!("../../models.json");
-        let response: ModelsResponse = serde_json::from_str(file_contents)?;
-        Ok(response.models)
-    }
-
-    fn load_bundled_models(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
-        match provider.wire_api {
-            WireApi::Responses | WireApi::Chat => Self::load_remote_models_from_file()
-                .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}")),
-            WireApi::Anthropic => model_info::anthropic_model_catalog(),
-        }
-    }
-
-    fn apply_catalog_overlay(
-        mut base_models: Vec<ModelInfo>,
-        overlay_models: Option<&[ModelInfo]>,
-    ) -> Vec<ModelInfo> {
-        let Some(overlay_models) = overlay_models else {
-            return base_models;
-        };
-
-        for model in overlay_models {
-            if let Some(existing_index) = base_models
-                .iter()
-                .position(|existing| existing.slug == model.slug)
-            {
-                base_models[existing_index] = model.clone();
-            } else {
-                base_models.push(model.clone());
-            }
-        }
-        base_models
+        Ok(crate::bundled_models_response()?.models)
     }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
-    async fn try_load_cache(&self, allow_legacy_without_provider_cache_key: bool) -> bool {
+    async fn try_load_cache(&self) -> bool {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
-        let client_version = crate::models_manager::client_version_to_whole();
-        let provider_cache_key = self.provider_cache_key();
+        let client_version = crate::client_version_to_whole();
         info!(client_version, "models cache: evaluating cache eligibility");
-        let cache = match self
-            .cache_manager
-            .load_fresh(
-                &client_version,
-                &provider_cache_key,
-                allow_legacy_without_provider_cache_key,
-            )
-            .await
-        {
+        let cache = match self.cache_manager.load_fresh(&client_version).await {
             Some(cache) => cache,
             None => {
                 info!("models cache: no usable cache entry");
@@ -589,14 +513,6 @@ impl ModelsManager {
             "models cache: cache entry applied"
         );
         true
-    }
-
-    fn provider_cache_key(&self) -> String {
-        format!(
-            "{}:{}",
-            self.provider.wire_api,
-            self.provider.base_url.as_deref().unwrap_or_default()
-        )
     }
 
     /// Build picker-ready presets from the active catalog snapshot.
@@ -621,7 +537,7 @@ impl ModelsManager {
     }
 
     /// Construct a manager with a specific provider for testing.
-    pub(crate) fn with_provider_for_tests(
+    pub fn with_provider_for_tests(
         codex_home: PathBuf,
         auth_manager: Arc<AuthManager>,
         provider: ModelProviderInfo,
@@ -630,14 +546,13 @@ impl ModelsManager {
             codex_home,
             auth_manager,
             /*model_catalog*/ None,
-            /*model_catalog_merge*/ None,
             CollaborationModesConfig::default(),
             provider,
         )
     }
 
     /// Get model identifier without consulting remote state or cache.
-    pub(crate) fn get_model_offline_for_tests(model: Option<&str>) -> String {
+    pub fn get_model_offline_for_tests(model: Option<&str>) -> String {
         if let Some(model) = model {
             return model.to_string();
         }
@@ -653,30 +568,16 @@ impl ModelsManager {
     }
 
     /// Build `ModelInfo` without consulting remote state or cache.
-    pub(crate) fn construct_model_info_offline_for_tests(
+    pub fn construct_model_info_offline_for_tests(
         model: &str,
-        config: &Config,
+        config: &ModelsManagerConfig,
     ) -> ModelInfo {
-        let candidates = if let Some(model_catalog) = config.model_catalog.as_ref() {
-            Self::apply_catalog_overlay(
-                model_catalog.models.clone(),
-                config
-                    .model_catalog_merge
-                    .as_ref()
-                    .map(|catalog| catalog.models.as_slice()),
-            )
-        } else if config.model_catalog_merge.is_some() {
-            Self::apply_catalog_overlay(
-                Self::load_bundled_models(&config.model_provider),
-                config
-                    .model_catalog_merge
-                    .as_ref()
-                    .map(|catalog| catalog.models.as_slice()),
-            )
+        let candidates: &[ModelInfo] = if let Some(model_catalog) = config.model_catalog.as_ref() {
+            &model_catalog.models
         } else {
-            Vec::new()
+            &[]
         };
-        Self::construct_model_info_from_candidates(model, &candidates, config)
+        Self::construct_model_info_from_candidates(model, candidates, config)
     }
 }
 

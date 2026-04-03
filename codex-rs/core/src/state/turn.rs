@@ -18,7 +18,7 @@ use rmcp::model::RequestId;
 use tokio::sync::oneshot;
 
 use crate::codex::TurnContext;
-use crate::tasks::SessionTask;
+use crate::tasks::AnySessionTask;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
@@ -30,6 +30,16 @@ pub(crate) struct ActiveTurn {
 }
 
 /// Whether mailbox deliveries should still be folded into the current turn.
+///
+/// State machine:
+/// - A turn starts in `CurrentTurn`, so queued child mail can join the next
+///   model request for that turn.
+/// - After user-visible terminal output is recorded, we switch to `NextTurn`
+///   to leave late child mail queued instead of extending an already shown
+///   answer.
+/// - If the same task later gets explicit same-turn work again (a steered user
+///   prompt or a tool call after an untagged preamble), we reopen `CurrentTurn`
+///   so that pending child mail is drained into that follow-up request.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum MailboxDeliveryPhase {
     /// Incoming mailbox messages can still be consumed by the current turn.
@@ -59,7 +69,7 @@ pub(crate) enum TaskKind {
 pub(crate) struct RunningTask {
     pub(crate) done: Arc<Notify>,
     pub(crate) kind: TaskKind,
-    pub(crate) task: Arc<dyn SessionTask>,
+    pub(crate) task: Arc<dyn AnySessionTask>,
     pub(crate) cancellation_token: CancellationToken,
     pub(crate) handle: Arc<AbortOnDropHandle<()>>,
     pub(crate) turn_context: Arc<TurnContext>,

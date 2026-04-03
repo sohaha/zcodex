@@ -1,18 +1,18 @@
 use codex_core::ModelClient;
-use codex_core::ModelProviderInfo;
 use codex_core::NewThread;
 use codex_core::Prompt;
 use codex_core::ResponseEvent;
 use codex_core::ThreadManager;
-use codex_core::WireApi;
-use codex_core::built_in_model_providers;
-use codex_core::error::CodexErr;
-use codex_core::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_features::Feature;
 use codex_login::AuthCredentialsStoreMode;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::default_client::originator;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
+use codex_model_provider_info::built_in_model_providers;
+use codex_models_manager::bundled_models_response;
+use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
@@ -22,6 +22,7 @@ use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::Verbosity;
+use codex_protocol::error::CodexErr;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
@@ -34,7 +35,6 @@ use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::WebSearchAction;
-use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
@@ -197,7 +197,7 @@ $lines | Select-Object -Skip 1 | Set-Content -Path tokens.txt
 "#,
             )?;
             (
-                "powershell".to_string(),
+                "powershell.exe".to_string(),
                 vec![
                     "-NoProfile".to_string(),
                     "-ExecutionPolicy".to_string(),
@@ -456,7 +456,6 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
         status: None,
         call_id: "legacy-js-call".to_string(),
         name: "js_repl".to_string(),
-        model: None,
         input: "console.log('legacy image flow')".to_string(),
     };
     let legacy_image_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
@@ -485,7 +484,6 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
             item: RolloutItem::ResponseItem(ResponseItem::CustomToolCallOutput {
                 call_id: "legacy-js-call".to_string(),
                 name: None,
-                model: None,
                 output: FunctionCallOutputPayload::from_text("legacy js_repl stdout".to_string()),
             }),
         },
@@ -612,7 +610,6 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::ResponseItem(ResponseItem::FunctionCall {
                 id: None,
                 name: "view_image".to_string(),
-                model: None,
                 namespace: None,
                 arguments: "{\"path\":\"/tmp/example.webp\"}".to_string(),
                 call_id: function_call_id.to_string(),
@@ -637,7 +634,6 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                 status: Some("completed".to_string()),
                 call_id: custom_call_id.to_string(),
                 name: "js_repl".to_string(),
-                model: None,
                 input: "console.log('image flow')".to_string(),
             }),
         },
@@ -646,7 +642,6 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             item: RolloutItem::ResponseItem(ResponseItem::CustomToolCallOutput {
                 call_id: custom_call_id.to_string(),
                 name: None,
-                model: None,
                 output: FunctionCallOutputPayload::from_content_items(vec![
                     FunctionCallOutputContentItem::InputImage {
                         image_url: image_url.to_string(),
@@ -813,7 +808,6 @@ async fn provider_auth_command_refreshes_after_401() {
 async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuthInfo) {
     let provider = ModelProviderInfo {
         name: "corp".into(),
-        model: None,
         base_url: Some(format!("{}/v1", server.uri())),
         env_key: None,
         env_key_instructions: None,
@@ -1642,8 +1636,8 @@ async fn user_turn_explicit_reasoning_summary_overrides_model_catalog_default() 
     )
     .await;
 
-    let mut model_catalog: ModelsResponse =
-        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
+    let mut model_catalog = bundled_models_response()
+        .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"));
     let model = model_catalog
         .models
         .iter_mut()
@@ -1755,8 +1749,8 @@ async fn reasoning_summary_none_overrides_model_catalog_default() -> anyhow::Res
     )
     .await;
 
-    let mut model_catalog: ModelsResponse =
-        serde_json::from_str(include_str!("../../models.json")).expect("valid models.json");
+    let mut model_catalog = bundled_models_response()
+        .unwrap_or_else(|err| panic!("bundled models.json should parse: {err}"));
     let model = model_catalog
         .models
         .iter_mut()
@@ -1993,6 +1987,7 @@ async fn includes_developer_instructions_message_in_request() {
         "expected developer instructions in a developer message, got {:?}",
         request_body["input"]
     );
+
     assert_message_role(&request_body["input"][1], "user");
     let user_context_texts = message_input_texts(&request_body["input"][1]);
     assert!(
@@ -2031,7 +2026,6 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
 
     let provider = ModelProviderInfo {
         name: "azure".into(),
-        model: None,
         base_url: Some(format!("{}/openai", server.uri())),
         env_key: None,
         env_key_instructions: None,
@@ -2119,7 +2113,6 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
     prompt.input.push(ResponseItem::FunctionCall {
         id: Some("function-id".into()),
         name: "do_thing".into(),
-        model: None,
         namespace: None,
         arguments: "{}".into(),
         call_id: "function-call-id".into(),
@@ -2145,13 +2138,11 @@ async fn azure_responses_request_includes_store_and_reasoning_ids() {
         status: Some("completed".into()),
         call_id: "custom-tool-call-id".into(),
         name: "custom_tool".into(),
-        model: None,
         input: "{}".into(),
     });
     prompt.input.push(ResponseItem::CustomToolCallOutput {
         call_id: "custom-tool-call-id".into(),
         name: None,
-        model: None,
         output: FunctionCallOutputPayload::from_text("ok".into()),
     });
 
@@ -2600,14 +2591,18 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
     Ok(())
 }
 
+/// We try to avoid setting env vars in tests because std::env::set_var() is
+/// process-wide and unsafe. Though for this test, we want to simulate the
+/// presence of an environment variable that the provider will read for auth, so
+/// we pick a commonly existing env var that is guaranteed to have a non-empty
+/// value on both Windows and Unix. Note that this test must also work when run
+/// under Bazel in CI, which uses a restricted environment, so PATH seems like
+/// the safest choice.
+const EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE: &str = "PATH";
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_overrides_assign_properties_used_for_responses_url() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = "PATH";
-    let expected_authorization = format!(
-        "Bearer {}",
-        std::env::var(existing_env_var_with_random_value).expect("PATH should be set in tests")
-    );
 
     // Mock server
     let server = MockServer::start().await;
@@ -2625,7 +2620,14 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         .and(path("/openai/responses"))
         .and(query_param("api-version", "2025-04-01-preview"))
         .and(header_regex("Custom-Header", "Value"))
-        .and(header("Authorization", expected_authorization.as_str()))
+        .and(header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE).unwrap()
+            )
+            .as_str(),
+        ))
         .respond_with(first)
         .expect(1)
         .mount(&server)
@@ -2633,10 +2635,9 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
 
     let provider = ModelProviderInfo {
         name: "custom".to_string(),
-        model: None,
         base_url: Some(format!("{}/openai", server.uri())),
         // Reuse the existing environment variable to avoid using unsafe code
-        env_key: Some(existing_env_var_with_random_value.to_string()),
+        env_key: Some(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE.to_string()),
         experimental_bearer_token: None,
         auth: None,
         query_params: Some(std::collections::HashMap::from([(
@@ -2687,11 +2688,6 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn env_var_overrides_loaded_auth() {
     skip_if_no_network!();
-    let existing_env_var_with_random_value = "PATH";
-    let expected_authorization = format!(
-        "Bearer {}",
-        std::env::var(existing_env_var_with_random_value).expect("PATH should be set in tests")
-    );
 
     // Mock server
     let server = MockServer::start().await;
@@ -2709,7 +2705,14 @@ async fn env_var_overrides_loaded_auth() {
         .and(path("/openai/responses"))
         .and(query_param("api-version", "2025-04-01-preview"))
         .and(header_regex("Custom-Header", "Value"))
-        .and(header("Authorization", expected_authorization.as_str()))
+        .and(header(
+            "Authorization",
+            format!(
+                "Bearer {}",
+                std::env::var(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE).unwrap()
+            )
+            .as_str(),
+        ))
         .respond_with(first)
         .expect(1)
         .mount(&server)
@@ -2717,10 +2720,9 @@ async fn env_var_overrides_loaded_auth() {
 
     let provider = ModelProviderInfo {
         name: "custom".to_string(),
-        model: None,
         base_url: Some(format!("{}/openai", server.uri())),
         // Reuse the existing environment variable to avoid using unsafe code
-        env_key: Some(existing_env_var_with_random_value.to_string()),
+        env_key: Some(EXISTING_ENV_VAR_WITH_NON_EMPTY_VALUE.to_string()),
         query_params: Some(std::collections::HashMap::from([(
             "api-version".to_string(),
             "2025-04-01-preview".to_string(),

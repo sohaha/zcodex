@@ -13,8 +13,6 @@ use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
 use crate::apps::render_apps_section;
-use crate::auth_env_telemetry::collect_auth_env_telemetry;
-use crate::buddy::maybe_inject_companion_intro;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::compact;
 use crate::compact::InitialContextInjection;
@@ -24,10 +22,6 @@ use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::config::ManagedFeatures;
 use crate::connectors;
 use crate::exec_policy::ExecPolicyManager;
-#[cfg(test)]
-use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
-use crate::models_manager::manager::ModelsManager;
-use crate::models_manager::manager::RefreshStrategy;
 use crate::parse_turn_item;
 use crate::path_utils::normalize_for_native_workdir;
 use crate::realtime_conversation::RealtimeConversationManager;
@@ -70,12 +64,17 @@ use codex_hooks::Hooks;
 use codex_hooks::HooksConfig;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
+use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
 use codex_login::default_client::originator;
 use codex_mcp::mcp_connection_manager::McpConnectionManager;
 use codex_mcp::mcp_connection_manager::SandboxState;
 use codex_mcp::mcp_connection_manager::ToolInfo as McpToolInfo;
 use codex_mcp::mcp_connection_manager::codex_apps_tools_cache_key;
 use codex_mcp::mcp_connection_manager::filter_non_codex_apps_mcp_tools_only;
+#[cfg(test)]
+use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
+use codex_models_manager::manager::ModelsManager;
+use codex_models_manager::manager::RefreshStrategy;
 use codex_network_proxy::NetworkProxy;
 use codex_network_proxy::NetworkProxyAuditMetadata;
 use codex_network_proxy::normalize_host;
@@ -169,7 +168,6 @@ use tracing::trace_span;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::ModelProviderInfo;
 use crate::client::ModelClient;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
@@ -185,13 +183,14 @@ use crate::config::resolve_web_search_mode_for_turn;
 use crate::context_manager::ContextManager;
 use crate::context_manager::TotalTokenUsageBreakdown;
 use crate::environment_context::EnvironmentContext;
-use crate::error::CodexErr;
-use crate::error::Result as CodexResult;
-#[cfg(test)]
-use crate::exec::StreamOutput;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::types::McpServerConfig;
 use codex_config::types::ShellEnvironmentPolicy;
+use codex_model_provider_info::ModelProviderInfo;
+use codex_protocol::error::CodexErr;
+use codex_protocol::error::Result as CodexResult;
+#[cfg(test)]
+use codex_protocol::exec_output::StreamOutput;
 
 mod rollout_reconstruction;
 #[cfg(test)]
@@ -309,9 +308,6 @@ use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
 use crate::tools::parallel::ToolCallRuntime;
-use crate::tools::rewrite::AutoTldrContext;
-use crate::tools::rewrite::ToolRoutingDirectives;
-use crate::tools::rewrite::extract_tool_routing_directives;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::turn_diff_tracker::TurnDiffTracker;
@@ -555,13 +551,13 @@ impl Codex {
 
         let config = Arc::new(config);
         let refresh_strategy = match session_source {
-            SessionSource::SubAgent(_) => crate::models_manager::manager::RefreshStrategy::Offline,
-            _ => crate::models_manager::manager::RefreshStrategy::OnlineIfUncached,
+            SessionSource::SubAgent(_) => codex_models_manager::manager::RefreshStrategy::Offline,
+            _ => codex_models_manager::manager::RefreshStrategy::OnlineIfUncached,
         };
         if config.model.is_none()
             || !matches!(
                 refresh_strategy,
-                crate::models_manager::manager::RefreshStrategy::Offline
+                codex_models_manager::manager::RefreshStrategy::Offline
             )
         {
             let _ = models_manager.list_models(refresh_strategy).await;
@@ -574,7 +570,9 @@ impl Codex {
         // 1. config.base_instructions override
         // 2. conversation history => session_meta.base_instructions
         // 3. base_instructions for current model
-        let model_info = models_manager.get_model_info(model.as_str(), &config).await;
+        let model_info = models_manager
+            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .await;
         let base_instructions = config
             .base_instructions
             .clone()
@@ -887,8 +885,6 @@ pub(crate) struct TurnContext {
     pub(crate) truncation_policy: TruncationPolicy,
     pub(crate) js_repl: Arc<JsReplHandle>,
     pub(crate) dynamic_tools: Vec<DynamicToolSpec>,
-    pub(crate) tool_routing_directives: Arc<RwLock<ToolRoutingDirectives>>,
-    pub(crate) auto_tldr_context: Arc<RwLock<AutoTldrContext>>,
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
     pub(crate) turn_skills: TurnSkillsContext,
     pub(crate) turn_timing_state: Arc<TurnTimingState>,
@@ -909,7 +905,9 @@ impl TurnContext {
     pub(crate) async fn with_model(&self, model: String, models_manager: &ModelsManager) -> Self {
         let mut config = (*self.config).clone();
         config.model = Some(model.clone());
-        let model_info = models_manager.get_model_info(model.as_str(), &config).await;
+        let model_info = models_manager
+            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .await;
         let truncation_policy = model_info.truncation_policy.into();
         let supported_reasoning_levels = model_info
             .supported_reasoning_levels
@@ -953,7 +951,6 @@ impl TurnContext {
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
         .with_allow_login_shell(self.tools_config.allow_login_shell)
-        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
         .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
             &config.agent_roles,
         ));
@@ -1000,8 +997,6 @@ impl TurnContext {
             truncation_policy,
             js_repl: Arc::clone(&self.js_repl),
             dynamic_tools: self.dynamic_tools.clone(),
-            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
-            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
@@ -1416,7 +1411,6 @@ impl Session {
         )
         .with_web_search_config(per_turn_config.web_search_config.clone())
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
-        .with_auto_tldr_routing(per_turn_config.auto_tldr_routing)
         .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
             &per_turn_config.agent_roles,
         ));
@@ -1471,8 +1465,6 @@ impl Session {
             truncation_policy: model_info.truncation_policy.into(),
             js_repl,
             dynamic_tools: session_configuration.dynamic_tools.clone(),
-            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
-            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
             turn_metadata_state,
             turn_skills: TurnSkillsContext::new(skills_outcome),
             turn_timing_state: Arc::new(TurnTimingState::default()),
@@ -2214,11 +2206,7 @@ impl Session {
             InitialHistory::Resumed(resumed_history) => {
                 let rollout_items = resumed_history.history;
                 let previous_turn_settings = self
-                    .apply_rollout_reconstruction(
-                        &turn_context,
-                        &rollout_items,
-                        /*preserve_reference_context_item*/ true,
-                    )
+                    .apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
 
                 // If resuming, warn when the last recorded model differs from the current one.
@@ -2255,12 +2243,8 @@ impl Session {
                 }
             }
             InitialHistory::Forked(rollout_items) => {
-                self.apply_rollout_reconstruction(
-                    &turn_context,
-                    &rollout_items,
-                    /*preserve_reference_context_item*/ true,
-                )
-                .await;
+                self.apply_rollout_reconstruction(&turn_context, &rollout_items)
+                    .await;
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
@@ -2289,25 +2273,16 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
-        preserve_reference_context_item: bool,
     ) -> Option<PreviousTurnSettings> {
         let reconstructed_rollout = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
         let previous_turn_settings = reconstructed_rollout.previous_turn_settings.clone();
-        if preserve_reference_context_item {
-            let mut state = self.state.lock().await;
-            state.replace_history_preserving_reference_context(
-                reconstructed_rollout.history,
-                reconstructed_rollout.reference_context_item,
-            );
-        } else {
-            self.replace_history(
-                reconstructed_rollout.history,
-                reconstructed_rollout.reference_context_item,
-            )
-            .await;
-        }
+        self.replace_history(
+            reconstructed_rollout.history,
+            reconstructed_rollout.reference_context_item,
+        )
+        .await;
         self.set_previous_turn_settings(previous_turn_settings.clone())
             .await;
         previous_turn_settings
@@ -2495,7 +2470,7 @@ impl Session {
             .models_manager
             .get_model_info(
                 session_configuration.collaboration_mode.model(),
-                &per_turn_config,
+                &per_turn_config.to_models_manager_config(),
             )
             .await;
         let plugin_outcome = self
@@ -2546,7 +2521,7 @@ impl Session {
                 tc,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "未找到模型 `{}` 的元数据。将使用回退元数据；这可能降低性能并引发问题。",
+                        "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
                         tc.model_info.slug
                     ),
                 }),
@@ -3518,9 +3493,9 @@ impl Session {
         &self,
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
-    ) -> Option<TurnContextItem> {
+    ) {
         let mut state = self.state.lock().await;
-        state.replace_history(items, reference_context_item)
+        state.replace_history(items, reference_context_item);
     }
 
     pub(crate) async fn replace_compacted_history(
@@ -3529,7 +3504,8 @@ impl Session {
         reference_context_item: Option<TurnContextItem>,
         compacted_item: CompactedItem,
     ) {
-        let reference_context_item = self.replace_history(items, reference_context_item).await;
+        self.replace_history(items, reference_context_item.clone())
+            .await;
 
         self.persist_rollout_items(&[RolloutItem::Compacted(compacted_item)])
             .await;
@@ -3628,15 +3604,12 @@ impl Session {
             developer_sections.push(developer_instructions.to_string());
         }
         // Add developer instructions for memories.
-        if turn_context.features.enabled(Feature::NativeMemories)
+        if turn_context.features.enabled(Feature::MemoryTool)
             && turn_context.config.memories.use_memories
             && let Some(memory_prompt) =
                 build_memory_tool_developer_instructions(&turn_context.config.codex_home).await
         {
             developer_sections.push(memory_prompt);
-        }
-        if turn_context.features.enabled(Feature::Zmemory) {
-            developer_sections.push(build_zmemory_tool_developer_instructions());
         }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
@@ -3940,8 +3913,6 @@ impl Session {
         input: &[UserInput],
         response_item: ResponseItem,
     ) {
-        *turn_context.tool_routing_directives.write().await =
-            extract_tool_routing_directives(input);
         // Persist the user message to history, but emit the turn item from `UserInput` so
         // UI-only `text_elements` are preserved. `ResponseItem::Message` does not carry
         // those spans, and `record_response_item_and_emit_turn_item` would drop them.
@@ -4735,7 +4706,6 @@ mod handlers {
     use codex_protocol::request_user_input::RequestUserInputResponse;
 
     use crate::context_manager::is_user_turn_boundary;
-    use crate::memories::zmemory_preferences::capture_stable_preference_memories;
     use codex_protocol::config_types::CollaborationMode;
     use codex_protocol::config_types::ModeKind;
     use codex_protocol::config_types::Settings;
@@ -4835,9 +4805,6 @@ mod handlers {
             // new_turn_with_sub_id already emits the error event.
             return;
         };
-        if current_context.features.enabled(Feature::Zmemory) {
-            capture_stable_preference_memories(sess, &current_context, &items).await;
-        }
         sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
             .await;
         match sess
@@ -5365,12 +5332,8 @@ mod handlers {
         sess.persist_rollout_items(&[RolloutItem::EventMsg(rollback_msg.clone())])
             .await;
         sess.flush_rollout().await;
-        sess.apply_rollout_reconstruction(
-            turn_context.as_ref(),
-            replay_items.as_slice(),
-            /*preserve_reference_context_item*/ false,
-        )
-        .await;
+        sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
+            .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;
 
         sess.deliver_event_raw(Event {
@@ -5545,7 +5508,7 @@ async fn spawn_review_thread(
     let review_model_info = sess
         .services
         .models_manager
-        .get_model_info(&model, &config)
+        .get_model_info(&model, &config.to_models_manager_config())
         .await;
     // For reviews, disable web_search and view_image regardless of global settings.
     let mut review_features = sess.features.clone();
@@ -5572,7 +5535,6 @@ async fn spawn_review_thread(
     )
     .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
-    .with_auto_tldr_routing(config.auto_tldr_routing)
     .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
         &config.agent_roles,
     ));
@@ -5657,8 +5619,6 @@ async fn spawn_review_thread(
         tool_call_gate: Arc::new(ReadinessFlag::new()),
         js_repl: Arc::clone(&sess.js_repl),
         dynamic_tools: parent_turn_context.dynamic_tools.clone(),
-        tool_routing_directives: Arc::clone(&parent_turn_context.tool_routing_directives),
-        auto_tldr_context: Arc::clone(&parent_turn_context.auto_tldr_context),
         truncation_policy: model_info.truncation_policy.into(),
         turn_metadata_state,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
@@ -6556,8 +6516,7 @@ async fn run_sampling_request(
     )
     .await?;
 
-    let mut base_instructions = sess.get_base_instructions().await;
-    maybe_inject_companion_intro(&turn_context.config, &mut base_instructions);
+    let base_instructions = sess.get_base_instructions().await;
 
     let prompt = build_prompt(
         input,
@@ -7040,8 +6999,6 @@ fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::ShutdownComplete
         | EventMsg::EnteredReviewMode(_)
         | EventMsg::ExitedReviewMode(_)
-        | EventMsg::BuddySoulGenerated(_)
-        | EventMsg::BuddyReaction(_)
         | EventMsg::RawResponseItem(_)
         | EventMsg::ItemStarted(_)
         | EventMsg::HookStarted(_)
@@ -7694,7 +7651,6 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 }
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
-use crate::memories::prompts::build_zmemory_tool_developer_instructions;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]
