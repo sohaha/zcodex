@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-03T10:03:26.154Z
-- 本轮摘要：查看 job 69825985962 仍因链接缺少 libm；判断 CARGO_ENCODED_RUSTFLAGS 置空覆盖了 RUSTFLAGS，链接命令无 -lm。更新 nmtx/.github/workflows/codex.yml：设置 CARGO_ENCODED_RUSTFLAGS=-C\x1flink-arg=-lm；提交 commit 2b9f220。
+- 更新时间：2026-04-03T11:19:42.913Z
+- 本轮摘要：更新计划与 issue 记录：将本地改名范围的 rtk 文案改为 ztok（保留上游 rtk 引用）；提交 docs: update ztok rename records。
 
 ## 待确认问题
 
