@@ -20,8 +20,8 @@ use tracing::warn;
 
 pub struct ZmemoryHandler;
 
-pub(crate) const ZMEMORY_JSON_BEGIN: &str = "---BEGIN_ZMEMORY_JSON---";
-pub(crate) const ZMEMORY_JSON_END: &str = "---END_ZMEMORY_JSON---";
+pub const ZMEMORY_JSON_BEGIN: &str = "---BEGIN_ZMEMORY_JSON---";
+pub const ZMEMORY_JSON_END: &str = "---END_ZMEMORY_JSON---";
 
 #[async_trait]
 impl ToolHandler for ZmemoryHandler {

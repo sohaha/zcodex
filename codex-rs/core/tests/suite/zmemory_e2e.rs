@@ -29,10 +29,9 @@ use serde_json::Value;
 use serde_json::json;
 use std::fs;
 use std::sync::Arc;
+use codex_core::tools::handlers::ZMEMORY_JSON_BEGIN;
+use codex_core::tools::handlers::ZMEMORY_JSON_END;
 use tempfile::TempDir;
-
-const ZMEMORY_JSON_BEGIN: &str = "---BEGIN_ZMEMORY_JSON---";
-const ZMEMORY_JSON_END: &str = "---END_ZMEMORY_JSON---";
 
 fn extract_zmemory_json_block(text: &str) -> Value {
     let (_, json_and_suffix) = text

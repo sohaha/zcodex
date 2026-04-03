@@ -53,6 +53,8 @@ pub use tool_suggest::ToolSuggestHandler;
 pub use unified_exec::UnifiedExecHandler;
 pub use view_image::ViewImageHandler;
 pub use zmemory::ZmemoryHandler;
+pub use zmemory::ZMEMORY_JSON_BEGIN;
+pub use zmemory::ZMEMORY_JSON_END;
 
 fn parse_arguments<T>(arguments: &str) -> Result<T, FunctionCallError>
 where
