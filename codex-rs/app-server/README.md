@@ -922,6 +922,11 @@ Because audio is intentionally separate from `ThreadItem`, clients can opt out o
 
 - `mcpServer/startupStatus/updated` — `{ name, status, error }` when app-server observes an MCP server startup transition. `status` is one of `starting`, `ready`, `failed`, or `cancelled`. `error` is `null` except for `failed`.
 
+### Buddy events
+
+- `buddy/soulGenerated` — `{ threadId, name, personality }` when the buddy AI soul is generated and persisted.
+- `buddy/reaction` — `{ threadId, text }` when the buddy emits a reaction bubble.
+
 ### Turn events
 
 The app-server streams JSON-RPC notifications while a turn is running. Each turn emits `turn/started` when it begins running and ends with `turn/completed` (final `turn` status). Token usage events stream separately via `thread/tokenUsage/updated`. Clients subscribe to the events they care about, rendering each item incrementally as updates arrive. The per-item lifecycle is always: `item/started` → zero or more item-specific deltas → `item/completed`.

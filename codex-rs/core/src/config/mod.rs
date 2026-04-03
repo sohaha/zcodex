@@ -32,6 +32,7 @@ use codex_app_server_protocol::Tools;
 use codex_app_server_protocol::UserSavedConfig;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AppsConfigToml;
+use codex_config::types::BuddySoul;
 use codex_config::types::DEFAULT_OTEL_ENVIRONMENT;
 use codex_config::types::History;
 use codex_config::types::McpServerConfig;
@@ -351,6 +352,15 @@ pub struct Config {
 
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
+
+    /// Whether the footer buddy should hatch automatically when the TUI starts.
+    pub tui_show_buddy: bool,
+
+    /// Whether AI-driven buddy reactions are enabled.
+    pub tui_buddy_reactions_enabled: bool,
+
+    /// Persisted AI soul for the buddy (global).
+    pub tui_buddy_soul: Option<BuddySoul>,
 
     /// The absolute directory that should be treated as the current working
     /// directory for the session. All relative paths inside the business-logic
@@ -2750,6 +2760,18 @@ impl Config {
             tui_status_line: cfg.tui.as_ref().and_then(|t| t.status_line.clone()),
             tui_terminal_title: cfg.tui.as_ref().and_then(|t| t.terminal_title.clone()),
             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
+            tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
+            tui_buddy_reactions_enabled: cfg
+                .tui
+                .as_ref()
+                .and_then(|t| t.buddy.as_ref())
+                .map(|buddy| buddy.reactions_enabled)
+                .unwrap_or(true),
+            tui_buddy_soul: cfg
+                .tui
+                .as_ref()
+                .and_then(|t| t.buddy.as_ref())
+                .and_then(|buddy| buddy.soul.clone()),
             otel: {
                 let t: OtelConfigToml = cfg.otel.unwrap_or_default();
                 let log_user_prompt = t.log_user_prompt.unwrap_or(false);

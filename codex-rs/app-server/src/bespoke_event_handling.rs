@@ -17,6 +17,8 @@ use codex_app_server_protocol::AdditionalPermissionProfile as V2AdditionalPermis
 use codex_app_server_protocol::AgentMessageDeltaNotification;
 use codex_app_server_protocol::ApplyPatchApprovalParams;
 use codex_app_server_protocol::ApplyPatchApprovalResponse;
+use codex_app_server_protocol::BuddyReactionNotification;
+use codex_app_server_protocol::BuddySoulGeneratedNotification;
 use codex_app_server_protocol::CodexErrorInfo as V2CodexErrorInfo;
 use codex_app_server_protocol::CollabAgentState as V2CollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;
@@ -342,6 +344,29 @@ pub(crate) async fn apply_bespoke_event_handling(
             }
         }
         EventMsg::Warning(_warning_event) => {}
+        EventMsg::BuddySoulGenerated(event) => {
+            if let ApiVersion::V2 = api_version {
+                let notification = BuddySoulGeneratedNotification {
+                    thread_id: event.thread_id,
+                    name: event.name,
+                    personality: event.personality,
+                };
+                outgoing
+                    .send_server_notification(ServerNotification::BuddySoulGenerated(notification))
+                    .await;
+            }
+        }
+        EventMsg::BuddyReaction(event) => {
+            if let ApiVersion::V2 = api_version {
+                let notification = BuddyReactionNotification {
+                    thread_id: event.thread_id,
+                    text: event.text,
+                };
+                outgoing
+                    .send_server_notification(ServerNotification::BuddyReaction(notification))
+                    .await;
+            }
+        }
         EventMsg::GuardianAssessment(assessment) => {
             if let ApiVersion::V2 = api_version {
                 let notification = guardian_auto_approval_review_notification(

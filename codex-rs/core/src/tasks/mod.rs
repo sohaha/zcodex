@@ -19,8 +19,13 @@ use tracing::info_span;
 use tracing::trace;
 use tracing::warn;
 
+use crate::buddy::fallback_buddy_reaction;
+use crate::buddy::generate_buddy_reaction;
+use crate::buddy::generate_buddy_soul;
+use crate::buddy::persist_buddy_soul;
 use crate::codex::Session;
 use crate::codex::TurnContext;
+use crate::compact::collect_user_messages;
 use crate::contextual_user_message::TURN_ABORTED_CLOSE_TAG;
 use crate::contextual_user_message::TURN_ABORTED_OPEN_TAG;
 use crate::hook_runtime::PendingInputHookDisposition;
@@ -40,8 +45,11 @@ use codex_otel::metrics::names::TURN_TOOL_CALL_METRIC;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::BuddyReactionEvent;
+use codex_protocol::protocol::BuddySoulGeneratedEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
@@ -449,6 +457,15 @@ impl Session {
                 &[("token_type", "reasoning_output"), tmp_mem],
             );
         }
+
+        if turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled {
+            let session = Arc::clone(self);
+            let ctx = Arc::clone(&turn_context);
+            let last_agent_message = last_agent_message.clone();
+            tokio::spawn(async move {
+                handle_buddy_observer(session, ctx, last_agent_message).await;
+            });
+        }
         let event = EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: turn_context.sub_id.clone(),
             last_agent_message,
@@ -532,6 +549,84 @@ impl Session {
         });
         self.send_event(task.turn_context.as_ref(), event).await;
     }
+}
+
+async fn handle_buddy_observer(
+    session: Arc<Session>,
+    turn_context: Arc<TurnContext>,
+    last_agent_message: Option<String>,
+) {
+    if matches!(turn_context.session_source, SessionSource::SubAgent(_)) {
+        return;
+    }
+
+    let mut soul = turn_context.config.tui_buddy_soul.clone();
+    if soul.is_none()
+        && (turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled)
+    {
+        if let Some(generated) = generate_buddy_soul(session.as_ref(), turn_context.as_ref()).await
+        {
+            match persist_buddy_soul(turn_context.config.codex_home.as_path(), &generated).await {
+                Ok(()) => {
+                    session.reload_user_config_layer().await;
+                    session
+                        .send_event(
+                            turn_context.as_ref(),
+                            EventMsg::BuddySoulGenerated(BuddySoulGeneratedEvent {
+                                thread_id: session.conversation_id.to_string(),
+                                name: generated.name.clone(),
+                                personality: generated.personality.clone(),
+                            }),
+                        )
+                        .await;
+                    soul = Some(generated);
+                }
+                Err(err) => {
+                    warn!(
+                        turn_id = %turn_context.sub_id,
+                        "failed to persist buddy soul: {err}"
+                    );
+                }
+            }
+        }
+    }
+
+    if !turn_context.config.tui_buddy_reactions_enabled {
+        return;
+    }
+
+    let history = session
+        .clone_history()
+        .await
+        .for_prompt(&turn_context.model_info.input_modalities);
+    let last_user_message = collect_user_messages(&history).last().cloned();
+    let has_context = last_user_message.is_some()
+        || last_agent_message
+            .as_ref()
+            .is_some_and(|msg| !msg.is_empty());
+    if !has_context {
+        return;
+    }
+
+    let reaction = generate_buddy_reaction(
+        session.as_ref(),
+        turn_context.as_ref(),
+        soul.as_ref(),
+        last_user_message.as_deref(),
+        last_agent_message.as_deref(),
+    )
+    .await
+    .unwrap_or_else(|| fallback_buddy_reaction(&turn_context.sub_id));
+
+    session
+        .send_event(
+            turn_context.as_ref(),
+            EventMsg::BuddyReaction(BuddyReactionEvent {
+                thread_id: session.conversation_id.to_string(),
+                text: reaction,
+            }),
+        )
+        .await;
 }
 
 #[cfg(test)]

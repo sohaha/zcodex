@@ -1,5 +1,6 @@
 use std::time::Instant;
 
+use codex_config::types::BuddySoul;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
@@ -21,6 +22,7 @@ use model::REACTION_DURATION;
 pub(crate) struct BuddyWidget {
     bones: Option<BuddyBones>,
     state: BuddyState,
+    soul: Option<BuddySoul>,
 }
 
 impl BuddyWidget {
@@ -28,6 +30,7 @@ impl BuddyWidget {
         Self {
             bones: None,
             state: BuddyState::default(),
+            soul: None,
         }
     }
 
@@ -56,6 +59,7 @@ impl BuddyWidget {
     pub(crate) fn show(&mut self, seed: &str) -> BuddyCommandResult {
         let was_hatched = self.bones.is_some();
         let bones = self.ensure_bones(seed).clone();
+        let name = self.display_name(&bones).to_string();
         let now = Instant::now();
         self.state.visible = true;
         let reaction_kind = if was_hatched {
@@ -78,13 +82,13 @@ impl BuddyWidget {
         let message = if was_hatched {
             format!(
                 "小伙伴回来了：{} {}。",
-                bones.short_summary(),
+                short_summary_with_name(&bones, &name),
                 bones.rarity.stars()
             )
         } else {
             format!(
                 "小伙伴已孵化：{} {}。",
-                bones.short_summary(),
+                short_summary_with_name(&bones, &name),
                 bones.rarity.stars()
             )
         };
@@ -101,19 +105,21 @@ impl BuddyWidget {
                 hint: Some("使用 `/buddy show` 为此项目孵化一个。".to_string()),
             };
         };
+        let name = self.display_name(bones).to_string();
         self.state.visible = false;
         self.state.pet_started_at = None;
         self.state.pet_until = None;
         self.state.reaction = None;
         self.state.last_action = Some(BuddyLastAction::Hidden);
         BuddyCommandResult {
-            message: format!("小伙伴已隐藏：{}。", bones.short_summary()),
+            message: format!("小伙伴已隐藏：{}。", short_summary_with_name(bones, &name)),
             hint: Some("使用 `/buddy show` 让它回来。".to_string()),
         }
     }
 
     pub(crate) fn pet(&mut self, seed: &str) -> BuddyCommandResult {
         let bones = self.ensure_bones(seed).clone();
+        let name = self.display_name(&bones).to_string();
         let now = Instant::now();
         self.state.visible = true;
         self.state.pet_count += 1;
@@ -128,7 +134,7 @@ impl BuddyWidget {
         self.state.last_action = Some(BuddyLastAction::Petted);
 
         BuddyCommandResult {
-            message: format!("你抚摸了 {}。{}", bones.name, reaction_text),
+            message: format!("你抚摸了 {}。{}", name, reaction_text),
             hint: Some("用 `/buddy status` 查看稀有度、特征和心情。".to_string()),
         }
     }
@@ -140,6 +146,7 @@ impl BuddyWidget {
                 hint: Some("使用 `/buddy show` 为此项目孵化一个。".to_string()),
             };
         };
+        let name = self.display_name(bones);
 
         let visibility = if self.state.visible {
             "可见"
@@ -155,6 +162,7 @@ impl BuddyWidget {
                 BuddyReactionKind::Return => "安顿好了",
                 BuddyReactionKind::Pet => "很满意",
                 BuddyReactionKind::Teaser => "等你关注",
+                BuddyReactionKind::Observe => "在观察",
             }
         } else if self.state.visible {
             "警觉"
@@ -162,9 +170,14 @@ impl BuddyWidget {
             "幕后休息"
         };
         let shiny = if bones.shiny { "，闪亮" } else { "" };
+        let personality = self
+            .soul
+            .as_ref()
+            .map(|soul| format!(" 性格：{}。", soul.personality))
+            .unwrap_or_default();
         let message = format!(
-            "小伙伴状态：{} {}（{visibility}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。",
-            bones.short_summary(),
+            "小伙伴状态：{} {}（{visibility}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
+            short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),
             bones.eye.label(),
@@ -192,7 +205,57 @@ impl BuddyWidget {
         if !self.is_visible() {
             return Vec::new();
         }
-        render::render_lines(bones, &self.state, width)
+        let name = self.display_name(bones);
+        let render_mode = if width < render::full_layout_width() {
+            render::BuddyRenderMode::InlineBubble
+        } else {
+            render::BuddyRenderMode::NoBubble
+        };
+        render::render_lines(bones, name, &self.state, width, render_mode)
+    }
+
+    pub(crate) fn bubble_lines(&self, width: u16) -> Vec<ratatui::text::Line<'static>> {
+        let Some(bones) = self.bones.as_ref() else {
+            return Vec::new();
+        };
+        if !self.is_visible() || width < render::full_layout_width() {
+            return Vec::new();
+        }
+        render::render_bubble_lines(bones, &self.state, width)
+    }
+
+    pub(crate) fn set_soul(&mut self, soul: Option<BuddySoul>) -> bool {
+        if self.soul == soul {
+            return false;
+        }
+        self.soul = soul;
+        true
+    }
+
+    pub(crate) fn react(&mut self, seed: &str, text: String) -> bool {
+        if !self.state.visible {
+            return false;
+        }
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        let _ = self.ensure_bones(seed);
+        let now = Instant::now();
+        self.state.reaction = Some(BuddyReaction {
+            kind: BuddyReactionKind::Observe,
+            text: trimmed.to_string(),
+            until: now + REACTION_DURATION,
+        });
+        self.state.last_action = Some(BuddyLastAction::Observed);
+        true
+    }
+
+    fn display_name<'a>(&'a self, bones: &'a BuddyBones) -> &'a str {
+        self.soul
+            .as_ref()
+            .map(|soul| soul.name.as_str())
+            .unwrap_or(bones.name.as_str())
     }
 }
 
@@ -201,9 +264,18 @@ fn reaction_text(bones: &BuddyBones, kind: BuddyReactionKind, index: u32) -> &'s
         BuddyReactionKind::Hatch => bones.species.hatch_lines(),
         BuddyReactionKind::Return => bones.species.return_lines(),
         BuddyReactionKind::Pet => bones.species.pet_lines(),
-        BuddyReactionKind::Teaser => bones.species.teaser_lines(),
+        BuddyReactionKind::Teaser | BuddyReactionKind::Observe => bones.species.teaser_lines(),
     };
     lines[index as usize % lines.len()]
+}
+
+fn short_summary_with_name(bones: &BuddyBones, name: &str) -> String {
+    format!(
+        "{} the {} {}",
+        name,
+        bones.rarity.label(),
+        bones.species.label()
+    )
 }
 
 impl Renderable for BuddyWidget {
@@ -220,6 +292,33 @@ impl Renderable for BuddyWidget {
 
     fn desired_height(&self, width: u16) -> u16 {
         self.render_lines(width).len() as u16
+    }
+}
+
+pub(crate) struct BuddyBubble<'a> {
+    buddy: &'a BuddyWidget,
+}
+
+impl<'a> BuddyBubble<'a> {
+    pub(crate) fn new(buddy: &'a BuddyWidget) -> Self {
+        Self { buddy }
+    }
+}
+
+impl Renderable for BuddyBubble<'_> {
+    fn render(&self, area: Rect, buf: &mut Buffer) {
+        if area.is_empty() {
+            return;
+        }
+        let lines = self.buddy.bubble_lines(area.width);
+        if lines.is_empty() {
+            return;
+        }
+        Paragraph::new(lines).render(area, buf);
+    }
+
+    fn desired_height(&self, width: u16) -> u16 {
+        self.buddy.bubble_lines(width).len() as u16
     }
 }
 
@@ -273,6 +372,18 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         buddy.render(Rect::new(0, 0, width, height), &mut buf);
         assert_snapshot!("buddy_widget_visible_wide", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn buddy_bubble_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let _ = buddy.show("codex-home::project");
+        let width = 60;
+        let bubble = BuddyBubble::new(&buddy);
+        let height = bubble.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        bubble.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_bubble", snapshot_buffer(&buf));
     }
 
     #[test]

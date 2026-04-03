@@ -1,0 +1,58 @@
+plan = "plan/2026-04-03-tui-buddy-ai-soul-expansion.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "Buddy AI Soul 配置/协议与核心链路完善"
+scope = """
+完善 AI Soul 配置持久化、系统提示注入与 Buddy 观察者逻辑，补齐 app-server v2 通知与协议映射。
+不包含 TUI 的渲染、物种扩展或快照更新。
+"""
+touch_points = ["schema:config", "schema:app-server-protocol", "module:codex-config", "module:codex-core", "module:codex-protocol", "module:codex-app-server-protocol", "module:codex-app-server"]
+depends_on = []
+done_when = "AI Soul 配置可读写且不会破坏既有 config；系统提示只注入一次；Buddy 观察者能发送 BuddySoulGenerated/BuddyReaction 通知；配置 schema 与 app-server schema 已更新并保持一致。"
+validate_by = "在 codex-rs 目录运行 `just write-config-schema` 与 `just write-app-server-schema`，随后运行 `cargo nextest run -p codex-core` 和 `cargo nextest run -p codex-app-server-protocol`。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "blocked"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = "未使用会话能力（无适用技能）。按用户要求暂不校验：`just write-config-schema`/`cargo nextest run -p codex-core` 未通过（codex-core 编译报错）；`just write-app-server-schema` 已完成且 `cargo nextest run -p codex-app-server-protocol` 通过。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "TUI Buddy 扩展与浮动气泡"
+scope = """
+扩展 Buddy 物种/眼睛/帽子与 ASCII 精灵，新增底部浮动气泡槽位，并接入 soul/reaction 展示。
+不涉及 core/config/protocol 逻辑调整。
+"""
+touch_points = ["module:codex-tui", "codex-rs/tui/src/buddy/model.rs", "codex-rs/tui/src/buddy/render.rs", "codex-rs/tui/src/buddy/mod.rs", "codex-rs/tui/src/bottom_pane/mod.rs", "codex-rs/tui/src/chatwidget.rs"]
+depends_on = []
+done_when = "新增物种与装饰在宽/窄终端均可正确渲染；浮动气泡在宽屏可见且不破坏布局；Buddy soul 与 reaction 展示生效。"
+validate_by = "运行 `cargo nextest run -p codex-tui`，然后执行 `cargo insta pending-snapshots -p codex-tui` 并使用 `cargo insta accept -p codex-tui` 接受快照更新。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "blocked"
+validate_status = "failed"
+regress_status = "not_needed"
+notes = "未使用会话能力（无适用技能）。按用户要求暂不校验：`cargo nextest run -p codex-tui` 未运行/失败（受 codex-core 编译错误影响），快照未生成或接受。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "格式化与收尾验证"
+scope = """
+在所有改动完成后运行 Rust 格式化并确认无遗留格式化差异。
+不新增功能或修改实现逻辑。
+"""
+touch_points = ["command:just fmt"]
+depends_on = ["a1", "a2"]
+done_when = "在 codex-rs 目录完成 `just fmt`，并确认未产生新的格式化差异。"
+validate_by = "在 codex-rs 目录运行 `just fmt`，随后使用 `git status --short` 确认格式化没有留下未提交的仅格式化变更。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "未使用会话能力（无适用技能）。已执行 `just fmt`，但依赖 a1/a2 解除阻塞后再确认此项完成状态。"

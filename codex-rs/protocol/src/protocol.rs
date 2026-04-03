@@ -1344,6 +1344,10 @@ pub enum EventMsg {
 
     BackgroundEvent(BackgroundEventEvent),
 
+    BuddySoulGenerated(BuddySoulGeneratedEvent),
+
+    BuddyReaction(BuddyReactionEvent),
+
     UndoStarted(UndoStartedEvent),
 
     UndoCompleted(UndoCompletedEvent),
@@ -2929,6 +2933,19 @@ pub struct TerminalInteractionEvent {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct BackgroundEventEvent {
     pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct BuddySoulGeneratedEvent {
+    pub thread_id: String,
+    pub name: String,
+    pub personality: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+pub struct BuddyReactionEvent {
+    pub thread_id: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]

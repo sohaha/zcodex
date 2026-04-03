@@ -14,6 +14,7 @@ use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
 use crate::apps::render_apps_section;
 use crate::auth_env_telemetry::collect_auth_env_telemetry;
+use crate::buddy::maybe_inject_companion_intro;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::compact;
 use crate::compact::InitialContextInjection;
@@ -6552,7 +6553,8 @@ async fn run_sampling_request(
     )
     .await?;
 
-    let base_instructions = sess.get_base_instructions().await;
+    let mut base_instructions = sess.get_base_instructions().await;
+    maybe_inject_companion_intro(&turn_context.config, &mut base_instructions);
 
     let prompt = build_prompt(
         input,
@@ -7035,6 +7037,8 @@ fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::ShutdownComplete
         | EventMsg::EnteredReviewMode(_)
         | EventMsg::ExitedReviewMode(_)
+        | EventMsg::BuddySoulGenerated(_)
+        | EventMsg::BuddyReaction(_)
         | EventMsg::RawResponseItem(_)
         | EventMsg::ItemStarted(_)
         | EventMsg::HookStarted(_)

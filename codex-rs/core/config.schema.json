@@ -1729,6 +1729,43 @@
       ],
       "type": "string"
     },
+    "BuddySoul": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "personality": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "personality"
+      ],
+      "type": "object"
+    },
+    "TuiBuddy": {
+      "additionalProperties": false,
+      "description": "Buddy-specific configuration.",
+      "properties": {
+        "reactions_enabled": {
+          "default": true,
+          "description": "Whether AI-driven buddy reactions are enabled. Defaults to `true`.",
+          "type": "boolean"
+        },
+        "soul": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/BuddySoul"
+            }
+          ],
+          "default": null,
+          "description": "Persisted AI soul for the buddy (global)."
+        }
+      },
+      "type": "object"
+    },
     "Tui": {
       "additionalProperties": false,
       "description": "Collection of settings that are specific to the TUI.",
@@ -1774,14 +1811,23 @@
           "default": true,
           "description": "Enable desktop notifications from the TUI when the terminal is unfocused. Defaults to `true`."
         },
+        "buddy": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TuiBuddy"
+            }
+          ],
+          "default": null,
+          "description": "Buddy-specific configuration."
+        },
         "show_buddy": {
           "default": true,
           "description": "Whether the footer buddy should hatch automatically when the TUI starts. Defaults to `true`.",
           "type": "boolean"
         },
         "show_tooltips": {
-          "default": false,
-          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `false`.",
+          "default": true,
+          "description": "Show startup tooltips in the TUI welcome screen. Defaults to `true`.",
           "type": "boolean"
         },
         "status_line": {
