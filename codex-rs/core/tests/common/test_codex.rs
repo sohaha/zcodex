@@ -560,6 +560,10 @@ impl TestCodexBuilder {
         let cwd = Arc::new(TempDir::new()?);
         let mut config = load_default_config_for_test(home).await;
         config.cwd = absolute_path(cwd.path())?;
+        config.model_provider_id = model_provider.name.clone();
+        config
+            .model_providers
+            .insert(model_provider.name.clone(), model_provider.clone());
         config.model_provider = model_provider;
         config.sync_active_model_provider();
         for hook in self.pre_build_hooks.drain(..) {

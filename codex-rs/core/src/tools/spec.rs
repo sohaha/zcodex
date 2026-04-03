@@ -55,6 +55,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
     use crate::tools::handlers::ViewImageHandler;
+    use crate::tools::handlers::ZmemoryHandler;
     use crate::tools::handlers::multi_agents::CloseAgentHandler;
     use crate::tools::handlers::multi_agents::ResumeAgentHandler;
     use crate::tools::handlers::multi_agents::SendInputHandler;
@@ -229,6 +230,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::WaitAgentV2 => {
                 builder.register_handler(handler.name, Arc::new(WaitAgentHandlerV2));
+            }
+            ToolHandlerKind::Zmemory => {
+                builder.register_handler(handler.name, Arc::new(ZmemoryHandler));
             }
         }
     }

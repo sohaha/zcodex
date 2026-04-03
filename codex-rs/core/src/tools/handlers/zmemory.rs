@@ -11,8 +11,10 @@ use crate::tools::registry::ToolKind;
 use anyhow::Result;
 use async_trait::async_trait;
 use codex_app_server_protocol::ConfigLayerSource;
+use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
 use codex_zmemory::tool_api::run_zmemory_tool_with_context;
+use serde::Deserialize;
 use std::path::PathBuf;
 use tracing::warn;
 
@@ -34,6 +36,7 @@ impl ToolHandler for ZmemoryHandler {
             session,
             turn,
             payload,
+            tool_name,
             ..
         } = invocation;
         let arguments = match payload {
@@ -44,7 +47,7 @@ impl ToolHandler for ZmemoryHandler {
                 ));
             }
         };
-        let args: ZmemoryToolCallParam = parse_arguments(&arguments)?;
+        let args = parse_zmemory_tool_args(&tool_name, &arguments)?;
         let codex_home = match args
             .codex_home
             .as_deref()
@@ -81,6 +84,152 @@ impl ToolHandler for ZmemoryHandler {
             Err(err) => Ok(FunctionToolOutput::from_text(err.to_string(), Some(false))),
         }
     }
+}
+
+#[derive(Deserialize)]
+struct ReadMemoryArgs {
+    uri: String,
+}
+
+#[derive(Deserialize)]
+struct SearchMemoryArgs {
+    query: String,
+    domain: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct CreateMemoryArgs {
+    parent_uri: String,
+    content: String,
+    priority: i64,
+    title: Option<String>,
+    disclosure: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UpdateMemoryArgs {
+    uri: String,
+    old_string: Option<String>,
+    new_string: Option<String>,
+    append: Option<String>,
+    priority: Option<i64>,
+    disclosure: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DeleteMemoryArgs {
+    uri: String,
+}
+
+#[derive(Deserialize)]
+struct AddAliasArgs {
+    new_uri: String,
+    target_uri: String,
+    priority: Option<i64>,
+    disclosure: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ManageTriggersArgs {
+    uri: String,
+    add: Option<Vec<String>>,
+    remove: Option<Vec<String>>,
+}
+
+fn parse_zmemory_tool_args(
+    tool_name: &str,
+    arguments: &str,
+) -> Result<ZmemoryToolCallParam, FunctionCallError> {
+    match tool_name {
+        "zmemory" => parse_arguments(arguments),
+        "read_memory" => {
+            let args: ReadMemoryArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some(args.uri),
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        "search_memory" => {
+            let args: SearchMemoryArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                uri: map_domain_to_scope(args.domain),
+                query: Some(args.query),
+                limit: args.limit,
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        "create_memory" => {
+            let args: CreateMemoryArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                parent_uri: Some(args.parent_uri),
+                content: Some(args.content),
+                priority: Some(args.priority),
+                title: args.title,
+                disclosure: args.disclosure,
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        "update_memory" => {
+            let args: UpdateMemoryArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Update,
+                uri: Some(args.uri),
+                old_string: args.old_string,
+                new_string: args.new_string,
+                append: args.append,
+                priority: args.priority,
+                disclosure: args.disclosure,
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        "delete_memory" => {
+            let args: DeleteMemoryArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::DeletePath,
+                uri: Some(args.uri),
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        "add_alias" => {
+            let args: AddAliasArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                new_uri: Some(args.new_uri),
+                target_uri: Some(args.target_uri),
+                priority: args.priority,
+                disclosure: args.disclosure,
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        "manage_triggers" => {
+            let args: ManageTriggersArgs = parse_arguments(arguments)?;
+            Ok(ZmemoryToolCallParam {
+                action: ZmemoryToolAction::ManageTriggers,
+                uri: Some(args.uri),
+                add: args.add,
+                remove: args.remove,
+                ..ZmemoryToolCallParam::default()
+            })
+        }
+        _ => Err(FunctionCallError::RespondToModel(format!(
+            "unknown zmemory tool name `{tool_name}`"
+        ))),
+    }
+}
+
+fn map_domain_to_scope(domain: Option<String>) -> Option<String> {
+    let domain = domain
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    if domain.contains("://") {
+        return Some(domain.to_string());
+    }
+    Some(format!("{domain}://"))
 }
 
 async fn resolve_zmemory_config_for_turn(

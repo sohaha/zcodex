@@ -608,11 +608,6 @@ async fn zmemory_stats_and_doctor_surface_review_pressure() -> Result<()> {
     assert!(
         issues
             .iter()
-            .any(|issue| issue["code"] == "paths_missing_disclosure")
-    );
-    assert!(
-        issues
-            .iter()
             .any(|issue| issue["code"] == "disclosures_need_review")
     );
     assert!(

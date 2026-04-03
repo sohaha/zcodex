@@ -1,0 +1,39 @@
+plan = "plan/2026-04-03-zmemory-mcp-tools-alignment.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "补齐 MCP 风格工具入口与参数映射"
+scope = """
+增加 MCP 风格工具名与参数契约，并映射到现有 zmemory 动作层；保持原有 zmemory 工具与 CLI 行为不回退。
+不引入新的存储后端，不新增远程 MCP 服务。
+"""
+touch_points = ["module:codex-core", "module:codex-zmemory", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/zmemory/src/tool_api.rs"]
+depends_on = []
+done_when = "MCP 风格工具（read_memory/search_memory/create_memory/update_memory/delete_memory/add_alias/manage_triggers）可调用并正确转发到 zmemory 动作层，且保留原有 zmemory 工具入口。"
+validate_by = "补充或更新工具契约测试后，运行仓库现有命令 cargo nextest run -p codex-core --test all zmemory_ --quiet；若未安装 cargo-nextest，则运行 cargo test -p codex-core --test all zmemory_ --quiet。"
+regress_by = "运行仓库现有命令 cargo nextest run -p codex-zmemory --quiet && cargo nextest run -p codex-cli --test zmemory --quiet；若未安装 cargo-nextest，则运行 cargo test -p codex-zmemory --quiet && cargo test -p codex-cli --test zmemory --quiet。"
+regress_timing = "after_done"
+status = "in_progress"
+validate_status = "done"
+regress_status = "done"
+notes = "已补齐 MCP 风格工具入口与参数映射，并修复 alias 边约束与 doctor 误报。已运行 cargo nextest run -p codex-core --test all zmemory_、cargo nextest run -p codex-zmemory、cargo nextest run -p codex-cli --test zmemory。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "补齐 agent 主动使用指引与文档对齐"
+scope = """
+在提示模板/工具说明中补充主动使用 zmemory 的规则（读/搜/写触发条件），并与文档保持一致。
+不扩展到 Nocturne Memory 的 Web/HTTP 管理面。
+"""
+touch_points = ["docs/zmemory.md", "codex-rs/zmemory/README.md", "module:codex-core"]
+depends_on = ["a1"]
+done_when = "agent 指引覆盖 read/search/create/update 触发条件，文档与实现一致。"
+validate_by = "运行仓库现有命令 cargo nextest run -p codex-core --test all zmemory_ --quiet；若未安装 cargo-nextest，则运行 cargo test -p codex-core --test all zmemory_ --quiet，并人工核对 docs/zmemory.md 与 codex-rs/zmemory/README.md 与实现一致。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "done"
+regress_status = "not_needed"
+notes = "已补齐 docs/zmemory.md 与 codex-rs/zmemory/README.md 的主动使用指引与实现一致。"

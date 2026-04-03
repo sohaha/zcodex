@@ -13,6 +13,18 @@ memory that is separate from the native read-only memory folder.
   `read system://defaults` to compare product defaults.
 - Keep disclosures single-purpose so later `stats` and `doctor` review output
   stays actionable.
+- MCP-style tool aliases are also available: `read_memory`, `search_memory`,
+  `create_memory`, `update_memory`, `delete_memory`, `add_alias`,
+  `manage_triggers` (they map to the same zmemory actions).
+
+Active-use triggers:
+
+- If the user mentions a topic that should exist in memory, `read_memory` it
+  before answering.
+- If the URI is unclear, `search_memory` first; do not guess the path.
+- When durable new knowledge appears, use `create_memory` (or `update_memory`
+  when refining an existing node).
+- Before `update_memory` or `delete_memory`, read the target node first.
 
 Stable preference contract:
 

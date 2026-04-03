@@ -81,6 +81,7 @@ impl ZmemoryConfig {
 
     pub fn is_valid_domain(&self, domain: &str) -> bool {
         domain == "system"
+            || domain == "alias"
             || self
                 .settings
                 .valid_domains
@@ -100,6 +101,9 @@ impl ZmemoryConfig {
         let mut values = self.settings.valid_domains.clone();
         if !values.iter().any(|value| value == "system") {
             values.push("system".to_string());
+        }
+        if !values.iter().any(|value| value == "alias") {
+            values.push("alias".to_string());
         }
         values
     }

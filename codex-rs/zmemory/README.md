@@ -93,6 +93,18 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 - `zmemory` 不替换 `core/memories` 的启动期摘要流程
 - CLI 与 core tool 共用同一套 `tool_api / service / schema`
 
+## MCP 风格工具名
+
+为对齐 MCP 生态，内置别名工具如下（映射到同一套动作层）：
+
+- `read_memory` -> `read`
+- `search_memory` -> `search`
+- `create_memory` -> `create`
+- `update_memory` -> `update`
+- `delete_memory` -> `delete-path`
+- `add_alias` -> `add-alias`
+- `manage_triggers` -> `manage-triggers`
+
 ## 常用命令
 
 ```bash

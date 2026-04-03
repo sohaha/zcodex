@@ -13,6 +13,8 @@ use crate::ToolSpec;
 use crate::ToolsConfig;
 use crate::ViewImageToolOptions;
 use crate::WebSearchToolOptions;
+use crate::ZMEMORY_MCP_TOOL_NAMES;
+use crate::ZMEMORY_TOOL_NAME;
 use crate::collect_code_mode_tool_definitions;
 use crate::collect_tool_search_app_infos;
 use crate::collect_tool_suggest_entries;
@@ -53,6 +55,8 @@ use crate::create_wait_agent_tool_v2;
 use crate::create_wait_tool;
 use crate::create_web_search_tool;
 use crate::create_write_stdin_tool;
+use crate::create_zmemory_mcp_tools;
+use crate::create_zmemory_tool;
 use crate::dynamic_tool_to_responses_api_tool;
 use crate::mcp_tool_to_responses_api_tool;
 use crate::request_permissions_tool_description;
@@ -225,6 +229,27 @@ pub fn build_tool_registry_plan(
             config.code_mode_enabled,
         );
         plan.register_handler("request_permissions", ToolHandlerKind::RequestPermissions);
+    }
+
+    if config.zmemory_tool_enabled {
+        plan.push_spec(
+            create_zmemory_tool(),
+            /*supports_parallel_tool_calls*/ false,
+            config.code_mode_enabled,
+        );
+        plan.register_handler(ZMEMORY_TOOL_NAME, ToolHandlerKind::Zmemory);
+
+        let mcp_tools = create_zmemory_mcp_tools();
+        for tool in mcp_tools {
+            plan.push_spec(
+                tool,
+                /*supports_parallel_tool_calls*/ false,
+                config.code_mode_enabled,
+            );
+        }
+        for name in ZMEMORY_MCP_TOOL_NAMES {
+            plan.register_handler(name, ToolHandlerKind::Zmemory);
+        }
     }
 
     if config.search_tool

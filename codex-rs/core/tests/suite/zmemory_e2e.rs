@@ -2,6 +2,8 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use anyhow::Result;
+use codex_core::config::types::ZmemoryConfig;
+use codex_core::config::types::ZmemoryToml;
 use codex_features::Feature;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -74,6 +76,19 @@ fn tool_parameter_description(
                 }
             })
         })
+}
+
+fn tool_names(body: &Value) -> Vec<String> {
+    body.get("tools")
+        .and_then(Value::as_array)
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -170,6 +185,7 @@ async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result
     test.submit_turn("describe the available tools").await?;
 
     let body = resp_mock.single_request().body_json();
+    let tool_names = tool_names(&body);
     let uri_description = tool_parameter_description(&body, "zmemory", "uri")
         .expect("zmemory uri description should be present");
     let limit_description = tool_parameter_description(&body, "zmemory", "limit")
@@ -184,6 +200,8 @@ async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result
     assert!(uri_description.contains("current workspace runtime facts"));
     assert!(limit_description.contains("system://defaults"));
     assert!(limit_description.contains("system://workspace"));
+    assert!(tool_names.contains(&"read_memory".to_string()));
+    assert!(tool_names.contains(&"search_memory".to_string()));
 
     Ok(())
 }
@@ -477,6 +495,56 @@ async fn zmemory_function_read_supports_export_style_system_views() -> Result<()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_read_memory_tool_maps_to_read_action() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-read",
+                "read_memory",
+                &serde_json::to_string(&json!({
+                    "uri": "system://defaults"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("read defaults").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-read")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "read");
+    assert_eq!(payload["result"]["uri"], "system://defaults");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -655,16 +723,19 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
             .features
             .enable(Feature::Zmemory)
             .expect("test config should allow feature update");
-        config.zmemory.valid_domains = Some(vec![
-            "core".to_string(),
-            "project".to_string(),
-            "notes".to_string(),
-        ]);
-        config.zmemory.core_memory_uris = Some(vec![
-            "core://agent/coding_operating_manual".to_string(),
-            "core://my_user/coding_preferences".to_string(),
-            "core://agent/my_user/collaboration_contract".to_string(),
-        ]);
+        config.zmemory = ZmemoryConfig::from_toml(Some(ZmemoryToml {
+            path: None,
+            valid_domains: Some(vec![
+                "core".to_string(),
+                "project".to_string(),
+                "notes".to_string(),
+            ]),
+            core_memory_uris: Some(vec![
+                "core://agent/coding_operating_manual".to_string(),
+                "core://my_user/coding_preferences".to_string(),
+                "core://agent/my_user/collaboration_contract".to_string(),
+            ]),
+        }));
     });
     let test = builder.build(&server).await?;
 

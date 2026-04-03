@@ -41,6 +41,7 @@ pub enum ToolHandlerKind {
     ViewImage,
     WaitAgentV1,
     WaitAgentV2,
+    Zmemory,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

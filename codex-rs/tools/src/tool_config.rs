@@ -140,6 +140,7 @@ pub struct ToolsConfig {
     pub agent_jobs_tools: bool,
     pub agent_jobs_worker_tools: bool,
     pub agent_type_description: String,
+    pub zmemory_tool_enabled: bool,
 }
 
 pub struct ToolsConfigParams<'a> {
@@ -180,6 +181,7 @@ impl ToolsConfig {
         let include_tool_suggest = features.enabled(Feature::ToolSuggest)
             && features.enabled(Feature::Apps)
             && features.enabled(Feature::Plugins);
+        let include_zmemory_tool = features.enabled(Feature::Zmemory);
         let include_original_image_detail = can_request_original_image_detail(features, model_info);
         let include_image_gen_tool =
             features.enabled(Feature::ImageGeneration) && supports_image_generation(model_info);
@@ -255,6 +257,7 @@ impl ToolsConfig {
             agent_jobs_tools: include_agent_jobs,
             agent_jobs_worker_tools,
             agent_type_description: String::new(),
+            zmemory_tool_enabled: include_zmemory_tool,
         }
     }
 

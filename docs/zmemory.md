@@ -96,6 +96,18 @@ codex zmemory rebuild-search --json
 - `doctor`
 - `rebuild-search`
 
+## MCP 风格工具名
+
+为对齐 MCP 生态，内置别名工具如下（映射到同一套动作层）：
+
+- `read_memory` -> `read`
+- `search_memory` -> `search`
+- `create_memory` -> `create`
+- `update_memory` -> `update`
+- `delete_memory` -> `delete-path`
+- `add_alias` -> `add-alias`
+- `manage_triggers` -> `manage-triggers`
+
 ## 系统视图
 
 常用系统视图：

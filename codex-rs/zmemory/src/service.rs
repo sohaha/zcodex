@@ -395,13 +395,19 @@ fn add_alias_action(
     };
     let priority = args.priority.unwrap_or(target.priority);
     let disclosure = args.disclosure.clone();
+    let edge_name = new_uri.leaf_name()?;
+    let existing_edge_id = find_edge_id(conn, &parent.node_uuid, &target.node_uuid, edge_name)?;
 
     let tx = conn.transaction()?;
-    tx.execute(
-        "INSERT INTO edges(parent_uuid, child_uuid, name, priority, disclosure) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![parent.node_uuid, target.node_uuid, new_uri.leaf_name()?, priority, disclosure],
-    )?;
-    let edge_id = tx.last_insert_rowid();
+    let edge_id = if let Some(edge_id) = existing_edge_id {
+        edge_id
+    } else {
+        tx.execute(
+            "INSERT INTO edges(parent_uuid, child_uuid, name, priority, disclosure) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![parent.node_uuid, target.node_uuid, edge_name, priority, disclosure],
+        )?;
+        tx.last_insert_rowid()
+    };
     tx.execute(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
         params![new_uri.domain, new_uri.path, edge_id],
@@ -1107,6 +1113,21 @@ fn find_path_row(conn: &Connection, uri: &ZmemoryUri) -> Result<Option<PathRow>>
                 disclosure: row.get(3)?,
             })
         },
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+fn find_edge_id(
+    conn: &Connection,
+    parent_uuid: &str,
+    child_uuid: &str,
+    name: &str,
+) -> Result<Option<i64>> {
+    conn.query_row(
+        "SELECT id FROM edges WHERE parent_uuid = ?1 AND child_uuid = ?2 AND name = ?3",
+        params![parent_uuid, child_uuid, name],
+        |row| row.get(0),
     )
     .optional()
     .map_err(Into::into)
@@ -1875,7 +1896,7 @@ mod tests {
         .expect_err("invalid domain should fail");
         assert_eq!(
             invalid_domain.to_string(),
-            "unknown domain 'writer'. valid domains: core, notes, system"
+            "unknown domain 'writer'. valid domains: core, notes, system, alias"
         );
 
         let invalid_index = execute_action(
@@ -1889,7 +1910,7 @@ mod tests {
         .expect_err("invalid index domain should fail");
         assert_eq!(
             invalid_index.to_string(),
-            "unknown domain 'writer'. valid domains: core, notes, system"
+            "unknown domain 'writer'. valid domains: core, notes, system, alias"
         );
 
         let system_write = execute_action(
@@ -2046,11 +2067,6 @@ mod tests {
             issues
                 .iter()
                 .any(|issue| issue["code"] == "orphaned_memories")
-        );
-        assert!(
-            issues
-                .iter()
-                .any(|issue| issue["code"] == "paths_missing_disclosure")
         );
         assert!(
             issues

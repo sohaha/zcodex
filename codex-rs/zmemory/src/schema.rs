@@ -104,10 +104,43 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_documents_fts USING fts5 (
 );
 "#;
 
-const MIGRATIONS: [(&str, &str); 3] = [
+const MIGRATION_0004_EDGES_ALLOW_ALIAS_NAME: &str = r#"
+PRAGMA foreign_keys = OFF;
+
+CREATE TABLE IF NOT EXISTS edges_new (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  parent_uuid TEXT NOT NULL,
+  child_uuid TEXT NOT NULL,
+  name TEXT NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 0,
+  disclosure TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (parent_uuid) REFERENCES nodes(uuid),
+  FOREIGN KEY (child_uuid) REFERENCES nodes(uuid),
+  CONSTRAINT uq_edges_parent_child_name UNIQUE (parent_uuid, child_uuid, name)
+);
+
+INSERT INTO edges_new (id, parent_uuid, child_uuid, name, priority, disclosure, created_at)
+SELECT id, parent_uuid, child_uuid, name, priority, disclosure, created_at
+FROM edges;
+
+DROP TABLE edges;
+ALTER TABLE edges_new RENAME TO edges;
+
+CREATE INDEX IF NOT EXISTS idx_edges_parent_uuid ON edges(parent_uuid);
+CREATE INDEX IF NOT EXISTS idx_edges_child_uuid ON edges(child_uuid);
+
+PRAGMA foreign_keys = ON;
+"#;
+
+const MIGRATIONS: [(&str, &str); 4] = [
     ("0001_core", MIGRATION_0001_CORE),
     ("0002_search", MIGRATION_0002_SEARCH),
     ("0003_search_fts", MIGRATION_0003_SEARCH_FTS),
+    (
+        "0004_edges_alias_name",
+        MIGRATION_0004_EDGES_ALLOW_ALIAS_NAME,
+    ),
 ];
 
 pub fn initialize_database(conn: &Connection) -> Result<()> {

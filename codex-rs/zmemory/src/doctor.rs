@@ -165,12 +165,6 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
             "message": format!("{alias_nodes_missing} alias nodes have no keywords"),
         }));
     }
-    if paths_missing_disclosure > 0 {
-        issues.push(json!({
-            "code": "paths_missing_disclosure",
-            "message": format!("{paths_missing_disclosure} live paths have no disclosure"),
-        }));
-    }
     if disclosures_needing_review > 0 {
         issues.push(json!({
             "code": "disclosures_need_review",
