@@ -26,6 +26,8 @@ Rust 实现已成为 Codex CLI 的主线版本与默认体验，提供旧版 Typ
 
 Codex 支持更完整的配置能力。注意 Rust CLI 使用 `config.toml` 而不是 `config.json`。详情见 [`docs/config.md`](../docs/config.md)。
 
+TUI 粘贴图片默认会自动压缩，也支持通过 `[tui]` 配置 `auto_compress_pasted_images`、`pasted_image_max_width`、`pasted_image_max_height` 和 `pasted_image_jpeg_quality` 调整行为。
+
 ### zmemory 默认行为
 
 Rust CLI 现在默认同时启用两套独立记忆系统：

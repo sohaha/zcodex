@@ -28,6 +28,27 @@ Use `$` in the composer to insert a ChatGPT connector; the popover lists accessi
 apps. The `/apps` command lists available and installed apps. Connected apps appear first
 and are labeled as connected; others are marked as can be installed.
 
+## TUI pasted image compression
+
+The TUI can automatically recompress images pasted with `Ctrl+V` before upload. Configure it in `~/.codex/config.toml`:
+
+```toml
+[tui]
+auto_compress_pasted_images = true
+pasted_image_max_width = 1280
+pasted_image_max_height = 720
+pasted_image_jpeg_quality = 85
+```
+
+Behavior:
+
+- images larger than the configured width or height are resized proportionally,
+- transparent images stay PNG,
+- non-transparent images are encoded as both PNG and JPEG and Codex keeps the smaller result,
+- invalid width/height/quality values fall back to the built-in defaults.
+
+For implementation details and composer behavior, see `docs/tui-chat-composer.md`.
+
 ## Notify
 
 Codex can run a notification hook when the agent finishes a turn. See the configuration reference for the latest notification settings:
