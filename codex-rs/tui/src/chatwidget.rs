@@ -68,8 +68,6 @@ use crate::terminal_title::set_terminal_title;
 use crate::text_formatting::proper_join;
 use crate::version::CODEX_CLI_VERSION;
 use codex_app_server_protocol::AppSummary;
-use codex_app_server_protocol::BuddyReactionNotification;
-use codex_app_server_protocol::BuddySoulGeneratedNotification;
 use codex_app_server_protocol::CodexErrorInfo as AppServerCodexErrorInfo;
 use codex_app_server_protocol::CollabAgentState as AppServerCollabAgentState;
 use codex_app_server_protocol::CollabAgentStatus as AppServerCollabAgentStatus;
@@ -6893,6 +6891,21 @@ impl ChatWidget {
                 self.on_agent_reasoning_final();
             }
             EventMsg::AgentReasoningSectionBreak(_) => self.on_reasoning_section_break(),
+            EventMsg::BuddySoulGenerated(event) => {
+                let soul = BuddySoul {
+                    name: event.name,
+                    personality: event.personality,
+                };
+                self.config.tui_buddy_soul = Some(soul.clone());
+                self.bottom_pane.set_buddy_soul(Some(soul));
+                self.request_redraw();
+            }
+            EventMsg::BuddyReaction(event) => {
+                if !from_replay && self.config.tui_buddy_reactions_enabled {
+                    let seed = self.buddy_seed();
+                    self.bottom_pane.react_buddy(&seed, event.text);
+                }
+            }
             EventMsg::TurnStarted(event) => {
                 if !is_resume_initial_replay {
                     self.apply_turn_started_context_window(event.model_context_window);
