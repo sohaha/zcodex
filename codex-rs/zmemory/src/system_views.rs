@@ -351,9 +351,9 @@ fn read_glossary_view(conn: &Connection, limit: usize) -> Result<Value> {
 }
 
 fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
-    let alias_nodes = alias_node_count(conn)?;
-    let trigger_nodes = trigger_node_count(conn)?;
-    let alias_nodes_missing = alias_nodes_missing_triggers(conn)?;
+    let alias_nodes = crate::service::stats_queries::alias_node_count(conn)?;
+    let trigger_nodes = crate::service::stats_queries::trigger_node_count(conn)?;
+    let alias_nodes_missing = crate::service::stats_queries::alias_nodes_missing_triggers(conn)?;
     let entries = alias_entries(conn, limit)?;
 
     let coverage_percent = if alias_nodes == 0 {
@@ -541,41 +541,4 @@ fn suggestion_command(node_uri: &str, suggested_keywords: &Value) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     format!("codex zmemory manage-triggers {node_uri} {args} --json")
-}
-
-fn alias_node_count(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COUNT(*) FROM (
-             SELECT child_uuid
-             FROM edges
-             GROUP BY child_uuid
-             HAVING COUNT(*) > 1
-         )",
-        [],
-        |row| row.get(0),
-    )?)
-}
-
-fn trigger_node_count(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords",
-        [],
-        |row| row.get(0),
-    )?)
-}
-
-fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COUNT(*) FROM (
-             SELECT child_uuid
-             FROM edges
-             GROUP BY child_uuid
-             HAVING COUNT(*) > 1
-         ) AS alias_nodes
-         WHERE alias_nodes.child_uuid NOT IN (
-             SELECT DISTINCT node_uuid FROM glossary_keywords
-         )",
-        [],
-        |row| row.get(0),
-    )?)
 }

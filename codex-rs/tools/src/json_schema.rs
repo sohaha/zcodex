@@ -22,6 +22,11 @@ pub enum JsonSchema {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
+    /// Integer type - serializes as "type": "integer".
+    Integer {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+    },
     Array {
         items: Box<JsonSchema>,
 

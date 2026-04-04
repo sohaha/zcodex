@@ -1,0 +1,57 @@
+//! Delete action for the zmemory service layer.
+
+use crate::config::ZmemoryConfig;
+use crate::tool_api::ZmemoryToolCallParam;
+use anyhow::Result;
+use rusqlite::Connection;
+use rusqlite::params;
+use serde_json::Value;
+use serde_json::json;
+
+use super::common::ensure_writable_domain;
+use super::common::find_path_row;
+use super::common::parse_required_uri;
+use super::index::rebuild_search_index;
+
+pub(crate) fn delete_path_action(
+    config: &ZmemoryConfig,
+    conn: &mut Connection,
+    args: &ZmemoryToolCallParam,
+) -> Result<Value> {
+    let uri = parse_required_uri(args.uri.as_deref())?;
+    anyhow::ensure!(!uri.is_root(), "cannot delete root path");
+    ensure_writable_domain(config, conn, &uri.domain)?;
+    let row =
+        find_path_row(conn, &uri)?.ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
+
+    let tx = conn.transaction()?;
+    let deleted_paths = tx.execute(
+        "DELETE FROM paths WHERE domain = ?1 AND path = ?2",
+        params![uri.domain, uri.path],
+    )?;
+    let deleted_edges = tx.execute("DELETE FROM edges WHERE id = ?1", [row.edge_id])?;
+    let remaining_refs: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM edges e JOIN paths p ON p.edge_id = e.id WHERE e.child_uuid = ?1",
+        [row.node_uuid.as_str()],
+        |stmt| stmt.get(0),
+    )?;
+    let deprecated_nodes = if remaining_refs == 0 {
+        tx.execute(
+            "UPDATE memories SET deprecated = TRUE WHERE node_uuid = ?1 AND deprecated = FALSE",
+            [row.node_uuid.as_str()],
+        )?
+    } else {
+        0
+    };
+    tx.commit()?;
+
+    let rebuild = rebuild_search_index(conn)?;
+    Ok(json!({
+        "uri": uri.to_string(),
+        "nodeUuid": row.node_uuid,
+        "deletedPaths": deleted_paths,
+        "deletedEdges": deleted_edges,
+        "deprecatedNodes": deprecated_nodes,
+        "documentCount": rebuild,
+    }))
+}
