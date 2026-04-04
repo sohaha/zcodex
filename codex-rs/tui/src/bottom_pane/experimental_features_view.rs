@@ -291,7 +291,7 @@ impl Renderable for ExperimentalFeaturesView {
 
 fn experimental_popup_hint_line() -> Line<'static> {
     Line::from(vec![
-        "Press ".into(),
+        "按 ".into(),
         key_hint::plain(KeyCode::Char(' ')).into(),
         " 选择或 ".into(),
         key_hint::plain(KeyCode::Enter).into(),

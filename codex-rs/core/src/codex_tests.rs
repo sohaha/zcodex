@@ -1435,10 +1435,7 @@ async fn thread_rollback_fails_without_persisted_rollout_path() {
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 1).await;
 
     let error_event = wait_for_thread_rollback_failed(&rx).await;
-    assert_eq!(
-        error_event.message,
-        "thread rollback requires a persisted rollout path"
-    );
+    assert_eq!(error_event.message, "线程回滚需要已持久化的 rollout 路径");
     assert_eq!(
         error_event.codex_error_info,
         Some(CodexErrorInfo::ThreadRollbackFailed)
@@ -1773,7 +1770,7 @@ async fn thread_rollback_fails_when_num_turns_is_zero() {
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 0).await;
 
     let error_event = wait_for_thread_rollback_failed(&rx).await;
-    assert_eq!(error_event.message, "num_turns must be >= 1");
+    assert_eq!(error_event.message, "num_turns 必须大于等于 1");
     assert_eq!(
         error_event.codex_error_info,
         Some(CodexErrorInfo::ThreadRollbackFailed)

@@ -935,7 +935,7 @@ async fn login_account_api_key_rejected_when_forced_chatgpt() -> Result<()> {
 
     assert_eq!(
         err.error.message,
-        "API key login is disabled. Use ChatGPT login instead."
+        "API Key 登录已禁用。请改用 ChatGPT 登录。"
     );
     Ok(())
 }
@@ -963,7 +963,7 @@ async fn login_account_chatgpt_rejected_when_forced_api() -> Result<()> {
 
     assert_eq!(
         err.error.message,
-        "ChatGPT login is disabled. Use API key login instead."
+        "ChatGPT 登录已禁用。请改用 API Key 登录。"
     );
     Ok(())
 }

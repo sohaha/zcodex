@@ -11,4 +11,4 @@ expression: "render_lines(&view, 72)"
 › [x] Repo Scout        Summarize the repo layout                       
   [ ] Changelog Writer  Draft release notes                             
                                                                         
-  Press space 或  enter 切 换 ； esc 关 闭
+  按  space 或  enter 切 换 ； esc 关 闭

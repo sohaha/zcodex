@@ -213,27 +213,24 @@ impl SteerInputError {
     fn to_error_event(&self) -> ErrorEvent {
         match self {
             Self::NoActiveTurn(_) => ErrorEvent {
-                message: "no active turn to steer".to_string(),
+                message: "没有活动中的轮次可继续追加".to_string(),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
             Self::ExpectedTurnMismatch { expected, actual } => ErrorEvent {
-                message: format!("expected active turn id `{expected}` but found `{actual}`"),
+                message: format!("当前活动轮次 ID 应为 `{expected}`，但实际为 `{actual}`"),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
-            Self::ActiveTurnNotSteerable { turn_kind } => {
-                let turn_kind_label = match turn_kind {
-                    NonSteerableTurnKind::Review => "review",
-                    NonSteerableTurnKind::Compact => "compact",
-                };
-                ErrorEvent {
-                    message: format!("cannot steer a {turn_kind_label} turn"),
-                    codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
-                        turn_kind: *turn_kind,
-                    }),
-                }
-            }
+            Self::ActiveTurnNotSteerable { turn_kind } => ErrorEvent {
+                message: match turn_kind {
+                    NonSteerableTurnKind::Review => "无法在审查轮次中继续追加".to_string(),
+                    NonSteerableTurnKind::Compact => "无法在压缩轮次中继续追加".to_string(),
+                },
+                codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
+                    turn_kind: *turn_kind,
+                }),
+            },
             Self::EmptyInput => ErrorEvent {
-                message: "input must not be empty".to_string(),
+                message: "输入不能为空".to_string(),
                 codex_error_info: Some(CodexErrorInfo::BadRequest),
             },
         }
@@ -1408,7 +1405,7 @@ impl Session {
                 audit_metadata,
             )
             .await
-            .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?;
+            .map_err(|err| anyhow::anyhow!("启动托管网络代理失败：{err}"))?;
         let session_network_proxy = {
             let proxy = network_proxy.proxy();
             SessionNetworkProxyRuntime {
@@ -1755,10 +1752,10 @@ impl Session {
             post_session_configured_events.push(Event {
                 id: INITIAL_SUBMIT_ID.to_owned(),
                 msg: EventMsg::DeprecationNotice(DeprecationNoticeEvent {
-                    summary: "`experimental_instructions_file` is deprecated and ignored. Use `model_instructions_file` instead."
+                    summary: "`experimental_instructions_file` 已弃用且会被忽略。请改用 `model_instructions_file`。"
                         .to_string(),
                     details: Some(
-                        "Move the setting to `model_instructions_file` in config.toml (or under a profile) to load instructions from a file."
+                        "请将该配置迁移到 config.toml 中的 `model_instructions_file`（或某个配置档下）以从文件加载说明。"
                             .to_string(),
                     ),
                 }),
@@ -1789,7 +1786,7 @@ impl Session {
             post_session_configured_events.push(Event {
                 id: "".to_owned(),
                 msg: EventMsg::Warning(WarningEvent {
-                    message: "`on-failure` approval policy is deprecated and will be removed in a future release. Use `on-request` for interactive approvals or `never` for non-interactive runs.".to_string(),
+                    message: "`on-failure` 审批策略已弃用，并将在后续版本移除。交互式审批请改用 `on-request`，非交互运行请改用 `never`。".to_string(),
                 }),
             });
         }
@@ -5372,7 +5369,7 @@ mod handlers {
         sess.send_event_raw(Event {
             id: sub_id,
             msg: EventMsg::Error(ErrorEvent {
-                message: format!("Memory drop completed with errors: {}", errors.join("; ")),
+                message: format!("清理记忆已完成，但存在错误：{}", errors.join("; ")),
                 codex_error_info: Some(CodexErrorInfo::Other),
             }),
         })
@@ -5390,7 +5387,7 @@ mod handlers {
         sess.send_event_raw(Event {
             id: sub_id.clone(),
             msg: EventMsg::Warning(WarningEvent {
-                message: "Memory update triggered.".to_string(),
+                message: "已触发记忆更新。".to_string(),
             }),
         })
         .await;
@@ -5401,7 +5398,7 @@ mod handlers {
             sess.send_event_raw(Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "num_turns must be >= 1".to_string(),
+                    message: "num_turns 必须大于等于 1".to_string(),
                     codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
                 }),
             })
@@ -5414,7 +5411,7 @@ mod handlers {
             sess.send_event_raw(Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Cannot rollback while a turn is in progress.".to_string(),
+                    message: "当前有进行中的轮次，无法回滚。".to_string(),
                     codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
                 }),
             })
@@ -5432,7 +5429,7 @@ mod handlers {
                 sess.send_event_raw(Event {
                     id: turn_context.sub_id.clone(),
                     msg: EventMsg::Error(ErrorEvent {
-                        message: "thread rollback requires a persisted rollout path".to_string(),
+                        message: "线程回滚需要已持久化的 rollout 路径".to_string(),
                         codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
                     }),
                 })
@@ -5516,7 +5513,7 @@ mod handlers {
             let event = Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Thread name cannot be empty.".to_string(),
+                    message: "线程名称不能为空。".to_string(),
                     codex_error_info: Some(CodexErrorInfo::BadRequest),
                 }),
             };
@@ -5532,7 +5529,7 @@ mod handlers {
             let event = Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Session persistence is disabled; cannot rename thread.".to_string(),
+                    message: "会话持久化已禁用，无法重命名线程。".to_string(),
                     codex_error_info: Some(CodexErrorInfo::Other),
                 }),
             };
@@ -5547,7 +5544,7 @@ mod handlers {
             let event = Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: format!("Failed to set thread name: {e}"),
+                    message: format!("设置线程名称失败：{e}"),
                     codex_error_info: Some(CodexErrorInfo::Other),
                 }),
             };
@@ -5604,7 +5601,7 @@ mod handlers {
             let event = Event {
                 id: sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Failed to shutdown rollout recorder".to_string(),
+                    message: "关闭 rollout 记录器失败".to_string(),
                     codex_error_info: Some(CodexErrorInfo::Other),
                 }),
             };
@@ -6267,7 +6264,9 @@ pub(crate) async fn run_turn(
                             sess.send_event(
                                 &turn_context,
                                 EventMsg::Warning(WarningEvent {
-                                    message: "Stop hook requested continuation without a prompt; ignoring the block.".to_string(),
+                                    message:
+                                        "Stop hook 请求继续执行但未提供 prompt；已忽略该阻塞。"
+                                            .to_string(),
                                 }),
                             )
                             .await;
@@ -6351,8 +6350,7 @@ pub(crate) async fn run_turn(
                     continue;
                 }
                 let event = EventMsg::Error(ErrorEvent {
-                    message: "Invalid image in your last message. Please remove it and try again."
-                        .to_string(),
+                    message: "你上一条消息中的图片无效，请移除后重试。".to_string(),
                     codex_error_info: Some(CodexErrorInfo::BadRequest),
                 });
                 sess.send_event(&turn_context, event).await;
@@ -6808,7 +6806,7 @@ async fn run_sampling_request(
             sess.send_event(
                 &sampling_turn_context,
                 EventMsg::Warning(WarningEvent {
-                    message: format!("Falling back from WebSockets to HTTPS transport. {err:#}"),
+                    message: format!("正在从 WebSockets 回退到 HTTPS 传输。{err:#}"),
                 }),
             )
             .await;

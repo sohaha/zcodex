@@ -1051,14 +1051,14 @@ fn active_turn_steer_race(error: &TypedRequestError) -> Option<ActiveTurnSteerRa
     if method != "turn/steer" {
         return None;
     }
-    if source.message == "no active turn to steer" {
+    if source.message == "没有活动中的轮次可继续追加" {
         return Some(ActiveTurnSteerRace::Missing);
     }
 
     // App-server steer mismatches mean our cached active turn id is stale, but the response
     // includes the server's current active turn so we can resynchronize and retry once.
-    let mismatch_prefix = "expected active turn id `";
-    let mismatch_separator = "` but found `";
+    let mismatch_prefix = "当前活动轮次 ID 应为 `";
+    let mismatch_separator = "`，但实际为 `";
     let actual_turn_id = source
         .message
         .strip_prefix(mismatch_prefix)?
@@ -1106,7 +1106,7 @@ impl App {
             .harness_overrides(overrides)
             .build()
             .await
-            .wrap_err_with(|| format!("Failed to rebuild config for cwd {cwd_display}"))
+            .wrap_err_with(|| format!("为 cwd {cwd_display} 重建配置失败"))
     }
 
     async fn refresh_in_memory_config_from_disk(&mut self) -> Result<()> {
@@ -1157,17 +1157,15 @@ impl App {
             && let Err(err) = config.permissions.approval_policy.set(*policy)
         {
             tracing::warn!(%err, "failed to carry forward approval policy override");
-            self.chat_widget.add_error_message(format!(
-                "Failed to carry forward approval policy override: {err}"
-            ));
+            self.chat_widget
+                .add_error_message(format!("沿用审批策略覆盖失败：{err}"));
         }
         if let Some(policy) = self.runtime_sandbox_policy_override.as_ref()
             && let Err(err) = config.permissions.sandbox_policy.set(policy.clone())
         {
             tracing::warn!(%err, "failed to carry forward sandbox policy override");
-            self.chat_widget.add_error_message(format!(
-                "Failed to carry forward sandbox policy override: {err}"
-            ));
+            self.chat_widget
+                .add_error_message(format!("沿用沙箱策略覆盖失败：{err}"));
         }
     }
 
@@ -1268,7 +1266,7 @@ impl App {
                 && root_approvals_reviewer_blocks_profile_disable
             {
                 self.chat_widget.add_error_message(
-                        "无法在当前 profile 中禁用 Guardian 审批，因为 `approvals_reviewer` 配置在活动 profile 之外。".to_string(),
+                        "无法在当前配置档中禁用 Guardian 审批，因为 `approvals_reviewer` 配置在活动配置档之外。".to_string(),
                     );
                 continue;
             }
@@ -1279,9 +1277,8 @@ impl App {
                     feature = feature_key,
                     "failed to update constrained feature flags"
                 );
-                self.chat_widget.add_error_message(format!(
-                    "Failed to update experimental feature `{feature_key}`: {err}"
-                ));
+                self.chat_widget
+                    .add_error_message(format!("更新实验特性 `{feature_key}` 失败：{err}"));
                 continue;
             }
             let effective_enabled = feature_config.features.enabled(feature);
@@ -1363,7 +1360,7 @@ impl App {
         if let Err(err) = builder.apply().await {
             tracing::error!(error = %err, "failed to persist feature flags");
             self.chat_widget
-                .add_error_message(format!("Failed to update experimental features: {err}"));
+                .add_error_message(format!("更新实验特性失败：{err}"));
             return;
         }
 
@@ -1941,7 +1938,7 @@ impl App {
             let plugin_name_for_event = plugin_name.clone();
             let result = fetch_plugin_install(request_handle, marketplace_path, plugin_name)
                 .await
-                .map_err(|err| format!("Failed to install plugin: {err}"));
+                .map_err(|err| format!("安装插件失败：{err}"));
             app_event_tx.send(AppEvent::PluginInstallLoaded {
                 cwd: cwd_for_event,
                 marketplace_path: marketplace_path_for_event,
@@ -1966,7 +1963,7 @@ impl App {
             let plugin_id_for_event = plugin_id.clone();
             let result = fetch_plugin_uninstall(request_handle, plugin_id)
                 .await
-                .map_err(|err| format!("Failed to uninstall plugin: {err}"));
+                .map_err(|err| format!("卸载插件失败：{err}"));
             app_event_tx.send(AppEvent::PluginUninstallLoaded {
                 cwd: cwd_for_event,
                 plugin_id: plugin_id_for_event,
@@ -2026,7 +2023,7 @@ impl App {
             Err(err) => self
                 .chat_widget
                 .add_to_history(history_cell::new_error_event(format!(
-                    "Failed to upload feedback: {err}"
+                    "上传反馈失败：{err}"
                 ))),
         }
     }
@@ -2108,7 +2105,7 @@ impl App {
             Ok(statuses) => statuses,
             Err(err) => {
                 self.chat_widget
-                    .add_error_message(format!("Failed to load MCP inventory: {err}"));
+                    .add_error_message(format!("加载 MCP 清单失败：{err}"));
                 return;
             }
         };
@@ -2424,7 +2421,7 @@ impl App {
             }
             Err(err) => {
                 self.chat_widget.add_error_message(format!(
-                    "Failed to resolve app-server request for thread {thread_id}: {err}"
+                    "为线程 {thread_id} 处理 app-server 请求失败：{err}"
                 ));
                 Ok(false)
             }
@@ -3664,7 +3661,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("Failed to resume session from {target_label}")
+                        format!("从 {target_label} 恢复会话失败")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -3703,7 +3700,7 @@ impl App {
                     .await
                     .wrap_err_with(|| {
                         let target_label = target_session.display_label();
-                        format!("Failed to fork session from {target_label}")
+                        format!("从 {target_label} 分叉会话失败")
                     })?;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
@@ -4268,7 +4265,7 @@ impl App {
                 // Enter alternate screen using TUI helper and build pager lines
                 let _ = tui.enter_alt_screen();
                 let pager_lines: Vec<ratatui::text::Line<'static>> = if text.trim().is_empty() {
-                    vec!["No changes detected.".italic().into()]
+                    vec!["未检测到变更。".italic().into()]
                 } else {
                     text.lines().map(ansi_escape_line).collect()
                 };
@@ -4663,7 +4660,7 @@ impl App {
                 {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("Granting sandbox read access to {path} ..."),
+                            format!("正在为沙箱授予 {path} 的读取权限..."),
                             /*hint*/ None,
                         ));
 
@@ -4705,12 +4702,12 @@ impl App {
             AppEvent::WindowsSandboxGrantReadRootCompleted { path, error } => match error {
                 Some(err) => {
                     self.chat_widget
-                        .add_to_history(history_cell::new_error_event(format!("Error: {err}")));
+                        .add_to_history(history_cell::new_error_event(format!("错误：{err}")));
                 }
                 None => {
                     self.chat_widget
                         .add_to_history(history_cell::new_info_event(
-                            format!("Sandbox read access granted for {}", path.display()),
+                            format!("已授予 {} 的沙箱读取权限", path.display()),
                             /*hint*/ None,
                         ));
                 }
@@ -4849,7 +4846,7 @@ impl App {
                         if let Some(profile) = profile {
                             message.push_str("，适用于 ");
                             message.push_str(profile);
-                            message.push_str(" profile");
+                            message.push_str(" 配置档");
                         }
                         self.chat_widget.add_info_message(message, /*hint*/ None);
                     }
@@ -4860,7 +4857,7 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "为 profile `{profile}` 保存模型失败：{err}"
+                                "为配置档 `{profile}` 保存模型失败：{err}"
                             ));
                         } else {
                             self.chat_widget
@@ -4911,7 +4908,7 @@ impl App {
                         if let Some(profile) = profile {
                             message.push_str("，适用于 ");
                             message.push_str(profile);
-                            message.push_str(" profile");
+                            message.push_str(" 配置档");
                         }
                         self.chat_widget.add_info_message(message, /*hint*/ None);
                     }
@@ -4922,7 +4919,7 @@ impl App {
                         );
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "为 profile `{profile}` 保存人格失败：{err}"
+                                "为配置档 `{profile}` 保存人格失败：{err}"
                             ));
                         } else {
                             self.chat_widget
@@ -4946,7 +4943,7 @@ impl App {
                         if let Some(profile) = profile {
                             message.push_str("，适用于 ");
                             message.push_str(profile);
-                            message.push_str(" profile");
+                            message.push_str(" 配置档");
                         }
                         self.chat_widget.add_info_message(message, /*hint*/ None);
                     }
@@ -4954,7 +4951,7 @@ impl App {
                         tracing::error!(error = %err, "failed to persist fast mode selection");
                         if let Some(profile) = profile {
                             self.chat_widget.add_error_message(format!(
-                                "为 profile `{profile}` 保存快速模式失败：{err}"
+                                "为配置档 `{profile}` 保存快速模式失败：{err}"
                             ));
                         } else {
                             self.chat_widget
@@ -5016,7 +5013,7 @@ impl App {
                 if !self.try_set_approval_policy_on_config(
                     &mut config,
                     policy,
-                    "Failed to set approval policy",
+                    "设置审批策略失败",
                     "failed to set approval policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -5040,7 +5037,7 @@ impl App {
                 if !self.try_set_sandbox_policy_on_config(
                     &mut config,
                     policy,
-                    "Failed to set sandbox policy",
+                    "设置沙箱策略失败",
                     "failed to set sandbox policy on app config",
                 ) {
                     return Ok(AppRunControl::Continue);
@@ -5049,7 +5046,7 @@ impl App {
                 if let Err(err) = self.chat_widget.set_sandbox_policy(policy_for_chat) {
                     tracing::warn!(%err, "failed to set sandbox policy on chat config");
                     self.chat_widget
-                        .add_error_message(format!("Failed to set sandbox policy: {err}"));
+                        .add_error_message(format!("设置沙箱策略失败：{err}"));
                     return Ok(AppRunControl::Continue);
                 }
                 self.runtime_sandbox_policy_override =
@@ -5112,7 +5109,7 @@ impl App {
                         "failed to persist approvals reviewer update"
                     );
                     self.chat_widget
-                        .add_error_message(format!("Failed to save approvals reviewer: {err}"));
+                        .add_error_message(format!("保存审批审核者设置失败：{err}"));
                 }
             }
             AppEvent::UpdateFeatureFlags { updates } => {
@@ -5145,9 +5142,8 @@ impl App {
                         error = %err,
                         "failed to persist full access warning acknowledgement"
                     );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save full access confirmation preference: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("保存完全访问确认偏好失败：{err}"));
                 }
             }
             AppEvent::PersistWorldWritableWarningAcknowledged => {
@@ -5174,9 +5170,8 @@ impl App {
                         error = %err,
                         "failed to persist rate limit switch prompt preference"
                     );
-                    self.chat_widget.add_error_message(format!(
-                        "Failed to save rate limit reminder preference: {err}"
-                    ));
+                    self.chat_widget
+                        .add_error_message(format!("保存速率限制提醒偏好失败：{err}"));
                 }
             }
             AppEvent::PersistPlanModeReasoningEffort(effort) => {
@@ -5209,7 +5204,7 @@ impl App {
                     );
                     if let Some(profile) = profile {
                         self.chat_widget.add_error_message(format!(
-                            "为 profile `{profile}` 保存 Plan 模式推理级别失败：{err}"
+                            "为配置档 `{profile}` 保存 Plan 模式推理级别失败：{err}"
                         ));
                     } else {
                         self.chat_widget
@@ -5270,9 +5265,8 @@ impl App {
                     }
                     Err(err) => {
                         let path_display = path.display();
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update skill config for {path_display}: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("更新技能配置 {path_display} 失败：{err}"));
                     }
                 }
             }
@@ -5319,9 +5313,8 @@ impl App {
                         self.chat_widget.submit_op(AppCommand::reload_user_config());
                     }
                     Err(err) => {
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to update app config for {id}: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("更新应用配置 {id} 失败：{err}"));
                     }
                 }
             }
@@ -5431,7 +5424,7 @@ impl App {
                     Err(err) => {
                         tracing::error!(error = %err, "failed to persist status line items; keeping previous selection");
                         self.chat_widget
-                            .add_error_message(format!("Failed to save status line items: {err}"));
+                            .add_error_message(format!("保存状态栏项目失败：{err}"));
                     }
                 }
             }
@@ -5457,9 +5450,8 @@ impl App {
                     Err(err) => {
                         tracing::error!(error = %err, "failed to persist terminal title items; keeping previous selection");
                         self.chat_widget.revert_terminal_title_setup_preview();
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to save terminal title items: {err}"
-                        ));
+                        self.chat_widget
+                            .add_error_message(format!("保存终端标题项目失败：{err}"));
                     }
                 }
             }
@@ -5493,7 +5485,7 @@ impl App {
                         self.restore_runtime_theme_from_config();
                         tracing::error!(error = %err, "failed to persist theme selection");
                         self.chat_widget
-                            .add_error_message(format!("Failed to save theme: {err}"));
+                            .add_error_message(format!("保存主题失败：{err}"));
                     }
                 }
             }
@@ -5873,7 +5865,7 @@ impl App {
                 if let Err(err) = self.clear_terminal_ui(tui, /*redraw_header*/ false) {
                     tracing::warn!(error = %err, "failed to clear terminal UI");
                     self.chat_widget
-                        .add_error_message(format!("Failed to clear terminal UI: {err}"));
+                        .add_error_message(format!("清空终端界面失败：{err}"));
                 } else {
                     self.reset_app_ui_state_after_clear();
                     self.queue_clear_ui_header(tui);
@@ -9468,7 +9460,7 @@ guardian_approval = true
         };
         assert_eq!(
             lines_to_single_string(&cell.display_lines(/*width*/ 120)),
-            "■ Failed to upload feedback: boom"
+            "■ 上传反馈失败：boom"
         );
     }
 
@@ -9725,7 +9717,7 @@ guardian_approval = true
     #[test]
     fn active_turn_not_steerable_turn_error_extracts_structured_server_error() {
         let turn_error = AppServerTurnError {
-            message: "cannot steer a review turn".to_string(),
+            message: "无法在审查轮次中继续追加".to_string(),
             codex_error_info: Some(AppServerCodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: AppServerNonSteerableTurnKind::Review,
             }),
@@ -9752,7 +9744,7 @@ guardian_approval = true
             method: "turn/steer".to_string(),
             source: JSONRPCErrorError {
                 code: -32602,
-                message: "no active turn to steer".to_string(),
+                message: "没有活动中的轮次可继续追加".to_string(),
                 data: None,
             },
         };
@@ -9770,8 +9762,7 @@ guardian_approval = true
             method: "turn/steer".to_string(),
             source: JSONRPCErrorError {
                 code: -32602,
-                message: "expected active turn id `turn-expected` but found `turn-actual`"
-                    .to_string(),
+                message: "当前活动轮次 ID 应为 `turn-expected`，但实际为 `turn-actual`".to_string(),
                 data: None,
             },
         };

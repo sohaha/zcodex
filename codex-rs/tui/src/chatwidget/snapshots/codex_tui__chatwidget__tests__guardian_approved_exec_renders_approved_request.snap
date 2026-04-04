@@ -1,18 +1,25 @@
 ---
-source: tui/src/chatwidget/tests/mcp_guardian.rs
+source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 112
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
-✔
-  .--------------------------------.
-  | 礼貌地从底栏飘上来。                     |
-  '--------------------------------.
+
+
+
+
+
+
+✔ 自动审查器批准 Codex 执行 rm -f /tmp/guardian-approved.sqlite（仅这次）
+
+  .------------.
+  | 轻轻漂来。 |
+  '------------.
     \
-   .---.
-  ( ^ ^ )
-  / ~~~ \\
-  Echo ★ 常见 幽灵 ·  坐立不安
-  峰值 耐心 74 · 无 · 困倦眼 · 孵化中 · 抚摸 0
+  }~   ~{
+  ( ^..^ )
+   \__/
+  Ripple ★ 常见 美西螈 · 坐立不安
 
 
 › Ask Codex to do anything

@@ -162,10 +162,7 @@ async fn thread_metadata_update_rejects_empty_git_info_patch() -> Result<()> {
     )
     .await??;
 
-    assert_eq!(
-        update_err.error.message,
-        "gitInfo must include at least one field"
-    );
+    assert_eq!(update_err.error.message, "gitInfo 至少需要包含一个字段");
 
     Ok(())
 }

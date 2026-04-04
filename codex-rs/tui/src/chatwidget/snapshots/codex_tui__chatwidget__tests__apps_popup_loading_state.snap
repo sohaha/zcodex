@@ -1,8 +1,9 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 549
 expression: before
 ---
-  Apps
-  Loading installed and available apps...
+  应 用
+  正 在 加 载 已 安 装 和 可 用 的 应 用 ...
 
-›    Loading apps...  This updates when the full list is ready.
+›    正 在 加 载 应 用 ...  完 整 列 表 准 备 好 后 ， 这 里 会 自 动 更 新 。

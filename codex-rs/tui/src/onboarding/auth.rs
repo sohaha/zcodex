@@ -104,6 +104,15 @@ pub(crate) enum SignInOption {
 }
 
 const API_KEY_DISABLED_MESSAGE: &str = "API Key 登录已禁用。";
+
+pub(super) fn unexpected_login_response_error(other: &LoginAccountResponse) -> String {
+    format!("登录响应异常：{other:?}")
+}
+
+pub(super) fn login_error_message(action: &str, err: impl std::fmt::Display) -> String {
+    format!("{action}：{err}")
+}
+
 fn onboarding_request_id() -> codex_app_server_protocol::RequestId {
     codex_app_server_protocol::RequestId::String(Uuid::new_v4().to_string())
 }
@@ -701,15 +710,14 @@ impl AuthModeWidget {
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyConfigured;
                 }
                 Ok(other) => {
-                    *error.write().unwrap() =
-                        Some(format!("意外的 account/login/start 响应：{other:?}"));
+                    *error.write().unwrap() = Some(unexpected_login_response_error(&other));
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyEntry(ApiKeyInputState {
                         value: api_key,
                         prepopulated_from_env: false,
                     });
                 }
                 Err(err) => {
-                    *error.write().unwrap() = Some(format!("保存 API Key 失败：{err}"));
+                    *error.write().unwrap() = Some(login_error_message("保存 API Key 失败", err));
                     *sign_in_state.write().unwrap() = SignInState::ApiKeyEntry(ApiKeyInputState {
                         value: api_key,
                         prepopulated_from_env: false,
@@ -767,12 +775,12 @@ impl AuthModeWidget {
                 }
                 Ok(other) => {
                     *sign_in_state.write().unwrap() = SignInState::PickMode;
-                    *error.write().unwrap() =
-                        Some(format!("意外的 account/login/start 响应：{other:?}"));
+                    *error.write().unwrap() = Some(unexpected_login_response_error(&other));
                 }
                 Err(err) => {
                     *sign_in_state.write().unwrap() = SignInState::PickMode;
-                    *error.write().unwrap() = Some(err.to_string());
+                    *error.write().unwrap() =
+                        Some(login_error_message("启动 ChatGPT 登录失败", err));
                 }
             }
             request_frame.schedule_frame();
@@ -809,7 +817,11 @@ impl AuthModeWidget {
             self.set_error(/*message*/ None);
             *self.sign_in_state.write().unwrap() = SignInState::ChatGptSuccessMessage;
         } else {
-            self.set_error(notification.error);
+            self.set_error(
+                notification
+                    .error
+                    .map(|err| login_error_message("ChatGPT 登录失败", err)),
+            );
             *self.sign_in_state.write().unwrap() = SignInState::PickMode;
         }
         self.request_frame.schedule_frame();
@@ -1122,6 +1134,22 @@ mod tests {
         assert!(
             !sym.contains("\x1B]8;;\x07injected"),
             "symbol must not contain raw control chars from URL"
+        );
+    }
+
+    #[test]
+    fn unexpected_login_response_renders_localized_error() {
+        assert_eq!(
+            unexpected_login_response_error(&LoginAccountResponse::ApiKey {}),
+            "登录响应异常：ApiKey"
+        );
+    }
+
+    #[test]
+    fn downstream_login_error_renders_localized_message() {
+        assert_eq!(
+            login_error_message("启动 ChatGPT 登录失败", "network down"),
+            "启动 ChatGPT 登录失败：network down"
         );
     }
 }

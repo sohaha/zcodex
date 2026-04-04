@@ -66,6 +66,7 @@ async fn turn_steer_requires_active_turn() -> Result<()> {
     )
     .await??;
     assert_eq!(steer_err.error.code, -32600);
+    assert_eq!(steer_err.error.message, "没有活动中的轮次可继续追加");
 
     Ok(())
 }

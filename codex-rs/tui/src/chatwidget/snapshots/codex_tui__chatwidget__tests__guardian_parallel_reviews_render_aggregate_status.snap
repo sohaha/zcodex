@@ -1,13 +1,14 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
+assertion_line: 257
 expression: normalize_snapshot_paths(rendered)
 ---
-• Reviewing 2 approval requests (0s • esc 中 断 )
+• 正 在 审 查  2 个 批 准 请 求  (0s • esc 中 断 )
   └ • rm -rf '/tmp/guardian target 1'
     • rm -rf '/tmp/guardian target 2'
-  .-----------------------------------.
-  | 像 在 水 里 一 样 轻 轻 漂 来 。                        |
-  '-----------------------------------.
+  .------------.
+  | 轻 轻 漂 来 。  |
+  '------------.
     \
   }~   ~{
   ( ^..^ )

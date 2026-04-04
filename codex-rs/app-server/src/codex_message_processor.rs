@@ -506,7 +506,7 @@ impl CodexMessageProcessor {
         // Resolve the core conversation handle from a v2 thread id string.
         let thread_id = ThreadId::from_string(thread_id).map_err(|err| JSONRPCErrorError {
             code: INVALID_REQUEST_ERROR_CODE,
-            message: format!("invalid thread id: {err}"),
+            message: format!("无效线程 ID：{err}"),
             data: None,
         })?;
 
@@ -516,7 +516,7 @@ impl CodexMessageProcessor {
             .await
             .map_err(|_| JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: format!("thread not found: {thread_id}"),
+                message: format!("未找到线程：{thread_id}"),
                 data: None,
             })?;
 
@@ -572,7 +572,7 @@ impl CodexMessageProcessor {
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to reload config: {err}"),
+                message: format!("重新加载配置失败：{err}"),
                 data: None,
             })?;
         apply_runtime_feature_enablement(&mut config, &self.current_runtime_feature_enablement());
@@ -642,14 +642,14 @@ impl CodexMessageProcessor {
             ApiReviewTarget::BaseBranch { branch } => {
                 let branch = branch.trim().to_string();
                 if branch.is_empty() {
-                    return Err(invalid_request("branch must not be empty".to_string()));
+                    return Err(invalid_request("branch 不能为空".to_string()));
                 }
                 ApiReviewTarget::BaseBranch { branch }
             }
             ApiReviewTarget::Commit { sha, title } => {
                 let sha = sha.trim().to_string();
                 if sha.is_empty() {
-                    return Err(invalid_request("sha must not be empty".to_string()));
+                    return Err(invalid_request("sha 不能为空".to_string()));
                 }
                 let title = title
                     .map(|t| t.trim().to_string())
@@ -659,9 +659,7 @@ impl CodexMessageProcessor {
             ApiReviewTarget::Custom { instructions } => {
                 let trimmed = instructions.trim().to_string();
                 if trimmed.is_empty() {
-                    return Err(invalid_request(
-                        "instructions must not be empty".to_string(),
-                    ));
+                    return Err(invalid_request("instructions 不能为空".to_string()));
                 }
                 ApiReviewTarget::Custom {
                     instructions: trimmed,
@@ -1015,7 +1013,7 @@ impl CodexMessageProcessor {
     fn external_auth_active_error(&self) -> JSONRPCErrorError {
         JSONRPCErrorError {
             code: INVALID_REQUEST_ERROR_CODE,
-            message: "External auth is active. Use account/login/start (chatgptAuthTokens) to update it or account/logout to clear it."
+            message: "当前已启用外部认证。请使用 account/login/start（chatgptAuthTokens）更新，或使用 account/logout 清除。"
                 .to_string(),
             data: None,
         }
@@ -1035,7 +1033,7 @@ impl CodexMessageProcessor {
         ) {
             return Err(JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "API key login is disabled. Use ChatGPT login instead.".to_string(),
+                message: "API Key 登录已禁用。请改用 ChatGPT 登录。".to_string(),
                 data: None,
             });
         }
@@ -1059,7 +1057,7 @@ impl CodexMessageProcessor {
             }
             Err(err) => Err(JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to save api key: {err}"),
+                message: format!("保存 API Key 失败：{err}"),
                 data: None,
             }),
         }
@@ -1111,7 +1109,7 @@ impl CodexMessageProcessor {
         if matches!(config.forced_login_method, Some(ForcedLoginMethod::Api)) {
             return Err(JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "ChatGPT login is disabled. Use API key login instead.".to_string(),
+                message: "ChatGPT 登录已禁用。请改用 API Key 登录。".to_string(),
                 data: None,
             });
         }
@@ -1144,9 +1142,9 @@ impl CodexMessageProcessor {
                 INTERNAL_ERROR_CODE
             },
             message: if is_not_found {
-                err.to_string()
+                format!("请求设备码失败：{err}")
             } else {
-                format!("failed to request device code: {err}")
+                format!("请求设备码失败：{err}")
             },
             data: None,
         }
@@ -1188,10 +1186,10 @@ impl CodexMessageProcessor {
                         .await
                         {
                             Ok(Ok(())) => (true, None),
-                            Ok(Err(err)) => (false, Some(format!("Login server error: {err}"))),
+                            Ok(Err(err)) => (false, Some(format!("登录服务错误：{err}"))),
                             Err(_elapsed) => {
                                 shutdown_handle.shutdown();
-                                (false, Some("Login timed out".to_string()))
+                                (false, Some("登录超时".to_string()))
                             }
                         };
 
@@ -1249,7 +1247,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     let error = JSONRPCErrorError {
                         code: INTERNAL_ERROR_CODE,
-                        message: format!("failed to start login server: {err}"),
+                        message: format!("启动登录服务失败：{err}"),
                         data: None,
                     };
                     self.outgoing.send_error(request_id, error).await;
@@ -1299,12 +1297,12 @@ impl CodexMessageProcessor {
                     tokio::spawn(async move {
                         let (success, error_msg) = tokio::select! {
                             _ = cancel.cancelled() => {
-                                (false, Some("Login was not completed".to_string()))
+                                (false, Some("登录未完成".to_string()))
                             }
                             r = complete_device_code_login(opts, device_code) => {
                                 match r {
                                     Ok(()) => (true, None),
-                                    Err(err) => (false, Some(err.to_string())),
+                                    Err(err) => (false, Some(format!("设备码登录失败：{err}"))),
                                 }
                             }
                         };
@@ -1396,7 +1394,7 @@ impl CodexMessageProcessor {
             Err(_) => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("invalid login id: {login_id}"),
+                    message: format!("无效的登录 ID：{login_id}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -1417,8 +1415,7 @@ impl CodexMessageProcessor {
         ) {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "External ChatGPT auth is disabled. Use API key login instead."
-                    .to_string(),
+                message: "外部 ChatGPT 认证已禁用。请改用 API Key 登录。".to_string(),
                 data: None,
             };
             self.outgoing.send_error(request_id, error).await;
@@ -1439,7 +1436,7 @@ impl CodexMessageProcessor {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
                 message: format!(
-                    "External auth must use workspace {expected_workspace}, but received {chatgpt_account_id:?}."
+                    "外部认证必须使用工作区 {expected_workspace}，但收到的是 {chatgpt_account_id:?}。"
                 ),
                 data: None,
             };
@@ -1455,7 +1452,7 @@ impl CodexMessageProcessor {
         ) {
             let error = JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to set external auth: {err}"),
+                message: format!("设置外部认证失败：{err}"),
                 data: None,
             };
             self.outgoing.send_error(request_id, error).await;
@@ -1506,7 +1503,7 @@ impl CodexMessageProcessor {
         if let Err(err) = self.auth_manager.logout() {
             return Err(JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("logout failed: {err}"),
+                message: format!("退出登录失败：{err}"),
                 data: None,
             });
         }
@@ -1647,9 +1644,7 @@ impl CodexMessageProcessor {
                         _ => {
                             let error = JSONRPCErrorError {
                                 code: INVALID_REQUEST_ERROR_CODE,
-                                message:
-                                    "email and plan type are required for chatgpt authentication"
-                                        .to_string(),
+                                message: "ChatGPT 认证需要提供邮箱和订阅方案信息".to_string(),
                                 data: None,
                             };
                             self.outgoing.send_error(request_id, error).await;
@@ -1700,7 +1695,7 @@ impl CodexMessageProcessor {
         let Some(auth) = self.auth_manager.auth().await else {
             return Err(JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "codex account authentication required to read rate limits".to_string(),
+                message: "读取速率限制需要 Codex 账号认证".to_string(),
                 data: None,
             });
         };
@@ -1708,7 +1703,7 @@ impl CodexMessageProcessor {
         if !auth.is_chatgpt_auth() {
             return Err(JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "chatgpt authentication required to read rate limits".to_string(),
+                message: "读取速率限制需要 ChatGPT 认证".to_string(),
                 data: None,
             });
         }
@@ -1716,7 +1711,7 @@ impl CodexMessageProcessor {
         let client = BackendClient::from_auth(self.config.chatgpt_base_url.clone(), &auth)
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to construct backend client: {err}"),
+                message: format!("构建后端客户端失败：{err}"),
                 data: None,
             })?;
 
@@ -1725,13 +1720,13 @@ impl CodexMessageProcessor {
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to fetch codex rate limits: {err}"),
+                message: format!("获取 Codex 速率限制失败：{err}"),
                 data: None,
             })?;
         if snapshots.is_empty() {
             return Err(JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: "failed to fetch codex rate limits: no snapshots returned".to_string(),
+                message: "获取 Codex 速率限制失败：未返回任何快照".to_string(),
                 data: None,
             });
         }
@@ -1769,7 +1764,7 @@ impl CodexMessageProcessor {
         if params.command.is_empty() {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "command must not be empty".to_string(),
+                message: "命令不能为空".to_string(),
                 data: None,
             };
             self.outgoing.send_error(request, error).await;
@@ -1795,7 +1790,7 @@ impl CodexMessageProcessor {
         if size.is_some() && !tty {
             let error = JSONRPCErrorError {
                 code: INVALID_PARAMS_ERROR_CODE,
-                message: "command/exec size requires tty: true".to_string(),
+                message: "`command/exec` 在设置 size 时要求 tty 为 true".to_string(),
                 data: None,
             };
             self.outgoing.send_error(request, error).await;
@@ -1805,7 +1800,7 @@ impl CodexMessageProcessor {
         if disable_output_cap && output_bytes_cap.is_some() {
             let error = JSONRPCErrorError {
                 code: INVALID_PARAMS_ERROR_CODE,
-                message: "command/exec cannot set both outputBytesCap and disableOutputCap"
+                message: "`command/exec` 不能同时设置 outputBytesCap 和 disableOutputCap"
                     .to_string(),
                 data: None,
             };
@@ -1816,7 +1811,7 @@ impl CodexMessageProcessor {
         if disable_timeout && timeout_ms.is_some() {
             let error = JSONRPCErrorError {
                 code: INVALID_PARAMS_ERROR_CODE,
-                message: "command/exec cannot set both timeoutMs and disableTimeout".to_string(),
+                message: "`command/exec` 不能同时设置 timeoutMs 和 disableTimeout".to_string(),
                 data: None,
             };
             self.outgoing.send_error(request, error).await;
@@ -1847,7 +1842,7 @@ impl CodexMessageProcessor {
                     let error = JSONRPCErrorError {
                         code: INVALID_PARAMS_ERROR_CODE,
                         message: format!(
-                            "command/exec timeoutMs must be non-negative, got {timeout_ms}"
+                            "`command/exec` 的 timeoutMs 必须为非负数，当前为 {timeout_ms}"
                         ),
                         data: None,
                     };
@@ -1874,7 +1869,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     let error = JSONRPCErrorError {
                         code: INTERNAL_ERROR_CODE,
-                        message: format!("failed to start managed network proxy: {err}"),
+                        message: format!("启动托管网络代理失败：{err}"),
                         data: None,
                     };
                     self.outgoing.send_error(request, error).await;
@@ -1939,7 +1934,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid sandbox policy: {err}"),
+                        message: format!("无效的沙箱策略：{err}"),
                         data: None,
                     };
                     self.outgoing.send_error(request, error).await;
@@ -1999,7 +1994,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("exec failed: {err}"),
+                    message: format!("执行失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request, error).await;
@@ -2232,7 +2227,7 @@ impl CodexMessageProcessor {
             ) {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to persist trusted project state: {err}"),
+                    message: format!("持久化受信任项目状态失败：{err}"),
                     data: None,
                 };
                 listener_task_context
@@ -2415,7 +2410,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("error creating thread: {err}"),
+                    message: format!("创建线程失败：{err}"),
                     data: None,
                 };
                 listener_task_context
@@ -2470,7 +2465,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("invalid thread id: {err}"),
+                    message: format!("无效线程 ID：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -2485,7 +2480,7 @@ impl CodexMessageProcessor {
                 Ok(None) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("no rollout found for thread id {thread_id}"),
+                        message: format!("未找到线程 {thread_id} 的 rollout"),
                         data: None,
                     };
                     self.outgoing.send_error(request_id, error).await;
@@ -2494,7 +2489,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("failed to locate thread id {thread_id}: {err}"),
+                        message: format!("定位线程 ID {thread_id} 失败：{err}"),
                         data: None,
                     };
                     self.outgoing.send_error(request_id, error).await;
@@ -2598,17 +2593,14 @@ impl CodexMessageProcessor {
         let thread_id = match ThreadId::from_string(&thread_id) {
             Ok(id) => id,
             Err(err) => {
-                self.send_invalid_request_error(request_id, format!("invalid thread id: {err}"))
+                self.send_invalid_request_error(request_id, format!("无效线程 ID：{err}"))
                     .await;
                 return;
             }
         };
         let Some(name) = codex_core::util::normalize_thread_name(&name) else {
-            self.send_invalid_request_error(
-                request_id,
-                "thread name must not be empty".to_string(),
-            )
-            .await;
+            self.send_invalid_request_error(request_id, "线程名称不能为空".to_string())
+                .await;
             return;
         };
 
@@ -2636,7 +2628,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     self.send_invalid_request_error(
                         request_id,
-                        format!("failed to locate thread id {thread_id}: {err}"),
+                        format!("定位线程 ID {thread_id} 失败：{err}"),
                     )
                     .await;
                     return;
@@ -2644,7 +2636,7 @@ impl CodexMessageProcessor {
             };
 
         if !thread_exists {
-            self.send_invalid_request_error(request_id, format!("thread not found: {thread_id}"))
+            self.send_invalid_request_error(request_id, format!("未找到线程：{thread_id}"))
                 .await;
             return;
         }
@@ -2682,7 +2674,7 @@ impl CodexMessageProcessor {
         let thread_uuid = match ThreadId::from_string(&thread_id) {
             Ok(id) => id,
             Err(err) => {
-                self.send_invalid_request_error(request_id, format!("invalid thread id: {err}"))
+                self.send_invalid_request_error(request_id, format!("无效线程 ID：{err}"))
                     .await;
                 return;
             }
@@ -2694,20 +2686,14 @@ impl CodexMessageProcessor {
             origin_url,
         }) = git_info
         else {
-            self.send_invalid_request_error(
-                request_id,
-                "gitInfo must include at least one field".to_string(),
-            )
-            .await;
+            self.send_invalid_request_error(request_id, "gitInfo 至少需要包含一个字段".to_string())
+                .await;
             return;
         };
 
         if sha.is_none() && branch.is_none() && origin_url.is_none() {
-            self.send_invalid_request_error(
-                request_id,
-                "gitInfo must include at least one field".to_string(),
-            )
-            .await;
+            self.send_invalid_request_error(request_id, "gitInfo 至少需要包含一个字段".to_string())
+                .await;
             return;
         }
 
@@ -2737,11 +2723,8 @@ impl CodexMessageProcessor {
             Some(Some(sha)) => {
                 let sha = sha.trim().to_string();
                 if sha.is_empty() {
-                    self.send_invalid_request_error(
-                        request_id,
-                        "gitInfo.sha must not be empty".to_string(),
-                    )
-                    .await;
+                    self.send_invalid_request_error(request_id, "gitInfo.sha 不能为空".to_string())
+                        .await;
                     return;
                 }
                 Some(Some(sha))
@@ -2755,7 +2738,7 @@ impl CodexMessageProcessor {
                 if branch.is_empty() {
                     self.send_invalid_request_error(
                         request_id,
-                        "gitInfo.branch must not be empty".to_string(),
+                        "gitInfo.branch 不能为空".to_string(),
                     )
                     .await;
                     return;
@@ -2771,7 +2754,7 @@ impl CodexMessageProcessor {
                 if origin_url.is_empty() {
                     self.send_invalid_request_error(
                         request_id,
-                        "gitInfo.originUrl must not be empty".to_string(),
+                        "gitInfo.originUrl 不能为空".to_string(),
                     )
                     .await;
                     return;
@@ -2930,7 +2913,7 @@ impl CodexMessageProcessor {
                 {
                     Ok(Some(path)) => path,
                     Ok(None) => {
-                        return Err(invalid_request(format!("thread not found: {thread_uuid}")));
+                        return Err(invalid_request(format!("未找到线程：{thread_uuid}")));
                     }
                     Err(err) => {
                         return Err(internal_error(format!(
@@ -2978,7 +2961,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("invalid thread id: {err}"),
+                    message: format!("无效线程 ID：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -2996,7 +2979,7 @@ impl CodexMessageProcessor {
             Ok(None) => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("no archived rollout found for thread id {thread_id}"),
+                    message: format!("未找到线程 {thread_id} 的归档 rollout"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -3005,7 +2988,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("failed to locate archived thread id {thread_id}: {err}"),
+                    message: format!("定位归档线程 ID {thread_id} 失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -3050,7 +3033,7 @@ impl CodexMessageProcessor {
             let Some(file_name) = canonical_rollout_path.file_name().map(OsStr::to_owned) else {
                 return Err(JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("rollout path `{rollout_path_display}` missing file name"),
+                    message: format!("rollout 路径 `{rollout_path_display}` 缺少文件名"),
                     data: None,
                 });
             };
@@ -3084,14 +3067,14 @@ impl CodexMessageProcessor {
                 .await
                 .map_err(|err| JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to unarchive thread: {err}"),
+                    message: format!("取消归档线程失败：{err}"),
                     data: None,
                 })?;
             tokio::fs::rename(&canonical_rollout_path, &restored_path)
                 .await
                 .map_err(|err| JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to unarchive thread: {err}"),
+                    message: format!("取消归档线程失败：{err}"),
                     data: None,
                 })?;
             tokio::task::spawn_blocking({
@@ -3108,12 +3091,12 @@ impl CodexMessageProcessor {
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to update unarchived thread timestamp: {err}"),
+                message: format!("更新已取消归档线程的时间戳失败：{err}"),
                 data: None,
             })?
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to update unarchived thread timestamp: {err}"),
+                message: format!("更新已取消归档线程的时间戳失败：{err}"),
                 data: None,
             })?;
             if let Some(ctx) = state_db_ctx {
@@ -3126,7 +3109,7 @@ impl CodexMessageProcessor {
                     .await
                     .map_err(|err| JSONRPCErrorError {
                         code: INTERNAL_ERROR_CODE,
-                        message: format!("failed to read unarchived thread: {err}"),
+                        message: format!("读取已取消归档的线程失败：{err}"),
                         data: None,
                     })?;
             Ok(summary_to_thread(summary))
@@ -3167,7 +3150,7 @@ impl CodexMessageProcessor {
         } = params;
 
         if num_turns == 0 {
-            self.send_invalid_request_error(request_id, "numTurns must be >= 1".to_string())
+            self.send_invalid_request_error(request_id, "numTurns 必须大于等于 1".to_string())
                 .await;
             return;
         }
@@ -3299,7 +3282,7 @@ impl CodexMessageProcessor {
                     request_id,
                     JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: "command must not be empty".to_string(),
+                        message: "命令不能为空".to_string(),
                         data: None,
                     },
                 )
@@ -3451,7 +3434,7 @@ impl CodexMessageProcessor {
                     Err(_) => {
                         let error = JSONRPCErrorError {
                             code: INVALID_REQUEST_ERROR_CODE,
-                            message: format!("invalid cursor: {cursor}"),
+                            message: format!("无效的 cursor：{cursor}"),
                             data: None,
                         };
                         self.outgoing.send_error(request_id, error).await;
@@ -3487,7 +3470,7 @@ impl CodexMessageProcessor {
         let thread_uuid = match ThreadId::from_string(&thread_id) {
             Ok(id) => id,
             Err(err) => {
-                self.send_invalid_request_error(request_id, format!("invalid thread id: {err}"))
+                self.send_invalid_request_error(request_id, format!("无效线程 ID：{err}"))
                     .await;
                 return;
             }
@@ -3890,7 +3873,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("error resuming thread: {err}"),
+                    message: format!("恢复线程失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -4089,7 +4072,7 @@ impl CodexMessageProcessor {
         history: &[ResponseItem],
     ) -> Option<InitialHistory> {
         if history.is_empty() {
-            self.send_invalid_request_error(request_id, "history must not be empty".to_string())
+            self.send_invalid_request_error(request_id, "history 不能为空".to_string())
                 .await;
             return None;
         }
@@ -4116,7 +4099,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid thread id: {err}"),
+                        message: format!("无效线程 ID：{err}"),
                         data: None,
                     };
                     self.outgoing.send_error(request_id, error).await;
@@ -4246,11 +4229,8 @@ impl CodexMessageProcessor {
             let existing_thread_id = match ThreadId::from_string(&thread_id) {
                 Ok(id) => id,
                 Err(err) => {
-                    self.send_invalid_request_error(
-                        request_id,
-                        format!("invalid thread id: {err}"),
-                    )
-                    .await;
+                    self.send_invalid_request_error(request_id, format!("无效线程 ID：{err}"))
+                        .await;
                     return;
                 }
             };
@@ -4606,7 +4586,7 @@ impl CodexMessageProcessor {
             Some(cursor_str) => {
                 Some(parse_cursor(cursor_str).ok_or_else(|| JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("invalid cursor: {cursor_str}"),
+                    message: format!("无效的 cursor：{cursor_str}"),
                     data: None,
                 })?)
             }
@@ -4648,7 +4628,7 @@ impl CodexMessageProcessor {
                 .await
                 .map_err(|err| JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to list threads: {err}"),
+                    message: format!("列出线程失败：{err}"),
                     data: None,
                 })?
             } else {
@@ -4665,7 +4645,7 @@ impl CodexMessageProcessor {
                 .await
                 .map_err(|err| JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to list threads: {err}"),
+                    message: format!("列出线程失败：{err}"),
                     data: None,
                 })?
             };
@@ -4756,7 +4736,7 @@ impl CodexMessageProcessor {
                 Err(_) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid cursor: {cursor}"),
+                        message: format!("无效的 cursor：{cursor}"),
                         data: None,
                     };
                     outgoing.send_error(request_id, error).await;
@@ -4769,7 +4749,7 @@ impl CodexMessageProcessor {
         if start > total {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: format!("cursor {start} exceeds total models {total}"),
+                message: format!("cursor {start} 超出模型总数 {total}"),
                 data: None,
             };
             outgoing.send_error(request_id, error).await;
@@ -4880,11 +4860,8 @@ impl CodexMessageProcessor {
             Some(cursor) => match cursor.parse::<usize>() {
                 Ok(idx) => idx,
                 Err(_) => {
-                    self.send_invalid_request_error(
-                        request_id,
-                        format!("invalid cursor: {cursor}"),
-                    )
-                    .await;
+                    self.send_invalid_request_error(request_id, format!("无效的 cursor：{cursor}"))
+                        .await;
                     return;
                 }
             },
@@ -4954,7 +4931,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 return Err(JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to serialize MCP servers: {err}"),
+                    message: format!("序列化 MCP 服务器失败：{err}"),
                     data: None,
                 });
             }
@@ -5012,7 +4989,7 @@ impl CodexMessageProcessor {
         let Some(server) = configured_servers.get(&name) else {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: format!("No MCP server named '{name}' found."),
+                message: format!("未找到名为 '{name}' 的 MCP 服务器。"),
                 data: None,
             };
             self.outgoing.send_error(request_id, error).await;
@@ -5029,8 +5006,7 @@ impl CodexMessageProcessor {
             _ => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: "OAuth login is only supported for streamable HTTP servers."
-                        .to_string(),
+                    message: "OAuth 登录仅支持 streamable HTTP 服务器。".to_string(),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -5068,7 +5044,7 @@ impl CodexMessageProcessor {
                 tokio::spawn(async move {
                     let (success, error) = match handle.wait().await {
                         Ok(()) => (true, None),
-                        Err(err) => (false, Some(err.to_string())),
+                        Err(err) => (false, Some(format!("MCP OAuth 登录失败：{err}"))),
                     };
 
                     let notification = ServerNotification::McpServerOauthLoginCompleted(
@@ -5087,7 +5063,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to login to MCP server '{name}': {err}"),
+                    message: format!("登录 MCP 服务器 '{name}' 失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -5156,7 +5132,7 @@ impl CodexMessageProcessor {
                 Err(_) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid cursor: {cursor}"),
+                        message: format!("无效的 cursor：{cursor}"),
                         data: None,
                     };
                     outgoing.send_error(request_id, error).await;
@@ -5169,7 +5145,7 @@ impl CodexMessageProcessor {
         if start > total {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: format!("cursor {start} exceeds total MCP servers {total}"),
+                message: format!("cursor {start} 超出 MCP 服务器总数 {total}"),
                 data: None,
             };
             outgoing.send_error(request_id, error).await;
@@ -5304,7 +5280,7 @@ impl CodexMessageProcessor {
         let thread_id = match ThreadId::from_string(&params.thread_id) {
             Ok(id) => id,
             Err(err) => {
-                self.send_invalid_request_error(request_id, format!("invalid thread id: {err}"))
+                self.send_invalid_request_error(request_id, format!("无效线程 ID：{err}"))
                     .await;
                 return;
             }
@@ -5516,7 +5492,7 @@ impl CodexMessageProcessor {
 
         result.map_err(|err| JSONRPCErrorError {
             code: INTERNAL_ERROR_CODE,
-            message: format!("failed to archive thread: {err}"),
+            message: format!("归档线程失败：{err}"),
             data: None,
         })
     }
@@ -5582,7 +5558,7 @@ impl CodexMessageProcessor {
                 Err(_) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid cursor: {cursor}"),
+                        message: format!("无效的 cursor：{cursor}"),
                         data: None,
                     };
                     outgoing.send_error(request_id, error).await;
@@ -5650,7 +5626,7 @@ impl CodexMessageProcessor {
                 Ok(None) => {
                     let error = JSONRPCErrorError {
                         code: INTERNAL_ERROR_CODE,
-                        message: "failed to load app lists".to_string(),
+                        message: "加载应用列表失败".to_string(),
                         data: None,
                     };
                     outgoing.send_error(request_id, error).await;
@@ -5660,9 +5636,7 @@ impl CodexMessageProcessor {
                     let timeout_seconds = APP_LIST_LOAD_TIMEOUT.as_secs();
                     let error = JSONRPCErrorError {
                         code: INTERNAL_ERROR_CODE,
-                        message: format!(
-                            "timed out waiting for app lists after {timeout_seconds} seconds"
-                        ),
+                        message: format!("等待应用列表超时，已等待 {timeout_seconds} 秒"),
                         data: None,
                     };
                     outgoing.send_error(request_id, error).await;
@@ -6116,7 +6090,7 @@ impl CodexMessageProcessor {
             _ => {
                 let error = JSONRPCErrorError {
                     code: INVALID_PARAMS_ERROR_CODE,
-                    message: "skills/config/write requires exactly one of path or name".to_string(),
+                    message: "skills/config/write 必须且只能提供 path 或 name 其中之一".to_string(),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -6145,7 +6119,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to update skill settings: {err}"),
+                    message: format!("更新技能设置失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -6507,7 +6481,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to start turn: {err}"),
+                    message: format!("启动轮次失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -6524,7 +6498,7 @@ impl CodexMessageProcessor {
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to set app server client name: {err}"),
+                message: format!("设置 app server 客户端名称失败：{err}"),
                 data: None,
             })
     }
@@ -6539,11 +6513,8 @@ impl CodexMessageProcessor {
         };
 
         if params.expected_turn_id.is_empty() {
-            self.send_invalid_request_error(
-                request_id,
-                "expectedTurnId must not be empty".to_string(),
-            )
-            .await;
+            self.send_invalid_request_error(request_id, "expectedTurnId 不能为空".to_string())
+                .await;
             return;
         }
         self.outgoing
@@ -6572,21 +6543,21 @@ impl CodexMessageProcessor {
                 let (code, message, data) = match err {
                     SteerInputError::NoActiveTurn(_) => (
                         INVALID_REQUEST_ERROR_CODE,
-                        "no active turn to steer".to_string(),
+                        "没有活动中的轮次可继续追加".to_string(),
                         None,
                     ),
                     SteerInputError::ExpectedTurnMismatch { expected, actual } => (
                         INVALID_REQUEST_ERROR_CODE,
-                        format!("expected active turn id `{expected}` but found `{actual}`"),
+                        format!("当前活动轮次 ID 应为 `{expected}`，但实际为 `{actual}`"),
                         None,
                     ),
                     SteerInputError::ActiveTurnNotSteerable { turn_kind } => {
                         let message = match turn_kind {
                             codex_protocol::protocol::NonSteerableTurnKind::Review => {
-                                "cannot steer a review turn".to_string()
+                                "无法在审查轮次中继续追加".to_string()
                             }
                             codex_protocol::protocol::NonSteerableTurnKind::Compact => {
-                                "cannot steer a compact turn".to_string()
+                                "无法在压缩轮次中继续追加".to_string()
                             }
                         };
                         let error = TurnError {
@@ -6610,11 +6581,9 @@ impl CodexMessageProcessor {
                         };
                         (INVALID_REQUEST_ERROR_CODE, message, data)
                     }
-                    SteerInputError::EmptyInput => (
-                        INVALID_REQUEST_ERROR_CODE,
-                        "input must not be empty".to_string(),
-                        None,
-                    ),
+                    SteerInputError::EmptyInput => {
+                        (INVALID_REQUEST_ERROR_CODE, "输入不能为空".to_string(), None)
+                    }
                 };
                 let error = JSONRPCErrorError {
                     code,
@@ -6877,7 +6846,7 @@ impl CodexMessageProcessor {
             }
             Err(err) => Err(JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to start review: {err}"),
+                message: format!("启动审查失败：{err}"),
                 data: None,
             }),
         }
@@ -6898,12 +6867,12 @@ impl CodexMessageProcessor {
                 .await
                 .map_err(|err| JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to locate thread id {parent_thread_id}: {err}"),
+                    message: format!("定位线程 ID {parent_thread_id} 失败：{err}"),
                     data: None,
                 })?
                 .ok_or_else(|| JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("no rollout found for thread id {parent_thread_id}"),
+                    message: format!("未找到线程 {parent_thread_id} 的 rollout"),
                     data: None,
                 })?
         };
@@ -6930,7 +6899,7 @@ impl CodexMessageProcessor {
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("error creating detached review thread: {err}"),
+                message: format!("创建独立审查线程失败：{err}"),
                 data: None,
             })?;
 
@@ -6990,7 +6959,7 @@ impl CodexMessageProcessor {
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("failed to start detached review turn: {err}"),
+                message: format!("启动独立审查轮次失败：{err}"),
                 data: None,
             })?;
 
@@ -7134,7 +7103,7 @@ impl CodexMessageProcessor {
             Err(_) => {
                 return Err(JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("thread not found: {conversation_id}"),
+                    message: format!("未找到线程：{conversation_id}"),
                     data: None,
                 });
             }
@@ -7321,7 +7290,7 @@ impl CodexMessageProcessor {
             None => {
                 let error = JSONRPCErrorError {
                     code: INVALID_REQUEST_ERROR_CODE,
-                    message: format!("failed to compute git diff to remote for cwd: {cwd:?}"),
+                    message: format!("为 cwd 计算到远端的 git diff 失败：{cwd:?}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -7382,7 +7351,7 @@ impl CodexMessageProcessor {
         if session_id.is_empty() {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "sessionId must not be empty".to_string(),
+                message: "sessionId 不能为空".to_string(),
                 data: None,
             };
             self.outgoing.send_error(request_id, error).await;
@@ -7402,7 +7371,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to start fuzzy file search session: {err}"),
+                    message: format!("启动模糊文件搜索会话失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -7428,7 +7397,7 @@ impl CodexMessageProcessor {
         if !found {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: format!("fuzzy file search session not found: {session_id}"),
+                message: format!("未找到模糊文件搜索会话：{session_id}"),
                 data: None,
             };
             self.outgoing.send_error(request_id, error).await;
@@ -7460,7 +7429,7 @@ impl CodexMessageProcessor {
         if !self.config.feedback_enabled {
             let error = JSONRPCErrorError {
                 code: INVALID_REQUEST_ERROR_CODE,
-                message: "sending feedback is disabled by configuration".to_string(),
+                message: "当前配置已禁用发送反馈".to_string(),
                 data: None,
             };
             self.outgoing.send_error(request_id, error).await;
@@ -7481,7 +7450,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
-                        message: format!("invalid thread id: {err}"),
+                        message: format!("无效线程 ID：{err}"),
                         data: None,
                     };
                     self.outgoing.send_error(request_id, error).await;
@@ -7557,7 +7526,7 @@ impl CodexMessageProcessor {
             Err(join_err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to upload feedback: {join_err}"),
+                    message: format!("上传反馈失败：{join_err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -7573,7 +7542,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("failed to upload feedback: {err}"),
+                    message: format!("上传反馈失败：{err}"),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -8163,7 +8132,7 @@ fn config_load_error(err: &std::io::Error) -> JSONRPCErrorError {
 
     JSONRPCErrorError {
         code: INVALID_REQUEST_ERROR_CODE,
-        message: format!("failed to load configuration: {err}"),
+        message: format!("加载配置失败：{err}"),
         data,
     }
 }
@@ -8173,19 +8142,16 @@ fn validate_dynamic_tools(tools: &[ApiDynamicToolSpec]) -> Result<(), String> {
     for tool in tools {
         let name = tool.name.trim();
         if name.is_empty() {
-            return Err("dynamic tool name must not be empty".to_string());
+            return Err("动态工具名不能为空".to_string());
         }
         if name != tool.name {
-            return Err(format!(
-                "dynamic tool name has leading/trailing whitespace: {}",
-                tool.name
-            ));
+            return Err(format!("动态工具名首尾不能包含空白：{}", tool.name));
         }
         if name == "mcp" || name.starts_with("mcp__") {
-            return Err(format!("dynamic tool name is reserved: {name}"));
+            return Err(format!("动态工具名是保留名称：{name}"));
         }
         if !seen.insert(name.to_string()) {
-            return Err(format!("duplicate dynamic tool name: {name}"));
+            return Err(format!("动态工具名重复：{name}"));
         }
 
         if let Err(err) = codex_tools::parse_tool_input_schema(&tool.input_schema) {

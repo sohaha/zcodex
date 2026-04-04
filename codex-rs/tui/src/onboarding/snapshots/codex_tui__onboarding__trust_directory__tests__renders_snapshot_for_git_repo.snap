@@ -1,5 +1,6 @@
 ---
 source: tui/src/onboarding/trust_directory.rs
+assertion_line: 225
 expression: terminal.backend()
 ---
 > 你当前位于 /workspace/project
@@ -9,4 +10,4 @@ expression: terminal.backend()
 › 1. 是，继续                                                         
   2. 否，退出
 
-  Press enter 继续
+  按 enter 继续

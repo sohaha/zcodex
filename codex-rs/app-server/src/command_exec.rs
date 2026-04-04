@@ -219,7 +219,7 @@ impl CommandExecManager {
                     }
                     Err(err) => {
                         outgoing
-                            .send_error(request_id, internal_error(format!("exec failed: {err}")))
+                            .send_error(request_id, internal_error(format!("命令执行失败：{err}")))
                             .await;
                     }
                 }
@@ -824,7 +824,7 @@ mod tests {
             panic!("expected execution failure to be reported as an error");
         };
         assert_eq!(error.id, request_id.request_id);
-        assert!(error.error.message.starts_with("exec failed:"));
+        assert!(error.error.message.starts_with("命令执行失败："));
     }
 
     #[cfg(not(target_os = "windows"))]

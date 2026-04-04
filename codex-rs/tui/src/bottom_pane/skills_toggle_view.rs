@@ -349,7 +349,7 @@ impl Renderable for SkillsToggleView {
                 &rows,
                 &self.state,
                 render_area.height as usize,
-                "no matches",
+                "没有匹配项",
             );
         }
 
@@ -365,7 +365,7 @@ impl Renderable for SkillsToggleView {
 
 fn skills_toggle_hint_line() -> Line<'static> {
     Line::from(vec![
-        "Press ".into(),
+        "按 ".into(),
         key_hint::plain(KeyCode::Char(' ')).into(),
         " 或 ".into(),
         key_hint::plain(KeyCode::Enter).into(),

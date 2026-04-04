@@ -871,7 +871,7 @@ async fn submit_user_message_queues_while_compaction_turn_is_running() {
     chat.handle_codex_event(Event {
         id: "steer-rejected".into(),
         msg: EventMsg::Error(ErrorEvent {
-            message: "cannot steer a compact turn".to_string(),
+            message: "无法在压缩轮次中继续追加".to_string(),
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Compact,
             }),
@@ -1388,10 +1388,7 @@ async fn plan_update_renders_history_cell() {
     let cells = drain_insert_history(&mut rx);
     assert!(!cells.is_empty(), "expected plan update cell to be sent");
     let blob = lines_to_single_string(cells.last().unwrap());
-    assert!(
-        blob.contains("Updated Plan"),
-        "missing plan header: {blob:?}"
-    );
+    assert!(blob.contains("计划已更新"), "missing plan header: {blob:?}");
     assert!(blob.contains("Explore codebase"));
     assert!(blob.contains("Implement feature"));
     assert!(blob.contains("Write tests"));

@@ -93,7 +93,7 @@ async fn plugins_popup_loading_state_snapshot() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        popup.contains("Loading available plugins..."),
+        popup.replace(' ', "").contains("正在加载可用插件..."),
         "expected /plugins to open in a loading state before the marketplace arrives, got:\n{popup}"
     );
     assert_chatwidget_snapshot!("plugins_popup_loading_state", popup);
@@ -238,7 +238,7 @@ async fn plugin_detail_popup_hides_disclosure_for_installed_plugins() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        !popup.contains("Data shared with this app is subject to the app's"),
+        !popup.contains("与此 App 共享的数据将受其"),
         "expected installed plugin details to hide the disclosure line, got:\n{popup}"
     );
     assert_chatwidget_snapshot!(
@@ -351,11 +351,13 @@ async fn plugins_popup_refreshes_installed_counts_after_install() {
     ])]);
     let before = render_loaded_plugins_popup(&mut chat, initial);
     assert!(
-        before.contains("Installed 1 of 2 available plugins."),
+        before
+            .replace(' ', "")
+            .contains("共2个可用插件，已安装1个。"),
         "expected initial installed count before refresh, got:\n{before}"
     );
     assert!(
-        before.contains("Available"),
+        before.replace(' ', "").contains("可用"),
         "expected pre-install popup copy before refresh, got:\n{before}"
     );
 
@@ -384,11 +386,16 @@ async fn plugins_popup_refreshes_installed_counts_after_install() {
 
     let after = render_bottom_popup(&chat, /*width*/ 100);
     assert!(
-        after.contains("Installed 2 of 2 available plugins."),
+        after
+            .replace(' ', "")
+            .contains("共2个可用插件，已安装2个。"),
         "expected /plugins to refresh installed counts after install, got:\n{after}"
     );
     assert!(
-        after.contains("Installed   Press Enter to view plugin details."),
+        after
+            .split_whitespace()
+            .collect::<String>()
+            .contains("已安装按Enter查看插件详情。"),
         "expected refreshed selected row copy to reflect the installed plugin state, got:\n{after}"
     );
 }
@@ -478,7 +485,7 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
         "expected popup to show the typed search query, got:\n{no_matches}"
     );
     assert!(
-        no_matches.contains("no matches"),
+        compact_rendered_text(&no_matches).contains("没有匹配项"),
         "expected popup to render the no-matches UX, got:\n{no_matches}"
     );
 
@@ -492,7 +499,7 @@ async fn plugins_popup_search_no_matches_and_backspace_restores_results() {
         "expected clearing the query to restore the plugin rows, got:\n{restored}"
     );
     assert!(
-        !restored.contains("no matches"),
+        !compact_rendered_text(&restored).contains("没有匹配项"),
         "did not expect the no-matches state after clearing the query, got:\n{restored}"
     );
 }
@@ -537,7 +544,9 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
 
     let before = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        before.contains("正在加载已安装和可用的应用..."),
+        before
+            .replace(' ', "")
+            .contains("正在加载已安装和可用的应用..."),
         "expected /apps to stay in the loading state until the full list arrives, got:\n{before}"
     );
     assert_chatwidget_snapshot!("apps_popup_loading_state", before);
@@ -582,7 +591,9 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
 
     let after = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        after.contains("共 2 个可用应用，已安装 2 个。"),
+        after
+            .replace(' ', "")
+            .contains("共2个可用应用，已安装2个。"),
         "expected refreshed apps popup snapshot, got:\n{after}"
     );
     assert!(
@@ -675,7 +686,9 @@ async fn apps_refresh_failure_keeps_existing_full_snapshot() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("共 2 个可用应用，已安装 1 个。"),
+        popup
+            .replace(' ', "")
+            .contains("共2个可用应用，已安装1个。"),
         "expected previous full snapshot to be preserved, got:\n{popup}"
     );
 }
@@ -939,7 +952,9 @@ async fn apps_popup_keeps_existing_full_snapshot_while_partial_refresh_loads() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("共 2 个可用应用，已安装 1 个。"),
+        popup
+            .replace(' ', "")
+            .contains("共2个可用应用，已安装1个。"),
         "expected popup to keep the last full snapshot while partial refresh loads, got:\n{popup}"
     );
     assert!(
@@ -982,7 +997,9 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
     chat.add_connectors_output();
     let loading_popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        loading_popup.contains("正在加载已安装和可用的应用..."),
+        loading_popup
+            .replace(' ', "")
+            .contains("正在加载已安装和可用的应用..."),
         "expected /apps to keep showing loading before the final result, got:\n{loading_popup}"
     );
 
@@ -998,11 +1015,15 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("共 1 个可用应用，已安装 1 个。"),
+        popup
+            .replace(' ', "")
+            .contains("共1个可用应用，已安装1个。"),
         "expected /apps to fall back to the installed apps snapshot, got:\n{popup}"
     );
     assert!(
-        popup.contains("已安装。按 Enter 打开应用页面"),
+        popup
+            .replace(' ', "")
+            .contains("已安装。按Enter打开应用页面"),
         "expected the fallback popup to behave like the installed apps view, got:\n{popup}"
     );
 }
@@ -1041,11 +1062,16 @@ async fn apps_popup_shows_disabled_status_for_installed_but_disabled_apps() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        popup
+            .replace(' ', "")
+            .contains("已安装·已停用。按Enter打开应用页面"),
         "expected selected app description to include disabled status, got:\n{popup}"
     );
     assert!(
-        popup.contains("enable/disable this app."),
+        popup
+            .split_whitespace()
+            .collect::<String>()
+            .contains("启用/停用这个应用。"),
         "expected selected app description to mention enable/disable action, got:\n{popup}"
     );
 }
@@ -1171,7 +1197,9 @@ async fn apps_initial_load_applies_enabled_state_from_requirements_with_user_ove
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        popup
+            .replace(' ', "")
+            .contains("已安装·已停用。按Enter打开应用页面"),
         "expected requirements-disabled connector to render as disabled, got:\n{popup}"
     );
 }
@@ -1235,7 +1263,9 @@ async fn apps_initial_load_applies_enabled_state_from_requirements_without_user_
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        popup
+            .replace(' ', "")
+            .contains("已安装·已停用。按Enter打开应用页面"),
         "expected requirements-disabled connector to render as disabled, got:\n{popup}"
     );
 }
@@ -1306,7 +1336,9 @@ async fn apps_refresh_preserves_toggled_enabled_state() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed · Disabled. Press Enter to open the app page"),
+        popup
+            .replace(' ', "")
+            .contains("已安装·已停用。按Enter打开应用页面"),
         "expected disabled status to persist after reload, got:\n{popup}"
     );
 }
@@ -1345,11 +1377,16 @@ async fn apps_popup_for_not_installed_app_uses_install_only_selected_description
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Can be installed. Press Enter to open the app page to install"),
+        popup
+            .replace(' ', "")
+            .contains("可安装。按Enter打开应用页面安装这个应用。"),
         "expected selected app description to be install-only for not-installed apps, got:\n{popup}"
     );
     assert!(
-        !popup.contains("enable/disable this app."),
+        !popup
+            .split_whitespace()
+            .collect::<String>()
+            .contains("启用/停用这个应用。"),
         "did not expect enable/disable text for not-installed apps, got:\n{popup}"
     );
 }

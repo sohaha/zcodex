@@ -1,15 +1,15 @@
 ---
 source: tui/src/chatwidget/tests/permissions.rs
+assertion_line: 83
 expression: popup
 ---
-  Enable full access?
-  When Codex runs with full access, it can edit any file on your computer and
-  run commands with network, without your approval. Exercise caution when
-  enabling full access. This significantly increases the risk of data loss,
-  leaks, or unexpected behavior.
+  启 用 完 全 访 问 权 限 ？
+  启 用 完 全 访 问 后 ， Codex
+  可 以 在 无 需 你 额 外 批 准 的 情 况 下 编 辑 电 脑 上 的 任 意 文 件 ， 并 执 行 带 网 络 权 限 的 命 令 。
+  请 谨 慎 开 启 ， 这 会 显 著 增 加 数 据 丢 失 、 泄 露 或 出 现 意 外 行 为 的 风 险 。
 
-› 1. Yes, continue anyway      Apply full access for this session
-  2. Yes, and don't ask again  Enable full access and remember this choice
-  3. Cancel                    Go back without enabling full access
+› 1. 是 ， 仍 要 继 续       本 会 话 启 用 完 全 访 问 权 限
+  2. 是 ， 并 且 不 再 询 问   启 用 完 全 访 问 并 记 住 这 个 选 择
+  3. 取 消               返 回 且 不 启 用 完 全 访 问
 
   按  enter 确 认 或 按  esc 返 回

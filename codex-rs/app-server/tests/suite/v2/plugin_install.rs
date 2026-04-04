@@ -597,7 +597,7 @@ async fn plugin_install_makes_bundled_mcp_servers_available_to_followup_requests
     assert_eq!(err.error.code, -32600);
     assert_eq!(
         err.error.message,
-        "OAuth login is only supported for streamable HTTP servers."
+        "OAuth 登录仅支持 streamable HTTP 服务器。"
     );
     Ok(())
 }

@@ -44,10 +44,7 @@ async fn get_account_rate_limits_requires_auth() -> Result<()> {
 
     assert_eq!(error.id, RequestId::Integer(request_id));
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
-    assert_eq!(
-        error.error.message,
-        "codex account authentication required to read rate limits"
-    );
+    assert_eq!(error.error.message, "读取速率限制需要 Codex 账号认证");
 
     Ok(())
 }
@@ -71,10 +68,7 @@ async fn get_account_rate_limits_requires_chatgpt_auth() -> Result<()> {
 
     assert_eq!(error.id, RequestId::Integer(request_id));
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
-    assert_eq!(
-        error.error.message,
-        "chatgpt authentication required to read rate limits"
-    );
+    assert_eq!(error.error.message, "读取速率限制需要 ChatGPT 认证");
 
     Ok(())
 }

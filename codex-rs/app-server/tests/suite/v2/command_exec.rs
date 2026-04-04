@@ -279,7 +279,7 @@ async fn command_exec_rejects_disable_output_cap_with_output_bytes_cap() -> Resu
         .await?;
     assert_eq!(
         error.error.message,
-        "command/exec cannot set both outputBytesCap and disableOutputCap"
+        "`command/exec` 不能同时设置 outputBytesCap 和 disableOutputCap"
     );
 
     Ok(())
@@ -321,7 +321,7 @@ async fn command_exec_rejects_negative_timeout_ms() -> Result<()> {
         .await?;
     assert_eq!(
         error.error.message,
-        "command/exec timeoutMs must be non-negative, got -1"
+        "`command/exec` 的 timeoutMs 必须为非负数，当前为 -1"
     );
 
     Ok(())

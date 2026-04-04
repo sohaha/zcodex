@@ -115,7 +115,7 @@ async fn entered_review_mode_uses_request_hint() {
 
     let cells = drain_insert_history(&mut rx);
     let banner = lines_to_single_string(cells.last().expect("review banner"));
-    assert_eq!(banner, ">> Code review started: feature branch <<\n");
+    assert_eq!(banner, ">> 代码评审已开始：feature branch <<\n");
     assert!(chat.is_review_mode);
 }
 
@@ -134,7 +134,7 @@ async fn entered_review_mode_defaults_to_current_changes_banner() {
 
     let cells = drain_insert_history(&mut rx);
     let banner = lines_to_single_string(cells.last().expect("review banner"));
-    assert_eq!(banner, ">> Code review started: current changes <<\n");
+    assert_eq!(banner, ">> 代码评审已开始：current changes <<\n");
     assert!(chat.is_review_mode);
 }
 
@@ -191,7 +191,7 @@ async fn steer_rejection_queues_review_follow_up_before_existing_queued_messages
     chat.handle_codex_event(Event {
         id: "steer-rejected-1".into(),
         msg: EventMsg::Error(ErrorEvent {
-            message: "cannot steer a review turn".to_string(),
+            message: "无法在审查轮次中继续追加".to_string(),
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Review,
             }),
@@ -200,7 +200,7 @@ async fn steer_rejection_queues_review_follow_up_before_existing_queued_messages
     chat.handle_codex_event(Event {
         id: "steer-rejected-2".into(),
         msg: EventMsg::Error(ErrorEvent {
-            message: "cannot steer a review turn".to_string(),
+            message: "无法在审查轮次中继续追加".to_string(),
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Review,
             }),
@@ -1423,7 +1423,7 @@ async fn review_queues_user_messages_snapshot() {
     chat.handle_codex_event(Event {
         id: "steer-rejected".into(),
         msg: EventMsg::Error(ErrorEvent {
-            message: "cannot steer a review turn".to_string(),
+            message: "无法在审查轮次中继续追加".to_string(),
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Review,
             }),

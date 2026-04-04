@@ -50,6 +50,8 @@ use std::time::Instant;
 use tokio::process::Command;
 use tokio::time::sleep;
 
+const TLDR_DAEMON_FALLBACK_MESSAGE: &str = "daemon 不可用；已回退到本地引擎";
+
 #[derive(Debug, Parser)]
 pub struct TldrCli {
     #[command(subcommand)]
@@ -533,7 +535,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
         if let Some(response) = daemon_response {
             let analysis = response
                 .analysis
-                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+                .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 analysis 数据"))?;
             (
                 "daemon",
                 Some(response.message),
@@ -547,7 +549,7 @@ async fn run_analysis_command(cmd: TldrAnalyzeCommand, kind: AnalysisKind) -> Re
             let response = engine.analyze(request)?;
             (
                 "local",
-                Some("daemon unavailable; used local engine".to_string()),
+                Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
                 response,
                 engine.config().project_root.clone(),
             )
@@ -593,9 +595,8 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
     let requested_path = cmd.path.display().to_string();
     let language = match cmd.lang {
         Some(language) => SupportedLanguage::from(language),
-        None => SupportedLanguage::from_path(&cmd.path).ok_or_else(|| {
-            anyhow::anyhow!("`--lang` is required when file extension is unsupported")
-        })?,
+        None => SupportedLanguage::from_path(&cmd.path)
+            .ok_or_else(|| anyhow::anyhow!("文件扩展名不受支持时必须显式传入 `--lang`"))?,
     };
     let config = load_tldr_config(&project_root)?;
     let request = AnalysisRequest {
@@ -624,7 +625,7 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
         if let Some(response) = daemon_response {
             let analysis = response
                 .analysis
-                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+                .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 analysis 数据"))?;
             (
                 "daemon",
                 Some(response.message),
@@ -638,7 +639,7 @@ async fn run_extract_command(cmd: TldrExtractCommand) -> Result<()> {
             let response = engine.analyze(request)?;
             (
                 "local",
-                Some("daemon unavailable; used local engine".to_string()),
+                Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
                 response,
                 engine.config().project_root.clone(),
             )
@@ -685,9 +686,7 @@ async fn run_imports_command(cmd: TldrExtractCommand) -> Result<()> {
         .lang
         .map(Into::into)
         .or_else(|| SupportedLanguage::from_path(&cmd.path))
-        .ok_or_else(|| {
-            anyhow::anyhow!("could not infer language from path {}", cmd.path.display())
-        })?;
+        .ok_or_else(|| anyhow::anyhow!("无法从路径推断语言：{}", cmd.path.display()))?;
     let project_root = cmd.project.canonicalize()?;
     let config = load_tldr_config(&project_root)?;
     let daemon_response = query_daemon_with_autostart(
@@ -703,7 +702,7 @@ async fn run_imports_command(cmd: TldrExtractCommand) -> Result<()> {
     let (source, message, response) = if let Some(response) = daemon_response {
         let imports = response
             .imports
-            .ok_or_else(|| anyhow::anyhow!("daemon response missing imports payload"))?;
+            .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 imports 数据"))?;
         ("daemon", Some(response.message), imports)
     } else {
         let engine = TldrEngine::builder(project_root.clone())
@@ -715,7 +714,7 @@ async fn run_imports_command(cmd: TldrExtractCommand) -> Result<()> {
         })?;
         (
             "local",
-            Some("daemon unavailable; used local engine".to_string()),
+            Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
             response,
         )
     };
@@ -766,7 +765,7 @@ async fn run_importers_command(cmd: TldrImportersCommand) -> Result<()> {
     let (source, message, response) = if let Some(response) = daemon_response {
         let importers = response
             .importers
-            .ok_or_else(|| anyhow::anyhow!("daemon response missing importers payload"))?;
+            .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 importers 数据"))?;
         ("daemon", Some(response.message), importers)
     } else {
         let engine = TldrEngine::builder(project_root.clone())
@@ -778,7 +777,7 @@ async fn run_importers_command(cmd: TldrImportersCommand) -> Result<()> {
         })?;
         (
             "local",
-            Some("daemon unavailable; used local engine".to_string()),
+            Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
             response,
         )
     };
@@ -859,7 +858,7 @@ async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
     let (source, message, response) = if let Some(response) = daemon_response {
         let search = response
             .search
-            .ok_or_else(|| anyhow::anyhow!("daemon response missing search payload"))?;
+            .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 search 数据"))?;
         ("daemon", Some(response.message), search)
     } else {
         let engine = TldrEngine::builder(project_root.clone())
@@ -868,7 +867,7 @@ async fn run_search_command(cmd: TldrSearchCommand) -> Result<()> {
         let response = engine.search(request)?;
         (
             "local",
-            Some("daemon unavailable; used local engine".to_string()),
+            Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
             response,
         )
     };
@@ -909,7 +908,7 @@ async fn run_diagnostics_command(cmd: TldrDiagnosticsCommand) -> Result<()> {
         .or_else(|| SupportedLanguage::from_path(&cmd.path))
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "`--lang` is required when file extension is unsupported for {}",
+                "{} 的文件扩展名不受支持时必须显式传入 `--lang`",
                 cmd.path.display()
             )
         })?;
@@ -931,7 +930,7 @@ async fn run_diagnostics_command(cmd: TldrDiagnosticsCommand) -> Result<()> {
     let (source, response) = if let Some(response) = daemon_response {
         let diagnostics = response
             .diagnostics
-            .ok_or_else(|| anyhow::anyhow!("daemon response missing diagnostics payload"))?;
+            .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 diagnostics 数据"))?;
         ("daemon", diagnostics)
     } else {
         let engine = TldrEngine::builder(project_root.clone())
@@ -989,9 +988,8 @@ async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
     let requested_path = cmd.path.display().to_string();
     let language = match cmd.lang {
         Some(language) => SupportedLanguage::from(language),
-        None => SupportedLanguage::from_path(&cmd.path).ok_or_else(|| {
-            anyhow::anyhow!("`--lang` is required when file extension is unsupported")
-        })?,
+        None => SupportedLanguage::from_path(&cmd.path)
+            .ok_or_else(|| anyhow::anyhow!("文件扩展名不受支持时必须显式传入 `--lang`"))?,
     };
     let config = load_tldr_config(&project_root)?;
     let request = AnalysisRequest {
@@ -1020,7 +1018,7 @@ async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
         if let Some(response) = daemon_response {
             let analysis = response
                 .analysis
-                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+                .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 analysis 数据"))?;
             (
                 "daemon",
                 Some(response.message),
@@ -1034,7 +1032,7 @@ async fn run_slice_command(cmd: TldrSliceCommand) -> Result<()> {
             let response = engine.analyze(request)?;
             (
                 "local",
-                Some("daemon unavailable; used local engine".to_string()),
+                Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
                 response,
                 engine.config().project_root.clone(),
             )
@@ -1085,7 +1083,7 @@ async fn run_change_impact_command(cmd: TldrChangeImpactCommand) -> Result<()> {
         .map(|path| path.display().to_string())
         .collect::<Vec<_>>();
     if requested_paths.is_empty() {
-        bail!("at least one path is required for change-impact");
+        bail!("change-impact 至少需要提供一个路径");
     }
     let request = AnalysisRequest {
         kind: AnalysisKind::ChangeImpact,
@@ -1107,7 +1105,7 @@ async fn run_change_impact_command(cmd: TldrChangeImpactCommand) -> Result<()> {
         if let Some(response) = daemon_response {
             let analysis = response
                 .analysis
-                .ok_or_else(|| anyhow::anyhow!("daemon response missing analysis payload"))?;
+                .ok_or_else(|| anyhow::anyhow!("daemon 响应缺少 analysis 数据"))?;
             (
                 "daemon",
                 Some(response.message),
@@ -1121,7 +1119,7 @@ async fn run_change_impact_command(cmd: TldrChangeImpactCommand) -> Result<()> {
             let response = engine.analyze(request)?;
             (
                 "local",
-                Some("daemon unavailable; used local engine".to_string()),
+                Some(TLDR_DAEMON_FALLBACK_MESSAGE.to_string()),
                 response,
                 engine.config().project_root.clone(),
             )
@@ -1296,21 +1294,21 @@ fn render_analysis_response_text(
     summary: &str,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("language: {}", language.as_str()),
-        format!("source: {source}"),
-        format!("support: {:?}", support.support_level),
-        format!("fallback: {}", support.fallback_strategy),
+        format!("语言：{}", language.as_str()),
+        format!("来源：{source}"),
+        format!("支持级别：{:?}", support.support_level),
+        format!("回退策略：{}", support.fallback_strategy),
     ];
     if let Some(message) = message {
-        lines.push(format!("message: {message}"));
+        lines.push(format!("消息：{message}"));
     }
     if let Some(path) = path {
-        lines.push(format!("path: {path}"));
+        lines.push(format!("路径：{path}"));
     }
     if let Some(line) = line {
-        lines.push(format!("line: {line}"));
+        lines.push(format!("行号：{line}"));
     }
-    lines.push(format!("summary: {summary}"));
+    lines.push(format!("摘要：{summary}"));
     lines
 }
 
@@ -1322,13 +1320,13 @@ fn render_imports_response_text(
     import_count: usize,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("language: {}", language.as_str()),
-        format!("source: {source}"),
-        format!("path: {path}"),
-        format!("imports: {import_count}"),
+        format!("语言：{}", language.as_str()),
+        format!("来源：{source}"),
+        format!("路径：{path}"),
+        format!("导入数：{import_count}"),
     ];
     if let Some(message) = message {
-        lines.push(format!("message: {message}"));
+        lines.push(format!("消息：{message}"));
     }
     lines
 }
@@ -1341,13 +1339,13 @@ fn render_importers_response_text(
     match_count: usize,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("language: {}", language.as_str()),
-        format!("source: {source}"),
-        format!("module: {module}"),
-        format!("matches: {match_count}"),
+        format!("语言：{}", language.as_str()),
+        format!("来源：{source}"),
+        format!("模块：{module}"),
+        format!("匹配数：{match_count}"),
     ];
     if let Some(message) = message {
-        lines.push(format!("message: {message}"));
+        lines.push(format!("消息：{message}"));
     }
     lines
 }
@@ -1355,12 +1353,12 @@ fn render_importers_response_text(
 fn render_doctor_response_text(response: &DoctorResponse) -> Vec<String> {
     let available_tools = response.tools.iter().filter(|tool| tool.available).count();
     let mut lines = vec![
-        format!("tools checked: {}", response.tools.len()),
-        format!("tools available: {available_tools}"),
-        format!("message: {}", response.message),
+        format!("已检查工具数：{}", response.tools.len()),
+        format!("可用工具数：{available_tools}"),
+        format!("消息：{}", response.message),
     ];
     for tool in &response.tools {
-        lines.push(format!("tool {}: {}", tool.tool, tool.available));
+        lines.push(format!("工具 {}：{}", tool.tool, tool.available));
     }
     lines
 }
@@ -1373,13 +1371,13 @@ fn render_search_response_text(
     match_count: usize,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("source: {source}"),
-        format!("pattern: {pattern}"),
-        format!("indexed files: {indexed_files}"),
-        format!("matches: {match_count}"),
+        format!("来源：{source}"),
+        format!("模式：{pattern}"),
+        format!("已索引文件数：{indexed_files}"),
+        format!("匹配数：{match_count}"),
     ];
     if let Some(message) = message {
-        lines.push(format!("message: {message}"));
+        lines.push(format!("消息：{message}"));
     }
     lines
 }
@@ -1390,14 +1388,14 @@ fn render_semantic_response_text(
     response: &SemanticSearchResponse,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("language: {}", language.as_str()),
-        format!("source: {source}"),
-        format!("query: {}", response.query),
-        format!("semantic enabled: {}", response.enabled),
-        format!("indexed files: {}", response.indexed_files),
-        format!("truncated: {}", response.truncated),
-        format!("message: {}", response.message),
-        format!("matches: {}", response.matches.len()),
+        format!("语言：{}", language.as_str()),
+        format!("来源：{source}"),
+        format!("查询：{}", response.query),
+        format!("语义检索启用：{}", response.enabled),
+        format!("已索引文件数：{}", response.indexed_files),
+        format!("已截断：{}", response.truncated),
+        format!("消息：{}", response.message),
+        format!("匹配数：{}", response.matches.len()),
     ];
     for (index, semantic_match) in response.matches.iter().enumerate() {
         let score = semantic_match
@@ -1405,12 +1403,12 @@ fn render_semantic_response_text(
             .map(|value| format!("{value:.3}"))
             .unwrap_or_else(|| "n/a".to_string());
         lines.push(format!(
-            "match {index}: {}:{} (embedding score: {score})",
+            "匹配 {index}：{}:{} (embedding score: {score})",
             semantic_match.path.display(),
             semantic_match.line
         ));
         lines.push(format!(
-            "  snippet: {}",
+            "  片段：{}",
             semantic_match.snippet.replace('\n', "\\n")
         ));
     }
@@ -1423,21 +1421,21 @@ fn render_diagnostics_response_text(
     response: &DiagnosticsResponse,
 ) -> Vec<String> {
     let mut lines = vec![
-        format!("language: {}", language.as_str()),
-        format!("source: {source}"),
-        format!("path: {}", response.path),
-        format!("tools: {}", response.tools.len()),
-        format!("diagnostics: {}", response.diagnostics.len()),
-        format!("message: {}", response.message),
+        format!("语言：{}", language.as_str()),
+        format!("来源：{source}"),
+        format!("路径：{}", response.path),
+        format!("工具数：{}", response.tools.len()),
+        format!("诊断数：{}", response.diagnostics.len()),
+        format!("消息：{}", response.message),
     ];
     for tool in &response.tools {
-        lines.push(format!("tool {}: {}", tool.tool, tool.available));
+        lines.push(format!("工具 {}：{}", tool.tool, tool.available));
     }
     for diagnostic in &response.diagnostics {
         let severity = match diagnostic.severity {
-            codex_native_tldr::api::DiagnosticSeverity::Error => "error",
-            codex_native_tldr::api::DiagnosticSeverity::Warning => "warning",
-            codex_native_tldr::api::DiagnosticSeverity::Info => "info",
+            codex_native_tldr::api::DiagnosticSeverity::Error => "错误",
+            codex_native_tldr::api::DiagnosticSeverity::Warning => "警告",
+            codex_native_tldr::api::DiagnosticSeverity::Info => "信息",
         };
         let code = diagnostic
             .code
@@ -1496,101 +1494,92 @@ fn render_daemon_response_text(
     let reindex_report = response.reindex_report.as_ref();
     let snapshot = response.snapshot.as_ref();
     let mut lines = vec![
-        format!("action: {action}"),
-        format!("status: {}", response.status),
-        format!("message: {}", response.message),
+        format!("动作：{action}"),
+        format!("状态：{}", response.status),
+        format!("消息：{}", response.message),
     ];
 
     if let Some(daemon_status) = daemon_status {
-        lines.push(format!("project: {}", daemon_status.project_root.display()));
-        lines.push(format!("socket: {}", daemon_status.socket_path.display()));
-        lines.push(format!("socket exists: {}", daemon_status.socket_exists));
-        lines.push(format!("pid is live: {}", daemon_status.pid_is_live));
-        lines.push(format!("lock is held: {}", daemon_status.lock_is_held));
-        lines.push(format!("healthy: {}", daemon_status.healthy));
-        lines.push(format!("stale socket: {}", daemon_status.stale_socket));
-        lines.push(format!("stale pid: {}", daemon_status.stale_pid));
+        lines.push(format!("项目：{}", daemon_status.project_root.display()));
+        lines.push(format!("套接字：{}", daemon_status.socket_path.display()));
+        lines.push(format!("套接字存在：{}", daemon_status.socket_exists));
+        lines.push(format!("PID 存活：{}", daemon_status.pid_is_live));
+        lines.push(format!("锁已持有：{}", daemon_status.lock_is_held));
+        lines.push(format!("健康：{}", daemon_status.healthy));
+        lines.push(format!("过期套接字：{}", daemon_status.stale_socket));
+        lines.push(format!("过期 PID：{}", daemon_status.stale_pid));
         if let Some(reason) = daemon_status.health_reason.as_deref() {
-            lines.push(format!("health reason: {reason}"));
+            lines.push(format!("健康原因：{reason}"));
         }
         if let Some(hint) = daemon_status.recovery_hint.as_deref() {
-            lines.push(format!("recovery hint: {hint}"));
+            lines.push(format!("恢复提示：{hint}"));
         }
         lines.push(format!(
-            "session reindex pending: {}",
+            "会话重索引待处理：{}",
             snapshot
                 .map(|snapshot| snapshot.reindex_pending)
                 .unwrap_or(false)
         ));
         lines.push(format!(
-            "session reindex in progress: {}",
+            "会话重索引进行中：{}",
             snapshot
                 .map(|snapshot| snapshot.background_reindex_in_progress)
                 .unwrap_or(false)
         ));
         lines.push(format!(
-            "semantic reindex pending: {}",
+            "语义重索引待处理：{}",
             daemon_status.semantic_reindex_pending
         ));
         lines.push(format!(
-            "semantic reindex in progress: {}",
+            "语义重索引进行中：{}",
             daemon_status.semantic_reindex_in_progress
         ));
         if let Some(last_query_at) = daemon_status.last_query_at {
-            lines.push(format!("last query at: {last_query_at:?}"));
+            lines.push(format!("最近查询时间：{last_query_at:?}"));
         }
-        lines.push(format!("auto start: {}", daemon_status.config.auto_start));
-        lines.push(format!("socket mode: {}", daemon_status.config.socket_mode));
+        lines.push(format!("自动启动：{}", daemon_status.config.auto_start));
+        lines.push(format!("套接字模式：{}", daemon_status.config.socket_mode));
         lines.push(format!(
-            "session idle timeout secs: {}",
+            "会话空闲超时秒数：{}",
             daemon_status.config.session_idle_timeout_secs
         ));
         lines.push(format!(
-            "session dirty file threshold: {}",
+            "会话脏文件阈值：{}",
             daemon_status.config.session_dirty_file_threshold
         ));
         lines.push(format!(
-            "semantic enabled: {}",
+            "语义检索启用：{}",
             daemon_status.config.semantic_enabled
         ));
         lines.push(format!(
-            "semantic auto reindex threshold: {}",
+            "语义自动重索引阈值：{}",
             daemon_status.config.semantic_auto_reindex_threshold
         ));
     }
     if let Some(snapshot) = snapshot {
         if daemon_status.is_none() {
+            lines.push(format!("会话重索引待处理：{}", snapshot.reindex_pending));
             lines.push(format!(
-                "session reindex pending: {}",
-                snapshot.reindex_pending
-            ));
-            lines.push(format!(
-                "session reindex in progress: {}",
+                "会话重索引进行中：{}",
                 snapshot.background_reindex_in_progress
             ));
         }
-        lines.push(format!("cached entries: {}", snapshot.cached_entries));
-        lines.push(format!("dirty files: {}", snapshot.dirty_files));
+        lines.push(format!("缓存条目数：{}", snapshot.cached_entries));
+        lines.push(format!("脏文件数：{}", snapshot.dirty_files));
+        lines.push(format!("脏文件阈值：{}", snapshot.dirty_file_threshold));
+        lines.push(format!("重索引待处理：{}", snapshot.reindex_pending));
         lines.push(format!(
-            "dirty file threshold: {}",
-            snapshot.dirty_file_threshold
-        ));
-        lines.push(format!("reindex pending: {}", snapshot.reindex_pending));
-        lines.push(format!(
-            "reindex in progress: {}",
+            "重索引进行中：{}",
             snapshot.background_reindex_in_progress
         ));
         if let Some(last_reindex) = snapshot.last_reindex.as_ref() {
-            lines.push(format!("last completed reindex: {:?}", last_reindex.status));
+            lines.push(format!("最近完成的重索引：{:?}", last_reindex.status));
         }
         if let Some(last_reindex_attempt) = snapshot.last_reindex_attempt.as_ref() {
-            lines.push(format!(
-                "last reindex attempt: {:?}",
-                last_reindex_attempt.status
-            ));
+            lines.push(format!("最近重索引尝试：{:?}", last_reindex_attempt.status));
         }
         if let Some(last_warm) = snapshot.last_warm.as_ref() {
-            lines.push(format!("last warm status: {:?}", last_warm.status));
+            lines.push(format!("最近预热状态：{:?}", last_warm.status));
             if !last_warm.languages.is_empty() {
                 let languages = last_warm
                     .languages
@@ -1599,20 +1588,17 @@ fn render_daemon_response_text(
                     .map(SupportedLanguage::as_str)
                     .collect::<Vec<_>>()
                     .join(",");
-                lines.push(format!("last warm languages: {languages}"));
+                lines.push(format!("最近预热语言：{languages}"));
             }
-            lines.push(format!("last warm message: {}", last_warm.message));
-            lines.push(format!(
-                "last warm finished at: {:?}",
-                last_warm.finished_at
-            ));
+            lines.push(format!("最近预热消息：{}", last_warm.message));
+            lines.push(format!("最近预热完成时间：{:?}", last_warm.finished_at));
         }
     }
     if let Some(reindex_report) = reindex_report {
-        lines.push(format!("reindex status: {:?}", reindex_report.status));
-        lines.push(format!("reindex files: {}", reindex_report.indexed_files));
-        lines.push(format!("reindex units: {}", reindex_report.indexed_units));
-        lines.push(format!("reindex message: {}", reindex_report.message));
+        lines.push(format!("重索引状态：{:?}", reindex_report.status));
+        lines.push(format!("重索引文件数：{}", reindex_report.indexed_files));
+        lines.push(format!("重索引单元数：{}", reindex_report.indexed_units));
+        lines.push(format!("重索引消息：{}", reindex_report.message));
     }
 
     lines
@@ -1680,7 +1666,7 @@ async fn run_daemon_start_command(project_root: &Path, json_output: bool) -> Res
     if json_output {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("started: {}", started.ready);
+        println!("已启动：{}", started.ready);
         for line in render_daemon_response_text("start", &response) {
             println!("{line}");
         }
@@ -1699,8 +1685,8 @@ async fn run_daemon_stop_command(project_root: &Path, json_output: bool) -> Resu
     if json_output {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("stopped: {stopped}");
-        println!("message: {message}");
+        println!("已停止：{stopped}");
+        println!("消息：{message}");
     }
     Ok(())
 }
@@ -1713,11 +1699,11 @@ async fn stop_native_tldr_daemon(project_root: &Path) -> Result<(bool, String)> 
         .and_then(|value| value.trim().parse::<i32>().ok());
     let Some(pid) = pid else {
         cleanup_stale_daemon_artifacts(project_root);
-        return Ok((false, "daemon pid file is missing".to_string()));
+        return Ok((false, "daemon 的 pid 文件缺失".to_string()));
     };
     if !read_live_pid(&pid_path).unwrap_or(false) {
         cleanup_stale_daemon_artifacts(project_root);
-        return Ok((false, "stale daemon artifacts cleaned".to_string()));
+        return Ok((false, "已清理过期 daemon 遗留文件".to_string()));
     }
 
     let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
@@ -1732,17 +1718,17 @@ async fn stop_native_tldr_daemon(project_root: &Path) -> Result<(bool, String)> 
     while start.elapsed() < Duration::from_secs(3) {
         if !read_live_pid(&pid_path).unwrap_or(false) {
             cleanup_stale_daemon_artifacts(project_root);
-            return Ok((true, format!("stopped daemon pid {pid}")));
+            return Ok((true, format!("已停止 daemon 进程 {pid}")));
         }
         sleep(Duration::from_millis(50)).await;
     }
 
-    bail!("daemon pid {pid} did not exit within timeout");
+    bail!("daemon 进程 {pid} 未在超时时间内退出");
 }
 
 #[cfg(not(unix))]
 async fn stop_native_tldr_daemon(_project_root: &Path) -> Result<(bool, String)> {
-    bail!("daemon stop is only supported on unix in this build")
+    bail!("当前构建仅在 Unix 平台支持停止 daemon")
 }
 
 async fn query_daemon_with_autostart(
@@ -2469,12 +2455,12 @@ mod output_tests {
         assert_eq!(
             lines,
             vec![
-                "language: rust".to_string(),
-                "source: daemon".to_string(),
-                "support: DataFlow".to_string(),
-                "fallback: structure + search".to_string(),
-                "message: impact ready".to_string(),
-                "summary: impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1".to_string(),
+                "语言：rust".to_string(),
+                "来源：daemon".to_string(),
+                "支持级别：DataFlow".to_string(),
+                "回退策略：structure + search".to_string(),
+                "消息：impact ready".to_string(),
+                "摘要：impact summary: 1 symbols across 1 files (1 touched paths); dependency edges=1".to_string(),
             ]
         );
     }
@@ -2491,11 +2477,11 @@ mod output_tests {
             "extract summary: src/lib.rs => 1 symbols (1 function); imports=0, references=0; sample: main:1-1",
         );
 
-        assert!(lines.contains(&"path: src/lib.rs".to_string()));
+        assert!(lines.contains(&"路径：src/lib.rs".to_string()));
         assert!(
             lines
                 .iter()
-                .any(|line| line.starts_with("summary: extract summary:"))
+                .any(|line| line.starts_with("摘要：extract summary:"))
         );
     }
 
@@ -2511,12 +2497,12 @@ mod output_tests {
             "slice summary: backward slice for src/lib.rs:login:4 -> 3 lines [1, 3, 4]",
         );
 
-        assert!(lines.contains(&"path: src/lib.rs".to_string()));
-        assert!(lines.contains(&"line: 4".to_string()));
+        assert!(lines.contains(&"路径：src/lib.rs".to_string()));
+        assert!(lines.contains(&"行号：4".to_string()));
         assert!(
             lines
                 .iter()
-                .any(|line| line.starts_with("summary: slice summary:"))
+                .any(|line| line.starts_with("摘要：slice summary:"))
         );
     }
 
@@ -2533,11 +2519,11 @@ mod output_tests {
         assert_eq!(
             lines,
             vec![
-                "language: rust".to_string(),
-                "source: daemon".to_string(),
-                "path: src/lib.rs".to_string(),
-                "imports: 1".to_string(),
-                "message: imports ready: src/lib.rs".to_string(),
+                "语言：rust".to_string(),
+                "来源：daemon".to_string(),
+                "路径：src/lib.rs".to_string(),
+                "导入数：1".to_string(),
+                "消息：imports ready: src/lib.rs".to_string(),
             ]
         );
     }
@@ -2555,11 +2541,11 @@ mod output_tests {
         assert_eq!(
             lines,
             vec![
-                "language: rust".to_string(),
-                "source: local".to_string(),
-                "module: auth::token".to_string(),
-                "matches: 2".to_string(),
-                "message: importers ready: auth::token".to_string(),
+                "语言：rust".to_string(),
+                "来源：local".to_string(),
+                "模块：auth::token".to_string(),
+                "匹配数：2".to_string(),
+                "消息：importers ready: auth::token".to_string(),
             ]
         );
     }
@@ -2626,10 +2612,10 @@ mod output_tests {
             },
         );
 
-        assert!(lines.contains(&"query: auth token".to_string()));
-        assert!(lines.contains(&"indexed files: 1".to_string()));
-        assert!(lines.contains(&"match 0: src/auth.rs:2 (embedding score: 0.750)".to_string()));
-        assert!(lines.contains(&"  snippet: let auth_token = true;\\nverify();".to_string()));
+        assert!(lines.contains(&"查询：auth token".to_string()));
+        assert!(lines.contains(&"已索引文件数：1".to_string()));
+        assert!(lines.contains(&"匹配 0：src/auth.rs:2 (embedding score: 0.750)".to_string()));
+        assert!(lines.contains(&"  片段：let auth_token = true;\\nverify();".to_string()));
     }
 
     #[test]
@@ -2657,9 +2643,9 @@ mod output_tests {
             },
         );
 
-        assert!(lines.contains(&"tool cargo-check: true".to_string()));
+        assert!(lines.contains(&"工具 cargo-check：true".to_string()));
         assert!(
-            lines.contains(&"src/main.rs:7:3 error cargo-check [E0609] unknown field".to_string())
+            lines.contains(&"src/main.rs:7:3 错误 cargo-check [E0609] unknown field".to_string())
         );
     }
 }
@@ -2890,9 +2876,9 @@ mod lifecycle_tests {
 
         let output = render_daemon_response_text("status", &response).join("\n");
 
-        assert!(output.contains("last completed reindex: Completed"));
-        assert!(output.contains("last reindex attempt: Failed"));
-        assert!(output.contains("session reindex in progress: false"));
+        assert!(output.contains("最近完成的重索引：Completed"));
+        assert!(output.contains("最近重索引尝试：Failed"));
+        assert!(output.contains("会话重索引进行中：false"));
     }
 
     #[test]
@@ -2914,9 +2900,9 @@ mod lifecycle_tests {
         assert_eq!(
             render_daemon_response_text("ping", &response),
             vec![
-                "action: ping".to_string(),
-                "status: ok".to_string(),
-                "message: pong".to_string()
+                "动作：ping".to_string(),
+                "状态：ok".to_string(),
+                "消息：pong".to_string()
             ]
         );
     }
@@ -2950,12 +2936,12 @@ mod lifecycle_tests {
         };
 
         let output = render_daemon_response_text("notify", &response).join("\n");
-        assert!(output.contains("action: notify"));
-        assert!(output.contains("message: marked src/lib.rs dirty"));
-        assert!(output.contains("cached entries: 2"));
-        assert!(output.contains("dirty files: 1"));
-        assert!(output.contains("reindex pending: true"));
-        assert!(output.contains("reindex in progress: false"));
+        assert!(output.contains("动作：notify"));
+        assert!(output.contains("消息：marked src/lib.rs dirty"));
+        assert!(output.contains("缓存条目数：2"));
+        assert!(output.contains("脏文件数：1"));
+        assert!(output.contains("重索引待处理：true"));
+        assert!(output.contains("重索引进行中：false"));
     }
 
     #[test]
@@ -2987,12 +2973,12 @@ mod lifecycle_tests {
         };
 
         let output = render_daemon_response_text("snapshot", &response).join("\n");
-        assert!(output.contains("action: snapshot"));
-        assert!(output.contains("message: snapshot"));
-        assert!(output.contains("cached entries: 3"));
-        assert!(output.contains("dirty files: 1"));
-        assert!(output.contains("reindex pending: false"));
-        assert!(output.contains("reindex in progress: false"));
+        assert!(output.contains("动作：snapshot"));
+        assert!(output.contains("消息：snapshot"));
+        assert!(output.contains("缓存条目数：3"));
+        assert!(output.contains("脏文件数：1"));
+        assert!(output.contains("重索引待处理：false"));
+        assert!(output.contains("重索引进行中：false"));
     }
 
     #[test]
@@ -3069,18 +3055,18 @@ mod lifecycle_tests {
 
         let output = render_daemon_response_text("status", &response).join("\n");
 
-        assert!(output.contains("pid is live: true"));
-        assert!(output.contains("lock is held: true"));
-        assert!(output.contains("dirty file threshold: 20"));
-        assert!(output.contains("session dirty file threshold: 20"));
-        assert!(output.contains("session idle timeout secs: 1800"));
-        assert!(output.contains("semantic auto reindex threshold: 20"));
-        assert!(output.contains("session reindex in progress: false"));
-        assert!(output.contains("semantic reindex in progress: false"));
-        assert!(output.contains("last warm status: Loaded"));
-        assert!(output.contains("last warm languages: rust"));
-        assert!(output.contains("reindex status: Completed"));
-        assert!(output.contains("reindex files: 2"));
+        assert!(output.contains("PID 存活：true"));
+        assert!(output.contains("锁已持有：true"));
+        assert!(output.contains("脏文件阈值：20"));
+        assert!(output.contains("会话脏文件阈值：20"));
+        assert!(output.contains("会话空闲超时秒数：1800"));
+        assert!(output.contains("语义自动重索引阈值：20"));
+        assert!(output.contains("会话重索引进行中：false"));
+        assert!(output.contains("语义重索引进行中：false"));
+        assert!(output.contains("最近预热状态：Loaded"));
+        assert!(output.contains("最近预热语言：rust"));
+        assert!(output.contains("重索引状态：Completed"));
+        assert!(output.contains("重索引文件数：2"));
     }
 
     #[tokio::test]

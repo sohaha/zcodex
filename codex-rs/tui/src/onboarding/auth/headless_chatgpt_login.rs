@@ -28,9 +28,11 @@ use super::AuthModeWidget;
 use super::ContinueInBrowserState;
 use super::ContinueWithDeviceCodeState;
 use super::SignInState;
+use super::login_error_message;
 use super::mark_url_hyperlink;
 use super::maybe_open_auth_url_in_browser;
 use super::onboarding_request_id;
+use super::unexpected_login_response_error;
 
 pub(super) fn start_headless_chatgpt_login(widget: &mut AuthModeWidget) {
     let mut opts = ServerOptions::new(
@@ -69,7 +71,7 @@ pub(super) fn start_headless_chatgpt_login(widget: &mut AuthModeWidget) {
                         &request_frame,
                         &error,
                         &cancel,
-                        err.to_string(),
+                        login_error_message("设备码登录失败", err),
                     );
                 }
                 return;
@@ -113,7 +115,7 @@ pub(super) fn start_headless_chatgpt_login(widget: &mut AuthModeWidget) {
                             &request_frame,
                             &error,
                             &cancel,
-                            err.to_string(),
+                            login_error_message("设备码登录失败", err),
                         );
                     }
                 }
@@ -306,7 +308,7 @@ async fn fallback_to_browser_login(
                 &request_frame,
                 &error,
                 &cancel,
-                format!("Unexpected account/login/start response: {other:?}"),
+                unexpected_login_response_error(&other),
             );
         }
         Err(err) => {
@@ -315,7 +317,7 @@ async fn fallback_to_browser_login(
                 &request_frame,
                 &error,
                 &cancel,
-                err.to_string(),
+                login_error_message("启动浏览器登录失败", err),
             );
         }
     }
@@ -337,7 +339,7 @@ async fn handle_chatgpt_auth_tokens_login_result_for_active_attempt(
                 &request_frame,
                 &error,
                 &cancel,
-                err,
+                login_error_message("读取本地 ChatGPT 登录状态失败", err),
             );
             return;
         }
@@ -358,7 +360,7 @@ async fn handle_chatgpt_auth_tokens_login_result_for_active_attempt(
         &request_frame,
         &error,
         &cancel,
-        result.map_err(|err| err.to_string()),
+        result.map_err(|err| login_error_message("同步 ChatGPT 登录状态失败", err)),
     );
 }
 
@@ -384,7 +386,7 @@ fn apply_chatgpt_auth_tokens_login_response_for_active_attempt(
                 request_frame,
                 error,
                 cancel,
-                format!("Unexpected account/login/start response: {other:?}"),
+                unexpected_login_response_error(&other),
             );
         }
         Err(err) => {
@@ -542,5 +544,21 @@ mod tests {
             &*sign_in_state.read().unwrap(),
             SignInState::ChatGptSuccessMessage
         ));
+    }
+
+    #[test]
+    fn unexpected_login_response_renders_localized_error() {
+        assert_eq!(
+            unexpected_login_response_error(&LoginAccountResponse::ApiKey {}),
+            "登录响应异常：ApiKey"
+        );
+    }
+
+    #[test]
+    fn device_code_error_renders_localized_message() {
+        assert_eq!(
+            login_error_message("设备码登录失败", "network down"),
+            "设备码登录失败：network down"
+        );
     }
 }

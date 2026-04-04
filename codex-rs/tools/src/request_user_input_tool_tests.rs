@@ -149,6 +149,7 @@ fn request_user_input_tool_description_mentions_available_modes() {
     );
     assert_eq!(
         request_user_input_tool_description(/*default_mode_request_user_input*/ true),
-        "向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 默认 或 计划 模式下可用。".to_string()
+        "向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 默认 或 计划 模式下可用。"
+            .to_string()
     );
 }

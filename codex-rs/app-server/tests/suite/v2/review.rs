@@ -251,7 +251,7 @@ async fn review_start_rejects_empty_base_branch() -> Result<()> {
     .await??;
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
     assert!(
-        error.error.message.contains("branch must not be empty"),
+        error.error.message.contains("branch 不能为空"),
         "unexpected message: {}",
         error.error.message
     );
@@ -360,7 +360,7 @@ async fn review_start_rejects_empty_commit_sha() -> Result<()> {
     .await??;
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
     assert!(
-        error.error.message.contains("sha must not be empty"),
+        error.error.message.contains("sha 不能为空"),
         "unexpected message: {}",
         error.error.message
     );
@@ -394,10 +394,7 @@ async fn review_start_rejects_empty_custom_instructions() -> Result<()> {
     .await??;
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
     assert!(
-        error
-            .error
-            .message
-            .contains("instructions must not be empty"),
+        error.error.message.contains("instructions 不能为空"),
         "unexpected message: {}",
         error.error.message
     );

@@ -46,9 +46,9 @@ pub(super) enum GuardianReviewOutcome {
 
 fn guardian_risk_level_str(level: GuardianRiskLevel) -> &'static str {
     match level {
-        GuardianRiskLevel::Low => "low",
-        GuardianRiskLevel::Medium => "medium",
-        GuardianRiskLevel::High => "high",
+        GuardianRiskLevel::Low => "低",
+        GuardianRiskLevel::Medium => "中",
+        GuardianRiskLevel::High => "高",
     }
 }
 
@@ -139,15 +139,13 @@ async fn run_guardian_review(
         GuardianReviewOutcome::Completed(Err(err)) => GuardianAssessment {
             risk_level: GuardianRiskLevel::High,
             risk_score: 100,
-            rationale: format!("Automatic approval review failed: {err}"),
+            rationale: format!("自动批准审查失败：{err}"),
             evidence: vec![],
         },
         GuardianReviewOutcome::TimedOut => GuardianAssessment {
             risk_level: GuardianRiskLevel::High,
             risk_score: 100,
-            rationale:
-                "Automatic approval review timed out while evaluating the requested approval."
-                    .to_string(),
+            rationale: "自动批准审查在评估本次批准请求时超时。".to_string(),
             evidence: vec![],
         },
         GuardianReviewOutcome::Aborted => {
@@ -170,9 +168,9 @@ async fn run_guardian_review(
     };
 
     let approved = assessment.risk_score < GUARDIAN_APPROVAL_RISK_THRESHOLD;
-    let verdict = if approved { "approved" } else { "denied" };
+    let verdict = if approved { "已批准" } else { "已拒绝" };
     let warning = format!(
-        "Automatic approval review {verdict} (risk: {}): {}",
+        "自动批准审查{verdict}（风险：{}）：{}",
         guardian_risk_level_str(assessment.risk_level),
         assessment.rationale
     );

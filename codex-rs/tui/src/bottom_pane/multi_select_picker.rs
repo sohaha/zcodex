@@ -573,7 +573,7 @@ impl Renderable for MultiSelectPicker {
                 &rows,
                 &self.state,
                 render_area.height as usize,
-                "no matches",
+                "没有匹配项",
             );
         }
 
@@ -728,7 +728,7 @@ impl MultiSelectPickerBuilder {
 
         let instructions = if self.instructions.is_empty() {
             vec![
-                "Press ".into(),
+                "按 ".into(),
                 key_hint::plain(KeyCode::Char(' ')).into(),
                 " 切换；".into(),
                 key_hint::plain(KeyCode::Enter).into(),

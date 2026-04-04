@@ -3106,9 +3106,9 @@ pub enum McpAuthStatus {
 impl fmt::Display for McpAuthStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let text = match self {
-            McpAuthStatus::Unsupported => "Unsupported",
-            McpAuthStatus::NotLoggedIn => "Not logged in",
-            McpAuthStatus::BearerToken => "Bearer token",
+            McpAuthStatus::Unsupported => "不支持",
+            McpAuthStatus::NotLoggedIn => "未登录",
+            McpAuthStatus::BearerToken => "Bearer 令牌",
             McpAuthStatus::OAuth => "OAuth",
         };
         f.write_str(text)
@@ -4383,7 +4383,7 @@ mod tests {
     #[test]
     fn active_turn_not_steerable_error_does_not_affect_turn_status() {
         let event = ErrorEvent {
-            message: "cannot steer a review turn".into(),
+            message: "无法在审查轮次中继续追加".into(),
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Review,
             }),

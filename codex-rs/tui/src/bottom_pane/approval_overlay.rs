@@ -1418,9 +1418,9 @@ mod tests {
             })
             .collect();
         let expected = vec![
-            "✔ 你批准 Codex 执行".to_string(),
-            "  git add tui/src/render/".to_string(),
-            "  mod.rs tui/src/render/".to_string(),
+            "✔ 你批准 Codex 执行 git add".to_string(),
+            "  tui/src/render/mod.rs tui/".to_string(),
+            "  src/render/".to_string(),
             "  renderable.rs（仅这次）".to_string(),
         ];
         assert_eq!(rendered, expected);

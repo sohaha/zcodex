@@ -19,9 +19,7 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         (
             "description".to_string(),
             JsonSchema::String {
-                description: Some(
-                    "一句话说明选中该项时的影响或取舍。".to_string(),
-                ),
+                description: Some("一句话说明选中该项时的影响或取舍。".to_string()),
             },
         ),
     ]);
@@ -42,17 +40,13 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         (
             "id".to_string(),
             JsonSchema::String {
-                description: Some(
-                    "用于映射答案的稳定标识（snake_case）。".to_string(),
-                ),
+                description: Some("用于映射答案的稳定标识（snake_case）。".to_string()),
             },
         ),
         (
             "header".to_string(),
             JsonSchema::String {
-                description: Some(
-                    "显示在界面里的简短标题（不超过 12 个字符）。".to_string(),
-                ),
+                description: Some("显示在界面里的简短标题（不超过 12 个字符）。".to_string()),
             },
         ),
         (
@@ -126,9 +120,7 @@ pub fn normalize_request_user_input_args(
 
 pub fn request_user_input_tool_description(default_mode_request_user_input: bool) -> String {
     let allowed_modes = format_allowed_modes(default_mode_request_user_input);
-    format!(
-        "向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 {allowed_modes} 模式下可用。"
-    )
+    format!("向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 {allowed_modes} 模式下可用。")
 }
 
 fn request_user_input_is_available(mode: ModeKind, default_mode_request_user_input: bool) -> bool {
@@ -144,10 +136,10 @@ fn format_allowed_modes(default_mode_request_user_input: bool) -> String {
         .collect();
 
     match mode_names.as_slice() {
-        [] => "no modes".to_string(),
-        [mode] => format!("{mode} mode"),
-        [first, second] => format!("{first} or {second} mode"),
-        [..] => format!("modes: {}", mode_names.join(",")),
+        [] => "无可用模式".to_string(),
+        [mode] => format!("{mode}"),
+        [first, second] => format!("{first} 或 {second}"),
+        [..] => format!("模式：{}", mode_names.join("、")),
     }
 }
 

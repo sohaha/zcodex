@@ -91,7 +91,7 @@ impl WidgetRef for &TrustDirectoryWidget {
 
         column.push(
             Line::from(vec![
-                "Press ".dim(),
+                "按 ".dim(),
                 key_hint::plain(KeyCode::Enter).into(),
                 if self.show_windows_create_sandbox_hint {
                     " 继续并创建沙盒...".dim()

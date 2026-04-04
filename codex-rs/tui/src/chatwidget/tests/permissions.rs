@@ -687,7 +687,7 @@ async fn permissions_full_access_history_cell_emitted_only_after_confirmation() 
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("启用完全访问权限？"),
+        popup.replace(' ', "").contains("启用完全访问权限？"),
         "expected full access confirmation popup, got: {popup}"
     );
 

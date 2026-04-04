@@ -1,9 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 99
 expression: popup
 ---
-  Plugins
-  Loading available plugins...
-  This first pass shows the ChatGPT marketplace only.
+  插 件
+  正 在 加 载 可 用 插 件 ...
+  首 次 加 载 仅 显 示  ChatGPT 市 场 中 的 插 件 。
 
-›    Loading plugins...  This updates when the marketplace list is ready.
+›    正 在 加 载 插 件 ...  市 场 列 表 准 备 好 后 会 自 动 更 新 。

@@ -1,6 +1,7 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/exec_flow.rs
+assertion_line: 878
 expression: combined
 ---
-• Viewed Image
+• 查看图片
   └ example.png

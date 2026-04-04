@@ -164,7 +164,11 @@ impl BuddyWidget {
         } else {
             "幕后休息"
         };
-        let visibility = if self.state.visible { "可见" } else { "隐藏" };
+        let visibility = if self.state.visible {
+            "可见"
+        } else {
+            "隐藏"
+        };
         let shiny = if bones.shiny { "，闪亮" } else { "" };
         let personality = self
             .soul
@@ -184,8 +188,7 @@ impl BuddyWidget {
         BuddyCommandResult {
             message,
             hint: Some(
-                "命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。"
-                    .to_string(),
+                "命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
             ),
         }
     }

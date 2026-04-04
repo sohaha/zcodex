@@ -77,7 +77,7 @@ async fn slash_init_skips_when_project_doc_exists() {
         "info message should mention the existing file: {rendered:?}"
     );
     assert!(
-        rendered.contains("Skipping /init"),
+        rendered.contains("已跳过 /init"),
         "info message should explain why /init was skipped: {rendered:?}"
     );
     assert_eq!(
@@ -299,7 +299,7 @@ async fn slash_buddy_rejects_unknown_subcommand() {
     assert_eq!(cells.len(), 1, "expected one error message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Usage: /buddy [show|pet|hide|status]"),
+        rendered.contains("用法：/buddy [show|pet|hide|status]"),
         "unexpected error message: {rendered:?}"
     );
 }
@@ -457,7 +457,7 @@ async fn slash_memory_drop_reports_stubbed_feature() {
     match event {
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(rendered.contains("Memory maintenance: TUI 暂未提供。"));
+            assert!(rendered.contains("记忆维护: TUI 暂未提供。"));
         }
         other => panic!("expected InsertHistoryCell error, got {other:?}"),
     }
@@ -473,7 +473,7 @@ async fn slash_mcp_requests_inventory_via_app_server() {
 
     chat.dispatch_command(SlashCommand::Mcp);
 
-    assert!(active_blob(&chat).contains("Loading MCP inventory"));
+    assert!(active_blob(&chat).contains("正在加载 MCP 清单"));
     assert_matches!(rx.try_recv(), Ok(AppEvent::FetchMcpInventory));
     assert!(op_rx.try_recv().is_err(), "expected no core op to be sent");
 }
@@ -488,7 +488,7 @@ async fn slash_memory_update_reports_stubbed_feature() {
     match event {
         AppEvent::InsertHistoryCell(cell) => {
             let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
-            assert!(rendered.contains("Memory maintenance: TUI 暂未提供。"));
+            assert!(rendered.contains("记忆维护: TUI 暂未提供。"));
         }
         other => panic!("expected InsertHistoryCell error, got {other:?}"),
     }
@@ -717,7 +717,7 @@ async fn compact_queues_user_messages_snapshot() {
     chat.handle_codex_event(Event {
         id: "steer-rejected".into(),
         msg: EventMsg::Error(ErrorEvent {
-            message: "cannot steer a compact turn".to_string(),
+            message: "无法在压缩轮次中继续追加".to_string(),
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Compact,
             }),

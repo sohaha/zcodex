@@ -385,8 +385,8 @@ use codex_utils_approval_presets::builtin_approval_presets;
 use strum::IntoEnumIterator;
 use unicode_segmentation::UnicodeSegmentation;
 
-const USER_SHELL_COMMAND_HELP_TITLE: &str = "Prefix a command with ! to run it locally";
-const USER_SHELL_COMMAND_HELP_HINT: &str = "Example: !ls";
+const USER_SHELL_COMMAND_HELP_TITLE: &str = "在本地运行命令可在前面加上 !";
+const USER_SHELL_COMMAND_HELP_HINT: &str = "例如：!ls";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const FAST_STATUS_MODEL: &str = "gpt-5.4";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 3] =
@@ -652,7 +652,7 @@ impl StatusIndicatorState {
     }
 
     fn is_guardian_review(&self) -> bool {
-        self.header == "Reviewing approval request" || self.header.starts_with("Reviewing ")
+        self.header == "正在审查批准请求" || self.header.starts_with("正在审查 ")
     }
 }
 
@@ -705,15 +705,15 @@ impl PendingGuardianReviewStatus {
                 .collect::<Vec<_>>();
             let remaining = self.entries.len().saturating_sub(3);
             if remaining > 0 {
-                lines.push(format!("+{remaining} more"));
+                lines.push(format!("另有 {remaining} 个"));
             }
             Some(lines.join("\n"))
         };
         let details = details?;
         let header = if self.entries.len() == 1 {
-            String::from("Reviewing approval request")
+            String::from("正在审查批准请求")
         } else {
-            format!("Reviewing {} approval requests", self.entries.len())
+            format!("正在审查 {} 个批准请求", self.entries.len())
         };
         let details_max_lines = if self.entries.len() == 1 { 1 } else { 4 };
         Some(StatusIndicatorState {
@@ -1475,12 +1475,9 @@ fn app_server_collab_state_to_core(state: &AppServerCollabAgentState) -> AgentSt
         AppServerCollabAgentStatus::Running => AgentStatus::Running,
         AppServerCollabAgentStatus::Interrupted => AgentStatus::Interrupted,
         AppServerCollabAgentStatus::Completed => AgentStatus::Completed(state.message.clone()),
-        AppServerCollabAgentStatus::Errored => AgentStatus::Errored(
-            state
-                .message
-                .clone()
-                .unwrap_or_else(|| "Agent errored".into()),
-        ),
+        AppServerCollabAgentStatus::Errored => {
+            AgentStatus::Errored(state.message.clone().unwrap_or_else(|| "代理出错".into()))
+        }
         AppServerCollabAgentStatus::Shutdown => AgentStatus::Shutdown,
         AppServerCollabAgentStatus::NotFound => AgentStatus::NotFound,
     }
@@ -1917,7 +1914,7 @@ impl ChatWidget {
     fn log_websocket_timing_totals(&mut self, delta: RuntimeMetricsSummary) {
         if let Some(label) = history_cell::runtime_metrics_label(delta.responses_api_summary()) {
             self.add_plain_history_lines(vec![
-                vec!["• ".dim(), format!("WebSocket timing: {label}").dark_gray()].into(),
+                vec!["• ".dim(), format!("WebSocket 时序：{label}").dark_gray()].into(),
             ]);
         }
     }
@@ -2054,7 +2051,7 @@ impl ChatWidget {
             let send_name_and_id = |name: String| {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "线程分叉自 ".into(),
                     name.cyan(),
                     " (".into(),
                     forked_from_id_text.clone().cyan(),
@@ -2068,7 +2065,7 @@ impl ChatWidget {
             let send_id_only = || {
                 let line: Line<'static> = vec![
                     "• ".dim(),
-                    "Thread forked from ".into(),
+                    "线程分叉自 ".into(),
                     forked_from_id_text.clone().cyan(),
                 ]
                 .into();
@@ -2724,7 +2721,7 @@ impl ChatWidget {
         self.finalize_turn();
 
         let message = if message.trim().is_empty() {
-            "Codex is currently experiencing high load.".to_string()
+            "Codex 当前负载较高。".to_string()
         } else {
             message
         };
@@ -3267,12 +3264,12 @@ impl ChatWidget {
                     .or_else(|| Some(command.join(" ")))
             }
             GuardianAssessmentAction::ApplyPatch { files, .. } => Some(if files.len() == 1 {
-                format!("apply_patch touching {}", files[0].display())
+                format!("apply_patch 涉及 {}", files[0].display())
             } else {
-                format!("apply_patch touching {} files", files.len())
+                format!("apply_patch 涉及 {} 个文件", files.len())
             }),
             GuardianAssessmentAction::NetworkAccess { target, .. } => {
-                Some(format!("network access to {target}"))
+                Some(format!("访问网络目标 {target}"))
             }
             GuardianAssessmentAction::McpToolCall {
                 server,
@@ -3281,7 +3278,7 @@ impl ChatWidget {
                 ..
             } => {
                 let label = connector_name.as_deref().unwrap_or(server.as_str());
-                Some(format!("MCP {tool_name} on {label}"))
+                Some(format!("在 {label} 上调用 MCP {tool_name}"))
             }
         };
         let guardian_command = |action: &GuardianAssessmentAction| match action {
@@ -3352,7 +3349,7 @@ impl ChatWidget {
                 history_cell::new_guardian_approved_action_request(summary)
             } else {
                 let summary = serde_json::to_string(&ev.action)
-                    .unwrap_or_else(|_| "<unrenderable guardian action>".to_string());
+                    .unwrap_or_else(|_| "<无法渲染的 guardian 操作>".to_string());
                 history_cell::new_guardian_approved_action_request(summary)
             };
 
@@ -3382,12 +3379,10 @@ impl ChatWidget {
                 GuardianAssessmentAction::McpToolCall {
                     server, tool_name, ..
                 } => history_cell::new_guardian_denied_action_request(format!(
-                    "codex to call MCP tool {server}.{tool_name}"
+                    "Codex 调用 MCP 工具 {server}.{tool_name}"
                 )),
                 GuardianAssessmentAction::NetworkAccess { target, .. } => {
-                    history_cell::new_guardian_denied_action_request(format!(
-                        "codex to access {target}"
-                    ))
+                    history_cell::new_guardian_denied_action_request(format!("Codex 访问 {target}"))
                 }
                 GuardianAssessmentAction::Command { .. } => unreachable!(),
                 GuardianAssessmentAction::Execve { .. } => unreachable!(),
@@ -3478,7 +3473,7 @@ impl ChatWidget {
                 .set_interrupt_hint_visible(/*visible*/ true);
             self.terminal_title_status_kind = TerminalTitleStatusKind::WaitingForBackgroundTerminal;
             self.set_status(
-                "Waiting for background terminal".to_string(),
+                "等待后台终端".to_string(),
                 command_display.clone(),
                 StatusDetailsCapitalization::Preserve,
                 /*details_max_lines*/ 1,
@@ -3792,9 +3787,7 @@ impl ChatWidget {
                                 .iter()
                                 .find_map(|thread_id| agents_states.get(thread_id))
                                 .map(app_server_collab_state_to_core)
-                                .unwrap_or_else(|| {
-                                    AgentStatus::Errored("Agent interaction failed".into())
-                                }),
+                                .unwrap_or_else(|| AgentStatus::Errored("代理交互失败".into())),
                         },
                     ));
                 }
@@ -3938,11 +3931,11 @@ impl ChatWidget {
 
     fn on_hook_started(&mut self, event: codex_protocol::protocol::HookStartedEvent) {
         let label = hook_event_label(event.run.event_name);
-        let mut message = format!("Running {label} hook");
+        let mut message = format!("正在运行 {label} 钩子");
         if let Some(status_message) = event.run.status_message
             && !status_message.is_empty()
         {
-            message.push_str(": ");
+            message.push_str("：");
             message.push_str(&status_message);
         }
         self.add_to_history(history_cell::new_info_event(message, /*hint*/ None));
@@ -3950,16 +3943,19 @@ impl ChatWidget {
     }
 
     fn on_hook_completed(&mut self, event: codex_protocol::protocol::HookCompletedEvent) {
-        let status = format!("{:?}", event.run.status).to_lowercase();
-        let header = format!("{} hook ({status})", hook_event_label(event.run.event_name));
+        let status = hook_run_status_label(event.run.status);
+        let header = format!(
+            "{} 钩子（{status}）",
+            hook_event_label(event.run.event_name)
+        );
         let mut lines: Vec<ratatui::text::Line<'static>> = vec![header.into()];
         for entry in event.run.entries {
             let prefix = match entry.kind {
-                codex_protocol::protocol::HookOutputEntryKind::Warning => "warning: ",
-                codex_protocol::protocol::HookOutputEntryKind::Stop => "stop: ",
-                codex_protocol::protocol::HookOutputEntryKind::Feedback => "feedback: ",
-                codex_protocol::protocol::HookOutputEntryKind::Context => "hook context: ",
-                codex_protocol::protocol::HookOutputEntryKind::Error => "error: ",
+                codex_protocol::protocol::HookOutputEntryKind::Warning => "警告：",
+                codex_protocol::protocol::HookOutputEntryKind::Stop => "停止：",
+                codex_protocol::protocol::HookOutputEntryKind::Feedback => "反馈：",
+                codex_protocol::protocol::HookOutputEntryKind::Context => "钩子上下文：",
+                codex_protocol::protocol::HookOutputEntryKind::Error => "错误：",
             };
             lines.push(format!("  {prefix}{}", entry.text).into());
         }
@@ -3972,9 +3968,7 @@ impl ChatWidget {
         self.bottom_pane.ensure_status_indicator();
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ false);
-        let message = event
-            .message
-            .unwrap_or_else(|| "Undo in progress...".to_string());
+        let message = event.message.unwrap_or_else(|| "正在撤销...".to_string());
         self.terminal_title_status_kind = TerminalTitleStatusKind::Undoing;
         self.set_status_header(message);
     }
@@ -3987,9 +3981,9 @@ impl ChatWidget {
         self.refresh_terminal_title();
         let message = message.unwrap_or_else(|| {
             if success {
-                "Undo completed successfully.".to_string()
+                "撤销已成功完成。".to_string()
             } else {
-                "Undo failed.".to_string()
+                "撤销失败。".to_string()
             }
         });
         if success {
@@ -4804,7 +4798,7 @@ impl ChatWidget {
                     Err(err) => {
                         tracing::warn!("failed to paste image: {err}");
                         self.add_to_history(history_cell::new_error_event(format!(
-                            "Failed to paste image: {err}",
+                            "粘贴图片失败：{err}",
                         )));
                     }
                 }
@@ -5034,14 +5028,14 @@ impl ChatWidget {
                     Ok(path) => path,
                     Err(err) => {
                         self.add_error_message(format!(
-                            "Failed to prepare {DEFAULT_PROJECT_DOC_FILENAME}: {err}",
+                            "准备 {DEFAULT_PROJECT_DOC_FILENAME} 失败：{err}",
                         ));
                         return;
                     }
                 };
                 if init_target.exists() {
                     let message = format!(
-                        "{DEFAULT_PROJECT_DOC_FILENAME} already exists here. Skipping /init to avoid overwriting it."
+                        "{DEFAULT_PROJECT_DOC_FILENAME} 已存在于此处。为避免覆盖，已跳过 /init。"
                     );
                     self.add_info_message(message, /*hint*/ None);
                     return;
@@ -5150,9 +5144,7 @@ impl ChatWidget {
                     else {
                         // Avoid panicking in interactive UI; treat this as a recoverable
                         // internal error.
-                        self.add_error_message(
-                            "Internal error: missing the 'auto' approval preset.".to_string(),
-                        );
+                        self.add_error_message("内部错误：缺少 `auto` 审批预设。".to_string());
                         return;
                     };
 
@@ -5181,9 +5173,7 @@ impl ChatWidget {
                 };
             }
             SlashCommand::SandboxReadRoot => {
-                self.add_error_message(
-                    "Usage: /sandbox-add-read-dir <absolute-directory-path>".to_string(),
-                );
+                self.add_error_message("用法：/sandbox-add-read-dir <绝对目录路径>".to_string());
             }
             SlashCommand::Experimental => {
                 self.open_experimental_popup();
@@ -5212,10 +5202,10 @@ impl ChatWidget {
                             if is_git_repo {
                                 diff_text
                             } else {
-                                "`/diff` — _not inside a git repository_".to_string()
+                                "`/diff` — _当前不在 Git 仓库中_".to_string()
                             }
                         }
-                        Err(e) => format!("Failed to compute diff: {e}"),
+                        Err(e) => format!("计算 diff 失败：{e}"),
                     };
                     tx.send(AppEvent::DiffResult(text));
                 });
@@ -5234,17 +5224,15 @@ impl ChatWidget {
                 match copy_result {
                     Ok(()) => {
                         let hint = self.agent_turn_running.then_some(
-                            "Current turn is still running; copied the latest completed output (not the in-progress response)."
+                            "当前回合仍在运行；已复制最近一次完成的输出（不含正在生成的回复）。"
                                 .to_string(),
                         );
                         self.add_info_message(
-                            "Copied latest Codex output to clipboard.".to_string(),
+                            "已将最新 Codex 输出复制到剪贴板。".to_string(),
                             hint,
                         );
                     }
-                    Err(err) => {
-                        self.add_error_message(format!("Failed to copy to clipboard: {err}"))
-                    }
+                    Err(err) => self.add_error_message(format!("复制到剪贴板失败：{err}")),
                 }
             }
             SlashCommand::Mention => {
@@ -5289,10 +5277,10 @@ impl ChatWidget {
                 self.clean_background_terminals();
             }
             SlashCommand::MemoryDrop => {
-                self.add_app_server_stub_message("Memory maintenance");
+                self.add_app_server_stub_message("记忆维护");
             }
             SlashCommand::MemoryUpdate => {
-                self.add_app_server_stub_message("Memory maintenance");
+                self.add_app_server_stub_message("记忆维护");
             }
             SlashCommand::Mcp => {
                 self.add_mcp_output();
@@ -5306,14 +5294,11 @@ impl ChatWidget {
             SlashCommand::Rollout => {
                 if let Some(path) = self.rollout_path() {
                     self.add_info_message(
-                        format!("Current rollout path: {}", path.display()),
+                        format!("当前执行记录路径：{}", path.display()),
                         /*hint*/ None,
                     );
                 } else {
-                    self.add_info_message(
-                        "Rollout path is not available yet.".to_string(),
-                        /*hint*/ None,
-                    );
+                    self.add_info_message("执行记录路径暂不可用。".to_string(), /*hint*/ None);
                 }
             }
             SlashCommand::TestApproval => {
@@ -5385,12 +5370,12 @@ impl ChatWidget {
                             "off"
                         };
                         self.add_info_message(
-                            format!("Fast mode is {status}."),
+                            format!("快速模式当前为 {status}。"),
                             /*hint*/ None,
                         );
                     }
                     _ => {
-                        self.add_error_message("Usage: /fast [on|off|status]".to_string());
+                        self.add_error_message("用法：/fast [on|off|status]".to_string());
                     }
                 }
             }
@@ -5404,7 +5389,7 @@ impl ChatWidget {
                     return;
                 };
                 let Some(name) = codex_core::util::normalize_thread_name(&prepared_args) else {
-                    self.add_error_message("Thread name cannot be empty.".to_string());
+                    self.add_error_message("线程名称不能为空。".to_string());
                     return;
                 };
                 let cell = Self::rename_confirmation_cell(&name, self.thread_id);
@@ -5532,19 +5517,19 @@ impl ChatWidget {
             .as_ref()
             .is_some_and(|name| !name.is_empty());
         let title = if has_name {
-            "Rename thread"
+            "重命名线程"
         } else {
-            "Name thread"
+            "命名线程"
         };
         let thread_id = self.thread_id;
         let view = CustomPromptView::new(
             title.to_string(),
-            "Type a name and press Enter".to_string(),
+            "输入名称后按 Enter".to_string(),
             /*context_label*/ None,
             Box::new(move |name: String| {
                 let Some(name) = codex_core::util::normalize_thread_name(&name) else {
                     tx.send(AppEvent::InsertHistoryCell(Box::new(
-                        history_cell::new_error_event("Thread name cannot be empty.".to_string()),
+                        history_cell::new_error_event("线程名称不能为空。".to_string()),
                     )));
                     return;
                 };
@@ -6210,7 +6195,7 @@ impl ChatWidget {
                             is_error: Some(false),
                             meta: None,
                         }),
-                        (None, None) => Err("MCP tool call completed without a result".to_string()),
+                        (None, None) => Err("MCP 工具调用已完成，但没有返回结果".to_string()),
                     },
                 });
             }
@@ -6974,7 +6959,7 @@ impl ChatWidget {
                     self.submit_pending_steers_after_interrupt = false;
                     self.pending_steers.clear();
                     self.refresh_pending_input_preview();
-                    self.on_error("Turn aborted: replaced by a new task".to_owned())
+                    self.on_error("当前回合已中止：已被新任务替换".to_owned())
                 }
                 TurnAbortReason::ReviewEnded => {
                     self.on_interrupted_turn(ev.reason);
@@ -7172,7 +7157,7 @@ impl ChatWidget {
             self.bottom_pane.set_task_running(/*running*/ true);
         }
         self.is_review_mode = true;
-        let banner = format!(">> Code review started: {hint} <<");
+        let banner = format!(">> 代码评审已开始：{hint} <<");
         self.add_to_history(history_cell::new_review_status_line(banner));
         self.request_redraw();
     }
@@ -7184,7 +7169,7 @@ impl ChatWidget {
         self.is_review_mode = false;
         self.restore_pre_review_token_info();
         self.add_to_history(history_cell::new_review_status_line(
-            "<< Code review finished >>".to_string(),
+            "<< 代码评审已结束 >>".to_string(),
         ));
         self.request_redraw();
     }
@@ -7207,9 +7192,9 @@ impl ChatWidget {
             if output.findings.is_empty() {
                 let explanation = output.overall_explanation.trim().to_string();
                 if explanation.is_empty() {
-                    tracing::error!("Reviewer failed to output a response.");
+                    tracing::error!("评审器未能输出回复。");
                     self.add_to_history(history_cell::new_error_event(
-                        "Reviewer failed to output a response.".to_owned(),
+                        "评审器未能输出回复。".to_owned(),
                     ));
                 } else {
                     // Show explanation when there are no structured findings.
@@ -7583,7 +7568,7 @@ impl ChatWidget {
                     Ok(connectors) => connectors,
                     Err(err) => {
                         app_event_tx.send(AppEvent::ConnectorsLoaded {
-                            result: Err(format!("Failed to load apps: {err}")),
+                            result: Err(format!("加载应用失败：{err}")),
                             is_final: true,
                         });
                         return;
@@ -7611,7 +7596,7 @@ impl ChatWidget {
                 Ok(ConnectorsSnapshot { connectors })
             }
             .await
-            .map_err(|err: anyhow::Error| format!("Failed to load apps: {err}"));
+            .map_err(|err: anyhow::Error| format!("加载应用失败：{err}"));
 
             app_event_tx.send(AppEvent::ConnectorsLoaded {
                 result,
@@ -9286,14 +9271,14 @@ impl ChatWidget {
         // accidentally queue messages that will run under an unexpected mode.
         self.bottom_pane.set_composer_input_enabled(
             /*enabled*/ false,
-            Some("Input disabled until setup completes.".to_string()),
+            Some("设置完成前无法输入。".to_string()),
         );
         self.bottom_pane.ensure_status_indicator();
         self.bottom_pane
             .set_interrupt_hint_visible(/*visible*/ false);
         self.set_status(
-            "Setting up sandbox...".to_string(),
-            Some("Hang tight, this may take a few minutes".to_string()),
+            "正在设置沙箱...".to_string(),
+            Some("请稍候，这可能需要几分钟".to_string()),
             StatusDetailsCapitalization::CapitalizeFirst,
             STATUS_DETAILS_DEFAULT_MAX_LINES,
         );
@@ -9360,7 +9345,7 @@ impl ChatWidget {
                 .set_audio_device_selection_enabled(self.realtime_audio_device_selection_enabled());
             if !realtime_conversation_enabled && self.realtime_conversation.is_live() {
                 self.request_realtime_conversation_close(Some(
-                    "Realtime voice mode was closed because the feature was disabled.".to_string(),
+                    "实时语音模式已关闭，因为该功能已被禁用。".to_string(),
                 ));
             }
         }
@@ -9656,7 +9641,7 @@ impl ChatWidget {
 
     fn image_inputs_not_supported_message(&self) -> String {
         format!(
-            "Model {} does not support image inputs. Remove images or switch models.",
+            "模型 {} 不支持图片输入。请移除图片或切换模型。",
             self.current_model()
         )
     }
@@ -9949,9 +9934,9 @@ impl ChatWidget {
         let name = name.to_string();
         let line = vec![
             "• ".into(),
-            "Thread renamed to ".into(),
+            "线程已重命名为：".into(),
             name.cyan(),
-            ", to resume this thread run ".into(),
+            "，继续此线程请运行 ".into(),
             resume_cmd.cyan(),
         ];
         PlainHistoryCell::new(vec![line.into()])
@@ -10097,9 +10082,7 @@ impl ChatWidget {
             };
             let is_installed = connector.is_accessible;
             let selected_label = if is_installed {
-                format!(
-                    "{status_label}。按 Enter 打开应用页面，可安装、管理或启用/停用这个应用。"
-                )
+                format!("{status_label}。按 Enter 打开应用页面，可安装、管理或启用/停用这个应用。")
             } else {
                 format!("{status_label}。按 Enter 打开应用页面安装这个应用。")
             };
@@ -10599,8 +10582,8 @@ impl ChatWidget {
         let mut items: Vec<SelectionItem> = Vec::new();
 
         items.push(SelectionItem {
-            name: "Review against a base branch".to_string(),
-            description: Some("(PR Style)".into()),
+            name: "基于分支进行评审".to_string(),
+            description: Some("（PR 风格）".into()),
             actions: vec![Box::new({
                 let cwd = self.config.cwd.to_path_buf();
                 move |tx| {
@@ -10612,7 +10595,7 @@ impl ChatWidget {
         });
 
         items.push(SelectionItem {
-            name: "Review uncommitted changes".to_string(),
+            name: "评审未提交的改动".to_string(),
             actions: vec![Box::new(move |tx: &AppEventSender| {
                 tx.review(ReviewRequest {
                     target: ReviewTarget::UncommittedChanges,
@@ -10625,7 +10608,7 @@ impl ChatWidget {
 
         // New: Review a specific commit (opens commit picker)
         items.push(SelectionItem {
-            name: "Review a commit".to_string(),
+            name: "评审某个提交".to_string(),
             actions: vec![Box::new({
                 let cwd = self.config.cwd.to_path_buf();
                 move |tx| {
@@ -10915,10 +10898,7 @@ impl Notification {
                     .unwrap_or_else(|| "代理回合完成".to_string())
             }
             Notification::ExecApprovalRequested { command } => {
-                format!(
-                    "请求批准：{}",
-                    truncate_text(command, /*max_graphemes*/ 30)
-                )
+                format!("请求批准：{}", truncate_text(command, /*max_graphemes*/ 30))
             }
             Notification::EditApprovalRequested { cwd, changes } => {
                 format!(
@@ -11055,11 +11035,21 @@ fn extract_first_bold(s: &str) -> Option<String> {
 
 fn hook_event_label(event_name: codex_protocol::protocol::HookEventName) -> &'static str {
     match event_name {
-        codex_protocol::protocol::HookEventName::PreToolUse => "PreToolUse",
-        codex_protocol::protocol::HookEventName::PostToolUse => "PostToolUse",
-        codex_protocol::protocol::HookEventName::SessionStart => "SessionStart",
-        codex_protocol::protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
-        codex_protocol::protocol::HookEventName::Stop => "Stop",
+        codex_protocol::protocol::HookEventName::PreToolUse => "工具调用前",
+        codex_protocol::protocol::HookEventName::PostToolUse => "工具调用后",
+        codex_protocol::protocol::HookEventName::SessionStart => "会话开始",
+        codex_protocol::protocol::HookEventName::UserPromptSubmit => "用户消息提交",
+        codex_protocol::protocol::HookEventName::Stop => "停止",
+    }
+}
+
+fn hook_run_status_label(status: codex_protocol::protocol::HookRunStatus) -> &'static str {
+    match status {
+        codex_protocol::protocol::HookRunStatus::Running => "运行中",
+        codex_protocol::protocol::HookRunStatus::Completed => "已完成",
+        codex_protocol::protocol::HookRunStatus::Failed => "失败",
+        codex_protocol::protocol::HookRunStatus::Blocked => "已拦截",
+        codex_protocol::protocol::HookRunStatus::Stopped => "已停止",
     }
 }
 

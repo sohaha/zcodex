@@ -1,5 +1,6 @@
 ---
 source: tui/src/history_cell.rs
+assertion_line: 3092
 expression: rendered
 ---
 ╭───────────────────────────╮
@@ -9,4 +10,4 @@ expression: rendered
 │ 目录: /tmp/project        │
 ╰───────────────────────────╯
 
-  Tip: Model just became available
+  提示： 模型刚刚可用
