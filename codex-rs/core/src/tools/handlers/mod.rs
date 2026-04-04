@@ -17,7 +17,7 @@ mod tool_search;
 mod tool_suggest;
 pub(crate) mod unified_exec;
 mod view_image;
-mod zmemory;
+pub(crate) mod zmemory;
 
 use codex_sandboxing::policy_transforms::intersect_permission_profiles;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
