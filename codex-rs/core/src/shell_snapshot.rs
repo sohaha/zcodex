@@ -281,6 +281,7 @@ async fn run_script_with_timeout(
     handler.args(&args[1..]);
     handler.stdin(Stdio::null());
     handler.current_dir(cwd);
+    sanitize_invalid_ripgrep_config_path(&mut handler);
     #[cfg(unix)]
     unsafe {
         handler.pre_exec(|| {
@@ -301,6 +302,16 @@ async fn run_script_with_timeout(
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn sanitize_invalid_ripgrep_config_path(command: &mut Command) {
+    let Some(path) = std::env::var_os("RIPGREP_CONFIG_PATH") else {
+        return;
+    };
+
+    if !path.is_empty() && !Path::new(&path).exists() {
+        command.env_remove("RIPGREP_CONFIG_PATH");
+    }
 }
 
 fn excluded_exports_regex() -> String {

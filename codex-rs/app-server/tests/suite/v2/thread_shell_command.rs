@@ -32,6 +32,7 @@ use codex_features::Feature;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::path::Path;
+use tempfile::NamedTempFile;
 use tempfile::TempDir;
 use tokio::time::timeout;
 
@@ -150,6 +151,90 @@ async fn thread_shell_command_runs_as_standalone_turn_and_persists_history() -> 
     assert_eq!(source, &CommandExecutionSource::UserShell);
     assert_eq!(status, &CommandExecutionStatus::Completed);
     assert_eq!(aggregated_output.as_deref(), Some(expected_output.as_str()));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_shell_command_ignores_invalid_ripgrep_config_path_from_parent_env() -> Result<()> {
+    let tmp = TempDir::new()?;
+    let codex_home = tmp.path().join("codex_home");
+    std::fs::create_dir(&codex_home)?;
+
+    let server = create_mock_responses_server_sequence(vec![]).await;
+    create_config_toml(
+        codex_home.as_path(),
+        &server.uri(),
+        "never",
+        &BTreeMap::default(),
+    )?;
+
+    let mut mcp = McpProcess::new_with_env(
+        codex_home.as_path(),
+        &[(
+            "RIPGREP_CONFIG_PATH",
+            Some("/tmp/definitely-missing-ripgreprc"),
+        )],
+    )
+    .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let start_id = mcp
+        .send_thread_start_request(ThreadStartParams {
+            persist_extended_history: true,
+            ..Default::default()
+        })
+        .await?;
+    let start_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
+
+    let file = NamedTempFile::new()?;
+    std::fs::write(file.path(), "hello from rg\n")?;
+    let command = format!("rg -n 'hello from rg' '{}'", file.path().display());
+
+    let shell_id = mcp
+        .send_thread_shell_command_request(ThreadShellCommandParams {
+            thread_id: thread.id.clone(),
+            command,
+        })
+        .await?;
+    let shell_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(shell_id)),
+    )
+    .await??;
+    let _: ThreadShellCommandResponse = to_response::<ThreadShellCommandResponse>(shell_resp)?;
+
+    let started = wait_for_command_execution_started(&mut mcp, /*expected_id*/ None).await?;
+    let ThreadItem::CommandExecution { id, .. } = &started.item else {
+        unreachable!("helper returns command execution item");
+    };
+    let command_id = id.clone();
+
+    let delta = wait_for_command_execution_output_delta(&mut mcp, &command_id).await?;
+    assert_eq!(delta.delta, "1:hello from rg\n");
+
+    let completed = wait_for_command_execution_completed(&mut mcp, Some(&command_id)).await?;
+    let ThreadItem::CommandExecution {
+        aggregated_output,
+        exit_code,
+        ..
+    } = &completed.item
+    else {
+        unreachable!("helper returns command execution item");
+    };
+    assert_eq!(aggregated_output.as_deref(), Some("1:hello from rg\n"));
+    assert_eq!(*exit_code, Some(0));
+
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
 
     Ok(())
 }

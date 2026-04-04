@@ -250,6 +250,34 @@ async fn shell_command_ignores_invalid_ripgrep_config_path_from_parent_env() -> 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shell_command_with_login_ignores_invalid_ripgrep_config_path_from_parent_env()
+-> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_windows!(Ok(()));
+
+    let file = NamedTempFile::new()?;
+    std::fs::write(file.path(), "hello with login\n")?;
+    let command = format!("rg -n 'hello with login' '{}'", file.path().display());
+
+    let harness = shell_command_harness_with(|builder| builder.with_model("gpt-5.1")).await?;
+
+    let call_id = "shell-command-invalid-ripgreprc-login";
+    mount_shell_responses(&harness, call_id, &command, Some(true)).await;
+    harness
+        .submit("run rg with login and invalid parent ripgrep config")
+        .await?;
+
+    let output = harness.function_call_stdout(call_id).await;
+    assert_shell_command_output(&output, "1:hello with login")?;
+    assert!(
+        !output.contains("ripgreprc"),
+        "unexpected ripgreprc error in output: {output}"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shell_command_times_out_with_timeout_ms() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 

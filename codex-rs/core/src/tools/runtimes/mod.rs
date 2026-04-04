@@ -75,6 +75,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
     let (override_captures, override_exports) = build_override_exports(explicit_env_overrides);
+    let ripgrep_cleanup = invalid_ripgrep_config_unset();
     let snapshot = session_shell
         .shell_snapshot()
         .filter(|snapshot| snapshot.path.exists())
@@ -95,19 +96,20 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
             let original_script = shell_single_quote(original_script);
             let rewritten_script = if override_exports.is_empty() {
                 format!(
-                    "if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
+                    "{ripgrep_cleanup}if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
                 )
             } else {
                 format!(
-                    "{override_captures}\n\nif . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
+                    "{override_captures}\n\n{ripgrep_cleanup}if . '{snapshot_path}' >/dev/null 2>&1; then :; fi\n\n{override_exports}\n\nexec '{original_shell}' -c '{original_script}'{trailing_args}"
                 )
             };
 
             vec![shell_path.to_string(), "-c".to_string(), rewritten_script]
         }
-        None if override_exports.is_empty() => command.to_vec(),
+        None if override_exports.is_empty() && ripgrep_cleanup.is_empty() => command.to_vec(),
         None => {
-            let restored_script = format!("{override_exports}\n\n{original_script}");
+            let restored_script =
+                format!("{ripgrep_cleanup}{override_exports}\n\n{original_script}");
             let rewritten_script = format!(
                 "{override_captures}\n\nexec '{original_shell}' -lc '{}'{}",
                 shell_single_quote(&restored_script),
@@ -152,6 +154,15 @@ fn build_override_exports(explicit_env_overrides: &HashMap<String, String>) -> (
         .join("\n");
 
     (captures, restores)
+}
+
+fn invalid_ripgrep_config_unset() -> &'static str {
+    match std::env::var_os("RIPGREP_CONFIG_PATH") {
+        Some(path) if !path.is_empty() && !Path::new(&path).exists() => {
+            "unset RIPGREP_CONFIG_PATH\n\n"
+        }
+        _ => "",
+    }
 }
 
 fn is_valid_shell_variable_name(name: &str) -> bool {
