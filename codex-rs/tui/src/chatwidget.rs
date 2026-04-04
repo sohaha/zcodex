@@ -956,6 +956,7 @@ pub(crate) struct ChatWidget {
     realtime_conversation: RealtimeConversationUiState,
     last_rendered_user_message_event: Option<RenderedUserMessageEvent>,
     last_non_retry_error: Option<(String, String)>,
+    last_buddy_status_message: Option<String>,
 }
 
 /// Cached nickname and role for a collab agent thread, used to attach human-readable labels to
@@ -4710,6 +4711,7 @@ impl ChatWidget {
             realtime_conversation: RealtimeConversationUiState::default(),
             last_rendered_user_message_event: None,
             last_non_retry_error: None,
+            last_buddy_status_message: None,
         };
 
         widget
@@ -5491,6 +5493,7 @@ impl ChatWidget {
 
     fn handle_buddy_command(&mut self, args: &str) {
         let seed = self.buddy_seed();
+        let is_status = args == "status";
         let result = match args {
             "" | "help" => {
                 self.show_buddy_help();
@@ -5505,6 +5508,15 @@ impl ChatWidget {
                 return;
             }
         };
+        if is_status {
+            if self.last_buddy_status_message.as_deref() == Some(result.message.as_str()) {
+                self.request_redraw();
+                return;
+            }
+            self.last_buddy_status_message = Some(result.message.clone());
+        } else {
+            self.last_buddy_status_message = None;
+        }
         self.add_info_message(result.message, result.hint);
     }
 

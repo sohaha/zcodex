@@ -3,6 +3,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use textwrap::Options;
+use unicode_width::UnicodeWidthStr;
 
 use crate::live_wrap::take_prefix_by_width;
 
@@ -152,7 +153,7 @@ fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
     let wrapped = textwrap::wrap(text, Options::new(bubble_width));
     let body_width = wrapped
         .iter()
-        .map(|line| line.len())
+        .map(|line| UnicodeWidthStr::width(line.as_ref()))
         .max()
         .unwrap_or_default();
     let border = if fading {
@@ -173,10 +174,13 @@ fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
     ]));
 
     for line in wrapped {
+        let line_text = line.into_owned();
+        let padding =
+            " ".repeat(body_width.saturating_sub(UnicodeWidthStr::width(line_text.as_str())));
         lines.push(Line::from(vec![
             "  ".into(),
             Span::styled("| ", border),
-            Span::styled(format!("{line:<body_width$}"), text_style),
+            Span::styled(format!("{line_text}{padding}"), text_style),
             Span::styled(" |", border),
         ]));
     }

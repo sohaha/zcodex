@@ -288,6 +288,7 @@ pub(super) async fn make_chatwidget_manual(
         realtime_conversation: RealtimeConversationUiState::default(),
         last_rendered_user_message_event: None,
         last_non_retry_error: None,
+        last_buddy_status_message: None,
     };
     if widget.config.tui_show_buddy {
         let seed = widget.buddy_seed();

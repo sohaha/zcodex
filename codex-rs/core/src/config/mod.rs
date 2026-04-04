@@ -2891,12 +2891,16 @@ impl Config {
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(false),
             tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
-            model_availability_nux:
- cfg
+            model_availability_nux: cfg
                 .tui
                 .as_ref()
                 .map(|t| t.model_availability_nux.clone())
                 .unwrap_or_default(),
+            tui_auto_compress_pasted_images: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.auto_compress_pasted_images)
+                .unwrap_or(true),
             tui_alternate_screen: cfg
                 .tui
                 .as_ref()

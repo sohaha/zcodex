@@ -630,6 +630,23 @@
       },
       "type": "object"
     },
+    "FallbackProviderToml": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "description": "Optional model slug to use with this fallback provider.",
+          "type": "string"
+        },
+        "provider": {
+          "description": "Provider to use from the model_providers map.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
     "FeedbackConfigToml": {
       "additionalProperties": false,
       "properties": {
@@ -1754,6 +1771,11 @@
           "description": "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`.",
           "type": "boolean"
         },
+        "auto_compress_pasted_images": {
+          "default": true,
+          "description": "Automatically compress images pasted into the TUI composer with Ctrl+V. Defaults to `true`.",
+          "type": "boolean"
+        },
         "buddy": {
           "allOf": [
             {
@@ -2137,6 +2159,22 @@
     },
     "experimental_use_unified_exec_tool": {
       "type": "boolean"
+    },
+    "fallback_model": {
+      "description": "Optional model slug to use with the fallback provider.",
+      "type": "string"
+    },
+    "fallback_provider": {
+      "description": "Optional provider to use when the primary provider request fails.",
+      "type": "string"
+    },
+    "fallback_providers": {
+      "default": [],
+      "description": "Ordered list of fallback providers to try for the current request.",
+      "items": {
+        "$ref": "#/definitions/FallbackProviderToml"
+      },
+      "type": "array"
     },
     "features": {
       "additionalProperties": false,

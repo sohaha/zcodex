@@ -289,6 +289,7 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line: None,
             terminal_title: None,
             theme: None,
+            auto_compress_pasted_images: true,
             buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
@@ -988,6 +989,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             status_line: None,
             terminal_title: None,
             theme: None,
+            auto_compress_pasted_images: true,
             buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
@@ -4674,6 +4676,7 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_terminal_title: None,
             tui_theme: None,
+            tui_auto_compress_pasted_images: true,
             tui_buddy_reactions_enabled: true,
             tui_buddy_soul: None,
             otel: OtelConfig::default(),
@@ -4826,6 +4829,7 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_auto_compress_pasted_images: true,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -4976,6 +4980,7 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_auto_compress_pasted_images: true,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -5112,6 +5117,7 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_auto_compress_pasted_images: true,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -6465,4 +6471,16 @@ fn test_tui_notification_method() {
     let parsed: RootTomlTest =
         toml::from_str(toml).expect("deserialize notification_method=\"bel\"");
     assert_eq!(parsed.tui.notification_method, NotificationMethod::Bel);
+}
+
+#[test]
+fn test_tui_auto_compress_pasted_images_can_be_disabled() {
+    let toml = r#"
+            [tui]
+            auto_compress_pasted_images = false
+        "#;
+    let parsed: ConfigToml =
+        toml::from_str(toml).expect("deserialize auto_compress_pasted_images=false");
+    let tui = parsed.tui.expect("tui config should deserialize");
+    assert!(!tui.auto_compress_pasted_images);
 }

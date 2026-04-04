@@ -98,7 +98,8 @@ fn encode_pasted_image(
     auto_compress: bool,
 ) -> Result<(Vec<u8>, PastedImageInfo, &'static str), PasteImageError> {
     let processed = if auto_compress
-        && (dynamic.width() > AUTO_COMPRESS_MAX_WIDTH || dynamic.height() > AUTO_COMPRESS_MAX_HEIGHT)
+        && (dynamic.width() > AUTO_COMPRESS_MAX_WIDTH
+            || dynamic.height() > AUTO_COMPRESS_MAX_HEIGHT)
     {
         dynamic.resize(
             AUTO_COMPRESS_MAX_WIDTH,
@@ -111,11 +112,12 @@ fn encode_pasted_image(
 
     let width = processed.width();
     let height = processed.height();
-    let has_alpha = processed.color().has_alpha();
+    let rgba = processed.to_rgba8();
+    let preserves_transparency = rgba.pixels().any(|pixel| pixel[3] < u8::MAX);
     let mut encoded = Vec::new();
     let span = tracing::debug_span!("encode_image", byte_length = tracing::field::Empty).entered();
 
-    let (encoded_format, suffix) = if auto_compress && !has_alpha {
+    let (encoded_format, suffix) = if auto_compress && !preserves_transparency {
         let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
             &mut encoded,
             AUTO_COMPRESS_JPEG_QUALITY,
@@ -125,7 +127,6 @@ fn encode_pasted_image(
             .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
         (EncodedImageFormat::Jpeg, ".jpg")
     } else {
-        let rgba = processed.to_rgba8();
         let encoder = image::codecs::png::PngEncoder::new(&mut encoded);
         image::ImageEncoder::write_image(
             encoder,
@@ -151,10 +152,7 @@ fn encode_pasted_image(
 }
 
 #[cfg(not(target_os = "android"))]
-fn write_temp_image(
-    encoded: &[u8],
-    suffix: &'static str,
-) -> Result<PathBuf, PasteImageError> {
+fn write_temp_image(encoded: &[u8], suffix: &'static str) -> Result<PathBuf, PasteImageError> {
     let tmp = Builder::new()
         .prefix("codex-clipboard-")
         .suffix(suffix)
@@ -578,6 +576,74 @@ mod pasted_paths_tests {
         assert_eq!(
             result,
             PathBuf::from("/mnt/c/Users/Alice/Pictures/example image.png")
+        );
+    }
+}
+
+#[cfg(test)]
+mod pasted_image_encoding_tests {
+    use super::*;
+    use image::DynamicImage;
+    use image::ImageBuffer;
+    use image::Rgba;
+
+    #[test]
+    fn auto_compress_reencodes_opaque_images_as_jpeg() {
+        let image = ImageBuffer::from_pixel(640, 360, Rgba([10, 20, 30, 255]));
+        let (encoded, info, suffix) =
+            encode_pasted_image(DynamicImage::ImageRgba8(image), true).expect("encode image");
+
+        assert_eq!(info.width, 640);
+        assert_eq!(info.height, 360);
+        assert_eq!(info.encoded_format, EncodedImageFormat::Jpeg);
+        assert_eq!(suffix, ".jpg");
+        assert_eq!(
+            image::guess_format(&encoded).expect("detect format"),
+            image::ImageFormat::Jpeg
+        );
+    }
+
+    #[test]
+    fn auto_compress_keeps_transparent_images_as_png() {
+        let image = ImageBuffer::from_pixel(640, 360, Rgba([10, 20, 30, 100]));
+        let (encoded, info, suffix) =
+            encode_pasted_image(DynamicImage::ImageRgba8(image), true).expect("encode image");
+
+        assert_eq!(info.width, 640);
+        assert_eq!(info.height, 360);
+        assert_eq!(info.encoded_format, EncodedImageFormat::Png);
+        assert_eq!(suffix, ".png");
+        assert_eq!(
+            image::guess_format(&encoded).expect("detect format"),
+            image::ImageFormat::Png
+        );
+    }
+
+    #[test]
+    fn auto_compress_resizes_large_images() {
+        let image = ImageBuffer::from_pixel(4096, 2048, Rgba([200, 10, 10, 255]));
+        let (_encoded, info, suffix) =
+            encode_pasted_image(DynamicImage::ImageRgba8(image), true).expect("encode image");
+
+        assert!(info.width <= AUTO_COMPRESS_MAX_WIDTH);
+        assert!(info.height <= AUTO_COMPRESS_MAX_HEIGHT);
+        assert_eq!(info.encoded_format, EncodedImageFormat::Jpeg);
+        assert_eq!(suffix, ".jpg");
+    }
+
+    #[test]
+    fn disabling_auto_compress_keeps_png_output() {
+        let image = ImageBuffer::from_pixel(640, 360, Rgba([10, 20, 30, 255]));
+        let (encoded, info, suffix) =
+            encode_pasted_image(DynamicImage::ImageRgba8(image), false).expect("encode image");
+
+        assert_eq!(info.width, 640);
+        assert_eq!(info.height, 360);
+        assert_eq!(info.encoded_format, EncodedImageFormat::Png);
+        assert_eq!(suffix, ".png");
+        assert_eq!(
+            image::guess_format(&encoded).expect("detect format"),
+            image::ImageFormat::Png
         );
     }
 }
