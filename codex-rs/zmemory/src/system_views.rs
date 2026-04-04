@@ -194,7 +194,7 @@ fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Valu
     let boot_healthy = boot
         .get("missingUris")
         .and_then(Value::as_array)
-        .is_some_and(|missing| missing.is_empty());
+        .is_some_and(Vec::is_empty);
 
     Ok(json!({
         "view": "workspace",

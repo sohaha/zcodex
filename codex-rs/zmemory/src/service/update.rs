@@ -30,17 +30,16 @@ pub(crate) fn update_action(
     let mut priority = row.priority;
     let updated_content = resolve_updated_content(args, &current_memory.content)?;
 
-    // Early bail before transaction
-    let has_content_change = updated_content
-        .as_ref()
-        .is_some_and(|content| content != &current_memory.content);
+    // Early bail before transaction — filter out no-op content changes
+    let updated_content = updated_content
+        .filter(|content| content != &current_memory.content);
+    let has_content_change = updated_content.is_some();
     if !has_content_change && args.priority.is_none() && args.disclosure.is_none() {
         bail!("no changes requested");
     }
 
     let tx = conn.transaction()?;
-    if has_content_change {
-        let content = updated_content.unwrap();
+    if let Some(content) = &updated_content {
         tx.execute(
             "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
             params![row.node_uuid, content],
