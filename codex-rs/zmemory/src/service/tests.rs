@@ -1,0 +1,1517 @@
+use super::execute_action;
+use crate::config::ZmemoryConfig;
+use crate::config::ZmemorySettings;
+use crate::path_resolution::resolve_workspace_base_path;
+use crate::path_resolution::resolve_zmemory_path;
+use crate::tool_api::ZmemoryToolAction;
+use crate::tool_api::ZmemoryToolCallParam;
+use pretty_assertions::assert_eq;
+use rusqlite::Connection;
+use rusqlite::params;
+use serde_json::Value;
+use serde_json::json;
+use tempfile::TempDir;
+
+fn config() -> (TempDir, ZmemoryConfig) {
+    let dir = TempDir::new().expect("tempdir");
+    let resolution =
+        resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
+    let workspace_base = resolve_workspace_base_path(dir.path()).expect("resolve workspace base");
+    let config = ZmemoryConfig::new(dir.path().to_path_buf(), workspace_base, resolution);
+    (dir, config)
+}
+
+fn config_with_settings(settings: ZmemorySettings) -> (TempDir, ZmemoryConfig) {
+    let dir = TempDir::new().expect("tempdir");
+    let resolution =
+        resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
+    let workspace_base = resolve_workspace_base_path(dir.path()).expect("resolve workspace base");
+    let config = ZmemoryConfig::new_with_settings(
+        dir.path().to_path_buf(),
+        workspace_base,
+        resolution,
+        settings,
+    );
+    (dir, config)
+}
+
+#[test]
+fn create_read_search_and_rebuild_round_trip() {
+    let (_dir, config) = config();
+    let create = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Stores agent profile memory".to_string()),
+            priority: Some(5),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    assert_eq!(create["action"], "create");
+    assert_eq!(create["result"]["uri"], "core://agent-profile");
+
+    let read = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(read["result"]["content"], "Stores agent profile memory");
+
+    let search = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(search["result"]["matchCount"], 1);
+
+    let rebuild = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::RebuildSearch,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("rebuild should succeed");
+    assert_eq!(rebuild["result"]["documentCount"], 1);
+}
+
+#[test]
+fn create_supports_parent_uri_and_auto_numbering() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            parent_uri: Some("core://".to_string()),
+            title: Some("agent".to_string()),
+            content: Some("Stores agent profile memory".to_string()),
+            priority: Some(5),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("named create should succeed");
+
+    let numbered = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            parent_uri: Some("core://".to_string()),
+            content: Some("Auto numbered memory".to_string()),
+            priority: Some(3),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("auto-numbered create should succeed");
+
+    assert_eq!(numbered["result"]["uri"], "core://1");
+
+    let read = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(read["result"]["content"], "Stores agent profile memory");
+}
+
+#[test]
+fn create_rejects_conflicting_uri_modes_and_invalid_title() {
+    let (_dir, config) = config();
+    let conflict = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            parent_uri: Some("core://".to_string()),
+            content: Some("Stores agent profile memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("uri and parentUri should conflict");
+    assert_eq!(
+        conflict.to_string(),
+        "`uri` cannot be combined with `parentUri` or `title`"
+    );
+
+    let invalid_title = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            parent_uri: Some("core://".to_string()),
+            title: Some("bad title".to_string()),
+            content: Some("Stores agent profile memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("invalid title should fail");
+    assert_eq!(
+        invalid_title.to_string(),
+        "`title` may only contain ASCII letters, numbers, `_`, or `-`"
+    );
+}
+
+#[test]
+fn system_views_reflect_runtime_settings_without_changing_defaults() {
+    let (_dir, config) = config_with_settings(ZmemorySettings::from_sources(
+        Some(vec![
+            "core".to_string(),
+            "project".to_string(),
+            "notes".to_string(),
+        ]),
+        Some(vec![
+            "core://agent/coding_operating_manual".to_string(),
+            "core://my_user/coding_preferences".to_string(),
+            "core://agent/my_user/collaboration_contract".to_string(),
+        ]),
+        None,
+        None,
+    ));
+
+    let workspace = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://workspace".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("workspace view should succeed");
+    assert_eq!(
+        workspace["result"]["view"]["validDomains"],
+        json!(["core", "project", "notes"])
+    );
+    assert_eq!(
+        workspace["result"]["view"]["coreMemoryUris"],
+        json!([
+            "core://agent/coding_operating_manual",
+            "core://my_user/coding_preferences",
+            "core://agent/my_user/collaboration_contract"
+        ])
+    );
+
+    let boot = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://boot".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("boot view should succeed");
+    assert_eq!(boot["result"]["view"]["configuredUriCount"], 3);
+    assert_eq!(
+        boot["result"]["view"]["configuredUris"],
+        json!([
+            "core://agent/coding_operating_manual",
+            "core://my_user/coding_preferences",
+            "core://agent/my_user/collaboration_contract"
+        ])
+    );
+
+    let defaults = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://defaults".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("defaults view should succeed");
+    assert_eq!(defaults["result"]["view"]["validDomains"], json!(["core"]));
+    assert_eq!(
+        defaults["result"]["view"]["coreMemoryUris"],
+        json!(["core://agent", "core://my_user", "core://agent/my_user"])
+    );
+}
+
+#[test]
+fn alias_and_manage_triggers_are_visible_in_read() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://team".to_string()),
+            content: Some("Team root".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://salem".to_string()),
+            content: Some("Profile for Salem".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://team/salem".to_string()),
+            target_uri: Some("core://salem".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://salem".to_string()),
+            add: Some(vec!["Profile".to_string(), "Agent".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let read = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://salem".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+
+    assert_eq!(read["result"]["aliasCount"], 2);
+    assert_eq!(read["result"]["keywords"].as_array().map(Vec::len), Some(2));
+}
+
+#[test]
+fn update_supports_patch_append_and_metadata_only_modes() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("Original memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let update = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            old_string: Some("Original".to_string()),
+            new_string: Some("Updated".to_string()),
+            priority: Some(5),
+            disclosure: Some("team".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+
+    assert_eq!(update["result"]["contentChanged"], true);
+    assert_eq!(update["result"]["priority"], 5);
+    assert_eq!(update["result"]["disclosure"], "team");
+    assert!(update["result"]["newMemoryId"].as_i64().is_some());
+
+    let metadata_only = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            priority: Some(9),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("metadata-only update should succeed");
+    assert_eq!(metadata_only["result"]["contentChanged"], false);
+    assert!(metadata_only["result"]["newMemoryId"].is_null());
+    assert_eq!(metadata_only["result"]["priority"], 9);
+
+    let append = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            append: Some("   ".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("append update should succeed");
+    assert_eq!(append["result"]["contentChanged"], true);
+
+    let read = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(read["result"]["content"], "Updated memory   ");
+    assert_eq!(read["result"]["priority"], 9);
+
+    let search = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("Updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(search["result"]["matchCount"], 1);
+}
+
+#[test]
+fn update_rejects_conflicting_or_invalid_patch_modes() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("Original memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conflict = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            content: Some("Replacement".to_string()),
+            append: Some("suffix".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("content and append should conflict");
+    assert_eq!(
+        conflict.to_string(),
+        "`content` cannot be combined with `oldString`/`newString`/`append`"
+    );
+
+    let missing_new = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            old_string: Some("Original".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("oldString without newString should fail");
+    assert_eq!(
+        missing_new.to_string(),
+        "`newString` is required when `oldString` is provided"
+    );
+
+    let duplicate_patch = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            old_string: Some("m".to_string()),
+            new_string: Some("M".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("ambiguous patch should fail");
+    assert_eq!(
+        duplicate_patch.to_string(),
+        "`oldString` matched multiple locations; provide a more specific value"
+    );
+
+    let empty_append = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://agent".to_string()),
+            append: Some(String::new()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("empty append should fail");
+    assert_eq!(empty_append.to_string(), "`append` cannot be empty");
+}
+
+#[test]
+fn delete_path_removes_last_reference_from_search() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://obsolete".to_string()),
+            content: Some("Obsolete memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let delete = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::DeletePath,
+            uri: Some("core://obsolete".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("delete should succeed");
+    assert_eq!(delete["result"]["deletedPaths"], 1);
+    assert_eq!(delete["result"]["deletedEdges"], 1);
+    assert_eq!(delete["result"]["deprecatedNodes"], 1);
+
+    let search = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("Obsolete".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(search["result"]["matchCount"], 0);
+}
+
+#[test]
+fn system_views_reflect_index_recent_and_glossary() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("Profile for agent".to_string()),
+            priority: Some(7),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://agent".to_string()),
+            add: Some(vec!["profile".to_string(), "agent".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let boot = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://boot".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("boot view should succeed");
+    assert_eq!(boot["result"]["view"]["view"], "boot");
+    assert_eq!(boot["result"]["view"]["entryCount"], 1);
+    assert_eq!(boot["result"]["view"]["entries"][0]["uri"], "core://agent");
+    assert_eq!(boot["result"]["view"]["missingUris"][0], "core://my_user");
+    assert_eq!(
+        boot["result"]["view"]["missingUris"][1],
+        "core://agent/my_user"
+    );
+
+    let defaults = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://defaults".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("defaults view should succeed");
+    assert_eq!(defaults["result"]["view"]["view"], "defaults");
+    assert_eq!(
+        defaults["result"]["view"]["defaultPathPolicy"]["mode"],
+        "projectScoped"
+    );
+    assert_eq!(
+        defaults["result"]["view"]["defaultPathPolicy"]["dbPath"],
+        json!(
+            config
+                .codex_home()
+                .join("zmemory")
+                .join("projects")
+                .join(
+                    config
+                        .path_resolution()
+                        .workspace_key
+                        .as_deref()
+                        .expect("workspace key")
+                )
+                .join("zmemory.db")
+                .display()
+                .to_string()
+        )
+    );
+    assert_eq!(
+        defaults["result"]["view"]["defaultPathPolicy"]["workspaceKey"],
+        json!(config.path_resolution().workspace_key.clone())
+    );
+
+    let workspace = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://workspace".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("workspace view should succeed");
+    assert_eq!(workspace["result"]["view"]["view"], "workspace");
+    assert_eq!(workspace["result"]["view"]["source"], "projectScoped");
+    assert_eq!(workspace["result"]["view"]["hasExplicitZmemoryPath"], false);
+    assert_eq!(workspace["result"]["view"]["dbPathDiffers"], false);
+    assert_eq!(
+        workspace["result"]["view"]["defaultWorkspaceKey"],
+        json!(config.path_resolution().workspace_key.clone())
+    );
+    assert_eq!(
+        workspace["result"]["view"]["defaultDbPath"],
+        workspace["result"]["view"]["dbPath"]
+    );
+    assert_eq!(
+        workspace["result"]["view"]["workspaceBase"],
+        json!(config.workspace_base().display().to_string())
+    );
+    assert_eq!(workspace["result"]["view"]["bootHealthy"], false);
+
+    let index = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://index".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("index view should succeed");
+    assert_eq!(index["result"]["view"]["totalCount"], 1);
+
+    let recent = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://recent".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("recent view should succeed");
+    assert_eq!(recent["result"]["view"]["entryCount"], 1);
+
+    let glossary = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://glossary".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("glossary view should succeed");
+    assert_eq!(glossary["result"]["view"]["entryCount"], 2);
+
+    let index_by_domain = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://index/core".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("domain-scoped index should succeed");
+    assert_eq!(index_by_domain["result"]["view"]["view"], "index");
+    assert_eq!(index_by_domain["result"]["view"]["domain"], "core");
+    assert_eq!(index_by_domain["result"]["view"]["entryCount"], 1);
+
+    let recent_with_path_limit = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://recent/1".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("path-limited recent view should succeed");
+    assert_eq!(recent_with_path_limit["result"]["view"]["view"], "recent");
+    assert_eq!(recent_with_path_limit["result"]["view"]["entryCount"], 1);
+}
+
+#[test]
+fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
+    let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+        Some("core,notes".to_string()),
+        None,
+    ));
+
+    let invalid_domain = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("writer://draft".to_string()),
+            content: Some("unsupported".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("invalid domain should fail");
+    assert_eq!(
+        invalid_domain.to_string(),
+        "unknown domain 'writer'. valid domains: core, notes, system, alias"
+    );
+
+    let invalid_index = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://index/writer".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("invalid index domain should fail");
+    assert_eq!(
+        invalid_index.to_string(),
+        "unknown domain 'writer'. valid domains: core, notes, system, alias"
+    );
+
+    let system_write = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("system://boot-note".to_string()),
+            content: Some("forbidden".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("system writes should fail");
+    assert_eq!(system_write.to_string(), "system domain is read-only");
+}
+
+#[test]
+fn stats_and_doctor_surface_review_pressure() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://legacy".to_string()),
+            content: Some("Original profile memory".to_string()),
+            disclosure: Some("review/handoff".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://legacy".to_string()),
+            append: Some(" with fresh note".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://orphan".to_string()),
+            content: Some("Orphaned review source".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::DeletePath,
+            uri: Some("core://orphan".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("delete-path should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://undisclosed".to_string()),
+            content: Some("Missing disclosure".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("undisclosed create should succeed");
+
+    let stats = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Stats,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("stats should succeed");
+    assert_eq!(stats["result"]["deprecatedMemoryCount"], 1);
+    assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
+    assert_eq!(stats["result"]["pathsMissingDisclosure"], 1);
+    assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
+    assert_eq!(
+        stats["result"]["pathResolution"]["dbPath"],
+        json!(config.db_path().display().to_string())
+    );
+    assert_eq!(
+        stats["result"]["dbPath"],
+        stats["result"]["pathResolution"]["dbPath"]
+    );
+    assert_eq!(
+        stats["result"]["workspaceKey"],
+        stats["result"]["pathResolution"]["workspaceKey"]
+    );
+    assert_eq!(
+        stats["result"]["source"],
+        stats["result"]["pathResolution"]["source"]
+    );
+    assert_eq!(
+        stats["result"]["reason"],
+        stats["result"]["pathResolution"]["reason"]
+    );
+    assert_eq!(stats["result"]["pathResolution"].get("canonicalBase"), None);
+    assert_eq!(
+        sorted_object_keys(&stats["result"]["pathResolution"]),
+        vec!["dbPath", "reason", "source", "workspaceKey"]
+    );
+
+    let doctor = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Doctor,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("doctor should succeed");
+    assert_eq!(doctor["result"]["healthy"], false);
+    assert_eq!(
+        doctor["result"]["pathResolution"]["dbPath"],
+        json!(config.db_path().display().to_string())
+    );
+    assert_eq!(
+        doctor["result"]["dbPath"],
+        doctor["result"]["pathResolution"]["dbPath"]
+    );
+    assert_eq!(
+        doctor["result"]["workspaceKey"],
+        doctor["result"]["pathResolution"]["workspaceKey"]
+    );
+    assert_eq!(
+        doctor["result"]["source"],
+        doctor["result"]["pathResolution"]["source"]
+    );
+    assert_eq!(
+        doctor["result"]["reason"],
+        doctor["result"]["pathResolution"]["reason"]
+    );
+    assert_eq!(
+        doctor["result"]["pathResolution"].get("canonicalBase"),
+        None
+    );
+    assert_eq!(
+        sorted_object_keys(&doctor["result"]["pathResolution"]),
+        vec!["dbPath", "reason", "source", "workspaceKey"]
+    );
+    let issues = doctor["result"]["issues"]
+        .as_array()
+        .expect("issues should be an array");
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "deprecated_memories_awaiting_review")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "orphaned_memories")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "disclosures_need_review")
+    );
+}
+
+#[test]
+fn search_matches_alias_via_separator_normalized_query() {
+    let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+        Some("core,writer".to_string()),
+        None,
+    ));
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://alias-seed".to_string()),
+            content: Some("Alias path search seed".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("writer://folder".to_string()),
+            content: Some("Writer folder".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("writer folder should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("writer://folder/mirror-note".to_string()),
+            target_uri: Some("core://alias-seed".to_string()),
+            priority: Some(4),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias should succeed");
+
+    let exact = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            uri: Some("writer://".to_string()),
+            query: Some("writer://folder/mirror-note".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("exact search should succeed");
+    assert_eq!(exact["result"]["matchCount"], 1);
+    assert_eq!(
+        exact["result"]["matches"][0]["uri"],
+        "writer://folder/mirror-note"
+    );
+
+    let normalized = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            uri: Some("writer://".to_string()),
+            query: Some("writer/folder/mirror-note".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("normalized search should succeed");
+    assert_eq!(normalized["result"]["matchCount"], 1);
+    assert_eq!(
+        normalized["result"]["matches"][0]["uri"],
+        "writer://folder/mirror-note"
+    );
+}
+
+#[test]
+fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
+    let (_dir, config) = config();
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://ranking_primary".to_string()),
+            content: Some("omega delta".to_string()),
+            priority: Some(3),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("primary create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://aliases".to_string()),
+            content: Some("Aliases root".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("aliases root create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://aliases/ranking_primary_alias".to_string()),
+            target_uri: Some("core://ranking_primary".to_string()),
+            priority: Some(3),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://a".to_string()),
+            content: Some("omega delta".to_string()),
+            priority: Some(1),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("short path create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://longer_path".to_string()),
+            content: Some("omega delta".to_string()),
+            priority: Some(1),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("long path create should succeed");
+
+    let search = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("omega delta".to_string()),
+            limit: Some(3),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+
+    let matches = search["result"]["matches"]
+        .as_array()
+        .expect("matches should be an array");
+    assert_eq!(matches.len(), 3);
+    assert_eq!(matches[0]["uri"], "core://a");
+    assert_eq!(matches[1]["uri"], "core://longer_path");
+    assert_eq!(matches[2]["uri"], "core://ranking_primary");
+}
+
+#[test]
+fn search_snippet_prefers_literal_then_token_then_fallback() {
+    let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+        Some("core,writer".to_string()),
+        None,
+    ));
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snippet_literal".to_string()),
+            content: Some(format!(
+                "prefix {} GraphService exact phrase keeps literal hits focused {}",
+                "x".repeat(40),
+                "y".repeat(40)
+            )),
+            priority: Some(1),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("literal create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snippet_token".to_string()),
+            content: Some("mirror token keeps hits focused".to_string()),
+            priority: Some(2),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("token create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("writer://folder".to_string()),
+            content: Some("Writer folder".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("writer folder create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("writer://folder/mirror-note".to_string()),
+            target_uri: Some("core://snippet_token".to_string()),
+            priority: Some(2),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("token alias should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snippet_fallback".to_string()),
+            content: Some("z".repeat(120)),
+            priority: Some(3),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("fallback create should succeed");
+
+    let literal = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("GraphService exact phrase".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("literal search should succeed");
+    let literal_snippet = literal["result"]["matches"][0]["snippet"]
+        .as_str()
+        .expect("literal snippet should exist");
+    assert!(literal_snippet.contains("GraphService exact phrase"));
+    assert!(literal_snippet.contains("..."));
+
+    let token = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            uri: Some("writer://".to_string()),
+            query: Some("writer://folder/mirror-note".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("token search should succeed");
+    assert_eq!(
+        token["result"]["matches"][0]["snippet"],
+        "mirror token keeps hits focused"
+    );
+
+    let fallback = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("snippet_fallback".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("fallback search should succeed");
+    assert_eq!(
+        fallback["result"]["matches"][0]["snippet"],
+        format!("{}...", "z".repeat(80))
+    );
+}
+
+#[test]
+fn search_snippet_falls_back_to_content_for_disclosure_and_uri_hits() {
+    let (_dir, config) = config();
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snippet_field_contract".to_string()),
+            content: Some(
+                "content snippet fallback keeps search previews rooted in content".to_string(),
+            ),
+            disclosure: Some("edge recall notice".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let disclosure = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("edge recall".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("disclosure search should succeed");
+    assert_eq!(
+        disclosure["result"]["matches"][0]["snippet"],
+        "content snippet fallback keeps search previews rooted in content"
+    );
+
+    let uri = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("core://snippet_field_contract".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("uri search should succeed");
+    assert_eq!(
+        uri["result"]["matches"][0]["snippet"],
+        "content snippet fallback keeps search previews rooted in content"
+    );
+}
+
+#[test]
+fn search_snippet_preserves_multibyte_boundaries() {
+    let (_dir, config) = config();
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snippet_multibyte_fallback".to_string()),
+            content: Some("量".repeat(90)),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("fallback create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snippet_multibyte_literal".to_string()),
+            content: Some(format!("前缀{}GraphService后缀", "量".repeat(40))),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("literal create should succeed");
+
+    let fallback = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("snippet_multibyte_fallback".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("fallback search should succeed");
+    assert_eq!(
+        fallback["result"]["matches"][0]["snippet"],
+        format!("{}...", "量".repeat(80))
+    );
+
+    let literal = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("GraphService".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("literal search should succeed");
+    let literal_snippet = literal["result"]["matches"][0]["snippet"]
+        .as_str()
+        .expect("literal snippet should exist");
+    assert!(literal_snippet.contains("GraphService后缀"));
+}
+
+#[test]
+fn glossary_add_and_remove_refresh_search_contract() {
+    let (_dir, config) = config();
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://anchor_refresh_contract".to_string()),
+            content: Some("超导量子系统比特控制与协作".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let before_add = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("子系统比".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(before_add["result"]["matchCount"], 0);
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://anchor_refresh_contract".to_string()),
+            add: Some(vec!["子系统比".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add trigger should succeed");
+
+    let after_add = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("子系统比".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(after_add["result"]["matchCount"], 1);
+    assert_eq!(
+        after_add["result"]["matches"][0]["uri"],
+        "core://anchor_refresh_contract"
+    );
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://anchor_refresh_contract".to_string()),
+            remove: Some(vec!["子系统比".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("remove trigger should succeed");
+
+    let after_remove = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("子系统比".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(after_remove["result"]["matchCount"], 0);
+}
+
+#[test]
+fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
+    let (_dir, config) = config();
+
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://cjk_search".to_string()),
+            content: Some("超导量子系统比特控制与量子比特协作".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://cjk_search".to_string()),
+            add: Some(vec!["量子比特".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let hit = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("量子比特".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("hit search should succeed");
+    assert_eq!(hit["result"]["matchCount"], 1);
+    assert_eq!(hit["result"]["matches"][0]["uri"], "core://cjk_search");
+
+    let miss = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("子系统比".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("miss search should succeed");
+    assert_eq!(miss["result"]["matchCount"], 0);
+}
+
+#[test]
+fn alias_view_includes_priority_reasons_and_suggested_keywords() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://hub".to_string()),
+            content: Some("Hub".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("hub create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://zone".to_string()),
+            content: Some("Zone".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("zone create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://project-alpha".to_string()),
+            content: Some("Project note".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://hub/launch-plan".to_string()),
+            target_uri: Some("core://project-alpha".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("first alias should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://zone/release_plan".to_string()),
+            target_uri: Some("core://project-alpha".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("second alias should succeed");
+
+    let alias_view = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://alias".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias view should succeed");
+
+    let view = &alias_view["result"]["view"];
+    let recommendations = view["recommendations"]
+        .as_array()
+        .expect("recommendations should be an array");
+    assert_eq!(recommendations.len(), 1);
+    assert_eq!(recommendations[0]["reviewPriority"], "high");
+    assert_eq!(
+        recommendations[0]["priorityReason"],
+        "missing triggers across 3 alias paths"
+    );
+    assert_eq!(
+        recommendations[0]["suggestedKeywords"],
+        json!(["alpha", "hub", "launch"])
+    );
+    assert_eq!(
+        recommendations[0]["command"],
+        "codex zmemory manage-triggers core://hub/launch-plan --add alpha --add hub --add launch --json"
+    );
+
+    let entries = view["entries"]
+        .as_array()
+        .expect("entries should be an array");
+    assert_eq!(entries[0]["nodeUri"], "core://hub/launch-plan");
+    assert_eq!(entries[0]["reviewPriority"], "high");
+    assert_eq!(
+        entries[0]["priorityReason"],
+        "missing triggers across 3 alias paths"
+    );
+    assert_eq!(
+        entries[0]["suggestedKeywords"],
+        json!(["alpha", "hub", "launch"])
+    );
+}
+
+#[test]
+fn doctor_reports_fts_and_keyword_inconsistencies() {
+    let (_dir, config) = config();
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://salem".to_string()),
+            content: Some("Profile for Salem".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://salem".to_string()),
+            add: Some(vec!["profile".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    conn.execute("DELETE FROM search_documents_fts", [])
+        .expect("fts delete should succeed");
+    conn.execute(
+        "DELETE FROM paths WHERE domain = ?1 AND path = ?2",
+        params!["core", "salem"],
+    )
+    .expect("path delete should succeed");
+
+    let doctor = execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Doctor,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("doctor should succeed");
+
+    assert_eq!(doctor["result"]["healthy"], false);
+    let issues = doctor["result"]["issues"]
+        .as_array()
+        .expect("issues should be an array");
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "fts_count_mismatch")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|issue| issue["code"] == "dangling_keywords")
+    );
+}
+
+fn sorted_object_keys(value: &Value) -> Vec<&str> {
+    let mut keys = value
+        .as_object()
+        .expect("value should be an object")
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    keys.sort_unstable();
+    keys
+}

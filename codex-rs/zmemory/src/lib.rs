@@ -3,7 +3,7 @@ mod doctor;
 pub mod path_resolution;
 mod repository;
 mod schema;
-mod service;
+pub(crate) mod service;
 mod system_views;
 pub mod tool_api;
 
