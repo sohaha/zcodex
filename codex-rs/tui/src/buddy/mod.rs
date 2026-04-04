@@ -164,6 +164,7 @@ impl BuddyWidget {
         } else {
             "幕后休息"
         };
+        let visibility = if self.state.visible { "可见" } else { "隐藏" };
         let shiny = if bones.shiny { "，闪亮" } else { "" };
         let personality = self
             .soul
@@ -171,11 +172,10 @@ impl BuddyWidget {
             .map(|soul| format!(" 性格：{}。", soul.personality))
             .unwrap_or_default();
         let message = format!(
-            "{} {}：{}{}，{}眼，心情{mood}，抚摸 {}，峰值{} {}。{personality}",
+            "小伙伴状态：{} {}（{visibility}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
             short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),
-            shiny,
             bones.eye.label(),
             self.state.pet_count,
             primary_stat.label(),
@@ -183,7 +183,10 @@ impl BuddyWidget {
         );
         BuddyCommandResult {
             message,
-            hint: None,
+            hint: Some(
+                "命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。"
+                    .to_string(),
+            ),
         }
     }
 
@@ -349,13 +352,16 @@ mod tests {
     }
 
     #[test]
-    fn buddy_status_reports_peak_stat_without_visibility() {
+    fn buddy_status_reports_peak_stat_and_visibility() {
         let mut buddy = BuddyWidget::new();
         let _ = buddy.show("codex-home::project");
         let status = buddy.status("codex-home::project");
         assert!(status.message.contains("峰值属性："));
-        // assert!(!status.message.contains("可见"));
-        assert!(status.hint.is_none());
+        assert!(status.message.contains("可见"));
+        assert_eq!(
+            status.hint,
+            Some("命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string())
+        );
     }
 
     #[test]

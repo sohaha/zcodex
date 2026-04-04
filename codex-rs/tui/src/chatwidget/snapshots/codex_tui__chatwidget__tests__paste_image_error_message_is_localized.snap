@@ -1,0 +1,5 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+expression: rendered
+---
+■ 粘贴图片失败：剪贴板不可用：Unknown error while interacting with the clipboard

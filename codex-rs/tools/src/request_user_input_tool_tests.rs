@@ -17,7 +17,7 @@ fn request_user_input_tool_includes_questions_schema() {
                     "questions".to_string(),
                     JsonSchema::Array {
                         description: Some(
-                            "Questions to show the user. Prefer 1 and do not exceed 3".to_string(),
+                            "展示给用户的问题列表。建议 1 个，最多不超过 3 个。".to_string(),
                         ),
                         items: Box::new(JsonSchema::Object {
                             properties: BTreeMap::from([
@@ -25,7 +25,7 @@ fn request_user_input_tool_includes_questions_schema() {
                                     "header".to_string(),
                                     JsonSchema::String {
                                         description: Some(
-                                            "Short header label shown in the UI (12 or fewer chars)."
+                                            "显示在界面里的简短标题（不超过 12 个字符）。"
                                                 .to_string(),
                                         ),
                                     },
@@ -34,7 +34,7 @@ fn request_user_input_tool_includes_questions_schema() {
                                     "id".to_string(),
                                     JsonSchema::String {
                                         description: Some(
-                                            "Stable identifier for mapping answers (snake_case)."
+                                            "用于映射答案的稳定标识（snake_case）。"
                                                 .to_string(),
                                         ),
                                     },
@@ -43,7 +43,7 @@ fn request_user_input_tool_includes_questions_schema() {
                                     "options".to_string(),
                                     JsonSchema::Array {
                                         description: Some(
-                                            "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically."
+                                            "提供 2 到 3 个互斥选项。把推荐选项放在最前面，并在标签后加上“（推荐）”。不要在这里加入“其他”选项；客户端会自动补一个可自由填写的“其他”。"
                                                 .to_string(),
                                         ),
                                         items: Box::new(JsonSchema::Object {
@@ -52,7 +52,7 @@ fn request_user_input_tool_includes_questions_schema() {
                                                     "description".to_string(),
                                                     JsonSchema::String {
                                                         description: Some(
-                                                            "One short sentence explaining impact/tradeoff if selected."
+                                                            "一句话说明选中该项时的影响或取舍。"
                                                                 .to_string(),
                                                         ),
                                                     },
@@ -61,7 +61,7 @@ fn request_user_input_tool_includes_questions_schema() {
                                                     "label".to_string(),
                                                     JsonSchema::String {
                                                         description: Some(
-                                                            "User-facing label (1-5 words)."
+                                                            "展示给用户的标签（1 到 5 个词）。"
                                                                 .to_string(),
                                                         ),
                                                     },
@@ -79,7 +79,7 @@ fn request_user_input_tool_includes_questions_schema() {
                                     "question".to_string(),
                                     JsonSchema::String {
                                         description: Some(
-                                            "Single-sentence prompt shown to the user.".to_string(),
+                                            "展示给用户的单句提问。".to_string(),
                                         ),
                                     },
                                 ),
@@ -145,10 +145,10 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
 fn request_user_input_tool_description_mentions_available_modes() {
     assert_eq!(
         request_user_input_tool_description(/*default_mode_request_user_input*/ false),
-        "Request user input for one to three short questions and wait for the response. This tool is only available in 计划 mode.".to_string()
+        "向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 计划 模式下可用。".to_string()
     );
     assert_eq!(
         request_user_input_tool_description(/*default_mode_request_user_input*/ true),
-        "Request user input for one to three short questions and wait for the response. This tool is only available in 默认 or 计划 mode.".to_string()
+        "向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 默认 或 计划 模式下可用。".to_string()
     );
 }

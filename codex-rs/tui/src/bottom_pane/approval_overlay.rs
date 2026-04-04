@@ -1418,10 +1418,10 @@ mod tests {
             })
             .collect();
         let expected = vec![
-            "✔ You approved codex to run".to_string(),
+            "✔ 你批准 Codex 执行".to_string(),
             "  git add tui/src/render/".to_string(),
             "  mod.rs tui/src/render/".to_string(),
-            "  renderable.rs this time".to_string(),
+            "  renderable.rs（仅这次）".to_string(),
         ];
         assert_eq!(rendered, expected);
     }

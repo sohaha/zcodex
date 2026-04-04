@@ -13,14 +13,14 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         (
             "label".to_string(),
             JsonSchema::String {
-                description: Some("User-facing label (1-5 words).".to_string()),
+                description: Some("展示给用户的标签（1 到 5 个词）。".to_string()),
             },
         ),
         (
             "description".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "One short sentence explaining impact/tradeoff if selected.".to_string(),
+                    "一句话说明选中该项时的影响或取舍。".to_string(),
                 ),
             },
         ),
@@ -28,7 +28,7 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
 
     let options_schema = JsonSchema::Array {
         description: Some(
-            "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically."
+            "提供 2 到 3 个互斥选项。把推荐选项放在最前面，并在标签后加上“（推荐）”。不要在这里加入“其他”选项；客户端会自动补一个可自由填写的“其他”。"
                 .to_string(),
         ),
         items: Box::new(JsonSchema::Object {
@@ -43,7 +43,7 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
             "id".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Stable identifier for mapping answers (snake_case).".to_string(),
+                    "用于映射答案的稳定标识（snake_case）。".to_string(),
                 ),
             },
         ),
@@ -51,21 +51,21 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
             "header".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Short header label shown in the UI (12 or fewer chars).".to_string(),
+                    "显示在界面里的简短标题（不超过 12 个字符）。".to_string(),
                 ),
             },
         ),
         (
             "question".to_string(),
             JsonSchema::String {
-                description: Some("Single-sentence prompt shown to the user.".to_string()),
+                description: Some("展示给用户的单句提问。".to_string()),
             },
         ),
         ("options".to_string(), options_schema),
     ]);
 
     let questions_schema = JsonSchema::Array {
-        description: Some("Questions to show the user. Prefer 1 and do not exceed 3".to_string()),
+        description: Some("展示给用户的问题列表。建议 1 个，最多不超过 3 个。".to_string()),
         items: Box::new(JsonSchema::Object {
             properties: question_props,
             required: Some(vec![
@@ -114,7 +114,7 @@ pub fn normalize_request_user_input_args(
         .iter()
         .any(|question| question.options.as_ref().is_none_or(Vec::is_empty));
     if missing_options {
-        return Err("request_user_input requires non-empty options for every question".to_string());
+        return Err("request_user_input 要求每个问题都提供非空选项".to_string());
     }
 
     for question in &mut args.questions {
@@ -127,7 +127,7 @@ pub fn normalize_request_user_input_args(
 pub fn request_user_input_tool_description(default_mode_request_user_input: bool) -> String {
     let allowed_modes = format_allowed_modes(default_mode_request_user_input);
     format!(
-        "Request user input for one to three short questions and wait for the response. This tool is only available in {allowed_modes}."
+        "向用户发起 1 到 3 个简短问题并等待回复。这个工具仅在 {allowed_modes} 模式下可用。"
     )
 }
 

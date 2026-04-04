@@ -33,6 +33,11 @@ use std::process::Stdio;
 #[cfg(all(not(target_os = "android"), target_os = "linux"))]
 use crate::clipboard_paste::is_probably_wsl;
 
+#[cfg(not(target_os = "android"))]
+fn clipboard_unavailable(detail: impl std::fmt::Display) -> String {
+    format!("剪贴板不可用：{detail}")
+}
+
 /// Copies user-visible text into the most appropriate clipboard for the
 /// current environment.
 ///
@@ -61,16 +66,16 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<(), String> {
     let error = match arboard::Clipboard::new() {
         Ok(mut clipboard) => match clipboard.set_text(text.to_string()) {
             Ok(()) => return Ok(()),
-            Err(err) => format!("clipboard unavailable: {err}"),
+            Err(err) => clipboard_unavailable(err),
         },
-        Err(err) => format!("clipboard unavailable: {err}"),
+        Err(err) => clipboard_unavailable(err),
     };
 
     #[cfg(target_os = "linux")]
     let error = if is_probably_wsl() {
         match copy_via_wsl_clipboard(text) {
             Ok(()) => return Ok(()),
-            Err(wsl_err) => format!("{error}; WSL fallback failed: {wsl_err}"),
+            Err(wsl_err) => format!("{error}；WSL 回退失败：{wsl_err}"),
         }
     } else {
         error
@@ -93,25 +98,21 @@ fn copy_via_osc52(text: &str) -> Result<(), String> {
     let mut tty = OpenOptions::new()
         .write(true)
         .open("/dev/tty")
-        .map_err(|e| {
-            format!("clipboard unavailable: failed to open /dev/tty for OSC 52 copy: {e}")
-        })?;
+        .map_err(|e| clipboard_unavailable(format!("无法为 OSC 52 复制打开 /dev/tty：{e}")))?;
     #[cfg(unix)]
-    tty.write_all(sequence.as_bytes()).map_err(|e| {
-        format!("clipboard unavailable: failed to write OSC 52 escape sequence: {e}")
-    })?;
+    tty.write_all(sequence.as_bytes())
+        .map_err(|e| clipboard_unavailable(format!("无法写入 OSC 52 转义序列：{e}")))?;
     #[cfg(unix)]
-    tty.flush().map_err(|e| {
-        format!("clipboard unavailable: failed to flush OSC 52 escape sequence: {e}")
-    })?;
+    tty.flush()
+        .map_err(|e| clipboard_unavailable(format!("无法刷新 OSC 52 转义序列：{e}")))?;
     #[cfg(windows)]
-    stdout().write_all(sequence.as_bytes()).map_err(|e| {
-        format!("clipboard unavailable: failed to write OSC 52 escape sequence: {e}")
-    })?;
+    stdout()
+        .write_all(sequence.as_bytes())
+        .map_err(|e| clipboard_unavailable(format!("无法写入 OSC 52 转义序列：{e}")))?;
     #[cfg(windows)]
-    stdout().flush().map_err(|e| {
-        format!("clipboard unavailable: failed to flush OSC 52 escape sequence: {e}")
-    })?;
+    stdout()
+        .flush()
+        .map_err(|e| clipboard_unavailable(format!("无法刷新 OSC 52 转义序列：{e}")))?;
     Ok(())
 }
 
@@ -133,27 +134,27 @@ fn copy_via_wsl_clipboard(text: &str) -> Result<(), String> {
             "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; $text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text",
         ])
         .spawn()
-        .map_err(|e| format!("clipboard unavailable: failed to spawn powershell.exe: {e}"))?;
+        .map_err(|e| clipboard_unavailable(format!("无法启动 powershell.exe：{e}")))?;
 
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
         let _ = child.wait();
-        return Err("clipboard unavailable: failed to open powershell.exe stdin".to_string());
+        return Err(clipboard_unavailable("无法打开 powershell.exe 的 stdin"));
     };
 
     if let Err(err) = stdin.write_all(text.as_bytes()) {
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!(
-            "clipboard unavailable: failed to write to powershell.exe: {err}"
-        ));
+        return Err(clipboard_unavailable(format!(
+            "无法向 powershell.exe 写入数据：{err}"
+        )));
     }
 
     drop(stdin);
 
     let output = child
         .wait_with_output()
-        .map_err(|e| format!("clipboard unavailable: failed to wait for powershell.exe: {e}"))?;
+        .map_err(|e| clipboard_unavailable(format!("等待 powershell.exe 结束失败：{e}")))?;
 
     if output.status.success() {
         Ok(())
@@ -161,13 +162,13 @@ fn copy_via_wsl_clipboard(text: &str) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         if stderr.is_empty() {
             let status = output.status;
-            Err(format!(
-                "clipboard unavailable: powershell.exe exited with status {status}"
-            ))
+            Err(clipboard_unavailable(format!(
+                "powershell.exe 退出状态为 {status}"
+            )))
         } else {
-            Err(format!(
-                "clipboard unavailable: powershell.exe failed: {stderr}"
-            ))
+            Err(clipboard_unavailable(format!(
+                "powershell.exe 执行失败：{stderr}"
+            )))
         }
     }
 }
@@ -192,7 +193,7 @@ fn osc52_sequence(text: &str, tmux: bool) -> String {
 /// available in the supported Android/Termux environment.
 #[cfg(target_os = "android")]
 pub fn copy_text_to_clipboard(_text: &str) -> Result<(), String> {
-    Err("clipboard text copy is unsupported on Android".into())
+    Err("Android 不支持复制文本到剪贴板".into())
 }
 
 #[cfg(all(test, not(target_os = "android")))]

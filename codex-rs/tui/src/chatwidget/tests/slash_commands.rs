@@ -157,6 +157,25 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
 }
 
 #[tokio::test]
+async fn paste_image_error_message_is_localized() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    let err = crate::clipboard_paste::PasteImageError::ClipboardUnavailable(
+        "Unknown error while interacting with the clipboard".to_string(),
+    );
+    chat.add_error_message(format!("粘贴图片失败：{err}"));
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one error message");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_chatwidget_snapshot!("paste_image_error_message_is_localized", rendered);
+    assert!(
+        rendered.contains("粘贴图片失败：剪贴板不可用："),
+        "expected localized paste error message, got {rendered:?}"
+    );
+}
+
+#[tokio::test]
 async fn slash_copy_state_is_preserved_during_running_task() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

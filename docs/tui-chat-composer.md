@@ -91,6 +91,28 @@ Built-in slash command availability is centralized in
 `codex-rs/tui/src/bottom_pane/slash_commands.rs` and reused by both the composer and the command
 popup so gating stays in sync.
 
+## Pasted image compression
+
+When `Ctrl+V` pastes an image into the TUI composer, Codex can automatically recompress it before
+upload. This is enabled by default and is configured from `[tui]` in `config.toml`:
+
+```toml
+[tui]
+auto_compress_pasted_images = true
+pasted_image_max_width = 1280
+pasted_image_max_height = 720
+pasted_image_jpeg_quality = 85
+```
+
+Behavior:
+
+- images larger than the configured width or height are resized proportionally to fit within the
+  configured bounds,
+- transparent images stay PNG,
+- non-transparent images are encoded as both PNG and JPEG and Codex keeps the smaller result,
+- invalid width/height/quality values fall back to the built-in defaults.
+
+
 ## Submission flow (Enter/Tab)
 
 There are multiple submission paths, but they share the same core rules:

@@ -13,10 +13,10 @@ pub enum PasteImageError {
 impl std::fmt::Display for PasteImageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PasteImageError::ClipboardUnavailable(msg) => write!(f, "clipboard unavailable: {msg}"),
-            PasteImageError::NoImage(msg) => write!(f, "no image on clipboard: {msg}"),
-            PasteImageError::EncodeFailed(msg) => write!(f, "could not encode image: {msg}"),
-            PasteImageError::IoError(msg) => write!(f, "io error: {msg}"),
+            PasteImageError::ClipboardUnavailable(msg) => write!(f, "剪贴板不可用：{msg}"),
+            PasteImageError::NoImage(msg) => write!(f, "剪贴板中没有图片：{msg}"),
+            PasteImageError::EncodeFailed(msg) => write!(f, "图片编码失败：{msg}"),
+            PasteImageError::IoError(msg) => write!(f, "I/O 错误：{msg}"),
         }
     }
 }
@@ -72,7 +72,11 @@ impl PasteImageCompressionConfig {
             } else {
                 max_height
             },
-            jpeg_quality: jpeg_quality.clamp(1, 100),
+            jpeg_quality: if (1..=100).contains(&jpeg_quality) {
+                jpeg_quality
+            } else {
+                DEFAULT_AUTO_COMPRESS_JPEG_QUALITY
+            },
         }
     }
 }
@@ -318,7 +322,7 @@ pub fn paste_image_to_temp_file(
     _jpeg_quality: u8,
 ) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unsupported on Android".into(),
+        "Android 不支持剪贴板图片粘贴".into(),
     ))
 }
 
@@ -702,6 +706,6 @@ mod pasted_image_encoding_tests {
         let config = PasteImageCompressionConfig::new(true, 0, 0, 0);
         assert_eq!(config.max_width, DEFAULT_AUTO_COMPRESS_MAX_WIDTH);
         assert_eq!(config.max_height, DEFAULT_AUTO_COMPRESS_MAX_HEIGHT);
-        assert_eq!(config.jpeg_quality, 1);
+        assert_eq!(config.jpeg_quality, DEFAULT_AUTO_COMPRESS_JPEG_QUALITY);
     }
 }

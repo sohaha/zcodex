@@ -537,7 +537,7 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
 
     let before = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        before.contains("Loading installed and available apps..."),
+        before.contains("正在加载已安装和可用的应用..."),
         "expected /apps to stay in the loading state until the full list arrives, got:\n{before}"
     );
     assert_chatwidget_snapshot!("apps_popup_loading_state", before);
@@ -582,7 +582,7 @@ async fn apps_popup_stays_loading_until_final_snapshot_updates() {
 
     let after = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        after.contains("Installed 2 of 2 available apps."),
+        after.contains("共 2 个可用应用，已安装 2 个。"),
         "expected refreshed apps popup snapshot, got:\n{after}"
     );
     assert!(
@@ -675,7 +675,7 @@ async fn apps_refresh_failure_keeps_existing_full_snapshot() {
     chat.add_connectors_output();
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed 1 of 2 available apps."),
+        popup.contains("共 2 个可用应用，已安装 1 个。"),
         "expected previous full snapshot to be preserved, got:\n{popup}"
     );
 }
@@ -939,7 +939,7 @@ async fn apps_popup_keeps_existing_full_snapshot_while_partial_refresh_loads() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed 1 of 2 available apps."),
+        popup.contains("共 2 个可用应用，已安装 1 个。"),
         "expected popup to keep the last full snapshot while partial refresh loads, got:\n{popup}"
     );
     assert!(
@@ -982,7 +982,7 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
     chat.add_connectors_output();
     let loading_popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        loading_popup.contains("Loading installed and available apps..."),
+        loading_popup.contains("正在加载已安装和可用的应用..."),
         "expected /apps to keep showing loading before the final result, got:\n{loading_popup}"
     );
 
@@ -998,11 +998,11 @@ async fn apps_refresh_failure_without_full_snapshot_falls_back_to_installed_apps
 
     let popup = render_bottom_popup(&chat, /*width*/ 80);
     assert!(
-        popup.contains("Installed 1 of 1 available apps."),
+        popup.contains("共 1 个可用应用，已安装 1 个。"),
         "expected /apps to fall back to the installed apps snapshot, got:\n{popup}"
     );
     assert!(
-        popup.contains("Installed. Press Enter to open the app page"),
+        popup.contains("已安装。按 Enter 打开应用页面"),
         "expected the fallback popup to behave like the installed apps view, got:\n{popup}"
     );
 }

@@ -816,10 +816,10 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "approved".bold(),
-                    " codex to run ".into(),
+                    "批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
-                    " this time".bold(),
+                    "（仅这次）".bold(),
                 ],
             )
         }
@@ -831,9 +831,10 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "approved".bold(),
-                    " codex to always run commands that start with ".into(),
+                    "批准".bold(),
+                    " Codex 始终执行以 ".into(),
                     snippet,
+                    " 开头的命令".into(),
                 ],
             )
         }
@@ -843,10 +844,10 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "approved".bold(),
-                    " codex to run ".into(),
+                    "批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
-                    " every time this session".bold(),
+                    "（本会话内始终允许）".bold(),
                 ],
             )
         }
@@ -857,19 +858,20 @@ pub fn new_approval_decision_cell(
                 "✔ ".green(),
                 vec![
                     actor.subject().into(),
-                    "persisted".bold(),
-                    " Codex network access to ".into(),
+                    "已持久保存".bold(),
+                    " Codex 对 ".into(),
                     Span::from(network_policy_amendment.host).dim(),
+                    " 的网络访问权限".into(),
                 ],
             ),
             NetworkPolicyRuleAction::Deny => (
                 "✗ ".red(),
                 vec![
                     actor.subject().into(),
-                    "denied".bold(),
-                    " codex network access to ".into(),
+                    "拒绝".bold(),
+                    " Codex 对 ".into(),
                     Span::from(network_policy_amendment.host).dim(),
-                    " and saved that rule".into(),
+                    " 的网络访问，并保存了该规则".into(),
                 ],
             ),
         },
@@ -878,14 +880,14 @@ pub fn new_approval_decision_cell(
             let summary = match actor {
                 ApprovalDecisionActor::User => vec![
                     actor.subject().into(),
-                    "did not approve".bold(),
-                    " codex to run ".into(),
+                    "未批准".bold(),
+                    " Codex 执行 ".into(),
                     snippet,
                 ],
                 ApprovalDecisionActor::Guardian => vec![
-                    "Request ".into(),
-                    "denied".bold(),
-                    " for codex to run ".into(),
+                    "已拒绝".into(),
+                    "批准请求".bold(),
+                    "：Codex 执行 ".into(),
                     snippet,
                 ],
             };
@@ -897,8 +899,8 @@ pub fn new_approval_decision_cell(
                 "✗ ".red(),
                 vec![
                     actor.subject().into(),
-                    "canceled".bold(),
-                    " the request to run ".into(),
+                    "取消了".bold(),
+                    " 执行请求：".into(),
                     snippet,
                 ],
             )
@@ -921,25 +923,25 @@ pub enum ApprovalDecisionActor {
 impl ApprovalDecisionActor {
     fn subject(self) -> &'static str {
         match self {
-            Self::User => "You ",
-            Self::Guardian => "Auto-reviewer ",
+            Self::User => "你",
+            Self::Guardian => "自动审查器",
         }
     }
 }
 
 pub fn new_guardian_denied_patch_request(files: Vec<String>) -> Box<dyn HistoryCell> {
     let mut summary = vec![
-        "Request ".into(),
-        "denied".bold(),
-        " for codex to apply ".into(),
+        "已拒绝".into(),
+        "补丁请求".bold(),
+        "：Codex 应用 ".into(),
     ];
     if files.len() == 1 {
-        summary.push("a patch touching ".into());
+        summary.push("涉及 ".into());
         summary.push(Span::from(files[0].clone()).dim());
     } else {
-        summary.push("a patch touching ".into());
+        summary.push("涉及 ".into());
         summary.push(Span::from(files.len().to_string()).dim());
-        summary.push(" files".into());
+        summary.push(" 个文件".into());
     }
 
     Box::new(PrefixedWrappedHistoryCell::new(
@@ -951,9 +953,9 @@ pub fn new_guardian_denied_patch_request(files: Vec<String>) -> Box<dyn HistoryC
 
 pub fn new_guardian_denied_action_request(summary: String) -> Box<dyn HistoryCell> {
     let line = Line::from(vec![
-        "Request ".into(),
-        "denied".bold(),
-        " for ".into(),
+        "已拒绝".into(),
+        "请求".bold(),
+        "：".into(),
         Span::from(summary).dim(),
     ]);
     Box::new(PrefixedWrappedHistoryCell::new(line, "✗ ".red(), "  "))
@@ -961,9 +963,9 @@ pub fn new_guardian_denied_action_request(summary: String) -> Box<dyn HistoryCel
 
 pub fn new_guardian_approved_action_request(summary: String) -> Box<dyn HistoryCell> {
     let line = Line::from(vec![
-        "Request ".into(),
-        "approved".bold(),
-        " for ".into(),
+        "已批准".into(),
+        "请求".bold(),
+        "：".into(),
         Span::from(summary).dim(),
     ]);
     Box::new(PrefixedWrappedHistoryCell::new(line, "✔ ".green(), "  "))
@@ -1495,9 +1497,9 @@ impl HistoryCell for McpToolCallCell {
             None => spinner(Some(self.start_time), self.animations_enabled),
         };
         let header_text = if status.is_some() {
-            "Called"
+            "已调用"
         } else {
-            "Calling"
+            "调用中"
         };
 
         let invocation_line = line_to_static(&format_mcp_invocation(self.invocation.clone()));
@@ -1785,14 +1787,14 @@ pub(crate) fn empty_mcp_output() -> PlainHistoryCell {
     let lines: Vec<Line<'static>> = vec![
         "/mcp".magenta().into(),
         "".into(),
-        vec!["🔌  ".into(), "MCP Tools".bold()].into(),
+        vec!["🔌  ".into(), "MCP 工具".bold()].into(),
         "".into(),
-        "  • No MCP servers configured.".italic().into(),
+        "  • 当前未配置 MCP 服务器。".italic().into(),
         Line::from(vec![
-            "    See the ".into(),
+            "    参见 ".into(),
             "\u{1b}]8;;https://developers.openai.com/codex/mcp\u{7}MCP docs\u{1b}]8;;\u{7}"
                 .underlined(),
-            " to configure them.".into(),
+            " 了解配置方法。".into(),
         ])
         .style(Style::default().add_modifier(Modifier::DIM)),
     ];
@@ -1812,12 +1814,12 @@ pub(crate) fn new_mcp_tools_output(
     let mut lines: Vec<Line<'static>> = vec![
         "/mcp".magenta().into(),
         "".into(),
-        vec!["🔌  ".into(), "MCP Tools".bold()].into(),
+        vec!["🔌  ".into(), "MCP 工具".bold()].into(),
         "".into(),
     ];
 
     if tools.is_empty() {
-        lines.push("  • No MCP tools available.".italic().into());
+        lines.push("  • 当前没有可用的 MCP 工具。".italic().into());
         lines.push("".into());
     }
 
@@ -1984,7 +1986,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
     let mut lines: Vec<Line<'static>> = vec![
         "/mcp".magenta().into(),
         "".into(),
-        vec!["🔌  ".into(), "MCP Tools".bold()].into(),
+        vec!["🔌  ".into(), "MCP 工具".bold()].into(),
         "".into(),
     ];
 
@@ -1998,7 +2000,7 @@ pub(crate) fn new_mcp_tools_output_from_statuses(
 
     let has_any_tools = statuses.iter().any(|status| !status.tools.is_empty());
     if !has_any_tools {
-        lines.push("  • No MCP tools available.".italic().into());
+        lines.push("  • 当前没有可用的 MCP 工具。".italic().into());
         lines.push("".into());
     }
 
@@ -2187,7 +2189,7 @@ impl HistoryCell for McpInventoryLoadingCell {
             vec![
                 spinner(Some(self.start_time), self.animations_enabled),
                 " ".into(),
-                "Loading MCP inventory".bold(),
+                "正在加载 MCP 清单".bold(),
                 "…".dim(),
             ]
             .into(),
@@ -2230,10 +2232,10 @@ impl HistoryCell for RequestUserInputResultCell {
             .count();
         let unanswered = total.saturating_sub(answered);
 
-        let mut header = vec!["•".dim(), " ".into(), "Questions".bold()];
-        header.push(format!(" {answered}/{total} answered").dim());
+        let mut header = vec!["•".dim(), " ".into(), "问题".bold()];
+        header.push(format!(" 已回答 {answered}/{total}").dim());
         if self.interrupted {
-            header.push(" (interrupted)".cyan());
+            header.push("（已中断）".cyan());
         }
 
         let mut lines: Vec<Line<'static>> = vec![header.into()];
@@ -2252,7 +2254,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 Style::default(),
             );
             if answer_missing && let Some(last) = question_lines.last_mut() {
-                last.spans.push(" (unanswered)".dim());
+                last.spans.push("（未回答）".dim());
             }
             lines.extend(question_lines);
 
@@ -2263,7 +2265,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 lines.extend(wrap_with_prefix(
                     "••••••",
                     width,
-                    "    answer: ".dim(),
+                    "    回答：".dim(),
                     "            ".dim(),
                     Style::default().fg(Color::Cyan),
                 ));
@@ -2276,7 +2278,7 @@ impl HistoryCell for RequestUserInputResultCell {
                 lines.extend(wrap_with_prefix(
                     &option,
                     width,
-                    "    answer: ".dim(),
+                    "    回答：".dim(),
                     "            ".dim(),
                     Style::default().fg(Color::Cyan),
                 ));
@@ -2284,13 +2286,13 @@ impl HistoryCell for RequestUserInputResultCell {
             if let Some(note) = note {
                 let (label, continuation, style) = if question.options.is_some() {
                     (
-                        "    note: ".dim(),
+                        "    备注：".dim(),
                         "          ".dim(),
                         Style::default().fg(Color::Cyan),
                     )
                 } else {
                     (
-                        "    answer: ".dim(),
+                        "    回答：".dim(),
                         "            ".dim(),
                         Style::default().fg(Color::Cyan),
                     )
@@ -2300,7 +2302,7 @@ impl HistoryCell for RequestUserInputResultCell {
         }
 
         if self.interrupted && unanswered > 0 {
-            let summary = format!("interrupted with {unanswered} unanswered");
+            let summary = format!("已中断，尚有 {unanswered} 个问题未回答");
             lines.extend(wrap_with_prefix(
                 &summary,
                 width,
@@ -2526,7 +2528,7 @@ pub(crate) fn new_view_image_tool_call(path: PathBuf, cwd: &Path) -> PlainHistor
     let display_path = display_path_for(&path, cwd);
 
     let lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Viewed Image".bold()].into(),
+        vec!["• ".dim(), "查看图片".bold()].into(),
         vec!["  └ ".dim(), display_path.dim()].into(),
     ];
 
@@ -2541,11 +2543,11 @@ pub(crate) fn new_image_generation_call(
     let detail = revised_prompt.unwrap_or_else(|| call_id.clone());
 
     let mut lines: Vec<Line<'static>> = vec![
-        vec!["• ".dim(), "Generated Image:".bold()].into(),
+        vec!["• ".dim(), "生成图片：".bold()].into(),
         vec!["  └ ".dim(), detail.dim()].into(),
     ];
     if let Some(saved_path) = saved_path {
-        lines.push(vec!["  └ ".dim(), "Saved to: ".dim(), saved_path.into()].into());
+        lines.push(vec!["  └ ".dim(), "已保存到：".dim(), saved_path.into()].into());
     }
 
     PlainHistoryCell { lines }
@@ -2619,7 +2621,7 @@ impl HistoryCell for FinalMessageSeparator {
             .filter(|seconds| *seconds > 60)
             .map(super::status_indicator_widget::fmt_elapsed_compact)
         {
-            label_parts.push(format!("Worked for {elapsed_seconds}"));
+            label_parts.push(format!("已工作 {elapsed_seconds}"));
         }
         if let Some(metrics_label) = self.runtime_metrics.and_then(runtime_metrics_label) {
             label_parts.push(metrics_label);
@@ -2645,50 +2647,46 @@ pub(crate) fn runtime_metrics_label(summary: RuntimeMetricsSummary) -> Option<St
     let mut parts = Vec::new();
     if summary.tool_calls.count > 0 {
         let duration = format_duration_ms(summary.tool_calls.duration_ms);
-        let calls = pluralize(summary.tool_calls.count, "call", "calls");
         parts.push(format!(
-            "Local tools: {} {calls} ({duration})",
+            "本地工具：{} 次调用（{duration}）",
             summary.tool_calls.count
         ));
     }
     if summary.api_calls.count > 0 {
         let duration = format_duration_ms(summary.api_calls.duration_ms);
-        let calls = pluralize(summary.api_calls.count, "call", "calls");
         parts.push(format!(
-            "Inference: {} {calls} ({duration})",
+            "推理：{} 次调用（{duration}）",
             summary.api_calls.count
         ));
     }
     if summary.websocket_calls.count > 0 {
         let duration = format_duration_ms(summary.websocket_calls.duration_ms);
         parts.push(format!(
-            "WebSocket: {} events send ({duration})",
+            "WebSocket：发送 {} 个事件（{duration}）",
             summary.websocket_calls.count
         ));
     }
     if summary.streaming_events.count > 0 {
         let duration = format_duration_ms(summary.streaming_events.duration_ms);
-        let stream_label = pluralize(summary.streaming_events.count, "Stream", "Streams");
-        let events = pluralize(summary.streaming_events.count, "event", "events");
         parts.push(format!(
-            "{stream_label}: {} {events} ({duration})",
+            "流式输出：{} 个事件（{duration}）",
             summary.streaming_events.count
         ));
     }
     if summary.websocket_events.count > 0 {
         let duration = format_duration_ms(summary.websocket_events.duration_ms);
         parts.push(format!(
-            "{} events received ({duration})",
+            "接收 {} 个事件（{duration}）",
             summary.websocket_events.count
         ));
     }
     if summary.responses_api_overhead_ms > 0 {
         let duration = format_duration_ms(summary.responses_api_overhead_ms);
-        parts.push(format!("Responses API overhead: {duration}"));
+        parts.push(format!("Responses API 开销：{duration}"));
     }
     if summary.responses_api_inference_time_ms > 0 {
         let duration = format_duration_ms(summary.responses_api_inference_time_ms);
-        parts.push(format!("Responses API inference: {duration}"));
+        parts.push(format!("Responses API 推理：{duration}"));
     }
     if summary.responses_api_engine_iapi_ttft_ms > 0
         || summary.responses_api_engine_service_ttft_ms > 0
@@ -2944,9 +2942,9 @@ mod tests {
         assert_eq!(
             render_lines(&cell.display_lines(/*width*/ 80)),
             vec![
-                "• Generated Image:".to_string(),
+                "• 生成图片：".to_string(),
                 "  └ A tiny blue square".to_string(),
-                format!("  └ Saved to: {saved_path}"),
+                format!("  └ 已保存到：{saved_path}"),
             ],
         );
     }
@@ -3030,14 +3028,14 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(/*width*/ 600));
 
         assert_eq!(rendered.len(), 1);
-        assert!(!rendered[0].contains("Worked for"));
-        assert!(rendered[0].contains("Local tools: 3 calls (2.5s)"));
-        assert!(rendered[0].contains("Inference: 2 calls (1.2s)"));
-        assert!(rendered[0].contains("WebSocket: 1 events send (700ms)"));
-        assert!(rendered[0].contains("Streams: 6 events (900ms)"));
-        assert!(rendered[0].contains("4 events received (1.2s)"));
-        assert!(rendered[0].contains("Responses API overhead: 650ms"));
-        assert!(rendered[0].contains("Responses API inference: 1.9s"));
+        assert!(!rendered[0].contains("已工作"));
+        assert!(rendered[0].contains("本地工具：3 次调用（2.5s）"));
+        assert!(rendered[0].contains("推理：2 次调用（1.2s）"));
+        assert!(rendered[0].contains("WebSocket：发送 1 个事件（700ms）"));
+        assert!(rendered[0].contains("流式输出：6 个事件（900ms）"));
+        assert!(rendered[0].contains("接收 4 个事件（1.2s）"));
+        assert!(rendered[0].contains("Responses API 开销：650ms"));
+        assert!(rendered[0].contains("Responses API 推理：1.9s"));
         assert!(rendered[0].contains("TTFT: 410ms (iapi) 460ms (service)"));
         assert!(rendered[0].contains("TBT: 1.2s (iapi) 1.2s (service)"));
     }
@@ -3048,7 +3046,7 @@ mod tests {
         let rendered = render_lines(&cell.display_lines(/*width*/ 200));
 
         assert_eq!(rendered.len(), 1);
-        assert!(rendered[0].contains("Worked for"));
+        assert!(rendered[0].contains("已工作"));
     }
 
     #[test]
@@ -3356,22 +3354,22 @@ mod tests {
     #[test]
     fn prefixed_wrapped_history_cell_indents_wrapped_lines() {
         let summary = Line::from(vec![
-            "You ".into(),
-            "approved".bold(),
-            " codex to run ".into(),
+            "你".into(),
+            "批准".bold(),
+            " Codex 执行 ".into(),
             "echo something really long to ensure wrapping happens".dim(),
-            " this time".bold(),
+            "（仅这次）".bold(),
         ]);
         let cell = PrefixedWrappedHistoryCell::new(summary, "✔ ".green(), "  ");
         let rendered = render_lines(&cell.display_lines(/*width*/ 24));
         assert_eq!(
             rendered,
             vec![
-                "✔ You approved codex to".to_string(),
-                "  run echo something".to_string(),
-                "  really long to ensure".to_string(),
-                "  wrapping happens this".to_string(),
-                "  time".to_string(),
+                "✔ 你批准 Codex 执行".to_string(),
+                "  echo something really".to_string(),
+                "  long to ensure".to_string(),
+                "  wrapping happens".to_string(),
+                "  （仅这次）".to_string(),
             ]
         );
     }

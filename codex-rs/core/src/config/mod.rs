@@ -2898,7 +2898,7 @@ impl Config {
                 .map(|t| t.notification_method)
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
-            show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(false),
+            show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
             tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
             model_availability_nux: cfg
                 .tui
