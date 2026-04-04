@@ -9252,6 +9252,7 @@ mod tests {
             source: SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,
@@ -9384,6 +9385,7 @@ mod tests {
             serde_json::to_string(&SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: ThreadId::from_string("ad7f0408-99b8-4f6e-a46f-bd0eec433370")?,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,

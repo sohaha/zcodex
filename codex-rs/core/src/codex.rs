@@ -13,12 +13,14 @@ use crate::agent::MailboxReceiver;
 use crate::agent::agent_status_from_event;
 use crate::agent::status::is_final;
 use crate::apps::render_apps_section;
+use crate::buddy::maybe_inject_companion_intro;
 use crate::commit_attribution::commit_message_trailer_instruction;
 use crate::compact;
 use crate::compact::InitialContextInjection;
 use crate::compact::run_inline_auto_compact_task;
 use crate::compact::should_use_remote_compact_task;
 use crate::compact_remote::run_inline_remote_auto_compact_task;
+use crate::config::FallbackProviderConfig;
 use crate::config::ManagedFeatures;
 use crate::connectors;
 use crate::exec_policy::ExecPolicyManager;
@@ -193,6 +195,7 @@ use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::exec_output::StreamOutput;
+use reqwest::StatusCode;
 
 mod rollout_reconstruction;
 #[cfg(test)]
@@ -310,6 +313,7 @@ use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
 use crate::tools::parallel::ToolCallRuntime;
+use crate::tools::rewrite::extract_tool_routing_directives;
 use crate::tools::router::ToolRouterParams;
 use crate::tools::sandboxing::ApprovalStore;
 use crate::turn_diff_tracker::TurnDiffTracker;
@@ -954,6 +958,7 @@ impl TurnContext {
         })
         .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
         .with_web_search_config(self.tools_config.web_search_config.clone())
+        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
         .with_allow_login_shell(self.tools_config.allow_login_shell)
         .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
             &config.agent_roles,
@@ -1004,8 +1009,120 @@ impl TurnContext {
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
-            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
-            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
+            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
+            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
+        }
+    }
+
+    pub(crate) async fn with_model_provider(
+        &self,
+        model: String,
+        model_provider_id: String,
+        model_provider: ModelProviderInfo,
+        models_manager: &ModelsManager,
+    ) -> Self {
+        let mut config = (*self.config).clone();
+        config.model = Some(model.clone());
+        config.model_provider_id = model_provider_id;
+        config.model_provider = model_provider.clone();
+        let model_info = models_manager
+            .get_model_info(model.as_str(), &config.to_models_manager_config())
+            .await;
+        let truncation_policy = model_info.truncation_policy.into();
+        let supported_reasoning_levels = model_info
+            .supported_reasoning_levels
+            .iter()
+            .map(|preset| preset.effort)
+            .collect::<Vec<_>>();
+        let reasoning_effort = if let Some(current_reasoning_effort) = self.reasoning_effort {
+            if supported_reasoning_levels.contains(&current_reasoning_effort) {
+                Some(current_reasoning_effort)
+            } else {
+                supported_reasoning_levels
+                    .get(supported_reasoning_levels.len().saturating_sub(1) / 2)
+                    .copied()
+                    .or(model_info.default_reasoning_level)
+            }
+        } else {
+            supported_reasoning_levels
+                .get(supported_reasoning_levels.len().saturating_sub(1) / 2)
+                .copied()
+                .or(model_info.default_reasoning_level)
+        };
+        config.model_reasoning_effort = reasoning_effort;
+
+        let collaboration_mode = self.collaboration_mode.with_updates(
+            Some(model.clone()),
+            Some(reasoning_effort),
+            /*developer_instructions*/ None,
+        );
+        let features = self.features.clone();
+        let tools_config = ToolsConfig::new(&ToolsConfigParams {
+            model_info: &model_info,
+            available_models: &models_manager
+                .list_models(RefreshStrategy::OnlineIfUncached)
+                .await,
+            features: &features,
+            web_search_mode: self.tools_config.web_search_mode,
+            session_source: self.session_source.clone(),
+            sandbox_policy: self.sandbox_policy.get(),
+            windows_sandbox_level: self.windows_sandbox_level,
+        })
+        .with_unified_exec_shell_mode(self.tools_config.unified_exec_shell_mode.clone())
+        .with_web_search_config(self.tools_config.web_search_config.clone())
+        .with_auto_tldr_routing(self.tools_config.auto_tldr_routing)
+        .with_allow_login_shell(self.tools_config.allow_login_shell)
+        .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
+            &config.agent_roles,
+        ));
+
+        Self {
+            sub_id: self.sub_id.clone(),
+            trace_id: self.trace_id.clone(),
+            realtime_active: self.realtime_active,
+            config: Arc::new(config),
+            auth_manager: self.auth_manager.clone(),
+            model_info: model_info.clone(),
+            session_telemetry: self
+                .session_telemetry
+                .clone()
+                .with_model(model.as_str(), model_info.slug.as_str()),
+            provider: model_provider,
+            reasoning_effort,
+            reasoning_summary: self.reasoning_summary,
+            session_source: self.session_source.clone(),
+            environment: Arc::clone(&self.environment),
+            cwd: self.cwd.clone(),
+            current_date: self.current_date.clone(),
+            timezone: self.timezone.clone(),
+            app_server_client_name: self.app_server_client_name.clone(),
+            developer_instructions: self.developer_instructions.clone(),
+            compact_prompt: self.compact_prompt.clone(),
+            user_instructions: self.user_instructions.clone(),
+            collaboration_mode,
+            personality: self.personality,
+            approval_policy: self.approval_policy.clone(),
+            sandbox_policy: self.sandbox_policy.clone(),
+            file_system_sandbox_policy: self.file_system_sandbox_policy.clone(),
+            network_sandbox_policy: self.network_sandbox_policy,
+            network: self.network.clone(),
+            windows_sandbox_level: self.windows_sandbox_level,
+            shell_environment_policy: self.shell_environment_policy.clone(),
+            tools_config,
+            features,
+            ghost_snapshot: self.ghost_snapshot.clone(),
+            final_output_json_schema: self.final_output_json_schema.clone(),
+            codex_self_exe: self.codex_self_exe.clone(),
+            codex_linux_sandbox_exe: self.codex_linux_sandbox_exe.clone(),
+            tool_call_gate: Arc::new(ReadinessFlag::new()),
+            truncation_policy,
+            js_repl: Arc::clone(&self.js_repl),
+            dynamic_tools: self.dynamic_tools.clone(),
+            turn_metadata_state: self.turn_metadata_state.clone(),
+            turn_skills: self.turn_skills.clone(),
+            turn_timing_state: Arc::clone(&self.turn_timing_state),
+            tool_routing_directives: Arc::clone(&self.tool_routing_directives),
+            auto_tldr_context: Arc::clone(&self.auto_tldr_context),
         }
     }
 
@@ -1416,6 +1533,7 @@ impl Session {
             main_execve_wrapper_exe,
         )
         .with_web_search_config(per_turn_config.web_search_config.clone())
+        .with_auto_tldr_routing(per_turn_config.auto_tldr_routing)
         .with_allow_login_shell(per_turn_config.permissions.allow_login_shell)
         .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
             &per_turn_config.agent_roles,
@@ -2214,7 +2332,11 @@ impl Session {
             InitialHistory::Resumed(resumed_history) => {
                 let rollout_items = resumed_history.history;
                 let previous_turn_settings = self
-                    .apply_rollout_reconstruction(&turn_context, &rollout_items)
+                    .apply_rollout_reconstruction(
+                        &turn_context,
+                        &rollout_items,
+                        /*preserve_reference_context_item*/ true,
+                    )
                     .await;
 
                 // If resuming, warn when the last recorded model differs from the current one.
@@ -2251,8 +2373,12 @@ impl Session {
                 }
             }
             InitialHistory::Forked(rollout_items) => {
-                self.apply_rollout_reconstruction(&turn_context, &rollout_items)
-                    .await;
+                self.apply_rollout_reconstruction(
+                    &turn_context,
+                    &rollout_items,
+                    /*preserve_reference_context_item*/ true,
+                )
+                .await;
 
                 // Seed usage info from the recorded rollout so UIs can show token counts
                 // immediately on resume/fork.
@@ -2281,16 +2407,25 @@ impl Session {
         &self,
         turn_context: &TurnContext,
         rollout_items: &[RolloutItem],
+        preserve_reference_context_item: bool,
     ) -> Option<PreviousTurnSettings> {
         let reconstructed_rollout = self
             .reconstruct_history_from_rollout(turn_context, rollout_items)
             .await;
         let previous_turn_settings = reconstructed_rollout.previous_turn_settings.clone();
-        self.replace_history(
-            reconstructed_rollout.history,
-            reconstructed_rollout.reference_context_item,
-        )
-        .await;
+        if preserve_reference_context_item {
+            let mut state = self.state.lock().await;
+            state.replace_history_preserving_reference_context(
+                reconstructed_rollout.history,
+                reconstructed_rollout.reference_context_item,
+            );
+        } else {
+            self.replace_history(
+                reconstructed_rollout.history,
+                reconstructed_rollout.reference_context_item,
+            )
+            .await;
+        }
         self.set_previous_turn_settings(previous_turn_settings.clone())
             .await;
         previous_turn_settings
@@ -3619,6 +3754,9 @@ impl Session {
         {
             developer_sections.push(memory_prompt);
         }
+        if turn_context.features.enabled(Feature::Zmemory) {
+            developer_sections.push(build_zmemory_tool_developer_instructions());
+        }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
             DeveloperInstructions::from_collaboration_mode(&collaboration_mode)
@@ -3921,6 +4059,8 @@ impl Session {
         input: &[UserInput],
         response_item: ResponseItem,
     ) {
+        *turn_context.tool_routing_directives.write().await =
+            extract_tool_routing_directives(input);
         // Persist the user message to history, but emit the turn item from `UserInput` so
         // UI-only `text_elements` are preserved. `ResponseItem::Message` does not carry
         // those spans, and `record_response_item_and_emit_turn_item` would drop them.
@@ -4681,6 +4821,7 @@ mod handlers {
     use crate::config_loader::CloudRequirementsLoader;
     use crate::config_loader::LoaderOverrides;
     use crate::config_loader::load_config_layers_state;
+    use crate::memories::zmemory_preferences::capture_stable_preference_memories;
     use codex_features::Feature;
     use codex_utils_absolute_path::AbsolutePathBuf;
 
@@ -4813,6 +4954,9 @@ mod handlers {
             // new_turn_with_sub_id already emits the error event.
             return;
         };
+        if current_context.features.enabled(Feature::Zmemory) {
+            capture_stable_preference_memories(sess, &current_context, &items).await;
+        }
         sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
             .await;
         match sess
@@ -5340,8 +5484,12 @@ mod handlers {
         sess.persist_rollout_items(&[RolloutItem::EventMsg(rollback_msg.clone())])
             .await;
         sess.flush_rollout().await;
-        sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
-            .await;
+        sess.apply_rollout_reconstruction(
+            turn_context.as_ref(),
+            replay_items.as_slice(),
+            /*preserve_reference_context_item*/ false,
+        )
+        .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;
 
         sess.deliver_event_raw(Event {
@@ -5542,6 +5690,7 @@ async fn spawn_review_thread(
         sess.services.main_execve_wrapper_exe.as_ref(),
     )
     .with_web_search_config(/*web_search_config*/ None)
+    .with_auto_tldr_routing(parent_turn_context.tools_config.auto_tldr_routing)
     .with_allow_login_shell(config.permissions.allow_login_shell)
     .with_agent_type_description(crate::agent::role::spawn_tool_spec::build(
         &config.agent_roles,
@@ -5631,8 +5780,8 @@ async fn spawn_review_thread(
         turn_metadata_state,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
-        tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
-        auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
+        tool_routing_directives: Arc::clone(&parent_turn_context.tool_routing_directives),
+        auto_tldr_context: Arc::clone(&parent_turn_context.auto_tldr_context),
     };
 
     // Seed the child task with the review prompt as the initial user message.
@@ -6526,7 +6675,8 @@ async fn run_sampling_request(
     )
     .await?;
 
-    let base_instructions = sess.get_base_instructions().await;
+    let mut base_instructions = sess.get_base_instructions().await;
+    maybe_inject_companion_intro(&turn_context.config, &mut base_instructions);
 
     let prompt = build_prompt(
         input,
@@ -6551,51 +6701,107 @@ async fn run_sampling_request(
         )
         .await;
     let mut retries = 0;
+    let mut sampling_turn_context = Arc::clone(&turn_context);
+    let mut next_fallback_index = 0usize;
+    let mut fallback_client_session: Option<ModelClientSession> = None;
     loop {
-        let err = match try_run_sampling_request(
-            tool_runtime.clone(),
-            Arc::clone(&sess),
-            Arc::clone(&turn_context),
-            client_session,
-            turn_metadata_header,
-            Arc::clone(&turn_diff_tracker),
-            server_model_warning_emitted_for_turn,
-            &prompt,
-            cancellation_token.child_token(),
-        )
-        .await
+        let request_result = if let Some(fallback_client_session) = fallback_client_session.as_mut()
         {
+            try_run_sampling_request(
+                tool_runtime.clone(),
+                Arc::clone(&sess),
+                Arc::clone(&sampling_turn_context),
+                fallback_client_session,
+                turn_metadata_header,
+                Arc::clone(&turn_diff_tracker),
+                server_model_warning_emitted_for_turn,
+                &prompt,
+                cancellation_token.child_token(),
+            )
+            .await
+        } else {
+            try_run_sampling_request(
+                tool_runtime.clone(),
+                Arc::clone(&sess),
+                Arc::clone(&sampling_turn_context),
+                client_session,
+                turn_metadata_header,
+                Arc::clone(&turn_diff_tracker),
+                server_model_warning_emitted_for_turn,
+                &prompt,
+                cancellation_token.child_token(),
+            )
+            .await
+        };
+        let err = match request_result {
             Ok(output) => {
                 return Ok(output);
             }
             Err(CodexErr::ContextWindowExceeded) => {
-                sess.set_total_tokens_full(&turn_context).await;
+                sess.set_total_tokens_full(&sampling_turn_context).await;
                 return Err(CodexErr::ContextWindowExceeded);
             }
             Err(CodexErr::UsageLimitReached(e)) => {
                 let rate_limits = e.rate_limits.clone();
                 if let Some(rate_limits) = rate_limits {
-                    sess.update_rate_limits(&turn_context, *rate_limits).await;
+                    sess.update_rate_limits(&sampling_turn_context, *rate_limits)
+                        .await;
                 }
-                return Err(CodexErr::UsageLimitReached(e));
+                CodexErr::UsageLimitReached(e)
             }
             Err(err) => err,
         };
+
+        if should_retry_with_fallback_provider(&err)
+            && let Some((fallback_turn_context, used_fallback_index)) =
+                next_fallback_turn_context(&sess, &sampling_turn_context, next_fallback_index).await
+        {
+            next_fallback_index = used_fallback_index + 1;
+            let fallback_provider = fallback_turn_context.provider.name.clone();
+            let fallback_model = fallback_turn_context.model_info.slug.clone();
+            fallback_client_session =
+                Some(build_model_client_for_turn(&sess, &fallback_turn_context).new_session());
+            sampling_turn_context = fallback_turn_context;
+            retries = 0;
+            sess.send_event(
+                &sampling_turn_context,
+                EventMsg::Warning(WarningEvent {
+                    message: format!(
+                        "Provider request failed; retrying with fallback provider `{fallback_provider}` and model `{fallback_model}`. {err:#}"
+                    ),
+                }),
+            )
+            .await;
+            continue;
+        }
+
+        if should_short_circuit_to_parent_model(&sampling_turn_context, &err) {
+            return Err(err);
+        }
 
         if !err.is_retryable() {
             return Err(err);
         }
 
         // Use the configured provider-specific stream retry budget.
-        let max_retries = turn_context.provider.stream_max_retries();
-        if retries >= max_retries
-            && client_session.try_switch_fallback_transport(
-                &turn_context.session_telemetry,
-                &turn_context.model_info,
-            )
-        {
+        let max_retries = sampling_turn_context.provider.stream_max_retries();
+        let activated_transport_fallback =
+            if let Some(fallback_client_session) = fallback_client_session.as_mut() {
+                retries >= max_retries
+                    && fallback_client_session.try_switch_fallback_transport(
+                        &sampling_turn_context.session_telemetry,
+                        &sampling_turn_context.model_info,
+                    )
+            } else {
+                retries >= max_retries
+                    && client_session.try_switch_fallback_transport(
+                        &sampling_turn_context.session_telemetry,
+                        &sampling_turn_context.model_info,
+                    )
+            };
+        if activated_transport_fallback {
             sess.send_event(
-                &turn_context,
+                &sampling_turn_context,
                 EventMsg::Warning(WarningEvent {
                     message: format!("Falling back from WebSockets to HTTPS transport. {err:#}"),
                 }),
@@ -6620,13 +6826,17 @@ async fn run_sampling_request(
             // transient reconnect messages. In debug builds, keep full visibility for diagnosis.
             let report_error = retries > 1
                 || cfg!(debug_assertions)
-                || !sess.services.model_client.responses_websocket_enabled();
+                || if let Some(fallback_client_session) = fallback_client_session.as_ref() {
+                    !fallback_client_session.responses_websocket_enabled()
+                } else {
+                    !sess.services.model_client.responses_websocket_enabled()
+                };
             if report_error {
                 // Surface retry information to any UI/front‑end so the
                 // user understands what is happening instead of staring
                 // at a seemingly frozen screen.
                 sess.notify_stream_error(
-                    &turn_context,
+                    &sampling_turn_context,
                     format!("Reconnecting... {retries}/{max_retries}"),
                     err,
                 )
@@ -6637,6 +6847,135 @@ async fn run_sampling_request(
             return Err(err);
         }
     }
+}
+
+fn build_model_client_for_turn(sess: &Session, turn_context: &TurnContext) -> ModelClient {
+    ModelClient::new(
+        turn_context.auth_manager.clone(),
+        sess.conversation_id,
+        turn_context.provider.clone(),
+        turn_context.session_source.clone(),
+        turn_context.config.model_verbosity,
+        turn_context
+            .config
+            .features
+            .enabled(Feature::EnableRequestCompression),
+        turn_context
+            .config
+            .features
+            .enabled(Feature::RuntimeMetrics),
+        Session::build_model_client_beta_features_header(turn_context.config.as_ref()),
+    )
+}
+
+async fn next_fallback_turn_context(
+    sess: &Session,
+    turn_context: &Arc<TurnContext>,
+    start_index: usize,
+) -> Option<(Arc<TurnContext>, usize)> {
+    let fallback_candidates = if turn_context.config.fallback_providers.is_empty() {
+        turn_context
+            .config
+            .fallback_provider_id
+            .as_ref()
+            .zip(turn_context.config.fallback_provider.as_ref())
+            .map(|(provider_id, provider)| {
+                vec![FallbackProviderConfig {
+                    provider_id: provider_id.clone(),
+                    provider: provider.clone(),
+                    model: turn_context.config.fallback_model.clone(),
+                }]
+            })
+            .unwrap_or_default()
+    } else {
+        turn_context.config.fallback_providers.clone()
+    };
+
+    for (index, fallback) in fallback_candidates.iter().enumerate().skip(start_index) {
+        let fallback_model = fallback
+            .model
+            .clone()
+            .unwrap_or_else(|| turn_context.model_info.slug.clone());
+        if fallback.provider_id == turn_context.config.model_provider_id
+            && fallback_model == turn_context.model_info.slug
+        {
+            continue;
+        }
+
+        let fallback_turn_context = turn_context
+            .with_model_provider(
+                fallback_model,
+                fallback.provider_id.clone(),
+                fallback.provider.clone(),
+                &sess.services.models_manager,
+            )
+            .await;
+        return Some((Arc::new(fallback_turn_context), index));
+    }
+
+    None
+}
+
+fn should_retry_with_fallback_provider(err: &CodexErr) -> bool {
+    matches!(
+        err,
+        CodexErr::Stream(_, _)
+            | CodexErr::UnexpectedStatus(_)
+            | CodexErr::InvalidRequest(_)
+            | CodexErr::UsageLimitReached(_)
+            | CodexErr::QuotaExceeded
+            | CodexErr::UsageNotIncluded
+            | CodexErr::ServerOverloaded
+            | CodexErr::ResponseStreamFailed(_)
+            | CodexErr::ConnectionFailed(_)
+            | CodexErr::InternalServerError
+            | CodexErr::Timeout
+    )
+}
+
+fn is_model_request_failure_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("model")
+        && (normalized.contains("not found")
+            || normalized.contains("does not exist")
+            || normalized.contains("unsupported")
+            || normalized.contains("not supported")
+            || normalized.contains("not available")
+            || normalized.contains("unavailable")
+            || normalized.contains("invalid")
+            || normalized.contains("no access")
+            || normalized.contains("not have access"))
+}
+
+fn should_retry_subagent_with_parent_model(err: &CodexErr) -> bool {
+    match err {
+        CodexErr::Stream(message, _) => is_model_request_failure_message(message),
+        CodexErr::InvalidRequest(message) => is_model_request_failure_message(message),
+        CodexErr::UnexpectedStatus(response) => {
+            matches!(
+                response.status,
+                StatusCode::BAD_REQUEST | StatusCode::FORBIDDEN | StatusCode::NOT_FOUND
+            ) && is_model_request_failure_message(&response.body)
+        }
+        _ => false,
+    }
+}
+
+fn subagent_parent_model(turn_context: &TurnContext) -> Option<&str> {
+    let SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+        parent_model: Some(parent_model),
+        ..
+    }) = &turn_context.session_source
+    else {
+        return None;
+    };
+    Some(parent_model.as_str())
+}
+
+fn should_short_circuit_to_parent_model(turn_context: &TurnContext, err: &CodexErr) -> bool {
+    should_retry_subagent_with_parent_model(err)
+        && subagent_parent_model(turn_context)
+            .is_some_and(|parent_model| parent_model != turn_context.model_info.slug)
 }
 
 pub(crate) async fn built_tools(
@@ -7663,6 +8002,7 @@ pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -
 }
 
 use crate::memories::prompts::build_memory_tool_developer_instructions;
+use crate::memories::prompts::build_zmemory_tool_developer_instructions;
 #[cfg(test)]
 pub(crate) use tests::make_session_and_context;
 #[cfg(test)]

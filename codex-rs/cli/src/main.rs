@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -29,8 +30,11 @@ use codex_tui::Cli as TuiCli;
 use codex_tui::ExitReason;
 use codex_tui::update_action::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
+use codex_ztok::alias_name as ztok_alias_name;
+use codex_ztok::is_alias_invocation as is_ztok_alias_invocation;
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
+use std::io::Write;
 use std::path::PathBuf;
 use supports_color::Stream;
 
@@ -39,10 +43,15 @@ mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
 mod mcp_cmd;
+mod tldr_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
+mod zmemory_cmd;
 
 use crate::mcp_cmd::McpCli;
+use crate::tldr_cmd::TldrCli;
+use crate::zmemory_cmd::ZmemoryCli;
+use crate::zmemory_cmd::run_zmemory_command;
 
 use codex_core::config::Config;
 use codex_core::config::ConfigOverrides;
@@ -53,9 +62,9 @@ use codex_features::Stage;
 use codex_features::is_known_feature_key;
 use codex_terminal_detection::TerminalName;
 
-/// Codex CLI
+/// Codex 命令行工具
 ///
-/// If no subcommand is specified, options will be forwarded to the interactive CLI.
+/// 若未指定子命令，选项会转发到交互式命令行界面。
 #[derive(Debug, Parser)]
 #[clap(
     author,
@@ -66,7 +75,8 @@ use codex_terminal_detection::TerminalName;
     // `codex-x86_64-unknown-linux-musl`, but the help output should always use
     // the generic `codex` command name that users run.
     bin_name = "codex",
-    override_usage = "codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]"
+    override_usage = "codex [选项] [提示]\n       codex [选项] <命令> [参数]",
+    long_about = "Codex 命令行工具\n\n若未指定子命令，选项会转发到交互式命令行界面。"
 )]
 struct MultitoolCli {
     #[clap(flatten)]
@@ -87,76 +97,93 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Run Codex non-interactively.
+    /// 以非交互模式运行 Codex。
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
 
-    /// Run a code review non-interactively.
+    /// 以非交互模式执行代码评审。
     Review(ReviewArgs),
 
-    /// Manage login.
+    /// 管理登录。
     Login(LoginCommand),
 
-    /// Remove stored authentication credentials.
+    /// 删除已保存的认证凭据。
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
+    /// 管理 Codex 的外部 MCP 服务器。
     Mcp(McpCli),
 
-    /// Start Codex as an MCP server (stdio).
+    /// 运行 Token 优化的命令包装器。
+    Ztok(ZtokArgs),
+
+    /// 运行原生 TLDR 代码上下文分析命令。
+    Tldr(TldrCli),
+
+    /// 管理本地 zmemory 长期记忆。
+    Zmemory(ZmemoryCli),
+
+    /// 以 MCP 服务器（标准输入/输出）模式启动 Codex。
     McpServer,
 
-    /// [experimental] Run the app server or related tooling.
+    /// [实验性] 运行应用服务器或相关工具。
     AppServer(AppServerCommand),
 
-    /// Launch the Codex desktop app (downloads the macOS installer if missing).
+    /// 启动 Codex 桌面应用（若缺失会下载 macOS 安装包）。
     #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
-    /// Generate shell completion scripts.
+    /// 生成命令行补全脚本。
     Completion(CompletionCommand),
 
-    /// Run commands within a Codex-provided sandbox.
+    /// 在 Codex 提供的沙箱中运行命令。
     Sandbox(SandboxArgs),
 
-    /// Debugging tools.
+    /// 调试工具。
     Debug(DebugCommand),
 
-    /// Execpolicy tooling.
+    /// Execpolicy 工具。
     #[clap(hide = true)]
     Execpolicy(ExecpolicyCommand),
 
-    /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
+    /// 将 Codex agent 生成的最新 diff 以 `git apply` 方式应用到本地工作区。
     #[clap(visible_alias = "a")]
     Apply(ApplyCommand),
 
-    /// Resume a previous interactive session (picker by default; use --last to continue the most recent).
+    /// 恢复之前的交互会话（默认打开选择器；使用 --last 可继续最近一次）。
+    #[clap(visible_alias = "r")]
     Resume(ResumeCommand),
 
-    /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
+    /// 从之前的交互会话分叉（默认打开选择器；使用 --last 可分叉最近一次）。
     Fork(ForkCommand),
 
-    /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
+    /// [实验性] 浏览 Codex Cloud 任务并将变更应用到本地。
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
 
-    /// Internal: run the responses API proxy.
+    /// 内部：运行 responses API 代理。
     #[clap(hide = true)]
     ResponsesApiProxy(ResponsesApiProxyArgs),
 
-    /// Internal: relay stdio to a Unix domain socket.
+    /// 内部：将 stdio 转发到 Unix 域套接字。
     #[clap(hide = true, name = "stdio-to-uds")]
     StdioToUds(StdioToUdsCommand),
 
-    /// Inspect feature flags.
+    /// 查看功能开关。
     Features(FeaturesCli),
 }
 
 #[derive(Debug, Parser)]
 struct CompletionCommand {
-    /// Shell to generate completions for
+    /// 要生成补全脚本的 shell 类型。
     #[clap(value_enum, default_value_t = Shell::Bash)]
     shell: Shell,
+}
+
+#[derive(Debug, Args)]
+#[command(disable_help_flag = true, disable_version_flag = true)]
+struct ZtokArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<std::ffi::OsString>,
 }
 
 #[derive(Debug, Parser)]
@@ -167,10 +194,10 @@ struct DebugCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugSubcommand {
-    /// Tooling: helps debug the app server.
+    /// 用于调试应用服务器的工具。
     AppServer(DebugAppServerCommand),
 
-    /// Internal: reset local memory state for a fresh start.
+    /// 内部：重置本地记忆状态以重新开始。
     #[clap(hide = true)]
     ClearMemories,
 }
@@ -183,32 +210,33 @@ struct DebugAppServerCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum DebugAppServerSubcommand {
-    // Send message to app server V2.
+    /// 向应用服务器的 v2 接口发送消息。
     SendMessageV2(DebugAppServerSendMessageV2Command),
 }
 
 #[derive(Debug, Parser)]
 struct DebugAppServerSendMessageV2Command {
-    #[arg(value_name = "USER_MESSAGE", required = true)]
+    /// 要发送的用户消息。
+    #[arg(value_name = "用户消息", required = true)]
     user_message: String,
 }
 
 #[derive(Debug, Parser)]
 struct ResumeCommand {
-    /// Conversation/session id (UUID) or thread name. UUIDs take precedence if it parses.
-    /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
+    /// 会话 ID（UUID）或线程名。若能解析为 UUID，则优先按 UUID 处理。
+    /// 省略时可用 --last 选择最近一次记录的会话。
+    #[arg(value_name = "会话ID")]
     session_id: Option<String>,
 
-    /// Continue the most recent session without showing the picker.
+    /// 不显示选择器，直接继续最近一次会话。
     #[arg(long = "last", default_value_t = false)]
     last: bool,
 
-    /// Show all sessions (disables cwd filtering and shows CWD column).
+    /// 显示所有会话（关闭 cwd 过滤并显示 CWD 列）。
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
-    /// Include non-interactive sessions in the resume picker and --last selection.
+    /// 在恢复选择器和 `--last` 选择中包含非交互式会话。
     #[arg(long = "include-non-interactive", default_value_t = false)]
     include_non_interactive: bool,
 
@@ -221,16 +249,16 @@ struct ResumeCommand {
 
 #[derive(Debug, Parser)]
 struct ForkCommand {
-    /// Conversation/session id (UUID). When provided, forks this session.
-    /// If omitted, use --last to pick the most recent recorded session.
-    #[arg(value_name = "SESSION_ID")]
+    /// 会话 ID（UUID）。提供后会分叉该会话。
+    /// 省略时可用 --last 选择最近一次记录的会话。
+    #[arg(value_name = "会话ID")]
     session_id: Option<String>,
 
-    /// Fork the most recent session without showing the picker.
+    /// 不显示选择器，直接分叉最近一次会话。
     #[arg(long = "last", default_value_t = false, conflicts_with = "session_id")]
     last: bool,
 
-    /// Show all sessions (disables cwd filtering and shows CWD column).
+    /// 显示所有会话（关闭 cwd 过滤并显示 CWD 列）。
     #[arg(long = "all", default_value_t = false)]
     all: bool,
 
@@ -249,15 +277,15 @@ struct SandboxArgs {
 
 #[derive(Debug, clap::Subcommand)]
 enum SandboxCommand {
-    /// Run a command under Seatbelt (macOS only).
+    /// 在 macOS 的 Seatbelt 沙箱中运行命令。
     #[clap(visible_alias = "seatbelt")]
     Macos(SeatbeltCommand),
 
-    /// Run a command under the Linux sandbox (bubblewrap by default).
+    /// 在 Linux 沙箱下运行命令（默认使用 `bubblewrap`）。
     #[clap(visible_alias = "landlock")]
     Linux(LandlockCommand),
 
-    /// Run a command under Windows restricted token (Windows only).
+    /// 在 Windows 受限令牌下运行命令（仅 Windows）。
     Windows(WindowsCommand),
 }
 
@@ -269,7 +297,7 @@ struct ExecpolicyCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum ExecpolicySubcommand {
-    /// Check execpolicy files against a command.
+    /// 使用命令检查 execpolicy 文件。
     #[clap(name = "check")]
     Check(ExecPolicyCheckCommand),
 }
@@ -281,7 +309,7 @@ struct LoginCommand {
 
     #[arg(
         long = "with-api-key",
-        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`)"
+        help = "从标准输入读取 API 密钥（例如：`printenv OPENAI_API_KEY | codex login --with-api-key`）"
     )]
     with_api_key: bool,
 
@@ -289,22 +317,22 @@ struct LoginCommand {
         long = "api-key",
         num_args = 0..=1,
         default_missing_value = "",
-        value_name = "API_KEY",
-        help = "(deprecated) Previously accepted the API key directly; now exits with guidance to use --with-api-key",
+        value_name = "API密钥",
+        help = "（已弃用）此前可直接传 API 密钥；现在会退出并提示改用 --with-api-key",
         hide = true
     )]
     api_key: Option<String>,
 
-    #[arg(long = "device-auth")]
+    #[arg(long = "device-auth", help = "使用设备码流程登录。")]
     use_device_code: bool,
 
-    /// EXPERIMENTAL: Use custom OAuth issuer base URL (advanced)
-    /// Override the OAuth issuer base URL (advanced)
+    /// 实验性：使用自定义 OAuth issuer 基础 URL（高级）
+    /// 覆盖 OAuth issuer 基础 URL（高级）
     #[arg(long = "experimental_issuer", value_name = "URL", hide = true)]
     issuer_base_url: Option<String>,
 
-    /// EXPERIMENTAL: Use custom OAuth client ID (advanced)
-    #[arg(long = "experimental_client-id", value_name = "CLIENT_ID", hide = true)]
+    /// 实验性：使用自定义 OAuth client ID（高级）
+    #[arg(long = "experimental_client-id", value_name = "客户端ID", hide = true)]
     client_id: Option<String>,
 
     #[command(subcommand)]
@@ -313,7 +341,7 @@ struct LoginCommand {
 
 #[derive(Debug, clap::Subcommand)]
 enum LoginSubcommand {
-    /// Show login status.
+    /// 显示登录状态。
     Status,
 }
 
@@ -325,12 +353,12 @@ struct LogoutCommand {
 
 #[derive(Debug, Parser)]
 struct AppServerCommand {
-    /// Omit to run the app server; specify a subcommand for tooling.
+    /// 省略时直接运行应用服务器；指定子命令可执行工具能力。
     #[command(subcommand)]
     subcommand: Option<AppServerSubcommand>,
 
-    /// Transport endpoint URL. Supported values: `stdio://` (default),
-    /// `ws://IP:PORT`.
+    /// 传输监听地址。支持：`stdio://`（默认）、
+    /// `ws://IP:PORT`。
     #[arg(
         long = "listen",
         value_name = "URL",
@@ -338,21 +366,20 @@ struct AppServerCommand {
     )]
     listen: codex_app_server::AppServerTransport,
 
-    /// Controls whether analytics are enabled by default.
+    /// 控制是否默认启用分析上报。
     ///
-    /// Analytics are disabled by default for app-server. Users have to explicitly opt in
-    /// via the `analytics` section in the config.toml file.
+    /// app-server 默认关闭分析上报。用户需要在 config.toml 的 `analytics`
+    /// 配置段中显式选择启用。
     ///
-    /// However, for first-party use cases like the VSCode IDE extension, we default analytics
-    /// to be enabled by default by setting this flag. Users can still opt out by setting this
-    /// in their config.toml:
+    /// 但对于 VSCode IDE 扩展这类第一方用例，我们可通过此标志让分析上报默认启用。
+    /// 用户仍可在 config.toml 中这样设置来选择退出：
     ///
     /// ```toml
     /// [analytics]
     /// enabled = false
     /// ```
     ///
-    /// See https://developers.openai.com/codex/config-advanced/#metrics for more details.
+    /// 详情见 https://developers.openai.com/codex/config-advanced/#metrics 。
     #[arg(long = "analytics-default-enabled")]
     analytics_default_enabled: bool,
 
@@ -363,54 +390,58 @@ struct AppServerCommand {
 #[derive(Debug, clap::Subcommand)]
 #[allow(clippy::enum_variant_names)]
 enum AppServerSubcommand {
-    /// [experimental] Generate TypeScript bindings for the app server protocol.
+    /// [实验性] 启动本地 OpenAI 兼容 HTTP 服务。
+    #[clap(name = "openai-compat")]
+    OpenAiCompat(codex_app_server::OpenAiCompatServerArgs),
+
+    /// [实验性] 为应用服务器协议生成 TypeScript 代码绑定。
     GenerateTs(GenerateTsCommand),
 
-    /// [experimental] Generate JSON Schema for the app server protocol.
+    /// [实验性] 为应用服务器协议生成 JSON Schema 文件。
     GenerateJsonSchema(GenerateJsonSchemaCommand),
 
-    /// [internal] Generate internal JSON Schema artifacts for Codex tooling.
+    /// [内部] 为 Codex 工具链生成内部 JSON Schema 文件。
     #[clap(hide = true)]
     GenerateInternalJsonSchema(GenerateInternalJsonSchemaCommand),
 }
 
 #[derive(Debug, Args)]
 struct GenerateTsCommand {
-    /// Output directory where .ts files will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    /// 输出目录（写入 TypeScript 文件）
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 
-    /// Optional path to the Prettier executable to format generated files
-    #[arg(short = 'p', long = "prettier", value_name = "PRETTIER_BIN")]
+    /// 可选：用于格式化生成文件的 Prettier 可执行文件路径。
+    #[arg(short = 'p', long = "prettier", value_name = "Prettier路径")]
     prettier: Option<PathBuf>,
 
-    /// Include experimental methods and fields in the generated output
+    /// 在输出中包含实验性方法和字段。
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
 
 #[derive(Debug, Args)]
 struct GenerateJsonSchemaCommand {
-    /// Output directory where the schema bundle will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    /// 输出目录（写入 Schema 汇总文件）
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 
-    /// Include experimental methods and fields in the generated output
+    /// 在输出中包含实验性方法和字段。
     #[arg(long = "experimental", default_value_t = false)]
     experimental: bool,
 }
 
 #[derive(Debug, Args)]
 struct GenerateInternalJsonSchemaCommand {
-    /// Output directory where internal JSON Schema artifacts will be written
-    #[arg(short = 'o', long = "out", value_name = "DIR")]
+    /// 输出目录（写入内部 JSON Schema 文件）
+    #[arg(short = 'o', long = "out", value_name = "目录")]
     out_dir: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 struct StdioToUdsCommand {
-    /// Path to the Unix domain socket to connect to.
-    #[arg(value_name = "SOCKET_PATH")]
+    /// 要连接的 Unix 域套接字路径。
+    #[arg(value_name = "套接字路径")]
     socket_path: PathBuf,
 }
 
@@ -426,10 +457,7 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
         return Vec::new();
     }
 
-    let mut lines = vec![format!(
-        "{}",
-        codex_protocol::protocol::FinalOutput::from(token_usage)
-    )];
+    let mut lines = vec![format_localized_token_usage(&token_usage)];
 
     if let Some(resume_cmd) =
         codex_core::util::resume_command(thread_name.as_deref(), conversation_id)
@@ -439,17 +467,17 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
         } else {
             resume_cmd
         };
-        lines.push(format!("To continue this session, run {command}"));
+        lines.push(format!("若要继续此会话，请运行 {command}"));
     }
 
     lines
 }
 
-/// Handle the app exit and print the results. Optionally run the update action.
+/// 处理应用退出并打印结果。可选执行更新动作。
 fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     match exit_info.exit_reason {
         ExitReason::Fatal(message) => {
-            eprintln!("ERROR: {message}");
+            eprintln!("错误：{message}");
             std::process::exit(1);
         }
         ExitReason::UserRequested => { /* normal exit */ }
@@ -466,11 +494,11 @@ fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Run the update action and print the result.
+/// 执行更新动作并输出结果。
 fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
     println!();
     let cmd_str = action.command_str();
-    println!("Updating Codex via `{cmd_str}`...");
+    println!("正在通过 `{cmd_str}` 更新 Codex...");
 
     let status = {
         #[cfg(windows)]
@@ -494,10 +522,39 @@ fn run_update_action(action: UpdateAction) -> anyhow::Result<()> {
         }
     };
     if !status.success() {
-        anyhow::bail!("`{cmd_str}` failed with status {status}");
+        anyhow::bail!("`{cmd_str}` 执行失败，状态码：{status}");
     }
-    println!("\n🎉 Update ran successfully! Please restart Codex.");
+    println!("\n🎉 更新成功！请重启 Codex。");
     Ok(())
+}
+
+fn format_localized_token_usage(token_usage: &codex_protocol::protocol::TokenUsage) -> String {
+    let mut line = format!(
+        "Token 使用量：总计={} 输入={}",
+        codex_protocol::num_format::format_with_separators(token_usage.blended_total()),
+        codex_protocol::num_format::format_with_separators(token_usage.non_cached_input()),
+    );
+
+    if token_usage.cached_input() > 0 {
+        line.push_str(&format!(
+            "（+ {} 缓存）",
+            codex_protocol::num_format::format_with_separators(token_usage.cached_input())
+        ));
+    }
+
+    line.push_str(&format!(
+        " 输出={}",
+        codex_protocol::num_format::format_with_separators(token_usage.output_tokens)
+    ));
+
+    if token_usage.reasoning_output_tokens > 0 {
+        line.push_str(&format!(
+            "（推理 {}）",
+            codex_protocol::num_format::format_with_separators(token_usage.reasoning_output_tokens)
+        ));
+    }
+
+    line
 }
 
 fn run_execpolicycheck(cmd: ExecPolicyCheckCommand) -> anyhow::Result<()> {
@@ -516,26 +573,25 @@ async fn run_debug_app_server_command(cmd: DebugAppServerCommand) -> anyhow::Res
 
 #[derive(Debug, Default, Parser, Clone)]
 struct FeatureToggles {
-    /// Enable a feature (repeatable). Equivalent to `-c features.<name>=true`.
-    #[arg(long = "enable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
+    /// 启用功能（可重复）。等价于 `-c features.<name>=true`。
+    #[arg(long = "enable", value_name = "功能", action = clap::ArgAction::Append, global = true)]
     enable: Vec<String>,
 
-    /// Disable a feature (repeatable). Equivalent to `-c features.<name>=false`.
-    #[arg(long = "disable", value_name = "FEATURE", action = clap::ArgAction::Append, global = true)]
+    /// 禁用功能（可重复）。等价于 `-c features.<name>=false`。
+    #[arg(long = "disable", value_name = "功能", action = clap::ArgAction::Append, global = true)]
     disable: Vec<String>,
 }
 
 #[derive(Debug, Default, Parser, Clone)]
 struct InteractiveRemoteOptions {
-    /// Connect the TUI to a remote app server websocket endpoint.
+    /// 将 TUI 连接到远程应用服务器 WebSocket 端点。
     ///
-    /// Accepted forms: `ws://host:port` or `wss://host:port`.
-    #[arg(long = "remote", value_name = "ADDR")]
+    /// 支持格式：`ws://host:port` 或 `wss://host:port`。
+    #[arg(long = "remote", value_name = "地址")]
     remote: Option<String>,
 
-    /// Name of the environment variable containing the bearer token to send to
-    /// a remote app server websocket.
-    #[arg(long = "remote-auth-token-env", value_name = "ENV_VAR")]
+    /// 包含远程应用服务器 WebSocket 访问令牌的环境变量名。
+    #[arg(long = "remote-auth-token-env", value_name = "环境变量")]
     remote_auth_token_env: Option<String>,
 }
 
@@ -557,7 +613,7 @@ impl FeatureToggles {
         if is_known_feature_key(feature) {
             Ok(())
         } else {
-            anyhow::bail!("Unknown feature flag: {feature}")
+            anyhow::bail!("未知的功能开关：{feature}")
         }
     }
 }
@@ -570,27 +626,27 @@ struct FeaturesCli {
 
 #[derive(Debug, Parser)]
 enum FeaturesSubcommand {
-    /// List known features with their stage and effective state.
+    /// 列出已知功能及其所处阶段与当前状态。
     List,
-    /// Enable a feature in config.toml.
+    /// 在 config.toml 中启用功能。
     Enable(FeatureSetArgs),
-    /// Disable a feature in config.toml.
+    /// 在 config.toml 中禁用功能。
     Disable(FeatureSetArgs),
 }
 
 #[derive(Debug, Parser)]
 struct FeatureSetArgs {
-    /// Feature key to update (for example: unified_exec).
+    /// 要更新的功能键（例如：unified_exec）。
     feature: String,
 }
 
 fn stage_str(stage: Stage) -> &'static str {
     match stage {
-        Stage::UnderDevelopment => "under development",
-        Stage::Experimental { .. } => "experimental",
-        Stage::Stable => "stable",
-        Stage::Deprecated => "deprecated",
-        Stage::Removed => "removed",
+        Stage::UnderDevelopment => "开发中",
+        Stage::Experimental { .. } => "实验性",
+        Stage::Stable => "稳定",
+        Stage::Deprecated => "已弃用",
+        Stage::Removed => "已移除",
     }
 }
 
@@ -608,7 +664,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
         remote,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = parse_multitool_cli_from_env();
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
@@ -675,6 +731,25 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
         }
+        Some(Subcommand::Ztok(ztok_cli)) => {
+            codex_ztok::run_from_os_args(ztok_cli.args)?;
+        }
+        Some(Subcommand::Tldr(tldr_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "tldr",
+            )?;
+            tldr_cmd::run_tldr_command(tldr_cli).await?;
+        }
+        Some(Subcommand::Zmemory(zmemory_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "zmemory",
+            )?;
+            run_zmemory_command(zmemory_cli).await?;
+        }
         Some(Subcommand::AppServer(app_server_cli)) => {
             let AppServerCommand {
                 subcommand,
@@ -721,6 +796,15 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 }
                 Some(AppServerSubcommand::GenerateInternalJsonSchema(gen_cli)) => {
                     codex_app_server_protocol::generate_internal_json_schema(&gen_cli.out_dir)?;
+                }
+                Some(AppServerSubcommand::OpenAiCompat(openai_cli)) => {
+                    codex_app_server::run_openai_compat_server(
+                        arg0_paths.clone(),
+                        root_config_overrides,
+                        codex_core::config_loader::LoaderOverrides::default(),
+                        openai_cli,
+                    )
+                    .await?;
                 }
             }
         }
@@ -811,7 +895,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                         .await;
                     } else if login_cli.api_key.is_some() {
                         eprintln!(
-                            "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`."
+                            "--api-key 参数已不再支持。请改为通过管道传入密钥，例如：`printenv OPENAI_API_KEY | codex login --with-api-key`。"
                         );
                         std::process::exit(1);
                     } else if login_cli.with_api_key {
@@ -1010,7 +1094,8 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 rows.sort_unstable_by_key(|(name, _, _)| *name);
 
                 for (name, stage, enabled) in rows {
-                    println!("{name:<name_width$}  {stage:<stage_width$}  {enabled}");
+                    let status = if enabled { "已启用" } else { "未启用" };
+                    println!("{name:<name_width$}  {stage:<stage_width$}  {status}");
                 }
             }
             FeaturesSubcommand::Enable(FeatureSetArgs { feature }) => {
@@ -1043,7 +1128,7 @@ async fn enable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyhow
         .set_feature_enabled(feature, /*enabled*/ true)
         .apply()
         .await?;
-    println!("Enabled feature `{feature}` in config.toml.");
+    println!("已在 config.toml 中启用功能 `{feature}`。");
     maybe_print_under_development_feature_warning(&codex_home, interactive, feature);
     Ok(())
 }
@@ -1056,7 +1141,7 @@ async fn disable_feature_in_config(interactive: &TuiCli, feature: &str) -> anyho
         .set_feature_enabled(feature, /*enabled*/ false)
         .apply()
         .await?;
-    println!("Disabled feature `{feature}` in config.toml.");
+    println!("已在 config.toml 中禁用功能 `{feature}`。");
     Ok(())
 }
 
@@ -1078,7 +1163,7 @@ fn maybe_print_under_development_feature_warning(
 
     let config_path = codex_home.join(codex_config::CONFIG_TOML_FILE);
     eprintln!(
-        "Under-development features enabled: {feature}. Under-development features are incomplete and may behave unpredictably. To suppress this warning, set `suppress_unstable_features_warning = true` in {}.",
+        "已启用开发中的功能：{feature}。开发中的功能尚未完善，行为可能不稳定。若要关闭此警告，请在 {} 中设置 `suppress_unstable_features_warning = true`。",
         config_path.display()
     );
 }
@@ -1115,18 +1200,15 @@ async fn run_debug_clear_memories_command(
     };
 
     let mut message = if cleared_state_db {
-        format!("Cleared memory state from {}.", state_path.display())
+        format!("已清除 {} 中的记忆状态。", state_path.display())
     } else {
-        format!("No state db found at {}.", state_path.display())
+        format!("未在 {} 找到状态数据库。", state_path.display())
     };
 
     if removed_memory_root {
-        message.push_str(&format!(" Removed {}.", memory_root.display()));
+        message.push_str(&format!(" 已移除 {}。", memory_root.display()));
     } else {
-        message.push_str(&format!(
-            " No memory directory found at {}.",
-            memory_root.display()
-        ));
+        message.push_str(&format!(" 未在 {} 找到记忆目录。", memory_root.display()));
     }
 
     println!("{message}");
@@ -1134,8 +1216,7 @@ async fn run_debug_clear_memories_command(
     Ok(())
 }
 
-/// Prepend root-level overrides so they have lower precedence than
-/// CLI-specific ones specified after the subcommand (if any).
+/// 在前面插入根级覆盖项，使其优先级低于子命令后显式给出的 CLI 覆盖项。
 fn prepend_config_flags(
     subcommand_config_overrides: &mut CliConfigOverrides,
     cli_config_overrides: CliConfigOverrides,
@@ -1151,13 +1232,11 @@ fn reject_remote_mode_for_subcommand(
     subcommand: &str,
 ) -> anyhow::Result<()> {
     if let Some(remote) = remote {
-        anyhow::bail!(
-            "`--remote {remote}` is only supported for interactive TUI commands, not `codex {subcommand}`"
-        );
+        anyhow::bail!("`--remote {remote}` 仅支持交互式 TUI 命令，不支持 `codex {subcommand}`");
     }
     if remote_auth_token_env.is_some() {
         anyhow::bail!(
-            "`--remote-auth-token-env` is only supported for interactive TUI commands, not `codex {subcommand}`"
+            "`--remote-auth-token-env` 仅支持交互式 TUI 命令，不支持 `codex {subcommand}`"
         );
     }
     Ok(())
@@ -1170,6 +1249,7 @@ fn reject_remote_mode_for_app_server_subcommand(
 ) -> anyhow::Result<()> {
     let subcommand_name = match subcommand {
         None => "app-server",
+        Some(AppServerSubcommand::OpenAiCompat(_)) => "app-server openai-compat",
         Some(AppServerSubcommand::GenerateTs(_)) => "app-server generate-ts",
         Some(AppServerSubcommand::GenerateJsonSchema(_)) => "app-server generate-json-schema",
         Some(AppServerSubcommand::GenerateInternalJsonSchema(_)) => {
@@ -1186,11 +1266,11 @@ fn read_remote_auth_token_from_env_var_with<F>(
 where
     F: FnOnce(&str) -> Result<String, std::env::VarError>,
 {
-    let auth_token = get_var(env_var_name)
-        .map_err(|_| anyhow::anyhow!("environment variable `{env_var_name}` is not set"))?;
+    let auth_token =
+        get_var(env_var_name).map_err(|_| anyhow::anyhow!("环境变量 `{env_var_name}` 未设置"))?;
     let auth_token = auth_token.trim().to_string();
     if auth_token.is_empty() {
-        anyhow::bail!("environment variable `{env_var_name}` is empty");
+        anyhow::bail!("环境变量 `{env_var_name}` 为空");
     }
     Ok(auth_token)
 }
@@ -1214,16 +1294,14 @@ async fn run_interactive_tui(
     if terminal_info.name == TerminalName::Dumb {
         if !(std::io::stdin().is_terminal() && std::io::stderr().is_terminal()) {
             return Ok(AppExitInfo::fatal(
-                "TERM is set to \"dumb\". Refusing to start the interactive TUI because no terminal is available for a confirmation prompt (stdin/stderr is not a TTY). Run in a supported terminal or unset TERM.",
+                "TERM 被设置为 \"dumb\"。由于没有可用于确认提示的终端（stdin/stderr 不是 TTY），拒绝启动交互式 TUI。请在受支持的终端中运行，或取消设置 TERM。",
             ));
         }
 
-        eprintln!(
-            "WARNING: TERM is set to \"dumb\". Codex's interactive TUI may not work in this terminal."
-        );
-        if !confirm("Continue anyway? [y/N]: ")? {
+        eprintln!("警告：TERM 被设置为 \"dumb\"。Codex 的交互式 TUI 可能无法在此终端正常工作。");
+        if !confirm("仍要继续吗？[y/N]: ")? {
             return Ok(AppExitInfo::fatal(
-                "Refusing to start the interactive TUI because TERM is set to \"dumb\". Run in a supported terminal or unset TERM.",
+                "由于 TERM 被设置为 \"dumb\"，拒绝启动交互式 TUI。请在受支持的终端中运行，或取消设置 TERM。",
             ));
         }
     }
@@ -1235,7 +1313,7 @@ async fn run_interactive_tui(
         .map_err(std::io::Error::other)?;
     if remote_auth_token_env.is_some() && normalized_remote.is_none() {
         return Ok(AppExitInfo::fatal(
-            "`--remote-auth-token-env` requires `--remote`.",
+            "`--remote-auth-token-env` 需要配合 `--remote` 使用。",
         ));
     }
     let remote_auth_token = remote_auth_token_env
@@ -1316,9 +1394,8 @@ fn finalize_fork_interactive(
     interactive
 }
 
-/// Merge flags provided to `codex resume`/`codex fork` so they take precedence over any
-/// root-level flags. Only overrides fields explicitly set on the subcommand-scoped
-/// CLI. Also appends `-c key=value` overrides with highest precedence.
+/// 合并 `codex resume`/`codex fork` 上提供的标志，使其优先于根级标志。
+/// 仅覆盖子命令作用域 CLI 中显式设置的字段，同时追加最高优先级的 `-c key=value`。
 fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli) {
     if let Some(model) = subcommand_cli.model {
         interactive.model = Some(model);
@@ -1365,9 +1442,189 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
 }
 
 fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
+    let mut app = localized_multitool_command();
     let name = "codex";
     generate(cmd.shell, &mut app, name, &mut std::io::stdout());
+}
+
+fn parse_multitool_cli_from_env() -> MultitoolCli {
+    let raw_args = std::env::args_os().collect::<Vec<_>>();
+    if raw_args.is_empty() {
+        return MultitoolCli::parse();
+    }
+
+    let parsed_args = if is_ztok_alias_invocation(&raw_args[0]) {
+        let mut injected_args = Vec::with_capacity(raw_args.len() + 1);
+        injected_args.push(raw_args[0].clone());
+        injected_args.push(ztok_alias_name().into());
+        injected_args.extend(raw_args.into_iter().skip(1));
+        injected_args
+    } else {
+        raw_args
+    };
+
+    let mut cli = parse_multitool_cli(parsed_args.clone());
+    restore_ztok_explicit_double_dash(&parsed_args, &mut cli);
+    cli
+}
+
+fn parse_multitool_cli<I, T>(args: I) -> MultitoolCli
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let command = localized_multitool_command();
+    match command.try_get_matches_from(args) {
+        Ok(matches) => MultitoolCli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit()),
+        Err(err) => {
+            let rendered = localize_help_output(err.to_string());
+            let _ = std::io::stderr().write_all(rendered.as_bytes());
+            std::process::exit(err.exit_code());
+        }
+    }
+}
+
+fn restore_ztok_explicit_double_dash(raw_args: &[std::ffi::OsString], cli: &mut MultitoolCli) {
+    let Some(Subcommand::Ztok(ztok_cli)) = cli.subcommand.as_mut() else {
+        return;
+    };
+
+    if ztok_cli.args.first().is_some_and(|arg| arg == "--") {
+        return;
+    }
+
+    if ztok_subcommand_uses_explicit_double_dash(raw_args, ztok_cli.args.len()) {
+        ztok_cli.args.insert(0, "--".into());
+    }
+}
+
+fn ztok_subcommand_uses_explicit_double_dash(
+    raw_args: &[std::ffi::OsString],
+    ztok_arg_count: usize,
+) -> bool {
+    raw_args.iter().enumerate().skip(1).any(|(index, arg)| {
+        arg == ztok_alias_name()
+            && raw_args.get(index + 1).is_some_and(|next| next == "--")
+            && raw_args.len().saturating_sub(index + 2) == ztok_arg_count
+    })
+}
+
+fn localized_multitool_command() -> clap::Command {
+    localize_clap_command(MultitoolCli::command())
+}
+
+fn localize_clap_command(cmd: clap::Command) -> clap::Command {
+    cmd
+}
+
+fn localize_help_output(output: String) -> String {
+    output
+        .replace("Usage:", "用法：")
+        .replace("Commands:", "命令：")
+        .replace("Arguments:", "参数：")
+        .replace("Options:", "选项：")
+        .replace("[aliases:", "[别名：")
+        .replace("[default:", "[默认：")
+        .replace(
+            "Print this message or the help of the given subcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace(
+            "Print this message or the help of the given\nsubcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace(
+            "Print this message or the help of the given\n                   subcommand(s)",
+            "显示此消息或指定子命令的帮助",
+        )
+        .replace("Print help for the subcommand(s)", "显示指定子命令的帮助")
+        .replace(
+            "Print help (see a summary with '-h')",
+            "显示帮助（使用 '-h' 查看摘要）",
+        )
+        .replace(
+            "Print help (see more with '--help')",
+            "显示帮助（使用 '--help' 查看更多）",
+        )
+        .replace("Print help", "显示帮助")
+        .replace("Print version", "显示版本")
+        .replace("Possible values:", "可选值：")
+        .replace("[possible values:", "[可选值：")
+        .replace("error: invalid value", "错误：无效的值")
+        .replace(
+            "For more information, try '--help'.",
+            "更多信息请使用 '--help'。",
+        )
+        .replace("[PROMPT]", "[提示]")
+        .replace("<FILE>", "<文件>")
+        .replace("<MODEL>", "<模型>")
+        .replace("<OSS_PROVIDER>", "<提供方>")
+        .replace("<CONFIG_PROFILE>", "<配置文件>")
+        .replace("<SANDBOX_MODE>", "<沙箱策略>")
+        .replace("<APPROVAL_POLICY>", "<批准策略>")
+        .replace("<DIR>", "<目录>")
+        .replace("<ADDR>", "<地址>")
+        .replace("<ENV_VAR>", "<环境变量>")
+        .replace("Optional user prompt to start the session", "可选的会话启动提示")
+        .replace(
+            "Optional image(s) to attach to the initial prompt",
+            "可选的初始提示附件图片",
+        )
+        .replace("Model the agent should use", "智能体应使用的模型")
+        .replace(
+            "Convenience flag to select the local open source model provider. Equivalent to -c model_provider=oss; verifies a local LM Studio or Ollama server is running",
+            "便捷标志，用于选择本地开源模型提供方。等价于 -c model_provider=oss；验证本地 LM Studio 或 Ollama 服务器是否正在运行",
+        )
+        .replace(
+            "Convenience flag to select the local open source model provider. Equivalent to -c model_provider=oss; verifies a\n          local LM Studio or Ollama server is running",
+            "便捷标志，用于选择本地开源模型提供方。等价于 -c model_provider=oss；验证本地 LM Studio 或 Ollama 服务器是否正在运行",
+        )
+        .replace(
+            "Specify which local provider to use (lmstudio or ollama). If not specified with --oss, will use config default or show selection",
+            "指定要使用的本地提供方（lmstudio 或 ollama）。如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择",
+        )
+        .replace(
+            "Specify which local provider to use (lmstudio or ollama). If not specified with --oss, will use config default\n          or show selection",
+            "指定要使用的本地提供方（lmstudio 或 ollama）。如果与 --oss 一起使用时未指定，将使用配置默认值或显示选择",
+        )
+        .replace(
+            "Configuration profile from config.toml to specify default options",
+            "来自 config.toml 的配置配置文件，用于指定默认选项",
+        )
+        .replace(
+            "Select the sandbox policy to use when executing model-generated shell commands",
+            "选择执行模型生成的 shell 命令时要使用的沙箱策略",
+        )
+        .replace(
+            "Configure when the model requires human approval before executing a command",
+            "配置模型在执行命令前何时需要人工批准",
+        )
+        .replace(
+            "Convenience alias for low-friction sandboxed automatic execution (-a on-request, --sandbox workspace-write)",
+            "低摩擦沙箱自动执行的便捷别名（-a on-request, --sandbox workspace-write）",
+        )
+        .replace(
+            "Skip all confirmation prompts and execute commands without sandboxing. EXTREMELY DANGEROUS. Intended solely for running in environments that are externally sandboxed",
+            "跳过所有确认提示并在无沙箱的情况下执行命令。极度危险。仅适用于在外部沙箱环境中运行",
+        )
+        .replace(
+            "Tell the agent to use the specified directory as its working root",
+            "告诉智能体使用指定目录作为其工作根目录",
+        )
+        .replace("Enable live web search.", "启用实时网络搜索。")
+        .replace(
+            "When enabled, the native Responses `web_search` tool is available to the model (no per‑call approval)",
+            "启用后，原生 Responses `web_search` 工具可供模型使用（无需每次调用批准）",
+        )
+        .replace(
+            "Additional directories that should be writable alongside the primary workspace",
+            "除主工作区外还应可写入的附加目录",
+        )
+        .replace("Disable alternate screen mode", "禁用备用屏幕模式")
+        .replace(
+            "Runs the TUI in inline mode, preserving terminal scrollback history. This is useful in terminal multiplexers like Zellij that follow the xterm spec strictly and disable scrollback in alternate screen buffers.",
+            "以内联模式运行 TUI，保留终端滚动历史记录。这在严格遵循 xterm 规范并禁用备用屏幕缓冲区中滚动的终端复用器（如 Zellij）中很有用。",
+        )
 }
 
 #[cfg(test)]
@@ -1529,8 +1786,8 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume 123e4567-e89b-12d3-a456-426614174000"
+                "Token 使用量：总计=2 输入=0 输出=2".to_string(),
+                "若要继续此会话，请运行 codex resume 123e4567-e89b-12d3-a456-426614174000"
                     .to_string(),
             ]
         );
@@ -1548,6 +1805,22 @@ mod tests {
     }
 
     #[test]
+    fn format_localized_token_usage_preserves_cached_and_reasoning_breakdown() {
+        let usage = TokenUsage {
+            input_tokens: 8,
+            cached_input_tokens: 3,
+            output_tokens: 5,
+            reasoning_output_tokens: 2,
+            total_tokens: 13,
+        };
+
+        assert_eq!(
+            format_localized_token_usage(&usage),
+            "Token 使用量：总计=10 输入=5（+ 3 缓存） 输出=5（推理 2）"
+        );
+    }
+
+    #[test]
     fn format_exit_messages_prefers_thread_name() {
         let exit_info = sample_exit_info(
             Some("123e4567-e89b-12d3-a456-426614174000"),
@@ -1557,8 +1830,8 @@ mod tests {
         assert_eq!(
             lines,
             vec![
-                "Token usage: total=2 input=0 output=2".to_string(),
-                "To continue this session, run codex resume my-thread".to_string(),
+                "Token 使用量：总计=2 输入=0 输出=2".to_string(),
+                "若要继续此会话，请运行 codex resume my-thread".to_string(),
             ]
         );
     }
@@ -1785,10 +2058,7 @@ mod tests {
             "exec",
         )
         .expect_err("non-interactive subcommands should reject --remote");
-        assert!(
-            err.to_string()
-                .contains("only supported for interactive TUI commands")
-        );
+        assert!(err.to_string().contains("仅支持交互式 TUI 命令"));
     }
 
     #[test]
@@ -1799,10 +2069,7 @@ mod tests {
             "exec",
         )
         .expect_err("non-interactive subcommands should reject --remote-auth-token-env");
-        assert!(
-            err.to_string()
-                .contains("only supported for interactive TUI commands")
-        );
+        assert!(err.to_string().contains("仅支持交互式 TUI 命令"));
     }
 
     #[test]
@@ -1826,7 +2093,7 @@ mod tests {
             Err(std::env::VarError::NotPresent)
         })
         .expect_err("missing env vars should be rejected");
-        assert!(err.to_string().contains("is not set"));
+        assert!(err.to_string().contains("未设置"));
     }
 
     #[test]
@@ -1845,7 +2112,7 @@ mod tests {
             Ok(" \n\t ".to_string())
         })
         .expect_err("empty env vars should be rejected");
-        assert!(err.to_string().contains("is empty"));
+        assert!(err.to_string().contains("为空"));
     }
 
     #[test]
@@ -1944,6 +2211,109 @@ mod tests {
     }
 
     #[test]
+    fn ztok_parse_restores_explicit_double_dash_for_raw_wrapper_commands() {
+        let raw_args = vec![
+            std::ffi::OsString::from("codex"),
+            std::ffi::OsString::from("ztok"),
+            std::ffi::OsString::from("--"),
+            std::ffi::OsString::from("env"),
+            std::ffi::OsString::from("FOO=1"),
+            std::ffi::OsString::from("git"),
+            std::ffi::OsString::from("status"),
+        ];
+
+        let mut cli = parse_multitool_cli(raw_args.clone());
+        restore_ztok_explicit_double_dash(&raw_args, &mut cli);
+
+        let Some(Subcommand::Ztok(ztok_cli)) = cli.subcommand else {
+            panic!("expected ztok subcommand");
+        };
+        assert_eq!(ztok_cli.args, vec!["--", "env", "FOO=1", "git", "status"]);
+    }
+
+    #[test]
+    fn tldr_daemon_ping_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "tldr", "daemon", "ping"])
+            .expect("parse should succeed");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Tldr(_))));
+    }
+
+    #[test]
+    fn short_resume_alias_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "r"]).expect("parse should succeed");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Resume(_))));
+    }
+
+    #[test]
+    fn localize_help_output_translates_usage_header() {
+        assert_eq!(localize_help_output("Usage:\n".to_string()), "用法：\n");
+    }
+
+    #[test]
+    fn ztok_parse_does_not_inject_double_dash_without_explicit_boundary() {
+        let cli = parse_multitool_cli(["codex", "ztok", "env", "FOO=1", "git", "status"]);
+
+        let Some(Subcommand::Ztok(ztok_cli)) = cli.subcommand else {
+            panic!("expected ztok subcommand");
+        };
+
+        assert_eq!(
+            ztok_cli.args,
+            vec![
+                std::ffi::OsString::from("env"),
+                std::ffi::OsString::from("FOO=1"),
+                std::ffi::OsString::from("git"),
+                std::ffi::OsString::from("status"),
+            ]
+        );
+    }
+
+    #[test]
+    fn tldr_extract_parses_path_and_optional_language() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "tldr",
+            "extract",
+            "--project",
+            ".",
+            "--lang",
+            "rust",
+            "src/lib.rs",
+        ])
+        .expect("parse should succeed");
+
+        let Some(Subcommand::Tldr(tldr_cli)) = cli.subcommand else {
+            panic!("expected tldr subcommand");
+        };
+        let tldr_cmd::TldrSubcommand::Extract(args) = tldr_cli.subcommand else {
+            panic!("expected extract subcommand");
+        };
+
+        assert_eq!(args.path, std::path::PathBuf::from("src/lib.rs"));
+        assert!(matches!(args.lang, Some(tldr_cmd::CliLanguage::Rust)));
+    }
+
+    #[test]
+    fn tldr_daemon_status_parses() {
+        let cli = MultitoolCli::try_parse_from(["codex", "tldr", "daemon", "status"])
+            .expect("parse should succeed");
+        assert!(matches!(cli.subcommand, Some(Subcommand::Tldr(_))));
+    }
+
+    #[test]
+    fn localize_help_output_replaces_wrapped_help_line() {
+        let localized = localize_help_output(
+            "help             Print this message or the help of the given
+                   subcommand(s)
+"
+            .to_string(),
+        );
+
+        assert!(localized.contains("显示此消息或指定子命令的帮助"));
+        assert!(!localized.contains("Print this message or the help of the given"));
+    }
+
+    #[test]
     fn features_enable_parses_feature_name() {
         let cli = MultitoolCli::try_parse_from(["codex", "features", "enable", "unified_exec"])
             .expect("parse should succeed");
@@ -2007,6 +2377,6 @@ mod tests {
         let err = toggles
             .to_overrides()
             .expect_err("feature should be rejected");
-        assert_eq!(err.to_string(), "Unknown feature flag: does_not_exist");
+        assert_eq!(err.to_string(), "未知的功能开关：does_not_exist");
     }
 }

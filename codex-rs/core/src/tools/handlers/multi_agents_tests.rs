@@ -1,5 +1,6 @@
 use super::*;
 use crate::ThreadManager;
+use crate::codex::TurnContext;
 use crate::codex::make_session_and_context;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::function_tool::FunctionCallError;
@@ -295,6 +296,70 @@ async fn spawn_agent_uses_explorer_role_and_preserves_approval_policy() {
         .await;
     assert_eq!(snapshot.approval_policy, AskForApproval::OnRequest);
     assert_eq!(snapshot.model_provider_id, "ollama");
+}
+
+#[tokio::test]
+async fn spawn_agent_uses_requested_provider_override() {
+    let (mut session, turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    session.services.agent_control = manager.agent_control();
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "inspect this repo",
+            "provider": "ollama",
+        })),
+    );
+    let output = SpawnAgentHandler
+        .handle(invocation)
+        .await
+        .expect("spawn_agent should succeed");
+    let (content, _) = expect_text_output(output);
+    let result: serde_json::Value =
+        serde_json::from_str(&content).expect("spawn_agent result should be json");
+    let agent_id = parse_agent_id(
+        result["agent_id"]
+            .as_str()
+            .expect("spawn_agent result should include agent id"),
+    );
+    let snapshot = manager
+        .get_thread(agent_id)
+        .await
+        .expect("spawned agent thread should exist")
+        .config_snapshot()
+        .await;
+
+    assert_eq!(snapshot.model_provider_id, "ollama");
+}
+
+#[tokio::test]
+async fn spawn_agent_rejects_unknown_provider_override() {
+    let (mut session, turn) = make_session_and_context().await;
+    let manager = thread_manager();
+    session.services.agent_control = manager.agent_control();
+
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "spawn_agent",
+        function_payload(json!({
+            "message": "inspect this repo",
+            "provider": "missing-provider",
+        })),
+    );
+    let err = SpawnAgentHandler
+        .handle(invocation)
+        .await
+        .expect_err("spawn_agent should reject unknown provider");
+
+    assert!(
+        err.to_string()
+            .contains("Unknown provider `missing-provider` for spawn_agent"),
+        "unexpected error: {err}"
+    );
 }
 
 #[tokio::test]
@@ -663,6 +728,7 @@ async fn multi_agent_v2_send_message_accepts_root_target_from_child() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(child_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -676,6 +742,7 @@ async fn multi_agent_v2_send_message_accepts_root_target_from_child() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: root.thread_id,
         depth: 1,
+        parent_model: None,
         agent_path: Some(child_path.clone()),
         agent_nickname: None,
         agent_role: None,
@@ -739,6 +806,7 @@ async fn multi_agent_v2_followup_task_rejects_root_target_from_child() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(child_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -752,6 +820,7 @@ async fn multi_agent_v2_followup_task_rejects_root_target_from_child() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: root.thread_id,
         depth: 1,
+        parent_model: None,
         agent_path: Some(child_path),
         agent_nickname: None,
         agent_role: None,
@@ -908,6 +977,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: Some(researcher_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -929,6 +999,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
             Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                 parent_thread_id: root.thread_id,
                 depth: 2,
+                parent_model: None,
                 agent_path: Some(worker_path.clone()),
                 agent_nickname: None,
                 agent_role: None,
@@ -941,6 +1012,7 @@ async fn multi_agent_v2_list_agents_filters_by_relative_path_prefix() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: root.thread_id,
         depth: 1,
+        parent_model: None,
         agent_path: Some(researcher_path),
         agent_nickname: None,
         agent_role: None,
@@ -1725,6 +1797,7 @@ async fn spawn_agent_rejects_when_depth_limit_exceeded() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: session.conversation_id,
         depth: max_depth,
+        parent_model: None,
         agent_path: None,
         agent_nickname: None,
         agent_role: None,
@@ -1765,6 +1838,7 @@ async fn spawn_agent_allows_depth_up_to_configured_max_depth() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: session.conversation_id,
         depth: DEFAULT_AGENT_MAX_DEPTH,
+        parent_model: None,
         agent_path: None,
         agent_nickname: None,
         agent_role: None,
@@ -2129,6 +2203,7 @@ async fn resume_agent_rejects_when_depth_limit_exceeded() {
     turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id: session.conversation_id,
         depth: max_depth,
+        parent_model: None,
         agent_path: None,
         agent_nickname: None,
         agent_role: None,
@@ -3201,7 +3276,9 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
     let mut expected = (*turn.config).clone();
     expected.base_instructions = Some(base_instructions.text);
     expected.model = Some(turn.model_info.slug.clone());
@@ -3239,7 +3316,9 @@ async fn build_agent_spawn_config_preserves_base_user_instructions() {
         text: "base".to_string(),
     };
 
-    let config = build_agent_spawn_config(&base_instructions, &turn).expect("spawn config");
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
 
     assert_eq!(config.user_instructions, base_config.user_instructions);
 }
@@ -3254,7 +3333,9 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .set(AskForApproval::OnRequest)
         .expect("approval policy set");
 
-    let config = build_agent_resume_config(&turn, /*child_depth*/ 0).expect("resume config");
+    let config = build_agent_resume_config(&turn, /*child_depth*/ 0)
+        .await
+        .expect("resume config");
 
     let mut expected = (*turn.config).clone();
     expected.base_instructions = None;

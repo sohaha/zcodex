@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::AutoTldrRoutingMode;
 use crate::config::ConfigBuilder;
 use crate::config::test_config;
 use crate::config_loader::ConfigLayerStack;
@@ -2073,6 +2074,21 @@ async fn turn_context_with_model_updates_model_fields() {
     ));
 }
 
+#[tokio::test]
+async fn turn_context_with_model_preserves_auto_tldr_routing() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.tools_config.auto_tldr_routing = AutoTldrRoutingMode::Aggressive;
+
+    let updated = turn_context
+        .with_model("gpt-5.1".to_string(), &session.services.models_manager)
+        .await;
+
+    assert_eq!(
+        updated.tools_config.auto_tldr_routing,
+        AutoTldrRoutingMode::Aggressive
+    );
+}
+
 #[test]
 fn falls_back_to_content_when_structured_is_null() {
     let ctr = McpCallToolResult {
@@ -3940,6 +3956,22 @@ async fn build_initial_context_uses_previous_realtime_state() {
             .iter()
             .any(|text| text.contains("<realtime_conversation>")),
         "did not expect a duplicate realtime update, got {resumed_developer_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn build_initial_context_includes_zmemory_instructions_when_feature_enabled() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+
+    let initial_context = session.build_initial_context(&turn_context).await;
+    let developer_texts = developer_input_texts(&initial_context);
+
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory")),
+        "expected initial context to include zmemory instructions, got {developer_texts:?}"
     );
 }
 

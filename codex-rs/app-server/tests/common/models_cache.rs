@@ -22,7 +22,7 @@ const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 
 /// Convert a ModelPreset to ModelInfo for cache storage.
 fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
-    let base_instructions = codex_core::models_manager::model_info::BASE_INSTRUCTIONS.to_string();
+    let base_instructions = codex_models_manager::model_info::BASE_INSTRUCTIONS.to_string();
     let model_messages = preset.supports_personality.then(|| ModelMessages {
         instructions_template: Some(format!(
             "{DEFAULT_PERSONALITY_HEADER}\n\n{PERSONALITY_PLACEHOLDER}\n\n{base_instructions}"

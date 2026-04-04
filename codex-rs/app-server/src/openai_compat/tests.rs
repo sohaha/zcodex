@@ -1,7 +1,7 @@
 use super::*;
 use crate::openai_compat::adapter::CompatEndpoint;
 use crate::openai_compat::adapter::UpstreamAdapter;
-use codex_core::CodexAuth;
+use codex_login::CodexAuth;
 use futures::StreamExt;
 use futures::stream;
 use pretty_assertions::assert_eq;
@@ -26,12 +26,12 @@ use wiremock::matchers::query_param;
 fn provider(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "Proxy Test".to_string(),
-        model: None,
         model: Some("gpt-5.4".to_string()),
         base_url: Some(base_url),
         env_key: None,
         env_key_instructions: None,
         experimental_bearer_token: Some("provider-token".to_string()),
+        auth: None,
         wire_api: WireApi::Responses,
         query_params: Some(HashMap::from([(
             "api-version".to_string(),
