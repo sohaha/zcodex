@@ -20,6 +20,7 @@ use codex_config::types::Notifications;
 use codex_config::types::ToolSuggestDiscoverableType;
 use codex_features::Feature;
 use codex_features::FeaturesToml;
+use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_models_manager::bundled_models_response;
 use codex_protocol::permissions::FileSystemAccessMode;
@@ -288,7 +289,6 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line: None,
             terminal_title: None,
             theme: None,
-            show_buddy: true,
             buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
@@ -988,7 +988,6 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             status_line: None,
             terminal_title: None,
             theme: None,
-            show_buddy: true,
             buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
@@ -1810,6 +1809,143 @@ fn config_honors_explicit_file_oauth_store_mode() -> std::io::Result<()> {
         config.mcp_oauth_credentials_store_mode,
         OAuthCredentialsStoreMode::File,
     );
+
+    Ok(())
+}
+
+#[test]
+fn resolves_fallback_provider_and_model() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg = ConfigToml {
+        fallback_provider: Some("fallback".to_string()),
+        fallback_model: Some("fallback-model".to_string()),
+        model_providers: HashMap::from([(
+            "fallback".to_string(),
+            ModelProviderInfo {
+                name: "Fallback".to_string(),
+                model: None,
+                base_url: Some("https://fallback.example/v1".to_string()),
+                env_key: Some("OPENAI_API_KEY".to_string()),
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                auth: None,
+                wire_api: WireApi::Responses,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                websocket_connect_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
+        )]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.fallback_provider_id.as_deref(), Some("fallback"));
+    assert_eq!(
+        config
+            .fallback_provider
+            .as_ref()
+            .map(|provider| provider.name.as_str()),
+        Some("Fallback")
+    );
+    assert_eq!(config.fallback_model.as_deref(), Some("fallback-model"));
+    assert_eq!(config.fallback_providers.len(), 1);
+    assert_eq!(config.fallback_providers[0].provider_id, "fallback");
+    assert_eq!(
+        config.fallback_providers[0].model.as_deref(),
+        Some("fallback-model")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn resolves_fallback_provider_chain() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    let cfg = ConfigToml {
+        fallback_providers: vec![
+            FallbackProviderToml {
+                provider: "fallback-a".to_string(),
+                model: Some("fallback-model-a".to_string()),
+            },
+            FallbackProviderToml {
+                provider: "fallback-b".to_string(),
+                model: None,
+            },
+        ],
+        model_providers: HashMap::from([
+            (
+                "fallback-a".to_string(),
+                ModelProviderInfo {
+                    name: "Fallback A".to_string(),
+                    model: None,
+                    base_url: Some("https://fallback-a.example/v1".to_string()),
+                    env_key: Some("OPENAI_API_KEY".to_string()),
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    auth: None,
+                    wire_api: WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: None,
+                    stream_max_retries: None,
+                    stream_idle_timeout_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                },
+            ),
+            (
+                "fallback-b".to_string(),
+                ModelProviderInfo {
+                    name: "Fallback B".to_string(),
+                    model: Some("provider-default-model".to_string()),
+                    base_url: Some("https://fallback-b.example/v1".to_string()),
+                    env_key: Some("OPENAI_API_KEY".to_string()),
+                    env_key_instructions: None,
+                    experimental_bearer_token: None,
+                    auth: None,
+                    wire_api: WireApi::Responses,
+                    query_params: None,
+                    http_headers: None,
+                    env_http_headers: None,
+                    request_max_retries: None,
+                    stream_max_retries: None,
+                    stream_idle_timeout_ms: None,
+                    websocket_connect_timeout_ms: None,
+                    requires_openai_auth: false,
+                    supports_websockets: false,
+                },
+            ),
+        ]),
+        ..Default::default()
+    };
+
+    let config = Config::load_from_base_config_with_overrides(
+        cfg,
+        ConfigOverrides::default(),
+        codex_home.path().to_path_buf(),
+    )?;
+
+    assert_eq!(config.fallback_providers.len(), 2);
+    assert_eq!(config.fallback_providers[0].provider_id, "fallback-a");
+    assert_eq!(
+        config.fallback_providers[0].model.as_deref(),
+        Some("fallback-model-a")
+    );
+    assert_eq!(config.fallback_providers[1].provider_id, "fallback-b");
+    assert_eq!(config.fallback_providers[1].model.as_deref(), None);
 
     Ok(())
 }
@@ -4434,6 +4570,10 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             service_tier: None,
             model_provider_id: "openai".to_string(),
             model_provider: fixture.openai_provider.clone(),
+            fallback_provider_id: None,
+            fallback_provider: None,
+            fallback_model: None,
+            fallback_providers: Vec::new(),
             permissions: Permissions {
                 approval_policy: Constrained::allow_any(AskForApproval::Never),
                 sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4534,7 +4674,6 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_status_line: None,
             tui_terminal_title: None,
             tui_theme: None,
-            tui_show_buddy: true,
             tui_buddy_reactions_enabled: true,
             tui_buddy_soul: None,
             otel: OtelConfig::default(),
@@ -4583,6 +4722,10 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai-custom".to_string(),
         model_provider: fixture.openai_custom_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::UnlessTrusted),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4683,7 +4826,6 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
-        tui_show_buddy: true,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -4730,6 +4872,10 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4830,6 +4976,8 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_buddy_reactions_enabled: true,
+        tui_buddy_soul: None,
         otel: OtelConfig::default(),
     };
 
@@ -4860,6 +5008,10 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         service_tier: None,
         model_provider_id: "openai".to_string(),
         model_provider: fixture.openai_provider.clone(),
+        fallback_provider_id: None,
+        fallback_provider: None,
+        fallback_model: None,
+        fallback_providers: Vec::new(),
         permissions: Permissions {
             approval_policy: Constrained::allow_any(AskForApproval::OnFailure),
             sandbox_policy: Constrained::allow_any(SandboxPolicy::new_read_only_policy()),
@@ -4960,6 +5112,8 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_status_line: None,
         tui_terminal_title: None,
         tui_theme: None,
+        tui_buddy_reactions_enabled: true,
+        tui_buddy_soul: None,
         otel: OtelConfig::default(),
     };
 

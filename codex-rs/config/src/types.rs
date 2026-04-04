@@ -512,6 +512,11 @@ pub struct Tui {
     #[serde(default)]
     pub theme: Option<String>,
 
+    /// Automatically compress images pasted into the TUI composer with Ctrl+V.
+    /// Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub auto_compress_pasted_images: bool,
+
     /// Buddy-specific configuration.
     #[serde(default)]
     pub buddy: Option<TuiBuddy>,

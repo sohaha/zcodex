@@ -347,5 +347,161 @@ pub(crate) async fn intercept_apply_patch(
 }
 
 #[cfg(test)]
+async fn run_apply_patch_in_process(
+    action: &ApplyPatchAction,
+) -> Result<codex_protocol::exec_output::ExecToolCallOutput, String> {
+    let start = std::time::Instant::now();
+    let (patch, path_rewrites) = absolutize_apply_patch(action);
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit_code = match codex_apply_patch::apply_patch(&patch, &mut stdout, &mut stderr) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    };
+    let stdout = rewrite_apply_patch_output(
+        String::from_utf8_lossy(&stdout).into_owned(),
+        &path_rewrites,
+    );
+    let stderr = rewrite_apply_patch_output(
+        String::from_utf8_lossy(&stderr).into_owned(),
+        &path_rewrites,
+    );
+    let aggregated = if stderr.is_empty() {
+        stdout.clone()
+    } else if stdout.is_empty() {
+        stderr.clone()
+    } else {
+        format!("{stdout}{stderr}")
+    };
+
+    Ok(codex_protocol::exec_output::ExecToolCallOutput {
+        exit_code,
+        stdout: codex_protocol::exec_output::StreamOutput::new(stdout),
+        stderr: codex_protocol::exec_output::StreamOutput::new(stderr),
+        aggregated_output: codex_protocol::exec_output::StreamOutput::new(aggregated),
+        duration: start.elapsed(),
+        timed_out: false,
+    })
+}
+
+#[cfg(test)]
+fn absolutize_apply_patch(action: &ApplyPatchAction) -> (String, Vec<(String, String)>) {
+    let mut rewritten_lines = Vec::new();
+    let mut path_rewrites = Vec::new();
+
+    for line in action.patch.lines() {
+        if let Some(path) = line.strip_prefix("*** Add File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Add File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Delete File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Delete File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Update File: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Update File: {}", absolute.display()));
+        } else if let Some(path) = line.strip_prefix("*** Move to: ") {
+            let absolute = absolutize_patch_path(path, &action.cwd);
+            path_rewrites.push((absolute.display().to_string(), path.to_string()));
+            rewritten_lines.push(format!("*** Move to: {}", absolute.display()));
+        } else {
+            rewritten_lines.push(line.to_string());
+        }
+    }
+
+    path_rewrites.sort_by(|left, right| right.0.len().cmp(&left.0.len()));
+    path_rewrites.dedup();
+
+    let mut rewritten = rewritten_lines.join("\n");
+    if action.patch.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    (rewritten, path_rewrites)
+}
+
+#[cfg(test)]
+fn absolutize_patch_path(path: &str, cwd: &Path) -> std::path::PathBuf {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    }
+}
+
+#[cfg(test)]
+fn rewrite_apply_patch_output(output: String, path_rewrites: &[(String, String)]) -> String {
+    let mut rewritten = output
+        .lines()
+        .map(|line| rewrite_apply_patch_output_line(line, path_rewrites))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if output.ends_with('\n') {
+        rewritten.push('\n');
+    }
+    rewritten
+}
+
+#[cfg(test)]
+fn rewrite_apply_patch_output_line(line: &str, path_rewrites: &[(String, String)]) -> String {
+    [
+        "A ",
+        "M ",
+        "D ",
+        "Failed to create parent directories for ",
+        "Failed to write file ",
+        "Failed to delete file ",
+        "Failed to remove original ",
+        "Failed to read file to update ",
+        "Failed to find expected lines in ",
+    ]
+    .into_iter()
+    .find_map(|prefix| rewrite_line_path_after_prefix(line, prefix, path_rewrites))
+    .or_else(|| rewrite_context_lookup_line(line, path_rewrites))
+    .unwrap_or_else(|| line.to_string())
+}
+
+#[cfg(test)]
+fn rewrite_line_path_after_prefix(
+    line: &str,
+    prefix: &str,
+    path_rewrites: &[(String, String)],
+) -> Option<String> {
+    let remainder = line.strip_prefix(prefix)?;
+    let (rewritten, suffix) = rewrite_path_with_optional_suffix(remainder, path_rewrites)?;
+    Some(format!("{prefix}{rewritten}{suffix}"))
+}
+
+#[cfg(test)]
+fn rewrite_context_lookup_line(line: &str, path_rewrites: &[(String, String)]) -> Option<String> {
+    let (prefix, path) = line.rsplit_once(" in ")?;
+    if !prefix.starts_with("Failed to find context '") {
+        return None;
+    }
+    let rewritten = rewrite_exact_path(path, path_rewrites)?;
+    Some(format!("{prefix} in {rewritten}"))
+}
+
+#[cfg(test)]
+fn rewrite_exact_path<'a>(path: &'a str, path_rewrites: &'a [(String, String)]) -> Option<&'a str> {
+    path_rewrites
+        .iter()
+        .find_map(|(absolute, original)| (path == absolute).then_some(original.as_str()))
+}
+
+#[cfg(test)]
+fn rewrite_path_with_optional_suffix<'a>(
+    path: &'a str,
+    path_rewrites: &'a [(String, String)],
+) -> Option<(&'a str, &'a str)> {
+    path_rewrites.iter().find_map(|(absolute, original)| {
+        let suffix = path.strip_prefix(absolute)?;
+        (suffix.is_empty() || suffix.starts_with(':')).then_some((original.as_str(), suffix))
+    })
+}
+
+#[cfg(test)]
 #[path = "apply_patch_tests.rs"]
 mod tests;

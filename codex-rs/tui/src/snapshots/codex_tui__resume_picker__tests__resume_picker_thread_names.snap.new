@@ -1,0 +1,8 @@
+---
+source: tui/src/resume_picker.rs
+assertion_line: 2255
+expression: snapshot
+---
+  创建时间      更新时间      分支    CWD  对话
+> -         2 天前      -     -    Keep this for now
+  -         3 天前      -     -    Named thread

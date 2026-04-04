@@ -119,6 +119,15 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         expected.insert(spec.name().to_string(), spec);
     }
 
+    if config.zmemory_tool_enabled {
+        let zmemory_specs = [create_zmemory_tool()]
+            .into_iter()
+            .chain(create_zmemory_mcp_tools());
+        for spec in zmemory_specs {
+            expected.insert(spec.name().to_string(), spec);
+        }
+    }
+
     if config.exec_permission_approvals_enabled {
         let spec = create_request_permissions_tool(request_permissions_tool_description());
         expected.insert(spec.name().to_string(), spec);
@@ -1842,7 +1851,8 @@ fn strip_descriptions_schema(schema: &mut JsonSchema) {
     match schema {
         JsonSchema::Boolean { description }
         | JsonSchema::String { description }
-        | JsonSchema::Number { description } => {
+        | JsonSchema::Number { description }
+        | JsonSchema::Integer { description } => {
             *description = None;
         }
         JsonSchema::Array { items, description } => {

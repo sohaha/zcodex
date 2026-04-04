@@ -3,16 +3,16 @@ source: tui/src/chatwidget/tests/review_mode.rs
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
+
 • 处理中 (0s • esc 中断)
-  .--------------------------------.
-  | 礼貌地从底栏飘上来。                     |
-  '--------------------------------.
+  .-----------------------------------.
+  | 像在水里一样轻轻漂来。                       |
+  '-----------------------------------.
     \
-   .---.
-  ( ^ ^ )
-  / ~~~ \\
-  Echo ★ 常见 幽灵 · 可见 · 坐立不安
-  峰值 耐心 74 · 无 · 困倦眼 · 孵化中 · 抚摸 0
+  }~   ~{
+  ( ^..^ )
+   \__/
+  Ripple ★ 常见 美西螈 · 坐立不安
 
 • 回合结束后提交的消息
   ↳ Steer submitted while /review was running.

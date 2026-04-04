@@ -520,7 +520,7 @@ impl Session {
             );
         }
 
-        if turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled {
+        if should_run_buddy_observer(turn_context.as_ref()) {
             let session = Arc::clone(self);
             let ctx = Arc::clone(&turn_context);
             let last_agent_message = last_agent_message.clone();
@@ -613,12 +613,17 @@ impl Session {
     }
 }
 
+fn should_run_buddy_observer(turn_context: &TurnContext) -> bool {
+    matches!(turn_context.session_source, SessionSource::Cli)
+        && (turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled)
+}
+
 async fn handle_buddy_observer(
     session: Arc<Session>,
     turn_context: Arc<TurnContext>,
     last_agent_message: Option<String>,
 ) {
-    if matches!(turn_context.session_source, SessionSource::SubAgent(_)) {
+    if !should_run_buddy_observer(turn_context.as_ref()) {
         return;
     }
 

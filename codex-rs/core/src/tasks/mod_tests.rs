@@ -1,4 +1,5 @@
 use super::emit_turn_network_proxy_metric;
+use crate::codex::make_session_and_context;
 use codex_otel::SessionTelemetry;
 use codex_otel::metrics::MetricsClient;
 use codex_otel::metrics::MetricsConfig;
@@ -94,6 +95,16 @@ fn emit_turn_network_proxy_metric_records_active_turn() {
             ("tmp_mem_enabled".to_string(), "true".to_string()),
         ])
     );
+}
+
+#[tokio::test]
+async fn should_run_buddy_observer_only_for_cli_sessions() {
+    let (_session, mut turn_context) = make_session_and_context().await;
+    turn_context.session_source = SessionSource::Exec;
+    assert!(!super::should_run_buddy_observer(&turn_context));
+
+    turn_context.session_source = SessionSource::Cli;
+    assert!(super::should_run_buddy_observer(&turn_context));
 }
 
 #[test]

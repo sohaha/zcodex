@@ -316,7 +316,7 @@ use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::custom_prompt_view::CustomPromptView;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
-use crate::clipboard_paste::paste_image_to_temp_png;
+use crate::clipboard_paste::paste_image_to_temp_file;
 use crate::clipboard_text;
 use crate::collaboration_modes;
 use crate::diff_render::display_path_for;
@@ -4784,7 +4784,7 @@ impl ChatWidget {
             } if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
                 && c.eq_ignore_ascii_case(&'v') =>
             {
-                match paste_image_to_temp_png() {
+                match paste_image_to_temp_file(self.config.tui_auto_compress_pasted_images) {
                     Ok((path, info)) => {
                         tracing::debug!(
                             "pasted image size={}x{} format={}",
@@ -5484,9 +5484,8 @@ impl ChatWidget {
 
     fn show_buddy_help(&mut self) {
         self.add_info_message(
-            "Buddy commands: `/buddy show`, `/buddy pet`, `/buddy hide`, `/buddy status`."
-                .to_string(),
-            Some("The buddy is deterministic per Codex home and current project.".to_string()),
+            "小伙伴命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
+            Some("小伙伴会根据当前 Codex home 与项目路径稳定生成。".to_string()),
         );
     }
 
@@ -5502,7 +5501,7 @@ impl ChatWidget {
             "hide" => self.bottom_pane.hide_buddy(),
             "status" => self.bottom_pane.buddy_status(&seed),
             _ => {
-                self.add_error_message("Usage: /buddy [show|pet|hide|status]".to_string());
+                self.add_error_message("用法：/buddy [show|pet|hide|status]".to_string());
                 return;
             }
         };

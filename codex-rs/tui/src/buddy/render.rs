@@ -193,7 +193,6 @@ fn render_bubble(text: &str, width: u16, fading: bool) -> Vec<Line<'static>> {
 }
 
 fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> Line<'static> {
-    let visibility = if state.visible { "可见" } else { "隐藏" };
     let mood = match state.frame() {
         BuddyFrame::Blink => "眨眼",
         BuddyFrame::FidgetUp | BuddyFrame::FidgetDown => "坐立不安",
@@ -216,8 +215,6 @@ fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> L
         bones.rarity.styled_span(),
         " ".into(),
         bones.species.label().dim(),
-        " · ".dim(),
-        visibility.dim(),
         " · ".dim(),
         mood.dim(),
     ];

@@ -116,7 +116,7 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
             ModeKind::Default,
             /*default_mode_request_user_input*/ false
         ),
-        Some("request_user_input is unavailable in Default mode".to_string())
+        Some("request_user_input is unavailable in 默认 mode".to_string())
     );
     assert_eq!(
         request_user_input_unavailable_message(
@@ -130,14 +130,14 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
             ModeKind::Execute,
             /*default_mode_request_user_input*/ false
         ),
-        Some("request_user_input is unavailable in Execute mode".to_string())
+        Some("request_user_input is unavailable in 执行 mode".to_string())
     );
     assert_eq!(
         request_user_input_unavailable_message(
             ModeKind::PairProgramming,
             /*default_mode_request_user_input*/ false
         ),
-        Some("request_user_input is unavailable in Pair Programming mode".to_string())
+        Some("request_user_input is unavailable in 结对编程 mode".to_string())
     );
 }
 
@@ -145,10 +145,10 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
 fn request_user_input_tool_description_mentions_available_modes() {
     assert_eq!(
         request_user_input_tool_description(/*default_mode_request_user_input*/ false),
-        "Request user input for one to three short questions and wait for the response. This tool is only available in Plan mode.".to_string()
+        "Request user input for one to three short questions and wait for the response. This tool is only available in 计划 mode.".to_string()
     );
     assert_eq!(
         request_user_input_tool_description(/*default_mode_request_user_input*/ true),
-        "Request user input for one to three short questions and wait for the response. This tool is only available in Default or Plan mode.".to_string()
+        "Request user input for one to three short questions and wait for the response. This tool is only available in 默认 or 计划 mode.".to_string()
     );
 }

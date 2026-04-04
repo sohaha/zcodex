@@ -1,0 +1,18 @@
+---
+source: core/tests/suite/compact.rs
+assertion_line: 3061
+expression: "format_labeled_requests_snapshot(\"Pre-turn auto-compaction with a context override emits the context diff in the compact request while the incoming user message is still excluded.\",\n&[(\"Local Compaction Request\", &requests[2]),\n(\"Local Post-Compaction History Layout\", &requests[3]),])"
+---
+Scenario: Pre-turn auto-compaction with a context override emits the context diff in the compact request while the incoming user message is still excluded.
+
+## Local Compaction Request
+00:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
+02:message/user:USER_ONE
+03:message/assistant:FIRST_REPLY
+04:message/user:USER_TWO
+
+## Local Post-Compaction History Layout
+00:message/user:User message:\nUSER_TWO\nAssistant reply:\nFIRST_REPLY\nWrite th...

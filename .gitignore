@@ -101,3 +101,7 @@ __pycache__/
 /codex
 .tmp/
 .cargo-target/
+.target-app-compat/
+.target-app-fork/
+.target-app-protocol/
+.target-app-start/

@@ -2769,6 +2769,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         "turn_id".to_string(),
         Arc::clone(&js_repl),
         skills_outcome,
+        session_configuration.user_instructions.clone(),
     );
 
     let (mailbox, mailbox_rx) = crate::agent::Mailbox::new();
@@ -3608,6 +3609,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         "turn_id".to_string(),
         Arc::clone(&js_repl),
         skills_outcome,
+        session_configuration.user_instructions.clone(),
     ));
 
     let (mailbox, mailbox_rx) = crate::agent::Mailbox::new();
@@ -4206,6 +4208,27 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
     let mut expected_history = vec![compacted_summary];
     expected_history.extend(session.build_initial_context(&turn_context).await);
     assert_eq!(history.raw_items().to_vec(), expected_history);
+}
+
+#[tokio::test]
+async fn record_context_updates_and_set_reference_context_item_reinjects_full_context_when_user_instructions_change()
+ {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let previous_context_item = turn_context.to_turn_context_item();
+    {
+        let mut state = session.state.lock().await;
+        state.set_reference_context_item(Some(previous_context_item));
+    }
+
+    turn_context.user_instructions = Some("updated AGENTS instructions".to_string());
+
+    session
+        .record_context_updates_and_set_reference_context_item(&turn_context)
+        .await;
+
+    let history = session.clone_history().await;
+    let initial_context = session.build_initial_context(&turn_context).await;
+    assert_eq!(history.raw_items().to_vec(), initial_context);
 }
 
 #[tokio::test]

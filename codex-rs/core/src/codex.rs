@@ -1505,6 +1505,7 @@ impl Session {
         sub_id: String,
         js_repl: Arc<JsReplHandle>,
         skills_outcome: Arc<SkillLoadOutcome>,
+        user_instructions: Option<String>,
     ) -> TurnContext {
         let reasoning_effort = session_configuration.collaboration_mode.reasoning_effort();
         let reasoning_summary = session_configuration
@@ -1569,7 +1570,7 @@ impl Session {
             app_server_client_name: session_configuration.app_server_client_name.clone(),
             developer_instructions: session_configuration.developer_instructions.clone(),
             compact_prompt: session_configuration.compact_prompt.clone(),
-            user_instructions: session_configuration.user_instructions.clone(),
+            user_instructions,
             collaboration_mode: session_configuration.collaboration_mode.clone(),
             personality: session_configuration.personality,
             approval_policy: session_configuration.approval_policy.clone(),
@@ -2583,6 +2584,7 @@ impl Session {
         sandbox_policy_changed: bool,
     ) -> Arc<TurnContext> {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
+        let user_instructions = get_user_instructions(&per_turn_config).await;
         self.services
             .mcp_connection_manager
             .read()
@@ -2647,6 +2649,7 @@ impl Session {
             sub_id,
             Arc::clone(&self.js_repl),
             skills_outcome,
+            user_instructions,
         );
         turn_context.realtime_active = self.conversation.running_state().await.is_some();
 
@@ -2664,7 +2667,7 @@ impl Session {
                 tc,
                 EventMsg::Warning(WarningEvent {
                     message: format!(
-                        "Model metadata for `{}` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.",
+                        "未找到模型 `{}` 的元数据。将使用回退元数据；这可能降低性能并引发问题。",
                         tc.model_info.slug
                     ),
                 }),
@@ -3911,7 +3914,9 @@ impl Session {
             let state = self.state.lock().await;
             state.reference_context_item()
         };
-        let should_inject_full_context = reference_context_item.is_none();
+        let should_inject_full_context = reference_context_item
+            .as_ref()
+            .is_none_or(|previous| previous.user_instructions != turn_context.user_instructions);
         let context_items = if should_inject_full_context {
             self.build_initial_context(turn_context).await
         } else {
@@ -5487,7 +5492,7 @@ mod handlers {
         sess.apply_rollout_reconstruction(
             turn_context.as_ref(),
             replay_items.as_slice(),
-            /*preserve_reference_context_item*/ false,
+            /*preserve_reference_context_item*/ true,
         )
         .await;
         sess.recompute_token_usage(turn_context.as_ref()).await;

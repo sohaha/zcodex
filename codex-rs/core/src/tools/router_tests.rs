@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use crate::client_common::tools::ResponsesApiTool;
-use crate::client_common::tools::ToolSpec;
 use crate::codex::make_session_and_context;
 use crate::function_tool::FunctionCallError;
 use crate::tools::context::FunctionToolOutput;
@@ -11,11 +9,12 @@ use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
 use crate::tools::registry::ToolRegistryBuilder;
 use crate::tools::rewrite::ToolRoutingDirectives;
-use crate::tools::spec::JsonSchema;
 use crate::turn_diff_tracker::TurnDiffTracker;
-use async_trait::async_trait;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
+use codex_tools::JsonSchema;
+use codex_tools::ResponsesApiTool;
+use codex_tools::ToolSpec;
 use tokio_util::sync::CancellationToken;
 
 use super::ToolCall;
@@ -216,7 +215,6 @@ struct FakeFunctionHandler {
     label: &'static str,
 }
 
-#[async_trait]
 impl ToolHandler for FakeFunctionHandler {
     type Output = FunctionToolOutput;
 

@@ -556,12 +556,12 @@ mod tests {
     use super::ToolEmitter;
     use super::ToolEventCtx;
     use crate::codex::make_session_and_context_with_rx;
-    use crate::exec::ExecToolCallOutput;
-    use crate::exec::StreamOutput;
     use crate::protocol::EventMsg;
     use crate::protocol::ExecCommandBeginEvent;
     use crate::protocol::ExecCommandEndEvent;
     use crate::protocol::ExecCommandSource;
+    use codex_protocol::exec_output::ExecToolCallOutput;
+    use codex_protocol::exec_output::StreamOutput;
     use pretty_assertions::assert_eq;
     use std::time::Duration;
 

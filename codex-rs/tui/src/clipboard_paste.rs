@@ -43,13 +43,17 @@ impl EncodedImageFormat {
 pub struct PastedImageInfo {
     pub width: u32,
     pub height: u32,
-    pub encoded_format: EncodedImageFormat, // Always PNG for now.
+    pub encoded_format: EncodedImageFormat,
 }
 
-/// Capture image from system clipboard, encode to PNG, and return bytes + info.
+const AUTO_COMPRESS_MAX_WIDTH: u32 = 2048;
+const AUTO_COMPRESS_MAX_HEIGHT: u32 = 768;
+const AUTO_COMPRESS_JPEG_QUALITY: u8 = 85;
+
+/// Capture image from system clipboard and return a decoded image.
 #[cfg(not(target_os = "android"))]
-pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
-    let _span = tracing::debug_span!("paste_image_as_png").entered();
+fn read_clipboard_image() -> Result<image::DynamicImage, PasteImageError> {
+    let _span = tracing::debug_span!("read_clipboard_image").entered();
     tracing::debug!("attempting clipboard image read");
     let mut cb = arboard::Clipboard::new()
         .map_err(|e| PasteImageError::ClipboardUnavailable(e.to_string()))?;
@@ -60,7 +64,7 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
         .get()
         .file_list()
         .map_err(|e| PasteImageError::ClipboardUnavailable(e.to_string()));
-    let dyn_img = if let Some(img) = files
+    if let Some(img) = files
         .unwrap_or_default()
         .into_iter()
         .find_map(|f| image::open(f).ok())
@@ -70,76 +74,114 @@ pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageErro
             img.width(),
             img.height()
         );
-        img
-    } else {
-        let _span = tracing::debug_span!("get_image").entered();
-        let img = cb
-            .get_image()
-            .map_err(|e| PasteImageError::NoImage(e.to_string()))?;
-        let w = img.width as u32;
-        let h = img.height as u32;
-        tracing::debug!("clipboard image opened from image: {}x{}", w, h);
-
-        let Some(rgba_img) = image::RgbaImage::from_raw(w, h, img.bytes.into_owned()) else {
-            return Err(PasteImageError::EncodeFailed("invalid RGBA buffer".into()));
-        };
-
-        image::DynamicImage::ImageRgba8(rgba_img)
-    };
-
-    let mut png: Vec<u8> = Vec::new();
-    {
-        let span =
-            tracing::debug_span!("encode_image", byte_length = tracing::field::Empty).entered();
-        let mut cursor = std::io::Cursor::new(&mut png);
-        dyn_img
-            .write_to(&mut cursor, image::ImageFormat::Png)
-            .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
-        span.record("byte_length", png.len());
+        return Ok(img);
     }
 
-    Ok((
-        png,
-        PastedImageInfo {
-            width: dyn_img.width(),
-            height: dyn_img.height(),
-            encoded_format: EncodedImageFormat::Png,
-        },
-    ))
+    let _span = tracing::debug_span!("get_image").entered();
+    let img = cb
+        .get_image()
+        .map_err(|e| PasteImageError::NoImage(e.to_string()))?;
+    let w = img.width as u32;
+    let h = img.height as u32;
+    tracing::debug!("clipboard image opened from image: {}x{}", w, h);
+
+    let Some(rgba_img) = image::RgbaImage::from_raw(w, h, img.bytes.into_owned()) else {
+        return Err(PasteImageError::EncodeFailed("invalid RGBA buffer".into()));
+    };
+
+    Ok(image::DynamicImage::ImageRgba8(rgba_img))
 }
 
-/// Android/Termux does not support arboard; return a clear error.
-#[cfg(target_os = "android")]
-pub fn paste_image_as_png() -> Result<(Vec<u8>, PastedImageInfo), PasteImageError> {
-    Err(PasteImageError::ClipboardUnavailable(
-        "clipboard image paste is unsupported on Android".into(),
-    ))
-}
-
-/// Convenience: write to a temp file and return its path + info.
 #[cfg(not(target_os = "android"))]
-pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
-    // First attempt: read image from system clipboard via arboard (native paths or image data).
-    match paste_image_as_png() {
-        Ok((png, info)) => {
-            // Create a unique temporary file with a .png suffix to avoid collisions.
-            let tmp = Builder::new()
-                .prefix("codex-clipboard-")
-                .suffix(".png")
-                .tempfile()
-                .map_err(|e| PasteImageError::IoError(e.to_string()))?;
-            std::fs::write(tmp.path(), &png)
-                .map_err(|e| PasteImageError::IoError(e.to_string()))?;
-            // Persist the file (so it remains after the handle is dropped) and return its PathBuf.
-            let (_file, path) = tmp
-                .keep()
-                .map_err(|e| PasteImageError::IoError(e.error.to_string()))?;
+fn encode_pasted_image(
+    dynamic: image::DynamicImage,
+    auto_compress: bool,
+) -> Result<(Vec<u8>, PastedImageInfo, &'static str), PasteImageError> {
+    let processed = if auto_compress
+        && (dynamic.width() > AUTO_COMPRESS_MAX_WIDTH || dynamic.height() > AUTO_COMPRESS_MAX_HEIGHT)
+    {
+        dynamic.resize(
+            AUTO_COMPRESS_MAX_WIDTH,
+            AUTO_COMPRESS_MAX_HEIGHT,
+            image::imageops::FilterType::Triangle,
+        )
+    } else {
+        dynamic
+    };
+
+    let width = processed.width();
+    let height = processed.height();
+    let has_alpha = processed.color().has_alpha();
+    let mut encoded = Vec::new();
+    let span = tracing::debug_span!("encode_image", byte_length = tracing::field::Empty).entered();
+
+    let (encoded_format, suffix) = if auto_compress && !has_alpha {
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut encoded,
+            AUTO_COMPRESS_JPEG_QUALITY,
+        );
+        encoder
+            .encode_image(&processed)
+            .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
+        (EncodedImageFormat::Jpeg, ".jpg")
+    } else {
+        let rgba = processed.to_rgba8();
+        let encoder = image::codecs::png::PngEncoder::new(&mut encoded);
+        image::ImageEncoder::write_image(
+            encoder,
+            rgba.as_raw(),
+            width,
+            height,
+            image::ColorType::Rgba8.into(),
+        )
+        .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
+        (EncodedImageFormat::Png, ".png")
+    };
+    span.record("byte_length", encoded.len());
+
+    Ok((
+        encoded,
+        PastedImageInfo {
+            width,
+            height,
+            encoded_format,
+        },
+        suffix,
+    ))
+}
+
+#[cfg(not(target_os = "android"))]
+fn write_temp_image(
+    encoded: &[u8],
+    suffix: &'static str,
+) -> Result<PathBuf, PasteImageError> {
+    let tmp = Builder::new()
+        .prefix("codex-clipboard-")
+        .suffix(suffix)
+        .tempfile()
+        .map_err(|e| PasteImageError::IoError(e.to_string()))?;
+    std::fs::write(tmp.path(), encoded).map_err(|e| PasteImageError::IoError(e.to_string()))?;
+    let (_file, path) = tmp
+        .keep()
+        .map_err(|e| PasteImageError::IoError(e.error.to_string()))?;
+    Ok(path)
+}
+
+/// Convenience: write a clipboard image to a temp file and return its path + info.
+#[cfg(not(target_os = "android"))]
+pub fn paste_image_to_temp_file(
+    auto_compress: bool,
+) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
+    match read_clipboard_image() {
+        Ok(dynamic) => {
+            let (encoded, info, suffix) = encode_pasted_image(dynamic, auto_compress)?;
+            let path = write_temp_image(&encoded, suffix)?;
             Ok((path, info))
         }
         Err(e) => {
             #[cfg(target_os = "linux")]
             {
-                try_wsl_clipboard_fallback(&e).or(Err(e))
+                try_wsl_clipboard_fallback(&e, auto_compress).or(Err(e))
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -158,6 +200,7 @@ pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImag
 #[cfg(target_os = "linux")]
 fn try_wsl_clipboard_fallback(
     error: &PasteImageError,
+    auto_compress: bool,
 ) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     use PasteImageError::ClipboardUnavailable;
     use PasteImageError::NoImage;
@@ -176,20 +219,10 @@ fn try_wsl_clipboard_fallback(
         return Err(error.clone());
     };
 
-    let Ok((w, h)) = image::image_dimensions(&mapped_path) else {
-        return Err(error.clone());
-    };
-
-    // Return the mapped path directly without copying.
-    // The file will be read and base64-encoded during serialization.
-    Ok((
-        mapped_path,
-        PastedImageInfo {
-            width: w,
-            height: h,
-            encoded_format: EncodedImageFormat::Png,
-        },
-    ))
+    let dynamic = image::open(&mapped_path).map_err(|_| error.clone())?;
+    let (encoded, info, suffix) = encode_pasted_image(dynamic, auto_compress)?;
+    let path = write_temp_image(&encoded, suffix)?;
+    Ok((path, info))
 }
 
 /// Try to call a Windows PowerShell command (several common names) to save the
@@ -229,8 +262,9 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
 }
 
 #[cfg(target_os = "android")]
-pub fn paste_image_to_temp_png() -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
-    // Keep error consistent with paste_image_as_png.
+pub fn paste_image_to_temp_file(
+    _auto_compress: bool,
+) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
         "clipboard image paste is unsupported on Android".into(),
     ))

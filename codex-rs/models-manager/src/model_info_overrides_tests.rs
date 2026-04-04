@@ -18,7 +18,6 @@ async fn offline_model_info_without_tool_output_override() {
         codex_home.path().to_path_buf(),
         auth_manager,
         None,
-        None,
         CollaborationModesConfig::default(),
     );
 
@@ -40,7 +39,6 @@ async fn offline_model_info_with_tool_output_override() {
     let manager = ModelsManager::new(
         codex_home.path().to_path_buf(),
         auth_manager,
-        None,
         None,
         CollaborationModesConfig::default(),
     );

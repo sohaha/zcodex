@@ -348,6 +348,9 @@ pub struct Config {
     /// Persisted startup availability NUX state for model tooltips.
     pub model_availability_nux: ModelAvailabilityNuxConfig,
 
+    /// Whether Ctrl+V pasted images should be automatically compressed before upload.
+    pub tui_auto_compress_pasted_images: bool,
+
     /// Start the TUI in the specified collaboration mode (plan/default).
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
@@ -1188,6 +1191,16 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
+
+    /// Optional provider to use when the primary provider request fails.
+    pub fallback_provider: Option<String>,
+
+    /// Optional model slug to use with the fallback provider.
+    pub fallback_model: Option<String>,
+
+    /// Ordered list of fallback providers to try for the current request.
+    #[serde(default)]
+    pub fallback_providers: Vec<FallbackProviderToml>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,
@@ -2401,6 +2414,61 @@ impl Config {
             })?
             .clone();
 
+        let fallback_provider_id = cfg.fallback_provider.clone();
+        let fallback_provider = fallback_provider_id
+            .as_ref()
+            .map(|provider_id| {
+                model_providers.get(provider_id).ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!("Fallback model provider `{provider_id}` not found"),
+                    )
+                })
+            })
+            .transpose()?
+            .cloned();
+        let mut fallback_providers = cfg
+            .fallback_providers
+            .into_iter()
+            .map(|fallback| {
+                let provider_id = fallback.provider;
+                let provider = model_providers
+                    .get(&provider_id)
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::NotFound,
+                            format!("Fallback model provider `{provider_id}` not found"),
+                        )
+                    })?
+                    .clone();
+                Ok(FallbackProviderConfig {
+                    provider_id,
+                    provider,
+                    model: fallback.model,
+                })
+            })
+            .collect::<std::io::Result<Vec<_>>>()?;
+        if let Some(provider_id) = fallback_provider_id.as_ref()
+            && !fallback_providers
+                .iter()
+                .any(|fallback| &fallback.provider_id == provider_id)
+        {
+            let Some(provider) = fallback_provider.clone() else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Fallback model provider `{provider_id}` not found"),
+                ));
+            };
+            fallback_providers.insert(
+                0,
+                FallbackProviderConfig {
+                    provider_id: provider_id.clone(),
+                    provider,
+                    model: cfg.fallback_model.clone(),
+                },
+            );
+        }
+
         let shell_environment_policy = cfg.shell_environment_policy.into();
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);
 
@@ -2669,6 +2737,10 @@ impl Config {
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_provider_id,
             model_provider,
+            fallback_provider_id,
+            fallback_provider,
+            fallback_model: cfg.fallback_model,
+            fallback_providers,
             cwd: resolved_cwd,
             startup_warnings,
             permissions: Permissions {
@@ -2819,7 +2891,8 @@ impl Config {
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
             show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(false),
             tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
-            model_availability_nux: cfg
+            model_availability_nux:
+ cfg
                 .tui
                 .as_ref()
                 .map(|t| t.model_availability_nux.clone())
