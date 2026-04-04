@@ -29,7 +29,7 @@ pub(crate) fn add_alias_action(
         .ok_or_else(|| anyhow::anyhow!("target path does not exist: {target_uri}"))?;
     let parent_uri = new_uri.parent();
     let parent = if parent_uri.is_root() {
-        common::PathRow::root(new_uri.domain.clone())
+        common::PathRow::root()
     } else {
         common::find_path_row(conn, &parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?

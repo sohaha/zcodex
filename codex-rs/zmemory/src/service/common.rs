@@ -24,8 +24,7 @@ pub(crate) struct PathRow {
 }
 
 impl PathRow {
-    pub(crate) fn root(domain: String) -> Self {
-        let _ = domain;
+    pub(crate) fn root() -> Self {
         Self {
             edge_id: 0,
             node_uuid: ROOT_NODE_UUID.to_string(),
@@ -46,7 +45,7 @@ pub(crate) fn find_path_row(
     uri: &crate::tool_api::ZmemoryUri,
 ) -> Result<Option<PathRow>> {
     if uri.is_root() {
-        return Ok(Some(PathRow::root(uri.domain.clone())));
+        return Ok(Some(PathRow::root()));
     }
     conn.query_row(
         "SELECT p.edge_id, e.child_uuid, e.priority, e.disclosure
