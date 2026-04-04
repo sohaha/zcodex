@@ -323,7 +323,7 @@ impl AppLinkView {
             lines.push(Line::from(line.into_owned()));
         }
         for line in wrap(
-            "Sign in there if needed, then return here and select \"I already Installed it\".",
+            "如有需要，请先在那里登录，然后回到这里选择“我已经安装了”。",
             usable_width,
         ) {
             lines.push(Line::from(line.into_owned()));

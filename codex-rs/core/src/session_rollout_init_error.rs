@@ -13,31 +13,31 @@ pub(crate) fn map_session_init_error(err: &anyhow::Error, codex_home: &Path) -> 
         return mapped;
     }
 
-    CodexErr::Fatal(format!("Failed to initialize session: {err:#}"))
+    CodexErr::Fatal(format!("会话初始化失败：{err:#}"))
 }
 
 fn map_rollout_io_error(io_err: &std::io::Error, codex_home: &Path) -> Option<CodexErr> {
     let sessions_dir = codex_home.join(SESSIONS_SUBDIR);
     let hint = match io_err.kind() {
         ErrorKind::PermissionDenied => format!(
-            "Codex cannot access session files at {} (permission denied). If sessions were created using sudo, fix ownership: sudo chown -R $(whoami) {}",
+            "Codex 无法访问 {} 中的会话文件（权限被拒绝）。如果这些会话是使用 sudo 创建的，请修复所有权：sudo chown -R $(whoami) {}",
             sessions_dir.display(),
             codex_home.display()
         ),
         ErrorKind::NotFound => format!(
-            "Session storage missing at {}. Create the directory or choose a different Codex home.",
+            "在 {} 未找到会话存储目录。请创建该目录，或改用其他 Codex home。",
             sessions_dir.display()
         ),
         ErrorKind::AlreadyExists => format!(
-            "Session storage path {} is blocked by an existing file. Remove or rename it so Codex can create sessions.",
+            "会话存储路径 {} 被现有文件占用。请移除或重命名它，以便 Codex 创建会话。",
             sessions_dir.display()
         ),
         ErrorKind::InvalidData | ErrorKind::InvalidInput => format!(
-            "Session data under {} looks corrupt or unreadable. Clearing the sessions directory may help (this will remove saved threads).",
+            "{} 下的会话数据似乎已损坏或不可读。可以尝试清理 sessions 目录（这会删除已保存线程）。",
             sessions_dir.display()
         ),
         ErrorKind::IsADirectory | ErrorKind::NotADirectory => format!(
-            "Session storage path {} has an unexpected type. Ensure it is a directory Codex can use for session files.",
+            "会话存储路径 {} 的类型异常。请确保它是 Codex 可用于保存会话文件的目录。",
             sessions_dir.display()
         ),
         _ => return None,

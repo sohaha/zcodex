@@ -1426,6 +1426,7 @@ impl Session {
             session_configuration.collaboration_mode.reasoning_effort();
         per_turn_config.model_reasoning_summary = session_configuration.model_reasoning_summary;
         per_turn_config.service_tier = session_configuration.service_tier;
+        per_turn_config.user_instructions = session_configuration.user_instructions.clone();
         per_turn_config.personality = session_configuration.personality;
         per_turn_config.approvals_reviewer = session_configuration.approvals_reviewer;
         let resolved_web_search_mode = resolve_web_search_mode_for_turn(
@@ -5447,7 +5448,7 @@ mod handlers {
                 id: turn_context.sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
                     message: format!(
-                        "failed to flush rollout `{}` for rollback replay: {err}",
+                        "为回滚重放刷新 rollout `{}` 失败：{err}",
                         rollout_path.display()
                     ),
                     codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
@@ -5465,7 +5466,7 @@ mod handlers {
                         id: turn_context.sub_id.clone(),
                         msg: EventMsg::Error(ErrorEvent {
                             message: format!(
-                                "failed to load rollout `{}` for rollback replay: {err}",
+                                "为回滚重放加载 rollout `{}` 失败：{err}",
                                 rollout_path.display()
                             ),
                             codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),

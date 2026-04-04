@@ -353,6 +353,25 @@ async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
 }
 
 #[tokio::test]
+async fn anthropic_provider_uses_anthropic_catalog_by_default() {
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let provider = ModelProviderInfo {
+        wire_api: WireApi::Anthropic,
+        ..provider_for("https://example.com".to_string())
+    };
+    let manager = ModelsManager::with_provider_for_tests(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        provider,
+    );
+
+    let remote_models = manager.get_remote_models().await;
+    assert_eq!(remote_models, crate::model_info::anthropic_model_catalog());
+}
+
+#[tokio::test]
 async fn refresh_available_models_sorts_by_priority() {
     let server = MockServer::start().await;
     let remote_models = vec![

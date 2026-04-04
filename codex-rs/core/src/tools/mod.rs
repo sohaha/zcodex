@@ -13,9 +13,6 @@ pub mod runtimes;
 pub mod sandboxing;
 pub mod spec;
 
-pub use handlers::zmemory::ZMEMORY_JSON_BEGIN;
-pub use handlers::zmemory::ZMEMORY_JSON_END;
-
 use codex_protocol::exec_output::ExecToolCallOutput;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::formatted_truncate_text;

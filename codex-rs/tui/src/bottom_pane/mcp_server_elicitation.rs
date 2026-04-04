@@ -596,7 +596,7 @@ fn parse_field(
             let options = [true, false]
                 .into_iter()
                 .map(|value| {
-                    let label = if value { "True" } else { "False" }.to_string();
+                    let label = if value { "是" } else { "否" }.to_string();
                     McpServerElicitationOption {
                         label,
                         description: None,
@@ -1318,7 +1318,7 @@ impl McpServerElicitationOverlay {
         let option_tip = if options_hidden {
             let selected = self.selected_option_index().unwrap_or(0).saturating_add(1);
             let total = self.options_len();
-            Some(FooterTip::new(format!("option {selected}/{total}")))
+            Some(FooterTip::new(format!("选项 {selected}/{total}")))
         } else {
             None
         };
@@ -1784,14 +1784,14 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准这个待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -1807,23 +1807,23 @@ mod tests {
                 thread_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
-                message: "Allow this request?".to_string(),
+                message: "允许这个请求吗？".to_string(),
                 approval_display_params: Vec::new(),
                 response_mode: McpServerElicitationResponseMode::FormContent,
                 fields: vec![McpServerElicitationField {
                     id: "confirmed".to_string(),
-                    label: "Confirm".to_string(),
-                    prompt: "Approve the pending action.".to_string(),
+                    label: "确认".to_string(),
+                    prompt: "批准这个待处理操作。".to_string(),
                     required: true,
                     input: McpServerElicitationFieldInput::Select {
                         options: vec![
                             McpServerElicitationOption {
-                                label: "True".to_string(),
+                                label: "是".to_string(),
                                 description: None,
                                 value: Value::Bool(true),
                             },
                             McpServerElicitationOption {
-                                label: "False".to_string(),
+                                label: "否".to_string(),
                                 description: None,
                                 value: Value::Bool(false),
                             },
@@ -1863,7 +1863,7 @@ mod tests {
         let thread_id = ThreadId::default();
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
-            form_request("Allow this request?", Value::Null, /*meta*/ None),
+            form_request("允许这个请求吗？", Value::Null, /*meta*/ None),
         )
         .expect("expected approval fallback");
 
@@ -1873,7 +1873,7 @@ mod tests {
                 thread_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
-                message: "Allow this request?".to_string(),
+                message: "允许这个请求吗？".to_string(),
                 approval_display_params: Vec::new(),
                 response_mode: McpServerElicitationResponseMode::ApprovalAction,
                 fields: vec![McpServerElicitationField {
@@ -1913,7 +1913,7 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[],
@@ -1930,7 +1930,7 @@ mod tests {
                 thread_id,
                 server_name: "server-1".to_string(),
                 request_id: McpRequestId::String("request-1".to_string()),
-                message: "Allow this request?".to_string(),
+                message: "允许这个请求吗？".to_string(),
                 approval_display_params: Vec::new(),
                 response_mode: McpServerElicitationResponseMode::ApprovalAction,
                 fields: vec![McpServerElicitationField {
@@ -2088,14 +2088,14 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准这个待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -2142,7 +2142,7 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[
@@ -2196,7 +2196,7 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[
@@ -2250,14 +2250,14 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             thread_id,
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准这个待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -2306,7 +2306,7 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
+                            "title": "确认",
                         }
                     },
                 }),
@@ -2323,7 +2323,7 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
+                            "title": "确认",
                         }
                     },
                 }),
@@ -2340,7 +2340,7 @@ mod tests {
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
+                            "title": "确认",
                         }
                     },
                 }),
@@ -2372,14 +2372,14 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 serde_json::json!({
                     "type": "object",
                     "properties": {
                         "confirmed": {
                             "type": "boolean",
-                            "title": "Confirm",
-                            "description": "Approve the pending action.",
+                            "title": "确认",
+                            "description": "批准这个待处理操作。",
                         }
                     },
                     "required": ["confirmed"],
@@ -2405,7 +2405,7 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[],
@@ -2432,7 +2432,7 @@ mod tests {
         let request = McpServerElicitationFormRequest::from_event(
             ThreadId::default(),
             form_request(
-                "Allow this request?",
+                "允许这个请求吗？",
                 empty_object_schema(),
                 tool_approval_meta(
                     &[

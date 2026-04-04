@@ -19,6 +19,7 @@ use codex_login::collect_auth_env_telemetry;
 use codex_login::default_client::build_reqwest_client;
 use codex_login::required_auth_manager_for_provider;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_model_provider_info::WireApi;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::error::CodexErr;
@@ -241,7 +242,7 @@ impl ModelsManager {
         };
         let remote_models = model_catalog
             .map(|catalog| catalog.models)
-            .unwrap_or_else(|| Self::load_remote_models_from_file().unwrap_or_default());
+            .unwrap_or_else(|| Self::default_remote_models_for_provider(&provider));
         Self {
             remote_models: RwLock::new(remote_models),
             catalog_mode,
@@ -492,7 +493,7 @@ impl ModelsManager {
 
     /// Replace the cached remote models and rebuild the derived presets list.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
-        let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
+        let mut existing_models = Self::default_remote_models_for_provider(&self.provider);
         for model in models {
             if let Some(existing_index) = existing_models
                 .iter()
@@ -504,6 +505,13 @@ impl ModelsManager {
             }
         }
         *self.remote_models.write().await = existing_models;
+    }
+
+    fn default_remote_models_for_provider(provider: &ModelProviderInfo) -> Vec<ModelInfo> {
+        match provider.wire_api {
+            WireApi::Anthropic => model_info::anthropic_model_catalog(),
+            _ => Self::load_remote_models_from_file().unwrap_or_default(),
+        }
     }
 
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
@@ -593,7 +601,9 @@ impl ModelsManager {
         if let Some(model) = model {
             return model.to_string();
         }
-        let mut models = Self::load_remote_models_from_file().unwrap_or_default();
+        let mut models = Self::default_remote_models_for_provider(
+            &ModelProviderInfo::create_openai_provider(/*base_url*/ None),
+        );
         models.sort_by(|a, b| a.priority.cmp(&b.priority));
         let presets: Vec<ModelPreset> = models.into_iter().map(Into::into).collect();
         presets

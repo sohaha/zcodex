@@ -51,6 +51,7 @@ pub(crate) fn build_specs_with_discoverable_tools(
     use crate::tools::handlers::ShellCommandHandler;
     use crate::tools::handlers::ShellHandler;
     use crate::tools::handlers::TestSyncHandler;
+    use crate::tools::handlers::TldrHandler;
     use crate::tools::handlers::ToolSearchHandler;
     use crate::tools::handlers::ToolSuggestHandler;
     use crate::tools::handlers::UnifiedExecHandler;
@@ -205,6 +206,9 @@ pub(crate) fn build_specs_with_discoverable_tools(
             }
             ToolHandlerKind::TestSync => {
                 builder.register_handler(handler.name, Arc::new(TestSyncHandler));
+            }
+            ToolHandlerKind::Tldr => {
+                builder.register_handler(handler.name, Arc::new(TldrHandler));
             }
             ToolHandlerKind::ToolSearch => {
                 if tool_search_handler.is_none() {

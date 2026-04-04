@@ -961,7 +961,7 @@ where
             "configured value is disallowed by requirements; falling back to required value for {field_name}"
         );
         let message = format!(
-            "Configured value for `{field_name}` is disallowed by requirements; falling back to required value {fallback_value:?}. Details: {err}"
+            "配置项 `{field_name}` 不符合 requirements 限制；将回退到必需值 {fallback_value:?}。详情：{err}"
         );
         startup_warnings.push(message);
 

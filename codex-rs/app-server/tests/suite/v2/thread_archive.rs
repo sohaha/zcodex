@@ -76,10 +76,7 @@ async fn thread_archive_requires_materialized_rollout() -> Result<()> {
     )
     .await??;
     assert!(
-        archive_err
-            .error
-            .message
-            .contains("no rollout found for thread id"),
+        archive_err.error.message.contains("未找到线程"),
         "unexpected archive error: {}",
         archive_err.error.message
     );

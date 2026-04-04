@@ -2873,7 +2873,7 @@ impl CodexMessageProcessor {
                 Ok(None) => {}
                 Err(err) => {
                     return Err(internal_error(format!(
-                        "failed to load reconciled thread metadata for {thread_uuid}: {err}"
+                        "加载 {thread_uuid} 的调和线程元数据失败：{err}"
                     )));
                 }
             }
@@ -2917,13 +2917,13 @@ impl CodexMessageProcessor {
                     }
                     Err(err) => {
                         return Err(internal_error(format!(
-                            "failed to locate archived thread id {thread_uuid}: {err}"
+                            "定位归档线程 ID {thread_uuid} 失败：{err}"
                         )));
                     }
                 },
                 Err(err) => {
                     return Err(internal_error(format!(
-                        "failed to locate thread id {thread_uuid}: {err}"
+                        "定位线程 ID {thread_uuid} 失败：{err}"
                     )));
                 }
             };
@@ -2942,10 +2942,10 @@ impl CodexMessageProcessor {
         match state_db_ctx.get_thread(thread_uuid).await {
             Ok(Some(_)) => Ok(()),
             Ok(None) => Err(internal_error(format!(
-                "failed to create thread metadata from rollout for {thread_uuid}"
+                "从 rollout 为 {thread_uuid} 创建线程元数据失败"
             ))),
             Err(err) => Err(internal_error(format!(
-                "failed to load reconciled thread metadata for {thread_uuid}: {err}"
+                "加载 {thread_uuid} 的调和线程元数据失败：{err}"
             ))),
         }
     }
@@ -3500,7 +3500,7 @@ impl CodexMessageProcessor {
                     Err(err) => {
                         self.send_invalid_request_error(
                             request_id,
-                            format!("failed to locate thread id {thread_uuid}: {err}"),
+                            format!("定位线程 ID {thread_uuid} 失败：{err}"),
                         )
                         .await;
                         return;
@@ -3511,7 +3511,7 @@ impl CodexMessageProcessor {
         if include_turns && rollout_path.is_none() && db_summary.is_some() {
             self.send_internal_error(
                 request_id,
-                format!("failed to locate rollout for thread {thread_uuid}"),
+                format!("定位线程 {thread_uuid} 的 rollout 失败"),
             )
             .await;
             return;
@@ -3527,7 +3527,7 @@ impl CodexMessageProcessor {
                     self.send_internal_error(
                         request_id,
                         format!(
-                            "failed to load rollout `{}` for thread {thread_uuid}: {err}",
+                            "加载线程 {thread_uuid} 的 rollout `{}` 失败：{err}",
                             rollout_path.display()
                         ),
                     )
@@ -3585,7 +3585,7 @@ impl CodexMessageProcessor {
                     self.send_internal_error(
                         request_id,
                         format!(
-                            "failed to load rollout `{}` for thread {thread_uuid}: {err}",
+                            "加载线程 {thread_uuid} 的 rollout `{}` 失败：{err}",
                             rollout_path.display()
                         ),
                     )
@@ -3933,7 +3933,7 @@ impl CodexMessageProcessor {
                         Ok(None) => {
                             self.send_invalid_request_error(
                                 request_id,
-                                format!("no rollout found for thread id {existing_thread_id}"),
+                                format!("未找到线程 ID {existing_thread_id} 的 rollout"),
                             )
                             .await;
                             return true;
@@ -3941,7 +3941,7 @@ impl CodexMessageProcessor {
                         Err(err) => {
                             self.send_invalid_request_error(
                                 request_id,
-                                format!("failed to locate thread id {existing_thread_id}: {err}"),
+                                format!("定位线程 ID {existing_thread_id} 失败：{err}"),
                             )
                             .await;
                             return true;
@@ -3959,7 +3959,7 @@ impl CodexMessageProcessor {
                     Ok(None) => {
                         self.send_invalid_request_error(
                             request_id,
-                            format!("no rollout found for thread id {existing_thread_id}"),
+                            format!("未找到线程 ID {existing_thread_id} 的 rollout"),
                         )
                         .await;
                         return true;
@@ -3967,7 +3967,7 @@ impl CodexMessageProcessor {
                     Err(err) => {
                         self.send_invalid_request_error(
                             request_id,
-                            format!("failed to locate thread id {existing_thread_id}: {err}"),
+                            format!("定位线程 ID {existing_thread_id} 失败：{err}"),
                         )
                         .await;
                         return true;
@@ -4117,7 +4117,7 @@ impl CodexMessageProcessor {
                 Ok(None) => {
                     self.send_invalid_request_error(
                         request_id,
-                        format!("no rollout found for thread id {existing_thread_id}"),
+                        format!("未找到线程 ID {existing_thread_id} 的 rollout"),
                     )
                     .await;
                     return None;
@@ -4125,7 +4125,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     self.send_invalid_request_error(
                         request_id,
-                        format!("failed to locate thread id {existing_thread_id}: {err}"),
+                        format!("定位线程 ID {existing_thread_id} 失败：{err}"),
                     )
                     .await;
                     return None;
@@ -4138,7 +4138,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 self.send_invalid_request_error(
                     request_id,
-                    format!("failed to load rollout `{}`: {err}", rollout_path.display()),
+                    format!("加载 rollout `{}` 失败：{err}", rollout_path.display()),
                 )
                 .await;
                 None
@@ -4245,7 +4245,7 @@ impl CodexMessageProcessor {
                 Ok(None) => {
                     self.send_invalid_request_error(
                         request_id,
-                        format!("no rollout found for thread id {existing_thread_id}"),
+                        format!("未找到线程 ID {existing_thread_id} 的 rollout"),
                     )
                     .await;
                     return;
@@ -4253,7 +4253,7 @@ impl CodexMessageProcessor {
                 Err(err) => {
                     self.send_invalid_request_error(
                         request_id,
-                        format!("failed to locate thread id {existing_thread_id}: {err}"),
+                        format!("定位线程 ID {existing_thread_id} 失败：{err}"),
                     )
                     .await;
                     return;
@@ -4348,7 +4348,7 @@ impl CodexMessageProcessor {
                     CodexErr::Io(_) | CodexErr::Json(_) => {
                         self.send_invalid_request_error(
                             request_id,
-                            format!("failed to load rollout `{}`: {err}", rollout_path.display()),
+                            format!("加载 rollout `{}` 失败：{err}", rollout_path.display()),
                         )
                         .await;
                     }
@@ -4356,11 +4356,8 @@ impl CodexMessageProcessor {
                         self.send_invalid_request_error(request_id, message).await;
                     }
                     _ => {
-                        self.send_internal_error(
-                            request_id,
-                            format!("error forking thread: {err}"),
-                        )
-                        .await;
+                        self.send_internal_error(request_id, format!("分叉线程失败：{err}"))
+                            .await;
                     }
                 }
                 return;
@@ -4400,7 +4397,7 @@ impl CodexMessageProcessor {
                     self.send_internal_error(
                         request_id,
                         format!(
-                            "failed to load rollout `{}` for thread {thread_id}: {err}",
+                            "加载线程 {thread_id} 的 rollout `{}` 失败：{err}",
                             fork_rollout_path.display()
                         ),
                     )
@@ -4420,7 +4417,7 @@ impl CodexMessageProcessor {
                     self.send_internal_error(
                         request_id,
                         format!(
-                            "failed to load source rollout `{}` for thread {thread_id}: {err}",
+                            "加载线程 {thread_id} 的源 rollout `{}` 失败：{err}",
                             rollout_path.display()
                         ),
                     )
@@ -4535,9 +4532,7 @@ impl CodexMessageProcessor {
                     _ => {
                         let error = JSONRPCErrorError {
                             code: INVALID_REQUEST_ERROR_CODE,
-                            message: format!(
-                                "no rollout found for conversation id {conversation_id}"
-                            ),
+                            message: format!("未找到会话 ID {conversation_id} 的 rollout"),
                             data: None,
                         };
                         self.outgoing.send_error(request_id, error).await;
@@ -4556,11 +4551,7 @@ impl CodexMessageProcessor {
             Err(err) => {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!(
-                        "failed to load conversation summary from {}: {}",
-                        path.display(),
-                        err
-                    ),
+                    message: format!("从 {} 加载会话摘要失败：{}", path.display(), err),
                     data: None,
                 };
                 self.outgoing.send_error(request_id, error).await;
@@ -7787,7 +7778,7 @@ async fn populate_thread_turns(
                 .map(|items| build_turns_from_rollout_items(&items))
                 .map_err(|err| {
                     format!(
-                        "failed to load rollout `{}` for thread {}: {err}",
+                        "加载线程 {} 的 rollout `{}` 失败：{err}",
                         rollout_path.display(),
                         thread.id
                     )
@@ -8599,7 +8590,7 @@ async fn load_thread_summary_for_rollout(
         .map(summary_to_thread)
         .map_err(|err| {
             format!(
-                "failed to load rollout `{}` for thread {thread_id}: {err}",
+                "加载线程 {thread_id} 的 rollout `{}` 失败：{err}",
                 rollout_path.display()
             )
         })?;

@@ -30,6 +30,7 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolHandler;
 use crate::tools::registry::ToolKind;
+use crate::tools::rewrite::shell_search_rewrite::maybe_intercept_shell_search;
 use crate::tools::runtimes::shell::ShellRequest;
 use crate::tools::runtimes::shell::ShellRuntime;
 use crate::tools::runtimes::shell::ShellRuntimeBackend;
@@ -348,6 +349,18 @@ impl ToolHandler for ShellCommandHandler {
         let params: ShellCommandToolCallParams =
             parse_arguments_with_base_path(&arguments, cwd.as_path())?;
         let workdir = turn.resolve_path(params.workdir.clone());
+        let directives = turn.tool_routing_directives.read().await.clone();
+        if let Some(interception) = maybe_intercept_shell_search(
+            &params.command,
+            &params.command,
+            workdir.as_path(),
+            &directives,
+        ) {
+            return Ok(FunctionToolOutput::from_text(
+                interception.message,
+                Some(false),
+            ));
+        }
         maybe_emit_implicit_skill_invocation(
             session.as_ref(),
             turn.as_ref(),

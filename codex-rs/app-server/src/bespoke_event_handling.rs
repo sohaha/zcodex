@@ -1853,7 +1853,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                                 let error = JSONRPCErrorError {
                                     code: INTERNAL_ERROR_CODE,
                                     message: format!(
-                                        "failed to load rollout `{}`: {err}",
+                                        "加载 rollout `{}` 失败：{err}",
                                         rollout_path.display()
                                     ),
                                     data: None,
@@ -1867,7 +1867,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                         let error = JSONRPCErrorError {
                             code: INTERNAL_ERROR_CODE,
                             message: format!(
-                                "failed to load rollout `{}`: {err}",
+                                "加载 rollout `{}` 失败：{err}",
                                 rollout_path.display()
                             ),
                             data: None,
@@ -2533,7 +2533,7 @@ fn request_permissions_response_from_client_result(
     })
 }
 
-const REVIEW_FALLBACK_MESSAGE: &str = "Reviewer failed to output a response.";
+const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
 
 fn render_review_output_text(output: &ReviewOutputEvent) -> String {
     let mut sections = Vec::new();

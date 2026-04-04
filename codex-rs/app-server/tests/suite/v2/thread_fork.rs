@@ -261,10 +261,7 @@ async fn thread_fork_rejects_unmaterialized_thread() -> Result<()> {
     )
     .await??;
     assert!(
-        fork_err
-            .error
-            .message
-            .contains("no rollout found for thread id"),
+        fork_err.error.message.contains("未找到线程"),
         "unexpected fork error: {}",
         fork_err.error.message
     );

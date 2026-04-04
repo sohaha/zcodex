@@ -291,7 +291,7 @@ fn project_config_warning(config: &Config) -> Option<ConfigWarningNotification> 
                     .disabled_reason
                     .as_ref()
                     .map(ToString::to_string)
-                    .unwrap_or_else(|| "config.toml is disabled.".to_string()),
+                    .unwrap_or_else(|| "config.toml 已被禁用。".to_string()),
             ));
         }
     }
@@ -301,8 +301,8 @@ fn project_config_warning(config: &Config) -> Option<ConfigWarningNotification> 
     }
 
     let mut message = concat!(
-        "Project config.toml files are disabled in the following folders. ",
-        "Settings in those files are ignored, but skills and exec policies still load.\n",
+        "以下文件夹中的 Project config.toml 被禁用。 ",
+        "这些文件中的设置会被忽略，但技能与 exec 策略仍会加载。\n",
     )
     .to_string();
     for (index, (folder, reason)) in disabled_folders.iter().enumerate() {
@@ -441,7 +441,7 @@ pub async fn run_main_with_transport(
     if let Ok(Some(err)) = check_execpolicy_for_warnings(&config.config_layer_stack).await {
         let (path, range) = exec_policy_warning_location(&err);
         let message = ConfigWarningNotification {
-            summary: "Error parsing rules; custom rules not applied.".to_string(),
+            summary: "解析规则失败；未应用自定义规则。".to_string(),
             details: Some(err.to_string()),
             path,
             range,

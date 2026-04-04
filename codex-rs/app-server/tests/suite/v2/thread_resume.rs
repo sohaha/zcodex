@@ -147,10 +147,7 @@ async fn thread_resume_rejects_unmaterialized_thread() -> Result<()> {
     )
     .await??;
     assert!(
-        resume_err
-            .error
-            .message
-            .contains("no rollout found for thread id"),
+        resume_err.error.message.contains("未找到线程"),
         "unexpected resume error: {}",
         resume_err.error.message
     );

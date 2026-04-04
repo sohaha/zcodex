@@ -2731,10 +2731,6 @@ fn format_duration_ms(duration_ms: u64) -> String {
     }
 }
 
-fn pluralize(count: u64, singular: &'static str, plural: &'static str) -> &'static str {
-    if count == 1 { singular } else { plural }
-}
-
 fn format_mcp_invocation<'a>(invocation: McpInvocation) -> Line<'a> {
     let args_str = invocation
         .arguments

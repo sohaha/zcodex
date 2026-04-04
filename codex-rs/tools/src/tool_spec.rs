@@ -1,6 +1,7 @@
 use crate::FreeformTool;
 use crate::JsonSchema;
 use crate::ResponsesApiTool;
+use codex_native_tldr::tool_api::tldr_tool_output_schema;
 use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchContextSize;
 use codex_protocol::config_types::WebSearchFilters as ConfigWebSearchFilters;
@@ -10,6 +11,7 @@ use codex_protocol::config_types::WebSearchUserLocationType;
 use codex_protocol::openai_models::WebSearchToolType;
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 const WEB_SEARCH_TEXT_AND_IMAGE_CONTENT_TYPES: [&str; 2] = ["text", "image"];
 
@@ -68,6 +70,73 @@ impl ToolSpec {
 
 pub fn create_local_shell_tool() -> ToolSpec {
     ToolSpec::LocalShell {}
+}
+
+pub fn create_tldr_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "action".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Action to run: tree, context, impact, semantic, ping, warm, snapshot, status, or notify."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "project".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional project root. Defaults to the current session working directory."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "language".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Language for tree/context/impact/semantic: rust, typescript, javascript, python, go, php, or zig."
+                        .to_string(),
+                ),
+            },
+        ),
+        (
+            "symbol".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Optional symbol name for tree/context/impact queries.".to_string(),
+                ),
+            },
+        ),
+        (
+            "query".to_string(),
+            JsonSchema::String {
+                description: Some("Natural-language query for semantic search.".to_string()),
+            },
+        ),
+        (
+            "path".to_string(),
+            JsonSchema::String {
+                description: Some("Path to notify for action=notify.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "tldr".to_string(),
+        description:
+            "Structured code context analysis via native-tldr with daemon-first execution."
+                .to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["action".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+        output_schema: Some(tldr_tool_output_schema()),
+    })
 }
 
 pub fn create_image_generation_tool(output_format: &str) -> ToolSpec {

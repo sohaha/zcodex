@@ -3,6 +3,7 @@ use crate::tools::context::ToolCallSource;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::auto_tldr::rewrite_grep_files_to_tldr;
 use crate::tools::rewrite::decision::ToolRewriteDecision;
+use crate::tools::rewrite::read_gate::rewrite_read_file_to_tldr;
 use crate::tools::router::ToolCall;
 use codex_native_tldr::tool_api::TldrToolAction;
 use tracing::info;
@@ -43,10 +44,7 @@ async fn route_auto_tldr(
 ) -> ToolRewriteDecision {
     match call.tool_name.as_str() {
         "grep_files" => rewrite_grep_files_to_tldr(turn, call, directives, mode).await,
-        "read_file" if directives.force_raw_read => ToolRewriteDecision::Passthrough {
-            call,
-            reason: "force_raw_read",
-        },
+        "read_file" => rewrite_read_file_to_tldr(turn, call, directives, mode).await,
         _ => ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",

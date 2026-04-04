@@ -35,6 +35,7 @@ pub enum ToolHandlerKind {
     SpawnAgentV1,
     SpawnAgentV2,
     TestSync,
+    Tldr,
     ToolSearch,
     ToolSuggest,
     UnifiedExec,

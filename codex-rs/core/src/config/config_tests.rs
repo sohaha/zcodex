@@ -5204,7 +5204,7 @@ fn test_requirements_web_search_mode_allowlist_does_not_warn_when_unset() -> any
         !config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("Configured value for `web_search_mode`")),
+            .any(|warning| warning.contains("配置项 `web_search_mode`")),
         "{:?}",
         config.startup_warnings
     );
@@ -5924,7 +5924,7 @@ async fn feature_requirements_normalize_effective_feature_values() -> std::io::R
         !config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("Configured value for `features`")),
+            .any(|warning| warning.contains("配置项 `features`")),
         "{:?}",
         config.startup_warnings
     );
@@ -5967,7 +5967,7 @@ shell_tool = true
         !config
             .startup_warnings
             .iter()
-            .any(|warning| warning.contains("Configured value for `features`")),
+            .any(|warning| warning.contains("配置项 `features`")),
         "{:?}",
         config.startup_warnings
     );

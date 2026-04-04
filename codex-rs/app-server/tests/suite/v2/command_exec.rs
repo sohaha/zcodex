@@ -237,7 +237,7 @@ async fn command_exec_rejects_disable_timeout_with_timeout_ms() -> Result<()> {
         .await?;
     assert_eq!(
         error.error.message,
-        "command/exec cannot set both timeoutMs and disableTimeout"
+        "`command/exec` 不能同时设置 timeoutMs 和 disableTimeout"
     );
 
     Ok(())
@@ -363,7 +363,7 @@ async fn command_exec_without_process_id_rejects_streaming() -> Result<()> {
         .await?;
     assert_eq!(
         error.error.message,
-        "command/exec tty or streaming requires a client-supplied processId"
+        "`command/exec` 在启用 tty 或流式输出时需要客户端提供 processId"
     );
 
     Ok(())
@@ -836,7 +836,7 @@ async fn command_exec_process_ids_are_connection_scoped_and_disconnect_terminate
     };
     assert_eq!(
         terminate_error.error.message,
-        "no active command/exec for process id \"shared-process\""
+        "未找到 processId 为 \"shared-process\" 的活动 command/exec"
     );
     wait_for_process_marker(&marker, /*should_exist*/ true).await?;
 

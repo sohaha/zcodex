@@ -1065,7 +1065,7 @@ impl ThreadHistoryBuilder {
     }
 }
 
-const REVIEW_FALLBACK_MESSAGE: &str = "Reviewer failed to output a response.";
+const REVIEW_FALLBACK_MESSAGE: &str = "审查器未输出任何回复。";
 
 fn render_review_output_text(output: &ReviewOutputEvent) -> String {
     let explanation = output.overall_explanation.trim();

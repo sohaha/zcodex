@@ -158,7 +158,7 @@ impl CommandExecManager {
         } = params;
         if process_id.is_none() && (tty || stream_stdin || stream_stdout_stderr) {
             return Err(invalid_request(
-                "command/exec tty or streaming requires a client-supplied processId".to_string(),
+                "`command/exec` 在启用 tty 或流式输出时需要客户端提供 processId".to_string(),
             ));
         }
         let process_id = process_id.map_or_else(
@@ -178,19 +178,19 @@ impl CommandExecManager {
         if matches!(exec_request.sandbox, SandboxType::WindowsRestrictedToken) {
             if tty || stream_stdin || stream_stdout_stderr {
                 return Err(invalid_request(
-                    "streaming command/exec is not supported with windows sandbox".to_string(),
+                    "Windows 沙箱不支持流式 `command/exec`".to_string(),
                 ));
             }
             if output_bytes_cap != Some(DEFAULT_OUTPUT_BYTES_CAP) {
                 return Err(invalid_request(
-                    "custom outputBytesCap is not supported with windows sandbox".to_string(),
+                    "Windows 沙箱不支持自定义 outputBytesCap".to_string(),
                 ));
             }
             if let InternalProcessId::Client(_) = &process_id {
                 let mut sessions = self.sessions.lock().await;
                 if sessions.contains_key(&process_key) {
                     return Err(invalid_request(format!(
-                        "duplicate active command/exec process id: {}",
+                        "重复的活动 command/exec processId：{}",
                         process_key.process_id.error_repr(),
                     )));
                 }
@@ -249,12 +249,12 @@ impl CommandExecManager {
         let sessions = Arc::clone(&self.sessions);
         let (program, args) = command
             .split_first()
-            .ok_or_else(|| invalid_request("command must not be empty".to_string()))?;
+            .ok_or_else(|| invalid_request("命令不能为空".to_string()))?;
         {
             let mut sessions = self.sessions.lock().await;
             if sessions.contains_key(&process_key) {
                 return Err(invalid_request(format!(
-                    "duplicate active command/exec process id: {}",
+                    "重复的活动 command/exec processId：{}",
                     process_key.process_id.error_repr(),
                 )));
             }
@@ -283,7 +283,7 @@ impl CommandExecManager {
             Ok(spawned) => spawned,
             Err(err) => {
                 self.sessions.lock().await.remove(&process_key);
-                return Err(internal_error(format!("failed to spawn command: {err}")));
+                return Err(internal_error(format!("启动命令失败：{err}")));
             }
         };
         tokio::spawn(async move {
@@ -312,14 +312,14 @@ impl CommandExecManager {
     ) -> Result<CommandExecWriteResponse, JSONRPCErrorError> {
         if params.delta_base64.is_none() && !params.close_stdin {
             return Err(invalid_params(
-                "command/exec/write requires deltaBase64 or closeStdin".to_string(),
+                "`command/exec/write` 需要提供 deltaBase64 或 closeStdin".to_string(),
             ));
         }
 
         let delta = match params.delta_base64 {
             Some(delta_base64) => STANDARD
                 .decode(delta_base64)
-                .map_err(|err| invalid_params(format!("invalid deltaBase64: {err}")))?,
+                .map_err(|err| invalid_params(format!("无效的 deltaBase64：{err}")))?,
             None => Vec::new(),
         };
 
@@ -414,14 +414,14 @@ impl CommandExecManager {
                 .cloned()
                 .ok_or_else(|| {
                     invalid_request(format!(
-                        "no active command/exec for process id {}",
+                        "未找到 processId 为 {} 的活动 command/exec",
                         process_id.process_id.error_repr(),
                     ))
                 })?
         };
         let CommandExecSession::Active { control_tx } = session else {
             return Err(invalid_request(
-                "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes".to_string(),
+                "Windows 沙箱进程不支持 `command/exec/write`、`command/exec/terminate` 和 `command/exec/resize`".to_string(),
             ));
         };
         let (response_tx, response_rx) = oneshot::channel();
@@ -635,7 +635,7 @@ async fn handle_process_write(
 ) -> Result<(), JSONRPCErrorError> {
     if !stream_stdin {
         return Err(invalid_request(
-            "stdin streaming is not enabled for this command/exec".to_string(),
+            "当前 command/exec 未启用 stdin 流式输入".to_string(),
         ));
     }
     if !delta.is_empty() {
@@ -643,7 +643,7 @@ async fn handle_process_write(
             .writer_sender()
             .send(delta)
             .await
-            .map_err(|_| invalid_request("stdin is already closed".to_string()))?;
+            .map_err(|_| invalid_request("stdin 已关闭".to_string()))?;
     }
     if close_stdin {
         session.close_stdin();
@@ -657,7 +657,7 @@ fn handle_process_resize(
 ) -> Result<(), JSONRPCErrorError> {
     session
         .resize(size)
-        .map_err(|err| invalid_request(format!("failed to resize PTY: {err}")))
+        .map_err(|err| invalid_request(format!("调整 PTY 大小失败：{err}")))
 }
 
 pub(crate) fn terminal_size_from_protocol(
@@ -665,7 +665,7 @@ pub(crate) fn terminal_size_from_protocol(
 ) -> Result<TerminalSize, JSONRPCErrorError> {
     if size.rows == 0 || size.cols == 0 {
         return Err(invalid_params(
-            "command/exec size rows and cols must be greater than 0".to_string(),
+            "`command/exec` 的 size.rows 和 size.cols 必须大于 0".to_string(),
         ));
     }
     Ok(TerminalSize {
@@ -676,7 +676,7 @@ pub(crate) fn terminal_size_from_protocol(
 
 fn command_no_longer_running_error(process_id: &InternalProcessId) -> JSONRPCErrorError {
     invalid_request(format!(
-        "command/exec {} is no longer running",
+        "command/exec {} 已不再运行",
         process_id.error_repr(),
     ))
 }
@@ -775,10 +775,7 @@ mod tests {
             .expect_err("streaming windows sandbox exec should be rejected");
 
         assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(
-            err.message,
-            "streaming command/exec is not supported with windows sandbox"
-        );
+        assert_eq!(err.message, "Windows 沙箱不支持流式 `command/exec`");
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -945,7 +942,7 @@ mod tests {
         assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
         assert_eq!(
             err.message,
-            "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes"
+            "Windows 沙箱进程不支持 `command/exec/write`、`command/exec/terminate` 和 `command/exec/resize`"
         );
     }
 
@@ -979,7 +976,7 @@ mod tests {
         assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
         assert_eq!(
             err.message,
-            "command/exec/write, command/exec/terminate, and command/exec/resize are not supported for windows sandbox processes"
+            "Windows 沙箱进程不支持 `command/exec/write`、`command/exec/terminate` 和 `command/exec/resize`"
         );
     }
 
@@ -1018,6 +1015,6 @@ mod tests {
             .expect_err("dropped control request should be treated as not running");
 
         assert_eq!(err.code, INVALID_REQUEST_ERROR_CODE);
-        assert_eq!(err.message, "command/exec \"proc-13\" is no longer running");
+        assert_eq!(err.message, "command/exec \"proc-13\" 已不再运行");
     }
 }

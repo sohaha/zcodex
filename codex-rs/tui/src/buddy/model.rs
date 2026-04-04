@@ -521,15 +521,6 @@ impl BuddyBones {
             stats: BuddyStats::roll(&mut rng, rarity),
         }
     }
-
-    pub(crate) fn short_summary(&self) -> String {
-        format!(
-            "{} the {} {}",
-            self.name,
-            self.rarity.label(),
-            self.species.label()
-        )
-    }
 }
 
 fn roll_rarity(rng: &mut rand::rngs::StdRng) -> BuddyRarity {

@@ -215,7 +215,7 @@ async fn emit_capture_warning(
     turn_context: &Arc<TurnContext>,
     detail: String,
 ) {
-    let message = format!("Failed to proactively capture stable zmemory preference: {detail}");
+    let message = format!("主动捕获稳定 zmemory 偏好失败：{detail}");
     warn!("{message}");
     session
         .send_event(turn_context, EventMsg::Warning(WarningEvent { message }))

@@ -10,7 +10,6 @@ use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::resolve_tldr_project_root;
 use crate::tools::rewrite::should_auto_warm_tldr;
 use anyhow::Result;
-use async_trait::async_trait;
 use codex_native_tldr::daemon::TldrDaemonCommand;
 use codex_native_tldr::daemon::daemon_health;
 use codex_native_tldr::daemon::daemon_lock_is_held;
@@ -97,7 +96,6 @@ fn record_test_log(message: &str, fields: Vec<(&str, String)>) {
     });
 }
 
-#[async_trait]
 impl ToolHandler for TldrHandler {
     type Output = FunctionToolOutput;
 
