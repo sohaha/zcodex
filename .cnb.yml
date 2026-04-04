@@ -97,3 +97,4 @@ $:
                 mkdir -p /root/.cnb/codex-session/zcodex
                 mkdir -p /root/.codex
                 ln -sfn /root/.cnb/codex-session/zcodex /root/.codex/sessions
+                mise run build &

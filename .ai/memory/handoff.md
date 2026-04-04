@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-03T11:19:42.913Z
-- 本轮摘要：更新计划与 issue 记录：将本地改名范围的 rtk 文案改为 ztok（保留上游 rtk 引用）；提交 docs: update ztok rename records。
+- 更新时间：2026-04-03T14:35:35.319Z
+- 本轮摘要：对齐 zmemory MCP 工具映射，修复 alias 约束/doctor 误报，更新文档与测试，补齐 issue 状态并提交。
 
 ## 待确认问题
 
