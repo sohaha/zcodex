@@ -155,7 +155,36 @@ where
         env_map.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.to_string());
     }
 
+    sanitize_ripgrep_config_path(&mut env_map);
+
     env_map
+}
+
+fn sanitize_ripgrep_config_path(env_map: &mut HashMap<String, String>) {
+    let key = find_ripgrep_config_path_key(env_map);
+    let Some(key) = key else {
+        return;
+    };
+
+    let should_remove = env_map
+        .get(key.as_str())
+        .is_some_and(|value| !value.is_empty() && !Path::new(value).exists());
+    if should_remove {
+        env_map.remove(key.as_str());
+    }
+}
+
+fn find_ripgrep_config_path_key(env_map: &HashMap<String, String>) -> Option<String> {
+    if cfg!(target_os = "windows") {
+        env_map
+            .keys()
+            .find(|key| key.eq_ignore_ascii_case("RIPGREP_CONFIG_PATH"))
+            .cloned()
+    } else {
+        env_map
+            .contains_key("RIPGREP_CONFIG_PATH")
+            .then_some("RIPGREP_CONFIG_PATH".to_string())
+    }
 }
 
 #[cfg(test)]

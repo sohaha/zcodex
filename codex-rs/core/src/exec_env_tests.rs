@@ -1,6 +1,7 @@
 use super::*;
 use codex_config::types::ShellEnvironmentPolicyInherit;
 use maplit::hashmap;
+use tempfile::tempdir;
 
 fn make_vars(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
     pairs
@@ -272,4 +273,46 @@ fn explicit_snapshot_env_overrides_preserve_helper_path_and_dependency_env() {
     );
     assert_eq!(overrides.get("FOO"), Some(&"bar".to_string()));
     assert_eq!(overrides.get("OPENAI_API_KEY"), Some(&"secret".to_string()));
+}
+
+#[test]
+fn populate_env_removes_invalid_ripgrep_config_path() {
+    let vars = make_vars(&[
+        ("PATH", "/usr/bin"),
+        ("RIPGREP_CONFIG_PATH", "/tmp/definitely-missing-ripgreprc"),
+    ]);
+    let policy = ShellEnvironmentPolicy {
+        ignore_default_excludes: true,
+        ..Default::default()
+    };
+
+    let result = populate_env(vars, &policy, None);
+
+    assert_eq!(result.get("PATH"), Some(&"/usr/bin".to_string()));
+    assert!(!result.contains_key("RIPGREP_CONFIG_PATH"));
+}
+
+#[test]
+fn populate_env_keeps_valid_ripgrep_config_path() {
+    let dir = tempdir().expect("create temp dir");
+    let config_path = dir.path().join("ripgreprc");
+    std::fs::write(&config_path, "--hidden\n").expect("write ripgreprc");
+    let vars = vec![
+        ("PATH".to_string(), "/usr/bin".to_string()),
+        (
+            "RIPGREP_CONFIG_PATH".to_string(),
+            config_path.display().to_string(),
+        ),
+    ];
+    let policy = ShellEnvironmentPolicy {
+        ignore_default_excludes: true,
+        ..Default::default()
+    };
+
+    let result = populate_env(vars, &policy, None);
+
+    assert_eq!(
+        result.get("RIPGREP_CONFIG_PATH"),
+        Some(&config_path.display().to_string())
+    );
 }
