@@ -127,7 +127,7 @@ fn dedupe_and_sort_search_matches(
         .collect()
 }
 
-pub(crate) fn make_search_snippet(content: &str, query: &str) -> String {
+fn make_search_snippet(content: &str, query: &str) -> String {
     if content.is_empty() {
         return String::new();
     }

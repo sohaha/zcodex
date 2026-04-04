@@ -122,6 +122,8 @@ pub mod spawn;
 pub mod state_db_bridge;
 mod thread_rollout_truncation;
 mod tools;
+pub use tools::handlers::ZMEMORY_JSON_BEGIN;
+pub use tools::handlers::ZMEMORY_JSON_END;
 pub mod turn_diff_tracker;
 mod turn_metadata;
 mod turn_timing;

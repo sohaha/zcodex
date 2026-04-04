@@ -25,7 +25,7 @@ pub(crate) fn create_action(
 
     let parent_uri = uri.parent();
     let parent = if parent_uri.is_root() {
-        common::PathRow::root(parent_uri.domain)
+        common::PathRow::root()
     } else {
         common::find_path_row(conn, &parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?

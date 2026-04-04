@@ -50,7 +50,10 @@ fn parse_tool_input_schema_normalizes_integer_and_missing_array_items() {
         schema,
         JsonSchema::Object {
             properties: BTreeMap::from([
-                ("page".to_string(), JsonSchema::Number { description: None },),
+                (
+                    "page".to_string(),
+                    JsonSchema::Integer { description: None },
+                ),
                 (
                     "tags".to_string(),
                     JsonSchema::Array {

@@ -76,12 +76,7 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
     .map_err(Into::into)
 }
 
-pub(crate) fn build_search_terms(
-    domain: &str,
-    path: &str,
-    content: &str,
-    keywords: &str,
-) -> String {
+fn build_search_terms(domain: &str, path: &str, content: &str, keywords: &str) -> String {
     let mut terms = vec![
         domain.to_string(),
         normalize_search_field(domain),
@@ -96,7 +91,7 @@ pub(crate) fn build_search_terms(
     terms.join(" ")
 }
 
-pub(crate) fn normalize_search_field(value: &str) -> String {
+fn normalize_search_field(value: &str) -> String {
     value
         .chars()
         .map(|ch| match ch {
@@ -106,7 +101,7 @@ pub(crate) fn normalize_search_field(value: &str) -> String {
         .collect::<String>()
 }
 
-pub(crate) fn normalize_search_query(query: &str) -> String {
+pub(super) fn normalize_search_query(query: &str) -> String {
     if query.chars().any(is_cjk_rune) {
         normalize_search_field(query)
     } else {
@@ -130,7 +125,7 @@ fn ascii_search_tokens(value: &str) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn snippet_query_tokens(query: &str) -> Vec<String> {
+pub(super) fn snippet_query_tokens(query: &str) -> Vec<String> {
     let normalized: String = query
         .chars()
         .map(|ch| match ch {
@@ -209,7 +204,7 @@ fn split_cjk_run(run: &str) -> Vec<String> {
     tokens
 }
 
-pub(crate) fn is_cjk_rune(ch: char) -> bool {
+fn is_cjk_rune(ch: char) -> bool {
     matches!(
         ch as u32,
         0x4E00..=0x9FFF

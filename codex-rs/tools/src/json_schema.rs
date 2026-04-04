@@ -16,8 +16,6 @@ pub enum JsonSchema {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
     },
-    /// MCP schema allows "number" | "integer" for Number.
-    #[serde(alias = "integer")]
     Number {
         #[serde(skip_serializing_if = "Option::is_none")]
         description: Option<String>,
