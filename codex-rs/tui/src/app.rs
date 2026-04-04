@@ -5379,10 +5379,7 @@ impl App {
                     if let Some(rule_line) =
                         crate::bottom_pane::format_requested_permissions_rule(&permissions)
                     {
-                        lines.push(Line::from(vec![
-                            "权限规则：".into(),
-                            rule_line.cyan(),
-                        ]));
+                        lines.push(Line::from(vec!["权限规则：".into(), rule_line.cyan()]));
                     }
                     self.overlay = Some(Overlay::new_static_with_renderables(
                         vec![Box::new(Paragraph::new(lines).wrap(Wrap { trim: false }))],

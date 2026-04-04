@@ -209,6 +209,7 @@ fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> L
             }
         }
     };
+    let visibility = if state.visible { "可见" } else { "隐藏" };
 
     let mut spans = vec![
         "  ".into(),
@@ -219,6 +220,8 @@ fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> L
         bones.rarity.styled_span(),
         " ".into(),
         bones.species.label().dim(),
+        " · ".dim(),
+        visibility.dim(),
         " · ".dim(),
         mood.dim(),
     ];

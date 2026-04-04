@@ -116,7 +116,7 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
             ModeKind::Default,
             /*default_mode_request_user_input*/ false
         ),
-        Some("request_user_input is unavailable in 默认 mode".to_string())
+        Some("request_user_input 在 默认 模式不可用".to_string())
     );
     assert_eq!(
         request_user_input_unavailable_message(
@@ -130,14 +130,14 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
             ModeKind::Execute,
             /*default_mode_request_user_input*/ false
         ),
-        Some("request_user_input is unavailable in 执行 mode".to_string())
+        Some("request_user_input 在 执行 模式不可用".to_string())
     );
     assert_eq!(
         request_user_input_unavailable_message(
             ModeKind::PairProgramming,
             /*default_mode_request_user_input*/ false
         ),
-        Some("request_user_input is unavailable in 结对编程 mode".to_string())
+        Some("request_user_input 在 结对编程 模式不可用".to_string())
     );
 }
 

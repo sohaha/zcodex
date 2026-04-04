@@ -171,10 +171,11 @@ impl BuddyWidget {
             .map(|soul| format!(" 性格：{}。", soul.personality))
             .unwrap_or_default();
         let message = format!(
-            "小伙伴状态：{} {}（{}{shiny}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
+            "{} {}：{}{}，{}眼，心情{mood}，抚摸 {}，峰值{} {}。{personality}",
             short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),
+            shiny,
             bones.eye.label(),
             self.state.pet_count,
             primary_stat.label(),

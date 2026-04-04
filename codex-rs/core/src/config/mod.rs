@@ -351,6 +351,15 @@ pub struct Config {
     /// Whether Ctrl+V pasted images should be automatically compressed before upload.
     pub tui_auto_compress_pasted_images: bool,
 
+    /// Maximum width for pasted images after auto compression.
+    pub tui_pasted_image_max_width: u32,
+
+    /// Maximum height for pasted images after auto compression.
+    pub tui_pasted_image_max_height: u32,
+
+    /// JPEG quality used when auto-compressing non-transparent pasted images.
+    pub tui_pasted_image_jpeg_quality: u8,
+
     /// Start the TUI in the specified collaboration mode (plan/default).
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
@@ -2901,6 +2910,24 @@ impl Config {
                 .as_ref()
                 .map(|t| t.auto_compress_pasted_images)
                 .unwrap_or(true),
+            tui_pasted_image_max_width: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.pasted_image_max_width)
+                .filter(|value| *value > 0)
+                .unwrap_or(1280),
+            tui_pasted_image_max_height: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.pasted_image_max_height)
+                .filter(|value| *value > 0)
+                .unwrap_or(720),
+            tui_pasted_image_jpeg_quality: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.pasted_image_jpeg_quality)
+                .filter(|value| (1..=100).contains(value))
+                .unwrap_or(85),
             tui_alternate_screen: cfg
                 .tui
                 .as_ref()

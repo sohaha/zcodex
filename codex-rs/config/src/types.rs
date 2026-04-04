@@ -517,6 +517,21 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub auto_compress_pasted_images: bool,
 
+    /// Maximum width for pasted images after auto compression.
+    /// Defaults to `1280`.
+    #[serde(default = "default_pasted_image_max_width")]
+    pub pasted_image_max_width: u32,
+
+    /// Maximum height for pasted images after auto compression.
+    /// Defaults to `720`.
+    #[serde(default = "default_pasted_image_max_height")]
+    pub pasted_image_max_height: u32,
+
+    /// JPEG quality used when auto-compressing non-transparent pasted images.
+    /// Defaults to `85`.
+    #[serde(default = "default_pasted_image_jpeg_quality")]
+    pub pasted_image_jpeg_quality: u8,
+
     /// Buddy-specific configuration.
     #[serde(default)]
     pub buddy: Option<TuiBuddy>,
@@ -548,6 +563,18 @@ pub struct BuddySoul {
 
 const fn default_true() -> bool {
     true
+}
+
+const fn default_pasted_image_max_width() -> u32 {
+    1280
+}
+
+const fn default_pasted_image_max_height() -> u32 {
+    720
+}
+
+const fn default_pasted_image_jpeg_quality() -> u8 {
+    85
 }
 
 /// Settings for notices we display to users via the tui and app-server clients

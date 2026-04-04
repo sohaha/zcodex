@@ -4786,7 +4786,12 @@ impl ChatWidget {
             } if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
                 && c.eq_ignore_ascii_case(&'v') =>
             {
-                match paste_image_to_temp_file(self.config.tui_auto_compress_pasted_images) {
+                match paste_image_to_temp_file(
+                    self.config.tui_auto_compress_pasted_images,
+                    self.config.tui_pasted_image_max_width,
+                    self.config.tui_pasted_image_max_height,
+                    self.config.tui_pasted_image_jpeg_quality,
+                ) {
                     Ok((path, info)) => {
                         tracing::debug!(
                             "pasted image size={}x{} format={}",

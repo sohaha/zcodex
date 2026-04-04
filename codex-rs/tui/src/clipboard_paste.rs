@@ -46,9 +46,36 @@ pub struct PastedImageInfo {
     pub encoded_format: EncodedImageFormat,
 }
 
-const AUTO_COMPRESS_MAX_WIDTH: u32 = 2048;
-const AUTO_COMPRESS_MAX_HEIGHT: u32 = 768;
-const AUTO_COMPRESS_JPEG_QUALITY: u8 = 85;
+const DEFAULT_AUTO_COMPRESS_MAX_WIDTH: u32 = 1280;
+const DEFAULT_AUTO_COMPRESS_MAX_HEIGHT: u32 = 720;
+const DEFAULT_AUTO_COMPRESS_JPEG_QUALITY: u8 = 85;
+
+#[derive(Debug, Clone, Copy)]
+struct PasteImageCompressionConfig {
+    auto_compress: bool,
+    max_width: u32,
+    max_height: u32,
+    jpeg_quality: u8,
+}
+
+impl PasteImageCompressionConfig {
+    fn new(auto_compress: bool, max_width: u32, max_height: u32, jpeg_quality: u8) -> Self {
+        Self {
+            auto_compress,
+            max_width: if max_width == 0 {
+                DEFAULT_AUTO_COMPRESS_MAX_WIDTH
+            } else {
+                max_width
+            },
+            max_height: if max_height == 0 {
+                DEFAULT_AUTO_COMPRESS_MAX_HEIGHT
+            } else {
+                max_height
+            },
+            jpeg_quality: jpeg_quality.clamp(1, 100),
+        }
+    }
+}
 
 /// Capture image from system clipboard and return a decoded image.
 #[cfg(not(target_os = "android"))]
@@ -57,9 +84,6 @@ fn read_clipboard_image() -> Result<image::DynamicImage, PasteImageError> {
     tracing::debug!("attempting clipboard image read");
     let mut cb = arboard::Clipboard::new()
         .map_err(|e| PasteImageError::ClipboardUnavailable(e.to_string()))?;
-    // Sometimes images on the clipboard come as files (e.g. when copy/pasting from
-    // Finder), sometimes they come as image data (e.g. when pasting from Chrome).
-    // Accept both, and prefer files if both are present.
     let files = cb
         .get()
         .file_list()
@@ -93,17 +117,66 @@ fn read_clipboard_image() -> Result<image::DynamicImage, PasteImageError> {
 }
 
 #[cfg(not(target_os = "android"))]
+fn encode_png(
+    rgba: &image::RgbaImage,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, PasteImageError> {
+    let mut encoded = Vec::new();
+    let encoder = image::codecs::png::PngEncoder::new(&mut encoded);
+    image::ImageEncoder::write_image(
+        encoder,
+        rgba.as_raw(),
+        width,
+        height,
+        image::ColorType::Rgba8.into(),
+    )
+    .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
+    Ok(encoded)
+}
+
+#[cfg(not(target_os = "android"))]
+fn encode_jpeg(
+    dynamic: &image::DynamicImage,
+    jpeg_quality: u8,
+) -> Result<Vec<u8>, PasteImageError> {
+    let mut encoded = Vec::new();
+    let mut encoder =
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut encoded, jpeg_quality);
+    encoder
+        .encode_image(dynamic)
+        .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
+    Ok(encoded)
+}
+
+#[cfg(not(target_os = "android"))]
+fn choose_best_encoding(
+    dynamic: &image::DynamicImage,
+    rgba: &image::RgbaImage,
+    width: u32,
+    height: u32,
+    jpeg_quality: u8,
+) -> Result<(Vec<u8>, EncodedImageFormat, &'static str), PasteImageError> {
+    let png_bytes = encode_png(rgba, width, height)?;
+    let jpeg_bytes = encode_jpeg(dynamic, jpeg_quality)?;
+    if jpeg_bytes.len() < png_bytes.len() {
+        Ok((jpeg_bytes, EncodedImageFormat::Jpeg, ".jpg"))
+    } else {
+        Ok((png_bytes, EncodedImageFormat::Png, ".png"))
+    }
+}
+
+#[cfg(not(target_os = "android"))]
 fn encode_pasted_image(
     dynamic: image::DynamicImage,
-    auto_compress: bool,
+    compression: PasteImageCompressionConfig,
 ) -> Result<(Vec<u8>, PastedImageInfo, &'static str), PasteImageError> {
-    let processed = if auto_compress
-        && (dynamic.width() > AUTO_COMPRESS_MAX_WIDTH
-            || dynamic.height() > AUTO_COMPRESS_MAX_HEIGHT)
+    let processed = if compression.auto_compress
+        && (dynamic.width() > compression.max_width || dynamic.height() > compression.max_height)
     {
         dynamic.resize(
-            AUTO_COMPRESS_MAX_WIDTH,
-            AUTO_COMPRESS_MAX_HEIGHT,
+            compression.max_width,
+            compression.max_height,
             image::imageops::FilterType::Triangle,
         )
     } else {
@@ -114,29 +187,17 @@ fn encode_pasted_image(
     let height = processed.height();
     let rgba = processed.to_rgba8();
     let preserves_transparency = rgba.pixels().any(|pixel| pixel[3] < u8::MAX);
-    let mut encoded = Vec::new();
     let span = tracing::debug_span!("encode_image", byte_length = tracing::field::Empty).entered();
 
-    let (encoded_format, suffix) = if auto_compress && !preserves_transparency {
-        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-            &mut encoded,
-            AUTO_COMPRESS_JPEG_QUALITY,
-        );
-        encoder
-            .encode_image(&processed)
-            .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
-        (EncodedImageFormat::Jpeg, ".jpg")
+    let (encoded, encoded_format, suffix) = if compression.auto_compress && !preserves_transparency
+    {
+        choose_best_encoding(&processed, &rgba, width, height, compression.jpeg_quality)?
     } else {
-        let encoder = image::codecs::png::PngEncoder::new(&mut encoded);
-        image::ImageEncoder::write_image(
-            encoder,
-            rgba.as_raw(),
-            width,
-            height,
-            image::ColorType::Rgba8.into(),
+        (
+            encode_png(&rgba, width, height)?,
+            EncodedImageFormat::Png,
+            ".png",
         )
-        .map_err(|e| PasteImageError::EncodeFailed(e.to_string()))?;
-        (EncodedImageFormat::Png, ".png")
     };
     span.record("byte_length", encoded.len());
 
@@ -165,21 +226,25 @@ fn write_temp_image(encoded: &[u8], suffix: &'static str) -> Result<PathBuf, Pas
     Ok(path)
 }
 
-/// Convenience: write a clipboard image to a temp file and return its path + info.
 #[cfg(not(target_os = "android"))]
 pub fn paste_image_to_temp_file(
     auto_compress: bool,
+    max_width: u32,
+    max_height: u32,
+    jpeg_quality: u8,
 ) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
+    let compression =
+        PasteImageCompressionConfig::new(auto_compress, max_width, max_height, jpeg_quality);
     match read_clipboard_image() {
         Ok(dynamic) => {
-            let (encoded, info, suffix) = encode_pasted_image(dynamic, auto_compress)?;
+            let (encoded, info, suffix) = encode_pasted_image(dynamic, compression)?;
             let path = write_temp_image(&encoded, suffix)?;
             Ok((path, info))
         }
         Err(e) => {
             #[cfg(target_os = "linux")]
             {
-                try_wsl_clipboard_fallback(&e, auto_compress).or(Err(e))
+                try_wsl_clipboard_fallback(&e, compression).or(Err(e))
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -189,16 +254,10 @@ pub fn paste_image_to_temp_file(
     }
 }
 
-/// Attempt WSL fallback for clipboard image paste.
-///
-/// If clipboard is unavailable (common under WSL because arboard cannot access
-/// the Windows clipboard), attempt a WSL fallback that calls PowerShell on the
-/// Windows side to write the clipboard image to a temporary file, then return
-/// the corresponding WSL path.
 #[cfg(target_os = "linux")]
 fn try_wsl_clipboard_fallback(
     error: &PasteImageError,
-    auto_compress: bool,
+    compression: PasteImageCompressionConfig,
 ) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     use PasteImageError::ClipboardUnavailable;
     use PasteImageError::NoImage;
@@ -218,19 +277,13 @@ fn try_wsl_clipboard_fallback(
     };
 
     let dynamic = image::open(&mapped_path).map_err(|_| error.clone())?;
-    let (encoded, info, suffix) = encode_pasted_image(dynamic, auto_compress)?;
+    let (encoded, info, suffix) = encode_pasted_image(dynamic, compression)?;
     let path = write_temp_image(&encoded, suffix)?;
     Ok((path, info))
 }
 
-/// Try to call a Windows PowerShell command (several common names) to save the
-/// clipboard image to a temporary PNG and return the Windows path to that file.
-/// Returns None if no command succeeded or no image was present.
 #[cfg(target_os = "linux")]
 fn try_dump_windows_clipboard_image() -> Option<String> {
-    // Powershell script: save image from clipboard to a temp png and print the path.
-    // Force UTF-8 output to avoid encoding issues between powershell.exe (UTF-16LE default)
-    // and pwsh (UTF-8 default).
     let script = r#"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $img = Get-Clipboard -Format Image; if ($img -ne $null) { $p=[System.IO.Path]::GetTempFileName(); $p = [System.IO.Path]::ChangeExtension($p,'png'); $img.Save($p,[System.Drawing.Imaging.ImageFormat]::Png); Write-Output $p } else { exit 1 }"#;
 
     for cmd in ["powershell.exe", "pwsh", "powershell"] {
@@ -238,10 +291,8 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
             .args(["-NoProfile", "-Command", script])
             .output()
         {
-            // Executing PowerShell command
             Ok(output) => {
                 if output.status.success() {
-                    // Decode as UTF-8 (forced by the script above).
                     let win_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !win_path.is_empty() {
                         tracing::debug!("{} saved clipboard image to {}", cmd, win_path);
@@ -262,6 +313,9 @@ fn try_dump_windows_clipboard_image() -> Option<String> {
 #[cfg(target_os = "android")]
 pub fn paste_image_to_temp_file(
     _auto_compress: bool,
+    _max_width: u32,
+    _max_height: u32,
+    _jpeg_quality: u8,
 ) -> Result<(PathBuf, PastedImageInfo), PasteImageError> {
     Err(PasteImageError::ClipboardUnavailable(
         "clipboard image paste is unsupported on Android".into(),
@@ -282,24 +336,16 @@ pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
         .or_else(|| pasted.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
         .unwrap_or(pasted);
 
-    // file:// URL → filesystem path
     if let Ok(url) = url::Url::parse(unquoted)
         && url.scheme() == "file"
     {
         return url.to_file_path().ok();
     }
 
-    // TODO: We'll improve the implementation/unit tests over time, as appropriate.
-    // Possibly use typed-path: https://github.com/openai/codex/pull/2567/commits/3cc92b78e0a1f94e857cf4674d3a9db918ed352e
-    //
-    // Detect unquoted Windows paths and bypass POSIX shlex which
-    // treats backslashes as escapes (e.g., C:\Users\Alice\file.png).
-    // Also handles UNC paths (\\server\share\path).
     if let Some(path) = normalize_windows_path(unquoted) {
         return Some(path);
     }
 
-    // shell-escaped single path → unescaped
     let parts: Vec<String> = shlex::Shlex::new(pasted).collect();
     if parts.len() == 1 {
         let part = parts.into_iter().next()?;
@@ -314,7 +360,6 @@ pub fn normalize_pasted_path(pasted: &str) -> Option<PathBuf> {
 
 #[cfg(target_os = "linux")]
 pub(crate) fn is_probably_wsl() -> bool {
-    // Primary: Check /proc/version for "microsoft" or "WSL" (most reliable for standard WSL).
     if let Ok(version) = std::fs::read_to_string("/proc/version") {
         let version_lower = version.to_lowercase();
         if version_lower.contains("microsoft") || version_lower.contains("wsl") {
@@ -322,15 +367,12 @@ pub(crate) fn is_probably_wsl() -> bool {
         }
     }
 
-    // Fallback: Check WSL environment variables. This handles edge cases like
-    // custom Linux kernels installed in WSL where /proc/version may not contain
-    // "microsoft" or "WSL".
     std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some()
 }
 
 #[cfg(target_os = "linux")]
 fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
-    if input.starts_with("\\\\") {
+    if input.starts_with("\\") {
         return None;
     }
 
@@ -357,7 +399,6 @@ fn convert_windows_path_to_wsl(input: &str) -> Option<PathBuf> {
 }
 
 fn normalize_windows_path(input: &str) -> Option<PathBuf> {
-    // Drive letter path: C:\ or C:/
     let drive = input
         .chars()
         .next()
@@ -368,8 +409,7 @@ fn normalize_windows_path(input: &str) -> Option<PathBuf> {
             .get(2..3)
             .map(|s| s == "\\" || s == "/")
             .unwrap_or(false);
-    // UNC path: \\server\share
-    let unc = input.starts_with("\\\\");
+    let unc = input.starts_with("\\");
     if !drive && !unc {
         return None;
     }
@@ -386,7 +426,6 @@ fn normalize_windows_path(input: &str) -> Option<PathBuf> {
     Some(PathBuf::from(input))
 }
 
-/// Infer an image format for the provided path based on its extension.
 pub fn pasted_image_format(path: &Path) -> EncodedImageFormat {
     match path
         .extension()
@@ -587,19 +626,29 @@ mod pasted_image_encoding_tests {
     use image::ImageBuffer;
     use image::Rgba;
 
+    fn compression(auto_compress: bool) -> PasteImageCompressionConfig {
+        PasteImageCompressionConfig::new(
+            auto_compress,
+            DEFAULT_AUTO_COMPRESS_MAX_WIDTH,
+            DEFAULT_AUTO_COMPRESS_MAX_HEIGHT,
+            DEFAULT_AUTO_COMPRESS_JPEG_QUALITY,
+        )
+    }
+
     #[test]
-    fn auto_compress_reencodes_opaque_images_as_jpeg() {
+    fn auto_compress_prefers_png_when_it_is_smaller() {
         let image = ImageBuffer::from_pixel(640, 360, Rgba([10, 20, 30, 255]));
         let (encoded, info, suffix) =
-            encode_pasted_image(DynamicImage::ImageRgba8(image), true).expect("encode image");
+            encode_pasted_image(DynamicImage::ImageRgba8(image), compression(true))
+                .expect("encode image");
 
         assert_eq!(info.width, 640);
         assert_eq!(info.height, 360);
-        assert_eq!(info.encoded_format, EncodedImageFormat::Jpeg);
-        assert_eq!(suffix, ".jpg");
+        assert_eq!(info.encoded_format, EncodedImageFormat::Png);
+        assert_eq!(suffix, ".png");
         assert_eq!(
             image::guess_format(&encoded).expect("detect format"),
-            image::ImageFormat::Jpeg
+            image::ImageFormat::Png
         );
     }
 
@@ -607,7 +656,8 @@ mod pasted_image_encoding_tests {
     fn auto_compress_keeps_transparent_images_as_png() {
         let image = ImageBuffer::from_pixel(640, 360, Rgba([10, 20, 30, 100]));
         let (encoded, info, suffix) =
-            encode_pasted_image(DynamicImage::ImageRgba8(image), true).expect("encode image");
+            encode_pasted_image(DynamicImage::ImageRgba8(image), compression(true))
+                .expect("encode image");
 
         assert_eq!(info.width, 640);
         assert_eq!(info.height, 360);
@@ -620,22 +670,22 @@ mod pasted_image_encoding_tests {
     }
 
     #[test]
-    fn auto_compress_resizes_large_images() {
+    fn auto_compress_resizes_large_images_to_new_defaults() {
         let image = ImageBuffer::from_pixel(4096, 2048, Rgba([200, 10, 10, 255]));
-        let (_encoded, info, suffix) =
-            encode_pasted_image(DynamicImage::ImageRgba8(image), true).expect("encode image");
+        let (_encoded, info, _suffix) =
+            encode_pasted_image(DynamicImage::ImageRgba8(image), compression(true))
+                .expect("encode image");
 
-        assert!(info.width <= AUTO_COMPRESS_MAX_WIDTH);
-        assert!(info.height <= AUTO_COMPRESS_MAX_HEIGHT);
-        assert_eq!(info.encoded_format, EncodedImageFormat::Jpeg);
-        assert_eq!(suffix, ".jpg");
+        assert!(info.width <= DEFAULT_AUTO_COMPRESS_MAX_WIDTH);
+        assert!(info.height <= DEFAULT_AUTO_COMPRESS_MAX_HEIGHT);
     }
 
     #[test]
     fn disabling_auto_compress_keeps_png_output() {
         let image = ImageBuffer::from_pixel(640, 360, Rgba([10, 20, 30, 255]));
         let (encoded, info, suffix) =
-            encode_pasted_image(DynamicImage::ImageRgba8(image), false).expect("encode image");
+            encode_pasted_image(DynamicImage::ImageRgba8(image), compression(false))
+                .expect("encode image");
 
         assert_eq!(info.width, 640);
         assert_eq!(info.height, 360);
@@ -645,5 +695,13 @@ mod pasted_image_encoding_tests {
             image::guess_format(&encoded).expect("detect format"),
             image::ImageFormat::Png
         );
+    }
+
+    #[test]
+    fn compression_config_normalizes_invalid_values() {
+        let config = PasteImageCompressionConfig::new(true, 0, 0, 0);
+        assert_eq!(config.max_width, DEFAULT_AUTO_COMPRESS_MAX_WIDTH);
+        assert_eq!(config.max_height, DEFAULT_AUTO_COMPRESS_MAX_HEIGHT);
+        assert_eq!(config.jpeg_quality, 1);
     }
 }

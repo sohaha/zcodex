@@ -102,9 +102,7 @@ pub fn request_user_input_unavailable_message(
         None
     } else {
         let mode_name = mode.display_name();
-        Some(format!(
-            "request_user_input is unavailable in {mode_name} mode"
-        ))
+        Some(format!("request_user_input 在 {mode_name} 模式不可用"))
     }
 }
 

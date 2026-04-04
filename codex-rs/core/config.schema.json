@@ -1812,6 +1812,27 @@
           "default": true,
           "description": "Enable desktop notifications from the TUI when the terminal is unfocused. Defaults to `true`."
         },
+        "pasted_image_jpeg_quality": {
+          "default": 85,
+          "description": "JPEG quality used when auto-compressing non-transparent pasted images. Defaults to `85`.",
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "pasted_image_max_height": {
+          "default": 720,
+          "description": "Maximum height for pasted images after auto compression. Defaults to `720`.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "pasted_image_max_width": {
+          "default": 1280,
+          "description": "Maximum width for pasted images after auto compression. Defaults to `1280`.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "show_buddy": {
           "default": true,
           "description": "Show the buddy widget in the TUI. Defaults to `true`.",

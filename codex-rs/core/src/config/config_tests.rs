@@ -290,6 +290,9 @@ fn config_toml_deserializes_model_availability_nux() {
             terminal_title: None,
             theme: None,
             auto_compress_pasted_images: true,
+            pasted_image_max_width: 1280,
+            pasted_image_max_height: 720,
+            pasted_image_jpeg_quality: 85,
             buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig {
                 shown_count: HashMap::from([
@@ -990,6 +993,9 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             terminal_title: None,
             theme: None,
             auto_compress_pasted_images: true,
+            pasted_image_max_width: 1280,
+            pasted_image_max_height: 720,
+            pasted_image_jpeg_quality: 85,
             buddy: None,
             model_availability_nux: ModelAvailabilityNuxConfig::default(),
         }
@@ -4677,6 +4683,9 @@ fn test_precedence_fixture_with_o3_profile() -> std::io::Result<()> {
             tui_terminal_title: None,
             tui_theme: None,
             tui_auto_compress_pasted_images: true,
+            tui_pasted_image_max_width: 1280,
+            tui_pasted_image_max_height: 720,
+            tui_pasted_image_jpeg_quality: 85,
             tui_buddy_reactions_enabled: true,
             tui_buddy_soul: None,
             otel: OtelConfig::default(),
@@ -4830,6 +4839,9 @@ fn test_precedence_fixture_with_gpt3_profile() -> std::io::Result<()> {
         tui_terminal_title: None,
         tui_theme: None,
         tui_auto_compress_pasted_images: true,
+        tui_pasted_image_max_width: 1280,
+        tui_pasted_image_max_height: 720,
+        tui_pasted_image_jpeg_quality: 85,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -4981,6 +4993,9 @@ fn test_precedence_fixture_with_zdr_profile() -> std::io::Result<()> {
         tui_terminal_title: None,
         tui_theme: None,
         tui_auto_compress_pasted_images: true,
+        tui_pasted_image_max_width: 1280,
+        tui_pasted_image_max_height: 720,
+        tui_pasted_image_jpeg_quality: 85,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -5118,6 +5133,9 @@ fn test_precedence_fixture_with_gpt5_profile() -> std::io::Result<()> {
         tui_terminal_title: None,
         tui_theme: None,
         tui_auto_compress_pasted_images: true,
+        tui_pasted_image_max_width: 1280,
+        tui_pasted_image_max_height: 720,
+        tui_pasted_image_jpeg_quality: 85,
         tui_buddy_reactions_enabled: true,
         tui_buddy_soul: None,
         otel: OtelConfig::default(),
@@ -6483,4 +6501,19 @@ fn test_tui_auto_compress_pasted_images_can_be_disabled() {
         toml::from_str(toml).expect("deserialize auto_compress_pasted_images=false");
     let tui = parsed.tui.expect("tui config should deserialize");
     assert!(!tui.auto_compress_pasted_images);
+}
+
+#[test]
+fn test_tui_pasted_image_compression_settings_can_be_configured() {
+    let toml = r#"
+            [tui]
+            pasted_image_max_width = 900
+            pasted_image_max_height = 600
+            pasted_image_jpeg_quality = 77
+        "#;
+    let parsed: ConfigToml = toml::from_str(toml).expect("deserialize pasted image settings");
+    let tui = parsed.tui.expect("tui config should deserialize");
+    assert_eq!(tui.pasted_image_max_width, 900);
+    assert_eq!(tui.pasted_image_max_height, 600);
+    assert_eq!(tui.pasted_image_jpeg_quality, 77);
 }
