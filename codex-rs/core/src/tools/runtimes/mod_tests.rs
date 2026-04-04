@@ -468,3 +468,50 @@ exit 64
     assert!(output.status.success(), "command failed: {output:?}");
     assert_eq!(String::from_utf8_lossy(&output.stdout), "/worktree/bin");
 }
+
+#[test]
+fn maybe_wrap_shell_lc_with_snapshot_unsets_invalid_ripgrep_config_path() {
+    let dir = tempdir().expect("create temp dir");
+    let session_shell = shell_without_snapshot(ShellType::Sh, "/bin/sh");
+    let command = vec![
+        "/bin/bash".to_string(),
+        "-lc".to_string(),
+        "printf '%s' \"${RIPGREP_CONFIG_PATH-unset}\"".to_string(),
+    ];
+    let missing = dir.path().join("missing-ripgreprc");
+    let missing_value = missing.display().to_string();
+
+    let rewritten = {
+        let old = std::env::var_os("RIPGREP_CONFIG_PATH");
+        unsafe {
+            std::env::set_var("RIPGREP_CONFIG_PATH", &missing);
+        }
+        let rewritten = maybe_wrap_shell_lc_with_snapshot(
+            &command,
+            &session_shell,
+            dir.path(),
+            &HashMap::new(),
+        );
+        match old {
+            Some(value) => unsafe {
+                std::env::set_var("RIPGREP_CONFIG_PATH", value);
+            },
+            None => unsafe {
+                std::env::remove_var("RIPGREP_CONFIG_PATH");
+            },
+        }
+        rewritten
+    };
+
+    assert_eq!(rewritten[0], "/bin/sh");
+    assert_eq!(rewritten[1], "-c");
+    assert!(rewritten[2].contains("unset RIPGREP_CONFIG_PATH"));
+    let output = Command::new(&rewritten[0])
+        .args(&rewritten[1..])
+        .env("RIPGREP_CONFIG_PATH", &missing_value)
+        .output()
+        .expect("run rewritten command");
+
+    assert!(output.status.success(), "command failed: {output:?}");
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "unset");
+}
