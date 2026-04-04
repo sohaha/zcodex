@@ -247,6 +247,19 @@ pub struct Config {
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
 
+    /// Optional fallback provider identifier used when the primary provider
+    /// request fails for the current request.
+    pub fallback_provider_id: Option<String>,
+
+    /// Optional fallback provider definition resolved from `fallback_provider_id`.
+    pub fallback_provider: Option<ModelProviderInfo>,
+
+    /// Optional model slug to use with the fallback provider.
+    pub fallback_model: Option<String>,
+
+    /// Ordered list of fallback providers to try for the current request.
+    pub fallback_providers: Vec<FallbackProviderConfig>,
+
     /// Optionally specify the personality of the model
     pub personality: Option<Personality>,
 
@@ -1145,6 +1158,23 @@ pub fn set_default_oss_provider(codex_home: &Path, provider: &str) -> std::io::R
         .with_edits(edits)
         .apply_blocking()
         .map_err(|err| std::io::Error::other(format!("failed to persist config.toml: {err}")))
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct FallbackProviderToml {
+    /// Provider to use from the model_providers map.
+    pub provider: String,
+
+    /// Optional model slug to use with this fallback provider.
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FallbackProviderConfig {
+    pub provider_id: String,
+    pub provider: ModelProviderInfo,
+    pub model: Option<String>,
 }
 
 /// Base config deserialized from ~/.codex/config.toml.
@@ -2787,7 +2817,7 @@ impl Config {
                 .map(|t| t.notification_method)
                 .unwrap_or_default(),
             animations: cfg.tui.as_ref().map(|t| t.animations).unwrap_or(true),
-            show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(true),
+            show_tooltips: cfg.tui.as_ref().map(|t| t.show_tooltips).unwrap_or(false),
             tui_show_buddy: cfg.tui.as_ref().map(|t| t.show_buddy).unwrap_or(true),
             model_availability_nux: cfg
                 .tui
