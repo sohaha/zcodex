@@ -351,10 +351,9 @@ fn read_glossary_view(conn: &Connection, limit: usize) -> Result<Value> {
 }
 
 fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
-    use crate::service::common::stats_queries;
-    let alias_nodes = stats_queries::alias_node_count(conn)?;
-    let trigger_nodes = stats_queries::trigger_node_count(conn)?;
-    let alias_nodes_missing = stats_queries::alias_nodes_missing_triggers(conn)?;
+    let alias_nodes = crate::service::stats::alias_node_count(conn)?;
+    let trigger_nodes = crate::service::stats::trigger_node_count(conn)?;
+    let alias_nodes_missing = crate::service::stats::alias_nodes_missing_triggers(conn)?;
     let entries = alias_entries(conn, limit)?;
 
     let coverage_percent = if alias_nodes == 0 {

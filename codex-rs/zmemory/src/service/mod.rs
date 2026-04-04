@@ -1,27 +1,25 @@
-pub(crate) mod alias;
-pub(crate) mod common;
-pub(crate) mod create;
-pub(crate) mod delete;
-pub(crate) mod index;
-pub(crate) mod read;
-pub(crate) mod search;
-pub(crate) mod stats;
-pub(crate) mod update;
-
-#[cfg(test)]
-mod tests;
-
 use crate::config::ZmemoryConfig;
-use crate::repository::ZmemoryRepository;
 use crate::tool_api::ZmemoryToolAction;
 use crate::tool_api::ZmemoryToolCallParam;
 use anyhow::Result;
 use serde_json::Value;
 use serde_json::json;
 
+mod alias;
+mod common;
+mod create;
+mod delete;
+mod index;
+mod read;
+mod search;
+pub(crate) mod stats;
+mod update;
+
+#[cfg(test)]
+mod tests;
+
 pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam) -> Result<Value> {
-    let repository = ZmemoryRepository::new(config.clone());
-    let mut conn = repository.connect()?;
+    let mut conn = common::connect(config)?;
     let result = match args.action {
         ZmemoryToolAction::Read => read::read_action(config, &conn, args)?,
         ZmemoryToolAction::Search => search::search_action(config, &conn, args)?,

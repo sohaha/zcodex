@@ -1,9 +1,8 @@
 use crate::config::ZmemoryConfig;
 use crate::schema::mark_other_memories_deprecated;
-use crate::service::common::db_helpers;
-use crate::service::common::domain_checks;
+use crate::service::common;
+use crate::service::index;
 use crate::tool_api::ZmemoryToolCallParam;
-use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
 use anyhow::bail;
 use rusqlite::Connection;
@@ -18,11 +17,11 @@ pub(crate) fn update_action(
 ) -> Result<Value> {
     let uri = parse_required_uri(args.uri.as_deref())?;
     anyhow::ensure!(!uri.is_root(), "cannot update root path");
-    domain_checks::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = db_helpers::find_path_row(conn, &uri)?
+    common::ensure_writable_domain(config, conn, &uri.domain)?;
+    let row = common::find_path_row(conn, &uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
-    let current_memory = db_helpers::read_active_memory(conn, &row.node_uuid)?
-        .ok_or_else(|| anyhow::anyhow!("active memory not found for {uri}"))?;
+    let current_memory = common::read_active_memory(conn, &row.node_uuid)?
+        .ok_or_else(|| anyhow::anyhow!("active memory not found: {uri}"))?;
 
     let mut content_changed = false;
     let mut new_memory_id = None;
@@ -30,16 +29,10 @@ pub(crate) fn update_action(
     let mut priority = row.priority;
     let updated_content = resolve_updated_content(args, &current_memory.content)?;
 
-    // Early bail before transaction — filter out no-op content changes
-    let updated_content = updated_content
-        .filter(|content| content != &current_memory.content);
-    let has_content_change = updated_content.is_some();
-    if !has_content_change && args.priority.is_none() && args.disclosure.is_none() {
-        bail!("no changes requested");
-    }
-
     let tx = conn.transaction()?;
-    if let Some(content) = &updated_content {
+    if let Some(content) = updated_content
+        && content != current_memory.content
+    {
         tx.execute(
             "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
             params![row.node_uuid, content],
@@ -66,8 +59,12 @@ pub(crate) fn update_action(
         )?;
     }
 
+    if !content_changed && args.priority.is_none() && args.disclosure.is_none() {
+        bail!("no changes requested");
+    }
+
     tx.commit()?;
-    let rebuild = super::index::rebuild_search_index(conn)?;
+    let rebuild = index::rebuild_search_index(conn)?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,
@@ -80,9 +77,9 @@ pub(crate) fn update_action(
     }))
 }
 
-fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
+fn parse_required_uri(raw: Option<&str>) -> Result<crate::tool_api::ZmemoryUri> {
     let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` is required"))?;
-    ZmemoryUri::parse(raw)
+    crate::tool_api::ZmemoryUri::parse(raw)
 }
 
 fn resolve_updated_content(

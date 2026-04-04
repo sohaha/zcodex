@@ -1,5 +1,7 @@
 use crate::config::ZmemoryConfig;
-use crate::service::common::stats_queries;
+use crate::doctor::run_doctor;
+use crate::service::common;
+use crate::service::index;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -17,8 +19,36 @@ pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<
         conn.query_row("SELECT COUNT(*) FROM glossary_keywords", [], |row| {
             row.get(0)
         })?;
-
-    let path_resolution = path_resolution_payload(config);
+    let alias_node_count = alias_node_count(conn)?;
+    let trigger_node_count = trigger_node_count(conn)?;
+    let disclosure_path_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NOT NULL AND TRIM(e.disclosure) != ''",
+        [],
+        |row| row.get(0),
+    )?;
+    let paths_missing_disclosure = paths_missing_disclosure(conn)?;
+    let disclosures_needing_review = disclosures_needing_review(conn)?;
+    let orphaned_memory_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    let deprecated_memory_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    let search_document_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+            row.get(0)
+        })?;
+    let fts_document_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
+            row.get(0)
+        })?;
+    let path_resolution = common::path_resolution_payload(config);
 
     Ok(json!({
         "dbPath": path_resolution["dbPath"].clone(),
@@ -30,31 +60,96 @@ pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<
         "memoryCount": memory_count,
         "pathCount": path_count,
         "glossaryKeywordCount": glossary_count,
-        "orphanedMemoryCount": stats_queries::orphaned_memory_count(conn)?,
-        "deprecatedMemoryCount": stats_queries::deprecated_memory_count(conn)?,
-        "aliasNodeCount": stats_queries::alias_node_count(conn)?,
-        "triggerNodeCount": stats_queries::trigger_node_count(conn)?,
-        "disclosurePathCount": disclosure_path_count(conn)?,
-        "pathsMissingDisclosure": stats_queries::paths_missing_disclosure(conn)?,
-        "disclosuresNeedingReview": stats_queries::disclosures_needing_review(conn)?,
-        "searchDocumentCount": stats_queries::search_document_count(conn)?,
-        "ftsDocumentCount": stats_queries::fts_document_count(conn)?,
+        "orphanedMemoryCount": orphaned_memory_count,
+        "deprecatedMemoryCount": deprecated_memory_count,
+        "aliasNodeCount": alias_node_count,
+        "triggerNodeCount": trigger_node_count,
+        "disclosurePathCount": disclosure_path_count,
+        "pathsMissingDisclosure": paths_missing_disclosure,
+        "disclosuresNeedingReview": disclosures_needing_review,
+        "searchDocumentCount": search_document_count,
+        "ftsDocumentCount": fts_document_count,
     }))
 }
 
-fn disclosure_path_count(conn: &Connection) -> Result<i64> {
+pub(crate) fn alias_node_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT e.child_uuid
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+         )",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+pub(crate) fn trigger_node_count(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+pub(crate) fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT e.child_uuid
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+         ) AS alias_nodes
+         WHERE alias_nodes.child_uuid NOT IN (
+             SELECT DISTINCT node_uuid FROM glossary_keywords
+         )",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+pub(crate) fn paths_missing_disclosure(conn: &Connection) -> Result<i64> {
     Ok(conn.query_row(
         "SELECT COUNT(*) FROM edges e
          JOIN paths p ON p.edge_id = e.id
-         WHERE e.disclosure IS NOT NULL AND TRIM(e.disclosure) != ''",
+         WHERE e.disclosure IS NULL OR TRIM(e.disclosure) = ''",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+pub(crate) fn disclosures_needing_review(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COUNT(*) FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.disclosure IS NOT NULL
+           AND TRIM(e.disclosure) != ''
+           AND (
+             INSTR(LOWER(e.disclosure), ' or ') > 0
+             OR INSTR(LOWER(e.disclosure), ' and ') > 0
+             OR INSTR(e.disclosure, ',') > 0
+             OR INSTR(e.disclosure, '，') > 0
+             OR INSTR(e.disclosure, '、') > 0
+             OR INSTR(e.disclosure, ';') > 0
+             OR INSTR(e.disclosure, '；') > 0
+             OR INSTR(e.disclosure, '/') > 0
+             OR INSTR(e.disclosure, '&') > 0
+             OR INSTR(e.disclosure, '+') > 0
+             OR INSTR(e.disclosure, '|') > 0
+             OR INSTR(e.disclosure, '或') > 0
+           )",
         [],
         |row| row.get(0),
     )?)
 }
 
 pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
-    let doctor = crate::doctor::run_doctor(conn, &config.db_path().display().to_string())?;
-    let path_resolution = path_resolution_payload(config);
+    let doctor = run_doctor(conn, &config.db_path().display().to_string())?;
+    let stats = stats_action(conn, config)?;
+    let path_resolution = common::path_resolution_payload(config);
     Ok(json!({
         "dbPath": path_resolution["dbPath"].clone(),
         "workspaceKey": path_resolution["workspaceKey"].clone(),
@@ -78,12 +173,13 @@ pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result
             .cloned()
             .unwrap_or_else(|| json!(0)),
         "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
+        "stats": stats,
         "pathResolution": path_resolution,
     }))
 }
 
 pub(crate) fn rebuild_search_action(conn: &mut Connection) -> Result<Value> {
-    let count = super::index::rebuild_search_index(conn)?;
+    let count = index::rebuild_search_index(conn)?;
     let fts_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
             row.get(0)
@@ -92,14 +188,4 @@ pub(crate) fn rebuild_search_action(conn: &mut Connection) -> Result<Value> {
         "documentCount": count,
         "ftsDocumentCount": fts_count,
     }))
-}
-
-fn path_resolution_payload(config: &ZmemoryConfig) -> Value {
-    let resolution = config.path_resolution();
-    json!({
-        "dbPath": resolution.db_path.display().to_string(),
-        "workspaceKey": resolution.workspace_key.clone(),
-        "source": resolution.source,
-        "reason": resolution.reason.clone(),
-    })
 }

@@ -1,7 +1,6 @@
 use crate::config::ZmemoryConfig;
-use crate::service::common::db_helpers;
-use crate::service::common::domain_checks;
-use crate::service::common::PathRow;
+use crate::service::common;
+use crate::service::index;
 use crate::tool_api::ZmemoryToolCallParam;
 use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
@@ -18,22 +17,22 @@ pub(crate) fn create_action(
 ) -> Result<Value> {
     let uri = resolve_create_uri(conn, args)?;
     let content = required_content(args.content.as_deref())?;
-    domain_checks::ensure_writable_domain(config, conn, &uri.domain)?;
+    common::ensure_writable_domain(config, conn, &uri.domain)?;
     anyhow::ensure!(
-        db_helpers::find_path_row(conn, &uri)?.is_none(),
+        common::find_path_row(conn, &uri)?.is_none(),
         "memory already exists at {uri}"
     );
 
     let parent_uri = uri.parent();
     let parent = if parent_uri.is_root() {
-        PathRow::root(parent_uri.domain)
+        common::PathRow::root(parent_uri.domain)
     } else {
-        db_helpers::find_path_row(conn, &parent_uri)?
+        common::find_path_row(conn, &parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?
     };
     let node_uuid = Uuid::new_v4().to_string();
     let priority = args.priority.unwrap_or_default();
-    let disclosure = normalize_optional_text(args.disclosure.as_deref());
+    let disclosure = common::normalize_optional_text(args.disclosure.as_deref());
 
     let tx = conn.transaction()?;
     tx.execute("INSERT INTO nodes(uuid) VALUES (?1)", [node_uuid.as_str()])?;
@@ -53,7 +52,7 @@ pub(crate) fn create_action(
     )?;
     tx.commit()?;
 
-    let rebuild = super::index::rebuild_search_index(conn)?;
+    let rebuild = index::rebuild_search_index(conn)?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": node_uuid,
@@ -62,6 +61,14 @@ pub(crate) fn create_action(
         "disclosure": disclosure,
         "documentCount": rebuild,
     }))
+}
+
+fn required_content(content: Option<&str>) -> Result<String> {
+    let content = content
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("`content` is required"))?;
+    Ok(content.to_string())
 }
 
 fn resolve_create_uri(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<ZmemoryUri> {
@@ -77,7 +84,7 @@ fn resolve_create_uri(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<
     }
 
     let parent_uri = parse_parent_uri(args.parent_uri.as_deref())?;
-    let title = normalize_optional_text(args.title.as_deref());
+    let title = common::normalize_optional_text(args.title.as_deref());
     let name = match title {
         Some(title) => {
             validate_title(&title)?;
@@ -113,7 +120,7 @@ fn validate_title(title: &str) -> Result<()> {
 
 fn next_auto_child_name(conn: &Connection, parent_uri: &ZmemoryUri) -> Result<String> {
     if !parent_uri.is_root() {
-        db_helpers::find_path_row(conn, parent_uri)?
+        common::find_path_row(conn, parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?;
     }
 
@@ -128,23 +135,9 @@ fn next_auto_child_name(conn: &Connection, parent_uri: &ZmemoryUri) -> Result<St
             domain: parent_uri.domain.clone(),
             path: child_path,
         };
-        if db_helpers::find_path_row(conn, &candidate)?.is_none() {
+        if common::find_path_row(conn, &candidate)?.is_none() {
             return Ok(next_index.to_string());
         }
         next_index += 1;
     }
-}
-
-fn required_content(content: Option<&str>) -> Result<String> {
-    let content = content
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("`content` is required"))?;
-    Ok(content.to_string())
-}
-
-fn normalize_optional_text(raw: Option<&str>) -> Option<String> {
-    raw.map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToString::to_string)
 }

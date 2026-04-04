@@ -195,7 +195,7 @@ fn parse_setting_values(
     env_raw: Option<&str>,
     defaults: &[&str],
 ) -> Vec<String> {
-    let values = configured
+    configured
         .map(|values| normalize_values(values.iter().map(String::as_str)))
         .filter(|values| !values.is_empty())
         .or_else(|| {
@@ -210,9 +210,7 @@ fn parse_setting_values(
                 })
                 .filter(|values| !values.is_empty())
         })
-        .unwrap_or_else(|| normalize_values(defaults.iter().copied()));
-
-    values
+        .unwrap_or_else(|| normalize_values(defaults.iter().copied()))
 }
 
 fn normalize_values<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
@@ -283,11 +281,11 @@ mod tests {
             ZmemorySettings {
                 valid_domains: DEFAULT_VALID_DOMAINS
                     .iter()
-                    .map(|value| value.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect(),
                 core_memory_uris: DEFAULT_CORE_MEMORY_URIS
                     .iter()
-                    .map(|value| value.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect(),
             }
         );

@@ -80,12 +80,11 @@ pub fn run_doctor(conn: &Connection, db_path: &str) -> Result<Value> {
         }));
     }
 
-    use crate::service::common::stats_queries;
-    let alias_nodes = stats_queries::alias_node_count(conn)?;
-    let trigger_nodes = stats_queries::trigger_node_count(conn)?;
-    let alias_nodes_missing = stats_queries::alias_nodes_missing_triggers(conn)?;
-    let paths_missing_disclosure = stats_queries::paths_missing_disclosure(conn)?;
-    let disclosures_needing_review = stats_queries::disclosures_needing_review(conn)?;
+    let alias_nodes = crate::service::stats::alias_node_count(conn)?;
+    let trigger_nodes = crate::service::stats::trigger_node_count(conn)?;
+    let alias_nodes_missing = crate::service::stats::alias_nodes_missing_triggers(conn)?;
+    let paths_missing_disclosure = crate::service::stats::paths_missing_disclosure(conn)?;
+    let disclosures_needing_review = crate::service::stats::disclosures_needing_review(conn)?;
     if alias_nodes_missing > 0 {
         issues.push(json!({
             "code": "alias_nodes_missing_triggers",

@@ -1,4 +1,3 @@
-use super::execute_action;
 use crate::config::ZmemoryConfig;
 use crate::config::ZmemorySettings;
 use crate::path_resolution::resolve_workspace_base_path;
@@ -38,7 +37,7 @@ fn config_with_settings(settings: ZmemorySettings) -> (TempDir, ZmemoryConfig) {
 #[test]
 fn create_read_search_and_rebuild_round_trip() {
     let (_dir, config) = config();
-    let create = execute_action(
+    let create = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -52,7 +51,7 @@ fn create_read_search_and_rebuild_round_trip() {
     assert_eq!(create["action"], "create");
     assert_eq!(create["result"]["uri"], "core://agent-profile");
 
-    let read = execute_action(
+    let read = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -63,7 +62,7 @@ fn create_read_search_and_rebuild_round_trip() {
     .expect("read should succeed");
     assert_eq!(read["result"]["content"], "Stores agent profile memory");
 
-    let search = execute_action(
+    let search = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -74,7 +73,7 @@ fn create_read_search_and_rebuild_round_trip() {
     .expect("search should succeed");
     assert_eq!(search["result"]["matchCount"], 1);
 
-    let rebuild = execute_action(
+    let rebuild = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::RebuildSearch,
@@ -88,7 +87,7 @@ fn create_read_search_and_rebuild_round_trip() {
 #[test]
 fn create_supports_parent_uri_and_auto_numbering() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -101,7 +100,7 @@ fn create_supports_parent_uri_and_auto_numbering() {
     )
     .expect("named create should succeed");
 
-    let numbered = execute_action(
+    let numbered = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -115,7 +114,7 @@ fn create_supports_parent_uri_and_auto_numbering() {
 
     assert_eq!(numbered["result"]["uri"], "core://1");
 
-    let read = execute_action(
+    let read = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -130,7 +129,7 @@ fn create_supports_parent_uri_and_auto_numbering() {
 #[test]
 fn create_rejects_conflicting_uri_modes_and_invalid_title() {
     let (_dir, config) = config();
-    let conflict = execute_action(
+    let conflict = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -146,7 +145,7 @@ fn create_rejects_conflicting_uri_modes_and_invalid_title() {
         "`uri` cannot be combined with `parentUri` or `title`"
     );
 
-    let invalid_title = execute_action(
+    let invalid_title = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -180,7 +179,7 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
         None,
     ));
 
-    let workspace = execute_action(
+    let workspace = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -202,7 +201,7 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
         ])
     );
 
-    let boot = execute_action(
+    let boot = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -221,7 +220,7 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
         ])
     );
 
-    let defaults = execute_action(
+    let defaults = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -240,7 +239,7 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
 #[test]
 fn alias_and_manage_triggers_are_visible_in_read() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -250,7 +249,7 @@ fn alias_and_manage_triggers_are_visible_in_read() {
         },
     )
     .expect("parent create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -260,7 +259,7 @@ fn alias_and_manage_triggers_are_visible_in_read() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -270,7 +269,7 @@ fn alias_and_manage_triggers_are_visible_in_read() {
         },
     )
     .expect("alias should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
@@ -281,7 +280,7 @@ fn alias_and_manage_triggers_are_visible_in_read() {
     )
     .expect("manage triggers should succeed");
 
-    let read = execute_action(
+    let read = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -298,7 +297,7 @@ fn alias_and_manage_triggers_are_visible_in_read() {
 #[test]
 fn update_supports_patch_append_and_metadata_only_modes() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -309,7 +308,7 @@ fn update_supports_patch_append_and_metadata_only_modes() {
     )
     .expect("create should succeed");
 
-    let update = execute_action(
+    let update = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -328,7 +327,7 @@ fn update_supports_patch_append_and_metadata_only_modes() {
     assert_eq!(update["result"]["disclosure"], "team");
     assert!(update["result"]["newMemoryId"].as_i64().is_some());
 
-    let metadata_only = execute_action(
+    let metadata_only = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -342,7 +341,7 @@ fn update_supports_patch_append_and_metadata_only_modes() {
     assert!(metadata_only["result"]["newMemoryId"].is_null());
     assert_eq!(metadata_only["result"]["priority"], 9);
 
-    let append = execute_action(
+    let append = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -354,7 +353,7 @@ fn update_supports_patch_append_and_metadata_only_modes() {
     .expect("append update should succeed");
     assert_eq!(append["result"]["contentChanged"], true);
 
-    let read = execute_action(
+    let read = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -366,7 +365,7 @@ fn update_supports_patch_append_and_metadata_only_modes() {
     assert_eq!(read["result"]["content"], "Updated memory   ");
     assert_eq!(read["result"]["priority"], 9);
 
-    let search = execute_action(
+    let search = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -381,7 +380,7 @@ fn update_supports_patch_append_and_metadata_only_modes() {
 #[test]
 fn update_rejects_conflicting_or_invalid_patch_modes() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -392,7 +391,7 @@ fn update_rejects_conflicting_or_invalid_patch_modes() {
     )
     .expect("create should succeed");
 
-    let conflict = execute_action(
+    let conflict = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -408,7 +407,7 @@ fn update_rejects_conflicting_or_invalid_patch_modes() {
         "`content` cannot be combined with `oldString`/`newString`/`append`"
     );
 
-    let missing_new = execute_action(
+    let missing_new = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -423,7 +422,7 @@ fn update_rejects_conflicting_or_invalid_patch_modes() {
         "`newString` is required when `oldString` is provided"
     );
 
-    let duplicate_patch = execute_action(
+    let duplicate_patch = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -439,7 +438,7 @@ fn update_rejects_conflicting_or_invalid_patch_modes() {
         "`oldString` matched multiple locations; provide a more specific value"
     );
 
-    let empty_append = execute_action(
+    let empty_append = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -455,7 +454,7 @@ fn update_rejects_conflicting_or_invalid_patch_modes() {
 #[test]
 fn delete_path_removes_last_reference_from_search() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -466,7 +465,7 @@ fn delete_path_removes_last_reference_from_search() {
     )
     .expect("create should succeed");
 
-    let delete = execute_action(
+    let delete = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::DeletePath,
@@ -479,7 +478,7 @@ fn delete_path_removes_last_reference_from_search() {
     assert_eq!(delete["result"]["deletedEdges"], 1);
     assert_eq!(delete["result"]["deprecatedNodes"], 1);
 
-    let search = execute_action(
+    let search = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -494,7 +493,7 @@ fn delete_path_removes_last_reference_from_search() {
 #[test]
 fn system_views_reflect_index_recent_and_glossary() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -505,7 +504,7 @@ fn system_views_reflect_index_recent_and_glossary() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
@@ -516,7 +515,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     )
     .expect("manage triggers should succeed");
 
-    let boot = execute_action(
+    let boot = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -535,7 +534,7 @@ fn system_views_reflect_index_recent_and_glossary() {
         "core://agent/my_user"
     );
 
-    let defaults = execute_action(
+    let defaults = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -573,7 +572,7 @@ fn system_views_reflect_index_recent_and_glossary() {
         json!(config.path_resolution().workspace_key.clone())
     );
 
-    let workspace = execute_action(
+    let workspace = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -600,7 +599,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     );
     assert_eq!(workspace["result"]["view"]["bootHealthy"], false);
 
-    let index = execute_action(
+    let index = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -612,7 +611,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     .expect("index view should succeed");
     assert_eq!(index["result"]["view"]["totalCount"], 1);
 
-    let recent = execute_action(
+    let recent = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -624,7 +623,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     .expect("recent view should succeed");
     assert_eq!(recent["result"]["view"]["entryCount"], 1);
 
-    let glossary = execute_action(
+    let glossary = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -636,7 +635,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     .expect("glossary view should succeed");
     assert_eq!(glossary["result"]["view"]["entryCount"], 2);
 
-    let index_by_domain = execute_action(
+    let index_by_domain = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -650,7 +649,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     assert_eq!(index_by_domain["result"]["view"]["domain"], "core");
     assert_eq!(index_by_domain["result"]["view"]["entryCount"], 1);
 
-    let recent_with_path_limit = execute_action(
+    let recent_with_path_limit = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -670,7 +669,7 @@ fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
         None,
     ));
 
-    let invalid_domain = execute_action(
+    let invalid_domain = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -685,7 +684,7 @@ fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
         "unknown domain 'writer'. valid domains: core, notes, system, alias"
     );
 
-    let invalid_index = execute_action(
+    let invalid_index = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -699,7 +698,7 @@ fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
         "unknown domain 'writer'. valid domains: core, notes, system, alias"
     );
 
-    let system_write = execute_action(
+    let system_write = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -715,7 +714,7 @@ fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
 #[test]
 fn stats_and_doctor_surface_review_pressure() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -726,7 +725,7 @@ fn stats_and_doctor_surface_review_pressure() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Update,
@@ -736,7 +735,7 @@ fn stats_and_doctor_surface_review_pressure() {
         },
     )
     .expect("update should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -746,7 +745,7 @@ fn stats_and_doctor_surface_review_pressure() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::DeletePath,
@@ -755,7 +754,7 @@ fn stats_and_doctor_surface_review_pressure() {
         },
     )
     .expect("delete-path should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -766,7 +765,7 @@ fn stats_and_doctor_surface_review_pressure() {
     )
     .expect("undisclosed create should succeed");
 
-    let stats = execute_action(
+    let stats = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Stats,
@@ -804,7 +803,7 @@ fn stats_and_doctor_surface_review_pressure() {
         vec!["dbPath", "reason", "source", "workspaceKey"]
     );
 
-    let doctor = execute_action(
+    let doctor = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Doctor,
@@ -868,7 +867,7 @@ fn search_matches_alias_via_separator_normalized_query() {
         None,
     ));
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -878,7 +877,7 @@ fn search_matches_alias_via_separator_normalized_query() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -888,7 +887,7 @@ fn search_matches_alias_via_separator_normalized_query() {
         },
     )
     .expect("writer folder should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -900,7 +899,7 @@ fn search_matches_alias_via_separator_normalized_query() {
     )
     .expect("alias should succeed");
 
-    let exact = execute_action(
+    let exact = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -916,7 +915,7 @@ fn search_matches_alias_via_separator_normalized_query() {
         "writer://folder/mirror-note"
     );
 
-    let normalized = execute_action(
+    let normalized = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -937,7 +936,7 @@ fn search_matches_alias_via_separator_normalized_query() {
 fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
     let (_dir, config) = config();
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -948,7 +947,7 @@ fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
         },
     )
     .expect("primary create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -958,7 +957,7 @@ fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
         },
     )
     .expect("aliases root create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -969,7 +968,7 @@ fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
         },
     )
     .expect("alias create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -980,7 +979,7 @@ fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
         },
     )
     .expect("short path create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -992,7 +991,7 @@ fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
     )
     .expect("long path create should succeed");
 
-    let search = execute_action(
+    let search = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1019,7 +1018,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
         None,
     ));
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1034,7 +1033,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
         },
     )
     .expect("literal create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1045,7 +1044,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
         },
     )
     .expect("token create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1055,7 +1054,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
         },
     )
     .expect("writer folder create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -1066,7 +1065,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
         },
     )
     .expect("token alias should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1078,7 +1077,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
     )
     .expect("fallback create should succeed");
 
-    let literal = execute_action(
+    let literal = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1093,7 +1092,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
     assert!(literal_snippet.contains("GraphService exact phrase"));
     assert!(literal_snippet.contains("..."));
 
-    let token = execute_action(
+    let token = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1108,7 +1107,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
         "mirror token keeps hits focused"
     );
 
-    let fallback = execute_action(
+    let fallback = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1127,7 +1126,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
 fn search_snippet_falls_back_to_content_for_disclosure_and_uri_hits() {
     let (_dir, config) = config();
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1141,7 +1140,7 @@ fn search_snippet_falls_back_to_content_for_disclosure_and_uri_hits() {
     )
     .expect("create should succeed");
 
-    let disclosure = execute_action(
+    let disclosure = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1155,7 +1154,7 @@ fn search_snippet_falls_back_to_content_for_disclosure_and_uri_hits() {
         "content snippet fallback keeps search previews rooted in content"
     );
 
-    let uri = execute_action(
+    let uri = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1174,7 +1173,7 @@ fn search_snippet_falls_back_to_content_for_disclosure_and_uri_hits() {
 fn search_snippet_preserves_multibyte_boundaries() {
     let (_dir, config) = config();
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1184,7 +1183,7 @@ fn search_snippet_preserves_multibyte_boundaries() {
         },
     )
     .expect("fallback create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1195,7 +1194,7 @@ fn search_snippet_preserves_multibyte_boundaries() {
     )
     .expect("literal create should succeed");
 
-    let fallback = execute_action(
+    let fallback = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1209,7 +1208,7 @@ fn search_snippet_preserves_multibyte_boundaries() {
         format!("{}...", "量".repeat(80))
     );
 
-    let literal = execute_action(
+    let literal = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1228,7 +1227,7 @@ fn search_snippet_preserves_multibyte_boundaries() {
 fn glossary_add_and_remove_refresh_search_contract() {
     let (_dir, config) = config();
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1239,7 +1238,7 @@ fn glossary_add_and_remove_refresh_search_contract() {
     )
     .expect("create should succeed");
 
-    let before_add = execute_action(
+    let before_add = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1250,7 +1249,7 @@ fn glossary_add_and_remove_refresh_search_contract() {
     .expect("search should succeed");
     assert_eq!(before_add["result"]["matchCount"], 0);
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
@@ -1261,7 +1260,7 @@ fn glossary_add_and_remove_refresh_search_contract() {
     )
     .expect("add trigger should succeed");
 
-    let after_add = execute_action(
+    let after_add = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1276,7 +1275,7 @@ fn glossary_add_and_remove_refresh_search_contract() {
         "core://anchor_refresh_contract"
     );
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
@@ -1287,7 +1286,7 @@ fn glossary_add_and_remove_refresh_search_contract() {
     )
     .expect("remove trigger should succeed");
 
-    let after_remove = execute_action(
+    let after_remove = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1303,7 +1302,7 @@ fn glossary_add_and_remove_refresh_search_contract() {
 fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
     let (_dir, config) = config();
 
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1313,7 +1312,7 @@ fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
@@ -1324,7 +1323,7 @@ fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
     )
     .expect("manage triggers should succeed");
 
-    let hit = execute_action(
+    let hit = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1336,7 +1335,7 @@ fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
     assert_eq!(hit["result"]["matchCount"], 1);
     assert_eq!(hit["result"]["matches"][0]["uri"], "core://cjk_search");
 
-    let miss = execute_action(
+    let miss = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Search,
@@ -1351,7 +1350,7 @@ fn search_uses_token_boundaries_instead_of_raw_cjk_substrings() {
 #[test]
 fn alias_view_includes_priority_reasons_and_suggested_keywords() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1361,7 +1360,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         },
     )
     .expect("hub create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1371,7 +1370,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         },
     )
     .expect("zone create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1381,7 +1380,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -1391,7 +1390,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         },
     )
     .expect("first alias should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -1402,7 +1401,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
     )
     .expect("second alias should succeed");
 
-    let alias_view = execute_action(
+    let alias_view = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
@@ -1450,7 +1449,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
 #[test]
 fn doctor_reports_fts_and_keyword_inconsistencies() {
     let (_dir, config) = config();
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
@@ -1460,7 +1459,7 @@ fn doctor_reports_fts_and_keyword_inconsistencies() {
         },
     )
     .expect("create should succeed");
-    execute_action(
+    crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
@@ -1480,7 +1479,7 @@ fn doctor_reports_fts_and_keyword_inconsistencies() {
     )
     .expect("path delete should succeed");
 
-    let doctor = execute_action(
+    let doctor = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Doctor,

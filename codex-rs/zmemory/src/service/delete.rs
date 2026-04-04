@@ -1,6 +1,6 @@
 use crate::config::ZmemoryConfig;
-use crate::service::common::db_helpers;
-use crate::service::common::domain_checks;
+use crate::service::common;
+use crate::service::index;
 use crate::tool_api::ZmemoryToolCallParam;
 use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
@@ -16,8 +16,8 @@ pub(crate) fn delete_path_action(
 ) -> Result<Value> {
     let uri = parse_required_uri(args.uri.as_deref())?;
     anyhow::ensure!(!uri.is_root(), "cannot delete root path");
-    domain_checks::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = db_helpers::find_path_row(conn, &uri)?
+    common::ensure_writable_domain(config, conn, &uri.domain)?;
+    let row = common::find_path_row(conn, &uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
 
     let tx = conn.transaction()?;
@@ -41,7 +41,7 @@ pub(crate) fn delete_path_action(
     };
     tx.commit()?;
 
-    let rebuild = super::index::rebuild_search_index(conn)?;
+    let rebuild = index::rebuild_search_index(conn)?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,
