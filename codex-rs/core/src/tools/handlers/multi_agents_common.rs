@@ -137,6 +137,7 @@ pub(crate) fn thread_spawn_source(
     parent_thread_id: ThreadId,
     parent_session_source: &SessionSource,
     depth: i32,
+    parent_model: Option<&str>,
     agent_role: Option<&str>,
     task_name: Option<String>,
 ) -> Result<SessionSource, FunctionCallError> {
@@ -153,6 +154,7 @@ pub(crate) fn thread_spawn_source(
     Ok(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
         parent_thread_id,
         depth,
+        parent_model: parent_model.map(str::to_string),
         agent_path,
         agent_nickname: None,
         agent_role: agent_role.map(str::to_string),
@@ -220,7 +222,7 @@ pub(crate) fn build_agent_resume_config(
     Ok(config)
 }
 
-fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallError> {
+pub(crate) fn build_agent_shared_config(turn: &TurnContext) -> Result<Config, FunctionCallError> {
     let base_config = turn.config.clone();
     let mut config = (*base_config).clone();
     config.model = Some(turn.model_info.slug.clone());

@@ -56,7 +56,16 @@ pub fn map_api_error(err: ApiError) -> CodexErr {
                 }
 
                 if status == http::StatusCode::BAD_REQUEST {
-                    if body_text
+                    if let Ok(error) = serde_json::from_str::<AnthropicErrorResponse>(&body_text)
+                        && error.error.error_type.as_deref() == Some("invalid_request_error")
+                        && error
+                            .error
+                            .message
+                            .as_deref()
+                            .is_some_and(crate::anthropic::is_context_window_error_message)
+                    {
+                        CodexErr::ContextWindowExceeded
+                    } else if body_text
                         .contains("The image data you provided does not represent a valid image")
                     {
                         CodexErr::InvalidImageRequest()
@@ -172,6 +181,18 @@ struct UsageErrorBody {
     error_type: Option<String>,
     plan_type: Option<PlanType>,
     resets_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicErrorResponse {
+    error: AnthropicErrorBody,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicErrorBody {
+    #[serde(rename = "type")]
+    error_type: Option<String>,
+    message: Option<String>,
 }
 
 #[derive(Clone, Default)]

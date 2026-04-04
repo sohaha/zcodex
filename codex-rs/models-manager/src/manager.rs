@@ -44,6 +44,24 @@ const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
 const MODELS_ENDPOINT: &str = "/models";
+
+fn provider_cache_key(provider: &ModelProviderInfo, api_provider: &codex_api::Provider) -> String {
+    let mut parts = vec![
+        format!("name={}", provider.name),
+        format!("base_url={}", api_provider.base_url),
+        format!("wire_api={:?}", api_provider.wire_api),
+    ];
+    if let Some(params) = &api_provider.query_params
+        && !params.is_empty()
+    {
+        let mut entries: Vec<_> = params.iter().collect();
+        entries.sort_by(|(lhs, _), (rhs, _)| lhs.cmp(rhs));
+        for (key, value) in entries {
+            parts.push(format!("query:{key}={value}"));
+        }
+    }
+    parts.join("|")
+}
 #[derive(Clone)]
 struct ModelsRequestTelemetry {
     auth_mode: Option<String>,
@@ -441,6 +459,7 @@ impl ModelsManager {
             self.auth_manager.codex_api_key_env_enabled(),
         );
         let transport = ReqwestTransport::new(build_reqwest_client());
+        let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
         let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
             auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
             auth_header_attached: api_auth.auth_header_attached(),
@@ -462,7 +481,7 @@ impl ModelsManager {
         self.apply_remote_models(models.clone()).await;
         *self.etag.write().await = etag.clone();
         self.cache_manager
-            .persist_cache(&models, etag, client_version)
+            .persist_cache(&models, etag, client_version, provider_cache_key)
             .await;
         Ok(())
     }
@@ -496,8 +515,26 @@ impl ModelsManager {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.load_cache.duration_ms", &[]);
         let client_version = crate::client_version_to_whole();
+        let auth_mode = self.auth_manager.auth_mode();
+        let api_provider = match self.provider.to_api_provider(auth_mode) {
+            Ok(provider) => provider,
+            Err(err) => {
+                error!("models cache: failed to build provider config: {err}");
+                return false;
+            }
+        };
+        let provider_cache_key = provider_cache_key(&self.provider, &api_provider);
+        let allow_legacy_without_provider_cache_key = self.provider.is_openai();
         info!(client_version, "models cache: evaluating cache eligibility");
-        let cache = match self.cache_manager.load_fresh(&client_version).await {
+        let cache = match self
+            .cache_manager
+            .load_fresh(
+                &client_version,
+                &provider_cache_key,
+                allow_legacy_without_provider_cache_key,
+            )
+            .await
+        {
             Some(cache) => cache,
             None => {
                 info!("models cache: no usable cache entry");

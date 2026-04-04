@@ -7,6 +7,7 @@
 
 use codex_api::Provider as ApiProvider;
 use codex_api::provider::RetryConfig as ApiRetryConfig;
+use codex_api::provider::WireApi as ApiWireApi;
 use codex_app_server_protocol::AuthMode;
 use codex_protocol::config_types::ModelProviderAuthInfo;
 use codex_protocol::error::CodexErr;
@@ -33,7 +34,10 @@ const MAX_REQUEST_MAX_RETRIES: u64 = 100;
 
 const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
-const CHAT_WIRE_API_REMOVED_ERROR: &str = "`wire_api = \"chat\"` is no longer supported.\nHow to fix: set `wire_api = \"responses\"` in your provider config.\nMore info: https://github.com/openai/codex/discussions/7782";
+pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+pub const DEFAULT_CHATGPT_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+pub const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
+const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
 pub const LEGACY_OLLAMA_CHAT_PROVIDER_ID: &str = "ollama-chat";
 pub const OLLAMA_CHAT_PROVIDER_REMOVED_ERROR: &str = "`ollama-chat` is no longer supported.\nHow to fix: replace `ollama-chat` with `ollama` in `model_provider`, `oss_provider`, or `--local-provider`.\nMore info: https://github.com/openai/codex/discussions/7782";
 
@@ -44,12 +48,18 @@ pub enum WireApi {
     /// The Responses API exposed by OpenAI at `/v1/responses`.
     #[default]
     Responses,
+    /// Legacy Chat Completions API exposed by OpenAI at `/v1/chat/completions`.
+    Chat,
+    /// Anthropic Messages API exposed at `/v1/messages`.
+    Anthropic,
 }
 
 impl fmt::Display for WireApi {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let value = match self {
             Self::Responses => "responses",
+            Self::Chat => "chat",
+            Self::Anthropic => "anthropic",
         };
         f.write_str(value)
     }
@@ -63,8 +73,12 @@ impl<'de> Deserialize<'de> for WireApi {
         let value = String::deserialize(deserializer)?;
         match value.as_str() {
             "responses" => Ok(Self::Responses),
-            "chat" => Err(serde::de::Error::custom(CHAT_WIRE_API_REMOVED_ERROR)),
-            _ => Err(serde::de::Error::unknown_variant(&value, &["responses"])),
+            "chat" => Ok(Self::Chat),
+            "anthropic" => Ok(Self::Anthropic),
+            _ => Err(serde::de::Error::unknown_variant(
+                &value,
+                &["responses", "chat", "anthropic"],
+            )),
         }
     }
 }
@@ -75,6 +89,9 @@ impl<'de> Deserialize<'de> for WireApi {
 pub struct ModelProviderInfo {
     /// Friendly display name.
     pub name: String,
+    /// Optional fixed model override used by legacy configs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     /// Base URL for the provider's OpenAI-compatible API.
     pub base_url: Option<String>,
     /// Environment variable that stores the user's API key for this provider.
@@ -86,6 +103,7 @@ pub struct ModelProviderInfo {
     /// Value to use with `Authorization: Bearer <token>` header. Use of this
     /// config is discouraged in favor of `env_key` for security reasons, but
     /// this may be necessary when using this programmatically.
+    #[serde(alias = "api_key")]
     pub experimental_bearer_token: Option<String>,
     /// Command-backed bearer-token configuration for this provider.
     pub auth: Option<ModelProviderAuthInfo>,
@@ -182,17 +200,43 @@ impl ModelProviderInfo {
     }
 
     pub fn to_api_provider(&self, auth_mode: Option<AuthMode>) -> CodexResult<ApiProvider> {
-        let default_base_url = if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
-            "https://chatgpt.com/backend-api/codex"
-        } else {
-            "https://api.openai.com/v1"
+        let default_base_url = match self.wire_api {
+            WireApi::Anthropic => DEFAULT_ANTHROPIC_BASE_URL,
+            _ => {
+                if matches!(auth_mode, Some(AuthMode::Chatgpt)) {
+                    DEFAULT_CHATGPT_BASE_URL
+                } else {
+                    DEFAULT_OPENAI_BASE_URL
+                }
+            }
         };
         let base_url = self
             .base_url
             .clone()
             .unwrap_or_else(|| default_base_url.to_string());
 
-        let headers = self.build_header_map()?;
+        let mut headers = self.build_header_map()?;
+        if self.wire_api == WireApi::Anthropic {
+            let _ = headers.insert(
+                HeaderName::from_static("anthropic-version"),
+                HeaderValue::from_static(DEFAULT_ANTHROPIC_VERSION),
+            );
+            if let Some(api_key) = self.api_key()? {
+                let header_value = HeaderValue::from_str(&api_key).map_err(|err| {
+                    CodexErr::InvalidRequest(format!("invalid x-api-key header: {err}"))
+                })?;
+                let _ = headers
+                    .entry(HeaderName::from_static("x-api-key"))
+                    .or_insert(header_value.clone());
+                let auth_value =
+                    HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|err| {
+                        CodexErr::InvalidRequest(format!("invalid Authorization header: {err}"))
+                    })?;
+                let _ = headers
+                    .entry(http::header::AUTHORIZATION)
+                    .or_insert(auth_value);
+            }
+        }
         let retry = ApiRetryConfig {
             max_attempts: self.request_max_retries(),
             base_delay: Duration::from_millis(200),
@@ -200,10 +244,16 @@ impl ModelProviderInfo {
             retry_5xx: true,
             retry_transport: true,
         };
+        let wire_api = match self.wire_api {
+            WireApi::Responses => ApiWireApi::Responses,
+            WireApi::Chat => ApiWireApi::Chat,
+            WireApi::Anthropic => ApiWireApi::Anthropic,
+        };
 
         Ok(ApiProvider {
             name: self.name.clone(),
             base_url,
+            wire_api,
             query_params: self.query_params.clone(),
             headers,
             retry,
@@ -263,6 +313,7 @@ impl ModelProviderInfo {
     pub fn create_openai_provider(base_url: Option<String>) -> ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
+            model: None,
             base_url,
             env_key: None,
             env_key_instructions: None,
@@ -297,7 +348,55 @@ impl ModelProviderInfo {
     }
 
     pub fn is_openai(&self) -> bool {
-        self.name == OPENAI_PROVIDER_NAME
+        if self.name == OPENAI_PROVIDER_NAME {
+            return true;
+        }
+        match self.base_url.as_deref() {
+            Some(url) => url == DEFAULT_OPENAI_BASE_URL || url == DEFAULT_CHATGPT_BASE_URL,
+            None => false,
+        }
+    }
+
+    pub fn configured_bearer_token(&self) -> Option<&str> {
+        self.experimental_bearer_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+    }
+
+    pub fn uses_provider_supplied_auth(&self) -> bool {
+        if self.auth.is_some() || self.configured_bearer_token().is_some() {
+            return true;
+        }
+
+        let has_auth_header = |headers: &HashMap<String, String>| {
+            headers
+                .keys()
+                .any(|key| key.eq_ignore_ascii_case("authorization"))
+        };
+
+        self.http_headers.as_ref().is_some_and(has_auth_header)
+            || self.env_http_headers.as_ref().is_some_and(has_auth_header)
+    }
+
+    pub fn uses_official_openai_api(&self) -> bool {
+        if !self.is_openai() {
+            return false;
+        }
+        match self.base_url.as_deref() {
+            None => true,
+            Some(url) => url == DEFAULT_OPENAI_BASE_URL || url == DEFAULT_CHATGPT_BASE_URL,
+        }
+    }
+
+    pub fn uses_official_openai_responses_api(&self) -> bool {
+        if self.wire_api != WireApi::Responses || !self.is_openai() {
+            return false;
+        }
+        match self.base_url.as_deref() {
+            None => true,
+            Some(url) => url == DEFAULT_OPENAI_BASE_URL,
+        }
     }
 
     pub fn has_command_auth(&self) -> bool {
@@ -360,6 +459,7 @@ pub fn create_oss_provider(default_provider_port: u16, wire_api: WireApi) -> Mod
 pub fn create_oss_provider_with_base_url(base_url: &str, wire_api: WireApi) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "gpt-oss".into(),
+        model: None,
         base_url: Some(base_url.into()),
         env_key: None,
         env_key_instructions: None,

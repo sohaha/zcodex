@@ -260,7 +260,7 @@ fn anthropic_provider_defaults_to_official_base_url() {
     let api_provider = provider
         .to_api_provider(None)
         .expect("anthropic provider should build");
-    assert_eq!(api_provider.base_url, "https://api.anthropic.com/v1");
+    assert_eq!(api_provider.base_url, DEFAULT_ANTHROPIC_BASE_URL);
 }
 
 #[test]
@@ -370,7 +370,7 @@ fn anthropic_provider_preserves_explicit_authorization_header() {
         base_url: None,
         env_key: None,
         env_key_instructions: None,
-        experimental_bearer_token: Some("test-anthropic-api-key".into()),
+        experimental_bearer_token: None,
         auth: None,
         wire_api: WireApi::Anthropic,
         query_params: None,

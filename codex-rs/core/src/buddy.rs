@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use codex_config::types::BuddySoul;
+use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -228,7 +229,7 @@ async fn stream_prompt_text(
     session: &Session,
     turn_context: &TurnContext,
     prompt: Prompt,
-) -> crate::error::Result<String> {
+) -> CodexResult<String> {
     let mut client_session = session.services.model_client.new_session();
     let turn_metadata_header = turn_context.turn_metadata_state.current_header_value();
     let mut stream = client_session

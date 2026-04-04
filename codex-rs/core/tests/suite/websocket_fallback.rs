@@ -537,6 +537,7 @@ async fn request_fallback_chain_uses_provider_default_model_when_unspecified() -
                 provider_id: "fallback".to_string(),
                 provider: codex_core::ModelProviderInfo {
                     name: "fallback".to_string(),
+                    model: None,
                     model: Some("provider-default-model".to_string()),
                     base_url: Some(fallback_base_url),
                     env_key: Some("OPENAI_API_KEY".to_string()),

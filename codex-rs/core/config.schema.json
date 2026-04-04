@@ -930,7 +930,7 @@
           "type": "object"
         },
         "model": {
-          "description": "Optional default model slug to use when this provider is selected.",
+          "description": "Optional fixed model override used by legacy configs.",
           "type": "string"
         },
         "name": {
@@ -1956,14 +1956,14 @@
           "type": "string"
         },
         {
-          "description": "The Chat Completions API exposed by OpenAI at `/v1/chat/completions`.",
+          "description": "Legacy Chat Completions API exposed by OpenAI at `/v1/chat/completions`.",
           "enum": [
             "chat"
           ],
           "type": "string"
         },
         {
-          "description": "The Anthropic Messages API exposed at `/v1/messages`.",
+          "description": "Anthropic Messages API exposed at `/v1/messages`.",
           "enum": [
             "anthropic"
           ],

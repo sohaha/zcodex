@@ -39,6 +39,8 @@ use crate::stream_events_utils::handle_output_item_done;
 use crate::stream_events_utils::last_assistant_message_from_item;
 use crate::stream_events_utils::raw_assistant_output_text_from_item;
 use crate::stream_events_utils::record_completed_response_item;
+use crate::tools::rewrite::AutoTldrContext;
+use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::turn_metadata::TurnMetadataState;
 use crate::util::error_or_panic;
 use async_channel::Receiver;
@@ -888,6 +890,8 @@ pub(crate) struct TurnContext {
     pub(crate) turn_metadata_state: Arc<TurnMetadataState>,
     pub(crate) turn_skills: TurnSkillsContext,
     pub(crate) turn_timing_state: Arc<TurnTimingState>,
+    pub(crate) tool_routing_directives: Arc<RwLock<ToolRoutingDirectives>>,
+    pub(crate) auto_tldr_context: Arc<RwLock<AutoTldrContext>>,
 }
 impl TurnContext {
     pub(crate) fn model_context_window(&self) -> Option<i64> {
@@ -1000,6 +1004,8 @@ impl TurnContext {
             turn_metadata_state: self.turn_metadata_state.clone(),
             turn_skills: self.turn_skills.clone(),
             turn_timing_state: Arc::clone(&self.turn_timing_state),
+            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
+            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
         }
     }
 
@@ -1468,6 +1474,8 @@ impl Session {
             turn_metadata_state,
             turn_skills: TurnSkillsContext::new(skills_outcome),
             turn_timing_state: Arc::new(TurnTimingState::default()),
+            tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
+            auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
         }
     }
 
@@ -3604,7 +3612,7 @@ impl Session {
             developer_sections.push(developer_instructions.to_string());
         }
         // Add developer instructions for memories.
-        if turn_context.features.enabled(Feature::MemoryTool)
+        if turn_context.features.enabled(Feature::NativeMemories)
             && turn_context.config.memories.use_memories
             && let Some(memory_prompt) =
                 build_memory_tool_developer_instructions(&turn_context.config.codex_home).await
@@ -5623,6 +5631,8 @@ async fn spawn_review_thread(
         turn_metadata_state,
         turn_skills: TurnSkillsContext::new(parent_turn_context.turn_skills.outcome.clone()),
         turn_timing_state: Arc::new(TurnTimingState::default()),
+        tool_routing_directives: Arc::new(RwLock::new(ToolRoutingDirectives::default())),
+        auto_tldr_context: Arc::new(RwLock::new(AutoTldrContext::default())),
     };
 
     // Seed the child task with the review prompt as the initial user message.
@@ -7016,7 +7026,9 @@ fn realtime_text_for_event(msg: &EventMsg) -> Option<String> {
         | EventMsg::CollabCloseBegin(_)
         | EventMsg::CollabCloseEnd(_)
         | EventMsg::CollabResumeBegin(_)
-        | EventMsg::CollabResumeEnd(_) => None,
+        | EventMsg::CollabResumeEnd(_)
+        | EventMsg::BuddySoulGenerated(_)
+        | EventMsg::BuddyReaction(_) => None,
     }
 }
 

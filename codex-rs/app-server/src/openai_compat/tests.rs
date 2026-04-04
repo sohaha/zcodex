@@ -26,6 +26,7 @@ use wiremock::matchers::query_param;
 fn provider(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "Proxy Test".to_string(),
+        model: None,
         model: Some("gpt-5.4".to_string()),
         base_url: Some(base_url),
         env_key: None,

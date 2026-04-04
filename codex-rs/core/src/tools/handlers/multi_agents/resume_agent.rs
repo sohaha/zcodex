@@ -36,7 +36,7 @@ impl ToolHandler for Handler {
             .get_agent_metadata(receiver_thread_id)
             .unwrap_or_default();
         let child_depth = next_thread_spawn_depth(&turn.session_source);
-        let resume_config = build_agent_resume_config(turn.as_ref(), child_depth).await?;
+        let resume_config = build_agent_resume_config(turn.as_ref(), child_depth)?;
         let max_depth = resume_config.agent_max_depth;
         if exceeds_thread_spawn_depth_limit(child_depth, max_depth) {
             return Err(FunctionCallError::RespondToModel(
@@ -170,7 +170,7 @@ async fn try_resume_closed_agent(
                 session.conversation_id,
                 &turn.session_source,
                 child_depth,
-                Some(&turn.model_info.slug),
+                Some(turn.model_info.slug.as_str()),
                 /*agent_role*/ None,
                 /*task_name*/ None,
             )?,

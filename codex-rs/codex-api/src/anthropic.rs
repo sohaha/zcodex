@@ -1042,7 +1042,7 @@ fn merge_object_values(base: Value, overlay: Value) -> Value {
     }
 }
 
-fn is_context_window_error_message(message: &str) -> bool {
+pub(crate) fn is_context_window_error_message(message: &str) -> bool {
     let normalized = message.to_ascii_lowercase();
     normalized.contains("context window")
         || normalized.contains("context length")

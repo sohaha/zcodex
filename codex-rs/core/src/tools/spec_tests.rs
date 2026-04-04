@@ -215,7 +215,7 @@ fn get_memory_requires_feature_flag() {
     let config = test_config();
     let model_info = construct_model_info_offline("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
-    features.disable(Feature::MemoryTool);
+    features.disable(Feature::NativeMemories);
     let available_models = Vec::new();
     let tools_config = ToolsConfig::new(&ToolsConfigParams {
         model_info: &model_info,
