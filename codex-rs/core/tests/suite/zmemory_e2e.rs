@@ -727,6 +727,258 @@ async fn zmemory_mcp_search_memory_tool_maps_to_search_action() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_delete_memory_tool_maps_to_delete_path_action() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Delete me".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-delete-memory",
+                "delete_memory",
+                &serde_json::to_string(&json!({
+                    "uri": "core://agent-profile"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("delete memory through MCP alias").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-delete-memory")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "delete-path");
+    assert_eq!(payload["result"]["uri"], "core://agent-profile");
+
+    let err = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("deleted memory should not be readable");
+    assert_eq!(err.to_string(), "memory not found: core://agent-profile");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Alias target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-add-alias",
+                "add_alias",
+                &serde_json::to_string(&json!({
+                    "new_uri": "alias://agent-profile",
+                    "target_uri": "core://agent-profile",
+                    "priority": 3
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("add alias through MCP alias").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-add-alias")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "add-alias");
+    assert_eq!(payload["result"]["uri"], "alias://agent-profile");
+    assert_eq!(payload["result"]["targetUri"], "core://agent-profile");
+
+    let read_back = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("alias://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        read_back.structured_content["result"]["content"],
+        "Alias target"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_manage_triggers_tool_maps_to_manage_triggers_action() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Trigger target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-manage-triggers",
+                "manage_triggers",
+                &serde_json::to_string(&json!({
+                    "uri": "core://agent-profile",
+                    "add": ["profile", "agent"]
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("manage triggers through MCP alias")
+        .await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-manage-triggers")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "manage-triggers");
+    assert_eq!(payload["result"]["uri"], "core://agent-profile");
+    let mut added = payload["result"]["added"]
+        .as_array()
+        .expect("added should be an array")
+        .iter()
+        .map(|value| value.as_str().expect("added keyword should be a string"))
+        .collect::<Vec<_>>();
+    added.sort_unstable();
+    assert_eq!(added, vec!["agent", "profile"]);
+
+    let read_back = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    let mut keywords = read_back.structured_content["result"]["keywords"]
+        .as_array()
+        .expect("keywords should be an array")
+        .iter()
+        .map(|value| value.as_str().expect("keyword should be a string"))
+        .collect::<Vec<_>>();
+    keywords.sort_unstable();
+    assert_eq!(keywords, vec!["agent", "profile"]);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

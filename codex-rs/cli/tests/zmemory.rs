@@ -32,6 +32,22 @@ async fn zmemory_help_renders() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_export_help_lists_system_views() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    codex_command(codex_home.path())?
+        .args(["zmemory", "export", "--help"])
+        .assert()
+        .success()
+        .stderr(
+            predicate::str::contains("boot")
+                .and(predicate::str::contains("defaults"))
+                .and(predicate::str::contains("workspace"))
+                .and(predicate::str::contains("paths")),
+        );
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_stats_json_works_on_empty_db() -> Result<()> {
     let codex_home = TempDir::new()?;
     let mut cmd = codex_command(codex_home.path())?;
