@@ -10,6 +10,7 @@ use crate::contextual_user_message::SUBAGENT_NOTIFICATION_OPEN_TAG;
 use assert_matches::assert_matches;
 use chrono::Utc;
 use codex_features::Feature;
+use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_protocol::AgentPath;
 use codex_protocol::config_types::ModeKind;
@@ -18,13 +19,18 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
+use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_zmemory::tool_api::ZmemoryToolAction;
+use codex_zmemory::tool_api::ZmemoryToolCallParam;
+use codex_zmemory::tool_api::run_zmemory_tool_with_context;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::Duration;
@@ -100,6 +106,23 @@ impl AgentControlHarness {
             .expect("start thread");
         (new_thread.thread_id, new_thread.thread)
     }
+}
+
+fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message { role, content, .. } if role == "developer" => {
+                Some(content.as_slice())
+            }
+            _ => None,
+        })
+        .flat_map(|content| content.iter())
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn has_subagent_notification(history_items: &[ResponseItem]) -> bool {
@@ -1836,6 +1859,172 @@ async fn resume_thread_subagent_restores_stored_nickname_and_role() {
         .shutdown_live_agent(resumed_thread_id)
         .await
         .expect("resumed child shutdown should submit");
+}
+
+#[tokio::test]
+async fn resume_agent_from_rollout_rehydrates_zmemory_recall_on_first_trigger_turn() {
+    let mut harness = AgentControlHarness::new().await;
+    harness
+        .config
+        .features
+        .enable(Feature::Zmemory)
+        .expect("test config should allow feature update");
+
+    let new_thread = harness
+        .manager
+        .resume_thread_with_history(
+            harness.config.clone(),
+            InitialHistory::Forked(vec![RolloutItem::ResponseItem(ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "materialized".to_string(),
+                }],
+                end_turn: None,
+                phase: None,
+            })]),
+            AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
+            /*persist_extended_history*/ false,
+            /*parent_trace*/ None,
+        )
+        .await
+        .expect("thread should materialize from history");
+    let thread_id = new_thread.thread_id;
+
+    let _ = harness
+        .control
+        .shutdown_live_agent(thread_id)
+        .await
+        .expect("thread shutdown should succeed");
+
+    let resumed_thread_id = harness
+        .control
+        .resume_agent_from_rollout(harness.config.clone(), thread_id, SessionSource::Exec)
+        .await
+        .expect("resume should succeed");
+    assert_eq!(resumed_thread_id, thread_id);
+
+    run_zmemory_tool_with_context(
+        harness.config.codex_home.as_path(),
+        harness.config.cwd.as_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://my_user".to_string()),
+            content: Some("The user prefers concise Chinese responses.".to_string()),
+            priority: Some(80),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("user memory should be created");
+    run_zmemory_tool_with_context(
+        harness.config.codex_home.as_path(),
+        harness.config.cwd.as_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("The assistant should refer to itself as \"Codex\".".to_string()),
+            priority: Some(80),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("agent memory should be created");
+    run_zmemory_tool_with_context(
+        harness.config.codex_home.as_path(),
+        harness.config.cwd.as_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/my_user".to_string()),
+            content: Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
+                    .to_string(),
+            ),
+            priority: Some(80),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("contract memory should be created");
+
+    let resumed_thread = harness
+        .manager
+        .get_thread(resumed_thread_id)
+        .await
+        .expect("resumed thread should exist");
+
+    let communication = InterAgentCommunication::new(
+        AgentPath::try_from("/root/worker").expect("worker path should parse"),
+        AgentPath::root(),
+        Vec::new(),
+        "之后继续按上次方式来。".to_string(),
+        /*trigger_turn*/ true,
+    );
+    let _ = harness
+        .control
+        .send_inter_agent_communication(resumed_thread_id, communication)
+        .await
+        .expect("trigger-turn communication should succeed");
+
+    timeout(MULTI_AGENT_EVENTUAL_TIMEOUT, async {
+        loop {
+            let event = resumed_thread
+                .next_event()
+                .await
+                .expect("resumed thread should emit events");
+            if matches!(event.msg, EventMsg::TurnStarted(TurnStartedEvent { .. })) {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("trigger-turn should start a resumed turn");
+
+    let developer_texts = timeout(MULTI_AGENT_EVENTUAL_TIMEOUT, async {
+        loop {
+            let turn_context = resumed_thread
+                .codex
+                .session
+                .new_default_turn_with_sub_id("resume-zmemory-check".to_string())
+                .await;
+            assert!(turn_context.features.enabled(Feature::Zmemory));
+
+            let initial_context = resumed_thread
+                .codex
+                .session
+                .build_initial_context(&turn_context)
+                .await;
+            let developer_texts = developer_input_texts(&initial_context);
+            if developer_texts.iter().any(|text| {
+                text.contains("## Zmemory Recall")
+                    && text.contains("core://my_user")
+                    && text.contains("core://agent/my_user")
+            }) {
+                break developer_texts
+                    .iter()
+                    .map(|text| (*text).to_string())
+                    .collect::<Vec<_>>();
+            }
+
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("resumed trigger-turn should surface zmemory recall in initial context");
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall") && text.contains("core://my_user")),
+        "expected resumed trigger-turn initial context to include zmemory recall, got {developer_texts:?}"
+    );
+    let _ = harness
+        .control
+        .shutdown_live_agent(resumed_thread_id)
+        .await
+        .expect("resumed thread shutdown should succeed");
 }
 
 #[tokio::test]
