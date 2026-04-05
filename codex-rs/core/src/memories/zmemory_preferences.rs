@@ -31,8 +31,22 @@ static DURABLE_PREFERENCE_PATTERNS: &[&str] = &[
 ];
 static CHINESE_RESPONSE_PATTERNS: &[&str] = &["中文", "chinese"];
 static CONCISE_RESPONSE_PATTERNS: &[&str] = &["简洁", "简短", "精简", "concise", "brief", "short"];
+static COLLABORATION_CONTINUATION_PATTERNS: &[&str] = &[
+    "按上次方式",
+    "按照上次",
+    "继续按",
+    "以后都这样",
+    "继续这样",
+    "as before",
+    "same way",
+    "going forward",
+    "keep doing this",
+    "stick with this",
+];
 const COLLABORATION_AGENT_ANCHOR_CONTENT: &str =
     "Canonical assistant identity anchor for collaboration preferences.";
+const MAX_AUTOMATIC_PREFERENCE_TEXT_CHARS: usize = 600;
+const MAX_AUTOMATIC_PREFERENCE_ITEMS: usize = 3;
 static QUOTED_VALUE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"["“”'‘’「」『』]([^"“”'‘’「」『』]+)["“”'‘’「」『』]"#).expect("valid regex")
 });
@@ -42,6 +56,9 @@ pub(crate) async fn capture_stable_preference_memories(
     turn_context: &Arc<TurnContext>,
     items: &[UserInput],
 ) {
+    if should_defer_preference_automation(items) {
+        return;
+    }
     let Some(mut capture) = StablePreferenceCapture::from_items(items) else {
         return;
     };
@@ -105,6 +122,9 @@ pub(crate) async fn build_stable_preference_recall_note(
     turn_context: &Arc<TurnContext>,
     items: &[UserInput],
 ) -> Option<String> {
+    if should_defer_preference_automation(items) {
+        return None;
+    }
     let recall_targets = recall_targets_for_items(items);
     if recall_targets.is_empty() {
         return None;
@@ -394,17 +414,7 @@ fn recall_targets_for_items(items: &[UserInput]) -> Vec<StablePreferenceMemory> 
             targets.push(StablePreferenceMemory::AgentSelfReference);
         }
         if !extract_collaboration_style_clauses(text).is_empty()
-            || contains_any_pattern(
-                text,
-                &[
-                    "按上次方式",
-                    "按照上次",
-                    "继续按",
-                    "as before",
-                    "same way",
-                    "going forward",
-                ],
-            )
+            || contains_any_pattern(text, COLLABORATION_CONTINUATION_PATTERNS)
         {
             if !targets.contains(&StablePreferenceMemory::CollaborationAddressContract) {
                 targets.push(StablePreferenceMemory::CollaborationAddressContract);
@@ -415,6 +425,21 @@ fn recall_targets_for_items(items: &[UserInput]) -> Vec<StablePreferenceMemory> 
         }
     }
     targets
+}
+
+fn should_defer_preference_automation(items: &[UserInput]) -> bool {
+    if items.len() > MAX_AUTOMATIC_PREFERENCE_ITEMS {
+        return true;
+    }
+
+    let total_text_chars = items
+        .iter()
+        .filter_map(|item| match item {
+            UserInput::Text { text, .. } => Some(text.chars().count()),
+            _ => None,
+        })
+        .sum::<usize>();
+    total_text_chars > MAX_AUTOMATIC_PREFERENCE_TEXT_CHARS
 }
 
 fn extract_collaboration_style_clauses(text: &str) -> Vec<String> {
@@ -509,6 +534,7 @@ mod tests {
     use super::merge_contract_content;
     use super::parse_name_from_memory_content;
     use super::recall_targets_for_items;
+    use super::should_defer_preference_automation;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
 
@@ -588,6 +614,38 @@ mod tests {
     fn recall_targets_include_contract_for_durable_collaboration_request() {
         let targets = recall_targets_for_items(&[UserInput::Text {
             text: "以后默认用中文回答，尽量简洁一点。".to_string(),
+            text_elements: Vec::new(),
+        }]);
+
+        assert_eq!(
+            targets,
+            vec![
+                StablePreferenceMemory::CollaborationAddressContract,
+                StablePreferenceMemory::AgentSelfReference,
+            ]
+        );
+    }
+
+    #[test]
+    fn defers_preference_automation_for_large_turn_payloads() {
+        let items = vec![
+            UserInput::Text {
+                text: "以后默认用中文回答。".repeat(80),
+                text_elements: Vec::new(),
+            },
+            UserInput::Text {
+                text: "另外顺便处理这个长任务说明。".repeat(40),
+                text_elements: Vec::new(),
+            },
+        ];
+
+        assert!(should_defer_preference_automation(&items));
+    }
+
+    #[test]
+    fn recall_targets_include_contract_for_continue_previous_style_request() {
+        let targets = recall_targets_for_items(&[UserInput::Text {
+            text: "之后继续按上次方式来。".to_string(),
             text_elements: Vec::new(),
         }]);
 

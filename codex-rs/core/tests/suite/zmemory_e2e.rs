@@ -1260,6 +1260,57 @@ async fn zmemory_proactively_captures_durable_collaboration_preferences() -> Res
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_does_not_proactively_capture_preferences_in_high_load_turn() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到，我先处理这批复杂请求。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let high_load_input = format!(
+        "{}{}",
+        "以后默认用中文回答，尽量简洁一点。".repeat(80),
+        "另外这里还有很多一次性任务细节。".repeat(40)
+    );
+    test.submit_turn(&high_load_input).await?;
+
+    let read_result = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    );
+    assert_eq!(
+        read_result
+            .expect_err("high-load turn should defer proactive zmemory capture")
+            .to_string(),
+        "memory not found: core://agent/my_user"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
