@@ -649,6 +649,21 @@ fn system_views_reflect_index_recent_and_glossary() {
     assert_eq!(index_by_domain["result"]["view"]["domain"], "core");
     assert_eq!(index_by_domain["result"]["view"]["entryCount"], 1);
 
+    let paths = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://paths".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("paths view should succeed");
+    assert_eq!(paths["result"]["view"]["view"], "paths");
+    assert_eq!(paths["result"]["view"]["entryCount"], 1);
+    assert_eq!(paths["result"]["view"]["entries"][0]["uri"], "core://agent");
+    assert_eq!(paths["result"]["view"]["entries"][0]["path"], "agent");
+
     let recent_with_path_limit = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
@@ -660,6 +675,17 @@ fn system_views_reflect_index_recent_and_glossary() {
     .expect("path-limited recent view should succeed");
     assert_eq!(recent_with_path_limit["result"]["view"]["view"], "recent");
     assert_eq!(recent_with_path_limit["result"]["view"]["entryCount"], 1);
+
+    let clamped_alias_limit = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://alias/999".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("oversized alias limit should clamp");
+    assert_eq!(clamped_alias_limit["result"]["view"]["view"], "alias");
 }
 
 #[test]
@@ -696,6 +722,20 @@ fn invalid_domains_are_rejected_and_system_writes_are_blocked() {
     assert_eq!(
         invalid_index.to_string(),
         "unknown domain 'writer'. valid domains: core, notes, system, alias"
+    );
+
+    let invalid_system_view = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://nope".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("unknown system view should fail");
+    assert_eq!(
+        invalid_system_view.to_string(),
+        "unknown system view `nope`. supported views: boot, defaults, workspace, index, index/<domain>, paths, paths/<domain>, recent, recent/<n>, glossary, alias, alias/<n>"
     );
 
     let system_write = crate::service::execute_action(

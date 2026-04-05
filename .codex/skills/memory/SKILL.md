@@ -54,9 +54,10 @@ description: 在当前仓库中编排 zmemory 的 recall、capture、refine、li
 3. `export recent` 看最近变化
 4. `export glossary` 看 trigger 覆盖
 5. 同时检查 disclosure 治理：`pathsMissingDisclosure` / `disclosuresNeedingReview`
-6. `export alias [--limit N]` 看 alias coverage、trigger count、缺 trigger 列表、治理优先级、优先级原因、建议关键词和推荐命令
-7. 若 search 行为异常，再检查 query 是否命中了 domain 校验、token boundary 或 snippet 回退语义
-8. 再决定是否 `update`、`delete-path`、`add-alias`、`manage-triggers`
+6. 若要确认“当前到底有哪些活跃路径”，用 `export paths [--domain <domain>]`
+7. `export alias [--limit N]` 看 alias coverage、trigger count、缺 trigger 列表、治理优先级、优先级原因、建议关键词和推荐命令
+8. 若 search 行为异常，再检查 query 是否命中了 domain 校验、token boundary 或 snippet 回退语义
+9. 再决定是否 `update`、`delete-path`、`add-alias`、`manage-triggers`
 
 ### handoff
 

@@ -7,10 +7,15 @@ dependencies: [tech-review, tasks]
 # QA 验证报告
 
 ## 摘要
+- 2026-04-05 收尾修复：补上 `codex-rs/core/tests/suite/mod.rs` 对 `zmemory_e2e` 的模块注册，之前新增的 core e2e 因未被聚合，`cargo test -p codex-core --test all ...` 实际显示 `0 tests`；现在已纳入真实编译与执行路径。
+- 当前“查看全部路径”能力以显式 `system://paths` / `system://paths/<domain>` 和 `codex zmemory export paths` 落地，不再把这个需求隐含在 `system://index`。
+- `codex-tools` 侧补了窄单测，直接锁定 `zmemory` tool contract 中 `uri`/`limit` 对 `paths` 视图的 discoverability，避免再被无关的全量 toolset 测试噪音掩盖。
 - 文档对齐基线完成后，本轮已完成 `update`（patch/append/metadata）与 `create`（保留 URI 写入并兼容 `parentUri + title`）两条兼容扩展。
 - 在此基础上，本轮继续补齐 upstream `admin export` 的本地 CLI-only 对齐：新增 `codex zmemory export boot|index|recent|glossary`，底层仍复用 `read system://...`，不扩展 REST API/daemon。
 - QA 验证仍遵循“改动在哪一层就跑哪一层”：本轮已串行跑通 `codex-zmemory`、`codex-core zmemory_tool_`、`codex-cli --test zmemory`、`codex-core --test all zmemory_function_`，避免多次抢锁。
 - CLI run 手工链路已覆盖 patch/append 与 `parentUri + title` / 自动编号 create，确认 JSON 输出与路径生成符合预期。
+- CLI `zmemory export defaults|workspace|boot` 命令现已加入 QA 验证链路，底层均映射到相应 `system://defaults`/`system://workspace`/`system://boot` 视图并复用 `limit` 覆盖与 `Unknown`/空结果合同。
+- 新增 `system://paths` / `export paths` 作为显式“全部路径”视图；QA 与 architecture/tech-review 说明它满足 agent 所需的观察能力，`limit` 参数的跨视图合同一并同步到文档/skill 资产。
 
 ## 当前已验证项
 1. `RUSTC_WRAPPER= cargo test -p codex-zmemory --quiet` ✅（10 个单元测试通过，覆盖 patch/append/metadata 与 `parentUri + title` / 自动编号模式）。
@@ -36,6 +41,11 @@ dependencies: [tech-review, tasks]
 - `RUSTC_WRAPPER= CARGO_INCREMENTAL= just fix -p codex-zmemory -p codex-cli -p codex-core` 已在全部验证完成后执行；按仓库规则，fix 后未再重跑测试。
 - `just fix -p codex-zmemory -p codex-cli -p codex-core` 在本轮 export 收尾时尝试执行两次，但因工作区构建体量与锁等待超时，未拿到完整结束结果；已看到相关 crate 编译推进至 `codex-zmemory` / `codex-core` / `codex-cli`，但不能宣称 fix 完成。
 - 未来如需引入 `admin export` / memory skill 或进一步改变 create 行为边界，需要新增对应 targeted validation。
+
+## 文档与 skill 状态
+- `.agents/zmemory/architecture.md` / `.agents/zmemory/tech-review.md` 现在明确 `system://paths` 是“查看全部路径”的显式视图，`system://workspace/defaults/alias` 作为本地分叉，`limit` 覆盖所有 system 视图并贴合 CLI/skill 展示。
+- `.agents/zmemory/qa-report.md` 与 skill 参考材料同步，说明 `zmemory export defaults|workspace|boot|index|paths|recent|glossary|alias` 都复用 `limit`，`system://paths` 满足 agent 全路径需求，未知 system view 的错误合同已改为显式报错。
+- `.codex/skills/memory` 引导仍通过当前 CLI `zmemory create/read/update/export` 等命令驱动，在文档中点出 `stats/doctor` 提供 path/alias-level governance 信号（priorityScore、aliasNodesMissingTriggers、coveragePercent）供 skill 参考。
 
 ## T-006 评估结论
 - 本轮继续对齐 upstream `memory skill`，但仅落到“动作映射与边界说明”，没有新增 Rust 接口或 CLI 子命令。

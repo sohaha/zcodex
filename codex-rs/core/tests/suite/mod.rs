@@ -154,3 +154,5 @@ mod user_shell_cmd;
 mod view_image;
 mod web_search;
 mod websocket_fallback;
+#[cfg(not(target_os = "windows"))]
+mod zmemory_e2e;

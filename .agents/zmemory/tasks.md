@@ -23,6 +23,9 @@ dependencies: [prd, tech-review]
 - **关键路径**：状态基线 -> crate 语义对齐 -> CLI/core 适配 -> targeted tests
 - **关键路径**：状态基线 -> crate 语义对齐 -> CLI/core 适配 -> export 薄封装 -> targeted tests
 - **预估复杂度**：中
+- `system://paths` 作为“全部路径”浏览视图已在本地呈现，agent 不再缺失“查看全部路径”的操作能力；`system://index` 保留索引语义，`system://workspace`/`system://defaults`/`system://alias` 保持本地增强，明确为分叉支线。
+- `limit` 参数适用于所有 `system://` 视图（boot/index/recent/glossary/alias），文档、QA 与 skill references 已同步合同，避免视图不一致。
+- 2026-04-05 收尾时额外修复：`codex-rs/core/tests/suite/mod.rs` 之前漏挂 `zmemory_e2e`，导致新增 core e2e 没进入 `--test all` 聚合；该遗漏已补齐。
 
 ---
 
@@ -85,9 +88,9 @@ dependencies: [prd, tech-review]
 - 不要覆盖用户已有无关 handoff 内容。
 
 **完成标志**：
-- [ ] 状态文件更新完成
-- [ ] 元数据更新完成
-- [ ] 交接信息已补充
+- [x] 状态文件更新完成
+- [x] 元数据更新完成
+- [x] 交接信息已补充
 
 ---
 
@@ -129,9 +132,9 @@ dependencies: [prd, tech-review]
 - 每次内容变更后都要验证搜索索引刷新行为。
 
 **完成标志**：
-- [ ] crate 语义实现完成
-- [ ] CLI 适配完成
-- [ ] 针对性测试通过
+- [x] crate 语义实现完成
+- [x] CLI 适配完成
+- [x] 针对性测试通过
 
 ---
 
@@ -171,9 +174,9 @@ dependencies: [prd, tech-review]
 - 不要为了追 parity 破坏当前已有调用方式，除非有明确迁移策略。
 
 **完成标志**：
-- [ ] 已做接口决策
-- [ ] 文档与实现一致
-- [ ] 回归测试补齐
+- [x] 已做接口决策
+- [x] 文档与实现一致
+- [x] 回归测试补齐
 
 #### Task T-003A：实现本地 CLI-only `export` 视图导出
 
@@ -396,3 +399,8 @@ graph TD
 | 版本 | 日期 | 作者 | 变更内容 |
 |------|------|------|----------|
 | 1.0 | 2026-03-29 | Scrum Master Agent | 基于本地现状与上游参考重写 zmemory 实施任务拆解 |
+
+## 7. 当前任务状态同步
+- T-001 ~ T-006 全部已完成，文档/QA/架构/tech-review 均对齐当前实现与验证结果；QA 报告列举的 CLI/handler/run matrix 真实可追。
+- `system://paths` 视图已被确认是“查看全部路径”的显式入口，不需要新增 agent action；`system://index` 保留既有索引语义。
+- `limit` 约定覆盖所有系统视图，视图返回 `Unknown`/空结果 contract 也在 QA/tech-review 中同步说明。

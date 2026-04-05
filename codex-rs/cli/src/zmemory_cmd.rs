@@ -151,6 +151,7 @@ pub enum ZmemoryExportTarget {
     Defaults,
     Workspace,
     Index,
+    Paths,
     Recent,
     Glossary,
     Alias,
@@ -310,6 +311,10 @@ fn export_uri(command: &ZmemoryExportCommand) -> String {
             Some(domain) => format!("system://index/{domain}"),
             None => "system://index".to_string(),
         },
+        ZmemoryExportTarget::Paths => match command.domain.as_deref() {
+            Some(domain) => format!("system://paths/{domain}"),
+            None => "system://paths".to_string(),
+        },
         ZmemoryExportTarget::Recent => match command.limit {
             Some(limit) => format!("system://recent/{limit}"),
             None => "system://recent".to_string(),
@@ -345,6 +350,10 @@ mod tests {
         assert_eq!(
             export_uri(&export_command(ZmemoryExportTarget::Workspace)),
             "system://workspace"
+        );
+        assert_eq!(
+            export_uri(&export_command(ZmemoryExportTarget::Paths)),
+            "system://paths"
         );
     }
 }

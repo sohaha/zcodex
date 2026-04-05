@@ -25,14 +25,15 @@ pub fn read_system_view(
         ParsedSystemView::Index { domain, limit } => {
             read_index_view(conn, config, domain.as_deref(), limit)
         }
+        ParsedSystemView::Paths { domain, limit } => {
+            read_paths_view(conn, config, domain.as_deref(), limit)
+        }
         ParsedSystemView::Recent { limit } => read_recent_view(conn, limit),
         ParsedSystemView::Glossary { limit } => read_glossary_view(conn, limit),
         ParsedSystemView::Alias { limit } => read_alias_view(conn, limit),
-        other => Ok(json!({
-            "view": other.raw(),
-            "entryCount": 0,
-            "entries": [],
-        })),
+        ParsedSystemView::Unknown { raw } => Err(anyhow!(
+            "unknown system view `{raw}`. supported views: boot, defaults, workspace, index, index/<domain>, paths, paths/<domain>, recent, recent/<n>, glossary, alias, alias/<n>"
+        )),
     }
 }
 
@@ -43,6 +44,10 @@ enum ParsedSystemView {
     Defaults,
     Workspace,
     Index {
+        domain: Option<String>,
+        limit: usize,
+    },
+    Paths {
         domain: Option<String>,
         limit: usize,
     },
@@ -60,22 +65,8 @@ enum ParsedSystemView {
     },
 }
 
-impl ParsedSystemView {
-    fn raw(&self) -> &str {
-        match self {
-            Self::Boot { .. } => "boot",
-            Self::Defaults => "defaults",
-            Self::Workspace => "workspace",
-            Self::Index { .. } => "index",
-            Self::Recent { .. } => "recent",
-            Self::Glossary { .. } => "glossary",
-            Self::Alias { .. } => "alias",
-            Self::Unknown { raw } => raw,
-        }
-    }
-}
-
 fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemView> {
+    let default_limit = default_limit.clamp(1, 100);
     let trimmed = view.trim_matches('/');
     if trimmed.is_empty() {
         return Ok(ParsedSystemView::Unknown { raw: String::new() });
@@ -99,13 +90,22 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
             domain: Some(tail[0].to_string()),
             limit: default_limit,
         }),
+        "paths" if tail.is_empty() => Ok(ParsedSystemView::Paths {
+            domain: None,
+            limit: default_limit,
+        }),
+        "paths" if tail.len() == 1 => Ok(ParsedSystemView::Paths {
+            domain: Some(tail[0].to_string()),
+            limit: default_limit,
+        }),
         "recent" if tail.is_empty() => Ok(ParsedSystemView::Recent {
             limit: default_limit,
         }),
         "recent" if tail.len() == 1 => Ok(ParsedSystemView::Recent {
             limit: tail[0]
                 .parse::<usize>()
-                .map_err(|err| anyhow!("invalid system recent limit `{}`: {err}", tail[0]))?,
+                .map_err(|err| anyhow!("invalid system recent limit `{}`: {err}", tail[0]))?
+                .clamp(1, 100),
         }),
         "glossary" if tail.is_empty() => Ok(ParsedSystemView::Glossary {
             limit: default_limit,
@@ -116,7 +116,8 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
         "alias" if tail.len() == 1 => Ok(ParsedSystemView::Alias {
             limit: tail[0]
                 .parse::<usize>()
-                .map_err(|err| anyhow!("invalid system alias limit `{}`: {err}", tail[0]))?,
+                .map_err(|err| anyhow!("invalid system alias limit `{}`: {err}", tail[0]))?
+                .clamp(1, 100),
         }),
         _ => Ok(ParsedSystemView::Unknown {
             raw: trimmed.to_string(),
@@ -280,6 +281,85 @@ fn read_index_view(
         }),
         None => json!({
             "view": "index",
+            "totalCount": total,
+            "entryCount": entries.len(),
+            "entries": entries,
+        }),
+    })
+}
+
+fn read_paths_view(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    domain: Option<&str>,
+    limit: usize,
+) -> Result<Value> {
+    if let Some(domain) = domain {
+        anyhow::ensure!(
+            config.is_valid_domain(domain),
+            "unknown domain '{domain}'. valid domains: {}",
+            config.valid_domains_for_display().join(", ")
+        );
+    }
+    let (total, entries) = if let Some(domain) = domain {
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM search_documents WHERE domain = ?1",
+            [domain],
+            |row| row.get(0),
+        )?;
+        let mut stmt = conn.prepare(
+            "SELECT domain, path, uri, node_uuid, priority
+             FROM search_documents
+             WHERE domain = ?1
+             ORDER BY path ASC, uri ASC
+             LIMIT ?2",
+        )?;
+        let entries = stmt
+            .query_map((domain, limit as i64), |row| {
+                Ok(json!({
+                    "domain": row.get::<_, String>(0)?,
+                    "path": row.get::<_, String>(1)?,
+                    "uri": row.get::<_, String>(2)?,
+                    "nodeUuid": row.get::<_, String>(3)?,
+                    "priority": row.get::<_, i64>(4)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        (total, entries)
+    } else {
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+            row.get(0)
+        })?;
+        let mut stmt = conn.prepare(
+            "SELECT domain, path, uri, node_uuid, priority
+             FROM search_documents
+             ORDER BY domain ASC, path ASC, uri ASC
+             LIMIT ?1",
+        )?;
+        let entries = stmt
+            .query_map([limit as i64], |row| {
+                Ok(json!({
+                    "domain": row.get::<_, String>(0)?,
+                    "path": row.get::<_, String>(1)?,
+                    "uri": row.get::<_, String>(2)?,
+                    "nodeUuid": row.get::<_, String>(3)?,
+                    "priority": row.get::<_, i64>(4)?,
+                }))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        (total, entries)
+    };
+
+    Ok(match domain {
+        Some(domain) => json!({
+            "view": "paths",
+            "domain": domain,
+            "totalCount": total,
+            "entryCount": entries.len(),
+            "entries": entries,
+        }),
+        None => json!({
+            "view": "paths",
             "totalCount": total,
             "entryCount": entries.len(),
             "entries": entries,

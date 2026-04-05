@@ -839,6 +839,18 @@ async fn zmemory_export_supports_domain_and_recent_limit() -> Result<()> {
     assert_eq!(recent_payload["result"]["uri"], "system://recent/1");
     assert_eq!(recent_payload["result"]["view"]["entryCount"], 1);
 
+    let paths_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "export", "paths", "--domain", "core", "--json"],
+    )?;
+    assert_eq!(paths_payload["result"]["uri"], "system://paths/core");
+    assert_eq!(paths_payload["result"]["view"]["view"], "paths");
+    assert_eq!(paths_payload["result"]["view"]["entryCount"], 1);
+    assert_eq!(
+        paths_payload["result"]["view"]["entries"][0]["uri"],
+        "core://agent-profile"
+    );
+
     codex_command(codex_home.path())?
         .args([
             "zmemory",
@@ -857,6 +869,45 @@ async fn zmemory_export_supports_domain_and_recent_limit() -> Result<()> {
     assert_eq!(alias_payload["result"]["uri"], "system://alias/1");
     assert_eq!(alias_payload["result"]["view"]["view"], "alias");
     assert_eq!(alias_payload["result"]["view"]["entryCount"], 1);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_export_supports_boot_defaults_and_workspace() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://agent",
+            "--content",
+            "Agent memory",
+        ])
+        .assert()
+        .success();
+
+    let boot_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "export", "boot", "--limit", "1", "--json"],
+    )?;
+    assert_eq!(boot_payload["result"]["uri"], "system://boot");
+    assert_eq!(boot_payload["result"]["view"]["view"], "boot");
+
+    let defaults_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "export", "defaults", "--json"],
+    )?;
+    assert_eq!(defaults_payload["result"]["uri"], "system://defaults");
+    assert_eq!(defaults_payload["result"]["view"]["view"], "defaults");
+
+    let workspace_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "export", "workspace", "--json"],
+    )?;
+    assert_eq!(workspace_payload["result"]["uri"], "system://workspace");
+    assert_eq!(workspace_payload["result"]["view"]["view"], "workspace");
 
     Ok(())
 }

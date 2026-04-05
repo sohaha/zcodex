@@ -79,7 +79,7 @@ pub fn create_zmemory_tool() -> ToolSpec {
         str_prop(
             "uri",
             Some(
-                "目标 URI。支持系统视图：system://boot|defaults|workspace|index|index/<domain>|recent|recent/<n>|glossary|alias|alias/<n>。system://defaults 暴露产品默认值；system://workspace 暴露当前工作区运行时事实。",
+                "目标 URI。支持系统视图：system://boot|defaults|workspace|index|index/<domain>|paths|paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>。system://paths 暴露全部活跃记忆路径；system://defaults 暴露产品默认值；system://workspace 暴露当前工作区运行时事实。",
             ),
         ),
         str_prop("parent_uri", Some("create 操作使用的父级 URI。")),
@@ -100,7 +100,7 @@ pub fn create_zmemory_tool() -> ToolSpec {
         str_array_prop("remove", Some("要移除的触发关键词。")),
         int_prop(
             "limit",
-            Some("system://defaults 与 system://workspace 的结果或视图条目上限。"),
+            Some("system://boot|index|paths|recent|glossary|alias 等系统视图的结果条目上限。"),
         ),
     ]);
 
@@ -119,7 +119,7 @@ pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
             "读取某条记忆或系统视图。",
             BTreeMap::from([str_prop(
                 "uri",
-                Some("记忆 URI，例如 core://agent 或 system://boot。"),
+                Some("记忆 URI，例如 core://agent、system://boot 或 system://paths。"),
             )]),
             vec!["uri"],
         ),
@@ -189,4 +189,54 @@ pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
             vec!["uri"],
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn function_tool(spec: ToolSpec) -> ResponsesApiTool {
+        match spec {
+            ToolSpec::Function(tool) => tool,
+            other => panic!("expected function tool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn zmemory_tool_uri_description_mentions_paths_views() {
+        let tool = function_tool(create_zmemory_tool());
+        let JsonSchema::Object { properties, .. } = tool.parameters else {
+            panic!("zmemory tool should expose object parameters");
+        };
+
+        let Some(JsonSchema::String {
+            description: Some(description),
+        }) = properties.get("uri")
+        else {
+            panic!("uri property should expose a description");
+        };
+
+        assert!(description.contains("system://paths"));
+        assert!(description.contains("paths/<domain>"));
+        assert!(description.contains("全部活跃记忆路径"));
+    }
+
+    #[test]
+    fn zmemory_tool_limit_description_mentions_paths_view() {
+        let tool = function_tool(create_zmemory_tool());
+        let JsonSchema::Object { properties, .. } = tool.parameters else {
+            panic!("zmemory tool should expose object parameters");
+        };
+
+        let Some(JsonSchema::Integer {
+            description: Some(description),
+        }) = properties.get("limit")
+        else {
+            panic!("limit property should expose a description");
+        };
+
+        assert!(description.contains("system://boot"));
+        assert!(description.contains("paths"));
+        assert!(description.contains("alias"));
+    }
 }

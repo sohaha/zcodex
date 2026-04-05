@@ -83,6 +83,7 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 - `system://defaults`
 - `system://workspace`
 - `system://index`
+- `system://paths`
 - `system://recent`
 - `system://glossary`
 - `system://alias`
@@ -125,6 +126,7 @@ codex zmemory doctor --json
 - `codex zmemory export defaults`
 - `codex zmemory export workspace`
 - `codex zmemory export index [--domain core] [--limit N]`
+- `codex zmemory export paths [--domain core] [--limit N]`
 - `codex zmemory export recent [--limit N]`
 - `codex zmemory export glossary [--limit N]`
 - `codex zmemory export alias [--limit N]`
@@ -137,9 +139,15 @@ codex zmemory doctor --json
 - `export defaults` -> `system://defaults`
 - `export workspace` -> `system://workspace`
 - `export index --domain core` -> `system://index/core`
+- `export paths --domain core` -> `system://paths/core`
 - `export recent --limit 5` -> `system://recent/5`
 - `export glossary` -> `system://glossary`
 - `export alias --limit 5` -> `system://alias/5`
+
+`system://index` 与 `system://paths` 现在刻意区分：
+
+- `system://index`：面向浏览/召回的稳定索引视图，保留当前本地的索引语义。
+- `system://paths`：显式列出全部活跃记忆路径，适合治理、排查“到底有哪些 path”这类问题。
 
 `system://boot` 现在优先返回 `CORE_MEMORY_URIS` 中已存在的锚点节点，并显式给出缺失锚点列表；不再按全库 priority 直接截取前 N 条。
 
