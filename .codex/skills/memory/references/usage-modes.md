@@ -4,6 +4,7 @@
 
 ## 1. bootstrap / recall
 
+- 先用 `read system://workspace` 确认当前实际 DB，再用 `read system://defaults` 校对默认事实。
 - 用 `read system://boot` 读取配置化 boot 锚点。
 - 已知 URI 用 `read`，未知 URI 用 `search`。
 
@@ -16,5 +17,5 @@
 ## 3. review / governance
 
 - `stats` / `doctor` 看 orphan / deprecated / disclosure / alias pressure。
-- `export recent|glossary|alias` 看最近变化与 trigger wiring。
+- `export paths|recent|glossary|alias` 看活跃 path、最近内容版本与 trigger wiring；alias/path 元数据治理不要只靠 recent。
 - 必要时 `rebuild-search`。

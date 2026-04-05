@@ -298,6 +298,54 @@ async fn zmemory_update_delete_and_rebuild_round_trip() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_delete_path_preserves_other_aliases() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://agent-profile",
+            "--content",
+            "Profile memory",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "core://profile-mirror",
+            "core://agent-profile",
+        ])
+        .assert()
+        .success();
+
+    run_json(
+        codex_home.path(),
+        &["zmemory", "delete-path", "core://profile-mirror", "--json"],
+    )?;
+
+    let read_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "read", "core://agent-profile", "--json"],
+    )?;
+    assert_eq!(read_payload["result"]["content"], "Profile memory");
+
+    let search_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "search", "Profile", "--json"],
+    )?;
+    assert_eq!(search_payload["result"]["matchCount"], 1);
+    assert_eq!(
+        search_payload["result"]["matches"][0]["uri"],
+        "core://agent-profile"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_create_rejects_combined_uri_and_parent_uri() -> Result<()> {
     let codex_home = TempDir::new()?;
 

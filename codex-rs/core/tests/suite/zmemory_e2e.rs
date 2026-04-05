@@ -546,6 +546,71 @@ async fn zmemory_mcp_read_memory_tool_maps_to_read_action() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_read_memory_tool_supports_paths_view() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent".to_string()),
+            content: Some("Agent memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-read-paths",
+                "read_memory",
+                &serde_json::to_string(&json!({
+                    "uri": "system://paths"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("read paths").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-read-paths")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "read");
+    assert_eq!(payload["result"]["uri"], "system://paths");
+    assert_eq!(payload["result"]["view"]["view"], "paths");
+    assert_eq!(payload["result"]["view"]["entryCount"], 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_mcp_create_memory_tool_maps_to_create_action() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -727,6 +792,119 @@ async fn zmemory_mcp_search_memory_tool_maps_to_search_action() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_search_memory_tool_accepts_uri_scope_and_legacy_domain() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://team".to_string()),
+            content: Some("Team root memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://team/profile".to_string()),
+            content: Some("Scoped profile memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-search-domain",
+                "search_memory",
+                &serde_json::to_string(&json!({
+                    "query": "profile",
+                    "domain": "core"
+                }))?,
+            ),
+            ev_function_call(
+                "call-search-uri",
+                "search_memory",
+                &serde_json::to_string(&json!({
+                    "query": "profile",
+                    "uri": "core://team"
+                }))?,
+            ),
+            ev_function_call(
+                "call-search-both",
+                "search_memory",
+                &serde_json::to_string(&json!({
+                    "query": "profile",
+                    "uri": "core://team",
+                    "domain": "missing"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("search scoped memory through MCP alias")
+        .await?;
+
+    let request = follow_up.single_request();
+    let domain_output = request
+        .function_call_output_text("call-search-domain")
+        .expect("domain search output should be present");
+    let domain_payload = extract_zmemory_json_block(&domain_output);
+    assert_eq!(domain_payload["result"]["matchCount"], 1);
+
+    let uri_output = request
+        .function_call_output_text("call-search-uri")
+        .expect("uri search output should be present");
+    let uri_payload = extract_zmemory_json_block(&uri_output);
+    assert_eq!(uri_payload["result"]["matchCount"], 1);
+    assert_eq!(
+        uri_payload["result"]["matches"][0]["uri"],
+        "core://team/profile"
+    );
+
+    let both_output = request
+        .function_call_output_text("call-search-both")
+        .expect("combined search output should be present");
+    let both_payload = extract_zmemory_json_block(&both_output);
+    assert_eq!(both_payload["result"]["matchCount"], 1);
+    assert_eq!(
+        both_payload["result"]["matches"][0]["uri"],
+        "core://team/profile"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_mcp_delete_memory_tool_maps_to_delete_path_action() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -799,6 +977,98 @@ async fn zmemory_mcp_delete_memory_tool_maps_to_delete_path_action() -> Result<(
     )
     .expect_err("deleted memory should not be readable");
     assert_eq!(err.to_string(), "memory not found: core://agent-profile");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_mcp_delete_memory_tool_preserves_other_paths_for_same_node() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Delete alias only".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://profile-mirror".to_string()),
+            target_uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-delete-memory",
+                "delete_memory",
+                &serde_json::to_string(&json!({
+                    "uri": "core://profile-mirror"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("delete alias memory through MCP alias")
+        .await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-delete-memory")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "delete-path");
+    assert_eq!(payload["result"]["uri"], "core://profile-mirror");
+
+    let read = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        read.structured_content["result"]["content"],
+        "Delete alias only"
+    );
 
     Ok(())
 }

@@ -96,6 +96,7 @@ struct ReadMemoryArgs {
 #[derive(Deserialize)]
 struct SearchMemoryArgs {
     query: String,
+    uri: Option<String>,
     domain: Option<String>,
     limit: Option<usize>,
 }
@@ -157,7 +158,7 @@ fn parse_zmemory_tool_args(
             let args: SearchMemoryArgs = parse_arguments(arguments)?;
             Ok(ZmemoryToolCallParam {
                 action: ZmemoryToolAction::Search,
-                uri: map_domain_to_scope(args.domain),
+                uri: map_search_scope(args.uri, args.domain),
                 query: Some(args.query),
                 limit: args.limit,
                 ..ZmemoryToolCallParam::default()
@@ -232,6 +233,14 @@ fn map_domain_to_scope(domain: Option<String>) -> Option<String> {
         return Some(domain.to_string());
     }
     Some(format!("{domain}://"))
+}
+
+fn map_search_scope(uri: Option<String>, domain: Option<String>) -> Option<String> {
+    uri.as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+        .or_else(|| map_domain_to_scope(domain))
 }
 
 async fn resolve_zmemory_config_for_turn(

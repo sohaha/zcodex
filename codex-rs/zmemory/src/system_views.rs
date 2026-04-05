@@ -369,8 +369,9 @@ fn read_paths_view(
 
 fn read_recent_view(conn: &Connection, limit: usize) -> Result<Value> {
     let mut stmt = conn.prepare(
-        "SELECT uri, updated_at
+        "SELECT MIN(uri) AS uri, MAX(updated_at) AS updated_at
          FROM search_documents
+         GROUP BY node_uuid
          ORDER BY updated_at DESC, uri ASC
          LIMIT ?1",
     )?;
@@ -476,21 +477,16 @@ fn read_alias_view(conn: &Connection, limit: usize) -> Result<Value> {
 fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
     let mut stmt = conn.prepare(
         "SELECT alias.node_uuid,
-                alias.domain,
-                alias.path,
                 alias.alias_count,
                 COALESCE(trigger_counts.count, 0) AS trigger_count
          FROM (
              SELECT e.child_uuid AS node_uuid,
-                    MIN(p.domain) AS domain,
-                    MIN(p.path) AS path,
                     COUNT(*) AS alias_count
              FROM edges e
              JOIN paths p ON p.edge_id = e.id
              GROUP BY e.child_uuid
              HAVING COUNT(*) > 1
-             ORDER BY alias_count DESC, domain ASC, path ASC
-             LIMIT ?1
+             ORDER BY alias_count DESC, node_uuid ASC
          ) alias
          LEFT JOIN (
              SELECT node_uuid, COUNT(*) AS count
@@ -500,20 +496,23 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
     )?;
 
     let rows = stmt
-        .query_map([limit as i64], |row| {
+        .query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, i64>(3)?,
-                row.get::<_, i64>(4)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     let mut entries = rows
         .into_iter()
-        .map(|(node_uuid, domain, path, alias_count, trigger_count)| {
+        .map(|(node_uuid, alias_count, trigger_count)| {
+            let paths = alias_paths_for_node(conn, &node_uuid)?;
+            let (domain, path) = paths
+                .first()
+                .cloned()
+                .ok_or_else(|| anyhow!("alias node {node_uuid} has no active paths"))?;
             let node_uri = format!("{domain}://{path}");
             let missing_triggers = trigger_count == 0;
             let (review_priority, priority_score) =
@@ -557,6 +556,8 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
             })
     });
 
+    entries.truncate(limit);
+
     Ok(entries)
 }
 
@@ -580,19 +581,8 @@ fn alias_priority_reason(alias_count: i64, missing_triggers: bool) -> String {
 }
 
 fn infer_alias_keywords(conn: &Connection, node_uuid: &str) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT p.path
-         FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.child_uuid = ?1
-         ORDER BY p.domain ASC, p.path ASC",
-    )?;
-    let paths = stmt
-        .query_map([node_uuid], |row| row.get::<_, String>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
     let mut keywords = BTreeSet::new();
-    for path in paths {
+    for (_, path) in alias_paths_for_node(conn, node_uuid)? {
         for segment in path.split('/') {
             for token in segment.split(['-', '_']) {
                 let candidate = token.trim().to_lowercase();
@@ -604,6 +594,21 @@ fn infer_alias_keywords(conn: &Connection, node_uuid: &str) -> Result<Vec<String
     }
 
     Ok(keywords.into_iter().take(3).collect())
+}
+
+fn alias_paths_for_node(conn: &Connection, node_uuid: &str) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT p.domain, p.path
+         FROM edges e
+         JOIN paths p ON p.edge_id = e.id
+         WHERE e.child_uuid = ?1
+         ORDER BY p.domain ASC, p.path ASC",
+    )?;
+    stmt.query_map([node_uuid], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?
+    .collect::<rusqlite::Result<Vec<_>>>()
+    .map_err(Into::into)
 }
 
 fn suggestion_command(node_uri: &str, suggested_keywords: &Value) -> String {

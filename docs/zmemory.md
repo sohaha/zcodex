@@ -101,10 +101,10 @@ codex zmemory rebuild-search --json
 为对齐 MCP 生态，内置别名工具如下（映射到同一套动作层）：
 
 - `read_memory` -> `read`
-- `search_memory` -> `search`
+- `search_memory` -> `search`（主参数为 `query` + 可选 `uri` scope；`domain` 仅兼容旧调用）
 - `create_memory` -> `create`
 - `update_memory` -> `update`
-- `delete_memory` -> `delete-path`
+- `delete_memory` -> `delete-path`（只删除路径；若同一节点仍有其他 path/alias，则底层内容仍可通过其他路径访问）
 - `add_alias` -> `add-alias`
 - `manage_triggers` -> `manage-triggers`
 
@@ -116,6 +116,7 @@ codex zmemory rebuild-search --json
 - `system://defaults`
 - `system://workspace`
 - `system://index`
+- `system://paths`
 - `system://recent`
 - `system://glossary`
 - `system://alias`
@@ -130,7 +131,8 @@ codex zmemory rebuild-search --json
 1. 先看 `system://workspace`
 2. 再看 `system://defaults`
 3. 再看 `stats` / `doctor`
-4. 最后看 `system://alias`、`recent`、`glossary`
+4. 最后看 `system://paths`、`system://alias`、`recent`、`glossary`
+   - `recent` 代表最近内容版本节点；alias/trigger/path 等治理动作请结合 `paths`、`alias`、`doctor` 判断
 
 ## 诊断字段
 

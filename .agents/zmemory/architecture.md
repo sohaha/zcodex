@@ -4,7 +4,7 @@
 - 继续保持 `codex-zmemory` 作为嵌入式 Rust crate，仅由 `codex-cli/core` 工具调用。
 - 把所有上游 `memory skill` 要求的 review/admin/alias 命令，映射到本地 `system://…` 视图和 `stats/doctor` 报表，不扩 REST 或 daemon 服务。
 - 明确 `system://workspace`/`system://defaults` 分析当前 runtime 数据库、`core_memory_uris` 启动信息以及 path resolution。
-- 确保 `limit` 参数对所有 `system://` 视图（boot/index/paths/recent/glossary/alias）保持一致，文档/skill/QA 描述同源。
+- 确保 `limit` 参数对 `boot/index/paths/recent/glossary/alias` 这些分页视图保持一致；`defaults/workspace` 继续作为导出入口，但不承诺分页，文档/skill/QA 描述需同源。
 - `system://paths` 为显式“全部路径”浏览入口，`system://workspace`/`system://defaults`/`system://alias` 继续作为本地分叉，帮助 agent 了解运行时 path/alias 状态。
 
 ## 接入点

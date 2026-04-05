@@ -385,9 +385,11 @@ impl Session {
                 mailbox_content_refs.as_slice(),
             )
             .await;
-            self.set_pending_zmemory_recall_note(recall_note).await;
+            self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), recall_note)
+                .await;
         } else {
-            self.set_pending_zmemory_recall_note(None).await;
+            self.set_pending_zmemory_recall_note(turn_context.sub_id.as_str(), None)
+                .await;
         }
         self.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
             .await;
@@ -647,30 +649,28 @@ async fn handle_buddy_observer(
     let mut soul = turn_context.config.tui_buddy_soul.clone();
     if soul.is_none()
         && (turn_context.config.tui_show_buddy || turn_context.config.tui_buddy_reactions_enabled)
+        && let Some(generated) = generate_buddy_soul(session.as_ref(), turn_context.as_ref()).await
     {
-        if let Some(generated) = generate_buddy_soul(session.as_ref(), turn_context.as_ref()).await
-        {
-            match persist_buddy_soul(turn_context.config.codex_home.as_path(), &generated).await {
-                Ok(()) => {
-                    session.reload_user_config_layer().await;
-                    session
-                        .send_event(
-                            turn_context.as_ref(),
-                            EventMsg::BuddySoulGenerated(BuddySoulGeneratedEvent {
-                                thread_id: session.conversation_id.to_string(),
-                                name: generated.name.clone(),
-                                personality: generated.personality.clone(),
-                            }),
-                        )
-                        .await;
-                    soul = Some(generated);
-                }
-                Err(err) => {
-                    warn!(
-                        turn_id = %turn_context.sub_id,
-                        "failed to persist buddy soul: {err}"
-                    );
-                }
+        match persist_buddy_soul(turn_context.config.codex_home.as_path(), &generated).await {
+            Ok(()) => {
+                session.reload_user_config_layer().await;
+                session
+                    .send_event(
+                        turn_context.as_ref(),
+                        EventMsg::BuddySoulGenerated(BuddySoulGeneratedEvent {
+                            thread_id: session.conversation_id.to_string(),
+                            name: generated.name.clone(),
+                            personality: generated.personality.clone(),
+                        }),
+                    )
+                    .await;
+                soul = Some(generated);
+            }
+            Err(err) => {
+                warn!(
+                    turn_id = %turn_context.sub_id,
+                    "failed to persist buddy soul: {err}"
+                );
             }
         }
     }

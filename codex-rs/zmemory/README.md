@@ -99,10 +99,10 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 为对齐 MCP 生态，内置别名工具如下（映射到同一套动作层）：
 
 - `read_memory` -> `read`
-- `search_memory` -> `search`
+- `search_memory` -> `search`（主参数为 `query` + 可选 `uri` scope；`domain` 仅兼容旧调用）
 - `create_memory` -> `create`
 - `update_memory` -> `update`
-- `delete_memory` -> `delete-path`
+- `delete_memory` -> `delete-path`（只删除路径；若同一节点仍有其他 path/alias，则底层内容仍可通过其他路径访问）
 - `add_alias` -> `add-alias`
 - `manage_triggers` -> `manage-triggers`
 
@@ -166,7 +166,7 @@ codex zmemory doctor --json
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
 - `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
-- `codex zmemory export recent --json`：查看最近变更节点
+- `codex zmemory export recent --json`：查看最近内容版本节点（按节点内容时间聚合，不反映 alias/trigger/path 元数据治理动作）
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
 
 当前 `pathResolution` 的稳定字段为：
@@ -190,7 +190,7 @@ codex zmemory doctor --json
 1. 先看 `system://workspace` 判断当前实际 DB、boot 是否健康、是否显式覆盖默认路径。
 2. 再看 `system://defaults`，确认当前现象是产品默认还是 workspace 特例。
 3. 再看 `stats` / `doctor` 判断 orphan / deprecated / alias / disclosure 压力。
-4. 再用 `export recent` / `export glossary` 判断新节点是否进入召回网络。
+4. 再用 `export paths` / `export recent` / `export glossary` 判断活跃路径、最近内容版本与 trigger wiring 是否进入召回网络。
 5. 若 `stats` / `doctor` 提示 alias/trigger 缺口，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
 
 ### 区分“没有记忆”与“搜不到”
@@ -250,7 +250,7 @@ codex zmemory doctor --json
 - `capture`：新增稳定信息时用 `create`，已有节点修订时优先 `update`
 - `refine`：复用已对齐的 patch / append / metadata-only `update`
 - `linking`：复用 `add-alias` 与 `manage-triggers`
-- `review`：复用 `export recent|glossary`、`stats`、`doctor`、`rebuild-search`
+- `review`：复用 `export paths|recent|glossary|alias`、`stats`、`doctor`、`rebuild-search`
 - `handoff`：当前仍由上层项目记忆或 agent 工作流负责，不在 `codex-zmemory` crate 内扩成新的会话管理接口
 
 这样做的目的，是让 `codex-zmemory` 继续只提供稳定的本地动作层，而把“什么时候读、什么时候写、什么时候整理”留给上层 skill 或项目流程编排。

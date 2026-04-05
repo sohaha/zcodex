@@ -15,6 +15,7 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
                 e.child_uuid,
                 m.id,
                 m.content,
+                m.created_at,
                 e.disclosure,
                 e.priority,
                 COALESCE((
@@ -33,23 +34,27 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
             let node_uuid: String = row.get(2)?;
             let memory_id: i64 = row.get(3)?;
             let content: String = row.get(4)?;
-            let disclosure: Option<String> = row.get(5)?;
-            let priority: i64 = row.get(6)?;
-            let keywords: String = row.get(7)?;
+            let updated_at: String = row.get(5)?;
+            let disclosure: Option<String> = row.get(6)?;
+            let priority: i64 = row.get(7)?;
+            let keywords: String = row.get(8)?;
             Ok((
-                domain, path, node_uuid, memory_id, content, disclosure, priority, keywords,
+                domain, path, node_uuid, memory_id, content, updated_at, disclosure, priority,
+                keywords,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?
     };
 
-    for (domain, path, node_uuid, memory_id, content, disclosure, priority, keywords) in rows {
+    for (domain, path, node_uuid, memory_id, content, updated_at, disclosure, priority, keywords) in
+        rows
+    {
         let uri = format!("{domain}://{path}");
         let search_terms = build_search_terms(&domain, &path, &content, &keywords);
         tx.execute(
             "INSERT INTO search_documents(
-                domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 domain,
                 path,
@@ -59,7 +64,8 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
                 content,
                 disclosure,
                 search_terms,
-                priority
+                priority,
+                updated_at
             ],
         )?;
         tx.execute(

@@ -1985,17 +1985,23 @@ async fn resume_agent_from_rollout_rehydrates_zmemory_recall_on_first_trigger_tu
 
     let developer_texts = timeout(MULTI_AGENT_EVENTUAL_TIMEOUT, async {
         loop {
-            let turn_context = resumed_thread
-                .codex
-                .session
-                .new_default_turn_with_sub_id("resume-zmemory-check".to_string())
-                .await;
+            let turn_context = {
+                let active_turn = resumed_thread.codex.session.active_turn.lock().await;
+                active_turn
+                    .as_ref()
+                    .and_then(|turn| turn.tasks.first())
+                    .map(|(_, task)| Arc::clone(&task.turn_context))
+            };
+            let Some(turn_context) = turn_context else {
+                sleep(Duration::from_millis(10)).await;
+                continue;
+            };
             assert!(turn_context.features.enabled(Feature::Zmemory));
 
             let initial_context = resumed_thread
                 .codex
                 .session
-                .build_initial_context(&turn_context)
+                .build_initial_context(turn_context.as_ref())
                 .await;
             let developer_texts = developer_input_texts(&initial_context);
             if developer_texts.iter().any(|text| {

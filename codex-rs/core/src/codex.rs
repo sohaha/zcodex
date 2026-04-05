@@ -3713,7 +3713,7 @@ impl Session {
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
-                state.pending_zmemory_recall_note(),
+                state.pending_zmemory_recall_note_for(turn_context.sub_id.as_str()),
             )
         };
         if let Some(model_switch_message) =
@@ -4462,9 +4462,9 @@ impl Session {
         state.take_pending_session_start_source()
     }
 
-    pub(crate) async fn set_pending_zmemory_recall_note(&self, note: Option<String>) {
+    pub(crate) async fn set_pending_zmemory_recall_note(&self, sub_id: &str, note: Option<String>) {
         let mut state = self.state.lock().await;
-        state.set_pending_zmemory_recall_note(note);
+        state.set_pending_zmemory_recall_note(sub_id, note);
     }
     async fn refresh_mcp_servers_inner(
         &self,
@@ -4975,9 +4975,11 @@ mod handlers {
             capture_stable_preference_memories(sess, &current_context, &items).await;
             let recall_note =
                 build_stable_preference_recall_note(sess, &current_context, &items).await;
-            sess.set_pending_zmemory_recall_note(recall_note).await;
+            sess.set_pending_zmemory_recall_note(current_context.sub_id.as_str(), recall_note)
+                .await;
         } else {
-            sess.set_pending_zmemory_recall_note(None).await;
+            sess.set_pending_zmemory_recall_note(current_context.sub_id.as_str(), None)
+                .await;
         }
         sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
             .await;

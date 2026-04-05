@@ -33,7 +33,13 @@ pub(crate) struct SessionState {
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_source: Option<codex_hooks::SessionStartSource>,
     granted_permissions: Option<PermissionProfile>,
-    pending_zmemory_recall_note: Option<String>,
+    pending_zmemory_recall_note: Option<PendingZmemoryRecallNote>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PendingZmemoryRecallNote {
+    sub_id: String,
+    note: String,
 }
 
 impl SessionState {
@@ -221,12 +227,18 @@ impl SessionState {
         self.pending_session_start_source.take()
     }
 
-    pub(crate) fn set_pending_zmemory_recall_note(&mut self, note: Option<String>) {
-        self.pending_zmemory_recall_note = note;
+    pub(crate) fn set_pending_zmemory_recall_note(&mut self, sub_id: &str, note: Option<String>) {
+        self.pending_zmemory_recall_note = note.map(|note| PendingZmemoryRecallNote {
+            sub_id: sub_id.to_string(),
+            note,
+        });
     }
 
-    pub(crate) fn pending_zmemory_recall_note(&self) -> Option<String> {
-        self.pending_zmemory_recall_note.clone()
+    pub(crate) fn pending_zmemory_recall_note_for(&self, sub_id: &str) -> Option<String> {
+        self.pending_zmemory_recall_note
+            .as_ref()
+            .filter(|pending| pending.sub_id == sub_id)
+            .map(|pending| pending.note.clone())
     }
 
     pub(crate) fn record_granted_permissions(&mut self, permissions: PermissionProfile) {

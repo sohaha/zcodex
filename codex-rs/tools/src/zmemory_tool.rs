@@ -128,7 +128,16 @@ pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
             "使用全文检索搜索记忆内容和路径。",
             BTreeMap::from([
                 str_prop("query", Some("搜索查询。")),
-                str_prop("domain", Some("可选的域范围（例如 core、project）。")),
+                str_prop(
+                    "uri",
+                    Some("可选的 URI scope，例如 core://、core://team 或 project://。"),
+                ),
+                str_prop(
+                    "domain",
+                    Some(
+                        "兼容旧字段：可选的域范围（例如 core、project），会自动转换为 <domain>:// scope。",
+                    ),
+                ),
                 int_prop("limit", Some("返回结果上限。")),
             ]),
             vec!["query"],
@@ -194,6 +203,7 @@ pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     fn function_tool(spec: ToolSpec) -> ResponsesApiTool {
         match spec {
@@ -238,5 +248,87 @@ mod tests {
         assert!(description.contains("system://boot"));
         assert!(description.contains("paths"));
         assert!(description.contains("alias"));
+    }
+
+    #[test]
+    fn search_memory_schema_prefers_uri_scope_and_keeps_domain_compat() {
+        let tool = function_tool(
+            create_zmemory_mcp_tools()
+                .into_iter()
+                .find(|spec| spec.name() == "search_memory")
+                .expect("search_memory tool should exist"),
+        );
+        let JsonSchema::Object {
+            properties,
+            required,
+            ..
+        } = tool.parameters
+        else {
+            panic!("search_memory should expose object parameters");
+        };
+
+        assert_eq!(required, Some(vec!["query".to_string()]));
+        let Some(JsonSchema::String {
+            description: Some(uri_description),
+        }) = properties.get("uri")
+        else {
+            panic!("search_memory uri description should exist");
+        };
+        let Some(JsonSchema::String {
+            description: Some(domain_description),
+        }) = properties.get("domain")
+        else {
+            panic!("search_memory domain description should exist");
+        };
+        assert!(uri_description.contains("URI scope"));
+        assert!(domain_description.contains("兼容旧字段"));
+    }
+
+    #[test]
+    fn delete_memory_schema_mentions_path_only_contract() {
+        let tool = function_tool(
+            create_zmemory_mcp_tools()
+                .into_iter()
+                .find(|spec| spec.name() == "delete_memory")
+                .expect("delete_memory tool should exist"),
+        );
+        assert!(tool.description.contains("不会擦除底层内容"));
+    }
+
+    #[test]
+    fn create_zmemory_mcp_tools_keep_required_fields_stable() {
+        let required_fields = create_zmemory_mcp_tools()
+            .into_iter()
+            .map(function_tool)
+            .map(|tool| {
+                let JsonSchema::Object { required, .. } = tool.parameters else {
+                    panic!("tool should expose object parameters");
+                };
+                (tool.name, required.unwrap_or_default())
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        assert_eq!(
+            required_fields,
+            BTreeMap::from([
+                (
+                    "add_alias".to_string(),
+                    vec!["new_uri".to_string(), "target_uri".to_string()]
+                ),
+                (
+                    "create_memory".to_string(),
+                    vec![
+                        "parent_uri".to_string(),
+                        "content".to_string(),
+                        "priority".to_string(),
+                    ]
+                ),
+                ("delete_memory".to_string(), vec!["uri".to_string()]),
+                ("manage_triggers".to_string(), vec!["uri".to_string()]),
+                ("read_memory".to_string(), vec!["uri".to_string()]),
+                ("search_memory".to_string(), vec!["query".to_string()]),
+                ("update_memory".to_string(), vec!["uri".to_string()]),
+            ])
+        );
     }
 }

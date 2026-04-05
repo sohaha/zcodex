@@ -14,8 +14,11 @@
 
 ### 3. 系统视图导出
 
+- `codex zmemory export workspace --json`
+- `codex zmemory export defaults --json`
 - `codex zmemory export boot --json`
 - `codex zmemory export index --domain core --json`
+- `codex zmemory export paths --domain core --json`
 - `codex zmemory export recent --json`
 - `codex zmemory export glossary --json`
 - `codex zmemory export alias --json`
@@ -26,10 +29,11 @@
 
 ## 推荐顺序
 
-1. 先跑 `stats`
-2. 再跑 `doctor`
-3. 再看 `boot` / `recent` / `glossary` / `alias`
-4. 最后根据缺口执行 `update`、`manage-triggers`、`add-alias` 或 `rebuild-search`
+1. 先看 `workspace` / `defaults`
+2. 再跑 `stats`
+3. 再跑 `doctor`
+4. 再看 `boot` / `paths` / `recent` / `glossary` / `alias`（其中 `recent` 只反映最近内容版本，不覆盖 alias/trigger/path 元数据治理）
+5. 最后根据缺口执行 `update`、`manage-triggers`、`add-alias` 或 `rebuild-search`
 
 ## search parity 提醒
 

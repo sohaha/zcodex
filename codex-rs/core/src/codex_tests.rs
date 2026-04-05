@@ -3978,14 +3978,13 @@ async fn build_initial_context_includes_zmemory_instructions_when_feature_enable
 async fn build_initial_context_includes_pending_zmemory_recall_note() {
     let (session, mut turn_context) = make_session_and_context().await;
     let _ = turn_context.features.enable(Feature::Zmemory);
-    session
-        .state
-        .lock()
-        .await
-        .set_pending_zmemory_recall_note(Some(
+    session.state.lock().await.set_pending_zmemory_recall_note(
+        turn_context.sub_id.as_str(),
+        Some(
             "## Zmemory Recall\n- `core://my_user`: The user prefers concise Chinese responses."
                 .to_string(),
-        ));
+        ),
+    );
 
     let initial_context = session.build_initial_context(&turn_context).await;
     let developer_texts = developer_input_texts(&initial_context);
@@ -3995,6 +3994,49 @@ async fn build_initial_context_includes_pending_zmemory_recall_note() {
             .iter()
             .any(|text| text.contains("## Zmemory Recall")),
         "expected initial context to include zmemory recall note, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
+async fn build_initial_context_reuses_pending_zmemory_recall_note_for_same_turn() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    session.state.lock().await.set_pending_zmemory_recall_note(
+        turn_context.sub_id.as_str(),
+        Some("## Zmemory Recall\n- `core://my_user`: Keep responses concise.".to_string()),
+    );
+
+    let initial_context = session.build_initial_context(&turn_context).await;
+    let rebuilt_context = session.build_initial_context(&turn_context).await;
+
+    assert!(
+        developer_input_texts(&initial_context)
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall"))
+    );
+    assert!(
+        developer_input_texts(&rebuilt_context)
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall"))
+    );
+}
+
+#[tokio::test]
+async fn build_initial_context_does_not_leak_pending_zmemory_recall_note_to_other_turns() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    session.state.lock().await.set_pending_zmemory_recall_note(
+        turn_context.sub_id.as_str(),
+        Some("## Zmemory Recall\n- `core://my_user`: Keep responses concise.".to_string()),
+    );
+
+    turn_context.sub_id = "other-zmemory-turn".to_string();
+    let other_context = session.build_initial_context(&turn_context).await;
+
+    assert!(
+        !developer_input_texts(&other_context)
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall"))
     );
 }
 

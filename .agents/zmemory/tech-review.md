@@ -4,7 +4,7 @@
 - `codex-zmemory` 继续只提供动作执行，决策何时写入交由 `.codex/skills/memory` / 上层 agent orchestrator。
 - 所有 `read/search/create/update/add-alias/manage-triggers/stats/doctor/export` 都通过 `codex_zmemory` tool 命令暴露，无需新增 MCP/REST surface。
 - 本地保持了 `system://workspace/defaults/alias` 的诊断视图，并新增 `system://paths` 作为显式全活跃路径浏览入口，因此 agent 并不缺“查看全部路径”的能力；文档里需明确 `paths` 与 `index` 的分工。
-- `limit` 参数的欢迎特性已在 architecture/QA/skill 里同等说明，`boot/index/paths/recent/glossary/alias` 视图都共享这一截断合同。
+- `limit` 参数的分页合同已在 architecture/QA/skill 里同等说明，`boot/index/paths/recent/glossary/alias` 视图共享这一截断合同，而 `defaults/workspace` 不承诺分页。
 
 ## 分叉决策
 - **上游差异**：不追 `system://index` 的节点聚合语义；本地通过单独的 `system://paths` 满足“查看全部路径”的治理需求，同时保留 `index` 的既有索引语义。

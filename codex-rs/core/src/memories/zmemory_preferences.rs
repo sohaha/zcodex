@@ -532,12 +532,42 @@ fn format_contract_clauses(clauses: Vec<String>) -> Option<String> {
 
 fn extract_explicit_value(text: &str, patterns: &[&str]) -> Option<String> {
     patterns.iter().find_map(|pattern| {
-        let lowercase = text.to_lowercase();
-        let pattern_lowercase = pattern.to_lowercase();
-        let start = lowercase.find(&pattern_lowercase)?;
-        let suffix = &text[start + pattern.len()..];
+        let suffix = find_case_insensitive_suffix(text, pattern)?;
         parse_explicit_name_value(suffix)
     })
+}
+
+fn find_case_insensitive_suffix<'a>(text: &'a str, pattern: &str) -> Option<&'a str> {
+    if pattern.is_empty() {
+        return Some(text);
+    }
+
+    text.char_indices()
+        .map(|(idx, _)| idx)
+        .chain(std::iter::once(text.len()))
+        .find_map(|start| {
+            match_case_insensitive_prefix(&text[start..], pattern)
+                .map(|matched_bytes| &text[start + matched_bytes..])
+        })
+}
+
+fn match_case_insensitive_prefix(source: &str, pattern: &str) -> Option<usize> {
+    let mut matched_bytes = 0;
+    let mut source_chars = source.chars();
+
+    for pattern_char in pattern.chars() {
+        let source_char = source_chars.next()?;
+        if !chars_equal_case_insensitive(source_char, pattern_char) {
+            return None;
+        }
+        matched_bytes += source_char.len_utf8();
+    }
+
+    Some(matched_bytes)
+}
+
+fn chars_equal_case_insensitive(left: char, right: char) -> bool {
+    left.to_lowercase().collect::<String>() == right.to_lowercase().collect::<String>()
 }
 
 fn parse_explicit_name_value(raw: &str) -> Option<String> {
@@ -583,6 +613,7 @@ mod tests {
     use super::extract_collaboration_style_clauses;
     use super::extract_contract_clauses;
     use super::extract_explicit_value;
+    use super::find_case_insensitive_suffix;
     use super::format_contract_clauses;
     use super::format_recalled_memory;
     use super::merge_contract_content;
@@ -654,6 +685,12 @@ mod tests {
     fn detects_english_call_me_pattern() {
         let value = extract_explicit_value("From now on, call me Commander.", &["call me"]);
         assert_eq!(value.as_deref(), Some("Commander"));
+    }
+
+    #[test]
+    fn finds_case_insensitive_suffix_without_unicode_offset_mismatch() {
+        let suffix = find_case_insensitive_suffix("İ以后叫我“小王”", "叫我");
+        assert_eq!(suffix, Some("“小王”"));
     }
 
     #[test]

@@ -20,11 +20,10 @@ dependencies: [prd, tech-review]
 - **任务总数**：6 个任务
 - **前端任务**：0 个
 - **后端任务**：6 个（含 crate/CLI/core/文档/测试）
-- **关键路径**：状态基线 -> crate 语义对齐 -> CLI/core 适配 -> targeted tests
 - **关键路径**：状态基线 -> crate 语义对齐 -> CLI/core 适配 -> export 薄封装 -> targeted tests
 - **预估复杂度**：中
 - `system://paths` 作为“全部路径”浏览视图已在本地呈现，agent 不再缺失“查看全部路径”的操作能力；`system://index` 保留索引语义，`system://workspace`/`system://defaults`/`system://alias` 保持本地增强，明确为分叉支线。
-- `limit` 参数适用于所有 `system://` 视图（boot/index/recent/glossary/alias），文档、QA 与 skill references 已同步合同，避免视图不一致。
+- `limit` 参数的正式合同适用于 `boot/index/paths/recent/glossary/alias`；`defaults/workspace` 继续作为视图导出入口，但不宣称支持分页，文档、QA 与 skill references 需保持这一边界一致。
 - 2026-04-05 收尾时额外修复：`codex-rs/core/tests/suite/mod.rs` 之前漏挂 `zmemory_e2e`，导致新增 core e2e 没进入 `--test all` 聚合；该遗漏已补齐。
 
 ---

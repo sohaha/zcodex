@@ -491,6 +491,67 @@ fn delete_path_removes_last_reference_from_search() {
 }
 
 #[test]
+fn delete_path_preserves_other_alias_paths_for_same_node() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Profile memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://profile-mirror".to_string()),
+            target_uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::DeletePath,
+            uri: Some("core://profile-mirror".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("delete should succeed");
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("primary path should remain readable");
+    assert_eq!(read["result"]["content"], "Profile memory");
+
+    let search = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("Profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(search["result"]["matchCount"], 1);
+    assert_eq!(
+        search["result"]["matches"][0]["uri"],
+        "core://agent-profile"
+    );
+}
+
+#[test]
 fn system_views_reflect_index_recent_and_glossary() {
     let (_dir, config) = config();
     crate::service::execute_action(
@@ -686,6 +747,97 @@ fn system_views_reflect_index_recent_and_glossary() {
     )
     .expect("oversized alias limit should clamp");
     assert_eq!(clamped_alias_limit["result"]["view"]["view"], "alias");
+}
+
+#[test]
+fn recent_view_orders_distinct_nodes_by_real_memory_update_time() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://older".to_string()),
+            content: Some("Older memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("older create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://newer".to_string()),
+            content: Some("Newer memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("newer create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://newer-mirror".to_string()),
+            target_uri: Some("core://newer".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("open sqlite db");
+    conn.execute(
+        "UPDATE memories
+         SET created_at = ?1
+         WHERE node_uuid = (
+            SELECT e.child_uuid
+            FROM edges e
+            JOIN paths p ON p.edge_id = e.id
+            WHERE p.domain = 'core' AND p.path = 'older'
+         ) AND deprecated = FALSE",
+        params!["2024-01-01 00:00:00"],
+    )
+    .expect("update older timestamp");
+    conn.execute(
+        "UPDATE memories
+         SET created_at = ?1
+         WHERE node_uuid = (
+            SELECT e.child_uuid
+            FROM edges e
+            JOIN paths p ON p.edge_id = e.id
+            WHERE p.domain = 'core' AND p.path = 'newer'
+         ) AND deprecated = FALSE",
+        params!["2024-01-02 00:00:00"],
+    )
+    .expect("update newer timestamp");
+    drop(conn);
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::RebuildSearch,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("rebuild should succeed");
+
+    let recent = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://recent".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("recent view should succeed");
+    assert_eq!(recent["result"]["view"]["entryCount"], 2);
+    assert_eq!(
+        recent["result"]["view"]["entries"][0]["uri"],
+        "core://newer"
+    );
+    assert_eq!(
+        recent["result"]["view"]["entries"][1]["uri"],
+        "core://older"
+    );
 }
 
 #[test]
@@ -1484,6 +1636,55 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         entries[0]["suggestedKeywords"],
         json!(["alpha", "hub", "launch"])
     );
+}
+
+#[test]
+fn alias_view_uses_real_existing_path_for_cross_domain_alias_nodes() {
+    let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
+        Some("core,writer".to_string()),
+        None,
+    ));
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://project-alpha".to_string()),
+            content: Some("Cross-domain alias seed".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("writer://mirror-note".to_string()),
+            target_uri: Some("core://project-alpha".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("cross-domain alias should succeed");
+
+    let alias_view = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://alias".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias view should succeed");
+
+    let entry = &alias_view["result"]["view"]["entries"][0];
+    let node_uri = entry["nodeUri"]
+        .as_str()
+        .expect("nodeUri should be a string");
+    assert!(node_uri == "core://project-alpha" || node_uri == "writer://mirror-note");
+    let command = alias_view["result"]["view"]["recommendations"][0]["command"]
+        .as_str()
+        .expect("command should be a string");
+    assert!(command.contains(node_uri));
 }
 
 #[test]
