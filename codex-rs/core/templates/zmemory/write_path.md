@@ -26,6 +26,22 @@ Active-use triggers:
   when refining an existing node).
 - Before `update_memory` or `delete_memory`, read the target node first.
 
+Low-friction defaults:
+
+- Default to silent recall. Do not ask the user which memory path to read when
+  the request is clearly about stable identity, user preference, or shared
+  collaboration rules.
+- Use the canonical identity layer first:
+  - `core://agent` for the assistant's stable self-reference
+  - `core://my_user` for the user's stable preferences and address form
+  - `core://agent/my_user` for the shared collaboration contract
+- Prefer `update_memory` over `create_memory` when refining one of those
+  canonical nodes. Create a canonical node only if it is missing.
+- Capture only durable, cross-session facts. Keep temporary task instructions,
+  one-off requests, and unverified guesses out of long-term memory.
+- In high-load or tool-heavy turns, prioritize recall (`read_memory` /
+  `search_memory`) and defer capture unless the durable fact is explicit.
+
 Stable preference contract:
 
 {{ stable_preference_contract }}

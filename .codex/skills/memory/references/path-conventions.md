@@ -14,6 +14,7 @@
 ## 用户/关系主线
 
 - `core://agent`
+- `core://my_user`
 - `core://agent/my_user`
 - `core://relationship/history`
 - `core://relationship/preferences`
@@ -25,3 +26,4 @@
 3. 能 refine 就不 create 近似新节点。
 4. 当同一节点需要从多个语境访问时，用 alias，不复制内容。
 5. boot 锚点优先放进 `CORE_MEMORY_URIS`，保证 `system://boot` 输出稳定。
+6. `core://agent` / `core://my_user` / `core://agent/my_user` 是 canonical 身份层；优先 read/update，不要把临时任务细节直接写进去。

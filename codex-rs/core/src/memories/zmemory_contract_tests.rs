@@ -41,8 +41,12 @@ fn stable_preference_contract_markdown_describes_dedupe_and_update_rules() {
     assert!(markdown.contains("`read system://workspace`"));
     assert!(markdown.contains("`read` the canonical URI you plan to change"));
     assert!(markdown.contains("`search` for duplicate or alias coverage"));
+    assert!(markdown.contains("stable identity layer"));
+    assert!(markdown.contains("do not ask the user which path to use"));
     assert!(markdown.contains("must never change the canonical target URI"));
     assert!(markdown.contains("Use `create` only when that canonical URI is missing"));
     assert!(markdown.contains("always `update` that same canonical node"));
+    assert!(markdown.contains("temporary task instructions"));
+    assert!(markdown.contains("prioritize recall first"));
     assert!(markdown.contains("reading back the canonical URI"));
 }

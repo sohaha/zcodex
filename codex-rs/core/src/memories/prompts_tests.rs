@@ -102,6 +102,10 @@ fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
     assert!(instructions.contains("Stable preference contract:"));
     assert!(instructions.contains("read system://workspace"));
     assert!(instructions.contains("read system://defaults"));
+    assert!(instructions.contains("Default to silent recall"));
+    assert!(instructions.contains("Use the canonical identity layer first"));
+    assert!(instructions.contains("Capture only durable, cross-session facts"));
+    assert!(instructions.contains("prioritize recall (`read_memory` /"));
     assert!(instructions.contains("`core://my_user`"));
     assert!(instructions.contains("`core://agent`"));
     assert!(instructions.contains("`core://agent/my_user`"));

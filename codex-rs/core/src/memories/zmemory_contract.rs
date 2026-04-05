@@ -40,10 +40,14 @@ pub(crate) fn stable_preference_contract_markdown() -> String {
         "- Treat explicit, durable naming or addressing preferences as long-term memory.\n\
          - Use these canonical URIs for high-confidence preference writes:\n\
          {mappings}\n\
+         - Treat those three canonical URIs as the stable identity layer for automatic recall and refinement.\n\
+         - If the input is clearly about assistant identity, user preference, or the collaboration contract, read the matching canonical URI before answering and do not ask the user which path to use.\n\
          - Before writing, inspect the current runtime DB via `read system://workspace`, then `read` the canonical URI you plan to change.\n\
          - You may `search` for duplicate or alias coverage, but search results must never change the canonical target URI.\n\
          - Use `create` only when that canonical URI is missing.\n\
          - If that canonical URI already exists and the new instruction refines the same topic, always `update` that same canonical node.\n\
+         - Keep temporary task instructions and unverified guesses out of canonical long-term memory.\n\
+         - In high-load turns, prioritize recall first and defer writes unless the durable fact is explicit.\n\
          - After writing, verify the result by reading back the canonical URI you changed."
     )
 }
