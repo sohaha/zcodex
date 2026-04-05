@@ -1512,7 +1512,7 @@ async fn zmemory_proactively_captures_durable_collaboration_preferences() -> Res
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn zmemory_does_not_proactively_capture_preferences_in_high_load_turn() -> Result<()> {
+async fn zmemory_proactively_captures_explicit_preferences_even_in_high_load_turn() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -1551,12 +1551,10 @@ async fn zmemory_does_not_proactively_capture_preferences_in_high_load_turn() ->
             uri: Some("core://agent/my_user".to_string()),
             ..ZmemoryToolCallParam::default()
         },
-    );
+    )?;
     assert_eq!(
-        read_result
-            .expect_err("high-load turn should defer proactive zmemory capture")
-            .to_string(),
-        "memory not found: core://agent/my_user"
+        read_result.structured_content["result"]["content"],
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
     );
 
     Ok(())
