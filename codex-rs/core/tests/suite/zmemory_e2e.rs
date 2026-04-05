@@ -1208,7 +1208,7 @@ async fn zmemory_proactively_captures_explicit_naming_preferences() -> Result<()
     )?;
     assert_eq!(
         contract_memory.structured_content["result"]["content"],
-        "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions."
+        "Shared collaboration contract:\n- Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions."
     );
 
     Ok(())
@@ -1253,7 +1253,7 @@ async fn zmemory_proactively_captures_durable_collaboration_preferences() -> Res
     )?;
     assert_eq!(
         contract_memory.structured_content["result"]["content"],
-        "Respond in Chinese by default. Keep responses concise by default."
+        "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
     );
 
     Ok(())

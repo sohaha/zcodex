@@ -45,6 +45,7 @@ static COLLABORATION_CONTINUATION_PATTERNS: &[&str] = &[
 ];
 const COLLABORATION_AGENT_ANCHOR_CONTENT: &str =
     "Canonical assistant identity anchor for collaboration preferences.";
+const COLLABORATION_CONTRACT_HEADER: &str = "Shared collaboration contract:";
 const MAX_AUTOMATIC_PREFERENCE_TEXT_CHARS: usize = 600;
 const MAX_AUTOMATIC_PREFERENCE_ITEMS: usize = 3;
 static QUOTED_VALUE_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -465,18 +466,55 @@ fn contains_any_pattern(text: &str, patterns: &[&str]) -> bool {
 }
 
 fn merge_contract_content(existing_contract: Option<&str>, clauses: &[String]) -> Option<String> {
-    let mut content = existing_contract.unwrap_or("").trim().to_string();
+    let mut existing_clauses = extract_contract_clauses(existing_contract.unwrap_or(""));
     for clause in clauses {
-        if content.contains(clause) {
+        if existing_clauses.contains(clause) {
             continue;
         }
-        if !content.is_empty() {
-            content.push(' ');
-        }
-        content.push_str(clause);
+        existing_clauses.push(clause.clone());
     }
 
-    (!content.is_empty()).then_some(content)
+    format_contract_clauses(existing_clauses)
+}
+
+fn extract_contract_clauses(content: &str) -> Vec<String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    if let Some(rest) = trimmed.strip_prefix(COLLABORATION_CONTRACT_HEADER) {
+        return rest
+            .lines()
+            .map(str::trim)
+            .filter_map(|line| line.strip_prefix("- "))
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect();
+    }
+
+    trimmed
+        .split('.')
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| format!("{line}."))
+        .collect()
+}
+
+fn format_contract_clauses(clauses: Vec<String>) -> Option<String> {
+    if clauses.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "{COLLABORATION_CONTRACT_HEADER}\n{}",
+        clauses
+            .into_iter()
+            .map(|clause| format!("- {clause}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    ))
 }
 
 fn extract_explicit_value(text: &str, patterns: &[&str]) -> Option<String> {
@@ -530,7 +568,9 @@ mod tests {
     use super::StablePreferenceCapture;
     use super::StablePreferenceMemory;
     use super::extract_collaboration_style_clauses;
+    use super::extract_contract_clauses;
     use super::extract_explicit_value;
+    use super::format_contract_clauses;
     use super::merge_contract_content;
     use super::parse_name_from_memory_content;
     use super::recall_targets_for_items;
@@ -598,14 +638,57 @@ mod tests {
     fn merges_new_style_clause_into_existing_contract() {
         let merged = merge_contract_content(
             Some(
-                "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions.",
+                "Shared collaboration contract:\n- Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions.",
             ),
             &["Keep responses concise by default.".to_string()],
         );
         assert_eq!(
             merged.as_deref(),
             Some(
-                "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions. Keep responses concise by default."
+                "Shared collaboration contract:\n- Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions.\n- Keep responses concise by default."
+            )
+        );
+    }
+
+    #[test]
+    fn extracts_contract_clauses_from_legacy_sentence_format() {
+        let clauses = extract_contract_clauses(
+            "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions. Keep responses concise by default.",
+        );
+        assert_eq!(
+            clauses,
+            vec![
+                "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions."
+                    .to_string(),
+                "Keep responses concise by default.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_contract_clauses_from_structured_block() {
+        let clauses = extract_contract_clauses(
+            "Shared collaboration contract:\n- Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions.\n- Keep responses concise by default.",
+        );
+        assert_eq!(
+            clauses,
+            vec![
+                "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions."
+                    .to_string(),
+                "Keep responses concise by default.".to_string(),
+            ]
+        );
+    }
+    #[test]
+    fn formats_contract_clauses_as_structured_block() {
+        let content = format_contract_clauses(vec![
+            "Respond in Chinese by default.".to_string(),
+            "Keep responses concise by default.".to_string(),
+        ]);
+        assert_eq!(
+            content.as_deref(),
+            Some(
+                "Shared collaboration contract:\n- Respond in Chinese by default.\n- Keep responses concise by default."
             )
         );
     }
