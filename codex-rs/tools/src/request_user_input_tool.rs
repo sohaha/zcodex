@@ -137,7 +137,7 @@ fn format_allowed_modes(default_mode_request_user_input: bool) -> String {
 
     match mode_names.as_slice() {
         [] => "无可用模式".to_string(),
-        [mode] => format!("{mode}"),
+        [mode] => mode.to_string(),
         [first, second] => format!("{first} 或 {second}"),
         [..] => format!("模式：{}", mode_names.join("、")),
     }

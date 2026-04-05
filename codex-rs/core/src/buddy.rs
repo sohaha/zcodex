@@ -239,7 +239,7 @@ async fn stream_prompt_text(
             &turn_context.session_telemetry,
             turn_context.reasoning_effort,
             turn_context.reasoning_summary,
-            turn_context.config.service_tier.clone(),
+            turn_context.config.service_tier,
             turn_metadata_header.as_deref(),
         )
         .await?;
@@ -279,7 +279,7 @@ fn sanitize_name(raw: &str) -> Option<String> {
     let filtered: String = raw
         .trim()
         .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .collect();
     if (3..=12).contains(&filtered.len()) {
         Some(filtered)
