@@ -3704,6 +3704,7 @@ impl Session {
             collaboration_mode,
             base_instructions,
             session_source,
+            zmemory_recall_note,
         ) = {
             let state = self.state.lock().await;
             (
@@ -3712,6 +3713,7 @@ impl Session {
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
+                state.pending_zmemory_recall_note(),
             )
         };
         if let Some(model_switch_message) =
@@ -3757,6 +3759,9 @@ impl Session {
         }
         if turn_context.features.enabled(Feature::Zmemory) {
             developer_sections.push(build_zmemory_tool_developer_instructions());
+            if let Some(zmemory_recall_note) = zmemory_recall_note {
+                developer_sections.push(zmemory_recall_note);
+            }
         }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if let Some(collab_instructions) =
@@ -4824,6 +4829,7 @@ mod handlers {
     use crate::config_loader::CloudRequirementsLoader;
     use crate::config_loader::LoaderOverrides;
     use crate::config_loader::load_config_layers_state;
+    use crate::memories::zmemory_preferences::build_stable_preference_recall_note;
     use crate::memories::zmemory_preferences::capture_stable_preference_memories;
     use codex_features::Feature;
     use codex_utils_absolute_path::AbsolutePathBuf;
@@ -4959,6 +4965,17 @@ mod handlers {
         };
         if current_context.features.enabled(Feature::Zmemory) {
             capture_stable_preference_memories(sess, &current_context, &items).await;
+            let recall_note =
+                build_stable_preference_recall_note(sess, &current_context, &items).await;
+            sess.state
+                .lock()
+                .await
+                .set_pending_zmemory_recall_note(recall_note);
+        } else {
+            sess.state
+                .lock()
+                .await
+                .set_pending_zmemory_recall_note(None);
         }
         sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
             .await;

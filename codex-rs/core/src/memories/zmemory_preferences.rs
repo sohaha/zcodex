@@ -100,6 +100,38 @@ pub(crate) async fn capture_stable_preference_memories(
     }
 }
 
+pub(crate) async fn build_stable_preference_recall_note(
+    session: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    items: &[UserInput],
+) -> Option<String> {
+    let recall_targets = recall_targets_for_items(items);
+    if recall_targets.is_empty() {
+        return None;
+    }
+
+    let zmemory_context = resolve_zmemory_context_for_turn(session, turn_context).await;
+    if inspect_workspace_runtime(&zmemory_context, turn_context).is_err() {
+        return None;
+    }
+
+    let mut recalled = Vec::new();
+    for memory in recall_targets {
+        let Ok(Some(content)) = read_canonical_content(&zmemory_context, turn_context, memory)
+        else {
+            continue;
+        };
+        recalled.push(format!("- `{}`: {content}", memory.uri()));
+    }
+
+    (!recalled.is_empty()).then(|| {
+        format!(
+            "## Zmemory Recall\nUse these canonical long-term memories silently for this turn:\n{}",
+            recalled.join("\n")
+        )
+    })
+}
+
 #[derive(Clone)]
 struct ResolvedZmemoryContext {
     codex_home: PathBuf,
@@ -340,6 +372,51 @@ impl StablePreferenceCapture {
     }
 }
 
+fn recall_targets_for_items(items: &[UserInput]) -> Vec<StablePreferenceMemory> {
+    let mut targets = Vec::new();
+    for item in items {
+        let UserInput::Text { text, .. } = item else {
+            continue;
+        };
+        let lowercase = text.to_lowercase();
+        if USER_ADDRESS_PATTERNS
+            .iter()
+            .any(|pattern| lowercase.contains(&pattern.to_lowercase()))
+            && !targets.contains(&StablePreferenceMemory::UserAddressPreference)
+        {
+            targets.push(StablePreferenceMemory::UserAddressPreference);
+        }
+        if AGENT_NAME_PATTERNS
+            .iter()
+            .any(|pattern| lowercase.contains(&pattern.to_lowercase()))
+            && !targets.contains(&StablePreferenceMemory::AgentSelfReference)
+        {
+            targets.push(StablePreferenceMemory::AgentSelfReference);
+        }
+        if !extract_collaboration_style_clauses(text).is_empty()
+            || contains_any_pattern(
+                text,
+                &[
+                    "按上次方式",
+                    "按照上次",
+                    "继续按",
+                    "as before",
+                    "same way",
+                    "going forward",
+                ],
+            )
+        {
+            if !targets.contains(&StablePreferenceMemory::CollaborationAddressContract) {
+                targets.push(StablePreferenceMemory::CollaborationAddressContract);
+            }
+            if !targets.contains(&StablePreferenceMemory::AgentSelfReference) {
+                targets.push(StablePreferenceMemory::AgentSelfReference);
+            }
+        }
+    }
+    targets
+}
+
 fn extract_collaboration_style_clauses(text: &str) -> Vec<String> {
     if !contains_any_pattern(text, DURABLE_PREFERENCE_PATTERNS) {
         return Vec::new();
@@ -426,10 +503,12 @@ fn parse_name_from_memory_content(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::StablePreferenceCapture;
+    use super::StablePreferenceMemory;
     use super::extract_collaboration_style_clauses;
     use super::extract_explicit_value;
     use super::merge_contract_content;
     use super::parse_name_from_memory_content;
+    use super::recall_targets_for_items;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
 
@@ -502,6 +581,22 @@ mod tests {
             Some(
                 "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions. Keep responses concise by default."
             )
+        );
+    }
+
+    #[test]
+    fn recall_targets_include_contract_for_durable_collaboration_request() {
+        let targets = recall_targets_for_items(&[UserInput::Text {
+            text: "以后默认用中文回答，尽量简洁一点。".to_string(),
+            text_elements: Vec::new(),
+        }]);
+
+        assert_eq!(
+            targets,
+            vec![
+                StablePreferenceMemory::CollaborationAddressContract,
+                StablePreferenceMemory::AgentSelfReference,
+            ]
         );
     }
 }

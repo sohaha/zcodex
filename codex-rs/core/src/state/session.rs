@@ -33,6 +33,7 @@ pub(crate) struct SessionState {
     pub(crate) active_connector_selection: HashSet<String>,
     pub(crate) pending_session_start_source: Option<codex_hooks::SessionStartSource>,
     granted_permissions: Option<PermissionProfile>,
+    pending_zmemory_recall_note: Option<String>,
 }
 
 impl SessionState {
@@ -51,6 +52,7 @@ impl SessionState {
             active_connector_selection: HashSet::new(),
             pending_session_start_source: None,
             granted_permissions: None,
+            pending_zmemory_recall_note: None,
         }
     }
 
@@ -217,6 +219,14 @@ impl SessionState {
         &mut self,
     ) -> Option<codex_hooks::SessionStartSource> {
         self.pending_session_start_source.take()
+    }
+
+    pub(crate) fn set_pending_zmemory_recall_note(&mut self, note: Option<String>) {
+        self.pending_zmemory_recall_note = note;
+    }
+
+    pub(crate) fn pending_zmemory_recall_note(&self) -> Option<String> {
+        self.pending_zmemory_recall_note.clone()
     }
 
     pub(crate) fn record_granted_permissions(&mut self, permissions: PermissionProfile) {

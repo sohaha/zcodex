@@ -3975,6 +3975,30 @@ async fn build_initial_context_includes_zmemory_instructions_when_feature_enable
 }
 
 #[tokio::test]
+async fn build_initial_context_includes_pending_zmemory_recall_note() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    let _ = turn_context.features.enable(Feature::Zmemory);
+    session
+        .state
+        .lock()
+        .await
+        .set_pending_zmemory_recall_note(Some(
+            "## Zmemory Recall\n- `core://my_user`: The user prefers concise Chinese responses."
+                .to_string(),
+        ));
+
+    let initial_context = session.build_initial_context(&turn_context).await;
+    let developer_texts = developer_input_texts(&initial_context);
+
+    assert!(
+        developer_texts
+            .iter()
+            .any(|text| text.contains("## Zmemory Recall")),
+        "expected initial context to include zmemory recall note, got {developer_texts:?}"
+    );
+}
+
+#[tokio::test]
 async fn build_initial_context_omits_default_image_save_location_with_image_history() {
     let (session, turn_context) = make_session_and_context().await;
     session
