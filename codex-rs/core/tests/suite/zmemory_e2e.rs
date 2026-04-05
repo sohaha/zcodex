@@ -1215,6 +1215,51 @@ async fn zmemory_proactively_captures_explicit_naming_preferences() -> Result<()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_proactively_captures_durable_collaboration_preferences() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "收到，我之后默认用中文并保持简洁。"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("以后默认用中文回答，尽量简洁一点。")
+        .await?;
+
+    let contract_memory = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent/my_user".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        contract_memory.structured_content["result"]["content"],
+        "Respond in Chinese by default. Keep responses concise by default."
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

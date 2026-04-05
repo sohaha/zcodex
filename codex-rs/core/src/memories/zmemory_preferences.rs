@@ -19,6 +19,20 @@ use tracing::warn;
 
 static USER_ADDRESS_PATTERNS: &[&str] = &["称呼我", "叫我", "call me", "refer to me as"];
 static AGENT_NAME_PATTERNS: &[&str] = &["你的名字是", "your name is", "call yourself"];
+static DURABLE_PREFERENCE_PATTERNS: &[&str] = &[
+    "以后",
+    "之后",
+    "默认",
+    "长期",
+    "from now on",
+    "going forward",
+    "by default",
+    "always",
+];
+static CHINESE_RESPONSE_PATTERNS: &[&str] = &["中文", "chinese"];
+static CONCISE_RESPONSE_PATTERNS: &[&str] = &["简洁", "简短", "精简", "concise", "brief", "short"];
+const COLLABORATION_AGENT_ANCHOR_CONTENT: &str =
+    "Canonical assistant identity anchor for collaboration preferences.";
 static QUOTED_VALUE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"["“”'‘’「」『』]([^"“”'‘’「」『』]+)["“”'‘’「」『』]"#).expect("valid regex")
 });
@@ -39,14 +53,22 @@ pub(crate) async fn capture_stable_preference_memories(
         return;
     }
 
+    let existing_agent_content =
+        if capture.agent_name.is_none() || !capture.collaboration_style_clauses.is_empty() {
+            read_canonical_content(
+                &zmemory_context,
+                turn_context,
+                StablePreferenceMemory::AgentSelfReference,
+            )
+            .ok()
+            .flatten()
+        } else {
+            None
+        };
     if capture.agent_name.is_none()
-        && let Ok(Some(content)) = read_canonical_content(
-            &zmemory_context,
-            turn_context,
-            StablePreferenceMemory::AgentSelfReference,
-        )
+        && let Some(content) = existing_agent_content.as_deref()
     {
-        capture.agent_name = parse_name_from_memory_content(&content);
+        capture.agent_name = parse_name_from_memory_content(content);
     }
     if capture.user_address.is_none()
         && let Ok(Some(content)) = read_canonical_content(
@@ -57,8 +79,18 @@ pub(crate) async fn capture_stable_preference_memories(
     {
         capture.user_address = parse_name_from_memory_content(&content);
     }
+    let existing_contract = read_canonical_content(
+        &zmemory_context,
+        turn_context,
+        StablePreferenceMemory::CollaborationAddressContract,
+    )
+    .ok()
+    .flatten();
 
-    let writes = capture.into_writes();
+    let writes = capture.into_writes(
+        existing_contract.as_deref(),
+        existing_agent_content.is_some(),
+    );
     for (memory, content) in writes {
         if let Err(err) =
             write_and_verify_canonical_memory(&zmemory_context, turn_context, memory, &content)
@@ -226,6 +258,7 @@ async fn emit_capture_warning(
 struct StablePreferenceCapture {
     user_address: Option<String>,
     agent_name: Option<String>,
+    collaboration_style_clauses: Vec<String>,
 }
 
 impl StablePreferenceCapture {
@@ -241,17 +274,30 @@ impl StablePreferenceCapture {
             if let Some(agent_name) = extract_explicit_value(text, AGENT_NAME_PATTERNS) {
                 capture.agent_name = Some(agent_name);
             }
+            for clause in extract_collaboration_style_clauses(text) {
+                if !capture.collaboration_style_clauses.contains(&clause) {
+                    capture.collaboration_style_clauses.push(clause);
+                }
+            }
         }
 
-        if capture.user_address.is_some() || capture.agent_name.is_some() {
+        if capture.user_address.is_some()
+            || capture.agent_name.is_some()
+            || !capture.collaboration_style_clauses.is_empty()
+        {
             Some(capture)
         } else {
             None
         }
     }
 
-    fn into_writes(self) -> Vec<(StablePreferenceMemory, String)> {
+    fn into_writes(
+        self,
+        existing_contract: Option<&str>,
+        has_agent_anchor: bool,
+    ) -> Vec<(StablePreferenceMemory, String)> {
         let mut writes = Vec::new();
+        let mut has_agent_anchor = has_agent_anchor;
         if let Some(user_address) = self.user_address.as_ref() {
             writes.push((
                 StablePreferenceMemory::UserAddressPreference,
@@ -263,19 +309,72 @@ impl StablePreferenceCapture {
                 StablePreferenceMemory::AgentSelfReference,
                 format!("The assistant should refer to itself as \"{agent_name}\"."),
             ));
+            has_agent_anchor = true;
         }
-        if let (Some(user_address), Some(agent_name)) =
-            (self.user_address.as_ref(), self.agent_name.as_ref())
-        {
+        let mut contract_clauses = self.collaboration_style_clauses;
+        if !has_agent_anchor && !contract_clauses.is_empty() {
             writes.push((
-                StablePreferenceMemory::CollaborationAddressContract,
+                StablePreferenceMemory::AgentSelfReference,
+                COLLABORATION_AGENT_ANCHOR_CONTENT.to_string(),
+            ));
+            has_agent_anchor = true;
+        }
+        if let (Some(user_address), Some(agent_name)) = (self.user_address, self.agent_name) {
+            contract_clauses.insert(
+                0,
                 format!(
                     "Use \"{agent_name}\" for the assistant and \"{user_address}\" for the user in future interactions."
                 ),
+            );
+        }
+        if has_agent_anchor
+            && let Some(contract_content) =
+                merge_contract_content(existing_contract, contract_clauses.as_slice())
+        {
+            writes.push((
+                StablePreferenceMemory::CollaborationAddressContract,
+                contract_content,
             ));
         }
         writes
     }
+}
+
+fn extract_collaboration_style_clauses(text: &str) -> Vec<String> {
+    if !contains_any_pattern(text, DURABLE_PREFERENCE_PATTERNS) {
+        return Vec::new();
+    }
+
+    let mut clauses = Vec::new();
+    if contains_any_pattern(text, CHINESE_RESPONSE_PATTERNS) {
+        clauses.push("Respond in Chinese by default.".to_string());
+    }
+    if contains_any_pattern(text, CONCISE_RESPONSE_PATTERNS) {
+        clauses.push("Keep responses concise by default.".to_string());
+    }
+    clauses
+}
+
+fn contains_any_pattern(text: &str, patterns: &[&str]) -> bool {
+    let lowercase = text.to_lowercase();
+    patterns
+        .iter()
+        .any(|pattern| lowercase.contains(&pattern.to_lowercase()))
+}
+
+fn merge_contract_content(existing_contract: Option<&str>, clauses: &[String]) -> Option<String> {
+    let mut content = existing_contract.unwrap_or("").trim().to_string();
+    for clause in clauses {
+        if content.contains(clause) {
+            continue;
+        }
+        if !content.is_empty() {
+            content.push(' ');
+        }
+        content.push_str(clause);
+    }
+
+    (!content.is_empty()).then_some(content)
 }
 
 fn extract_explicit_value(text: &str, patterns: &[&str]) -> Option<String> {
@@ -327,7 +426,9 @@ fn parse_name_from_memory_content(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::StablePreferenceCapture;
+    use super::extract_collaboration_style_clauses;
     use super::extract_explicit_value;
+    use super::merge_contract_content;
     use super::parse_name_from_memory_content;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
@@ -344,6 +445,27 @@ mod tests {
             Some(StablePreferenceCapture {
                 user_address: Some("指挥官".to_string()),
                 agent_name: Some("小白".to_string()),
+                collaboration_style_clauses: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn detects_durable_collaboration_style_preferences() {
+        let capture = StablePreferenceCapture::from_items(&[UserInput::Text {
+            text: "以后默认用中文回答，尽量简洁一点。".to_string(),
+            text_elements: Vec::new(),
+        }]);
+
+        assert_eq!(
+            capture,
+            Some(StablePreferenceCapture {
+                user_address: None,
+                agent_name: None,
+                collaboration_style_clauses: vec![
+                    "Respond in Chinese by default.".to_string(),
+                    "Keep responses concise by default.".to_string(),
+                ],
             })
         );
     }
@@ -359,5 +481,27 @@ mod tests {
         let value =
             parse_name_from_memory_content("The assistant should refer to itself as \"小白\".");
         assert_eq!(value.as_deref(), Some("小白"));
+    }
+
+    #[test]
+    fn ignores_one_off_style_instructions_without_durable_marker() {
+        let clauses = extract_collaboration_style_clauses("这次请用中文回答，简洁一点。");
+        assert!(clauses.is_empty());
+    }
+
+    #[test]
+    fn merges_new_style_clause_into_existing_contract() {
+        let merged = merge_contract_content(
+            Some(
+                "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions.",
+            ),
+            &["Keep responses concise by default.".to_string()],
+        );
+        assert_eq!(
+            merged.as_deref(),
+            Some(
+                "Use \"小白\" for the assistant and \"指挥官\" for the user in future interactions. Keep responses concise by default."
+            )
+        );
     }
 }
