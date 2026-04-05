@@ -32,6 +32,7 @@ use crate::hook_runtime::PendingInputHookDisposition;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
 use crate::hook_runtime::record_pending_input;
+use crate::memories::zmemory_preferences::build_stable_preference_recall_note_from_texts;
 use crate::state::ActiveTurn;
 use crate::state::RunningTask;
 use crate::state::TaskKind;
@@ -372,6 +373,22 @@ impl Session {
         }
 
         let turn_context = self.new_default_turn_with_sub_id(sub_id).await;
+        if turn_context.features.enabled(Feature::Zmemory) {
+            let mailbox_contents = self.trigger_turn_mailbox_contents().await;
+            let mailbox_content_refs = mailbox_contents
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            let recall_note = build_stable_preference_recall_note_from_texts(
+                self,
+                &turn_context,
+                mailbox_content_refs.as_slice(),
+            )
+            .await;
+            self.set_pending_zmemory_recall_note(recall_note).await;
+        } else {
+            self.set_pending_zmemory_recall_note(None).await;
+        }
         self.maybe_emit_unknown_model_warning_for_turn(turn_context.as_ref())
             .await;
         self.start_task(turn_context, Vec::new(), RegularTask::new())

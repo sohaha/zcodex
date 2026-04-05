@@ -65,6 +65,15 @@ impl MailboxReceiver {
         self.pending_mails.iter().any(|mail| mail.trigger_turn)
     }
 
+    pub(crate) fn peek_trigger_turn_contents(&mut self) -> Vec<String> {
+        self.sync_pending_mails();
+        self.pending_mails
+            .iter()
+            .filter(|mail| mail.trigger_turn)
+            .map(|mail| mail.content.clone())
+            .collect()
+    }
+
     pub(crate) fn drain(&mut self) -> Vec<InterAgentCommunication> {
         self.sync_pending_mails();
         self.pending_mails.drain(..).collect()
@@ -136,6 +145,39 @@ mod tests {
 
         assert_eq!(receiver.drain(), vec![mail_one, mail_two]);
         assert!(!receiver.has_pending());
+    }
+
+    #[tokio::test]
+    async fn mailbox_peek_trigger_turn_contents_preserves_pending_order() {
+        let (mailbox, mut receiver) = Mailbox::new();
+        let queued = make_mail(
+            AgentPath::root(),
+            AgentPath::try_from("/root/worker").expect("agent path"),
+            "queued",
+            /*trigger_turn*/ false,
+        );
+        let triggered_one = make_mail(
+            AgentPath::root(),
+            AgentPath::try_from("/root/worker").expect("agent path"),
+            "continue this way",
+            /*trigger_turn*/ true,
+        );
+        let triggered_two = make_mail(
+            AgentPath::root(),
+            AgentPath::try_from("/root/worker").expect("agent path"),
+            "still urgent",
+            /*trigger_turn*/ true,
+        );
+
+        mailbox.send(queued.clone());
+        mailbox.send(triggered_one.clone());
+        mailbox.send(triggered_two.clone());
+
+        assert_eq!(
+            receiver.peek_trigger_turn_contents(),
+            vec!["continue this way".to_string(), "still urgent".to_string()]
+        );
+        assert_eq!(receiver.drain(), vec![queued, triggered_one, triggered_two]);
     }
 
     #[tokio::test]

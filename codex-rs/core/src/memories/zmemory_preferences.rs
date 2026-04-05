@@ -118,7 +118,22 @@ pub(crate) async fn build_stable_preference_recall_note(
     turn_context: &Arc<TurnContext>,
     items: &[UserInput],
 ) -> Option<String> {
-    let recall_targets = recall_targets_for_items(items);
+    let texts = items
+        .iter()
+        .filter_map(|item| match item {
+            UserInput::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    build_stable_preference_recall_note_from_texts(session, turn_context, texts.as_slice()).await
+}
+
+pub(crate) async fn build_stable_preference_recall_note_from_texts(
+    session: &Arc<Session>,
+    turn_context: &Arc<TurnContext>,
+    texts: &[&str],
+) -> Option<String> {
+    let recall_targets = recall_targets_for_texts(texts);
     if recall_targets.is_empty() {
         return None;
     }
@@ -403,12 +418,9 @@ impl StablePreferenceCapture {
     }
 }
 
-fn recall_targets_for_items(items: &[UserInput]) -> Vec<StablePreferenceMemory> {
+fn recall_targets_for_texts(texts: &[&str]) -> Vec<StablePreferenceMemory> {
     let mut targets = Vec::new();
-    for item in items {
-        let UserInput::Text { text, .. } = item else {
-            continue;
-        };
+    for text in texts {
         let lowercase = text.to_lowercase();
         if USER_ADDRESS_PATTERNS
             .iter()
@@ -575,7 +587,7 @@ mod tests {
     use super::format_recalled_memory;
     use super::merge_contract_content;
     use super::parse_name_from_memory_content;
-    use super::recall_targets_for_items;
+    use super::recall_targets_for_texts;
     use codex_protocol::user_input::UserInput;
     use pretty_assertions::assert_eq;
 
@@ -612,6 +624,28 @@ mod tests {
                     "Respond in Chinese by default.".to_string(),
                     "Keep responses concise by default.".to_string(),
                 ],
+            })
+        );
+    }
+
+    #[test]
+    fn detects_preferences_from_mixed_image_and_text_inputs() {
+        let capture = StablePreferenceCapture::from_items(&[
+            UserInput::Image {
+                image_url: "https://example.com/pref.png".to_string(),
+            },
+            UserInput::Text {
+                text: "以后叫我指挥官。".to_string(),
+                text_elements: Vec::new(),
+            },
+        ]);
+
+        assert_eq!(
+            capture,
+            Some(StablePreferenceCapture {
+                user_address: Some("指挥官".to_string()),
+                agent_name: None,
+                collaboration_style_clauses: Vec::new(),
             })
         );
     }
@@ -696,10 +730,7 @@ mod tests {
 
     #[test]
     fn recall_targets_include_contract_for_durable_collaboration_request() {
-        let targets = recall_targets_for_items(&[UserInput::Text {
-            text: "以后默认用中文回答，尽量简洁一点。".to_string(),
-            text_elements: Vec::new(),
-        }]);
+        let targets = recall_targets_for_texts(&["以后默认用中文回答，尽量简洁一点。"]);
 
         assert_eq!(
             targets,
@@ -730,10 +761,7 @@ mod tests {
 
     #[test]
     fn recall_targets_include_identity_layer_for_continue_previous_style_request() {
-        let targets = recall_targets_for_items(&[UserInput::Text {
-            text: "之后继续按上次方式来。".to_string(),
-            text_elements: Vec::new(),
-        }]);
+        let targets = recall_targets_for_texts(&["之后继续按上次方式来。"]);
 
         assert_eq!(
             targets,

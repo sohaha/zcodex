@@ -4254,6 +4254,10 @@ impl Session {
         self.mailbox_rx.lock().await.has_pending_trigger_turn()
     }
 
+    pub(crate) async fn trigger_turn_mailbox_contents(&self) -> Vec<String> {
+        self.mailbox_rx.lock().await.peek_trigger_turn_contents()
+    }
+
     pub async fn prepend_pending_input(&self, input: Vec<ResponseInputItem>) -> Result<(), ()> {
         let mut active = self.active_turn.lock().await;
         match active.as_mut() {
@@ -4458,6 +4462,10 @@ impl Session {
         state.take_pending_session_start_source()
     }
 
+    pub(crate) async fn set_pending_zmemory_recall_note(&self, note: Option<String>) {
+        let mut state = self.state.lock().await;
+        state.set_pending_zmemory_recall_note(note);
+    }
     async fn refresh_mcp_servers_inner(
         &self,
         turn_context: &TurnContext,
@@ -4967,15 +4975,9 @@ mod handlers {
             capture_stable_preference_memories(sess, &current_context, &items).await;
             let recall_note =
                 build_stable_preference_recall_note(sess, &current_context, &items).await;
-            sess.state
-                .lock()
-                .await
-                .set_pending_zmemory_recall_note(recall_note);
+            sess.set_pending_zmemory_recall_note(recall_note).await;
         } else {
-            sess.state
-                .lock()
-                .await
-                .set_pending_zmemory_recall_note(None);
+            sess.set_pending_zmemory_recall_note(None).await;
         }
         sess.maybe_emit_unknown_model_warning_for_turn(current_context.as_ref())
             .await;
