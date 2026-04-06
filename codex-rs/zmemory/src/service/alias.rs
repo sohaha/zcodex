@@ -21,11 +21,11 @@ pub(crate) fn add_alias_action(
     common::ensure_writable_domain(config, conn, &new_uri.domain)?;
     common::ensure_readable_domain(config, conn, &target_uri.domain)?;
     anyhow::ensure!(
-        common::find_path_row(conn, &new_uri)?.is_none(),
+        common::find_path_row(conn, new_uri)?.is_none(),
         "alias path already exists: {new_uri}"
     );
 
-    let target = common::find_path_row(conn, &target_uri)?
+    let target = common::find_path_row(conn, target_uri)?
         .ok_or_else(|| anyhow::anyhow!("target path does not exist: {target_uri}"))?;
     let parent_uri = new_uri.parent();
     let parent = if parent_uri.is_root() {
@@ -79,7 +79,7 @@ pub(crate) fn manage_triggers_action(
     let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot manage triggers for root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, &uri)?
+    let row = common::find_path_row(conn, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let add = common::normalize_keywords(args.add.clone());
     let remove = common::normalize_keywords(args.remove.clone());

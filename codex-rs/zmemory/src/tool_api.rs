@@ -7,6 +7,7 @@ use crate::service::execute_action;
 use anyhow::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 use serde_json::json;
 use std::fmt;
@@ -27,7 +28,7 @@ pub enum ZmemoryToolAction {
     RebuildSearch,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ZmemoryToolCallParam {
     pub action: ZmemoryToolAction,
@@ -65,6 +66,133 @@ pub struct ZmemoryToolCallParam {
     pub limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+struct CommonToolArgs {
+    #[serde(default, alias = "codexHome")]
+    codex_home: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+enum TaggedZmemoryToolCallParam {
+    Read {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: String,
+        limit: Option<usize>,
+    },
+    Search {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        query: String,
+        uri: Option<String>,
+        limit: Option<usize>,
+    },
+    Create {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: Option<String>,
+        #[serde(alias = "parentUri")]
+        parent_uri: Option<String>,
+        content: String,
+        title: Option<String>,
+        priority: Option<i64>,
+        disclosure: Option<String>,
+    },
+    Update {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: String,
+        content: Option<String>,
+        #[serde(alias = "oldString")]
+        old_string: Option<String>,
+        #[serde(alias = "newString")]
+        new_string: Option<String>,
+        append: Option<String>,
+        priority: Option<i64>,
+        disclosure: Option<String>,
+    },
+    DeletePath {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: String,
+    },
+    AddAlias {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        #[serde(alias = "newUri")]
+        new_uri: String,
+        #[serde(alias = "targetUri")]
+        target_uri: String,
+        priority: Option<i64>,
+        disclosure: Option<String>,
+    },
+    ManageTriggers {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: String,
+        add: Option<Vec<String>>,
+        remove: Option<Vec<String>>,
+    },
+    Stats {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+    },
+    Doctor {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+    },
+    RebuildSearch {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyZmemoryToolCallParam {
+    action: ZmemoryToolAction,
+    #[serde(default, alias = "codex_home")]
+    codex_home: Option<String>,
+    #[serde(default)]
+    uri: Option<String>,
+    #[serde(default, alias = "parent_uri")]
+    parent_uri: Option<String>,
+    #[serde(default, alias = "new_uri")]
+    new_uri: Option<String>,
+    #[serde(default, alias = "target_uri")]
+    target_uri: Option<String>,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default, alias = "old_string")]
+    old_string: Option<String>,
+    #[serde(default, alias = "new_string")]
+    new_string: Option<String>,
+    #[serde(default)]
+    append: Option<String>,
+    #[serde(default)]
+    priority: Option<i64>,
+    #[serde(default)]
+    disclosure: Option<String>,
+    #[serde(default)]
+    add: Option<Vec<String>>,
+    #[serde(default)]
+    remove: Option<Vec<String>>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ZmemoryToolCallParamRepr {
+    Tagged(TaggedZmemoryToolCallParam),
+    Legacy(LegacyZmemoryToolCallParam),
+}
+
 impl Default for ZmemoryToolCallParam {
     fn default() -> Self {
         Self {
@@ -85,6 +213,158 @@ impl Default for ZmemoryToolCallParam {
             add: None,
             remove: None,
             limit: None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ZmemoryToolCallParam {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match ZmemoryToolCallParamRepr::deserialize(deserializer)? {
+            ZmemoryToolCallParamRepr::Tagged(tagged) => Ok(tagged.into()),
+            ZmemoryToolCallParamRepr::Legacy(legacy) => Ok(legacy.into()),
+        }
+    }
+}
+
+impl From<LegacyZmemoryToolCallParam> for ZmemoryToolCallParam {
+    fn from(legacy: LegacyZmemoryToolCallParam) -> Self {
+        Self {
+            action: legacy.action,
+            codex_home: legacy.codex_home,
+            uri: legacy.uri,
+            parent_uri: legacy.parent_uri,
+            new_uri: legacy.new_uri,
+            target_uri: legacy.target_uri,
+            query: legacy.query,
+            content: legacy.content,
+            title: legacy.title,
+            old_string: legacy.old_string,
+            new_string: legacy.new_string,
+            append: legacy.append,
+            priority: legacy.priority,
+            disclosure: legacy.disclosure,
+            add: legacy.add,
+            remove: legacy.remove,
+            limit: legacy.limit,
+        }
+    }
+}
+
+impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
+    fn from(tagged: TaggedZmemoryToolCallParam) -> Self {
+        match tagged {
+            TaggedZmemoryToolCallParam::Read { common, uri, limit } => Self {
+                action: ZmemoryToolAction::Read,
+                codex_home: common.codex_home,
+                uri: Some(uri),
+                limit,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Search {
+                common,
+                query,
+                uri,
+                limit,
+            } => Self {
+                action: ZmemoryToolAction::Search,
+                codex_home: common.codex_home,
+                query: Some(query),
+                uri,
+                limit,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Create {
+                common,
+                uri,
+                parent_uri,
+                content,
+                title,
+                priority,
+                disclosure,
+            } => Self {
+                action: ZmemoryToolAction::Create,
+                codex_home: common.codex_home,
+                uri,
+                parent_uri,
+                content: Some(content),
+                title,
+                priority,
+                disclosure,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Update {
+                common,
+                uri,
+                content,
+                old_string,
+                new_string,
+                append,
+                priority,
+                disclosure,
+            } => Self {
+                action: ZmemoryToolAction::Update,
+                codex_home: common.codex_home,
+                uri: Some(uri),
+                content,
+                old_string,
+                new_string,
+                append,
+                priority,
+                disclosure,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::DeletePath { common, uri } => Self {
+                action: ZmemoryToolAction::DeletePath,
+                codex_home: common.codex_home,
+                uri: Some(uri),
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::AddAlias {
+                common,
+                new_uri,
+                target_uri,
+                priority,
+                disclosure,
+            } => Self {
+                action: ZmemoryToolAction::AddAlias,
+                codex_home: common.codex_home,
+                new_uri: Some(new_uri),
+                target_uri: Some(target_uri),
+                priority,
+                disclosure,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::ManageTriggers {
+                common,
+                uri,
+                add,
+                remove,
+            } => Self {
+                action: ZmemoryToolAction::ManageTriggers,
+                codex_home: common.codex_home,
+                uri: Some(uri),
+                add,
+                remove,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Stats { common } => Self {
+                action: ZmemoryToolAction::Stats,
+                codex_home: common.codex_home,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Doctor { common } => Self {
+                action: ZmemoryToolAction::Doctor,
+                codex_home: common.codex_home,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::RebuildSearch { common } => Self {
+                action: ZmemoryToolAction::RebuildSearch,
+                codex_home: common.codex_home,
+                ..Self::default()
+            },
         }
     }
 }
@@ -488,5 +768,80 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .unwrap_or_default()
         ),
         _ => "zmemory result".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ZmemoryToolAction;
+    use super::ZmemoryToolCallParam;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn deserialize_tagged_union_uses_snake_case_fields() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "add-alias",
+            "codex_home": "/tmp/codex",
+            "new_uri": "core://alias",
+            "target_uri": "core://target",
+            "priority": 3
+        }))
+        .expect("deserialize tagged args");
+
+        assert_eq!(
+            args,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                codex_home: Some("/tmp/codex".to_string()),
+                new_uri: Some("core://alias".to_string()),
+                target_uri: Some("core://target".to_string()),
+                priority: Some(3),
+                ..ZmemoryToolCallParam::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_tagged_union_accepts_camel_case_aliases() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "update",
+            "codexHome": "/tmp/codex",
+            "uri": "core://agent",
+            "oldString": "before",
+            "newString": "after"
+        }))
+        .expect("deserialize tagged camelCase args");
+
+        assert_eq!(
+            args,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Update,
+                codex_home: Some("/tmp/codex".to_string()),
+                uri: Some("core://agent".to_string()),
+                old_string: Some("before".to_string()),
+                new_string: Some("after".to_string()),
+                ..ZmemoryToolCallParam::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_legacy_flat_shape_still_works() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "search",
+            "query": "hello",
+            "limit": 5
+        }))
+        .expect("deserialize legacy args");
+
+        assert_eq!(
+            args,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some("hello".to_string()),
+                limit: Some(5),
+                ..ZmemoryToolCallParam::default()
+            }
+        );
     }
 }

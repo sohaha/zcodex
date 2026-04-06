@@ -18,7 +18,7 @@ pub(crate) fn update_action(
     let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot update root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, &uri)?
+    let row = common::find_path_row(conn, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let current_memory = common::read_active_memory(conn, &row.node_uuid)?
         .ok_or_else(|| anyhow::anyhow!("active memory not found: {uri}"))?;

@@ -18,12 +18,12 @@ pub(crate) fn read_action(
     }
     common::ensure_readable_domain(config, conn, &uri.domain)?;
 
-    let row = common::find_path_row(conn, &uri)?
+    let row = common::find_path_row(conn, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let memory = common::read_active_memory(conn, &row.node_uuid)?
         .ok_or_else(|| anyhow::anyhow!("active memory not found for {uri}"))?;
     let keywords = common::load_keywords(conn, &row.node_uuid)?;
-    let children = common::list_children(conn, &uri, &row.node_uuid)?;
+    let children = common::list_children(conn, uri, &row.node_uuid)?;
     let alias_count = common::count_aliases(conn, &row.node_uuid)?;
 
     Ok(json!({
