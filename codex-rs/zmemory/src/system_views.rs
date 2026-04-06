@@ -6,7 +6,6 @@ use crate::config::zmemory_db_path;
 use anyhow::Result;
 use anyhow::anyhow;
 use rusqlite::Connection;
-use rusqlite::OptionalExtension;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -127,29 +126,20 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
 
 fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Result<Value> {
     let configured_uris = config.core_memory_uris();
+    let scoped_uris = configured_uris
+        .iter()
+        .take(limit)
+        .cloned()
+        .collect::<Vec<_>>();
     let mut entries = Vec::new();
     let mut missing_uris = Vec::new();
 
-    for uri in configured_uris.iter().take(limit) {
-        let row = conn
-            .query_row(
-                "SELECT uri, priority, updated_at
-                 FROM search_documents
-                 WHERE uri = ?1",
-                [uri],
-                |row| {
-                    Ok(json!({
-                        "uri": row.get::<_, String>(0)?,
-                        "priority": row.get::<_, i64>(1)?,
-                        "updatedAt": row.get::<_, String>(2)?,
-                    }))
-                },
-            )
-            .optional()?;
-        if let Some(entry) = row {
-            entries.push(entry);
+    let indexed_entries = search_documents_by_uri(conn, &scoped_uris)?;
+    for uri in scoped_uris {
+        if let Some(entry) = indexed_entries.get(&uri) {
+            entries.push(entry.clone());
         } else {
-            missing_uris.push(uri.clone());
+            missing_uris.push(uri);
         }
     }
 
@@ -161,6 +151,35 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
         "entryCount": entries.len(),
         "entries": entries,
     }))
+}
+
+fn search_documents_by_uri(conn: &Connection, uris: &[String]) -> Result<BTreeMap<String, Value>> {
+    if uris.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+
+    let placeholders = (0..uris.len()).map(|_| "?").collect::<Vec<_>>().join(", ");
+    let sql = format!(
+        "SELECT uri, priority, updated_at
+         FROM search_documents
+         WHERE uri IN ({placeholders})"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(uris.iter()), |row| {
+            let uri = row.get::<_, String>(0)?;
+            Ok((
+                uri.clone(),
+                json!({
+                    "uri": uri,
+                    "priority": row.get::<_, i64>(1)?,
+                    "updatedAt": row.get::<_, String>(2)?,
+                }),
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(rows.into_iter().collect())
 }
 
 fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
@@ -478,7 +497,9 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
     let mut stmt = conn.prepare(
         "SELECT alias.node_uuid,
                 alias.alias_count,
-                COALESCE(trigger_counts.count, 0) AS trigger_count
+                COALESCE(trigger_counts.count, 0) AS trigger_count,
+                p.domain,
+                p.path
          FROM (
              SELECT e.child_uuid AS node_uuid,
                     COUNT(*) AS alias_count
@@ -486,13 +507,15 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
              JOIN paths p ON p.edge_id = e.id
              GROUP BY e.child_uuid
              HAVING COUNT(*) > 1
-             ORDER BY alias_count DESC, node_uuid ASC
          ) alias
+         JOIN edges e ON e.child_uuid = alias.node_uuid
+         JOIN paths p ON p.edge_id = e.id
          LEFT JOIN (
              SELECT node_uuid, COUNT(*) AS count
              FROM glossary_keywords
              GROUP BY node_uuid
-         ) trigger_counts ON trigger_counts.node_uuid = alias.node_uuid",
+         ) trigger_counts ON trigger_counts.node_uuid = alias.node_uuid
+         ORDER BY alias.alias_count DESC, alias.node_uuid ASC, p.domain ASC, p.path ASC",
     )?;
 
     let rows = stmt
@@ -501,42 +524,28 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
                 row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
-    let mut entries = rows
-        .into_iter()
-        .map(|(node_uuid, alias_count, trigger_count)| {
-            let paths = alias_paths_for_node(conn, &node_uuid)?;
-            let (domain, path) = paths
-                .first()
-                .cloned()
-                .ok_or_else(|| anyhow!("alias node {node_uuid} has no active paths"))?;
-            let node_uri = format!("{domain}://{path}");
-            let missing_triggers = trigger_count == 0;
-            let (review_priority, priority_score) =
-                alias_review_priority(alias_count, missing_triggers);
-            let priority_reason = alias_priority_reason(alias_count, missing_triggers);
-            let suggested_keywords = if missing_triggers {
-                infer_alias_keywords(conn, &node_uuid)?
-            } else {
-                Vec::new()
-            };
-            Ok(json!({
-                "nodeUuid": node_uuid,
-                "domain": domain,
-                "path": path,
-                "aliasCount": alias_count,
-                "triggerCount": trigger_count,
-                "missingTriggers": missing_triggers,
-                "reviewPriority": review_priority,
-                "priorityScore": priority_score,
-                "priorityReason": priority_reason,
-                "suggestedKeywords": suggested_keywords,
-                "nodeUri": node_uri,
-            }))
-        })
+    let mut grouped = BTreeMap::<String, AliasNodeAggregate>::new();
+    for (node_uuid, alias_count, trigger_count, domain, path) in rows {
+        let aggregate = grouped
+            .entry(node_uuid.clone())
+            .or_insert_with(|| AliasNodeAggregate {
+                node_uuid,
+                alias_count,
+                trigger_count,
+                paths: Vec::new(),
+            });
+        aggregate.paths.push((domain, path));
+    }
+
+    let mut entries = grouped
+        .into_values()
+        .map(AliasNodeAggregate::into_json)
         .collect::<Result<Vec<_>>>()?;
 
     entries.sort_by(|left, right| {
@@ -561,6 +570,47 @@ fn alias_entries(conn: &Connection, limit: usize) -> Result<Vec<Value>> {
     Ok(entries)
 }
 
+struct AliasNodeAggregate {
+    node_uuid: String,
+    alias_count: i64,
+    trigger_count: i64,
+    paths: Vec<(String, String)>,
+}
+
+impl AliasNodeAggregate {
+    fn into_json(self) -> Result<Value> {
+        let (domain, path) = self
+            .paths
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow!("alias node {} has no active paths", self.node_uuid))?;
+        let node_uri = format!("{domain}://{path}");
+        let missing_triggers = self.trigger_count == 0;
+        let (review_priority, priority_score) =
+            alias_review_priority(self.alias_count, missing_triggers);
+        let priority_reason = alias_priority_reason(self.alias_count, missing_triggers);
+        let suggested_keywords = if missing_triggers {
+            infer_alias_keywords_from_paths(&self.paths)
+        } else {
+            Vec::new()
+        };
+
+        Ok(json!({
+            "nodeUuid": self.node_uuid,
+            "domain": domain,
+            "path": path,
+            "aliasCount": self.alias_count,
+            "triggerCount": self.trigger_count,
+            "missingTriggers": missing_triggers,
+            "reviewPriority": review_priority,
+            "priorityScore": priority_score,
+            "priorityReason": priority_reason,
+            "suggestedKeywords": suggested_keywords,
+            "nodeUri": node_uri,
+        }))
+    }
+}
+
 fn alias_review_priority(alias_count: i64, missing_triggers: bool) -> (&'static str, i64) {
     if missing_triggers {
         let priority = if alias_count >= 3 { "high" } else { "medium" };
@@ -580,9 +630,9 @@ fn alias_priority_reason(alias_count: i64, missing_triggers: bool) -> String {
     }
 }
 
-fn infer_alias_keywords(conn: &Connection, node_uuid: &str) -> Result<Vec<String>> {
+fn infer_alias_keywords_from_paths(paths: &[(String, String)]) -> Vec<String> {
     let mut keywords = BTreeSet::new();
-    for (_, path) in alias_paths_for_node(conn, node_uuid)? {
+    for (_, path) in paths {
         for segment in path.split('/') {
             for token in segment.split(['-', '_']) {
                 let candidate = token.trim().to_lowercase();
@@ -593,22 +643,7 @@ fn infer_alias_keywords(conn: &Connection, node_uuid: &str) -> Result<Vec<String
         }
     }
 
-    Ok(keywords.into_iter().take(3).collect())
-}
-
-fn alias_paths_for_node(conn: &Connection, node_uuid: &str) -> Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT p.domain, p.path
-         FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.child_uuid = ?1
-         ORDER BY p.domain ASC, p.path ASC",
-    )?;
-    stmt.query_map([node_uuid], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    })?
-    .collect::<rusqlite::Result<Vec<_>>>()
-    .map_err(Into::into)
+    keywords.into_iter().take(3).collect()
 }
 
 fn suggestion_command(node_uri: &str, suggested_keywords: &Value) -> String {
