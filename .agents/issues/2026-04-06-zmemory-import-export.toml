@@ -1,0 +1,41 @@
+plan = ".agents/plan/2026-04-06-zmemory-import-export.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "完成 zmemory 真实 import/export 主流程并收敛契约"
+scope = """
+已完成 service 层真实 export/import、CLI 子命令、tool schema 与 README 主体更新。
+本 issue 负责确认当前契约一致：保留旧 `codex zmemory export` 的 system view 语义，
+新增 `export-memory` / `import-memory` 承载真实记忆导入导出，并保证 shared-edge alias
+metadata 冲突不会被静默吞掉。不再扩展额外新能力。
+"""
+touch_points = ["codex-rs/zmemory/src/tool_api.rs", "codex-rs/zmemory/src/service/mod.rs", "codex-rs/zmemory/src/service/export.rs", "codex-rs/zmemory/src/service/import.rs", "codex-rs/zmemory/src/service/alias.rs", "codex-rs/zmemory/README.md", "codex-rs/cli/src/zmemory_cmd.rs", "codex-rs/tools/src/zmemory_tool.rs"]
+depends_on = []
+done_when = "真实 import/export 契约、CLI/schema/README 与 alias shared-edge 冲突语义一致，且相关代码已完成。"
+validate_by = "cd /workspace/codex-rs && CARGO_HOME=/tmp/codex-zmemory-home-exec3 CARGO_TARGET_DIR=/tmp/codex-zmemory-target-exec3 cargo nextest run -p codex-zmemory && CARGO_HOME=/tmp/codex-cli-home-exec2 CARGO_TARGET_DIR=/tmp/codex-cli-target-exec2 cargo nextest run -p codex-cli zmemory_ && CARGO_HOME=/tmp/codex-tools-home-exec2 CARGO_TARGET_DIR=/tmp/codex-tools-target-exec2 cargo nextest run -p codex-tools zmemory_tool"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成主体实现；最后收尾是修正一个因 shared-edge 冲突新语义导致的 service 测试数据，并整理提交。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "完成收尾验证、Cadence 记录与提交推送"
+scope = """
+本 issue 负责最后的测试修正、复核、Cadence 文件补齐、相关文件提交与推送。
+不再新增产品能力，只收敛当前实现并确保提交内容只包含本任务相关文件。
+"""
+touch_points = ["codex-rs/zmemory/src/service/tests.rs", ".agents/plan/2026-04-06-zmemory-import-export.md", ".agents/issues/2026-04-06-zmemory-import-export.toml"]
+depends_on = ["a1"]
+done_when = "zmemory 定向测试通过，Cadence 文件存在且结构正确，相关变更已 review、commit、push。"
+validate_by = "cd /workspace/codex-rs && CARGO_HOME=/tmp/codex-zmemory-home-exec3 CARGO_TARGET_DIR=/tmp/codex-zmemory-target-exec3 cargo nextest run -p codex-zmemory"
+regress_by = "node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js .agents/issues/2026-04-06-zmemory-import-export.toml"
+regress_timing = "after_done"
+status = "in_progress"
+validate_status = "passed"
+regress_status = "not_run"
+notes = "当前已修复 import 测试数据并跑通 codex-zmemory；待完成最终自审、只暂存相关文件、commit push 与 session-close。"

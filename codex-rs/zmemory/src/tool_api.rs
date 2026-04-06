@@ -19,6 +19,8 @@ pub enum ZmemoryToolAction {
     Read,
     History,
     Search,
+    Export,
+    Import,
     Create,
     BatchCreate,
     Update,
@@ -48,6 +50,8 @@ pub struct ZmemoryToolCallParam {
     pub target_uri: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,6 +104,17 @@ enum TaggedZmemoryToolCallParam {
         query: String,
         uri: Option<String>,
         limit: Option<usize>,
+    },
+    Export {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: Option<String>,
+        domain: Option<String>,
+    },
+    Import {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        items: Vec<serde_json::Value>,
     },
     Create {
         #[serde(flatten)]
@@ -196,6 +211,8 @@ struct LegacyZmemoryToolCallParam {
     #[serde(default)]
     query: Option<String>,
     #[serde(default)]
+    domain: Option<String>,
+    #[serde(default)]
     content: Option<String>,
     #[serde(default)]
     title: Option<String>,
@@ -238,6 +255,7 @@ impl Default for ZmemoryToolCallParam {
             new_uri: None,
             target_uri: None,
             query: None,
+            domain: None,
             content: None,
             title: None,
             old_string: None,
@@ -276,6 +294,7 @@ impl From<LegacyZmemoryToolCallParam> for ZmemoryToolCallParam {
             new_uri: legacy.new_uri,
             target_uri: legacy.target_uri,
             query: legacy.query,
+            domain: legacy.domain,
             content: legacy.content,
             title: legacy.title,
             old_string: legacy.old_string,
@@ -319,6 +338,23 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
                 query: Some(query),
                 uri,
                 limit,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Export {
+                common,
+                uri,
+                domain,
+            } => Self {
+                action: ZmemoryToolAction::Export,
+                codex_home: common.codex_home,
+                uri,
+                domain,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::Import { common, items } => Self {
+                action: ZmemoryToolAction::Import,
+                codex_home: common.codex_home,
+                items: Some(items),
                 ..Self::default()
             },
             TaggedZmemoryToolCallParam::Create {
@@ -444,6 +480,8 @@ pub(crate) enum ZmemoryActionInput {
     Read(ReadActionParams),
     History(UriActionParams),
     Search(SearchActionParams),
+    Export(ExportActionParams),
+    Import(ImportActionParams),
     Create(CreateActionParams),
     BatchCreate(BatchCreateActionParams),
     Update(UpdateActionParams),
@@ -468,6 +506,12 @@ pub(crate) struct SearchActionParams {
     pub(crate) query: String,
     pub(crate) uri: Option<ZmemoryUri>,
     pub(crate) limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExportActionParams {
+    pub(crate) uri: Option<ZmemoryUri>,
+    pub(crate) domain: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -517,6 +561,27 @@ struct BatchUpdateItemParam {
     disclosure: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ImportAliasItemParam {
+    uri: String,
+    priority: Option<i64>,
+    disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ImportItemParam {
+    uri: String,
+    content: String,
+    priority: Option<i64>,
+    disclosure: Option<String>,
+    #[serde(default)]
+    keywords: Vec<String>,
+    #[serde(default)]
+    aliases: Vec<ImportAliasItemParam>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BatchCreateActionParams {
     pub(crate) items: Vec<CreateActionParams>,
@@ -525,6 +590,28 @@ pub(crate) struct BatchCreateActionParams {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BatchUpdateActionParams {
     pub(crate) items: Vec<UpdateActionParams>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImportAliasActionParams {
+    pub(crate) uri: ZmemoryUri,
+    pub(crate) priority: Option<i64>,
+    pub(crate) disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImportItemActionParams {
+    pub(crate) uri: ZmemoryUri,
+    pub(crate) content: String,
+    pub(crate) priority: i64,
+    pub(crate) disclosure: Option<String>,
+    pub(crate) keywords: Vec<String>,
+    pub(crate) aliases: Vec<ImportAliasActionParams>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImportActionParams {
+    pub(crate) items: Vec<ImportItemActionParams>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -633,6 +720,13 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
                 uri: args.uri.as_deref().map(ZmemoryUri::parse).transpose()?,
                 limit: args.limit.unwrap_or(10),
             })),
+            ZmemoryToolAction::Export => Ok(Self::Export(build_export_action_params(args)?)),
+            ZmemoryToolAction::Import => Ok(Self::Import(ImportActionParams {
+                items: parse_batch_items::<ImportItemParam>(args.items.as_ref())?
+                    .into_iter()
+                    .map(build_import_action_params)
+                    .collect::<Result<Vec<_>>>()?,
+            })),
             ZmemoryToolAction::Create => Ok(Self::Create(CreateActionParams {
                 uri: args.uri.as_deref().map(ZmemoryUri::parse).transpose()?,
                 parent_uri: args
@@ -710,6 +804,20 @@ fn build_create_action_params(item: BatchCreateItemParam) -> Result<CreateAction
     })
 }
 
+fn build_export_action_params(args: &ZmemoryToolCallParam) -> Result<ExportActionParams> {
+    let uri = args.uri.as_deref().map(ZmemoryUri::parse).transpose()?;
+    let domain = normalize_optional_text(args.domain.as_deref()).map(|value| value.to_lowercase());
+    anyhow::ensure!(
+        uri.is_some() ^ domain.is_some(),
+        "exactly one of `uri` or `domain` is required for action=export",
+    );
+    anyhow::ensure!(
+        domain.as_ref().is_none_or(|value| !value.contains("://")),
+        "`domain` must be a bare domain name",
+    );
+    Ok(ExportActionParams { uri, domain })
+}
+
 fn build_update_action_params(item: BatchUpdateItemParam) -> Result<UpdateActionParams> {
     Ok(UpdateActionParams {
         uri: ZmemoryUri::parse(&item.uri)?,
@@ -719,6 +827,27 @@ fn build_update_action_params(item: BatchUpdateItemParam) -> Result<UpdateAction
         append: item.append,
         priority: item.priority,
         disclosure: item.disclosure,
+    })
+}
+
+fn build_import_action_params(item: ImportItemParam) -> Result<ImportItemActionParams> {
+    Ok(ImportItemActionParams {
+        uri: ZmemoryUri::parse(&item.uri)?,
+        content: required_content(Some(&item.content))?,
+        priority: item.priority.unwrap_or_default(),
+        disclosure: normalize_optional_text(item.disclosure.as_deref()),
+        keywords: normalize_keywords(item.keywords),
+        aliases: item
+            .aliases
+            .into_iter()
+            .map(|alias| {
+                Ok(ImportAliasActionParams {
+                    uri: ZmemoryUri::parse(&alias.uri)?,
+                    priority: alias.priority,
+                    disclosure: normalize_optional_text(alias.disclosure.as_deref()),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
     })
 }
 
@@ -766,6 +895,17 @@ fn normalize_optional_text(value: Option<&str>) -> Option<String> {
         .map(str::trim)
         .filter(|text| !text.is_empty())
         .map(str::to_string)
+}
+
+fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
+    let mut normalized = keywords
+        .into_iter()
+        .map(|keyword| keyword.trim().to_lowercase())
+        .filter(|keyword| !keyword.is_empty())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized.dedup();
+    normalized
 }
 
 pub fn run_zmemory_tool(
@@ -871,6 +1011,20 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .get("matches")
                 .and_then(serde_json::Value::as_array)
                 .map(Vec::len)
+                .unwrap_or_default()
+        ),
+        "export" => format!(
+            "export: {} memories",
+            result
+                .get("count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
+        ),
+        "import" => format!(
+            "import: {} memories",
+            result
+                .get("count")
+                .and_then(serde_json::Value::as_u64)
                 .unwrap_or_default()
         ),
         "create" => format!(
@@ -1058,6 +1212,46 @@ mod tests {
                 ..ZmemoryToolCallParam::default()
             }
         );
+    }
+
+    #[test]
+    fn deserialize_tagged_union_supports_export_with_domain() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "export",
+            "domain": "core"
+        }))
+        .expect("deserialize export args");
+
+        assert_eq!(
+            args,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Export,
+                domain: Some("core".to_string()),
+                ..ZmemoryToolCallParam::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_tagged_union_supports_import_items() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "import",
+            "items": [
+                {
+                    "uri": "core://agent",
+                    "content": "Agent memory",
+                    "aliases": [
+                        {
+                            "uri": "alias://agent"
+                        }
+                    ]
+                }
+            ]
+        }))
+        .expect("deserialize import args");
+
+        assert_eq!(args.action, ZmemoryToolAction::Import);
+        assert_eq!(args.items.as_ref().map(Vec::len), Some(1));
     }
 
     #[test]

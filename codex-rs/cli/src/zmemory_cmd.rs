@@ -23,6 +23,12 @@ pub enum ZmemorySubcommand {
     History(ZmemoryReadCommand),
     /// 执行全文搜索。
     Search(ZmemorySearchCommand),
+    /// 导出真实记忆数据。
+    #[command(name = "export-memory")]
+    ExportMemory(ZmemoryExportMemoryCommand),
+    /// 导入真实记忆数据。
+    #[command(name = "import-memory")]
+    ImportMemory(ZmemoryImportMemoryCommand),
     /// 创建新记忆节点。
     Create(ZmemoryCreateCommand),
     /// 更新现有记忆节点。
@@ -71,6 +77,34 @@ pub struct ZmemorySearchCommand {
     pub uri: Option<String>,
     #[arg(long, value_name = "限制")]
     pub limit: Option<usize>,
+    #[command(flatten)]
+    pub output: ZmemoryOutputCommand,
+}
+
+#[derive(Debug, Parser)]
+pub struct ZmemoryExportMemoryCommand {
+    #[arg(
+        long,
+        value_name = "URI",
+        conflicts_with = "domain",
+        required_unless_present = "domain"
+    )]
+    pub uri: Option<String>,
+    #[arg(
+        long,
+        value_name = "域",
+        conflicts_with = "uri",
+        required_unless_present = "uri"
+    )]
+    pub domain: Option<String>,
+    #[command(flatten)]
+    pub output: ZmemoryOutputCommand,
+}
+
+#[derive(Debug, Parser)]
+pub struct ZmemoryImportMemoryCommand {
+    #[arg(long, value_name = "JSON")]
+    pub items_json: String,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
 }
@@ -231,6 +265,23 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
                 uri: command.uri,
                 query: Some(command.query),
                 limit: command.limit,
+                ..ZmemoryToolCallParam::default()
+            },
+            command.output,
+        ),
+        ZmemorySubcommand::ExportMemory(command) => (
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Export,
+                uri: command.uri,
+                domain: command.domain,
+                ..ZmemoryToolCallParam::default()
+            },
+            command.output,
+        ),
+        ZmemorySubcommand::ImportMemory(command) => (
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Import,
+                items: Some(parse_items_json(&command.items_json)?),
                 ..ZmemoryToolCallParam::default()
             },
             command.output,

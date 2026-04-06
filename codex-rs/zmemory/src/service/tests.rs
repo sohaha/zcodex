@@ -2116,6 +2116,334 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
 }
 
 #[test]
+fn export_by_uri_keeps_requested_path_primary_and_includes_aliases_and_keywords() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://export-target".to_string()),
+            content: Some("Exported content".to_string()),
+            priority: Some(4),
+            disclosure: Some("profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://export-target-copy".to_string()),
+            target_uri: Some("core://export-target".to_string()),
+            priority: Some(6),
+            disclosure: Some("mirror".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://export-target".to_string()),
+            add: Some(vec!["profile".to_string(), "agent".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let export = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Export,
+            uri: Some("alias://export-target-copy".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("export should succeed");
+
+    assert_eq!(export["action"], "export");
+    assert_eq!(export["result"]["scope"]["type"], "uri");
+    assert_eq!(
+        export["result"]["scope"]["value"],
+        "alias://export-target-copy"
+    );
+    assert_eq!(export["result"]["count"], 1);
+    assert_eq!(
+        export["result"]["items"][0]["uri"],
+        "alias://export-target-copy"
+    );
+    assert_eq!(export["result"]["items"][0]["content"], "Exported content");
+    assert_eq!(export["result"]["items"][0]["priority"], 6);
+    assert_eq!(export["result"]["items"][0]["disclosure"], "mirror");
+    assert_eq!(
+        export["result"]["items"][0]["keywords"],
+        json!(["agent", "profile"])
+    );
+    assert_eq!(
+        export["result"]["items"][0]["aliases"][0]["uri"],
+        "core://export-target"
+    );
+}
+
+#[test]
+fn add_alias_rejects_shared_edge_metadata_conflicts() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://shared-edge".to_string()),
+            content: Some("Shared edge".to_string()),
+            priority: Some(1),
+            disclosure: Some("primary".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://shared-edge".to_string()),
+            target_uri: Some("core://shared-edge".to_string()),
+            priority: Some(2),
+            disclosure: Some("alias".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("conflicting alias metadata should fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("alias edge metadata conflicts for alias://shared-edge")
+    );
+}
+
+#[test]
+fn export_by_domain_uses_domain_scoped_primary_paths() {
+    let (_dir, config) = config();
+
+    for uri in ["core://domain-one", "core://domain-two"] {
+        crate::service::execute_action(
+            &config,
+            &ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some(uri.to_string()),
+                content: Some(format!("content for {uri}")),
+                ..ZmemoryToolCallParam::default()
+            },
+        )
+        .expect("create should succeed");
+    }
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://domain-two".to_string()),
+            target_uri: Some("core://domain-two".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    let export = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Export,
+            domain: Some("core".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("domain export should succeed");
+
+    assert_eq!(export["result"]["scope"]["type"], "domain");
+    assert_eq!(export["result"]["scope"]["value"], "core");
+    assert_eq!(export["result"]["count"], 2);
+    let items = export["result"]["items"]
+        .as_array()
+        .expect("items should be array");
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|item| {
+        item["uri"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("core://")
+    }));
+}
+
+#[test]
+fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
+    let (_dir, config) = config();
+
+    let import = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Import,
+            items: Some(vec![json!({
+                "uri": "core://import-target",
+                "content": "Imported content",
+                "priority": 2,
+                "disclosure": "profile",
+                "keywords": ["profile", "agent"],
+                "aliases": [
+                    {
+                        "uri": "alias://import-target-copy",
+                        "priority": 5,
+                        "disclosure": "mirror"
+                    }
+                ]
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("import should succeed");
+
+    assert_eq!(import["action"], "import");
+    assert_eq!(import["result"]["count"], 1);
+    assert_eq!(
+        import["result"]["results"][0]["uri"],
+        "core://import-target"
+    );
+
+    let read_primary = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://import-target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read primary should succeed");
+    assert_eq!(read_primary["result"]["content"], "Imported content");
+    assert_eq!(read_primary["result"]["priority"], 2);
+    assert_eq!(read_primary["result"]["disclosure"], "profile");
+    assert_eq!(
+        read_primary["result"]["keywords"],
+        json!(["agent", "profile"])
+    );
+    assert_eq!(read_primary["result"]["aliasCount"], 2);
+
+    let read_alias = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("alias://import-target-copy".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read alias should succeed");
+    assert_eq!(read_alias["result"]["content"], "Imported content");
+}
+
+#[test]
+fn import_rolls_back_when_alias_path_conflicts() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://existing-target".to_string()),
+            content: Some("existing".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://conflict".to_string()),
+            target_uri: Some("core://existing-target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Import,
+            items: Some(vec![json!({
+                "uri": "core://import-conflict",
+                "content": "should rollback",
+                "aliases": [
+                    {
+                        "uri": "alias://conflict"
+                    }
+                ]
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("import should fail");
+    assert_eq!(
+        error.to_string(),
+        "alias path already exists: alias://conflict"
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://import-conflict".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    );
+    assert!(read.is_err());
+}
+
+#[test]
+fn import_rolls_back_when_primary_uri_conflicts() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://import-conflict".to_string()),
+            content: Some("existing".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Import,
+            items: Some(vec![json!({
+                "uri": "core://import-conflict",
+                "content": "should fail"
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("import should fail");
+    assert_eq!(
+        error.to_string(),
+        "memory already exists at core://import-conflict"
+    );
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://import-conflict".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("existing memory should remain readable");
+    assert_eq!(read["result"]["content"], "existing");
+}
+
+#[test]
 fn alias_view_uses_real_existing_path_for_cross_domain_alias_nodes() {
     let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
         Some("core,writer".to_string()),

@@ -10,7 +10,9 @@ mod batch;
 mod common;
 mod create;
 mod delete;
+mod export;
 mod history;
+mod import;
 mod index;
 mod read;
 mod search;
@@ -27,6 +29,8 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
         ZmemoryActionInput::Read(params) => read::read_action(config, &conn, params)?,
         ZmemoryActionInput::History(params) => history::history_action(config, &conn, &params.uri)?,
         ZmemoryActionInput::Search(params) => search::search_action(config, &conn, params)?,
+        ZmemoryActionInput::Export(params) => export::export_action(config, &conn, params)?,
+        ZmemoryActionInput::Import(params) => import::import_action(config, &mut conn, params)?,
         ZmemoryActionInput::Create(params) => create::create_action(config, &mut conn, params)?,
         ZmemoryActionInput::BatchCreate(params) => {
             batch::batch_create_action(config, &mut conn, params)?
@@ -58,6 +62,8 @@ fn action_name(action: &ZmemoryActionInput) -> &'static str {
         ZmemoryActionInput::Read(_) => "read",
         ZmemoryActionInput::History(_) => "history",
         ZmemoryActionInput::Search(_) => "search",
+        ZmemoryActionInput::Export(_) => "export",
+        ZmemoryActionInput::Import(_) => "import",
         ZmemoryActionInput::Create(_) => "create",
         ZmemoryActionInput::BatchCreate(_) => "batch-create",
         ZmemoryActionInput::Update(_) => "update",

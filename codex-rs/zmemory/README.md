@@ -9,6 +9,8 @@
 - `read`
 - `history`
 - `search`
+- `export`
+- `import`
 - `create`
 - `batch-create`
 - `update`
@@ -120,6 +122,8 @@ codex zmemory batch-create --items-json '[{"uri":"core://agent-batch","content":
 codex zmemory batch-update --items-json '[{"uri":"core://agent-batch","append":" more"}]' --json
 codex zmemory history core://agent-profile --json
 codex zmemory search profile --json
+codex zmemory export-memory --uri core://agent-profile --json
+codex zmemory import-memory --items-json '[{"uri":"core://imported-profile","content":"Imported profile","keywords":["imported-profile"],"aliases":[{"uri":"core://imported-profile-alias"}]}]' --json
 codex zmemory export glossary --json
 codex zmemory audit --limit 10 --json
 codex zmemory rebuild-search --json
@@ -127,6 +131,49 @@ codex zmemory doctor --json
 ```
 
 ## 导出语义
+
+`export-memory` / `import-memory` 是真实记忆导入导出入口，直接桥接到底层动作层：
+
+- `codex zmemory export-memory --uri core://agent-profile`
+- `codex zmemory export-memory --domain core`
+- `codex zmemory import-memory --items-json '<json array>'`
+
+其中：
+
+- `export-memory` 对应 tool action `export`
+  - 必须且只能提供一个范围：`--uri <uri>` 或 `--domain <domain>`
+  - `--uri` 保留请求 URI 为主项，并把同节点的其他 live path 放到 `aliases`
+  - `--domain` 导出该 domain 下全部活跃节点
+- `import-memory` 对应 tool action `import`
+  - `--items-json` 传入导入数组
+  - 数组项支持 `uri`、`content`、`priority`、`disclosure`、`keywords`、`aliases`
+  - `aliases` 数组项支持 `uri`、`priority`、`disclosure`
+
+示例：
+
+```bash
+codex zmemory export-memory --uri core://agent-profile --json
+codex zmemory export-memory --domain core --json
+codex zmemory import-memory --items-json '[
+  {
+    "uri": "core://imported-profile",
+    "content": "Imported profile",
+    "keywords": ["imported-profile"],
+    "aliases": [
+      {
+        "uri": "core://imported-profile-alias"
+      }
+    ]
+  }
+]' --json
+```
+
+返回语义：
+
+- `export-memory` 返回 `scope`、`count`、`items`
+- `import-memory` 返回 `count`、`results`、`documentCount`
+
+## 系统视图导出语义
 
 `export` 是本地 CLI 的薄封装，用来导出内置系统视图，不会扩成 REST API、daemon 或独立服务。
 

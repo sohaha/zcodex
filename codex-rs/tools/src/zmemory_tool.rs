@@ -141,6 +141,62 @@ pub fn create_zmemory_tool() -> ToolSpec {
                 },
                 JsonSchema::Object {
                     properties: BTreeMap::from([
+                        literal_str_prop(
+                            "action",
+                            "export",
+                            Some("导出真实记忆数据；需且仅需提供 uri。"),
+                        ),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("uri", Some("要导出的目标 URI。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop(
+                            "action",
+                            "export",
+                            Some("导出真实记忆数据；需且仅需提供 domain。"),
+                        ),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("domain", Some("要导出的裸域名，例如 core、project。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "domain".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "import", Some("导入真实记忆数据。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        array_of_object_prop(
+                            "items",
+                            Some("待导入的记忆数组。"),
+                            BTreeMap::from([
+                                str_prop("uri", Some("目标 URI。")),
+                                str_prop("content", Some("记忆内容。")),
+                                int_prop("priority", Some("优先级权重。")),
+                                str_prop("disclosure", Some("可选 disclosure。")),
+                                str_array_prop("keywords", Some("可选触发关键词数组。")),
+                                array_of_object_prop(
+                                    "aliases",
+                                    Some("可选 alias 数组。"),
+                                    BTreeMap::from([
+                                        str_prop("uri", Some("alias URI。")),
+                                        int_prop("priority", Some("可选 alias 优先级。")),
+                                        str_prop("disclosure", Some("可选 alias disclosure。")),
+                                    ]),
+                                    vec!["uri"],
+                                ),
+                            ]),
+                            vec!["uri", "content"],
+                        ),
+                    ]),
+                    required: Some(vec!["action".to_string(), "items".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
                         literal_str_prop("action", "create", Some("创建记忆节点。")),
                         str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
                         str_prop("uri", Some("目标 URI。")),
@@ -397,7 +453,7 @@ mod tests {
         let JsonSchema::OneOf { variants } = tool.parameters else {
             panic!("zmemory tool should expose oneOf parameters");
         };
-        assert_eq!(variants.len(), 14);
+        assert_eq!(variants.len(), 17);
     }
 
     #[test]
@@ -436,6 +492,78 @@ mod tests {
             panic!("action property should be a literal string");
         };
         assert_eq!(value, "read");
+    }
+
+    #[test]
+    fn zmemory_tool_export_variants_require_uri_or_domain() {
+        let tool = function_tool(create_zmemory_tool());
+        let JsonSchema::OneOf { variants } = tool.parameters else {
+            panic!("zmemory tool should expose oneOf parameters");
+        };
+
+        let export_required_sets = variants
+            .iter()
+            .filter_map(|variant| {
+                let JsonSchema::Object {
+                    properties,
+                    required,
+                    ..
+                } = variant
+                else {
+                    return None;
+                };
+                let Some(JsonSchema::LiteralString { value, .. }) = properties.get("action") else {
+                    return None;
+                };
+                (value == "export").then(|| required.clone().unwrap_or_default())
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            export_required_sets,
+            vec![
+                vec!["action".to_string(), "uri".to_string()],
+                vec!["action".to_string(), "domain".to_string()],
+            ]
+        );
+    }
+
+    #[test]
+    fn zmemory_tool_import_variant_requires_items_and_mentions_aliases() {
+        let tool = function_tool(create_zmemory_tool());
+        let JsonSchema::OneOf { variants } = tool.parameters else {
+            panic!("zmemory tool should expose oneOf parameters");
+        };
+        let import_variant = variants
+            .iter()
+            .find_map(|variant| {
+                let JsonSchema::Object {
+                    properties,
+                    required,
+                    ..
+                } = variant
+                else {
+                    return None;
+                };
+                let Some(JsonSchema::LiteralString { value, .. }) = properties.get("action") else {
+                    return None;
+                };
+                (value == "import").then_some((properties, required))
+            })
+            .expect("import variant should exist");
+
+        assert_eq!(
+            import_variant.1.clone(),
+            Some(vec!["action".to_string(), "items".to_string()])
+        );
+        let Some(JsonSchema::Array { items, .. }) = import_variant.0.get("items") else {
+            panic!("import items should be an array");
+        };
+        let JsonSchema::Object { properties, .. } = items.as_ref() else {
+            panic!("import items should contain object rows");
+        };
+        assert!(properties.contains_key("keywords"));
+        assert!(properties.contains_key("aliases"));
     }
 
     #[test]

@@ -48,6 +48,200 @@ async fn zmemory_export_help_lists_system_views() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_export_memory_help_lists_uri_and_domain_flags() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    codex_command(codex_home.path())?
+        .args(["zmemory", "export-memory", "--help"])
+        .assert()
+        .success()
+        .stderr(
+            predicate::str::contains("--uri")
+                .and(predicate::str::contains("--domain"))
+                .and(predicate::str::contains("export-memory")),
+        );
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_import_memory_help_shows_items_json() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    codex_command(codex_home.path())?
+        .args(["zmemory", "import-memory", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("--items-json"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_export_memory_json_supports_uri_scope() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://export-target",
+            "--content",
+            "Export target content",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "core://export-target-alias",
+            "core://export-target",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "manage-triggers",
+            "core://export-target",
+            "--add",
+            "export-keyword",
+        ])
+        .assert()
+        .success();
+
+    let payload = run_json(
+        codex_home.path(),
+        &[
+            "zmemory",
+            "export-memory",
+            "--uri",
+            "core://export-target",
+            "--json",
+        ],
+    )?;
+    assert_eq!(payload["action"], "export");
+    assert_eq!(payload["result"]["scope"]["type"], "uri");
+    assert_eq!(payload["result"]["scope"]["value"], "core://export-target");
+    assert_eq!(payload["result"]["count"], 1);
+    assert_eq!(payload["result"]["items"][0]["uri"], "core://export-target");
+    assert_eq!(
+        payload["result"]["items"][0]["content"],
+        "Export target content"
+    );
+    assert_eq!(
+        payload["result"]["items"][0]["aliases"][0]["uri"],
+        "core://export-target-alias"
+    );
+    assert_eq!(
+        payload["result"]["items"][0]["keywords"][0],
+        "export-keyword"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_export_memory_json_supports_domain_scope() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    for uri in ["core://domain-one", "core://domain-two"] {
+        codex_command(codex_home.path())?
+            .args([
+                "zmemory",
+                "create",
+                uri,
+                "--content",
+                "Domain export content",
+            ])
+            .assert()
+            .success();
+    }
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "core://domain-two-alias",
+            "core://domain-two",
+        ])
+        .assert()
+        .success();
+
+    let payload = run_json(
+        codex_home.path(),
+        &["zmemory", "export-memory", "--domain", "core", "--json"],
+    )?;
+    assert_eq!(payload["action"], "export");
+    assert_eq!(payload["result"]["scope"]["type"], "domain");
+    assert_eq!(payload["result"]["scope"]["value"], "core");
+    assert_eq!(payload["result"]["count"], 2);
+    let items = payload["result"]["items"]
+        .as_array()
+        .expect("items should be array");
+    assert_eq!(items.len(), 2);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_import_memory_json_round_trips_aliases_and_keywords() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let import_payload = run_json(
+        codex_home.path(),
+        &[
+            "zmemory",
+            "import-memory",
+            "--items-json",
+            r#"[{"uri":"core://imported-memory","content":"Imported content","keywords":["import-keyword"],"aliases":[{"uri":"core://imported-memory-alias","priority":2,"disclosure":"imported alias"}]}]"#,
+            "--json",
+        ],
+    )?;
+    assert_eq!(import_payload["action"], "import");
+    assert_eq!(import_payload["result"]["count"], 1);
+    assert_eq!(
+        import_payload["result"]["results"][0]["uri"],
+        "core://imported-memory"
+    );
+    assert_eq!(import_payload["result"]["results"][0]["aliasCount"], 1);
+    assert_eq!(import_payload["result"]["results"][0]["keywordCount"], 1);
+
+    let read_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "read", "core://imported-memory", "--json"],
+    )?;
+    assert_eq!(read_payload["result"]["content"], "Imported content");
+
+    let search_payload = run_json(
+        codex_home.path(),
+        &["zmemory", "search", "import-keyword", "--json"],
+    )?;
+    assert_eq!(search_payload["result"]["matchCount"], 1);
+    assert_eq!(
+        search_payload["result"]["matches"][0]["uri"],
+        "core://imported-memory"
+    );
+
+    let export_payload = run_json(
+        codex_home.path(),
+        &[
+            "zmemory",
+            "export-memory",
+            "--uri",
+            "core://imported-memory",
+            "--json",
+        ],
+    )?;
+    assert_eq!(
+        export_payload["result"]["items"][0]["aliases"][0]["uri"],
+        "core://imported-memory-alias"
+    );
+    assert_eq!(
+        export_payload["result"]["items"][0]["keywords"][0],
+        "import-keyword"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_audit_help_lists_limit_flag() -> Result<()> {
     let codex_home = TempDir::new()?;
     codex_command(codex_home.path())?
