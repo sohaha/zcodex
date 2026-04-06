@@ -31,6 +31,7 @@ use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::disable_raw_mode;
 use ratatui::crossterm::terminal::enable_raw_mode;
 use ratatui::layout::Offset;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::layout::Size;
 use ratatui::text::Line;
@@ -482,7 +483,8 @@ impl Tui {
         }
         if area != terminal.viewport_area {
             // TODO(nornagon): probably this could be collapsed with the clear + set_viewport_area above.
-            terminal.clear()?;
+            let clear_top = terminal.viewport_area.y.min(area.y);
+            terminal.clear_from(Position { x: 0, y: clear_top })?;
             terminal.set_viewport_area(area);
         }
 
@@ -553,8 +555,10 @@ impl Tui {
 
             let terminal = &mut self.terminal;
             if let Some(new_area) = pending_viewport_area.take() {
+                let old_area = terminal.viewport_area;
+                let clear_top = old_area.y.min(new_area.y);
+                terminal.clear_from(Position { x: 0, y: clear_top })?;
                 terminal.set_viewport_area(new_area);
-                terminal.clear()?;
             }
 
             let mut needs_full_repaint =

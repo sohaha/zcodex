@@ -424,6 +424,16 @@ where
         Ok(())
     }
 
+    /// Clear from an arbitrary screen position to the end of the visible screen,
+    /// then force a full redraw on the next draw call.
+    pub fn clear_from(&mut self, position: Position) -> io::Result<()> {
+        self.backend.set_cursor_position(position)?;
+        self.backend.clear_region(ClearType::AfterCursor)?;
+        // Reset the back buffer to make sure the next update will redraw everything.
+        self.previous_buffer_mut().reset();
+        Ok(())
+    }
+
     /// Force the next draw pass to repaint the entire viewport by resetting the
     /// diff buffer. Call this after operations that move screen content outside of
     /// ratatui's knowledge (e.g., Zellij-mode scrolling via raw newlines), since
