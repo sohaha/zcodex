@@ -11,6 +11,10 @@ use std::collections::HashSet;
 
 const SEARCH_ORDER_BY: &str =
     " ORDER BY sd.priority ASC, bm25(search_documents_fts) ASC, length(f.path) ASC, f.uri ASC";
+const DEFAULT_SNIPPET_LIMIT: usize = 80;
+const SNIPPET_CONTEXT: usize = 30;
+const HIGHLIGHT_PREFIX: &str = "<mark>";
+const HIGHLIGHT_SUFFIX: &str = "</mark>";
 
 pub(crate) fn search_action(
     config: &ZmemoryConfig,
@@ -119,43 +123,67 @@ fn make_search_snippet(content: &str, query: &str) -> String {
     }
     let lower_content = content.to_lowercase();
     let lower_query = query.trim().to_lowercase();
-    let mut match_len = lower_query.chars().count();
     if lower_query.is_empty() {
-        return snippet(content, 80);
+        return snippet(content, DEFAULT_SNIPPET_LIMIT);
     }
 
-    if let Some(pos) = lower_content.find(&lower_query) {
-        let start = lower_content[..pos].chars().count();
-        let end = usize::min(content.chars().count(), start + match_len + 30);
-        let prefix = if start > 0 { "..." } else { "" };
-        let suffix = if end < content.chars().count() {
-            "..."
-        } else {
-            ""
-        };
-        return format!("{prefix}{}{suffix}", slice_chars(content, start, end));
+    if let Some(highlight_start) = find_match_start(&lower_content, &lower_query) {
+        let highlight_len = lower_query.chars().count();
+        return highlighted_window(content, highlight_start, highlight_len, true);
     }
 
     for token in index::snippet_query_tokens(query) {
-        if let Some(pos) = lower_content.find(&token) {
-            if content.chars().count() <= 80 {
-                return content.to_string();
-            }
-            match_len = token.chars().count();
-            let rune_pos = lower_content[..pos].chars().count();
-            let start = rune_pos.saturating_sub(30);
-            let end = usize::min(content.chars().count(), rune_pos + match_len + 30);
-            let prefix = if start > 0 { "..." } else { "" };
-            let suffix = if end < content.chars().count() {
-                "..."
-            } else {
-                ""
-            };
-            return format!("{prefix}{}{suffix}", slice_chars(content, start, end));
+        if let Some(highlight_start) = find_match_start(&lower_content, &token) {
+            let highlight_len = token.chars().count();
+            return highlighted_window(content, highlight_start, highlight_len, false);
         }
     }
 
-    snippet(content, 80)
+    snippet(content, DEFAULT_SNIPPET_LIMIT)
+}
+
+fn find_match_start(haystack: &str, needle: &str) -> Option<usize> {
+    haystack
+        .find(needle)
+        .map(|pos| haystack[..pos].chars().count())
+}
+
+fn highlighted_window(
+    content: &str,
+    highlight_start: usize,
+    highlight_len: usize,
+    center_match: bool,
+) -> String {
+    let content_len = content.chars().count();
+    let start = if center_match {
+        highlight_start
+    } else {
+        highlight_start.saturating_sub(SNIPPET_CONTEXT)
+    };
+    let end = usize::min(
+        content_len,
+        highlight_start + highlight_len + SNIPPET_CONTEXT,
+    );
+    let relative_highlight_start = highlight_start.saturating_sub(start);
+    let relative_highlight_end = relative_highlight_start + highlight_len;
+    let prefix = if start > 0 { "..." } else { "" };
+    let suffix = if end < content_len { "..." } else { "" };
+    let snippet_body = slice_chars(content, start, end);
+    format!(
+        "{prefix}{}{suffix}",
+        highlight_range(
+            &snippet_body,
+            relative_highlight_start,
+            relative_highlight_end,
+        )
+    )
+}
+
+fn highlight_range(content: &str, start: usize, end: usize) -> String {
+    let before = slice_chars(content, 0, start);
+    let highlighted = slice_chars(content, start, end);
+    let after = slice_chars(content, end, content.chars().count());
+    format!("{before}{HIGHLIGHT_PREFIX}{highlighted}{HIGHLIGHT_SUFFIX}{after}")
 }
 
 fn snippet(content: &str, limit: usize) -> String {

@@ -1758,7 +1758,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
     let literal_snippet = literal["result"]["matches"][0]["snippet"]
         .as_str()
         .expect("literal snippet should exist");
-    assert!(literal_snippet.contains("GraphService exact phrase"));
+    assert!(literal_snippet.contains("<mark>GraphService exact phrase</mark>"));
     assert!(literal_snippet.contains("..."));
 
     let token = crate::service::execute_action(
@@ -1773,7 +1773,7 @@ fn search_snippet_prefers_literal_then_token_then_fallback() {
     .expect("token search should succeed");
     assert_eq!(
         token["result"]["matches"][0]["snippet"],
-        "mirror token keeps hits focused"
+        "<mark>mirror</mark> token keeps hits focused"
     );
 
     let fallback = crate::service::execute_action(
@@ -1889,7 +1889,7 @@ fn search_snippet_preserves_multibyte_boundaries() {
     let literal_snippet = literal["result"]["matches"][0]["snippet"]
         .as_str()
         .expect("literal snippet should exist");
-    assert!(literal_snippet.contains("GraphService后缀"));
+    assert!(literal_snippet.contains("<mark>GraphService</mark>后缀"));
 }
 
 #[test]
