@@ -54,7 +54,11 @@ async fn zmemory_audit_help_lists_limit_flag() -> Result<()> {
         .args(["zmemory", "audit", "--help"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("--limit"));
+        .stderr(
+            predicate::str::contains("--limit")
+                .and(predicate::str::contains("--action"))
+                .and(predicate::str::contains("--uri")),
+        );
     Ok(())
 }
 
@@ -144,6 +148,65 @@ async fn zmemory_audit_json_returns_recent_entries() -> Result<()> {
         .map(|entry| entry["id"].as_i64().expect("entry id should be integer"))
         .collect::<Vec<_>>();
     assert!(ids.windows(2).all(|pair| pair[0] > pair[1]));
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_audit_json_supports_action_and_uri_filters() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://audit-filter-entry",
+            "--content",
+            "Initial audit content",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "update",
+            "core://audit-filter-entry",
+            "--append",
+            " updated",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "add-alias",
+            "core://audit-filter-alias",
+            "core://audit-filter-entry",
+        ])
+        .assert()
+        .success();
+
+    let payload = run_json(
+        codex_home.path(),
+        &[
+            "zmemory",
+            "audit",
+            "--action",
+            "add-alias",
+            "--uri",
+            "core://audit-filter-alias",
+            "--json",
+        ],
+    )?;
+    assert_eq!(payload["action"], "audit");
+    assert_eq!(payload["result"]["count"], 1);
+    assert_eq!(payload["result"]["auditAction"], "add-alias");
+    assert_eq!(payload["result"]["uri"], "core://audit-filter-alias");
+    assert_eq!(payload["result"]["entries"][0]["action"], "add-alias");
+    assert_eq!(
+        payload["result"]["entries"][0]["uri"],
+        "core://audit-filter-alias"
+    );
 
     Ok(())
 }

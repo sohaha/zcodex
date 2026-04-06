@@ -65,6 +65,8 @@ pub struct ZmemoryToolCallParam {
     pub remove: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audit_action: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -143,6 +145,9 @@ enum TaggedZmemoryToolCallParam {
         #[serde(flatten)]
         common: CommonToolArgs,
         limit: Option<usize>,
+        #[serde(alias = "auditAction")]
+        audit_action: Option<String>,
+        uri: Option<String>,
     },
     Doctor {
         #[serde(flatten)]
@@ -190,6 +195,8 @@ struct LegacyZmemoryToolCallParam {
     remove: Option<Vec<String>>,
     #[serde(default)]
     limit: Option<usize>,
+    #[serde(default, alias = "auditAction")]
+    audit_action: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -219,6 +226,7 @@ impl Default for ZmemoryToolCallParam {
             add: None,
             remove: None,
             limit: None,
+            audit_action: None,
         }
     }
 }
@@ -255,6 +263,7 @@ impl From<LegacyZmemoryToolCallParam> for ZmemoryToolCallParam {
             add: legacy.add,
             remove: legacy.remove,
             limit: legacy.limit,
+            audit_action: legacy.audit_action,
         }
     }
 }
@@ -361,10 +370,17 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
                 codex_home: common.codex_home,
                 ..Self::default()
             },
-            TaggedZmemoryToolCallParam::Audit { common, limit } => Self {
+            TaggedZmemoryToolCallParam::Audit {
+                common,
+                limit,
+                audit_action,
+                uri,
+            } => Self {
                 action: ZmemoryToolAction::Audit,
                 codex_home: common.codex_home,
                 limit,
+                audit_action,
+                uri,
                 ..Self::default()
             },
             TaggedZmemoryToolCallParam::Doctor { common } => Self {
@@ -453,6 +469,8 @@ pub(crate) struct ManageTriggersActionParams {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AuditActionParams {
     pub(crate) limit: usize,
+    pub(crate) audit_action: Option<String>,
+    pub(crate) uri: Option<ZmemoryUri>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -571,6 +589,9 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
             ZmemoryToolAction::Stats => Ok(Self::Stats),
             ZmemoryToolAction::Audit => Ok(Self::Audit(AuditActionParams {
                 limit: args.limit.unwrap_or(20),
+                audit_action: normalize_optional_text(args.audit_action.as_deref())
+                    .map(|value| value.to_lowercase()),
+                uri: args.uri.as_deref().map(ZmemoryUri::parse).transpose()?,
             })),
             ZmemoryToolAction::Doctor => Ok(Self::Doctor),
             ZmemoryToolAction::RebuildSearch => Ok(Self::RebuildSearch),
@@ -858,7 +879,9 @@ mod tests {
     fn deserialize_tagged_union_accepts_audit_limit() {
         let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
             "action": "audit",
-            "limit": 5
+            "limit": 5,
+            "auditAction": "add-alias",
+            "uri": "core://alias"
         }))
         .expect("deserialize audit args");
 
@@ -867,6 +890,8 @@ mod tests {
             ZmemoryToolCallParam {
                 action: ZmemoryToolAction::Audit,
                 limit: Some(5),
+                audit_action: Some("add-alias".to_string()),
+                uri: Some("core://alias".to_string()),
                 ..ZmemoryToolCallParam::default()
             }
         );

@@ -189,6 +189,11 @@ pub fn create_zmemory_tool() -> ToolSpec {
                         literal_str_prop("action", "audit", Some("查看最近审计日志。")),
                         str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
                         int_prop("limit", Some("返回最近审计记录条数。")),
+                        str_prop(
+                            "audit_action",
+                            Some("可选：按审计动作过滤，例如 create、update。"),
+                        ),
+                        str_prop("uri", Some("可选：按目标 URI 精确过滤。")),
                     ]),
                     required: Some(vec!["action".to_string()]),
                     additional_properties: Some(false.into()),

@@ -1266,6 +1266,64 @@ fn audit_action_returns_recent_entries_in_desc_order() {
 }
 
 #[test]
+fn audit_action_supports_action_and_uri_filters() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://audit_filter_target".to_string()),
+            content: Some("initial memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://audit_filter_target".to_string()),
+            append: Some(" updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://audit_filter_alias".to_string()),
+            target_uri: Some("core://audit_filter_target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    let audit = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Audit,
+            limit: Some(5),
+            audit_action: Some("add-alias".to_string()),
+            uri: Some("core://audit_filter_alias".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("filtered audit should succeed");
+
+    assert_eq!(audit["action"], "audit");
+    assert_eq!(audit["result"]["count"], 1);
+    assert_eq!(audit["result"]["auditAction"], "add-alias");
+    assert_eq!(audit["result"]["uri"], "core://audit_filter_alias");
+    assert_eq!(audit["result"]["entries"][0]["action"], "add-alias");
+    assert_eq!(
+        audit["result"]["entries"][0]["uri"],
+        "core://audit_filter_alias"
+    );
+}
+
+#[test]
 fn search_matches_alias_via_separator_normalized_query() {
     let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
         Some("core,writer".to_string()),

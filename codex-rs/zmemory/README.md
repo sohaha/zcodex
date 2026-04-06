@@ -14,6 +14,7 @@
 - `add-alias`
 - `manage-triggers`
 - `stats`
+- `audit`
 - `doctor`
 - `rebuild-search`
 
@@ -114,6 +115,7 @@ codex zmemory create core://agent-profile --content "Salem profile memory"
 codex zmemory read core://agent-profile --json
 codex zmemory search profile --json
 codex zmemory export glossary --json
+codex zmemory audit --limit 10 --json
 codex zmemory rebuild-search --json
 codex zmemory doctor --json
 ```
@@ -165,6 +167,7 @@ codex zmemory doctor --json
 - `codex zmemory read system://defaults --json`：确认产品默认 domains / boot anchors / 默认路径策略
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
+- `codex zmemory audit --json`：查看最近元数据治理动作时间线；支持 `--action <create|update|add-alias|manage-triggers|delete-path>` 与 `--uri <core://...>` 精确过滤
 - `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
 - `codex zmemory export recent --json`：查看最近内容版本节点（按节点内容时间聚合，不反映 alias/trigger/path 元数据治理动作）
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
@@ -190,7 +193,7 @@ codex zmemory doctor --json
 1. 先看 `system://workspace` 判断当前实际 DB、boot 是否健康、是否显式覆盖默认路径。
 2. 再看 `system://defaults`，确认当前现象是产品默认还是 workspace 特例。
 3. 再看 `stats` / `doctor` 判断 orphan / deprecated / alias / disclosure 压力。
-4. 再用 `export paths` / `export recent` / `export glossary` 判断活跃路径、最近内容版本与 trigger wiring 是否进入召回网络。
+4. 再用 `audit` / `export paths` / `export recent` / `export glossary` 判断最近治理动作、活跃路径、最近内容版本与 trigger wiring 是否进入召回网络。
 5. 若 `stats` / `doctor` 提示 alias/trigger 缺口，再用 `export alias` 或 `read system://alias` 观察 alias coverage 百分比与缺 trigger 列表。
 
 ### 区分“没有记忆”与“搜不到”

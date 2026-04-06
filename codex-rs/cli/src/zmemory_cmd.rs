@@ -143,6 +143,10 @@ pub struct ZmemoryManageTriggersCommand {
 pub struct ZmemoryAuditCommand {
     #[arg(long, value_name = "限制")]
     pub limit: Option<usize>,
+    #[arg(long, value_name = "动作")]
+    pub action: Option<String>,
+    #[arg(long, value_name = "URI")]
+    pub uri: Option<String>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
 }
@@ -266,6 +270,8 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
             ZmemoryToolCallParam {
                 action: ZmemoryToolAction::Audit,
                 limit: command.limit,
+                audit_action: command.action,
+                uri: command.uri,
                 ..ZmemoryToolCallParam::default()
             },
             command.output,

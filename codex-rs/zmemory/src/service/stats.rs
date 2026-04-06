@@ -38,26 +38,37 @@ pub(crate) fn audit_action(conn: &Connection, args: &AuditActionParams) -> Resul
     let mut stmt = conn.prepare(
         "SELECT id, action, uri, node_uuid, details, created_at
          FROM audit_log
+         WHERE (?1 IS NULL OR action = ?1)
+           AND (?2 IS NULL OR uri = ?2)
          ORDER BY id DESC
-         LIMIT ?1",
+         LIMIT ?3",
     )?;
     let entries = stmt
-        .query_map([args.limit], |row| {
-            let details = row.get::<_, String>(4)?;
-            Ok(json!({
-                "id": row.get::<_, i64>(0)?,
-                "action": row.get::<_, String>(1)?,
-                "uri": row.get::<_, Option<String>>(2)?,
-                "nodeUuid": row.get::<_, Option<String>>(3)?,
-                "details": serde_json::from_str::<Value>(&details)
-                    .unwrap_or(Value::String(details)),
-                "createdAt": row.get::<_, String>(5)?,
-            }))
-        })?
+        .query_map(
+            rusqlite::params![
+                args.audit_action.as_deref(),
+                args.uri.as_ref().map(ToString::to_string),
+                args.limit
+            ],
+            |row| {
+                let details = row.get::<_, String>(4)?;
+                Ok(json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "action": row.get::<_, String>(1)?,
+                    "uri": row.get::<_, Option<String>>(2)?,
+                    "nodeUuid": row.get::<_, Option<String>>(3)?,
+                    "details": serde_json::from_str::<Value>(&details)
+                        .unwrap_or(Value::String(details)),
+                    "createdAt": row.get::<_, String>(5)?,
+                }))
+            },
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(json!({
         "count": entries.len(),
         "limit": args.limit,
+        "auditAction": args.audit_action,
+        "uri": args.uri.as_ref().map(ToString::to_string),
         "entries": entries,
     }))
 }
