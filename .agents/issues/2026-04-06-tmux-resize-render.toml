@@ -1,0 +1,21 @@
+plan = ".agents/plan/2026-04-06-tmux-resize-render.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "稳定 resize 后 inline viewport 的定位与重绘"
+scope = """
+修改 `codex-rs/tui/src/tui.rs` 中与 resize 相关的 viewport 重定位路径，去掉对不可靠光标位移启发式的单点依赖，并补充覆盖“resize 发生但 cursor 反馈不可信或未变化”场景的回归测试。必要时更新与该行为直接相关的快照或测试辅助代码。
+
+不包括 buddy/宠物功能改动，不包括非 resize 触发的其他渲染问题，也不包括对 tmux 做独立兼容层或大规模 TUI 重构。
+"""
+touch_points = ["module:tui", "codex-rs/tui/src/tui.rs", "codex-rs/tui/tests", "codex-rs/tui/src"]
+depends_on = []
+done_when = "resize 后 inline viewport 的位置与可见内容在 tmux 和普通终端路径下都保持稳定，不再依赖单一 cursor delta 启发式；仓库中新增或更新了覆盖该回归的测试，并通过 `codex-tui` 的对应验证。"
+validate_by = "在 `codex-rs` 目录运行 `cargo nextest run -p codex-tui`；若本地缺少 nextest，则运行 `cargo test -p codex-tui`。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "手动回归重点是在 tmux 中调整 pane/window 尺寸确认不再出现底部内容截断；若修复影响可见 UI 布局，需同步更新相关 snapshot。"
