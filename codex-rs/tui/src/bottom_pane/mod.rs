@@ -1151,9 +1151,8 @@ impl BottomPane {
             let has_pending_input = !self.pending_input_preview.queued_messages.is_empty()
                 || !self.pending_input_preview.pending_steers.is_empty()
                 || !self.pending_input_preview.rejected_steers.is_empty();
-            let has_status_or_footer = self.status.is_some()
-                || !self.unified_exec_footer.is_empty()
-                || self.buddy.is_visible();
+            let has_status_or_footer =
+                self.status.is_some() || !self.unified_exec_footer.is_empty();
             let has_inline_previews = has_pending_thread_approvals || has_pending_input;
             if has_inline_previews && has_status_or_footer {
                 flex.push(/*flex*/ 0, RenderableItem::Owned("".into()));
@@ -1686,6 +1685,37 @@ mod tests {
         let area = Rect::new(0, 0, width, height);
         assert_snapshot!(
             "status_and_queued_messages_snapshot",
+            render_snapshot(&pane, area)
+        );
+    }
+
+    #[test]
+    fn buddy_and_queued_messages_do_not_insert_blank_separator_snapshot() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let mut pane = BottomPane::new(BottomPaneParams {
+            app_event_tx: tx,
+            frame_requester: FrameRequester::test_dummy(),
+            has_input_focus: true,
+            enhanced_keys_supported: false,
+            placeholder_text: "Ask Codex to do anything".to_string(),
+            disable_paste_burst: false,
+            animations_enabled: true,
+            skills: Some(Vec::new()),
+        });
+
+        let _ = pane.show_buddy("codex-home::project");
+        pane.set_pending_input_preview(
+            vec!["Queued follow-up question".to_string()],
+            Vec::new(),
+            Vec::new(),
+        );
+
+        let width = 60;
+        let height = pane.desired_height(width);
+        let area = Rect::new(0, 0, width, height);
+        assert_snapshot!(
+            "buddy_and_queued_messages_do_not_insert_blank_separator_snapshot",
             render_snapshot(&pane, area)
         );
     }
