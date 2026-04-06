@@ -1204,6 +1204,52 @@ fn search_dedupes_aliases_and_orders_by_priority_then_path_length() {
 }
 
 #[test]
+fn search_uses_bm25_after_priority_in_sql_ordering() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://ranking_exact".to_string()),
+            content: Some("omega delta".to_string()),
+            priority: Some(2),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("exact create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://ranking_partial".to_string()),
+            content: Some("omega middle filler words delta".to_string()),
+            priority: Some(2),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("partial create should succeed");
+
+    let search = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("omega delta".to_string()),
+            limit: Some(2),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+
+    let matches = search["result"]["matches"]
+        .as_array()
+        .expect("matches should be an array");
+    assert_eq!(matches.len(), 2);
+    assert_eq!(matches[0]["uri"], "core://ranking_exact");
+    assert_eq!(matches[1]["uri"], "core://ranking_partial");
+}
+
+#[test]
 fn search_snippet_prefers_literal_then_token_then_fallback() {
     let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
         Some("core,writer".to_string()),

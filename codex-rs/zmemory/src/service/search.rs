@@ -9,6 +9,9 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::HashSet;
 
+const SEARCH_ORDER_BY: &str =
+    " ORDER BY sd.priority ASC, bm25(search_documents_fts) ASC, length(f.path) ASC, f.uri ASC";
+
 pub(crate) fn search_action(
     config: &ZmemoryConfig,
     conn: &Connection,
@@ -32,7 +35,8 @@ pub(crate) fn search_action(
     );
 
     let raw_matches = if let Some(scope) = scope {
-        sql.push_str(" AND f.domain = ?2 AND (f.path = ?3 OR f.path LIKE ?4) ORDER BY bm25(search_documents_fts) ASC, f.uri ASC");
+        sql.push_str(" AND f.domain = ?2 AND (f.path = ?3 OR f.path LIKE ?4)");
+        sql.push_str(SEARCH_ORDER_BY);
         let prefix = if scope.path.is_empty() {
             "%".to_string()
         } else {
@@ -55,7 +59,7 @@ pub(crate) fn search_action(
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?
     } else {
-        sql.push_str(" ORDER BY bm25(search_documents_fts) ASC, f.uri ASC");
+        sql.push_str(SEARCH_ORDER_BY);
         let mut stmt = conn.prepare(&sql)?;
         stmt.query_map(params![normalized_query], |row| {
             Ok(SearchMatch {
@@ -70,7 +74,7 @@ pub(crate) fn search_action(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?
     };
-    let matches = dedupe_and_sort_search_matches(raw_matches, query, limit);
+    let matches = dedupe_search_matches(raw_matches, query, limit);
 
     Ok(json!({
         "query": query,
@@ -90,19 +94,7 @@ struct SearchMatch {
     node_uuid: String,
 }
 
-fn dedupe_and_sort_search_matches(
-    matches: Vec<SearchMatch>,
-    query: &str,
-    limit: usize,
-) -> Vec<Value> {
-    let mut matches = matches;
-    matches.sort_by(|left, right| {
-        left.priority
-            .cmp(&right.priority)
-            .then_with(|| left.path.len().cmp(&right.path.len()))
-            .then_with(|| left.uri.cmp(&right.uri))
-    });
-
+fn dedupe_search_matches(matches: Vec<SearchMatch>, query: &str, limit: usize) -> Vec<Value> {
     let mut seen = HashSet::new();
     matches
         .into_iter()
