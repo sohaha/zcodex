@@ -589,25 +589,64 @@ impl Tui {
         })?
     }
 
+    fn inline_viewport_area_for_screen(viewport_area: Rect, screen_size: Size) -> Rect {
+        let height = viewport_area.height.min(screen_size.height);
+        Rect::new(
+            viewport_area.x,
+            screen_size.height.saturating_sub(height),
+            screen_size.width,
+            height,
+        )
+    }
+
     fn pending_viewport_area(&mut self) -> Result<Option<Rect>> {
         let terminal = &mut self.terminal;
         let screen_size = terminal.size()?;
         let last_known_screen_size = terminal.last_known_screen_size;
-        if screen_size != last_known_screen_size
-            && let Ok(cursor_pos) = terminal.get_cursor_position()
-        {
+        if screen_size == last_known_screen_size {
+            return Ok(None);
+        }
+
+        if !self.alt_screen_active.load(Ordering::Relaxed) {
+            return Ok(Some(Self::inline_viewport_area_for_screen(
+                terminal.viewport_area,
+                screen_size,
+            )));
+        }
+
+        if let Ok(cursor_pos) = terminal.get_cursor_position() {
             let last_known_cursor_pos = terminal.last_known_cursor_pos;
-            // If we resized AND the cursor moved, we adjust the viewport area to keep the
-            // cursor in the same position. This is a heuristic that seems to work well
-            // at least in iTerm2.
+            // Alt-screen overlays still rely on the cursor-delta heuristic because they don't pin
+            // the viewport to the terminal bottom.
             if cursor_pos.y != last_known_cursor_pos.y {
-                let offset = Offset {
-                    x: 0,
-                    y: cursor_pos.y as i32 - last_known_cursor_pos.y as i32,
-                };
-                return Ok(Some(terminal.viewport_area.offset(offset)));
+                let offset_y = cursor_pos.y as i32 - last_known_cursor_pos.y as i32;
+                return Ok(Some(
+                    terminal.viewport_area.offset(Offset { x: 0, y: offset_y }),
+                ));
             }
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn inline_resize_bottom_aligns_viewport_when_screen_grows() {
+        let area = Rect::new(0, 9, 80, 6);
+        let resized = Tui::inline_viewport_area_for_screen(area, Size::new(100, 20));
+
+        assert_eq!(resized, Rect::new(0, 14, 100, 6));
+    }
+
+    #[test]
+    fn inline_resize_clamps_height_when_screen_shrinks() {
+        let area = Rect::new(0, 8, 80, 6);
+        let resized = Tui::inline_viewport_area_for_screen(area, Size::new(60, 4));
+
+        assert_eq!(resized, Rect::new(0, 0, 60, 4));
     }
 }
