@@ -105,8 +105,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search_documents_fts USING fts5 (
 "#;
 
 const MIGRATION_0004_EDGES_ALLOW_ALIAS_NAME: &str = r#"
-PRAGMA foreign_keys = OFF;
-
 CREATE TABLE IF NOT EXISTS edges_new (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   parent_uuid TEXT NOT NULL,
@@ -129,8 +127,6 @@ ALTER TABLE edges_new RENAME TO edges;
 
 CREATE INDEX IF NOT EXISTS idx_edges_parent_uuid ON edges(parent_uuid);
 CREATE INDEX IF NOT EXISTS idx_edges_child_uuid ON edges(child_uuid);
-
-PRAGMA foreign_keys = ON;
 "#;
 
 const MIGRATIONS: [(&str, &str); 4] = [
@@ -143,7 +139,7 @@ const MIGRATIONS: [(&str, &str); 4] = [
     ),
 ];
 
-pub fn initialize_database(conn: &Connection) -> Result<()> {
+pub fn initialize_database(conn: &mut Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
          CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -164,17 +160,36 @@ pub fn initialize_database(conn: &Connection) -> Result<()> {
         if applied {
             continue;
         }
-        conn.execute_batch(sql)?;
-        conn.execute(
-            "INSERT INTO schema_migrations(version) VALUES (?1)",
-            [version],
-        )?;
+        apply_migration(conn, version, sql)?;
     }
 
     ensure_domain_root(conn, DEFAULT_DOMAIN)?;
     ensure_domain_root(conn, SYSTEM_DOMAIN)?;
 
     Ok(())
+}
+
+fn apply_migration(conn: &mut Connection, version: &str, sql: &str) -> Result<()> {
+    if version == "0004_edges_alias_name" {
+        conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+    }
+
+    let migration_result = (|| {
+        let tx = conn.transaction()?;
+        tx.execute_batch(sql)?;
+        tx.execute(
+            "INSERT INTO schema_migrations(version) VALUES (?1)",
+            [version],
+        )?;
+        tx.commit()?;
+        Ok(())
+    })();
+
+    if version == "0004_edges_alias_name" {
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+    }
+
+    migration_result
 }
 
 pub fn ensure_domain_root(conn: &Connection, domain: &str) -> Result<()> {

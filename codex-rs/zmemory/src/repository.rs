@@ -28,9 +28,9 @@ impl ZmemoryRepository {
             std::fs::create_dir_all(parent)?;
         }
 
-        let conn = Connection::open(self.config.db_path())?;
+        let mut conn = Connection::open(self.config.db_path())?;
         conn.busy_timeout(Duration::from_secs(5))?;
-        initialize_database(&conn)?;
+        initialize_database(&mut conn)?;
         Ok(conn)
     }
 }
