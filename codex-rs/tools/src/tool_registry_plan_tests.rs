@@ -83,6 +83,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
         create_update_plan_tool(),
         request_user_input_tool_spec(/*default_mode_request_user_input*/ false),
         create_apply_patch_freeform_tool(),
+        create_tldr_tool(),
         ToolSpec::WebSearch {
             external_web_access: Some(true),
             filters: None,
@@ -1851,6 +1852,7 @@ fn strip_descriptions_schema(schema: &mut JsonSchema) {
     match schema {
         JsonSchema::Boolean { description }
         | JsonSchema::String { description }
+        | JsonSchema::LiteralString { description, .. }
         | JsonSchema::Number { description }
         | JsonSchema::Integer { description } => {
             *description = None;
@@ -1858,6 +1860,13 @@ fn strip_descriptions_schema(schema: &mut JsonSchema) {
         JsonSchema::Array { items, description } => {
             strip_descriptions_schema(items);
             *description = None;
+        }
+        JsonSchema::OneOf { variants }
+        | JsonSchema::AnyOf { variants }
+        | JsonSchema::AllOf { variants } => {
+            for variant in variants {
+                strip_descriptions_schema(variant);
+            }
         }
         JsonSchema::Object {
             properties,

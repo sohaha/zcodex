@@ -25,6 +25,16 @@ fn str_prop(name: &str, desc: Option<&str>) -> (String, JsonSchema) {
     )
 }
 
+fn literal_str_prop(name: &str, value: &str, desc: Option<&str>) -> (String, JsonSchema) {
+    (
+        name.to_string(),
+        JsonSchema::LiteralString {
+            value: value.to_string(),
+            description: desc.map(ToString::to_string),
+        },
+    )
+}
+
 /// Helper to build an integer property with an optional description.
 fn int_prop(name: &str, desc: Option<&str>) -> (String, JsonSchema) {
     (
@@ -68,48 +78,132 @@ fn mcp_tool(
 }
 
 pub fn create_zmemory_tool() -> ToolSpec {
-    let properties = BTreeMap::from([
-        str_prop(
-            "action",
-            Some(
-                "Zmemory 操作：read | search | create | update | delete-path | add-alias | manage-triggers | stats | doctor | rebuild-search。",
-            ),
-        ),
-        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
-        str_prop(
-            "uri",
-            Some(
-                "目标 URI。支持系统视图：system://boot|defaults|workspace|index|index/<domain>|paths|paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>。system://paths 暴露全部活跃记忆路径；system://defaults 暴露产品默认值；system://workspace 暴露当前工作区运行时事实。",
-            ),
-        ),
-        str_prop("parent_uri", Some("create 操作使用的父级 URI。")),
-        str_prop("new_uri", Some("add-alias 操作的新别名 URI。")),
-        str_prop("target_uri", Some("add-alias 操作的目标 URI。")),
-        str_prop("query", Some("搜索查询。")),
-        str_prop("content", Some("create 操作的记忆内容。")),
-        str_prop("title", Some("create 操作可选的节点标题。")),
-        str_prop("old_string", Some("update 补丁模式中待替换的 old_string。")),
-        str_prop(
-            "new_string",
-            Some("update 补丁模式中的 new_string 替换内容。"),
-        ),
-        str_prop("append", Some("update 追加模式中附加到内容末尾的文本。")),
-        int_prop("priority", Some("create/update 使用的优先级权重。")),
-        str_prop("disclosure", Some("披露触发文本。")),
-        str_array_prop("add", Some("要新增的触发关键词。")),
-        str_array_prop("remove", Some("要移除的触发关键词。")),
-        int_prop(
-            "limit",
-            Some("system://boot|index|paths|recent|glossary|alias 等系统视图的结果条目上限。"),
-        ),
-    ]);
-
-    mcp_tool(
-        ZMEMORY_TOOL_NAME,
-        "Codex 内置的 zmemory 持久记忆工具。",
-        properties,
-        vec!["action"],
-    )
+    ToolSpec::Function(ResponsesApiTool {
+        name: ZMEMORY_TOOL_NAME.to_string(),
+        description: "Codex 内置的 zmemory 持久记忆工具。".to_string(),
+        strict: false,
+        defer_loading: None,
+        parameters: JsonSchema::OneOf {
+            variants: vec![
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "read", Some("读取记忆或系统视图。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop(
+                            "uri",
+                            Some(
+                                "目标 URI。支持系统视图：system://boot|defaults|workspace|index|index/<domain>|system://paths|system://paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>。",
+                            ),
+                        ),
+                        int_prop("limit", Some("system 视图的结果条目上限。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "search", Some("全文检索。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("query", Some("搜索查询。")),
+                        str_prop("uri", Some("可选的 URI scope。")),
+                        int_prop("limit", Some("返回结果上限。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "query".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "create", Some("创建记忆节点。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("uri", Some("目标 URI。")),
+                        str_prop("parent_uri", Some("父级 URI。")),
+                        str_prop("content", Some("记忆内容。")),
+                        str_prop("title", Some("可选节点标题。")),
+                        int_prop("priority", Some("优先级权重。")),
+                        str_prop("disclosure", Some("披露触发文本。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "content".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "update", Some("更新记忆节点。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("uri", Some("目标 URI。")),
+                        str_prop("content", Some("完整替换内容。")),
+                        str_prop("old_string", Some("补丁模式待替换文本。")),
+                        str_prop("new_string", Some("补丁模式替换文本。")),
+                        str_prop("append", Some("追加文本。")),
+                        int_prop("priority", Some("可选优先级更新。")),
+                        str_prop("disclosure", Some("可选 disclosure 更新。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "delete-path", Some("删除记忆路径。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("uri", Some("要移除的 URI 路径。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "add-alias", Some("创建别名路径。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("new_uri", Some("新的别名 URI。")),
+                        str_prop("target_uri", Some("目标 URI。")),
+                        int_prop("priority", Some("可选优先级。")),
+                        str_prop("disclosure", Some("可选 disclosure。")),
+                    ]),
+                    required: Some(vec![
+                        "action".to_string(),
+                        "new_uri".to_string(),
+                        "target_uri".to_string(),
+                    ]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "manage-triggers", Some("管理触发词。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("uri", Some("目标 URI。")),
+                        str_array_prop("add", Some("要新增的触发关键词。")),
+                        str_array_prop("remove", Some("要移除的触发关键词。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "stats", Some("查看统计。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                    ]),
+                    required: Some(vec!["action".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "doctor", Some("健康检查。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                    ]),
+                    required: Some(vec!["action".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "rebuild-search", Some("重建搜索索引。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                    ]),
+                    required: Some(vec!["action".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+            ],
+        },
+        output_schema: None,
+    })
 }
 
 pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
@@ -213,10 +307,22 @@ mod tests {
     }
 
     #[test]
-    fn zmemory_tool_uri_description_mentions_paths_views() {
+    fn zmemory_tool_exposes_one_of_action_variants() {
         let tool = function_tool(create_zmemory_tool());
-        let JsonSchema::Object { properties, .. } = tool.parameters else {
-            panic!("zmemory tool should expose object parameters");
+        let JsonSchema::OneOf { variants } = tool.parameters else {
+            panic!("zmemory tool should expose oneOf parameters");
+        };
+        assert_eq!(variants.len(), 10);
+    }
+
+    #[test]
+    fn zmemory_tool_read_variant_uri_description_mentions_paths_views() {
+        let tool = function_tool(create_zmemory_tool());
+        let JsonSchema::OneOf { variants } = tool.parameters else {
+            panic!("zmemory tool should expose oneOf parameters");
+        };
+        let JsonSchema::Object { properties, .. } = &variants[0] else {
+            panic!("read variant should be object parameters");
         };
 
         let Some(JsonSchema::String {
@@ -227,27 +333,24 @@ mod tests {
         };
 
         assert!(description.contains("system://paths"));
-        assert!(description.contains("paths/<domain>"));
-        assert!(description.contains("全部活跃记忆路径"));
+        assert!(description.contains("paths"));
+        assert!(description.contains("workspace"));
     }
 
     #[test]
-    fn zmemory_tool_limit_description_mentions_paths_view() {
+    fn zmemory_tool_read_variant_action_is_literal() {
         let tool = function_tool(create_zmemory_tool());
-        let JsonSchema::Object { properties, .. } = tool.parameters else {
-            panic!("zmemory tool should expose object parameters");
+        let JsonSchema::OneOf { variants } = tool.parameters else {
+            panic!("zmemory tool should expose oneOf parameters");
+        };
+        let JsonSchema::Object { properties, .. } = &variants[0] else {
+            panic!("read variant should be object parameters");
         };
 
-        let Some(JsonSchema::Integer {
-            description: Some(description),
-        }) = properties.get("limit")
-        else {
-            panic!("limit property should expose a description");
+        let Some(JsonSchema::LiteralString { value, .. }) = properties.get("action") else {
+            panic!("action property should be a literal string");
         };
-
-        assert!(description.contains("system://boot"));
-        assert!(description.contains("paths"));
-        assert!(description.contains("alias"));
+        assert_eq!(value, "read");
     }
 
     #[test]

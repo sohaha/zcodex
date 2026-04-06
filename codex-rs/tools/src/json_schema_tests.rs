@@ -90,12 +90,71 @@ fn parse_tool_input_schema_sanitizes_additional_properties_schema() {
                 JsonSchema::Object {
                     properties: BTreeMap::from([(
                         "value".to_string(),
-                        JsonSchema::String { description: None },
+                        JsonSchema::AnyOf {
+                            variants: vec![
+                                JsonSchema::String { description: None },
+                                JsonSchema::Number { description: None },
+                            ],
+                        },
                     )]),
                     required: Some(vec!["value".to_string()]),
                     additional_properties: None,
                 },
             ))),
+        }
+    );
+}
+
+#[test]
+fn parse_tool_input_schema_preserves_one_of_and_single_value_enum() {
+    let schema = parse_tool_input_schema(&serde_json::json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["read"] }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            },
+            {
+                "type": "object",
+                "properties": {
+                    "action": { "const": "stats" }
+                },
+                "required": ["action"]
+            }
+        ]
+    }))
+    .expect("parse schema");
+
+    assert_eq!(
+        schema,
+        JsonSchema::OneOf {
+            variants: vec![
+                JsonSchema::Object {
+                    properties: BTreeMap::from([(
+                        "action".to_string(),
+                        JsonSchema::LiteralString {
+                            value: "read".to_string(),
+                            description: None,
+                        },
+                    )]),
+                    required: Some(vec!["action".to_string()]),
+                    additional_properties: Some(AdditionalProperties::Boolean(false)),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([(
+                        "action".to_string(),
+                        JsonSchema::LiteralString {
+                            value: "stats".to_string(),
+                            description: None,
+                        },
+                    )]),
+                    required: Some(vec!["action".to_string()]),
+                    additional_properties: None,
+                },
+            ],
         }
     );
 }
