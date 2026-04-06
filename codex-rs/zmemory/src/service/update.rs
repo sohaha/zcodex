@@ -15,6 +15,20 @@ pub(crate) fn update_action(
     conn: &mut Connection,
     args: &UpdateActionParams,
 ) -> Result<Value> {
+    let tx = conn.transaction()?;
+    let result = update_action_in_tx(config, &tx, args)?;
+    tx.commit()?;
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    Ok(augment_update_result(result, document_count))
+}
+
+pub(crate) fn update_action_in_tx(
+    config: &ZmemoryConfig,
+    conn: &rusqlite::Transaction<'_>,
+    args: &UpdateActionParams,
+) -> Result<Value> {
     let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot update root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
@@ -29,23 +43,22 @@ pub(crate) fn update_action(
     let mut priority = row.priority;
     let updated_content = resolve_updated_content(args, &current_memory.content)?;
 
-    let tx = conn.transaction()?;
     if let Some(content) = updated_content
         && content != current_memory.content
     {
-        tx.execute(
+        conn.execute(
             "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
             params![row.node_uuid, content],
         )?;
-        let replacement_id = tx.last_insert_rowid();
-        mark_other_memories_deprecated(&tx, &row.node_uuid, replacement_id)?;
+        let replacement_id = conn.last_insert_rowid();
+        mark_other_memories_deprecated(conn, &row.node_uuid, replacement_id)?;
         new_memory_id = Some(replacement_id);
         content_changed = true;
     }
 
     if let Some(updated_priority) = args.priority {
         priority = updated_priority;
-        tx.execute(
+        conn.execute(
             "UPDATE edges SET priority = ?2 WHERE id = ?1",
             params![row.edge_id, updated_priority],
         )?;
@@ -53,7 +66,7 @@ pub(crate) fn update_action(
 
     if let Some(updated_disclosure) = args.disclosure.clone() {
         disclosure = Some(updated_disclosure.clone());
-        tx.execute(
+        conn.execute(
             "UPDATE edges SET disclosure = ?2 WHERE id = ?1",
             params![row.edge_id, updated_disclosure],
         )?;
@@ -64,7 +77,7 @@ pub(crate) fn update_action(
     }
 
     common::insert_audit_log(
-        &tx,
+        conn,
         "update",
         Some(&uri.to_string()),
         Some(&row.node_uuid),
@@ -76,11 +89,7 @@ pub(crate) fn update_action(
             "disclosure": disclosure,
         }),
     )?;
-    index::reindex_node(&tx, &row.node_uuid)?;
-    tx.commit()?;
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    index::reindex_node(conn, &row.node_uuid)?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,
@@ -89,8 +98,12 @@ pub(crate) fn update_action(
         "priority": priority,
         "disclosure": disclosure,
         "contentChanged": content_changed,
-        "documentCount": document_count,
     }))
+}
+
+fn augment_update_result(mut result: Value, document_count: i64) -> Value {
+    result["documentCount"] = json!(document_count);
+    result
 }
 
 fn resolve_updated_content(

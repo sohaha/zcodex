@@ -15,6 +15,21 @@ pub(crate) fn create_action(
     conn: &mut Connection,
     args: &CreateActionParams,
 ) -> Result<Value> {
+    let tx = conn.transaction()?;
+    let result = create_action_in_tx(config, &tx, args)?;
+    tx.commit()?;
+
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
+    Ok(augment_create_result(result, document_count))
+}
+
+pub(crate) fn create_action_in_tx(
+    config: &ZmemoryConfig,
+    conn: &rusqlite::Transaction<'_>,
+    args: &CreateActionParams,
+) -> Result<Value> {
     let uri = resolve_create_uri(conn, args)?;
     common::ensure_writable_domain(config, conn, &uri.domain)?;
     anyhow::ensure!(
@@ -33,24 +48,23 @@ pub(crate) fn create_action(
     let priority = args.priority;
     let disclosure = common::normalize_optional_text(args.disclosure.as_deref());
 
-    let tx = conn.transaction()?;
-    tx.execute("INSERT INTO nodes(uuid) VALUES (?1)", [node_uuid.as_str()])?;
-    tx.execute(
+    conn.execute("INSERT INTO nodes(uuid) VALUES (?1)", [node_uuid.as_str()])?;
+    conn.execute(
         "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
         params![node_uuid, args.content],
     )?;
-    let memory_id = tx.last_insert_rowid();
-    tx.execute(
+    let memory_id = conn.last_insert_rowid();
+    conn.execute(
         "INSERT INTO edges(parent_uuid, child_uuid, name, priority, disclosure) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![parent.node_uuid, node_uuid, uri.leaf_name()?, priority, disclosure],
     )?;
-    let edge_id = tx.last_insert_rowid();
-    tx.execute(
+    let edge_id = conn.last_insert_rowid();
+    conn.execute(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
         params![uri.domain, uri.path, edge_id],
     )?;
     common::insert_audit_log(
-        &tx,
+        conn,
         "create",
         Some(&uri.to_string()),
         Some(&node_uuid),
@@ -60,20 +74,20 @@ pub(crate) fn create_action(
             "disclosure": disclosure,
         }),
     )?;
-    index::reindex_node(&tx, &node_uuid)?;
-    tx.commit()?;
+    index::reindex_node(conn, &node_uuid)?;
 
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": node_uuid,
         "memoryId": memory_id,
         "priority": priority,
         "disclosure": disclosure,
-        "documentCount": document_count,
     }))
+}
+
+fn augment_create_result(mut result: Value, document_count: i64) -> Value {
+    result["documentCount"] = json!(document_count);
+    result
 }
 
 fn resolve_create_uri(conn: &Connection, args: &CreateActionParams) -> Result<ZmemoryUri> {

@@ -108,6 +108,112 @@ async fn zmemory_history_json_returns_version_chain() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_batch_create_help_shows_items_json() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    codex_command(codex_home.path())?
+        .args(["zmemory", "batch-create", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("--items-json"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_batch_update_help_shows_items_json() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    codex_command(codex_home.path())?
+        .args(["zmemory", "batch-update", "--help"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("--items-json"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_batch_create_json_returns_results() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let payload = run_json(
+        codex_home.path(),
+        &[
+            "zmemory",
+            "batch-create",
+            "--items-json",
+            r#"[{"uri":"core://batch-cli-one","content":"one"},{"uri":"core://batch-cli-two","content":"two"}]"#,
+            "--json",
+        ],
+    )?;
+    assert_eq!(payload["action"], "batch-create");
+    assert_eq!(payload["result"]["count"], 2);
+    assert_eq!(
+        payload["result"]["results"][0]["uri"],
+        "core://batch-cli-one"
+    );
+    assert_eq!(
+        payload["result"]["results"][1]["uri"],
+        "core://batch-cli-two"
+    );
+
+    let read = run_json(
+        codex_home.path(),
+        &["zmemory", "read", "core://batch-cli-two", "--json"],
+    )?;
+    assert_eq!(read["result"]["content"], "two");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn zmemory_batch_update_json_rolls_back_on_failure() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://batch-cli-update-one",
+            "--content",
+            "one",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://batch-cli-update-two",
+            "--content",
+            "two",
+        ])
+        .assert()
+        .success();
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "batch-update",
+            "--items-json",
+            r#"[{"uri":"core://batch-cli-update-one","append":" updated"},{"uri":"core://batch-cli-update-missing","append":" updated"}]"#,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("memory not found: core://batch-cli-update-missing"));
+
+    let first = run_json(
+        codex_home.path(),
+        &["zmemory", "read", "core://batch-cli-update-one", "--json"],
+    )?;
+    let second = run_json(
+        codex_home.path(),
+        &["zmemory", "read", "core://batch-cli-update-two", "--json"],
+    )?;
+    assert_eq!(first["result"]["content"], "one");
+    assert_eq!(second["result"]["content"], "two");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_stats_json_works_on_empty_db() -> Result<()> {
     let codex_home = TempDir::new()?;
     let mut cmd = codex_command(codex_home.path())?;

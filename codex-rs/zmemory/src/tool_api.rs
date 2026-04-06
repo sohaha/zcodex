@@ -20,7 +20,9 @@ pub enum ZmemoryToolAction {
     History,
     Search,
     Create,
+    BatchCreate,
     Update,
+    BatchUpdate,
     DeletePath,
     AddAlias,
     ManageTriggers,
@@ -65,6 +67,8 @@ pub struct ZmemoryToolCallParam {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remove: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<serde_json::Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audit_action: Option<String>,
@@ -108,6 +112,11 @@ enum TaggedZmemoryToolCallParam {
         priority: Option<i64>,
         disclosure: Option<String>,
     },
+    BatchCreate {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        items: Vec<serde_json::Value>,
+    },
     Update {
         #[serde(flatten)]
         common: CommonToolArgs,
@@ -120,6 +129,11 @@ enum TaggedZmemoryToolCallParam {
         append: Option<String>,
         priority: Option<i64>,
         disclosure: Option<String>,
+    },
+    BatchUpdate {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        items: Vec<serde_json::Value>,
     },
     DeletePath {
         #[serde(flatten)]
@@ -200,6 +214,8 @@ struct LegacyZmemoryToolCallParam {
     #[serde(default)]
     remove: Option<Vec<String>>,
     #[serde(default)]
+    items: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
     limit: Option<usize>,
     #[serde(default, alias = "auditAction")]
     audit_action: Option<String>,
@@ -231,6 +247,7 @@ impl Default for ZmemoryToolCallParam {
             disclosure: None,
             add: None,
             remove: None,
+            items: None,
             limit: None,
             audit_action: None,
         }
@@ -268,6 +285,7 @@ impl From<LegacyZmemoryToolCallParam> for ZmemoryToolCallParam {
             disclosure: legacy.disclosure,
             add: legacy.add,
             remove: legacy.remove,
+            items: legacy.items,
             limit: legacy.limit,
             audit_action: legacy.audit_action,
         }
@@ -322,6 +340,12 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
                 disclosure,
                 ..Self::default()
             },
+            TaggedZmemoryToolCallParam::BatchCreate { common, items } => Self {
+                action: ZmemoryToolAction::BatchCreate,
+                codex_home: common.codex_home,
+                items: Some(items),
+                ..Self::default()
+            },
             TaggedZmemoryToolCallParam::Update {
                 common,
                 uri,
@@ -341,6 +365,12 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
                 append,
                 priority,
                 disclosure,
+                ..Self::default()
+            },
+            TaggedZmemoryToolCallParam::BatchUpdate { common, items } => Self {
+                action: ZmemoryToolAction::BatchUpdate,
+                codex_home: common.codex_home,
+                items: Some(items),
                 ..Self::default()
             },
             TaggedZmemoryToolCallParam::DeletePath { common, uri } => Self {
@@ -415,7 +445,9 @@ pub(crate) enum ZmemoryActionInput {
     History(UriActionParams),
     Search(SearchActionParams),
     Create(CreateActionParams),
+    BatchCreate(BatchCreateActionParams),
     Update(UpdateActionParams),
+    BatchUpdate(BatchUpdateActionParams),
     DeletePath(UriActionParams),
     AddAlias(AddAliasActionParams),
     ManageTriggers(ManageTriggersActionParams),
@@ -457,6 +489,42 @@ pub(crate) struct UpdateActionParams {
     pub(crate) append: Option<String>,
     pub(crate) priority: Option<i64>,
     pub(crate) disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct BatchCreateItemParam {
+    uri: Option<String>,
+    #[serde(default, alias = "parent_uri")]
+    parent_uri: Option<String>,
+    content: String,
+    title: Option<String>,
+    priority: Option<i64>,
+    disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct BatchUpdateItemParam {
+    uri: String,
+    content: Option<String>,
+    #[serde(default, alias = "old_string")]
+    old_string: Option<String>,
+    #[serde(default, alias = "new_string")]
+    new_string: Option<String>,
+    append: Option<String>,
+    priority: Option<i64>,
+    disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BatchCreateActionParams {
+    pub(crate) items: Vec<CreateActionParams>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BatchUpdateActionParams {
+    pub(crate) items: Vec<UpdateActionParams>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -577,6 +645,12 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
                 priority: args.priority.unwrap_or_default(),
                 disclosure: normalize_optional_text(args.disclosure.as_deref()),
             })),
+            ZmemoryToolAction::BatchCreate => Ok(Self::BatchCreate(BatchCreateActionParams {
+                items: parse_batch_items::<BatchCreateItemParam>(args.items.as_ref())?
+                    .into_iter()
+                    .map(build_create_action_params)
+                    .collect::<Result<Vec<_>>>()?,
+            })),
             ZmemoryToolAction::Update => Ok(Self::Update(UpdateActionParams {
                 uri: parse_required_uri(args.uri.as_deref())?,
                 content: args.content.clone(),
@@ -585,6 +659,12 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
                 append: args.append.clone(),
                 priority: args.priority,
                 disclosure: args.disclosure.clone(),
+            })),
+            ZmemoryToolAction::BatchUpdate => Ok(Self::BatchUpdate(BatchUpdateActionParams {
+                items: parse_batch_items::<BatchUpdateItemParam>(args.items.as_ref())?
+                    .into_iter()
+                    .map(build_update_action_params)
+                    .collect::<Result<Vec<_>>>()?,
             })),
             ZmemoryToolAction::DeletePath => Ok(Self::DeletePath(UriActionParams {
                 uri: parse_required_uri(args.uri.as_deref())?,
@@ -613,6 +693,51 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
             ZmemoryToolAction::RebuildSearch => Ok(Self::RebuildSearch),
         }
     }
+}
+
+fn build_create_action_params(item: BatchCreateItemParam) -> Result<CreateActionParams> {
+    Ok(CreateActionParams {
+        uri: item.uri.as_deref().map(ZmemoryUri::parse).transpose()?,
+        parent_uri: item
+            .parent_uri
+            .as_deref()
+            .map(ZmemoryUri::parse)
+            .transpose()?,
+        content: required_content(Some(&item.content))?,
+        title: normalize_optional_text(item.title.as_deref()),
+        priority: item.priority.unwrap_or_default(),
+        disclosure: normalize_optional_text(item.disclosure.as_deref()),
+    })
+}
+
+fn build_update_action_params(item: BatchUpdateItemParam) -> Result<UpdateActionParams> {
+    Ok(UpdateActionParams {
+        uri: ZmemoryUri::parse(&item.uri)?,
+        content: item.content,
+        old_string: item.old_string,
+        new_string: item.new_string,
+        append: item.append,
+        priority: item.priority,
+        disclosure: item.disclosure,
+    })
+}
+
+fn parse_batch_items<T>(items: Option<&Vec<serde_json::Value>>) -> Result<Vec<T>>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let items = items.ok_or_else(|| anyhow::anyhow!("`items` is required"))?;
+    anyhow::ensure!(!items.is_empty(), "`items` must contain at least one item");
+    items
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, item)| {
+            serde_json::from_value(item)
+                .map_err(anyhow::Error::from)
+                .map_err(|error| anyhow::anyhow!("invalid batch item at index {index}: {error}"))
+        })
+        .collect()
 }
 
 fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
@@ -755,12 +880,26 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("unknown")
         ),
+        "batch-create" => format!(
+            "batch created {} memories",
+            result
+                .get("count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
+        ),
         "update" => format!(
             "updated {}",
             result
                 .get("uri")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("unknown")
+        ),
+        "batch-update" => format!(
+            "batch updated {} memories",
+            result
+                .get("count")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
         ),
         "delete-path" => format!(
             "deleted {}",
@@ -919,6 +1058,23 @@ mod tests {
                 ..ZmemoryToolCallParam::default()
             }
         );
+    }
+
+    #[test]
+    fn deserialize_tagged_union_accepts_batch_create_items() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "batch-create",
+            "items": [
+                {
+                    "uri": "core://batch/one",
+                    "content": "one"
+                }
+            ]
+        }))
+        .expect("deserialize batch create args");
+
+        assert_eq!(args.action, ZmemoryToolAction::BatchCreate);
+        assert_eq!(args.items.as_ref().map(Vec::len), Some(1));
     }
 
     #[test]

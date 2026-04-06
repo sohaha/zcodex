@@ -127,6 +127,116 @@ fn create_supports_parent_uri_and_auto_numbering() {
 }
 
 #[test]
+fn batch_create_creates_multiple_memories_in_one_transaction() {
+    let (_dir, config) = config();
+    let create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::BatchCreate,
+            items: Some(vec![
+                json!({
+                    "uri": "core://batch-one",
+                    "content": "first memory",
+                    "priority": 2
+                }),
+                json!({
+                    "uri": "core://batch-two",
+                    "content": "second memory"
+                }),
+            ]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("batch create should succeed");
+
+    assert_eq!(create["action"], "batch-create");
+    assert_eq!(create["result"]["count"], 2);
+    assert_eq!(create["result"]["results"][0]["uri"], "core://batch-one");
+    assert_eq!(create["result"]["results"][1]["uri"], "core://batch-two");
+    assert_eq!(create["result"]["documentCount"], 2);
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://batch-two".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(read["result"]["content"], "second memory");
+}
+
+#[test]
+fn batch_update_rolls_back_when_any_item_fails() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://batch-update-one".to_string()),
+            content: Some("one".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create one should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://batch-update-two".to_string()),
+            content: Some("two".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create two should succeed");
+
+    let error = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::BatchUpdate,
+            items: Some(vec![
+                json!({
+                    "uri": "core://batch-update-one",
+                    "append": " updated"
+                }),
+                json!({
+                    "uri": "core://batch-update-missing",
+                    "append": " updated"
+                }),
+            ]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect_err("batch update should fail");
+    assert_eq!(
+        error.to_string(),
+        "memory not found: core://batch-update-missing"
+    );
+
+    let first = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://batch-update-one".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read one should succeed");
+    let second = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://batch-update-two".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read two should succeed");
+    assert_eq!(first["result"]["content"], "one");
+    assert_eq!(second["result"]["content"], "two");
+}
+
+#[test]
 fn history_returns_full_version_chain_sorted() {
     let (_dir, config) = config();
 

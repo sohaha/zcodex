@@ -10,7 +10,9 @@
 - `history`
 - `search`
 - `create`
+- `batch-create`
 - `update`
+- `batch-update`
 - `delete-path`
 - `add-alias`
 - `manage-triggers`
@@ -114,6 +116,8 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 codex zmemory stats --json
 codex zmemory create core://agent-profile --content "Salem profile memory"
 codex zmemory read core://agent-profile --json
+codex zmemory batch-create --items-json '[{"uri":"core://agent-batch","content":"A"}]' --json
+codex zmemory batch-update --items-json '[{"uri":"core://agent-batch","append":" more"}]' --json
 codex zmemory history core://agent-profile --json
 codex zmemory search profile --json
 codex zmemory export glossary --json
@@ -171,6 +175,8 @@ codex zmemory doctor --json
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
 - `codex zmemory audit --json`：查看最近元数据治理动作时间线；支持 `--action <create|update|add-alias|manage-triggers|delete-path>` 与 `--uri <core://...>` 精确过滤
 - `codex zmemory history <uri> --json`：查看单个节点的内容版本链，适合排查 update 产生的 deprecated 历史
+- `codex zmemory batch-create --items-json '<json array>' --json`：一次性创建多个节点，数组项支持 `uri`/`parentUri`/`content`/`title`/`priority`/`disclosure`，按 URI 顺序返回 `nodeUuid`
+- `codex zmemory batch-update --items-json '<json array>' --json`：一次性更新多个 URI，数组项支持 `uri`、`content`、`oldString`/`newString`、`append`、`priority`、`disclosure`，返回每条 `contentChanged`/`nodeUuid`
 - `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
 - `codex zmemory export recent --json`：查看最近内容版本节点（按节点内容时间聚合，不反映 alias/trigger/path 元数据治理动作）
 - `codex zmemory export glossary --json`：查看当前 trigger 网络
@@ -247,6 +253,12 @@ codex zmemory doctor --json
 - **父路径 + 标题（上游兼容模式）**：也可以传 `--parent-uri core://team` 和 `--title alice-profile`，工具会在父路径下构建新节点，`title` 会用于生成那一段路径（空 title 将自动编号，非法字符会报错）。此模式对齐 upstream `nocturne_memory` 的 `parent_uri + title` 合同，也允许显式调整 `priority` 与 `disclosure`。
 
 两个模式可以并存：仍可传 `URI` 路径以避免改动，也可以借用 `parent-uri/title` 接口来复用上游的更新逻辑。CLI 中的 `create` 命令接受 `--parent-uri` 和 `--title` 可选参数，使用时推荐先阅读 `.agents/zmemory/tasks.md` 中的具体任务拆解。
+
+## 批量语义
+
+- `batch-create` / `batch-update` 在单个事务里顺序执行全部子项。
+- 任意一项失败会整体回滚，不会留下部分成功结果。
+- tool 与 function-call 入口使用 `items` 数组；CLI 为了便于传参，使用 `--items-json '<json array>'`。
 
 ## 与 upstream memory skill 的最小衔接
 

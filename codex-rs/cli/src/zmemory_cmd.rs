@@ -40,6 +40,12 @@ pub enum ZmemorySubcommand {
     Stats(ZmemoryOutputCommand),
     /// 查看最近审计日志。
     Audit(ZmemoryAuditCommand),
+    /// 批量创建记忆节点。
+    #[command(name = "batch-create")]
+    BatchCreate(ZmemoryBatchCreateCommand),
+    /// 批量更新记忆节点。
+    #[command(name = "batch-update")]
+    BatchUpdate(ZmemoryBatchUpdateCommand),
     /// 运行一致性检查。
     Doctor(ZmemoryOutputCommand),
     /// 重建搜索投影与 FTS。
@@ -103,6 +109,22 @@ pub struct ZmemoryUpdateCommand {
     pub priority: Option<i64>,
     #[arg(long, value_name = "披露")]
     pub disclosure: Option<String>,
+    #[command(flatten)]
+    pub output: ZmemoryOutputCommand,
+}
+
+#[derive(Debug, Parser)]
+pub struct ZmemoryBatchCreateCommand {
+    #[arg(long, value_name = "JSON")]
+    pub items_json: String,
+    #[command(flatten)]
+    pub output: ZmemoryOutputCommand,
+}
+
+#[derive(Debug, Parser)]
+pub struct ZmemoryBatchUpdateCommand {
+    #[arg(long, value_name = "JSON")]
+    pub items_json: String,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
 }
@@ -286,6 +308,22 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
             },
             command.output,
         ),
+        ZmemorySubcommand::BatchCreate(command) => (
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::BatchCreate,
+                items: Some(parse_items_json(&command.items_json)?),
+                ..ZmemoryToolCallParam::default()
+            },
+            command.output,
+        ),
+        ZmemorySubcommand::BatchUpdate(command) => (
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::BatchUpdate,
+                items: Some(parse_items_json(&command.items_json)?),
+                ..ZmemoryToolCallParam::default()
+            },
+            command.output,
+        ),
         ZmemorySubcommand::Doctor(output) => (
             ZmemoryToolCallParam {
                 action: ZmemoryToolAction::Doctor,
@@ -334,6 +372,10 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
         println!("{}", result.text);
     }
     Ok(())
+}
+
+fn parse_items_json(raw: &str) -> Result<Vec<serde_json::Value>> {
+    serde_json::from_str(raw).map_err(Into::into)
 }
 
 fn export_uri(command: &ZmemoryExportCommand) -> String {

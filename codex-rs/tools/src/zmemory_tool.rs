@@ -56,6 +56,25 @@ fn str_array_prop(name: &str, desc: Option<&str>) -> (String, JsonSchema) {
     )
 }
 
+fn array_of_object_prop(
+    name: &str,
+    desc: Option<&str>,
+    properties: BTreeMap<String, JsonSchema>,
+    required: Vec<&str>,
+) -> (String, JsonSchema) {
+    (
+        name.to_string(),
+        JsonSchema::Array {
+            items: Box::new(JsonSchema::Object {
+                properties,
+                required: Some(required.into_iter().map(ToString::to_string).collect()),
+                additional_properties: Some(false.into()),
+            }),
+            description: desc.map(ToString::to_string),
+        },
+    )
+}
+
 /// Build a ToolSpec from name, description, properties, and required fields.
 fn mcp_tool(
     name: &str,
@@ -183,6 +202,49 @@ pub fn create_zmemory_tool() -> ToolSpec {
                         str_array_prop("remove", Some("要移除的触发关键词。")),
                     ]),
                     required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "batch-create", Some("批量创建记忆节点。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        array_of_object_prop(
+                            "items",
+                            Some("批量创建的数据数组。"),
+                            BTreeMap::from([
+                                str_prop("uri", Some("目标 URI。")),
+                                str_prop("parent_uri", Some("父级 URI。")),
+                                str_prop("content", Some("记忆内容。")),
+                                str_prop("title", Some("可选节点标题。")),
+                                int_prop("priority", Some("优先级权重。")),
+                                str_prop("disclosure", Some("披露触发文本。")),
+                            ]),
+                            vec!["content"],
+                        ),
+                    ]),
+                    required: Some(vec!["action".to_string(), "items".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
+                        literal_str_prop("action", "batch-update", Some("批量更新记忆节点。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        array_of_object_prop(
+                            "items",
+                            Some("批量更新的数据数组。"),
+                            BTreeMap::from([
+                                str_prop("uri", Some("目标 URI。")),
+                                str_prop("content", Some("完整替换内容。")),
+                                str_prop("old_string", Some("补丁模式待替换文本。")),
+                                str_prop("new_string", Some("补丁模式替换文本。")),
+                                str_prop("append", Some("追加文本。")),
+                                int_prop("priority", Some("可选优先级更新。")),
+                                str_prop("disclosure", Some("可选 disclosure 更新。")),
+                            ]),
+                            vec!["uri"],
+                        ),
+                    ]),
+                    required: Some(vec!["action".to_string(), "items".to_string()]),
                     additional_properties: Some(false.into()),
                 },
                 JsonSchema::Object {
@@ -335,7 +397,7 @@ mod tests {
         let JsonSchema::OneOf { variants } = tool.parameters else {
             panic!("zmemory tool should expose oneOf parameters");
         };
-        assert_eq!(variants.len(), 12);
+        assert_eq!(variants.len(), 14);
     }
 
     #[test]

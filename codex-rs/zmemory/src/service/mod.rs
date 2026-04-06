@@ -6,6 +6,7 @@ use serde_json::Value;
 use serde_json::json;
 
 mod alias;
+mod batch;
 mod common;
 mod create;
 mod delete;
@@ -27,7 +28,13 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
         ZmemoryActionInput::History(params) => history::history_action(config, &conn, &params.uri)?,
         ZmemoryActionInput::Search(params) => search::search_action(config, &conn, params)?,
         ZmemoryActionInput::Create(params) => create::create_action(config, &mut conn, params)?,
+        ZmemoryActionInput::BatchCreate(params) => {
+            batch::batch_create_action(config, &mut conn, params)?
+        }
         ZmemoryActionInput::Update(params) => update::update_action(config, &mut conn, params)?,
+        ZmemoryActionInput::BatchUpdate(params) => {
+            batch::batch_update_action(config, &mut conn, params)?
+        }
         ZmemoryActionInput::DeletePath(params) => {
             delete::delete_path_action(config, &mut conn, params)?
         }
@@ -52,7 +59,9 @@ fn action_name(action: &ZmemoryActionInput) -> &'static str {
         ZmemoryActionInput::History(_) => "history",
         ZmemoryActionInput::Search(_) => "search",
         ZmemoryActionInput::Create(_) => "create",
+        ZmemoryActionInput::BatchCreate(_) => "batch-create",
         ZmemoryActionInput::Update(_) => "update",
+        ZmemoryActionInput::BatchUpdate(_) => "batch-update",
         ZmemoryActionInput::DeletePath(_) => "delete-path",
         ZmemoryActionInput::AddAlias(_) => "add-alias",
         ZmemoryActionInput::ManageTriggers(_) => "manage-triggers",

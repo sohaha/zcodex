@@ -467,6 +467,99 @@ async fn zmemory_function_history_exposes_version_chain() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_batch_create_returns_results() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    let items = vec![
+        json!({
+            "parentUri": "core://",
+            "title": "batch-user-1",
+            "content": "batch entry one",
+            "priority": 5
+        }),
+        json!({
+            "parentUri": "core://",
+            "title": "batch-user-2",
+            "content": "batch entry two",
+            "priority": 6
+        }),
+    ];
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-batch-create",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "batch-create",
+                    "items": items,
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("batch create two memories").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-batch-create")
+        .expect("function tool output should be present");
+    assert!(output.contains("batch created 2 memories"));
+    assert!(output.contains(ZMEMORY_JSON_BEGIN));
+    assert!(output.contains(ZMEMORY_JSON_END));
+
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "batch-create");
+    assert_eq!(payload["result"]["count"], 2);
+    let entries = payload["result"]["results"]
+        .as_array()
+        .expect("results should be an array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["uri"], "core://batch-user-1");
+    assert_eq!(entries[1]["uri"], "core://batch-user-2");
+
+    let read_back = run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://batch-user-2".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    assert_eq!(
+        read_back.structured_content["result"]["content"],
+        "batch entry two"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
