@@ -295,14 +295,9 @@ fn split_cjk_run(run: &str) -> Vec<String> {
     if chars.len() <= 1 {
         return vec![run.to_string()];
     }
-    let mut tokens = Vec::new();
-    for width in [3_usize, 2, 1] {
-        if chars.len() < width {
-            continue;
-        }
-        for start in 0..=chars.len() - width {
-            tokens.push(chars[start..start + width].iter().collect::<String>());
-        }
+    let mut tokens = Vec::with_capacity(chars.len().saturating_sub(1));
+    for window in chars.windows(2) {
+        tokens.push(window.iter().collect::<String>());
     }
     tokens
 }
@@ -319,4 +314,29 @@ fn is_cjk_rune(ch: char) -> bool {
             | 0xF900..=0xFAFF
             | 0x2F800..=0x2FA1F
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snippet_query_tokens;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn cjk_runs_expand_to_bigrams_only() {
+        assert_eq!(
+            snippet_query_tokens("量子比特控制"),
+            vec![
+                "量子".to_string(),
+                "子比".to_string(),
+                "比特".to_string(),
+                "特控".to_string(),
+                "控制".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn single_cjk_rune_still_round_trips() {
+        assert_eq!(snippet_query_tokens("量"), vec!["量".to_string()]);
+    }
 }
