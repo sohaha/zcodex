@@ -277,6 +277,110 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_audit_exposes_recent_entries() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://audit-entry".to_string()),
+            content: Some("Initial audit content".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://audit-entry".to_string()),
+            append: Some(" updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://audit-entry-alias".to_string()),
+            target_uri: Some("core://audit-entry".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-audit",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "audit",
+                    "limit": 2
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("inspect recent memory audit entries")
+        .await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-audit")
+        .expect("function tool output should be present");
+    assert!(output.contains("audit: 2 entries"));
+    assert!(output.contains(ZMEMORY_JSON_BEGIN));
+    assert!(output.contains(ZMEMORY_JSON_END));
+
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "audit");
+    assert_eq!(payload["result"]["count"], 2);
+    assert_eq!(payload["result"]["limit"], 2);
+    let entries = payload["result"]["entries"]
+        .as_array()
+        .expect("entries should be an array");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["action"], "add-alias");
+    assert_eq!(entries[0]["uri"], "core://audit-entry-alias");
+    assert_eq!(entries[1]["action"], "update");
+    assert_eq!(entries[1]["uri"], "core://audit-entry");
+    assert!(entries[0]["details"].is_object());
+    assert!(entries[0]["createdAt"].is_string());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
