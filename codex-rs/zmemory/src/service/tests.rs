@@ -969,6 +969,11 @@ fn stats_and_doctor_surface_review_pressure() {
     assert_eq!(stats["result"]["orphanedMemoryCount"], 1);
     assert_eq!(stats["result"]["pathsMissingDisclosure"], 1);
     assert_eq!(stats["result"]["disclosuresNeedingReview"], 1);
+    assert_eq!(stats["result"]["auditLogCount"], 5);
+    assert!(stats["result"]["latestAuditAt"].is_string());
+    assert_eq!(stats["result"]["auditActionCounts"]["create"], 3);
+    assert_eq!(stats["result"]["auditActionCounts"]["update"], 1);
+    assert_eq!(stats["result"]["auditActionCounts"]["delete-path"], 1);
     assert_eq!(
         stats["result"]["pathResolution"]["dbPath"],
         json!(config.db_path().display().to_string())
@@ -1031,6 +1036,14 @@ fn stats_and_doctor_surface_review_pressure() {
     assert_eq!(
         sorted_object_keys(&doctor["result"]["pathResolution"]),
         vec!["dbPath", "reason", "source", "workspaceKey"]
+    );
+    assert_eq!(doctor["result"]["stats"]["auditLogCount"], 5);
+    assert!(doctor["result"]["stats"]["latestAuditAt"].is_string());
+    assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["create"], 3);
+    assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["update"], 1);
+    assert_eq!(
+        doctor["result"]["stats"]["auditActionCounts"]["delete-path"],
+        1
     );
     let issues = doctor["result"]["issues"]
         .as_array()
@@ -1115,20 +1128,38 @@ fn write_actions_append_audit_log_entries() {
     )
     .expect("stats should succeed");
     assert_eq!(stats["result"]["auditLogCount"], 5);
+    assert!(stats["result"]["latestAuditAt"].is_string());
+    assert_eq!(stats["result"]["auditActionCounts"]["create"], 1);
+    assert_eq!(stats["result"]["auditActionCounts"]["update"], 1);
+    assert_eq!(stats["result"]["auditActionCounts"]["add-alias"], 1);
+    assert_eq!(stats["result"]["auditActionCounts"]["manage-triggers"], 1);
+    assert_eq!(stats["result"]["auditActionCounts"]["delete-path"], 1);
 
     let conn = Connection::open(config.db_path()).expect("open db");
     let rows = conn
-        .prepare("SELECT action, uri FROM audit_log ORDER BY id ASC")
+        .prepare("SELECT action, uri, details FROM audit_log ORDER BY id ASC")
         .expect("prepare audit query")
         .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })
         .expect("query audit rows")
         .collect::<rusqlite::Result<Vec<_>>>()
         .expect("collect audit rows");
+    assert_eq!(
+        rows.len(),
+        stats["result"]["auditLogCount"].as_u64().unwrap_or(0) as usize
+    );
+    let first_details = serde_json::from_str::<Value>(&rows[0].2).expect("details should be json");
+    assert!(first_details.is_object());
 
     assert_eq!(
-        rows,
+        rows.iter()
+            .map(|(action, uri, _details)| (action.clone(), uri.clone()))
+            .collect::<Vec<_>>(),
         vec![
             (
                 "create".to_string(),

@@ -6,6 +6,7 @@ use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
 pub(crate) struct StatsSnapshot {
@@ -23,6 +24,8 @@ pub(crate) struct StatsSnapshot {
     pub(crate) search_document_count: i64,
     pub(crate) fts_document_count: i64,
     pub(crate) audit_log_count: i64,
+    pub(crate) latest_audit_at: Option<String>,
+    pub(crate) audit_action_counts: BTreeMap<String, i64>,
 }
 
 pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
@@ -73,6 +76,11 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
         })?;
     let audit_log_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM audit_log", [], |row| row.get(0))?;
+    let latest_audit_at: Option<String> =
+        conn.query_row("SELECT MAX(created_at) FROM audit_log", [], |row| {
+            row.get(0)
+        })?;
+    let audit_action_counts = collect_audit_action_counts(conn)?;
 
     Ok(StatsSnapshot {
         node_count,
@@ -89,7 +97,23 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
         search_document_count,
         fts_document_count,
         audit_log_count,
+        latest_audit_at,
+        audit_action_counts,
     })
+}
+
+fn collect_audit_action_counts(conn: &Connection) -> Result<BTreeMap<String, i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT action, COUNT(*)
+         FROM audit_log
+         GROUP BY action
+         ORDER BY action ASC",
+    )?;
+    stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?
+    .collect::<rusqlite::Result<BTreeMap<_, _>>>()
+    .map_err(Into::into)
 }
 
 pub(crate) fn alias_node_count(conn: &Connection) -> Result<i64> {
@@ -225,6 +249,8 @@ fn stats_action_with_snapshot(config: &ZmemoryConfig, stats: &StatsSnapshot) -> 
         "searchDocumentCount": stats.search_document_count,
         "ftsDocumentCount": stats.fts_document_count,
         "auditLogCount": stats.audit_log_count,
+        "latestAuditAt": stats.latest_audit_at,
+        "auditActionCounts": stats.audit_action_counts,
     })
 }
 
