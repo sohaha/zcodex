@@ -24,6 +24,7 @@ pub enum ZmemoryToolAction {
     AddAlias,
     ManageTriggers,
     Stats,
+    Audit,
     Doctor,
     RebuildSearch,
 }
@@ -137,6 +138,11 @@ enum TaggedZmemoryToolCallParam {
     Stats {
         #[serde(flatten)]
         common: CommonToolArgs,
+    },
+    Audit {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        limit: Option<usize>,
     },
     Doctor {
         #[serde(flatten)]
@@ -355,6 +361,12 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
                 codex_home: common.codex_home,
                 ..Self::default()
             },
+            TaggedZmemoryToolCallParam::Audit { common, limit } => Self {
+                action: ZmemoryToolAction::Audit,
+                codex_home: common.codex_home,
+                limit,
+                ..Self::default()
+            },
             TaggedZmemoryToolCallParam::Doctor { common } => Self {
                 action: ZmemoryToolAction::Doctor,
                 codex_home: common.codex_home,
@@ -379,6 +391,7 @@ pub(crate) enum ZmemoryActionInput {
     AddAlias(AddAliasActionParams),
     ManageTriggers(ManageTriggersActionParams),
     Stats,
+    Audit(AuditActionParams),
     Doctor,
     RebuildSearch,
 }
@@ -435,6 +448,11 @@ pub(crate) struct ManageTriggersActionParams {
     pub(crate) uri: ZmemoryUri,
     pub(crate) add: Vec<String>,
     pub(crate) remove: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AuditActionParams {
+    pub(crate) limit: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -551,6 +569,9 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
                 }))
             }
             ZmemoryToolAction::Stats => Ok(Self::Stats),
+            ZmemoryToolAction::Audit => Ok(Self::Audit(AuditActionParams {
+                limit: args.limit.unwrap_or(20),
+            })),
             ZmemoryToolAction::Doctor => Ok(Self::Doctor),
             ZmemoryToolAction::RebuildSearch => Ok(Self::RebuildSearch),
         }
@@ -740,6 +761,14 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("unknown reason")
         ),
+        "audit" => format!(
+            "audit: {} entries",
+            result
+                .get("entries")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len)
+                .unwrap_or_default()
+        ),
         "doctor" => format!(
             "doctor: {} ({}, {})",
             if result
@@ -820,6 +849,24 @@ mod tests {
                 uri: Some("core://agent".to_string()),
                 old_string: Some("before".to_string()),
                 new_string: Some("after".to_string()),
+                ..ZmemoryToolCallParam::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_tagged_union_accepts_audit_limit() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "audit",
+            "limit": 5
+        }))
+        .expect("deserialize audit args");
+
+        assert_eq!(
+            args,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Audit,
+                limit: Some(5),
                 ..ZmemoryToolCallParam::default()
             }
         );

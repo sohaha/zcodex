@@ -36,6 +36,8 @@ pub enum ZmemorySubcommand {
     ManageTriggers(ZmemoryManageTriggersCommand),
     /// 输出统计信息。
     Stats(ZmemoryOutputCommand),
+    /// 查看最近审计日志。
+    Audit(ZmemoryAuditCommand),
     /// 运行一致性检查。
     Doctor(ZmemoryOutputCommand),
     /// 重建搜索投影与 FTS。
@@ -133,6 +135,14 @@ pub struct ZmemoryManageTriggersCommand {
     pub add: Vec<String>,
     #[arg(long = "remove", value_name = "关键词")]
     pub remove: Vec<String>,
+    #[command(flatten)]
+    pub output: ZmemoryOutputCommand,
+}
+
+#[derive(Debug, Parser)]
+pub struct ZmemoryAuditCommand {
+    #[arg(long, value_name = "限制")]
+    pub limit: Option<usize>,
     #[command(flatten)]
     pub output: ZmemoryOutputCommand,
 }
@@ -251,6 +261,14 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
                 ..ZmemoryToolCallParam::default()
             },
             output,
+        ),
+        ZmemorySubcommand::Audit(command) => (
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Audit,
+                limit: command.limit,
+                ..ZmemoryToolCallParam::default()
+            },
+            command.output,
         ),
         ZmemorySubcommand::Doctor(output) => (
             ZmemoryToolCallParam {

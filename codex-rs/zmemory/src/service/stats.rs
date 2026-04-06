@@ -2,6 +2,7 @@ use crate::config::ZmemoryConfig;
 use crate::doctor::run_doctor;
 use crate::service::common;
 use crate::service::index;
+use crate::tool_api::AuditActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -31,6 +32,34 @@ pub(crate) struct StatsSnapshot {
 pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let stats = collect_stats_snapshot(conn)?;
     Ok(stats_action_with_snapshot(config, &stats))
+}
+
+pub(crate) fn audit_action(conn: &Connection, args: &AuditActionParams) -> Result<Value> {
+    let mut stmt = conn.prepare(
+        "SELECT id, action, uri, node_uuid, details, created_at
+         FROM audit_log
+         ORDER BY id DESC
+         LIMIT ?1",
+    )?;
+    let entries = stmt
+        .query_map([args.limit], |row| {
+            let details = row.get::<_, String>(4)?;
+            Ok(json!({
+                "id": row.get::<_, i64>(0)?,
+                "action": row.get::<_, String>(1)?,
+                "uri": row.get::<_, Option<String>>(2)?,
+                "nodeUuid": row.get::<_, Option<String>>(3)?,
+                "details": serde_json::from_str::<Value>(&details)
+                    .unwrap_or(Value::String(details)),
+                "createdAt": row.get::<_, String>(5)?,
+            }))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(json!({
+        "count": entries.len(),
+        "limit": args.limit,
+        "entries": entries,
+    }))
 }
 
 pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot> {

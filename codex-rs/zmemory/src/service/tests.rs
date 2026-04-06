@@ -1186,6 +1186,86 @@ fn write_actions_append_audit_log_entries() {
 }
 
 #[test]
+fn audit_action_returns_recent_entries_in_desc_order() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://audit_feed".to_string()),
+            content: Some("initial memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://audit_feed".to_string()),
+            append: Some(" updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://audit_feed_alias".to_string()),
+            target_uri: Some("core://audit_feed".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    let audit = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Audit,
+            limit: Some(3),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("audit should succeed");
+
+    assert_eq!(audit["action"], "audit");
+    assert_eq!(audit["result"]["count"], 3);
+    assert_eq!(audit["result"]["limit"], 3);
+    assert_eq!(
+        audit["result"]["entries"]
+            .as_array()
+            .expect("entries should be an array")
+            .len(),
+        3
+    );
+    assert_eq!(audit["result"]["entries"][0]["action"], "add-alias");
+    assert_eq!(
+        audit["result"]["entries"][0]["uri"],
+        "core://audit_feed_alias"
+    );
+    assert_eq!(audit["result"]["entries"][1]["action"], "update");
+    assert_eq!(audit["result"]["entries"][1]["uri"], "core://audit_feed");
+    assert_eq!(audit["result"]["entries"][2]["action"], "create");
+    assert_eq!(audit["result"]["entries"][2]["uri"], "core://audit_feed");
+    assert!(audit["result"]["entries"][0]["details"].is_object());
+    assert!(audit["result"]["entries"][0]["createdAt"].is_string());
+
+    let ids = audit["result"]["entries"]
+        .as_array()
+        .expect("entries should be an array")
+        .iter()
+        .map(|entry| {
+            entry["id"]
+                .as_i64()
+                .expect("audit entry id should be an integer")
+        })
+        .collect::<Vec<_>>();
+    assert!(ids.windows(2).all(|pair| pair[0] > pair[1]));
+}
+
+#[test]
 fn search_matches_alias_via_separator_normalized_query() {
     let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
         Some("core,writer".to_string()),
