@@ -7,7 +7,29 @@ use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
 
+#[derive(Debug, Clone)]
+pub(crate) struct StatsSnapshot {
+    pub(crate) node_count: i64,
+    pub(crate) memory_count: i64,
+    pub(crate) path_count: i64,
+    pub(crate) glossary_count: i64,
+    pub(crate) alias_node_count: i64,
+    pub(crate) trigger_node_count: i64,
+    pub(crate) disclosure_path_count: i64,
+    pub(crate) paths_missing_disclosure: i64,
+    pub(crate) disclosures_needing_review: i64,
+    pub(crate) orphaned_memory_count: i64,
+    pub(crate) deprecated_memory_count: i64,
+    pub(crate) search_document_count: i64,
+    pub(crate) fts_document_count: i64,
+}
+
 pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
+    let stats = collect_stats_snapshot(conn)?;
+    Ok(stats_action_with_snapshot(config, &stats))
+}
+
+pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot> {
     let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))?;
     let memory_count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM memories WHERE deprecated = FALSE",
@@ -48,28 +70,22 @@ pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<
         conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
             row.get(0)
         })?;
-    let path_resolution = common::path_resolution_payload(config);
 
-    Ok(json!({
-        "dbPath": path_resolution["dbPath"].clone(),
-        "workspaceKey": path_resolution["workspaceKey"].clone(),
-        "source": path_resolution["source"].clone(),
-        "reason": path_resolution["reason"].clone(),
-        "pathResolution": path_resolution,
-        "nodeCount": node_count,
-        "memoryCount": memory_count,
-        "pathCount": path_count,
-        "glossaryKeywordCount": glossary_count,
-        "orphanedMemoryCount": orphaned_memory_count,
-        "deprecatedMemoryCount": deprecated_memory_count,
-        "aliasNodeCount": alias_node_count,
-        "triggerNodeCount": trigger_node_count,
-        "disclosurePathCount": disclosure_path_count,
-        "pathsMissingDisclosure": paths_missing_disclosure,
-        "disclosuresNeedingReview": disclosures_needing_review,
-        "searchDocumentCount": search_document_count,
-        "ftsDocumentCount": fts_document_count,
-    }))
+    Ok(StatsSnapshot {
+        node_count,
+        memory_count,
+        path_count,
+        glossary_count,
+        alias_node_count,
+        trigger_node_count,
+        disclosure_path_count,
+        paths_missing_disclosure,
+        disclosures_needing_review,
+        orphaned_memory_count,
+        deprecated_memory_count,
+        search_document_count,
+        fts_document_count,
+    })
 }
 
 pub(crate) fn alias_node_count(conn: &Connection) -> Result<i64> {
@@ -147,8 +163,13 @@ pub(crate) fn disclosures_needing_review(conn: &Connection) -> Result<i64> {
 }
 
 pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
-    let doctor = run_doctor(conn, &config.db_path().display().to_string())?;
-    let stats = stats_action(conn, config)?;
+    let stats_snapshot = collect_stats_snapshot(conn)?;
+    let doctor = run_doctor(
+        conn,
+        &config.db_path().display().to_string(),
+        &stats_snapshot,
+    )?;
+    let stats = stats_action_with_snapshot(config, &stats_snapshot);
     let path_resolution = common::path_resolution_payload(config);
     Ok(json!({
         "dbPath": path_resolution["dbPath"].clone(),
@@ -176,6 +197,30 @@ pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result
         "stats": stats,
         "pathResolution": path_resolution,
     }))
+}
+
+fn stats_action_with_snapshot(config: &ZmemoryConfig, stats: &StatsSnapshot) -> Value {
+    let path_resolution = common::path_resolution_payload(config);
+    json!({
+        "dbPath": path_resolution["dbPath"].clone(),
+        "workspaceKey": path_resolution["workspaceKey"].clone(),
+        "source": path_resolution["source"].clone(),
+        "reason": path_resolution["reason"].clone(),
+        "pathResolution": path_resolution,
+        "nodeCount": stats.node_count,
+        "memoryCount": stats.memory_count,
+        "pathCount": stats.path_count,
+        "glossaryKeywordCount": stats.glossary_count,
+        "orphanedMemoryCount": stats.orphaned_memory_count,
+        "deprecatedMemoryCount": stats.deprecated_memory_count,
+        "aliasNodeCount": stats.alias_node_count,
+        "triggerNodeCount": stats.trigger_node_count,
+        "disclosurePathCount": stats.disclosure_path_count,
+        "pathsMissingDisclosure": stats.paths_missing_disclosure,
+        "disclosuresNeedingReview": stats.disclosures_needing_review,
+        "searchDocumentCount": stats.search_document_count,
+        "ftsDocumentCount": stats.fts_document_count,
+    })
 }
 
 pub(crate) fn rebuild_search_action(conn: &mut Connection) -> Result<Value> {
