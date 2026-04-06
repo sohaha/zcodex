@@ -1,8 +1,7 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
 use crate::service::index;
-use crate::tool_api::ZmemoryToolCallParam;
-use crate::tool_api::ZmemoryUri;
+use crate::tool_api::SearchActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::params;
@@ -13,16 +12,11 @@ use std::collections::HashSet;
 pub(crate) fn search_action(
     config: &ZmemoryConfig,
     conn: &Connection,
-    args: &ZmemoryToolCallParam,
+    args: &SearchActionParams,
 ) -> Result<Value> {
-    let query = args
-        .query
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("`query` is required for action=search"))?;
-    let limit = args.limit.unwrap_or(10);
-    let scope = args.uri.as_deref().map(ZmemoryUri::parse).transpose()?;
+    let query = args.query.as_str();
+    let limit = args.limit;
+    let scope = args.uri.clone();
     if let Some(scope) = scope.as_ref() {
         common::ensure_readable_domain(config, conn, &scope.domain)?;
     }

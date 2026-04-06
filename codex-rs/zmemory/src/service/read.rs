@@ -1,7 +1,6 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
-use crate::tool_api::ZmemoryToolCallParam;
-use crate::tool_api::ZmemoryUri;
+use crate::tool_api::ReadActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
@@ -10,17 +9,12 @@ use serde_json::json;
 pub(crate) fn read_action(
     config: &ZmemoryConfig,
     conn: &Connection,
-    args: &ZmemoryToolCallParam,
+    args: &ReadActionParams,
 ) -> Result<Value> {
-    let uri = parse_required_uri(args.uri.as_deref())?;
+    let uri = &args.uri;
     if uri.domain == "system" {
-        return crate::system_views::read_system_view(
-            conn,
-            config,
-            &uri.path,
-            args.limit.unwrap_or(20),
-        )
-        .map(|view| json!({ "uri": uri.to_string(), "view": view }));
+        return crate::system_views::read_system_view(conn, config, &uri.path, args.limit)
+            .map(|view| json!({ "uri": uri.to_string(), "view": view }));
     }
     common::ensure_readable_domain(config, conn, &uri.domain)?;
 
@@ -43,9 +37,4 @@ pub(crate) fn read_action(
         "children": children,
         "aliasCount": alias_count,
     }))
-}
-
-fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
-    let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` is required"))?;
-    ZmemoryUri::parse(raw)
 }

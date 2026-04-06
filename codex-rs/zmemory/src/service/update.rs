@@ -2,7 +2,7 @@ use crate::config::ZmemoryConfig;
 use crate::schema::mark_other_memories_deprecated;
 use crate::service::common;
 use crate::service::index;
-use crate::tool_api::ZmemoryToolCallParam;
+use crate::tool_api::UpdateActionParams;
 use anyhow::Result;
 use anyhow::bail;
 use rusqlite::Connection;
@@ -13,9 +13,9 @@ use serde_json::json;
 pub(crate) fn update_action(
     config: &ZmemoryConfig,
     conn: &mut Connection,
-    args: &ZmemoryToolCallParam,
+    args: &UpdateActionParams,
 ) -> Result<Value> {
-    let uri = parse_required_uri(args.uri.as_deref())?;
+    let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot update root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
     let row = common::find_path_row(conn, &uri)?
@@ -80,13 +80,8 @@ pub(crate) fn update_action(
     }))
 }
 
-fn parse_required_uri(raw: Option<&str>) -> Result<crate::tool_api::ZmemoryUri> {
-    let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` is required"))?;
-    crate::tool_api::ZmemoryUri::parse(raw)
-}
-
 fn resolve_updated_content(
-    args: &ZmemoryToolCallParam,
+    args: &UpdateActionParams,
     current_content: &str,
 ) -> Result<Option<String>> {
     let has_patch_fields = args.old_string.is_some() || args.new_string.is_some();

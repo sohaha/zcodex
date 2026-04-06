@@ -1,8 +1,7 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
 use crate::service::index;
-use crate::tool_api::ZmemoryToolCallParam;
-use crate::tool_api::ZmemoryUri;
+use crate::tool_api::UriActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::params;
@@ -12,9 +11,9 @@ use serde_json::json;
 pub(crate) fn delete_path_action(
     config: &ZmemoryConfig,
     conn: &mut Connection,
-    args: &ZmemoryToolCallParam,
+    args: &UriActionParams,
 ) -> Result<Value> {
-    let uri = parse_required_uri(args.uri.as_deref())?;
+    let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot delete root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
     let row = common::find_path_row(conn, &uri)?
@@ -53,9 +52,4 @@ pub(crate) fn delete_path_action(
         "deprecatedNodes": deprecated_nodes,
         "documentCount": document_count,
     }))
-}
-
-fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
-    let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` is required"))?;
-    ZmemoryUri::parse(raw)
 }

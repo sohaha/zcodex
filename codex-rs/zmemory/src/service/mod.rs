@@ -1,5 +1,5 @@
 use crate::config::ZmemoryConfig;
-use crate::tool_api::ZmemoryToolAction;
+use crate::tool_api::ZmemoryActionInput;
 use crate::tool_api::ZmemoryToolCallParam;
 use anyhow::Result;
 use serde_json::Value;
@@ -20,37 +20,40 @@ mod tests;
 
 pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam) -> Result<Value> {
     let mut conn = common::connect(config)?;
-    let result = match args.action {
-        ZmemoryToolAction::Read => read::read_action(config, &conn, args)?,
-        ZmemoryToolAction::Search => search::search_action(config, &conn, args)?,
-        ZmemoryToolAction::Create => create::create_action(config, &mut conn, args)?,
-        ZmemoryToolAction::Update => update::update_action(config, &mut conn, args)?,
-        ZmemoryToolAction::DeletePath => delete::delete_path_action(config, &mut conn, args)?,
-        ZmemoryToolAction::AddAlias => alias::add_alias_action(config, &mut conn, args)?,
-        ZmemoryToolAction::ManageTriggers => {
-            alias::manage_triggers_action(config, &mut conn, args)?
+    let typed = ZmemoryActionInput::try_from(args)?;
+    let result = match &typed {
+        ZmemoryActionInput::Read(params) => read::read_action(config, &conn, params)?,
+        ZmemoryActionInput::Search(params) => search::search_action(config, &conn, params)?,
+        ZmemoryActionInput::Create(params) => create::create_action(config, &mut conn, params)?,
+        ZmemoryActionInput::Update(params) => update::update_action(config, &mut conn, params)?,
+        ZmemoryActionInput::DeletePath(params) => {
+            delete::delete_path_action(config, &mut conn, params)?
         }
-        ZmemoryToolAction::Stats => stats::stats_action(&conn, config)?,
-        ZmemoryToolAction::Doctor => stats::doctor_action(&conn, config)?,
-        ZmemoryToolAction::RebuildSearch => stats::rebuild_search_action(&mut conn)?,
+        ZmemoryActionInput::AddAlias(params) => alias::add_alias_action(config, &mut conn, params)?,
+        ZmemoryActionInput::ManageTriggers(params) => {
+            alias::manage_triggers_action(config, &mut conn, params)?
+        }
+        ZmemoryActionInput::Stats => stats::stats_action(&conn, config)?,
+        ZmemoryActionInput::Doctor => stats::doctor_action(&conn, config)?,
+        ZmemoryActionInput::RebuildSearch => stats::rebuild_search_action(&mut conn)?,
     };
     Ok(json!({
-        "action": action_name(args.action.clone()),
+        "action": action_name(&typed),
         "result": result,
     }))
 }
 
-fn action_name(action: ZmemoryToolAction) -> &'static str {
+fn action_name(action: &ZmemoryActionInput) -> &'static str {
     match action {
-        ZmemoryToolAction::Read => "read",
-        ZmemoryToolAction::Search => "search",
-        ZmemoryToolAction::Create => "create",
-        ZmemoryToolAction::Update => "update",
-        ZmemoryToolAction::DeletePath => "delete-path",
-        ZmemoryToolAction::AddAlias => "add-alias",
-        ZmemoryToolAction::ManageTriggers => "manage-triggers",
-        ZmemoryToolAction::Stats => "stats",
-        ZmemoryToolAction::Doctor => "doctor",
-        ZmemoryToolAction::RebuildSearch => "rebuild-search",
+        ZmemoryActionInput::Read(_) => "read",
+        ZmemoryActionInput::Search(_) => "search",
+        ZmemoryActionInput::Create(_) => "create",
+        ZmemoryActionInput::Update(_) => "update",
+        ZmemoryActionInput::DeletePath(_) => "delete-path",
+        ZmemoryActionInput::AddAlias(_) => "add-alias",
+        ZmemoryActionInput::ManageTriggers(_) => "manage-triggers",
+        ZmemoryActionInput::Stats => "stats",
+        ZmemoryActionInput::Doctor => "doctor",
+        ZmemoryActionInput::RebuildSearch => "rebuild-search",
     }
 }

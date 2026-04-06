@@ -89,6 +89,74 @@ impl Default for ZmemoryToolCallParam {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ZmemoryActionInput {
+    Read(ReadActionParams),
+    Search(SearchActionParams),
+    Create(CreateActionParams),
+    Update(UpdateActionParams),
+    DeletePath(UriActionParams),
+    AddAlias(AddAliasActionParams),
+    ManageTriggers(ManageTriggersActionParams),
+    Stats,
+    Doctor,
+    RebuildSearch,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadActionParams {
+    pub(crate) uri: ZmemoryUri,
+    pub(crate) limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SearchActionParams {
+    pub(crate) query: String,
+    pub(crate) uri: Option<ZmemoryUri>,
+    pub(crate) limit: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CreateActionParams {
+    pub(crate) uri: Option<ZmemoryUri>,
+    pub(crate) parent_uri: Option<ZmemoryUri>,
+    pub(crate) content: String,
+    pub(crate) title: Option<String>,
+    pub(crate) priority: i64,
+    pub(crate) disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UpdateActionParams {
+    pub(crate) uri: ZmemoryUri,
+    pub(crate) content: Option<String>,
+    pub(crate) old_string: Option<String>,
+    pub(crate) new_string: Option<String>,
+    pub(crate) append: Option<String>,
+    pub(crate) priority: Option<i64>,
+    pub(crate) disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UriActionParams {
+    pub(crate) uri: ZmemoryUri,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AddAliasActionParams {
+    pub(crate) new_uri: ZmemoryUri,
+    pub(crate) target_uri: ZmemoryUri,
+    pub(crate) priority: Option<i64>,
+    pub(crate) disclosure: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ManageTriggersActionParams {
+    pub(crate) uri: ZmemoryUri,
+    pub(crate) add: Vec<String>,
+    pub(crate) remove: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZmemoryToolResult {
     pub text: String,
@@ -149,6 +217,92 @@ impl fmt::Display for ZmemoryUri {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}://{}", self.domain, self.path)
     }
+}
+
+impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
+    type Error = anyhow::Error;
+
+    fn try_from(args: &ZmemoryToolCallParam) -> Result<Self> {
+        match args.action {
+            ZmemoryToolAction::Read => Ok(Self::Read(ReadActionParams {
+                uri: parse_required_uri(args.uri.as_deref())?,
+                limit: args.limit.unwrap_or(20),
+            })),
+            ZmemoryToolAction::Search => Ok(Self::Search(SearchActionParams {
+                query: required_query(args.query.as_deref())?,
+                uri: args.uri.as_deref().map(ZmemoryUri::parse).transpose()?,
+                limit: args.limit.unwrap_or(10),
+            })),
+            ZmemoryToolAction::Create => Ok(Self::Create(CreateActionParams {
+                uri: args.uri.as_deref().map(ZmemoryUri::parse).transpose()?,
+                parent_uri: args
+                    .parent_uri
+                    .as_deref()
+                    .map(ZmemoryUri::parse)
+                    .transpose()?,
+                content: required_content(args.content.as_deref())?,
+                title: normalize_optional_text(args.title.as_deref()),
+                priority: args.priority.unwrap_or_default(),
+                disclosure: normalize_optional_text(args.disclosure.as_deref()),
+            })),
+            ZmemoryToolAction::Update => Ok(Self::Update(UpdateActionParams {
+                uri: parse_required_uri(args.uri.as_deref())?,
+                content: args.content.clone(),
+                old_string: args.old_string.clone(),
+                new_string: args.new_string.clone(),
+                append: args.append.clone(),
+                priority: args.priority,
+                disclosure: args.disclosure.clone(),
+            })),
+            ZmemoryToolAction::DeletePath => Ok(Self::DeletePath(UriActionParams {
+                uri: parse_required_uri(args.uri.as_deref())?,
+            })),
+            ZmemoryToolAction::AddAlias => Ok(Self::AddAlias(AddAliasActionParams {
+                new_uri: parse_required_uri(args.new_uri.as_deref())?,
+                target_uri: parse_required_uri(args.target_uri.as_deref())?,
+                priority: args.priority,
+                disclosure: args.disclosure.clone(),
+            })),
+            ZmemoryToolAction::ManageTriggers => {
+                Ok(Self::ManageTriggers(ManageTriggersActionParams {
+                    uri: parse_required_uri(args.uri.as_deref())?,
+                    add: args.add.clone().unwrap_or_default(),
+                    remove: args.remove.clone().unwrap_or_default(),
+                }))
+            }
+            ZmemoryToolAction::Stats => Ok(Self::Stats),
+            ZmemoryToolAction::Doctor => Ok(Self::Doctor),
+            ZmemoryToolAction::RebuildSearch => Ok(Self::RebuildSearch),
+        }
+    }
+}
+
+fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
+    let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` is required"))?;
+    ZmemoryUri::parse(raw)
+}
+
+fn required_query(query: Option<&str>) -> Result<String> {
+    query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("`query` is required for action=search"))
+}
+
+fn required_content(content: Option<&str>) -> Result<String> {
+    content
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| anyhow::anyhow!("`content` is required"))
+}
+
+fn normalize_optional_text(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
 }
 
 pub fn run_zmemory_tool(

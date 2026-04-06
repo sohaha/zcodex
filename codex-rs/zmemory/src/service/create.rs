@@ -1,7 +1,7 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
 use crate::service::index;
-use crate::tool_api::ZmemoryToolCallParam;
+use crate::tool_api::CreateActionParams;
 use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
 use rusqlite::Connection;
@@ -13,10 +13,9 @@ use uuid::Uuid;
 pub(crate) fn create_action(
     config: &ZmemoryConfig,
     conn: &mut Connection,
-    args: &ZmemoryToolCallParam,
+    args: &CreateActionParams,
 ) -> Result<Value> {
     let uri = resolve_create_uri(conn, args)?;
-    let content = required_content(args.content.as_deref())?;
     common::ensure_writable_domain(config, conn, &uri.domain)?;
     anyhow::ensure!(
         common::find_path_row(conn, &uri)?.is_none(),
@@ -31,14 +30,14 @@ pub(crate) fn create_action(
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?
     };
     let node_uuid = Uuid::new_v4().to_string();
-    let priority = args.priority.unwrap_or_default();
+    let priority = args.priority;
     let disclosure = common::normalize_optional_text(args.disclosure.as_deref());
 
     let tx = conn.transaction()?;
     tx.execute("INSERT INTO nodes(uuid) VALUES (?1)", [node_uuid.as_str()])?;
     tx.execute(
         "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
-        params![node_uuid, content],
+        params![node_uuid, args.content],
     )?;
     let memory_id = tx.last_insert_rowid();
     tx.execute(
@@ -66,28 +65,20 @@ pub(crate) fn create_action(
     }))
 }
 
-fn required_content(content: Option<&str>) -> Result<String> {
-    let content = content
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("`content` is required"))?;
-    Ok(content.to_string())
-}
-
-fn resolve_create_uri(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<ZmemoryUri> {
+fn resolve_create_uri(conn: &Connection, args: &CreateActionParams) -> Result<ZmemoryUri> {
     anyhow::ensure!(
         !(args.uri.is_some() && (args.parent_uri.is_some() || args.title.is_some())),
         "`uri` cannot be combined with `parentUri` or `title`",
     );
 
-    if let Some(uri) = args.uri.as_deref() {
-        let uri = ZmemoryUri::parse(uri)?;
+    if let Some(uri) = args.uri.as_ref() {
+        let uri = uri.clone();
         anyhow::ensure!(!uri.is_root(), "cannot create root path");
         return Ok(uri);
     }
 
-    let parent_uri = parse_parent_uri(args.parent_uri.as_deref())?;
-    let title = common::normalize_optional_text(args.title.as_deref());
+    let parent_uri = parse_parent_uri(args.parent_uri.as_ref())?;
+    let title = args.title.clone();
     let name = match title {
         Some(title) => {
             validate_title(&title)?;
@@ -106,9 +97,9 @@ fn resolve_create_uri(conn: &Connection, args: &ZmemoryToolCallParam) -> Result<
     })
 }
 
-fn parse_parent_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
-    let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` or `parentUri` is required"))?;
-    ZmemoryUri::parse(raw)
+fn parse_parent_uri(raw: Option<&ZmemoryUri>) -> Result<ZmemoryUri> {
+    raw.cloned()
+        .ok_or_else(|| anyhow::anyhow!("`uri` or `parentUri` is required"))
 }
 
 fn validate_title(title: &str) -> Result<()> {

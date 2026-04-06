@@ -1,8 +1,8 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
 use crate::service::index;
-use crate::tool_api::ZmemoryToolCallParam;
-use crate::tool_api::ZmemoryUri;
+use crate::tool_api::AddAliasActionParams;
+use crate::tool_api::ManageTriggersActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::params;
@@ -12,10 +12,10 @@ use serde_json::json;
 pub(crate) fn add_alias_action(
     config: &ZmemoryConfig,
     conn: &mut Connection,
-    args: &ZmemoryToolCallParam,
+    args: &AddAliasActionParams,
 ) -> Result<Value> {
-    let new_uri = parse_required_uri(args.new_uri.as_deref())?;
-    let target_uri = parse_required_uri(args.target_uri.as_deref())?;
+    let new_uri = &args.new_uri;
+    let target_uri = &args.target_uri;
     anyhow::ensure!(!new_uri.is_root(), "cannot alias root path");
     anyhow::ensure!(!target_uri.is_root(), "cannot alias the root node");
     common::ensure_writable_domain(config, conn, &new_uri.domain)?;
@@ -74,15 +74,15 @@ pub(crate) fn add_alias_action(
 pub(crate) fn manage_triggers_action(
     config: &ZmemoryConfig,
     conn: &mut Connection,
-    args: &ZmemoryToolCallParam,
+    args: &ManageTriggersActionParams,
 ) -> Result<Value> {
-    let uri = parse_required_uri(args.uri.as_deref())?;
+    let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot manage triggers for root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
     let row = common::find_path_row(conn, &uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
-    let add = common::normalize_keywords(args.add.clone().unwrap_or_default());
-    let remove = common::normalize_keywords(args.remove.clone().unwrap_or_default());
+    let add = common::normalize_keywords(args.add.clone());
+    let remove = common::normalize_keywords(args.remove.clone());
     anyhow::ensure!(
         !(add.is_empty() && remove.is_empty()),
         "no changes requested"
@@ -116,9 +116,4 @@ pub(crate) fn manage_triggers_action(
         "current": current,
         "documentCount": document_count,
     }))
-}
-
-fn parse_required_uri(raw: Option<&str>) -> Result<ZmemoryUri> {
-    let raw = raw.ok_or_else(|| anyhow::anyhow!("`uri` is required"))?;
-    ZmemoryUri::parse(raw)
 }
