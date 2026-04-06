@@ -71,6 +71,7 @@ codex-secrets = { workspace = true }
 codex-utils-string = { workspace = true }
 codex-utils-stream-parser = { workspace = true }
 codex-utils-template = { workspace = true }
+codex-ztok = { workspace = true }
 codex-windows-sandbox = { package = "codex-windows-sandbox", path = "../windows-sandbox-rs" }
 codex-zmemory = { workspace = true }
 csv = { workspace = true }

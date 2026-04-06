@@ -13,6 +13,7 @@ use core_test_support::skip_if_windows;
 use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::test_codex;
+use regex_lite::escape;
 use serde_json::json;
 use tempfile::NamedTempFile;
 use test_case::test_case;
@@ -102,6 +103,21 @@ fn assert_shell_command_output(output: &str, expected: &str) -> Result<()> {
         r"(?s)^Exit code: 0\nWall time: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\n{expected}\n?$"
     );
 
+    assert_regex_match(&expected_pattern, &normalized_output);
+    Ok(())
+}
+
+fn assert_routed_shell_command_output(output: &str, original: &str, rewritten: &str) -> Result<()> {
+    let normalized_output = output
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim_end_matches('\n')
+        .to_string();
+    let expected_pattern = format!(
+        r"(?s)^\[shell_command routed via embedded ZTOK\]\noriginal: {}\nrewritten: {}\n\nExit code: 0\nWall time: [0-9]+(?:\.[0-9]+)? seconds\nOutput:\n.+$",
+        escape(original),
+        escape(rewritten)
+    );
     assert_regex_match(&expected_pattern, &normalized_output);
     Ok(())
 }
@@ -240,7 +256,19 @@ async fn shell_command_ignores_invalid_ripgrep_config_path_from_parent_env() -> 
         .await?;
 
     let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "1:hello, world")?;
+    if output.contains("[shell_command routed via embedded ZTOK]") {
+        let rewritten = format!(
+            "codex ztok grep 'hello, world' {} -n",
+            file.path().display()
+        );
+        assert_routed_shell_command_output(&output, &command, &rewritten)?;
+        assert!(
+            output.contains("1: hello, world"),
+            "missing routed rg match: {output}"
+        );
+    } else {
+        assert_shell_command_output(&output, "1:hello, world")?;
+    }
     assert!(
         !output.contains("ripgreprc"),
         "unexpected ripgreprc error in output: {output}"
@@ -268,7 +296,19 @@ async fn shell_command_with_login_ignores_invalid_ripgrep_config_path_from_paren
         .await?;
 
     let output = harness.function_call_stdout(call_id).await;
-    assert_shell_command_output(&output, "1:hello with login")?;
+    if output.contains("[shell_command routed via embedded ZTOK]") {
+        let rewritten = format!(
+            "codex ztok grep 'hello with login' {} -n",
+            file.path().display()
+        );
+        assert_routed_shell_command_output(&output, &command, &rewritten)?;
+        assert!(
+            output.contains("1: hello with login"),
+            "missing routed rg match: {output}"
+        );
+    } else {
+        assert_shell_command_output(&output, "1:hello with login")?;
+    }
     assert!(
         !output.contains("ripgreprc"),
         "unexpected ripgreprc error in output: {output}"

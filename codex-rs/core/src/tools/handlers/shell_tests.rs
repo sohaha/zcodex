@@ -112,14 +112,21 @@ async fn shell_command_handler_to_exec_params_uses_session_shell_and_turn_contex
     .expect("login shells should be allowed");
 
     // ExecParams cannot derive Eq due to the CancellationToken field, so we manually compare the fields.
-    assert_eq!(exec_params.command, expected_command);
-    assert_eq!(exec_params.cwd, expected_cwd);
-    assert_eq!(exec_params.env, expected_env);
-    assert_eq!(exec_params.network, turn_context.network);
-    assert_eq!(exec_params.expiration.timeout_ms(), timeout_ms);
-    assert_eq!(exec_params.sandbox_permissions, sandbox_permissions);
-    assert_eq!(exec_params.justification, justification);
-    assert_eq!(exec_params.arg0, None);
+    assert_eq!(exec_params.exec_params.command, expected_command);
+    assert_eq!(exec_params.exec_params.cwd, expected_cwd);
+    assert_eq!(exec_params.exec_params.env, expected_env);
+    assert_eq!(exec_params.exec_params.network, turn_context.network);
+    assert_eq!(exec_params.exec_params.expiration.timeout_ms(), timeout_ms);
+    assert_eq!(
+        exec_params.exec_params.sandbox_permissions,
+        sandbox_permissions
+    );
+    assert_eq!(exec_params.exec_params.justification, justification);
+    assert_eq!(exec_params.exec_params.arg0, None);
+    assert_eq!(exec_params.approval_command, expected_command);
+    assert_eq!(exec_params.display_command, None);
+    assert_eq!(exec_params.interaction_input, None);
+    assert_eq!(exec_params.model_output_prefix, None);
 }
 
 #[test]
@@ -179,11 +186,111 @@ async fn shell_command_handler_defaults_to_non_login_when_disallowed() {
     .expect("non-login shells should still be allowed");
 
     assert_eq!(
-        exec_params.command,
+        exec_params.exec_params.command,
         session
             .user_shell()
             .derive_exec_args("echo hello", /*use_login_shell*/ false)
     );
+    assert_eq!(
+        exec_params.approval_command,
+        session
+            .user_shell()
+            .derive_exec_args("echo hello", /*use_login_shell*/ false)
+    );
+}
+
+#[tokio::test]
+async fn shell_command_handler_routes_git_status_via_ztok_but_keeps_approval_raw() {
+    let (session, mut turn_context) = make_session_and_context().await;
+    turn_context.codex_self_exe = Some(PathBuf::from("/tmp/codex"));
+    let params = ShellCommandToolCallParams {
+        command: "git status".to_string(),
+        workdir: None,
+        login: None,
+        timeout_ms: None,
+        sandbox_permissions: None,
+        additional_permissions: None,
+        prefix_rule: None,
+        justification: None,
+    };
+
+    let prepared = ShellCommandHandler::to_exec_params(
+        &params,
+        &session,
+        &turn_context,
+        session.conversation_id,
+        /*allow_login_shell*/ false,
+    )
+    .expect("rewrite should succeed");
+
+    assert_eq!(
+        prepared.exec_params.command,
+        session
+            .user_shell()
+            .derive_exec_args("/tmp/codex ztok git status", /*use_login_shell*/ false)
+    );
+    assert_eq!(
+        prepared.approval_command,
+        session
+            .user_shell()
+            .derive_exec_args("git status", /*use_login_shell*/ false)
+    );
+    assert_eq!(
+        prepared.display_command,
+        Some(
+            session
+                .user_shell()
+                .derive_exec_args("codex ztok git status", /*use_login_shell*/ false)
+        )
+    );
+    assert_eq!(prepared.interaction_input, Some("git status".to_string()));
+}
+
+#[test]
+fn shell_command_prepare_command_routes_safe_commands_via_ztok() {
+    let prepared = ShellCommandHandler::prepare_command(
+        "FOO=1 git status",
+        Some(PathBuf::from("/tmp/codex").as_path()),
+    )
+    .expect("rewrite should succeed");
+
+    assert_eq!(
+        prepared,
+        (
+            "FOO=1 /tmp/codex ztok git status".to_string(),
+            Some("FOO=1 codex ztok git status".to_string()),
+            Some("FOO=1 git status".to_string()),
+            Some(
+                "[shell_command routed via embedded ZTOK]\noriginal: FOO=1 git status\nrewritten: FOO=1 codex ztok git status".to_string()
+            )
+        )
+    );
+}
+
+#[test]
+fn shell_command_prepare_command_reports_candidate_passthrough_reason() {
+    let prepared = ShellCommandHandler::prepare_command("git status | head", None)
+        .expect("passthrough analysis should succeed");
+
+    assert_eq!(
+        prepared,
+        (
+            "git status | head".to_string(),
+            None,
+            None,
+            Some(
+                "[shell_command kept raw]\noriginal: git status | head\nexecuted: git status | head\nreason: contains compound shell syntax".to_string()
+            )
+        )
+    );
+}
+
+#[test]
+fn shell_command_prepare_command_keeps_raw_without_codex_launcher() {
+    let prepared =
+        ShellCommandHandler::prepare_command("git status", None).expect("analysis should succeed");
+
+    assert_eq!(prepared, ("git status".to_string(), None, None, None,));
 }
 
 #[test]

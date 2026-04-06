@@ -39,7 +39,11 @@ use codex_features::Feature;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::ExecCommandSource;
 use codex_shell_command::is_safe_command::is_known_safe_command;
+use codex_shell_command::parse_command::shlex_join;
 use codex_tools::ShellCommandBackendConfig;
+use codex_ztok::ShellCommandRewriteKind;
+use codex_ztok::analyze_shell_command;
+use std::path::Path;
 
 pub struct ShellHandler;
 
@@ -78,6 +82,10 @@ fn shell_command_payload_command(payload: &ToolPayload) -> Option<String> {
 struct RunExecLikeArgs {
     tool_name: String,
     exec_params: ExecParams,
+    approval_command: Option<Vec<String>>,
+    display_command: Option<Vec<String>>,
+    interaction_input: Option<String>,
+    model_output_prefix: Option<String>,
     additional_permissions: Option<PermissionProfile>,
     prefix_rule: Option<Vec<String>>,
     session: Arc<crate::codex::Session>,
@@ -86,6 +94,16 @@ struct RunExecLikeArgs {
     call_id: String,
     freeform: bool,
     shell_runtime_backend: ShellRuntimeBackend,
+}
+
+#[derive(Debug)]
+struct PreparedShellCommand {
+    exec_params: ExecParams,
+    approval_command: Vec<String>,
+    display_command: Option<Vec<String>>,
+    interaction_input: Option<String>,
+    model_output_prefix: Option<String>,
+    search_command: String,
 }
 
 impl ShellHandler {
@@ -138,33 +156,177 @@ impl ShellCommandHandler {
         shell.derive_exec_args(command, use_login_shell)
     }
 
+    fn prepare_command(
+        command: &str,
+        codex_self_exe: Option<&Path>,
+    ) -> Result<(String, Option<String>, Option<String>, Option<String>), FunctionCallError> {
+        let analysis = analyze_shell_command(command);
+        match analysis.kind {
+            ShellCommandRewriteKind::AlreadyZtok => {
+                let Some(logical_command) = logical_ztok_command(&analysis.command) else {
+                    return Ok((command.to_string(), None, None, None));
+                };
+                let Some(exec_command) = ztok_exec_command(&analysis.command, codex_self_exe)
+                else {
+                    return Ok((command.to_string(), None, None, None));
+                };
+                Ok((exec_command, Some(logical_command), None, None))
+            }
+            ShellCommandRewriteKind::Rewritten => {
+                let Some(logical_command) = logical_ztok_command(&analysis.command) else {
+                    return Ok((command.to_string(), None, None, None));
+                };
+                let Some(exec_command) = ztok_exec_command(&analysis.command, codex_self_exe)
+                else {
+                    return Ok((command.to_string(), None, None, None));
+                };
+                Ok((
+                    exec_command,
+                    Some(logical_command.clone()),
+                    Some(command.to_string()),
+                    Some(format!(
+                        "[shell_command routed via embedded ZTOK]\noriginal: {command}\nrewritten: {logical_command}"
+                    )),
+                ))
+            }
+            ShellCommandRewriteKind::Passthrough { reason, candidate } => Ok((
+                command.to_string(),
+                None,
+                None,
+                candidate.then(|| {
+                    format!(
+                        "[shell_command kept raw]\noriginal: {command}\nexecuted: {command}\nreason: {}",
+                        reason.as_str()
+                    )
+                }),
+            )),
+        }
+    }
+
     fn to_exec_params(
         params: &ShellCommandToolCallParams,
         session: &crate::codex::Session,
         turn_context: &TurnContext,
         thread_id: ThreadId,
         allow_login_shell: bool,
-    ) -> Result<ExecParams, FunctionCallError> {
+    ) -> Result<PreparedShellCommand, FunctionCallError> {
         let shell = session.user_shell();
         let use_login_shell = Self::resolve_use_login_shell(params.login, allow_login_shell)?;
-        let command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
+        let (exec_command, logical_command, interaction_input, model_output_prefix) =
+            Self::prepare_command(&params.command, turn_context.codex_self_exe.as_deref())?;
+        let approval_command = Self::base_command(shell.as_ref(), &params.command, use_login_shell);
+        let command = Self::base_command(shell.as_ref(), &exec_command, use_login_shell);
+        let display_command = logical_command.as_deref().map(|logical_command| {
+            Self::base_command(shell.as_ref(), logical_command, use_login_shell)
+        });
 
-        Ok(ExecParams {
-            command,
-            cwd: turn_context.resolve_path(params.workdir.clone()),
-            expiration: params.timeout_ms.into(),
-            capture_policy: ExecCapturePolicy::ShellTool,
-            env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
-            network: turn_context.network.clone(),
-            sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
-            windows_sandbox_level: turn_context.windows_sandbox_level,
-            windows_sandbox_private_desktop: turn_context
-                .config
-                .permissions
-                .windows_sandbox_private_desktop,
-            justification: params.justification.clone(),
-            arg0: None,
+        Ok(PreparedShellCommand {
+            exec_params: ExecParams {
+                command,
+                cwd: turn_context.resolve_path(params.workdir.clone()),
+                expiration: params.timeout_ms.into(),
+                capture_policy: ExecCapturePolicy::ShellTool,
+                env: create_env(&turn_context.shell_environment_policy, Some(thread_id)),
+                network: turn_context.network.clone(),
+                sandbox_permissions: params.sandbox_permissions.unwrap_or_default(),
+                windows_sandbox_level: turn_context.windows_sandbox_level,
+                windows_sandbox_private_desktop: turn_context
+                    .config
+                    .permissions
+                    .windows_sandbox_private_desktop,
+                justification: params.justification.clone(),
+                arg0: None,
+            },
+            approval_command,
+            display_command,
+            interaction_input,
+            model_output_prefix,
+            search_command: logical_command.unwrap_or_else(|| params.command.clone()),
         })
+    }
+}
+
+fn logical_ztok_command(rewritten_command: &str) -> Option<String> {
+    let mut args = shlex::split(rewritten_command)?;
+    let ztok_index = args.iter().position(|arg| arg == "ztok")?;
+    args.splice(
+        ztok_index..=ztok_index,
+        ["codex".to_string(), "ztok".to_string()],
+    );
+    serialize_shell_command(&args, ztok_index)
+}
+
+fn ztok_exec_command(rewritten_command: &str, codex_self_exe: Option<&Path>) -> Option<String> {
+    let mut args = shlex::split(rewritten_command)?;
+    let ztok_index = args.iter().position(|arg| arg == "ztok")?;
+    let codex_exe = resolve_codex_launcher(codex_self_exe)?;
+    args.splice(
+        ztok_index..=ztok_index,
+        [codex_exe.display().to_string(), "ztok".to_string()],
+    );
+    serialize_shell_command(&args, ztok_index)
+}
+
+fn serialize_shell_command(args: &[String], command_index: usize) -> Option<String> {
+    let rendered = args
+        .iter()
+        .enumerate()
+        .map(|(index, arg)| {
+            if index < command_index && is_shell_env_assignment(arg) {
+                Some(render_shell_env_assignment(arg))
+            } else {
+                Some(shlex_join(std::slice::from_ref(arg)))
+            }
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(rendered.join(" "))
+}
+
+fn render_shell_env_assignment(arg: &str) -> String {
+    let Some((name, value)) = arg.split_once('=') else {
+        return shlex_join(&[arg.to_string()]);
+    };
+    let rendered_value = shlex_join(&[value.to_string()]);
+    format!("{name}={rendered_value}")
+}
+
+fn is_shell_env_assignment(arg: &str) -> bool {
+    let Some((name, _)) = arg.split_once('=') else {
+        return false;
+    };
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn resolve_codex_launcher(codex_self_exe: Option<&Path>) -> Option<std::path::PathBuf> {
+    codex_self_exe.map(Path::to_path_buf).or_else(|| {
+        let current_exe = std::env::current_exe().ok()?;
+        if current_exe
+            .file_stem()
+            .is_some_and(|stem| stem == std::ffi::OsStr::new("codex"))
+        {
+            return Some(current_exe);
+        }
+        let parent = current_exe.parent()?;
+        codex_binary_names()
+            .iter()
+            .map(|name| parent.join(name))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+fn codex_binary_names() -> &'static [&'static str] {
+    #[cfg(windows)]
+    {
+        &["codex.exe", "codex"]
+    }
+    #[cfg(not(windows))]
+    {
+        &["codex"]
     }
 }
 
@@ -243,6 +405,10 @@ impl ToolHandler for ShellHandler {
                 Self::run_exec_like(RunExecLikeArgs {
                     tool_name: tool_name.clone(),
                     exec_params,
+                    approval_command: None,
+                    display_command: None,
+                    interaction_input: None,
+                    model_output_prefix: None,
                     additional_permissions: params.additional_permissions.clone(),
                     prefix_rule,
                     session,
@@ -260,6 +426,10 @@ impl ToolHandler for ShellHandler {
                 Self::run_exec_like(RunExecLikeArgs {
                     tool_name: tool_name.clone(),
                     exec_params,
+                    approval_command: None,
+                    display_command: None,
+                    interaction_input: None,
+                    model_output_prefix: None,
                     additional_permissions: None,
                     prefix_rule: None,
                     session,
@@ -349,10 +519,17 @@ impl ToolHandler for ShellCommandHandler {
         let params: ShellCommandToolCallParams =
             parse_arguments_with_base_path(&arguments, cwd.as_path())?;
         let workdir = turn.resolve_path(params.workdir.clone());
+        let prepared = Self::to_exec_params(
+            &params,
+            session.as_ref(),
+            turn.as_ref(),
+            session.conversation_id,
+            turn.tools_config.allow_login_shell,
+        )?;
         let directives = turn.tool_routing_directives.read().await.clone();
         if let Some(interception) = maybe_intercept_shell_search(
             &params.command,
-            &params.command,
+            &prepared.search_command,
             workdir.as_path(),
             &directives,
         ) {
@@ -369,16 +546,13 @@ impl ToolHandler for ShellCommandHandler {
         )
         .await;
         let prefix_rule = params.prefix_rule.clone();
-        let exec_params = Self::to_exec_params(
-            &params,
-            session.as_ref(),
-            turn.as_ref(),
-            session.conversation_id,
-            turn.tools_config.allow_login_shell,
-        )?;
         ShellHandler::run_exec_like(RunExecLikeArgs {
             tool_name,
-            exec_params,
+            exec_params: prepared.exec_params,
+            approval_command: Some(prepared.approval_command),
+            display_command: prepared.display_command,
+            interaction_input: prepared.interaction_input,
+            model_output_prefix: prepared.model_output_prefix,
             additional_permissions: params.additional_permissions.clone(),
             prefix_rule,
             session,
@@ -397,6 +571,10 @@ impl ShellHandler {
         let RunExecLikeArgs {
             tool_name,
             exec_params,
+            approval_command,
+            display_command,
+            interaction_input,
+            model_output_prefix,
             additional_permissions,
             prefix_rule,
             session,
@@ -489,12 +667,12 @@ impl ShellHandler {
         let source = ExecCommandSource::Agent;
         let emitter = ToolEmitter::shell(
             exec_params.command.clone(),
-            /*display_command*/ None,
+            display_command,
             exec_params.cwd.clone(),
             source,
             freeform,
-            /*interaction_input*/ None,
-            /*model_output_prefix*/ None,
+            interaction_input,
+            model_output_prefix,
         );
         let event_ctx = ToolEventCtx::new(
             session.as_ref(),
@@ -508,7 +686,7 @@ impl ShellHandler {
             .services
             .exec_policy
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
-                command: &exec_params.command,
+                command: approval_command.as_deref().unwrap_or(&exec_params.command),
                 approval_policy: turn.approval_policy.value(),
                 sandbox_policy: turn.sandbox_policy.get(),
                 file_system_sandbox_policy: &turn.file_system_sandbox_policy,

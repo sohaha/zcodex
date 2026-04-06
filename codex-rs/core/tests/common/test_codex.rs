@@ -570,17 +570,8 @@ impl TestCodexBuilder {
         for hook in self.pre_build_hooks.drain(..) {
             hook(home.path());
         }
-        if let Ok(path) = codex_utils_cargo_bin::cargo_bin("codex-linux-sandbox") {
-            config.codex_linux_sandbox_exe = Some(path);
-        } else if let Ok(exe) = std::env::current_exe()
-            && let Some(path) = exe
-                .parent()
-                .and_then(|parent| parent.parent())
-                .map(|parent| parent.join("codex-linux-sandbox"))
-            && path.is_file()
-        {
-            config.codex_linux_sandbox_exe = Some(path);
-        }
+        config.codex_self_exe = resolve_test_binary("codex");
+        config.codex_linux_sandbox_exe = resolve_test_binary("codex-linux-sandbox");
 
         let mut mutators = vec![];
         swap(&mut self.config_mutators, &mut mutators);
@@ -597,6 +588,33 @@ impl TestCodexBuilder {
 
         Ok((config, cwd))
     }
+}
+
+fn resolve_test_binary(binary_name: &str) -> Option<std::path::PathBuf> {
+    if let Ok(path) = codex_utils_cargo_bin::cargo_bin(binary_name) {
+        return Some(path);
+    }
+
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(path) = exe
+            .parent()
+            .and_then(|parent| parent.parent())
+            .map(|parent| parent.join(binary_name))
+        && path.is_file()
+    {
+        return Some(path);
+    }
+
+    if let Some(path_env) = std::env::var_os("PATH") {
+        for directory in std::env::split_paths(&path_env) {
+            let candidate = directory.join(binary_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
 }
 
 fn ensure_test_model_catalog(config: &mut Config) -> Result<()> {

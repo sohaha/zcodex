@@ -2014,6 +2014,7 @@ dependencies = [
  "codex-utils-template",
  "codex-windows-sandbox",
  "codex-zmemory",
+ "codex-ztok",
  "core-foundation 0.9.4",
  "core_test_support",
  "csv",
