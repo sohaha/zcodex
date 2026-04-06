@@ -1053,6 +1053,108 @@ fn stats_and_doctor_surface_review_pressure() {
 }
 
 #[test]
+fn write_actions_append_audit_log_entries() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://audit_target".to_string()),
+            content: Some("initial memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://audit_target".to_string()),
+            append: Some(" updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("core://audit_target_alias".to_string()),
+            target_uri: Some("core://audit_target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://audit_target".to_string()),
+            add: Some(vec!["audit".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::DeletePath,
+            uri: Some("core://audit_target_alias".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("delete alias should succeed");
+
+    let stats = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Stats,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("stats should succeed");
+    assert_eq!(stats["result"]["auditLogCount"], 5);
+
+    let conn = Connection::open(config.db_path()).expect("open db");
+    let rows = conn
+        .prepare("SELECT action, uri FROM audit_log ORDER BY id ASC")
+        .expect("prepare audit query")
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .expect("query audit rows")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("collect audit rows");
+
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "create".to_string(),
+                Some("core://audit_target".to_string())
+            ),
+            (
+                "update".to_string(),
+                Some("core://audit_target".to_string())
+            ),
+            (
+                "add-alias".to_string(),
+                Some("core://audit_target_alias".to_string())
+            ),
+            (
+                "manage-triggers".to_string(),
+                Some("core://audit_target".to_string())
+            ),
+            (
+                "delete-path".to_string(),
+                Some("core://audit_target_alias".to_string())
+            ),
+        ]
+    );
+}
+
+#[test]
 fn search_matches_alias_via_separator_normalized_query() {
     let (_dir, config) = config_with_settings(ZmemorySettings::from_env_vars(
         Some("core,writer".to_string()),

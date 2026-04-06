@@ -38,6 +38,18 @@ pub(crate) fn delete_path_action(
     } else {
         0
     };
+    common::insert_audit_log(
+        &tx,
+        "delete-path",
+        Some(&uri.to_string()),
+        Some(&row.node_uuid),
+        json!({
+            "deletedPaths": deleted_paths,
+            "deletedEdges": deleted_edges,
+            "deprecatedNodes": deprecated_nodes,
+            "remainingRefs": remaining_refs,
+        }),
+    )?;
     index::reindex_node(&tx, &row.node_uuid)?;
     tx.commit()?;
 

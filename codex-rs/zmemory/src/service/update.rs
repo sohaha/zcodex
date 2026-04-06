@@ -63,6 +63,19 @@ pub(crate) fn update_action(
         bail!("no changes requested");
     }
 
+    common::insert_audit_log(
+        &tx,
+        "update",
+        Some(&uri.to_string()),
+        Some(&row.node_uuid),
+        json!({
+            "oldMemoryId": current_memory.id,
+            "newMemoryId": new_memory_id,
+            "contentChanged": content_changed,
+            "priority": priority,
+            "disclosure": disclosure,
+        }),
+    )?;
     index::reindex_node(&tx, &row.node_uuid)?;
     tx.commit()?;
     let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {

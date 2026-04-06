@@ -129,7 +129,21 @@ CREATE INDEX IF NOT EXISTS idx_edges_parent_uuid ON edges(parent_uuid);
 CREATE INDEX IF NOT EXISTS idx_edges_child_uuid ON edges(child_uuid);
 "#;
 
-const MIGRATIONS: [(&str, &str); 4] = [
+const MIGRATION_0005_AUDIT_LOG: &str = r#"
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  action TEXT NOT NULL,
+  uri TEXT,
+  node_uuid TEXT,
+  details TEXT,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_action_created_at ON audit_log(action, created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_log_node_uuid_created_at ON audit_log(node_uuid, created_at);
+"#;
+
+const MIGRATIONS: [(&str, &str); 5] = [
     ("0001_core", MIGRATION_0001_CORE),
     ("0002_search", MIGRATION_0002_SEARCH),
     ("0003_search_fts", MIGRATION_0003_SEARCH_FTS),
@@ -137,6 +151,7 @@ const MIGRATIONS: [(&str, &str); 4] = [
         "0004_edges_alias_name",
         MIGRATION_0004_EDGES_ALLOW_ALIAS_NAME,
     ),
+    ("0005_audit_log", MIGRATION_0005_AUDIT_LOG),
 ];
 
 pub fn initialize_database(conn: &mut Connection) -> Result<()> {

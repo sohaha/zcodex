@@ -54,6 +54,18 @@ pub(crate) fn add_alias_action(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
         params![new_uri.domain, new_uri.path, edge_id],
     )?;
+    common::insert_audit_log(
+        &tx,
+        "add-alias",
+        Some(&new_uri.to_string()),
+        Some(&target.node_uuid),
+        json!({
+            "targetUri": target_uri.to_string(),
+            "edgeId": edge_id,
+            "priority": priority,
+            "disclosure": disclosure,
+        }),
+    )?;
     index::reindex_node(&tx, &target.node_uuid)?;
     tx.commit()?;
 
@@ -101,6 +113,16 @@ pub(crate) fn manage_triggers_action(
             params![keyword, row.node_uuid],
         )?;
     }
+    common::insert_audit_log(
+        &tx,
+        "manage-triggers",
+        Some(&uri.to_string()),
+        Some(&row.node_uuid),
+        json!({
+            "added": add,
+            "removed": remove,
+        }),
+    )?;
     index::reindex_node(&tx, &row.node_uuid)?;
     tx.commit()?;
     let current = common::load_keywords(conn, &row.node_uuid)?;

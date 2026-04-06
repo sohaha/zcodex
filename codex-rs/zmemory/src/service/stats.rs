@@ -22,6 +22,7 @@ pub(crate) struct StatsSnapshot {
     pub(crate) deprecated_memory_count: i64,
     pub(crate) search_document_count: i64,
     pub(crate) fts_document_count: i64,
+    pub(crate) audit_log_count: i64,
 }
 
 pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
@@ -70,6 +71,8 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
         conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
             row.get(0)
         })?;
+    let audit_log_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM audit_log", [], |row| row.get(0))?;
 
     Ok(StatsSnapshot {
         node_count,
@@ -85,6 +88,7 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
         deprecated_memory_count,
         search_document_count,
         fts_document_count,
+        audit_log_count,
     })
 }
 
@@ -220,6 +224,7 @@ fn stats_action_with_snapshot(config: &ZmemoryConfig, stats: &StatsSnapshot) -> 
         "disclosuresNeedingReview": stats.disclosures_needing_review,
         "searchDocumentCount": stats.search_document_count,
         "ftsDocumentCount": stats.fts_document_count,
+        "auditLogCount": stats.audit_log_count,
     })
 }
 

@@ -6,6 +6,7 @@ use crate::schema::ensure_domain_root;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
+use rusqlite::Transaction;
 use rusqlite::params;
 use serde_json::Value;
 use serde_json::json;
@@ -193,4 +194,18 @@ pub(crate) fn path_resolution_payload(config: &ZmemoryConfig) -> Value {
         "source": resolution.source,
         "reason": resolution.reason.clone(),
     })
+}
+
+pub(crate) fn insert_audit_log(
+    tx: &Transaction<'_>,
+    action: &str,
+    uri: Option<&str>,
+    node_uuid: Option<&str>,
+    details: Value,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO audit_log(action, uri, node_uuid, details) VALUES (?1, ?2, ?3, ?4)",
+        params![action, uri, node_uuid, serde_json::to_string(&details)?,],
+    )?;
+    Ok(())
 }

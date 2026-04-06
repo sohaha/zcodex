@@ -49,6 +49,17 @@ pub(crate) fn create_action(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
         params![uri.domain, uri.path, edge_id],
     )?;
+    common::insert_audit_log(
+        &tx,
+        "create",
+        Some(&uri.to_string()),
+        Some(&node_uuid),
+        json!({
+            "memoryId": memory_id,
+            "priority": priority,
+            "disclosure": disclosure,
+        }),
+    )?;
     index::reindex_node(&tx, &node_uuid)?;
     tx.commit()?;
 
