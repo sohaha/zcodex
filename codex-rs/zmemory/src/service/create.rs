@@ -50,16 +50,19 @@ pub(crate) fn create_action(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
         params![uri.domain, uri.path, edge_id],
     )?;
+    index::reindex_node(&tx, &node_uuid)?;
     tx.commit()?;
 
-    let rebuild = index::rebuild_search_index(conn)?;
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": node_uuid,
         "memoryId": memory_id,
         "priority": priority,
         "disclosure": disclosure,
-        "documentCount": rebuild,
+        "documentCount": document_count,
     }))
 }
 

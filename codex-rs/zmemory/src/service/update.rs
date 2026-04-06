@@ -63,8 +63,11 @@ pub(crate) fn update_action(
         bail!("no changes requested");
     }
 
+    index::reindex_node(&tx, &row.node_uuid)?;
     tx.commit()?;
-    let rebuild = index::rebuild_search_index(conn)?;
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,
@@ -73,7 +76,7 @@ pub(crate) fn update_action(
         "priority": priority,
         "disclosure": disclosure,
         "contentChanged": content_changed,
-        "documentCount": rebuild,
+        "documentCount": document_count,
     }))
 }
 

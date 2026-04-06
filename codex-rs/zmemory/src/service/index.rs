@@ -1,5 +1,6 @@
 use anyhow::Result;
 use rusqlite::Connection;
+use rusqlite::Transaction;
 use rusqlite::params;
 
 pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
@@ -49,29 +50,17 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
     for (domain, path, node_uuid, memory_id, content, updated_at, disclosure, priority, keywords) in
         rows
     {
-        let uri = format!("{domain}://{path}");
-        let search_terms = build_search_terms(&domain, &path, &content, &keywords);
-        tx.execute(
-            "INSERT INTO search_documents(
-                domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                domain,
-                path,
-                node_uuid,
-                memory_id,
-                uri,
-                content,
-                disclosure,
-                search_terms,
-                priority,
-                updated_at
-            ],
-        )?;
-        tx.execute(
-            "INSERT INTO search_documents_fts(domain, path, uri, content, disclosure, search_terms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![domain, path, uri, content, disclosure, search_terms],
+        insert_search_document(
+            &tx,
+            &domain,
+            &path,
+            &node_uuid,
+            memory_id,
+            &content,
+            disclosure.as_deref(),
+            priority,
+            &updated_at,
+            &keywords,
         )?;
     }
     tx.commit()?;
@@ -80,6 +69,114 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
         row.get(0)
     })
     .map_err(Into::into)
+}
+
+pub(crate) fn reindex_node(tx: &Transaction<'_>, node_uuid: &str) -> Result<()> {
+    let stale_uris = {
+        let mut stmt = tx.prepare("SELECT uri FROM search_documents WHERE node_uuid = ?1")?;
+        stmt.query_map([node_uuid], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    for uri in stale_uris {
+        tx.execute("DELETE FROM search_documents_fts WHERE uri = ?1", [uri])?;
+    }
+    tx.execute(
+        "DELETE FROM search_documents WHERE node_uuid = ?1",
+        [node_uuid],
+    )?;
+
+    let rows = {
+        let mut stmt = tx.prepare(
+            "SELECT
+                p.domain,
+                p.path,
+                m.id,
+                m.content,
+                m.created_at,
+                e.disclosure,
+                e.priority,
+                COALESCE((
+                    SELECT GROUP_CONCAT(keyword, ' ')
+                    FROM glossary_keywords
+                    WHERE node_uuid = e.child_uuid
+                ), '')
+             FROM paths p
+             JOIN edges e ON e.id = p.edge_id
+             JOIN memories m ON m.node_uuid = e.child_uuid AND m.deprecated = FALSE
+             WHERE e.child_uuid = ?1
+             ORDER BY p.domain ASC, p.path ASC",
+        )?;
+        stmt.query_map([node_uuid], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    for (domain, path, memory_id, content, updated_at, disclosure, priority, keywords) in rows {
+        insert_search_document(
+            tx,
+            &domain,
+            &path,
+            node_uuid,
+            memory_id,
+            &content,
+            disclosure.as_deref(),
+            priority,
+            &updated_at,
+            &keywords,
+        )?;
+    }
+
+    Ok(())
+}
+
+fn insert_search_document(
+    tx: &Transaction<'_>,
+    domain: &str,
+    path: &str,
+    node_uuid: &str,
+    memory_id: i64,
+    content: &str,
+    disclosure: Option<&str>,
+    priority: i64,
+    updated_at: &str,
+    keywords: &str,
+) -> Result<()> {
+    let uri = format!("{domain}://{path}");
+    let search_terms = build_search_terms(domain, path, content, keywords);
+    tx.execute(
+        "INSERT INTO search_documents(
+            domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            domain,
+            path,
+            node_uuid,
+            memory_id,
+            uri,
+            content,
+            disclosure,
+            search_terms,
+            priority,
+            updated_at
+        ],
+    )?;
+    tx.execute(
+        "INSERT INTO search_documents_fts(domain, path, uri, content, disclosure, search_terms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![domain, path, uri, content, disclosure, search_terms],
+    )?;
+    Ok(())
 }
 
 fn build_search_terms(domain: &str, path: &str, content: &str, keywords: &str) -> String {

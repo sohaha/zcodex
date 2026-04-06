@@ -39,16 +39,19 @@ pub(crate) fn delete_path_action(
     } else {
         0
     };
+    index::reindex_node(&tx, &row.node_uuid)?;
     tx.commit()?;
 
-    let rebuild = index::rebuild_search_index(conn)?;
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,
         "deletedPaths": deleted_paths,
         "deletedEdges": deleted_edges,
         "deprecatedNodes": deprecated_nodes,
-        "documentCount": rebuild,
+        "documentCount": document_count,
     }))
 }
 

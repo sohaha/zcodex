@@ -54,9 +54,12 @@ pub(crate) fn add_alias_action(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
         params![new_uri.domain, new_uri.path, edge_id],
     )?;
+    index::reindex_node(&tx, &target.node_uuid)?;
     tx.commit()?;
 
-    let rebuild = index::rebuild_search_index(conn)?;
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
     Ok(json!({
         "uri": new_uri.to_string(),
         "targetUri": target_uri.to_string(),
@@ -64,7 +67,7 @@ pub(crate) fn add_alias_action(
         "edgeId": edge_id,
         "priority": priority,
         "disclosure": disclosure,
-        "documentCount": rebuild,
+        "documentCount": document_count,
     }))
 }
 
@@ -98,9 +101,12 @@ pub(crate) fn manage_triggers_action(
             params![keyword, row.node_uuid],
         )?;
     }
+    index::reindex_node(&tx, &row.node_uuid)?;
     tx.commit()?;
-    let rebuild = index::rebuild_search_index(conn)?;
     let current = common::load_keywords(conn, &row.node_uuid)?;
+    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+        row.get::<_, i64>(0)
+    })?;
 
     Ok(json!({
         "uri": uri.to_string(),
@@ -108,7 +114,7 @@ pub(crate) fn manage_triggers_action(
         "added": add,
         "removed": remove,
         "current": current,
-        "documentCount": rebuild,
+        "documentCount": document_count,
     }))
 }
 
