@@ -289,10 +289,10 @@ fn parse_literal_string(
 ) -> Result<Option<String>, String> {
     if let Some(JsonValue::Array(values)) = enum_value
         && values.len() == 1
-            && let Some(value) = values[0].as_str()
-        {
-            return Ok(Some(value.to_string()));
-        }
+        && let Some(value) = values[0].as_str()
+    {
+        return Ok(Some(value.to_string()));
+    }
     if let Some(JsonValue::String(value)) = const_value {
         return Ok(Some(value));
     }
