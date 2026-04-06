@@ -102,6 +102,15 @@ pub fn create_zmemory_tool() -> ToolSpec {
                 },
                 JsonSchema::Object {
                     properties: BTreeMap::from([
+                        literal_str_prop("action", "history", Some("查看某条记忆的版本历史。")),
+                        str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
+                        str_prop("uri", Some("目标 URI。")),
+                    ]),
+                    required: Some(vec!["action".to_string(), "uri".to_string()]),
+                    additional_properties: Some(false.into()),
+                },
+                JsonSchema::Object {
+                    properties: BTreeMap::from([
                         literal_str_prop("action", "search", Some("全文检索。")),
                         str_prop("codex_home", Some("可选的 CODEX_HOME 覆盖路径。")),
                         str_prop("query", Some("搜索查询。")),
@@ -326,7 +335,7 @@ mod tests {
         let JsonSchema::OneOf { variants } = tool.parameters else {
             panic!("zmemory tool should expose oneOf parameters");
         };
-        assert_eq!(variants.len(), 11);
+        assert_eq!(variants.len(), 12);
     }
 
     #[test]

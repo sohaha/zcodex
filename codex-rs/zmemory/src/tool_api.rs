@@ -17,6 +17,7 @@ use std::path::Path;
 #[serde(rename_all = "kebab-case")]
 pub enum ZmemoryToolAction {
     Read,
+    History,
     Search,
     Create,
     Update,
@@ -83,6 +84,11 @@ enum TaggedZmemoryToolCallParam {
         common: CommonToolArgs,
         uri: String,
         limit: Option<usize>,
+    },
+    History {
+        #[serde(flatten)]
+        common: CommonToolArgs,
+        uri: String,
     },
     Search {
         #[serde(flatten)]
@@ -278,6 +284,12 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
                 limit,
                 ..Self::default()
             },
+            TaggedZmemoryToolCallParam::History { common, uri } => Self {
+                action: ZmemoryToolAction::History,
+                codex_home: common.codex_home,
+                uri: Some(uri),
+                ..Self::default()
+            },
             TaggedZmemoryToolCallParam::Search {
                 common,
                 query,
@@ -400,6 +412,7 @@ impl From<TaggedZmemoryToolCallParam> for ZmemoryToolCallParam {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ZmemoryActionInput {
     Read(ReadActionParams),
+    History(UriActionParams),
     Search(SearchActionParams),
     Create(CreateActionParams),
     Update(UpdateActionParams),
@@ -543,6 +556,9 @@ impl TryFrom<&ZmemoryToolCallParam> for ZmemoryActionInput {
             ZmemoryToolAction::Read => Ok(Self::Read(ReadActionParams {
                 uri: parse_required_uri(args.uri.as_deref())?,
                 limit: args.limit.unwrap_or(20),
+            })),
+            ZmemoryToolAction::History => Ok(Self::History(UriActionParams {
+                uri: parse_required_uri(args.uri.as_deref())?,
             })),
             ZmemoryToolAction::Search => Ok(Self::Search(SearchActionParams {
                 query: required_query(args.query.as_deref())?,
@@ -708,6 +724,18 @@ fn render_summary(payload: &serde_json::Value) -> String {
                 )
             }
         }
+        "history" => format!(
+            "history {}: {} versions",
+            result
+                .get("uri")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("unknown"),
+            result
+                .get("versions")
+                .and_then(serde_json::Value::as_array)
+                .map(Vec::len)
+                .unwrap_or_default()
+        ),
         "search" => format!(
             "search {}: {} matches",
             result
@@ -846,6 +874,24 @@ mod tests {
                 new_uri: Some("core://alias".to_string()),
                 target_uri: Some("core://target".to_string()),
                 priority: Some(3),
+                ..ZmemoryToolCallParam::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_tagged_union_supports_history() {
+        let args: ZmemoryToolCallParam = serde_json::from_value(serde_json::json!({
+            "action": "history",
+            "uri": "core://agent"
+        }))
+        .expect("deserialize history args");
+
+        assert_eq!(
+            args,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::History,
+                uri: Some("core://agent".to_string()),
                 ..ZmemoryToolCallParam::default()
             }
         );

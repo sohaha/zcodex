@@ -127,6 +127,56 @@ fn create_supports_parent_uri_and_auto_numbering() {
 }
 
 #[test]
+fn history_returns_full_version_chain_sorted() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://history-node".to_string()),
+            content: Some("initial".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://history-node".to_string()),
+            append: Some(" #1".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+
+    let history = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::History,
+            uri: Some("core://history-node".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("history should succeed");
+
+    let versions = history["result"]["versions"]
+        .as_array()
+        .expect("versions should be an array");
+    assert_eq!(history["action"], "history");
+    assert_eq!(history["result"]["uri"], "core://history-node");
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["content"], "initial #1");
+    assert_eq!(versions[0]["deprecated"], false);
+    assert_eq!(versions[1]["content"], "initial");
+    assert_eq!(versions[1]["deprecated"], true);
+    assert!(versions[0]["migratedTo"].is_null());
+    assert_eq!(versions[1]["migratedTo"], versions[0]["id"]);
+    assert!(versions[0]["createdAt"].is_string());
+}
+
+#[test]
 fn create_rejects_conflicting_uri_modes_and_invalid_title() {
     let (_dir, config) = config();
     let conflict = crate::service::execute_action(

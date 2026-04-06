@@ -381,6 +381,92 @@ async fn zmemory_function_audit_exposes_recent_entries() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_history_exposes_version_chain() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Zmemory)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build(&server).await?;
+
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://history-entry".to_string()),
+            content: Some("Initial version".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://history-entry".to_string()),
+            append: Some(" updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-history",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "history",
+                    "uri": "core://history-entry"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.submit_turn("inspect memory history").await?;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-history")
+        .expect("function tool output should be present");
+    assert!(output.contains("history core://history-entry: 2 versions"));
+
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(payload["action"], "history");
+    assert_eq!(payload["result"]["uri"], "core://history-entry");
+    let versions = payload["result"]["versions"]
+        .as_array()
+        .expect("versions should be an array");
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["content"], "Initial version updated");
+    assert_eq!(versions[0]["deprecated"], false);
+    assert_eq!(versions[1]["content"], "Initial version");
+    assert_eq!(versions[1]["deprecated"], true);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_create_accepts_parent_uri_and_title() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

@@ -63,6 +63,51 @@ async fn zmemory_audit_help_lists_limit_flag() -> Result<()> {
 }
 
 #[tokio::test]
+async fn zmemory_history_json_returns_version_chain() -> Result<()> {
+    let codex_home = TempDir::new()?;
+
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://history-entry",
+            "--content",
+            "Initial version",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "update",
+            "core://history-entry",
+            "--append",
+            " updated",
+        ])
+        .assert()
+        .success();
+
+    let payload = run_json(
+        codex_home.path(),
+        &["zmemory", "history", "core://history-entry", "--json"],
+    )?;
+    assert_eq!(payload["action"], "history");
+    assert_eq!(payload["result"]["uri"], "core://history-entry");
+    let versions = payload["result"]["versions"]
+        .as_array()
+        .expect("versions should be an array");
+    assert_eq!(versions.len(), 2);
+    assert_eq!(versions[0]["content"], "Initial version updated");
+    assert_eq!(versions[0]["deprecated"], false);
+    assert_eq!(versions[1]["content"], "Initial version");
+    assert_eq!(versions[1]["deprecated"], true);
+    assert_eq!(versions[1]["migratedTo"], versions[0]["id"]);
+    assert!(versions[0]["createdAt"].is_string());
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn zmemory_stats_json_works_on_empty_db() -> Result<()> {
     let codex_home = TempDir::new()?;
     let mut cmd = codex_command(codex_home.path())?;

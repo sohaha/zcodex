@@ -9,6 +9,7 @@ mod alias;
 mod common;
 mod create;
 mod delete;
+mod history;
 mod index;
 mod read;
 mod search;
@@ -23,6 +24,7 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
     let typed = ZmemoryActionInput::try_from(args)?;
     let result = match &typed {
         ZmemoryActionInput::Read(params) => read::read_action(config, &conn, params)?,
+        ZmemoryActionInput::History(params) => history::history_action(config, &conn, &params.uri)?,
         ZmemoryActionInput::Search(params) => search::search_action(config, &conn, params)?,
         ZmemoryActionInput::Create(params) => create::create_action(config, &mut conn, params)?,
         ZmemoryActionInput::Update(params) => update::update_action(config, &mut conn, params)?,
@@ -47,6 +49,7 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
 fn action_name(action: &ZmemoryActionInput) -> &'static str {
     match action {
         ZmemoryActionInput::Read(_) => "read",
+        ZmemoryActionInput::History(_) => "history",
         ZmemoryActionInput::Search(_) => "search",
         ZmemoryActionInput::Create(_) => "create",
         ZmemoryActionInput::Update(_) => "update",

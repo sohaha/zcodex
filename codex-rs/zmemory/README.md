@@ -7,6 +7,7 @@
 当前只做 M0 核心能力：
 
 - `read`
+- `history`
 - `search`
 - `create`
 - `update`
@@ -113,6 +114,7 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 codex zmemory stats --json
 codex zmemory create core://agent-profile --content "Salem profile memory"
 codex zmemory read core://agent-profile --json
+codex zmemory history core://agent-profile --json
 codex zmemory search profile --json
 codex zmemory export glossary --json
 codex zmemory audit --limit 10 --json
@@ -168,6 +170,7 @@ codex zmemory doctor --json
 - `codex zmemory stats --json`：查看 `orphanedMemoryCount`、`deprecatedMemoryCount`、`pathsMissingDisclosure`、`disclosuresNeedingReview`
 - `codex zmemory doctor --json`：查看 FTS/关键词一致性，以及 alias/disclosure 等 review 相关告警
 - `codex zmemory audit --json`：查看最近元数据治理动作时间线；支持 `--action <create|update|add-alias|manage-triggers|delete-path>` 与 `--uri <core://...>` 精确过滤
+- `codex zmemory history <uri> --json`：查看单个节点的内容版本链，适合排查 update 产生的 deprecated 历史
 - `codex zmemory stats --json` / `doctor --json`：同时查看稳定诊断对象 `pathResolution`，并在顶层重复输出 `dbPath` / `workspaceKey` / `source` / `reason`
 - `codex zmemory export recent --json`：查看最近内容版本节点（按节点内容时间聚合，不反映 alias/trigger/path 元数据治理动作）
 - `codex zmemory export glossary --json`：查看当前 trigger 网络

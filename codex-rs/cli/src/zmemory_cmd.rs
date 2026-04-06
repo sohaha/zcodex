@@ -19,6 +19,8 @@ pub struct ZmemoryCli {
 pub enum ZmemorySubcommand {
     /// 读取指定 URI 的记忆节点。
     Read(ZmemoryReadCommand),
+    /// 查看指定 URI 的版本历史。
+    History(ZmemoryReadCommand),
     /// 执行全文搜索。
     Search(ZmemorySearchCommand),
     /// 创建新记忆节点。
@@ -188,6 +190,14 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
         ZmemorySubcommand::Read(command) => (
             ZmemoryToolCallParam {
                 action: ZmemoryToolAction::Read,
+                uri: Some(command.uri),
+                ..ZmemoryToolCallParam::default()
+            },
+            command.output,
+        ),
+        ZmemorySubcommand::History(command) => (
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::History,
                 uri: Some(command.uri),
                 ..ZmemoryToolCallParam::default()
             },
