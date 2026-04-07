@@ -1251,7 +1251,6 @@ impl BottomPane {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn buddy_visible(&self) -> bool {
         self.buddy.is_visible()
     }

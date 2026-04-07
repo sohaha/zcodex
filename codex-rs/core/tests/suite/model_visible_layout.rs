@@ -45,14 +45,6 @@ fn format_labeled_requests_snapshot(
     )
 }
 
-fn user_instructions_wrapper_count(request: &ResponsesRequest) -> usize {
-    request
-        .message_input_texts("user")
-        .iter()
-        .filter(|text| text.starts_with("# AGENTS.md instructions for "))
-        .count()
-}
-
 fn format_environment_context_subagents_snapshot(subagents: &[&str]) -> String {
     let subagents_block = if subagents.is_empty() {
         String::new()
@@ -87,12 +79,12 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
         vec![
             sse(vec![
                 ev_response_created("resp-1"),
-                ev_assistant_message("msg-1", "turn one complete"),
+                ev_assistant_message("msg-1", "第一轮完成"),
                 ev_completed("resp-1"),
             ]),
             sse(vec![
                 ev_response_created("resp-2"),
-                ev_assistant_message("msg-2", "turn two complete"),
+                ev_assistant_message("msg-2", "第二轮完成"),
                 ev_completed("resp-2"),
             ]),
         ],
@@ -161,7 +153,9 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
     .await;
 
     let requests = responses.requests();
-    assert_eq!(requests.len(), 2, "expected two requests");
+    dbg!(requests[0].message_input_texts("user"));
+    dbg!(requests[1].message_input_texts("user"));
+    assert_eq!(requests.len(), 2, "预期一共发送两个请求");
     insta::assert_snapshot!(
         "model_visible_layout_turn_overrides",
         format_labeled_requests_snapshot(
@@ -177,9 +171,7 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// TODO(ccunningham): Diff `user_instructions` and emit updates when AGENTS.md content changes
-// (for example after cwd changes), then update this test to assert refreshed AGENTS content.
-async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> Result<()> {
+async fn snapshot_model_visible_layout_cwd_change_refreshes_agents() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -188,12 +180,12 @@ async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> R
         vec![
             sse(vec![
                 ev_response_created("resp-1"),
-                ev_assistant_message("msg-1", "turn one complete"),
+                ev_assistant_message("msg-1", "第一轮完成"),
                 ev_completed("resp-1"),
             ]),
             sse(vec![
                 ev_response_created("resp-2"),
-                ev_assistant_message("msg-2", "turn two complete"),
+                ev_assistant_message("msg-2", "第二轮完成"),
                 ev_completed("resp-2"),
             ]),
         ],
@@ -208,17 +200,17 @@ async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> R
     fs::create_dir_all(&cwd_two)?;
     fs::write(
         cwd_one.join("AGENTS.md"),
-        "# AGENTS one\n\n<INSTRUCTIONS>\nTurn one agents instructions.\n</INSTRUCTIONS>\n",
+        "# AGENTS one\n\n<INSTRUCTIONS>\n第一轮 AGENTS 指令。\n</INSTRUCTIONS>\n",
     )?;
     fs::write(
         cwd_two.join("AGENTS.md"),
-        "# AGENTS two\n\n<INSTRUCTIONS>\nTurn two agents instructions.\n</INSTRUCTIONS>\n",
+        "# AGENTS two\n\n<INSTRUCTIONS>\n第二轮 AGENTS 指令。\n</INSTRUCTIONS>\n",
     )?;
 
     test.codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "first turn in agents_one".into(),
+                text: "进入 agents_one 的第一轮".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -242,7 +234,7 @@ async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> R
     test.codex
         .submit(Op::UserTurn {
             items: vec![UserInput::Text {
-                text: "second turn in agents_two".into(),
+                text: "切到 agents_two 的第二轮".into(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -264,24 +256,45 @@ async fn snapshot_model_visible_layout_cwd_change_does_not_refresh_agents() -> R
     .await;
 
     let requests = responses.requests();
-    assert_eq!(requests.len(), 2, "expected two requests");
-    assert_eq!(
-        user_instructions_wrapper_count(&requests[0]),
-        0,
-        "expected first request to omit the serialized user-instructions wrapper when cwd-only project docs are introduced after session init"
+    assert_eq!(requests.len(), 2, "预期一共发送两个请求");
+    let first_instruction_wrappers: Vec<_> = requests[0]
+        .message_input_texts("user")
+        .into_iter()
+        .filter(|text| text.starts_with("# AGENTS.md 指令适用目录："))
+        .collect();
+    let first_instructions = first_instruction_wrappers
+        .last()
+        .map(String::as_str)
+        .unwrap_or_else(|| panic!("第一个请求缺少 AGENTS 包装消息"));
+    assert!(
+        first_instructions.contains("第一轮 AGENTS 指令。"),
+        "预期第一个请求序列化 agents_one 指令，实际为：{first_instructions}"
     );
-    assert_eq!(
-        user_instructions_wrapper_count(&requests[1]),
-        0,
-        "expected second request to keep omitting the serialized user-instructions wrapper after cwd change with the current session-scoped project doc behavior"
+
+    let second_instruction_wrappers: Vec<_> = requests[1]
+        .message_input_texts("user")
+        .into_iter()
+        .filter(|text| text.starts_with("# AGENTS.md 指令适用目录："))
+        .collect();
+    let second_instructions = second_instruction_wrappers
+        .last()
+        .map(String::as_str)
+        .unwrap_or_else(|| panic!("第二个请求缺少 AGENTS 包装消息"));
+    assert!(
+        second_instructions.contains("第二轮 AGENTS 指令。"),
+        "预期第二个请求在 cwd 切换后刷新 agents_two 指令，实际为：{second_instructions}"
+    );
+    assert!(
+        !second_instructions.contains("第一轮 AGENTS 指令。"),
+        "预期最新 AGENTS 包装消息不再保留 agents_one 指令，实际为：{second_instructions}"
     );
     insta::assert_snapshot!(
-        "model_visible_layout_cwd_change_does_not_refresh_agents",
+        "model_visible_layout_cwd_change_refreshes_agents",
         format_labeled_requests_snapshot(
-            "Second turn changes cwd to a directory with different AGENTS.md; current behavior does not emit refreshed AGENTS instructions.",
+            "第二轮切换到带有不同 AGENTS.md 的目录后，序列化的 AGENTS 包装消息会刷新为新的项目指令。",
             &[
-                ("First Request (agents_one)", &requests[0]),
-                ("Second Request (agents_two cwd)", &requests[1]),
+                ("第一个请求（agents_one）", &requests[0]),
+                ("第二个请求（agents_two cwd）", &requests[1]),
             ]
         )
     );

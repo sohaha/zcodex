@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-07T08:48:14.111Z
-- 本轮摘要：已完成 zmemory 优化并提交 e9b09abc7：将 zmemory prompt 收敛为 runtime-driven，明确 system://workspace 是运行时真相、missingUris 是 boot 缺失唯一权威来源；system://boot 新增 presentUris/missingUriCount/bootHealthy/anchors 以降低 LLM 误读；默认 writable domains 扩为 core,project,notes，README/测试/guardian snapshots 已同步。验证：just fmt、cargo nextest run -p codex-zmemory 通过；cargo nextest run -p codex-core 存在 5 个与本次改动无关的既有失败，相关定向测试已通过。
+- 更新时间：2026-04-07T10:40:14.361Z
+- 本轮摘要：完成 zmemory prompt 变更引起的 12 个 codex-core snapshot 更新：只接受 core/tests/suite 中 compact、compact_resume_fork、model_visible_layout 里与新 Zmemory 文案直接相关的快照变化；相关定向测试已重新通过。仍保留与本次无关的 model_visible_layout_cwd_change_does_not_refresh_agents 既有失败快照产物未处理。
 
 ## 待确认问题
 

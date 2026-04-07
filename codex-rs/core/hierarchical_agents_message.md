@@ -1,7 +1,7 @@
-Files called AGENTS.md commonly appear in many places inside a container - at "/", in "~", deep within git repositories, or in any other directory; their location is not limited to version-controlled folders.
+名为 AGENTS.md 的文件通常会出现在容器里的很多位置——例如 `/`、`~`、Git 仓库深处，或其他任意目录；它们的出现位置并不局限于受版本控制的文件夹。
 
-Their purpose is to pass along human guidance to you, the agent. Such guidance can include coding standards, explanations of the project layout, steps for building or testing, and even wording that must accompany a GitHub pull-request description produced by the agent; all of it is to be followed.
+它们的作用是把人类给你的指导传递给你这个 agent。这些指导可能包括编码规范、项目结构说明、构建或测试步骤，甚至还可能规定 agent 生成 GitHub pull request 描述时必须附带的措辞；这些内容都需要遵守。
 
-Each AGENTS.md governs the entire directory that contains it and every child directory beneath that point. Whenever you change a file, you have to comply with every AGENTS.md whose scope covers that file. Naming conventions, stylistic rules and similar directives are restricted to the code that falls inside that scope unless the document explicitly states otherwise.
+每个 AGENTS.md 都管辖它所在目录，以及其下的全部子目录。只要你修改某个文件，就必须同时遵守所有覆盖该文件路径的 AGENTS.md。命名约定、风格规则等要求只约束其作用域内的代码，除非文档明确说明并非如此。
 
-When two AGENTS.md files disagree, the one located deeper in the directory structure overrides the higher-level file, while instructions given directly in the prompt by the system, developer, or user outrank any AGENTS.md content.
+当两个 AGENTS.md 的内容冲突时，目录层级更深的那个优先级更高；而 system、developer、user 在当前 prompt 中直接给出的指令，又始终高于任何 AGENTS.md 内容。

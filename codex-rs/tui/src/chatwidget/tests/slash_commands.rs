@@ -245,29 +245,46 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
         "expected unavailable message, got {rendered:?}"
     );
 }
-
 #[tokio::test]
-async fn slash_buddy_show_then_pet_reports_state() {
+async fn slash_buddy_show_requests_persistent_visibility_update() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
     chat.dispatch_command_with_args(SlashCommand::Buddy, "show".to_string(), Vec::new());
-    let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one show info message");
-    let rendered = lines_to_single_string(&cells[0]);
-    assert!(
-        rendered.contains("小伙伴已孵化：") || rendered.contains("小伙伴回来了："),
-        "unexpected show message: {rendered:?}"
-    );
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PersistBuddyVisibility(true)));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn slash_buddy_hide_requests_persistent_visibility_update() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Buddy, "hide".to_string(), Vec::new());
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PersistBuddyVisibility(false)));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn slash_buddy_pet_requires_show_when_hidden() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let _ = chat.bottom_pane.hide_buddy();
+    chat.config.tui_show_buddy = false;
 
     chat.dispatch_command_with_args(SlashCommand::Buddy, "pet".to_string(), Vec::new());
+
     let cells = drain_insert_history(&mut rx);
-    assert_eq!(cells.len(), 1, "expected one pet info message");
+    assert_eq!(cells.len(), 1, "expected one info message");
     let rendered = lines_to_single_string(&cells[0]);
+    assert_chatwidget_snapshot!("slash_buddy_pet_requires_show_when_hidden", rendered);
     assert!(
-        rendered.contains("你抚摸了"),
-        "unexpected pet message: {rendered:?}"
+        rendered.contains("小伙伴现在藏起来了。"),
+        "unexpected hidden buddy message: {rendered:?}"
     );
-    assert!(chat.bottom_pane.buddy_visible());
+    assert!(
+        rendered.contains("先用 `/buddy show` 让它回来。"),
+        "unexpected hidden buddy hint: {rendered:?}"
+    );
 }
 
 #[tokio::test]

@@ -9091,7 +9091,7 @@ mod tests {
                 "role": "user",
                 "content": [{
                     "type": "input_text",
-                    "text": "# AGENTS.md instructions for project\n\n<INSTRUCTIONS>\n<AGENTS.md contents>\n</INSTRUCTIONS>".to_string(),
+                    "text": "# AGENTS.md 指令适用目录：project\n\n<INSTRUCTIONS>\n<AGENTS.md contents>\n</INSTRUCTIONS>".to_string(),
                 }],
             }),
             json!({

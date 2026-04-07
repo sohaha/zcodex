@@ -444,6 +444,8 @@ pub(crate) enum AppEvent {
 
     /// Persist the acknowledgement flag for the rate limit switch prompt.
     PersistRateLimitSwitchPromptHidden,
+    /// Persist the buddy visibility preference and sync the live widget state.
+    PersistBuddyVisibility(bool),
 
     /// Persist the Plan-mode-specific reasoning effort.
     PersistPlanModeReasoningEffort(Option<ReasoningEffort>),

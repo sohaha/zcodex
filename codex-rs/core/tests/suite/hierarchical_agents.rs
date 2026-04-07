@@ -6,8 +6,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::test_codex;
 
-const HIERARCHICAL_AGENTS_SNIPPET: &str =
-    "Files called AGENTS.md commonly appear in many places inside a container";
+const HIERARCHICAL_AGENTS_SNIPPET: &str = "名为 AGENTS.md 的文件通常会出现在容器里的很多位置";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hierarchical_agents_appends_to_project_doc_in_user_instructions() {
@@ -40,7 +39,7 @@ async fn hierarchical_agents_appends_to_project_doc_in_user_instructions() {
     let user_messages = request.message_input_texts("user");
     let instructions = user_messages
         .iter()
-        .find(|text| text.starts_with("# AGENTS.md instructions for "))
+        .find(|text| text.starts_with("# AGENTS.md 指令适用目录："))
         .expect("instructions message");
     assert!(
         instructions.contains("be nice"),
@@ -81,7 +80,7 @@ async fn hierarchical_agents_emits_when_no_project_doc() {
     let user_messages = request.message_input_texts("user");
     let instructions = user_messages
         .iter()
-        .find(|text| text.starts_with("# AGENTS.md instructions for "))
+        .find(|text| text.starts_with("# AGENTS.md 指令适用目录："))
         .expect("instructions message");
     assert!(
         instructions.contains(HIERARCHICAL_AGENTS_SNIPPET),

@@ -13,8 +13,7 @@ fn detects_environment_context_fragment() {
 #[test]
 fn detects_agents_instructions_fragment() {
     assert!(is_contextual_user_fragment(&ContentItem::InputText {
-        text: "# AGENTS.md instructions for /tmp\n\n<INSTRUCTIONS>\nbody\n</INSTRUCTIONS>"
-            .to_string(),
+        text: "# AGENTS.md 指令适用目录：/tmp\n\n<INSTRUCTIONS>\nbody\n</INSTRUCTIONS>".to_string(),
     }));
 }
 
@@ -37,7 +36,7 @@ fn ignores_regular_user_text() {
 fn classifies_memory_excluded_fragments() {
     let cases = [
         (
-            "# AGENTS.md instructions for /tmp\n\n<INSTRUCTIONS>\nbody\n</INSTRUCTIONS>",
+            "# AGENTS.md 指令适用目录：/tmp\n\n<INSTRUCTIONS>\nbody\n</INSTRUCTIONS>",
             true,
         ),
         (

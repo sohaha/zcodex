@@ -1450,6 +1450,39 @@ impl App {
         }
     }
 
+    async fn persist_buddy_visibility(&mut self, visible: bool) {
+        let segments = if let Some(profile) = self.active_profile.as_deref() {
+            vec![
+                "profiles".to_string(),
+                profile.to_string(),
+                "tui".to_string(),
+                "show_buddy".to_string(),
+            ]
+        } else {
+            vec!["tui".to_string(), "show_buddy".to_string()]
+        };
+
+        if let Err(err) = ConfigEditsBuilder::new(&self.config.codex_home)
+            .with_edits([ConfigEdit::SetPath {
+                segments,
+                value: visible.into(),
+            }])
+            .apply()
+            .await
+        {
+            tracing::error!(error = %err, "failed to persist buddy visibility");
+            self.chat_widget
+                .add_error_message(format!("保存小伙伴显示状态失败：{err}"));
+            return;
+        }
+
+        self.config.tui_show_buddy = visible;
+        let result = self.chat_widget.sync_buddy_visibility(visible);
+        self.chat_widget
+            .add_info_message(result.message, result.hint);
+        self.chat_widget.submit_op(AppCommand::reload_user_config());
+    }
+
     fn open_url_in_browser(&mut self, url: String) {
         if let Err(err) = webbrowser::open(&url) {
             self.chat_widget
@@ -5174,6 +5207,9 @@ impl App {
                         .add_error_message(format!("保存速率限制提醒偏好失败：{err}"));
                 }
             }
+            AppEvent::PersistBuddyVisibility(visible) => {
+                self.persist_buddy_visibility(visible).await;
+            }
             AppEvent::PersistPlanModeReasoningEffort(effort) => {
                 let profile = self.active_profile.as_deref();
                 let segments = if let Some(profile) = profile {
@@ -8201,6 +8237,91 @@ guardian_approval = true
                 .and_then(|table| table.get("approvals_reviewer")),
             Some(&TomlValue::String("guardian_subagent".to_string()))
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn persist_buddy_visibility_updates_runtime_and_config() -> Result<()> {
+        let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+
+        app.persist_buddy_visibility(false).await;
+
+        assert!(!app.config.tui_show_buddy);
+        assert!(!app.chat_widget.config_ref().tui_show_buddy);
+        let cell = match app_event_rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+            other => panic!("expected InsertHistoryCell event, got {other:?}"),
+        };
+        let rendered = cell
+            .display_lines(/*width*/ 120)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("小伙伴已隐藏："));
+        assert_eq!(op_rx.try_recv(), Ok(Op::ReloadUserConfig));
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(config.contains("show_buddy = false"));
+
+        app.persist_buddy_visibility(true).await;
+
+        assert!(app.config.tui_show_buddy);
+        assert!(app.chat_widget.config_ref().tui_show_buddy);
+        let cell = match app_event_rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+            other => panic!("expected InsertHistoryCell event, got {other:?}"),
+        };
+        let rendered = cell
+            .display_lines(/*width*/ 120)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("小伙伴回来了：") || rendered.contains("小伙伴已孵化："));
+        assert_eq!(op_rx.try_recv(), Ok(Op::ReloadUserConfig));
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(config.contains("show_buddy = true"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn persist_buddy_visibility_writes_active_profile_override() -> Result<()> {
+        let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+        app.active_profile = Some("focus".to_string());
+        std::fs::write(
+            codex_home.path().join("config.toml"),
+            "profile = \"focus\"\n",
+        )?;
+
+        app.persist_buddy_visibility(false).await;
+
+        assert_eq!(op_rx.try_recv(), Ok(Op::ReloadUserConfig));
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        let config_value = toml::from_str::<TomlValue>(&config)?;
+        assert!(
+            config_value
+                .as_table()
+                .and_then(|table| table.get("tui"))
+                .is_none()
+        );
+        let profile_config = config_value
+            .as_table()
+            .and_then(|table| table.get("profiles"))
+            .and_then(TomlValue::as_table)
+            .and_then(|profiles| profiles.get("focus"))
+            .and_then(TomlValue::as_table)
+            .expect("focus profile should exist");
+        let tui = profile_config
+            .get("tui")
+            .and_then(TomlValue::as_table)
+            .expect("focus profile should persist tui settings");
+        assert_eq!(tui.get("show_buddy"), Some(&TomlValue::Boolean(false)));
         Ok(())
     }
 

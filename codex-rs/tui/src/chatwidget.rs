@@ -5482,17 +5482,40 @@ impl ChatWidget {
     }
 
     fn handle_buddy_command(&mut self, args: &str) {
-        let seed = self.buddy_seed();
         let is_status = args == "status";
         let result = match args {
             "" | "help" => {
                 self.show_buddy_help();
                 return;
             }
-            "show" | "hatch" => self.bottom_pane.show_buddy(&seed),
-            "pet" => self.bottom_pane.pet_buddy(&seed),
-            "hide" => self.bottom_pane.hide_buddy(),
-            "status" => self.bottom_pane.buddy_status(&seed),
+            "show" | "hatch" => {
+                self.last_buddy_status_message = None;
+                self.app_event_tx
+                    .send(AppEvent::PersistBuddyVisibility(/*visible*/ true));
+                return;
+            }
+            "pet" => {
+                if !self.config.tui_show_buddy {
+                    self.last_buddy_status_message = None;
+                    self.add_info_message(
+                        "小伙伴现在藏起来了。".to_string(),
+                        Some("先用 `/buddy show` 让它回来。".to_string()),
+                    );
+                    return;
+                }
+                let seed = self.buddy_seed();
+                self.bottom_pane.pet_buddy(&seed)
+            }
+            "hide" => {
+                self.last_buddy_status_message = None;
+                self.app_event_tx
+                    .send(AppEvent::PersistBuddyVisibility(/*visible*/ false));
+                return;
+            }
+            "status" => {
+                let seed = self.buddy_seed();
+                self.bottom_pane.buddy_status(&seed)
+            }
             _ => {
                 self.add_error_message("用法：/buddy [show|pet|hide|status]".to_string());
                 return;
@@ -9458,6 +9481,28 @@ impl ChatWidget {
     /// Set Fast mode in the widget's config copy.
     pub(crate) fn set_service_tier(&mut self, service_tier: Option<ServiceTier>) {
         self.config.service_tier = service_tier;
+    }
+
+    pub(crate) fn sync_buddy_visibility(
+        &mut self,
+        visible: bool,
+    ) -> crate::buddy::BuddyCommandResult {
+        self.last_buddy_status_message = None;
+        if visible {
+            let seed = self.buddy_seed();
+            let result = self.bottom_pane.show_buddy(&seed);
+            self.config.tui_show_buddy = true;
+            return result;
+        }
+        if !self.config.tui_show_buddy && !self.bottom_pane.buddy_visible() {
+            return crate::buddy::BuddyCommandResult {
+                message: "小伙伴已经隐藏。".to_string(),
+                hint: Some("使用 `/buddy show` 让它回来。".to_string()),
+            };
+        }
+        let result = self.bottom_pane.hide_buddy();
+        self.config.tui_show_buddy = false;
+        result
     }
 
     pub(crate) fn current_service_tier(&self) -> Option<ServiceTier> {
