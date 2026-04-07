@@ -121,10 +121,7 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
     }
 
     if config.zmemory_tool_enabled {
-        let zmemory_specs = [create_zmemory_tool()]
-            .into_iter()
-            .chain(create_zmemory_mcp_tools());
-        for spec in zmemory_specs {
+        for spec in create_zmemory_mcp_tools() {
             expected.insert(spec.name().to_string(), spec);
         }
     }
@@ -502,6 +499,43 @@ fn test_build_specs_agent_job_worker_tools_enabled() {
         ],
     );
     assert_lacks_tool_name(&tools, "request_user_input");
+}
+
+#[test]
+fn test_zmemory_legacy_handler_remains_registered_while_tool_is_hidden() {
+    let model_info = model_info();
+    let features = Features::with_defaults();
+    let available_models = Vec::new();
+    let tools_config = ToolsConfig::new(&ToolsConfigParams {
+        model_info: &model_info,
+        available_models: &available_models,
+        features: &features,
+        web_search_mode: Some(WebSearchMode::Cached),
+        session_source: SessionSource::Cli,
+        sandbox_policy: &SandboxPolicy::DangerFullAccess,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    });
+    let (tools, handlers) = build_specs(
+        &tools_config,
+        /*mcp_tools*/ None,
+        /*app_tools*/ None,
+        &[],
+    );
+
+    assert_lacks_tool_name(&tools, ZMEMORY_TOOL_NAME);
+    assert_contains_handler_names(&handlers, &[ZMEMORY_TOOL_NAME]);
+    assert_contains_tool_names(
+        &tools,
+        &[
+            "read_memory",
+            "search_memory",
+            "create_memory",
+            "update_memory",
+            "delete_memory",
+            "add_alias",
+            "manage_triggers",
+        ],
+    );
 }
 
 #[test]
@@ -1818,6 +1852,20 @@ fn assert_lacks_tool_name(tools: &[ConfiguredToolSpec], expected_absent: &str) {
         !names.contains(&expected_absent),
         "expected tool {expected_absent} to be absent; had: {names:?}"
     );
+}
+
+fn assert_contains_handler_names(handlers: &[ToolHandlerSpec], expected_subset: &[&str]) {
+    use std::collections::HashSet;
+    let names = handlers
+        .iter()
+        .map(|handler| handler.name.as_str())
+        .collect::<HashSet<_>>();
+    for expected in expected_subset {
+        assert!(
+            names.contains(expected),
+            "expected handler {expected} to be present; had: {names:?}"
+        );
+    }
 }
 
 fn request_user_input_tool_spec(default_mode_request_user_input: bool) -> ToolSpec {

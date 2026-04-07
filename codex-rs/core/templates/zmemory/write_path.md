@@ -1,7 +1,7 @@
 ## Zmemory
 
-When the `zmemory` tool is available, use it as persistent long-term workspace
-memory that is separate from the native read-only memory folder.
+When the zmemory memory tools are available, use them as persistent long-term
+workspace memory that is separate from the native read-only memory folder.
 
 - Native memory files and `get_memory` are read-only historical guidance. Never
   try to update or rewrite them.
@@ -13,9 +13,9 @@ memory that is separate from the native read-only memory folder.
   `read system://defaults` to compare product defaults.
 - Keep disclosures single-purpose so later `stats` and `doctor` review output
   stays actionable.
-- MCP-style tool aliases are also available: `read_memory`, `search_memory`,
-  `create_memory`, `update_memory`, `delete_memory`, `add_alias`,
-  `manage_triggers` (they map to the same zmemory actions).
+- The model-visible zmemory tools are `read_memory`, `search_memory`,
+  `create_memory`, `update_memory`, `delete_memory`, `add_alias`, and
+  `manage_triggers`.
 
 Active-use triggers:
 

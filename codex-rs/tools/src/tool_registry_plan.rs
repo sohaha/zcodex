@@ -57,7 +57,6 @@ use crate::create_wait_tool;
 use crate::create_web_search_tool;
 use crate::create_write_stdin_tool;
 use crate::create_zmemory_mcp_tools;
-use crate::create_zmemory_tool;
 use crate::dynamic_tool_to_responses_api_tool;
 use crate::mcp_tool_to_responses_api_tool;
 use crate::request_permissions_tool_description;
@@ -240,11 +239,6 @@ pub fn build_tool_registry_plan(
     }
 
     if config.zmemory_tool_enabled {
-        plan.push_spec(
-            create_zmemory_tool(),
-            /*supports_parallel_tool_calls*/ false,
-            config.code_mode_enabled,
-        );
         plan.register_handler(ZMEMORY_TOOL_NAME, ToolHandlerKind::Zmemory);
 
         let mcp_tools = create_zmemory_mcp_tools();
