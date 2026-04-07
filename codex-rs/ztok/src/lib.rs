@@ -887,6 +887,110 @@ fn is_global_short_flag_cluster(arg: &str) -> bool {
         .is_some_and(|flags| flags.chars().all(|flag| matches!(flag, 'u' | 'v')))
 }
 
+fn rewrite_grep_option_first_args(args: &[OsString]) -> Option<Vec<OsString>> {
+    let command_index = first_subcommand_index(args)?;
+    if args.get(command_index)?.to_string_lossy() != "grep" {
+        return None;
+    }
+
+    let rewritten_grep_args = rewrite_grep_subcommand_args(&args[command_index + 1..])?;
+    let mut rewritten = args[..=command_index].to_vec();
+    rewritten.extend(rewritten_grep_args);
+    Some(rewritten)
+}
+
+fn rewrite_grep_subcommand_args(args: &[OsString]) -> Option<Vec<OsString>> {
+    let first_arg = args.first()?.to_string_lossy();
+    if !is_grep_option_like(first_arg.as_ref()) {
+        return None;
+    }
+
+    let mut leading_options = Vec::new();
+    let mut index = 0;
+
+    while let Some(arg) = args.get(index) {
+        let arg = arg.to_string_lossy();
+        if !is_grep_option_like(arg.as_ref()) {
+            break;
+        }
+        if grep_option_blocks_rewrite(arg.as_ref()) {
+            return None;
+        }
+
+        leading_options.push(args[index].clone());
+        if grep_option_uses_next_arg(arg.as_ref()) {
+            index += 1;
+            leading_options.push(args.get(index)?.clone());
+        }
+        index += 1;
+    }
+
+    let pattern = args.get(index)?.clone();
+    index += 1;
+
+    let mut rewritten = vec![pattern];
+    if let Some(path) = args.get(index)
+        && !is_grep_option_like(path.to_string_lossy().as_ref())
+    {
+        rewritten.push(path.clone());
+        index += 1;
+    }
+
+    rewritten.extend(leading_options);
+    rewritten.extend(args[index..].iter().cloned());
+    Some(rewritten)
+}
+
+fn is_grep_option_like(arg: &str) -> bool {
+    arg.starts_with('-') && arg != "-" && arg != "--"
+}
+
+fn grep_option_blocks_rewrite(arg: &str) -> bool {
+    matches!(arg, "-e" | "-f" | "--regexp" | "--file")
+        || arg.starts_with("--regexp=")
+        || arg.starts_with("--file=")
+        || arg.starts_with("-e")
+        || arg.starts_with("-f")
+}
+
+fn grep_option_uses_next_arg(arg: &str) -> bool {
+    if arg.starts_with("--") {
+        if arg.contains('=') {
+            return false;
+        }
+        return matches!(
+            arg,
+            "--after-context"
+                | "--before-context"
+                | "--binary-files"
+                | "--color"
+                | "--colors"
+                | "--context"
+                | "--glob"
+                | "--iglob"
+                | "--max-count"
+                | "--max-columns"
+                | "--max-depth"
+                | "--max-filesize"
+                | "--path-separator"
+                | "--pre"
+                | "--pre-glob"
+                | "--replace"
+                | "--sort"
+                | "--sortr"
+                | "--threads"
+                | "--type"
+                | "--type-add"
+                | "--type-not"
+        );
+    }
+
+    matches!(
+        arg,
+        "-A" | "-B" | "-C" | "-D" | "-d" | "-g" | "-j" | "-m" | "-M" | "-O" | "-t" | "-T"
+    )
+}
+
 fn run_fallback(args: &[OsString], parse_error: clap::Error) -> Result<()> {
     if args.is_empty() || should_show_parse_error(args) {
         parse_error.exit();
@@ -966,13 +1070,19 @@ enum GtCommands {
 }
 
 pub fn run_from_os_args(args: Vec<OsString>) -> Result<()> {
-    let cli = match Cli::try_parse_from(
-        std::iter::once(OsString::from(ZTOK_ALIAS_NAME)).chain(args.iter().cloned()),
-    ) {
+    let initial_args = std::iter::once(OsString::from(ZTOK_ALIAS_NAME)).chain(args.iter().cloned());
+    let cli = match Cli::try_parse_from(initial_args) {
         Ok(cli) => cli,
         Err(e) => {
             if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) {
                 e.exit();
+            }
+            if let Some(rewritten_args) = rewrite_grep_option_first_args(&args) {
+                let retry_args = std::iter::once(OsString::from(ZTOK_ALIAS_NAME))
+                    .chain(rewritten_args.iter().cloned());
+                if let Ok(cli) = Cli::try_parse_from(retry_args) {
+                    return run_cli(cli);
+                }
             }
             return run_fallback(&args, e);
         }
@@ -1838,6 +1948,63 @@ mod tests {
             Some("custom-fallback")
         );
         assert_eq!(first_subcommand_index(&args), Some(2));
+    }
+
+    #[test]
+    fn test_rewrite_grep_subcommand_args_reorders_leading_grep_flags() {
+        let args = vec![
+            OsString::from("-RInE"),
+            OsString::from("needle"),
+            OsString::from("."),
+            OsString::from("--exclude-dir=.git"),
+        ];
+
+        let rewritten = rewrite_grep_subcommand_args(&args).expect("grep args should rewrite");
+
+        assert_eq!(
+            rewritten,
+            vec![
+                OsString::from("needle"),
+                OsString::from("."),
+                OsString::from("-RInE"),
+                OsString::from("--exclude-dir=.git"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rewrite_grep_option_first_args_preserves_global_flags() {
+        let args = vec![
+            OsString::from("--verbose"),
+            OsString::from("grep"),
+            OsString::from("-RInE"),
+            OsString::from("needle"),
+            OsString::from("."),
+        ];
+
+        let rewritten = rewrite_grep_option_first_args(&args).expect("grep args should rewrite");
+
+        assert_eq!(
+            rewritten,
+            vec![
+                OsString::from("--verbose"),
+                OsString::from("grep"),
+                OsString::from("needle"),
+                OsString::from("."),
+                OsString::from("-RInE"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_rewrite_grep_subcommand_args_skips_pattern_flags() {
+        let args = vec![
+            OsString::from("-e"),
+            OsString::from("needle"),
+            OsString::from("."),
+        ];
+
+        assert!(rewrite_grep_subcommand_args(&args).is_none());
     }
 
     #[test]

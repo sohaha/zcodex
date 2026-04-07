@@ -41,11 +41,7 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
         rg_cmd.arg("--type").arg(ft);
     }
 
-    for arg in extra_args {
-        // 兼容处理：跳过 grep 风格的 `-r`（rg 默认递归；rg 的 `-r` 表示 `--replace`）
-        if arg == "-r" || arg == "--recursive" {
-            continue;
-        }
+    for arg in normalize_grep_extra_args(extra_args) {
         rg_cmd.arg(arg);
     }
 
@@ -156,6 +152,82 @@ pub fn run(options: GrepOptions<'_>, verbose: u8) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn normalize_grep_extra_args(extra_args: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    let mut index = 0;
+
+    while let Some(arg) = extra_args.get(index) {
+        if let Some(dir) = arg.strip_prefix("--exclude-dir=") {
+            normalized.push(exclude_dir_glob(dir));
+            index += 1;
+            continue;
+        }
+        if arg == "--exclude-dir" {
+            if let Some(dir) = extra_args.get(index + 1) {
+                normalized.push(exclude_dir_glob(dir));
+                index += 2;
+                continue;
+            }
+            normalized.push(arg.clone());
+            index += 1;
+            continue;
+        }
+        if let Some(cluster) = translate_grep_short_flag_cluster(arg) {
+            if !cluster.is_empty() {
+                normalized.push(cluster);
+            }
+            index += 1;
+            continue;
+        }
+        if should_skip_grep_compat_arg(arg) {
+            index += 1;
+            continue;
+        }
+        normalized.push(arg.clone());
+        index += 1;
+    }
+
+    normalized
+}
+
+fn exclude_dir_glob(dir: &str) -> String {
+    format!("--glob=!**/{dir}/**")
+}
+
+fn translate_grep_short_flag_cluster(arg: &str) -> Option<String> {
+    if !arg.starts_with('-') || arg.starts_with("--") || arg == "-" || arg.len() <= 2 {
+        return None;
+    }
+
+    let mut kept = String::new();
+    for flag in arg[1..].chars() {
+        if matches!(flag, 'E' | 'I' | 'R' | 'n' | 'r') {
+            continue;
+        }
+        kept.push(flag);
+    }
+
+    if kept.is_empty() {
+        Some(String::new())
+    } else {
+        Some(format!("-{kept}"))
+    }
+}
+
+fn should_skip_grep_compat_arg(arg: &str) -> bool {
+    matches!(
+        arg,
+        "-E" | "-I"
+            | "-R"
+            | "-n"
+            | "-r"
+            | "--dereference-recursive"
+            | "--extended-regexp"
+            | "--line-number"
+            | "--recursive"
+    )
 }
 
 fn clean_line(line: &str, max_len: usize, context_only: bool, pattern: &str) -> String {
@@ -284,12 +356,22 @@ mod tests {
     #[test]
     fn test_recursive_flag_stripped() {
         let extra_args: Vec<String> = vec!["-r".to_string(), "-i".to_string()];
-        let filtered: Vec<&String> = extra_args
-            .iter()
-            .filter(|a| *a != "-r" && *a != "--recursive")
-            .collect();
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0], "-i");
+        let filtered = normalize_grep_extra_args(&extra_args);
+        assert_eq!(filtered, vec!["-i"]);
+    }
+
+    #[test]
+    fn test_grep_compat_cluster_flags_are_removed() {
+        let extra_args: Vec<String> = vec!["-RInE".to_string(), "-w".to_string()];
+        let filtered = normalize_grep_extra_args(&extra_args);
+        assert_eq!(filtered, vec!["-w"]);
+    }
+
+    #[test]
+    fn test_exclude_dir_is_translated_to_glob() {
+        let extra_args: Vec<String> = vec!["--exclude-dir=node_modules".to_string()];
+        let filtered = normalize_grep_extra_args(&extra_args);
+        assert_eq!(filtered, vec!["--glob=!**/node_modules/**"]);
     }
 
     // 验证 rg 调用始终带有行号参数。

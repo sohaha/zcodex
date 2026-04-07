@@ -957,6 +957,35 @@ fn ztok_grep_handles_recursive_flag_without_replace_mode() -> Result<()> {
 }
 
 #[test]
+fn ztok_grep_accepts_leading_grep_flags_and_excludes() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let workspace = codex_home.path().join("search");
+    std::fs::create_dir(&workspace)?;
+    std::fs::create_dir(workspace.join("node_modules"))?;
+    std::fs::write(workspace.join("keep.txt"), "alpha\nneedle here\nomega\n")?;
+    std::fs::write(
+        workspace.join("node_modules").join("ignored.txt"),
+        "needle should stay excluded\n",
+    )?;
+
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.current_dir(&workspace)
+        .args([
+            "ztok",
+            "grep",
+            "-RInE",
+            "needle",
+            ".",
+            "--exclude-dir=node_modules",
+        ])
+        .assert()
+        .success()
+        .stdout(contains("keep.txt").and(contains("ignored.txt").not()));
+
+    Ok(())
+}
+
+#[test]
 fn ztok_log_keeps_interesting_lines() -> Result<()> {
     let codex_home = TempDir::new()?;
 
