@@ -1,0 +1,6 @@
+---
+source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 279
+expression: rendered
+---
+• 小伙伴现在藏起来了。 先用 `/buddy show` 让它回来。
