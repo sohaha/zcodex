@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+#MISE description="构建 codex CLI 正式 release 版本"
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$script_dir/build"
+
+print_help() {
+  cat >&2 <<'EOF'
+[mise] 用法:
+  mise run build-release [cargo build args...]
+  mise run build-release help
+
+[mise] 默认会在现有 build 逻辑基础上追加 --release 参数。
+EOF
+}
+
+resolve_remote_ssh_target() {
+  local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
+  local ssh_target
+
+  if [ -z "$ssh_schema" ]; then
+    return 1
+  fi
+
+  ssh_target="${ssh_schema#vscode://vscode-remote/ssh-remote+}"
+  if [ "$ssh_target" = "$ssh_schema" ]; then
+    return 1
+  fi
+
+  ssh_target="${ssh_target%%/*}"
+  if ! printf '%s\n' "$ssh_target" | grep -Eq '.+@.+'; then
+    return 1
+  fi
+
+  printf '%s\n' "$ssh_target"
+}
+
+print_download_hint() {
+  local dist_bin="$1"
+
+  if remote_ssh_target="$(resolve_remote_ssh_target)"; then
+    printf '\n下载命令:\nscp %s:%s ./codex\n' \
+      "$remote_ssh_target" \
+      "$dist_bin"
+  else
+    echo "[build-release] 未检测到可用的 CNB_VSCODE_REMOTE_SSH_SCHEMA，已跳过下载命令输出" >&2
+  fi
+}
+
+detect_release_args() {
+  local args=()
+  local saw_profile_next=0
+  local has_release=0
+
+  for arg in "$@"; do
+    if [ "$saw_profile_next" -eq 1 ]; then
+      args+=("$arg")
+      if [ "$arg" = "release" ]; then
+        has_release=1
+      fi
+      saw_profile_next=0
+      continue
+    fi
+
+    case "$arg" in
+      --release)
+        has_release=1
+        ;;
+      --profile)
+        saw_profile_next=1
+        ;;
+      --profile=release)
+        has_release=1
+        ;;
+    esac
+
+    args+=("$arg")
+  done
+
+  if [ "$has_release" -eq 0 ]; then
+    args+=(--release)
+  fi
+
+  printf '%s
+' "${args[@]}"
+}
+
+main() {
+  if [ "${1:-}" = "help" ] || [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    print_help
+    exit 0
+  fi
+
+  mapfile -t release_args < <(detect_release_args "$@")
+  dist_bin=""
+  if builtin type -P mktemp >/dev/null 2>&1; then
+    temp_log="$(mktemp)"
+  else
+    temp_log="$script_dir/.build-release.log"
+    : > "$temp_log"
+  fi
+
+  if CODEX_SKIP_ARTIFACT_SIZE_PRINT=1 "$script_dir/build" "${release_args[@]}" 2>"$temp_log"; then
+    dist_bin="$(resolve_codex_bin "${release_args[@]}")"
+    cat "$temp_log" >&2
+    rm -f "$temp_log"
+    if [ -f "$dist_bin" ]; then
+      print_artifact_size "build-release" "$dist_bin"
+      print_download_hint "$dist_bin"
+      exit 0
+    fi
+    echo "[build-release] 构建成功，但未找到产物: $dist_bin" >&2
+    exit 1
+  else
+    status=$?
+    cat "$temp_log" >&2
+    rm -f "$temp_log"
+    exit "$status"
+  fi
+}
+
+main "$@"
