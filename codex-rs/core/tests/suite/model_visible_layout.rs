@@ -153,8 +153,6 @@ async fn snapshot_model_visible_layout_turn_overrides() -> Result<()> {
     .await;
 
     let requests = responses.requests();
-    dbg!(requests[0].message_input_texts("user"));
-    dbg!(requests[1].message_input_texts("user"));
     assert_eq!(requests.len(), 2, "预期一共发送两个请求");
     insta::assert_snapshot!(
         "model_visible_layout_turn_overrides",
