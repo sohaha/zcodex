@@ -7,7 +7,7 @@ Scenario: rollback trims pre-turn override context updates before the follow-up 
 ## rolled-back turn request
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as persistent long-term workspace\nme...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use them as persistent long-term\nwor...
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:turn 1 user
 03:message/assistant:turn 1 assistant
@@ -18,7 +18,7 @@ Scenario: rollback trims pre-turn override context updates before the follow-up 
 ## follow-up request after rollback
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as persistent long-term workspace\nme...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use them as persistent long-term\nwor...
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:turn 1 user
 03:message/assistant:turn 1 assistant

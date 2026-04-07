@@ -7,7 +7,7 @@ Scenario: rollback past compaction replay after rollback
 ## compaction request
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:hello world
 03:message/assistant:FIRST_REPLY
@@ -18,7 +18,7 @@ Scenario: rollback past compaction replay after rollback
 01:message/user:<COMPACTION_SUMMARY>\nSUMMARY_ONLY_CONTEXT
 02:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 03:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 04:message/user:EDITED_AFTER_COMPACT
 
@@ -27,6 +27,6 @@ Scenario: rollback past compaction replay after rollback
 01:message/user:<COMPACTION_SUMMARY>\nSUMMARY_ONLY_CONTEXT
 02:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 03:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 04:message/user:AFTER_ROLLBACK

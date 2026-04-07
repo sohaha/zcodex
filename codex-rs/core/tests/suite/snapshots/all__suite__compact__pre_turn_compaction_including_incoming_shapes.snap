@@ -7,7 +7,7 @@ Scenario: Pre-turn auto-compaction with a context override emits the context dif
 ## Local Compaction Request
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:USER_ONE
 03:message/assistant:FIRST_REPLY
@@ -21,7 +21,7 @@ Scenario: Pre-turn auto-compaction with a context override emits the context dif
 02:message/user:<COMPACTION_SUMMARY>\nPRE_TURN_SUMMARY
 03:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 04:message/user:<ENVIRONMENT_CONTEXT:cwd=PRETURN_CONTEXT_DIFF_CWD>
 05:message/user[4]:
     [01] <image>

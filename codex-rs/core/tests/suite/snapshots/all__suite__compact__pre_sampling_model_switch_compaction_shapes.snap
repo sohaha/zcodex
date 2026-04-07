@@ -7,14 +7,14 @@ Scenario: Pre-sampling compaction on model switch to a smaller context window: c
 ## Initial Request (Previous Model)
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:before switch
 
 ## Pre-sampling Compaction Request
 00:message/developer[2]:
     [01] <PERMISSIONS_INSTRUCTIONS>
-    [02] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [02] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 01:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 02:message/user:before switch
 03:message/assistant:before switch
@@ -26,6 +26,6 @@ Scenario: Pre-sampling compaction on model switch to a smaller context window: c
 02:message/developer[3]:
     [01] <model_switch>\nThe user was previously using a different model....
     [02] <PERMISSIONS_INSTRUCTIONS>
-    [03] ## Zmemory\n\nWhen the `zmemory` tool is available, use it as pe...
+    [03] ## Zmemory\n\nWhen the zmemory memory tools are available, use t...
 03:message/user:<ENVIRONMENT_CONTEXT:cwd=<CWD>>
 04:message/user:after switch
