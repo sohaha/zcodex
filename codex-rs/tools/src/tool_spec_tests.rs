@@ -167,6 +167,94 @@ fn create_tools_json_for_responses_api_includes_top_level_name() {
 }
 
 #[test]
+fn create_tools_json_for_responses_api_wraps_top_level_one_of_as_object() {
+    assert_eq!(
+        create_tools_json_for_responses_api(&[ToolSpec::Function(ResponsesApiTool {
+            name: "demo".to_string(),
+            description: "A demo tool".to_string(),
+            strict: false,
+            defer_loading: None,
+            parameters: JsonSchema::OneOf {
+                variants: vec![
+                    JsonSchema::Object {
+                        properties: BTreeMap::from([
+                            (
+                                "action".to_string(),
+                                JsonSchema::LiteralString {
+                                    value: "read".to_string(),
+                                    description: None,
+                                },
+                            ),
+                            ("uri".to_string(), JsonSchema::String { description: None },),
+                        ]),
+                        required: Some(vec!["action".to_string(), "uri".to_string()]),
+                        additional_properties: Some(AdditionalProperties::Boolean(false)),
+                    },
+                    JsonSchema::Object {
+                        properties: BTreeMap::from([
+                            (
+                                "action".to_string(),
+                                JsonSchema::LiteralString {
+                                    value: "stats".to_string(),
+                                    description: None,
+                                },
+                            ),
+                            (
+                                "limit".to_string(),
+                                JsonSchema::Integer { description: None },
+                            ),
+                        ]),
+                        required: Some(vec!["action".to_string()]),
+                        additional_properties: Some(AdditionalProperties::Boolean(false)),
+                    },
+                ],
+            },
+            output_schema: None,
+        })])
+        .expect("serialize tools"),
+        vec![json!({
+            "type": "function",
+            "name": "demo",
+            "description": "A demo tool",
+            "strict": false,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["read", "stats"],
+                    },
+                    "uri": { "type": "string" },
+                    "limit": { "type": "integer" },
+                },
+                "required": ["action"],
+                "additionalProperties": false,
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "enum": ["read"] },
+                            "uri": { "type": "string" },
+                        },
+                        "required": ["action", "uri"],
+                        "additionalProperties": false,
+                    },
+                    {
+                        "type": "object",
+                        "properties": {
+                            "action": { "type": "string", "enum": ["stats"] },
+                            "limit": { "type": "integer" },
+                        },
+                        "required": ["action"],
+                        "additionalProperties": false,
+                    }
+                ],
+            },
+        })]
+    );
+}
+
+#[test]
 fn web_search_tool_spec_serializes_expected_wire_shape() {
     assert_eq!(
         serde_json::to_value(ToolSpec::WebSearch {

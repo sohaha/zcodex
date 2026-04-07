@@ -10,8 +10,10 @@ use codex_protocol::config_types::WebSearchUserLocation as ConfigWebSearchUserLo
 use codex_protocol::config_types::WebSearchUserLocationType;
 use codex_protocol::openai_models::WebSearchToolType;
 use serde::Serialize;
+use serde_json::Map as JsonMap;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::collections::BTreeSet;
 
 const WEB_SEARCH_TEXT_AND_IMAGE_CONTENT_TYPES: [&str; 2] = ["text", "image"];
 
@@ -211,11 +213,175 @@ pub fn create_tools_json_for_responses_api(
     let mut tools_json = Vec::new();
 
     for tool in tools {
-        let json = serde_json::to_value(tool)?;
+        let json = responses_api_tool_json(tool)?;
         tools_json.push(json);
     }
 
     Ok(tools_json)
+}
+
+fn responses_api_tool_json(tool: &ToolSpec) -> Result<Value, serde_json::Error> {
+    match tool {
+        ToolSpec::Function(ResponsesApiTool { parameters, .. })
+            if matches!(parameters, JsonSchema::OneOf { .. }) =>
+        {
+            let mut json = serde_json::to_value(tool)?;
+            if let Some(parameters) = json.get_mut("parameters") {
+                *parameters = normalize_top_level_schema(parameters.take());
+            }
+            Ok(json)
+        }
+        _ => serde_json::to_value(tool),
+    }
+}
+
+fn normalize_top_level_schema(schema: Value) -> Value {
+    let Some(variants) = schema.get("oneOf").and_then(Value::as_array) else {
+        return schema;
+    };
+    wrap_combiner_in_object("oneOf", variants).unwrap_or(schema)
+}
+
+fn wrap_combiner_in_object(kind: &str, variants: &[Value]) -> Option<Value> {
+    let mut properties = JsonMap::new();
+    let mut required_intersection: Option<BTreeSet<String>> = None;
+    let mut disallow_additional_properties = true;
+
+    for variant in variants {
+        let object = variant.as_object()?;
+        if object.get("type")?.as_str()? != "object" {
+            return None;
+        }
+
+        let variant_properties = object.get("properties")?.as_object()?;
+        for (key, value) in variant_properties {
+            merge_property_schema(&mut properties, key, value.clone());
+        }
+
+        let required = object
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(ToString::to_string)
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+
+        required_intersection = Some(match required_intersection.take() {
+            Some(existing) => existing.intersection(&required).cloned().collect(),
+            None => required,
+        });
+
+        if object.get("additionalProperties") != Some(&Value::Bool(false)) {
+            disallow_additional_properties = false;
+        }
+    }
+
+    let mut wrapped = JsonMap::from_iter([
+        ("type".to_string(), Value::String("object".to_string())),
+        ("properties".to_string(), Value::Object(properties)),
+        (kind.to_string(), Value::Array(variants.to_vec())),
+    ]);
+
+    if disallow_additional_properties {
+        wrapped.insert("additionalProperties".to_string(), Value::Bool(false));
+    }
+
+    if let Some(required) = required_intersection
+        && !required.is_empty()
+    {
+        wrapped.insert(
+            "required".to_string(),
+            Value::Array(required.into_iter().map(Value::String).collect()),
+        );
+    }
+
+    Some(Value::Object(wrapped))
+}
+
+fn merge_property_schema(properties: &mut JsonMap<String, Value>, key: &str, candidate: Value) {
+    let Some(existing) = properties.get_mut(key) else {
+        properties.insert(key.to_string(), candidate);
+        return;
+    };
+
+    if *existing == candidate {
+        return;
+    }
+
+    if let Some(enum_schema) = merge_literal_string_schemas(existing, &candidate) {
+        *existing = enum_schema;
+        return;
+    }
+
+    *existing = merge_any_of_schemas(existing.take(), candidate);
+}
+
+fn merge_literal_string_schemas(existing: &Value, candidate: &Value) -> Option<Value> {
+    let mut values = literal_string_values(existing)?;
+    values.extend(literal_string_values(candidate)?);
+    values.sort();
+    values.dedup();
+
+    let mut schema = JsonMap::from_iter([
+        ("type".to_string(), Value::String("string".to_string())),
+        (
+            "enum".to_string(),
+            Value::Array(values.into_iter().map(Value::String).collect()),
+        ),
+    ]);
+
+    if let Some(description) = existing
+        .get("description")
+        .and_then(Value::as_str)
+        .or_else(|| candidate.get("description").and_then(Value::as_str))
+    {
+        schema.insert(
+            "description".to_string(),
+            Value::String(description.to_string()),
+        );
+    }
+
+    Some(Value::Object(schema))
+}
+
+fn literal_string_values(schema: &Value) -> Option<Vec<String>> {
+    let object = schema.as_object()?;
+    if object.get("type")?.as_str()? != "string" {
+        return None;
+    }
+    let values = object.get("enum")?.as_array()?;
+    let mut strings = Vec::new();
+    for value in values {
+        strings.push(value.as_str()?.to_string());
+    }
+    Some(strings)
+}
+
+fn merge_any_of_schemas(existing: Value, candidate: Value) -> Value {
+    let mut variants = flatten_any_of(existing);
+    for schema in flatten_any_of(candidate) {
+        if !variants.contains(&schema) {
+            variants.push(schema);
+        }
+    }
+    Value::Object(JsonMap::from_iter([(
+        "anyOf".to_string(),
+        Value::Array(variants),
+    )]))
+}
+
+fn flatten_any_of(schema: Value) -> Vec<Value> {
+    match schema {
+        Value::Object(map) => match map.get("anyOf") {
+            Some(Value::Array(variants)) => variants.clone(),
+            _ => vec![Value::Object(map)],
+        },
+        other => vec![other],
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
