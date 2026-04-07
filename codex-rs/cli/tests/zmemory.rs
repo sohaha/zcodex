@@ -4,6 +4,7 @@ use anyhow::Result;
 use predicates::prelude::PredicateBooleanExt;
 use predicates::prelude::predicate;
 use pretty_assertions::assert_eq;
+use serde_json::json;
 use tempfile::TempDir;
 
 fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
