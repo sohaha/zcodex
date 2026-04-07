@@ -965,6 +965,16 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
             "create",
             "core://agent",
             "--content",
+            "Agent root",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://agent/coding_operating_manual",
+            "--content",
             "Profile for agent",
         ])
         .assert()
@@ -973,7 +983,7 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
         .args([
             "zmemory",
             "manage-triggers",
-            "core://agent",
+            "core://agent/coding_operating_manual",
             "--add",
             "profile",
             "--add",
@@ -989,8 +999,18 @@ async fn zmemory_system_views_and_doctor_are_available() -> Result<()> {
     assert_eq!(boot_payload["result"]["view"]["view"], "boot");
     assert_eq!(boot_payload["result"]["view"]["entryCount"], 1);
     assert_eq!(
+        boot_payload["result"]["view"]["bootRoles"][0]["role"],
+        "agent_operating_manual"
+    );
+    assert_eq!(
+        boot_payload["result"]["view"]["bootRoles"][0]["configured"],
+        true
+    );
+    assert_eq!(boot_payload["result"]["view"]["unassignedUris"], json!([]));
+    assert_eq!(boot_payload["result"]["view"]["missingUriCount"], 2);
+    assert_eq!(
         boot_payload["result"]["view"]["entries"][0]["uri"],
-        "core://agent"
+        "core://agent/coding_operating_manual"
     );
 
     let glossary_payload = run_json(
@@ -1426,6 +1446,16 @@ async fn zmemory_export_supports_boot_defaults_and_workspace() -> Result<()> {
             "create",
             "core://agent",
             "--content",
+            "Agent root",
+        ])
+        .assert()
+        .success();
+    codex_command(codex_home.path())?
+        .args([
+            "zmemory",
+            "create",
+            "core://agent/coding_operating_manual",
+            "--content",
             "Agent memory",
         ])
         .assert()
@@ -1437,6 +1467,11 @@ async fn zmemory_export_supports_boot_defaults_and_workspace() -> Result<()> {
     )?;
     assert_eq!(boot_payload["result"]["uri"], "system://boot");
     assert_eq!(boot_payload["result"]["view"]["view"], "boot");
+    assert_eq!(
+        boot_payload["result"]["view"]["bootRoles"][0]["configured"],
+        true
+    );
+    assert_eq!(boot_payload["result"]["view"]["unassignedUris"], json!([]));
 
     let defaults_payload = run_json(
         codex_home.path(),
@@ -1444,6 +1479,14 @@ async fn zmemory_export_supports_boot_defaults_and_workspace() -> Result<()> {
     )?;
     assert_eq!(defaults_payload["result"]["uri"], "system://defaults");
     assert_eq!(defaults_payload["result"]["view"]["view"], "defaults");
+    assert_eq!(
+        defaults_payload["result"]["view"]["bootRoles"][2]["role"],
+        "collaboration_contract"
+    );
+    assert_eq!(
+        defaults_payload["result"]["view"]["unassignedUris"],
+        json!([])
+    );
 
     let workspace_payload = run_json(
         codex_home.path(),
@@ -1451,6 +1494,14 @@ async fn zmemory_export_supports_boot_defaults_and_workspace() -> Result<()> {
     )?;
     assert_eq!(workspace_payload["result"]["uri"], "system://workspace");
     assert_eq!(workspace_payload["result"]["view"]["view"], "workspace");
+    assert_eq!(
+        workspace_payload["result"]["view"]["bootRoles"][1]["configured"],
+        true
+    );
+    assert_eq!(
+        workspace_payload["result"]["view"]["unassignedUris"],
+        json!([])
+    );
 
     Ok(())
 }

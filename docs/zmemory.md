@@ -63,8 +63,8 @@ core_memory_uris = [
 
 当前产品默认值：
 
-- `VALID_DOMAINS=core`
-- `CORE_MEMORY_URIS=core://agent,core://my_user,core://agent/my_user`
+- `VALID_DOMAINS=core,project,notes`
+- `CORE_MEMORY_URIS=core://agent/coding_operating_manual,core://my_user/coding_preferences,core://agent/my_user/collaboration_contract`
 
 `system` 是保留只读域，不需要写进 `VALID_DOMAINS`。
 
@@ -123,8 +123,8 @@ codex zmemory rebuild-search --json
 
 其中最重要的是：
 
-- `system://workspace`：当前会话实际生效的 runtime profile；包含当前使用的库、路径来源、`validDomains`、`coreMemoryUris`、boot 健康度，以及是否显式覆盖默认路径
-- `system://defaults`：产品默认事实；只报告内置默认 domains、boot anchors 与默认路径策略，不混入当前项目或用户配置覆盖状态
+- `system://workspace`：当前会话实际生效的 runtime profile；包含当前使用的库、路径来源、`validDomains`、`coreMemoryUris`、`bootRoles`、`unassignedUris`、boot 健康度，以及是否显式覆盖默认路径
+- `system://defaults`：产品默认事实；只报告内置默认 domains、boot anchors、`bootRoles` / `unassignedUris` 与默认路径策略，不混入当前项目或用户配置覆盖状态
 
 建议排查顺序：
 
@@ -133,6 +133,14 @@ codex zmemory rebuild-search --json
 3. 再看 `stats` / `doctor`
 4. 最后看 `system://paths`、`system://alias`、`recent`、`glossary`
    - `recent` 代表最近内容版本节点；alias/trigger/path 等治理动作请结合 `paths`、`alias`、`doctor` 判断
+
+默认 coding boot profile 的 3 个角色槽位为：
+
+- `agent_operating_manual`
+- `user_preferences`
+- `collaboration_contract`
+
+如果当前 runtime profile 少于 3 个 boot anchors，`bootRoles` 会保留这些角色并返回 `configured=false`、`uri=null`；如果超过 3 个，多出来的锚点会出现在 `unassignedUris`。
 
 ## 诊断字段
 

@@ -1552,6 +1552,18 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
+            content: Some("Agent root".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )?;
+    run_zmemory_tool_with_context(
+        test.home.path(),
+        test.cwd_path(),
+        None,
+        None,
+        ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/coding_operating_manual".to_string()),
             content: Some("Boot anchor".to_string()),
             ..ZmemoryToolCallParam::default()
         },
@@ -1594,15 +1606,27 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     assert_eq!(payload["result"]["view"]["view"], "boot");
     assert_eq!(payload["result"]["view"]["bootHealthy"], false);
     assert_eq!(payload["result"]["view"]["entryCount"], 1);
-    assert_eq!(payload["result"]["view"]["presentUris"][0], "core://agent");
+    assert_eq!(
+        payload["result"]["view"]["presentUris"][0],
+        "core://agent/coding_operating_manual"
+    );
+    assert_eq!(
+        payload["result"]["view"]["bootRoles"][0]["role"],
+        "agent_operating_manual"
+    );
     assert_eq!(payload["result"]["view"]["missingUriCount"], 2);
+    assert_eq!(payload["result"]["view"]["unassignedUris"], json!([]));
     assert_eq!(
         payload["result"]["view"]["entries"][0]["uri"],
-        "core://agent"
+        "core://agent/coding_operating_manual"
+    );
+    assert_eq!(
+        payload["result"]["view"]["anchors"][0]["role"],
+        "agent_operating_manual"
     );
     assert_eq!(
         payload["result"]["view"]["missingUris"][0],
-        "core://my_user"
+        "core://my_user/coding_preferences"
     );
 
     Ok(())
@@ -1774,6 +1798,30 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
             "core://agent/my_user/collaboration_contract"
         ])
     );
+    assert_eq!(
+        payload["result"]["view"]["bootRoles"],
+        json!([
+            {
+                "role": "agent_operating_manual",
+                "uri": "core://agent/coding_operating_manual",
+                "configured": true,
+                "description": "The assistant's coding operating manual."
+            },
+            {
+                "role": "user_preferences",
+                "uri": "core://my_user/coding_preferences",
+                "configured": true,
+                "description": "Stable user coding preferences for this runtime profile."
+            },
+            {
+                "role": "collaboration_contract",
+                "uri": "core://agent/my_user/collaboration_contract",
+                "configured": true,
+                "description": "Shared long-term collaboration rules for coding tasks."
+            }
+        ])
+    );
+    assert_eq!(payload["result"]["view"]["unassignedUris"], json!([]));
 
     Ok(())
 }

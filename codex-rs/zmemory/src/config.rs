@@ -10,8 +10,48 @@ pub(crate) const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
 const VALID_DOMAINS_ENV: &str = "VALID_DOMAINS";
 const CORE_MEMORY_URIS_ENV: &str = "CORE_MEMORY_URIS";
 const DEFAULT_VALID_DOMAINS: &[&str] = &["core", "project", "notes"];
-const DEFAULT_CORE_MEMORY_URIS: &[&str] =
-    &["core://agent", "core://my_user", "core://agent/my_user"];
+const DEFAULT_CORE_MEMORY_URIS: &[&str] = &[
+    "core://agent/coding_operating_manual",
+    "core://my_user/coding_preferences",
+    "core://agent/my_user/collaboration_contract",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BootMemoryRole {
+    AgentOperatingManual,
+    UserPreferences,
+    CollaborationContract,
+}
+
+impl BootMemoryRole {
+    const ALL: [Self; 3] = [
+        Self::AgentOperatingManual,
+        Self::UserPreferences,
+        Self::CollaborationContract,
+    ];
+
+    pub(crate) const fn key(self) -> &'static str {
+        match self {
+            Self::AgentOperatingManual => "agent_operating_manual",
+            Self::UserPreferences => "user_preferences",
+            Self::CollaborationContract => "collaboration_contract",
+        }
+    }
+
+    pub(crate) const fn description(self) -> &'static str {
+        match self {
+            Self::AgentOperatingManual => "The assistant's coding operating manual.",
+            Self::UserPreferences => "Stable user coding preferences for this runtime profile.",
+            Self::CollaborationContract => "Shared long-term collaboration rules for coding tasks.",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BootRoleBinding {
+    pub(crate) role: BootMemoryRole,
+    pub(crate) uri: Option<String>,
+}
 
 pub(crate) fn default_valid_domains() -> &'static [&'static str] {
     DEFAULT_VALID_DOMAINS
@@ -19,6 +59,33 @@ pub(crate) fn default_valid_domains() -> &'static [&'static str] {
 
 pub(crate) fn default_core_memory_uris() -> &'static [&'static str] {
     DEFAULT_CORE_MEMORY_URIS
+}
+
+pub(crate) fn default_boot_role_bindings() -> Vec<BootRoleBinding> {
+    boot_role_bindings_for_uris(
+        &default_core_memory_uris()
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub(crate) fn boot_role_bindings_for_uris(uris: &[String]) -> Vec<BootRoleBinding> {
+    BootMemoryRole::ALL
+        .into_iter()
+        .enumerate()
+        .map(|(index, role)| BootRoleBinding {
+            role,
+            uri: uris.get(index).cloned(),
+        })
+        .collect()
+}
+
+pub(crate) fn unassigned_boot_uris(uris: &[String]) -> Vec<String> {
+    uris.iter()
+        .skip(BootMemoryRole::ALL.len())
+        .cloned()
+        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,8 +300,10 @@ mod tests {
     use super::ZMEMORY_PROJECTS_DIR;
     use super::ZmemoryConfig;
     use super::ZmemorySettings;
+    use super::boot_role_bindings_for_uris;
     use super::global_zmemory_db_path;
     use super::project_key_for_workspace;
+    use super::unassigned_boot_uris;
     use super::zmemory_db_path;
     use crate::path_resolution::ZmemoryPathResolution;
     use crate::path_resolution::ZmemoryPathSource;
@@ -273,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_default_to_project_aware_domains_and_boot_anchors() {
+    fn settings_default_to_project_aware_domains_and_coding_boot_anchors() {
         let settings = ZmemorySettings::from_env_vars(None, None);
 
         assert_eq!(
@@ -366,6 +435,35 @@ mod tests {
         assert_eq!(config.db_path(), resolution.db_path.as_path());
         assert_eq!(config.workspace_base(), Path::new("/tmp/workspace"));
         assert_eq!(config.path_resolution(), &resolution);
+    }
+
+    #[test]
+    fn boot_role_bindings_keep_three_coding_roles_stable() {
+        let partial = boot_role_bindings_for_uris(&[
+            "core://agent/custom_manual".to_string(),
+            "core://my_user/custom_preferences".to_string(),
+        ]);
+        assert_eq!(partial.len(), 3);
+        assert_eq!(
+            partial[0].uri.as_deref(),
+            Some("core://agent/custom_manual")
+        );
+        assert_eq!(
+            partial[1].uri.as_deref(),
+            Some("core://my_user/custom_preferences")
+        );
+        assert_eq!(partial[2].uri, None);
+
+        let extra = vec![
+            "core://agent/custom_manual".to_string(),
+            "core://my_user/custom_preferences".to_string(),
+            "core://agent/my_user/custom_contract".to_string(),
+            "project://repo/architecture".to_string(),
+        ];
+        assert_eq!(
+            unassigned_boot_uris(&extra),
+            vec!["project://repo/architecture".to_string()]
+        );
     }
 
     fn sample_resolution(db_path: &str) -> ZmemoryPathResolution {

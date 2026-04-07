@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-07T07:59:28.815Z
-- 本轮摘要：Cadence 已自动进入 Issue Generation，并基于 .agents/plan/2026-04-07-zmemory-tldr-mcp-service.md 生成 issue 文件 .agents/issues/2026-04-07-zmemory-tldr-mcp-service.toml。Issue 拆分为 3 项：a1 收敛 zmemory 共享契约与适配层，a2 接线 codex mcp-server 暴露/分发 4 个 zmemory MCP 工具，a3 补齐项目级 MCP 文档并验证 tldr feature gate 不回退；已用 cadence_validate.js issue 校验通过，并修正了 issue 文件中的 cadence_validate 调用方式。
+- 更新时间：2026-04-07T08:48:14.111Z
+- 本轮摘要：已完成 zmemory 优化并提交 e9b09abc7：将 zmemory prompt 收敛为 runtime-driven，明确 system://workspace 是运行时真相、missingUris 是 boot 缺失唯一权威来源；system://boot 新增 presentUris/missingUriCount/bootHealthy/anchors 以降低 LLM 误读；默认 writable domains 扩为 core,project,notes，README/测试/guardian snapshots 已同步。验证：just fmt、cargo nextest run -p codex-zmemory 通过；cargo nextest run -p codex-core 存在 5 个与本次改动无关的既有失败，相关定向测试已通过。
 
 ## 待确认问题
 

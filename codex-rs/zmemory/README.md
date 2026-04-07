@@ -63,9 +63,11 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 
 - `[zmemory].valid_domains` / `[zmemory].core_memory_uris` 可直接声明 runtime profile
 - `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core,project,notes`
-- `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent,core://my_user,core://agent/my_user`
+- `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent/coding_operating_manual,core://my_user/coding_preferences,core://agent/my_user/collaboration_contract`
 - 优先级：`[zmemory]` 配置 > 环境变量 > 产品默认值
 - 运行时真相以 `system://workspace` 为准；如果用户在 `config.toml` 或环境变量里覆盖了这些值，不要继续按产品默认值推断当前 profile。
+- 默认会把前 3 个 boot anchors 解释为 role-aware 的 coding profile：`agent_operating_manual`、`user_preferences`、`collaboration_contract`；对应映射可在 `system://workspace.bootRoles` / `system://defaults.bootRoles` 中查看。
+- `bootRoles` 固定暴露这 3 个角色槽位；当 runtime profile 少于 3 个 boot anchors 时，会返回 `configured=false`、`uri=null` 的未绑定角色；多出的 boot anchors 会出现在 `unassignedUris`。
 - `system` 是保留只读域，不需要写进 `VALID_DOMAINS`
 - 当读写到未知 domain 时，会返回 `unknown domain 'X'. valid domains: ...` 这种显式错误，便于 CLI / tool 调用方直接修正输入。
 
@@ -209,7 +211,9 @@ codex zmemory import-memory --items-json '[
 
 - `missingUris` 是判断 boot 缺失锚点的唯一权威字段。
 - `entries` / `presentUris` 只列出当前已存在的锚点；某个 URI 没出现在 `entries` 中，不代表它缺失，必须再看 `missingUris`。
-- `anchors` 会按 boot 顺序返回每个锚点的 `uri` 与 `exists` 状态；已存在锚点还会附带 `priority` / `updatedAt`。
+- `bootRoles` 会列出当前 runtime profile 下 3 个稳定 coding role 的映射；不要再靠 URI 字面形状猜角色。
+- `anchors` 会按 boot 顺序返回每个锚点的 `uri`、`role` 与 `exists` 状态；已存在锚点还会附带 `priority` / `updatedAt`。
+- `unassignedUris` 会显式列出超过 3 个 coding role 槽位之外的额外 boot anchors。
 - `bootHealthy` 等价于 `missingUris` 为空，便于 agent 和脚本快速判断 boot 是否完整。
 
 `system://defaults` / `system://workspace` 用来显式区分“产品默认事实”和“当前工作区实际事实”：

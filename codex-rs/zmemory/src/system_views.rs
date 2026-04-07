@@ -1,7 +1,10 @@
 use crate::config::ZmemoryConfig;
+use crate::config::boot_role_bindings_for_uris;
+use crate::config::default_boot_role_bindings;
 use crate::config::default_core_memory_uris;
 use crate::config::default_valid_domains;
 use crate::config::project_key_for_workspace;
+use crate::config::unassigned_boot_uris;
 use crate::config::zmemory_db_path;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -126,6 +129,12 @@ fn parse_system_view(view: &str, default_limit: usize) -> Result<ParsedSystemVie
 
 fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Result<Value> {
     let configured_uris = config.core_memory_uris();
+    let boot_roles = boot_role_bindings_for_uris(configured_uris);
+    let unassigned_uris = unassigned_boot_uris(configured_uris);
+    let role_by_uri = boot_roles
+        .iter()
+        .filter_map(|binding| binding.uri.as_deref().map(|uri| (uri, binding.role)))
+        .collect::<BTreeMap<_, _>>();
     let scoped_uris = configured_uris
         .iter()
         .take(limit)
@@ -138,11 +147,13 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
 
     let indexed_entries = search_documents_by_uri(conn, &scoped_uris)?;
     for uri in scoped_uris {
+        let role = role_by_uri.get(uri.as_str()).map(|role| role.key());
         if let Some(entry) = indexed_entries.get(&uri) {
             entries.push(entry.clone());
             present_uris.push(uri.clone());
             anchors.push(json!({
                 "uri": uri,
+                "role": role,
                 "exists": true,
                 "priority": entry["priority"].clone(),
                 "updatedAt": entry["updatedAt"].clone(),
@@ -151,6 +162,7 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
             missing_uris.push(uri.clone());
             anchors.push(json!({
                 "uri": uri,
+                "role": role,
                 "exists": false,
             }));
         }
@@ -162,6 +174,8 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
         "view": "boot",
         "configuredUriCount": configured_uris.len(),
         "configuredUris": configured_uris,
+        "bootRoles": role_bindings_json(&boot_roles),
+        "unassignedUris": unassigned_uris,
         "presentUris": present_uris,
         "missingUris": missing_uris,
         "missingUriCount": missing_uri_count,
@@ -201,13 +215,30 @@ fn search_documents_by_uri(conn: &Connection, uris: &[String]) -> Result<BTreeMa
     Ok(rows.into_iter().collect())
 }
 
+fn role_bindings_json(bindings: &[crate::config::BootRoleBinding]) -> Vec<Value> {
+    bindings
+        .iter()
+        .map(|binding| {
+            json!({
+                "role": binding.role.key(),
+                "uri": binding.uri.clone(),
+                "configured": binding.uri.is_some(),
+                "description": binding.role.description(),
+            })
+        })
+        .collect()
+}
+
 fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
     let default_workspace_key = project_key_for_workspace(config.workspace_base());
     let default_db_path = zmemory_db_path(config.codex_home(), config.workspace_base());
+    let boot_roles = default_boot_role_bindings();
     Ok(json!({
         "view": "defaults",
         "validDomains": default_valid_domains(),
         "coreMemoryUris": default_core_memory_uris(),
+        "bootRoles": role_bindings_json(&boot_roles),
+        "unassignedUris": Vec::<String>::new(),
         "defaultPathPolicy": {
             "mode": "projectScoped",
             "dbPath": default_db_path.display().to_string(),
@@ -217,12 +248,15 @@ fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
         },
         "recommendedDomains": default_valid_domains(),
         "recommendedBootUris": default_core_memory_uris(),
+        "recommendedBootRoles": role_bindings_json(&boot_roles),
         "bootContract": {
             "view": "boot",
             "limitControlsAnchors": true,
             "entriesListOnlyPresentAnchors": true,
             "missingUrisAreAuthoritative": true,
             "anchors": default_core_memory_uris(),
+            "roles": role_bindings_json(&boot_roles),
+            "unassignedUris": Vec::<String>::new(),
         },
     }))
 }
@@ -231,6 +265,8 @@ fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Valu
     let resolution = config.path_resolution();
     let default_workspace_key = project_key_for_workspace(config.workspace_base());
     let default_db_path = zmemory_db_path(config.codex_home(), config.workspace_base());
+    let boot_roles = boot_role_bindings_for_uris(config.core_memory_uris());
+    let unassigned_uris = unassigned_boot_uris(config.core_memory_uris());
     let boot = read_boot_view(conn, config, usize::MAX)?;
     let boot_healthy = boot
         .get("bootHealthy")
@@ -250,6 +286,8 @@ fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Valu
         "dbPathDiffers": resolution.db_path != default_db_path,
         "validDomains": config.valid_domains(),
         "coreMemoryUris": config.core_memory_uris(),
+        "bootRoles": role_bindings_json(&boot_roles),
+        "unassignedUris": unassigned_uris,
         "boot": boot,
         "bootHealthy": boot_healthy,
     }))

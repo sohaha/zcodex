@@ -23,6 +23,12 @@ How to think about it:
   profile. Users may override `valid_domains` and `core_memory_uris` in
   `config.toml` or via environment variables, so do not assume product
   defaults are active.
+- When available, use `system://workspace.bootRoles` to map boot anchors to
+  their semantic roles instead of inferring meaning from URI shape alone.
+- `bootRoles` keeps the three coding-role slots stable; a slot may report
+  `configured=false` with `uri=null` when the runtime profile omits that role,
+  and `system://workspace.unassignedUris` lists extra boot anchors beyond those
+  role bindings.
 - Keep disclosures single-purpose so later `stats` and `doctor` review output
   stays actionable.
 - The model-visible zmemory tools are `read_memory`, `search_memory`,
@@ -51,6 +57,11 @@ Low-friction defaults:
   absent from `entries`.
 - Before claiming the boot state, cross-check `configuredUris`, `presentUris`,
   `missingUris`, and `bootHealthy`.
+- Default coding-first boot profiles commonly expose the roles
+  `agent_operating_manual`, `user_preferences`, and
+  `collaboration_contract`; prefer those role labels when
+  `system://workspace.bootRoles` or `system://boot.bootRoles` provides them,
+  but handle `configured=false` or `uri=null` as an intentionally unbound role.
 - Use the canonical identity layer first:
   - `core://agent` for the assistant's stable self-reference
   - `core://my_user` for the user's stable preferences and address form

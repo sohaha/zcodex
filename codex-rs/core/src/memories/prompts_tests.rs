@@ -106,10 +106,17 @@ fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
     assert!(instructions.contains("read system://workspace"));
     assert!(instructions.contains("read system://defaults"));
     assert!(instructions.contains("source of truth for the active runtime"));
+    assert!(instructions.contains("`system://workspace.bootRoles`"));
+    assert!(instructions.contains("`system://workspace.unassignedUris`"));
     assert!(instructions.contains("Default to silent recall"));
     assert!(instructions.contains("`missingUris`"));
     assert!(instructions.contains("`presentUris`"));
     assert!(instructions.contains("`bootHealthy`"));
+    assert!(instructions.contains("`agent_operating_manual`"));
+    assert!(instructions.contains("`user_preferences`"));
+    assert!(instructions.contains("`collaboration_contract`"));
+    assert!(instructions.contains("`configured=false`"));
+    assert!(instructions.contains("`uri=null`"));
     assert!(instructions.contains("Use the canonical identity layer first"));
     assert!(instructions.contains("Capture only durable, cross-session facts"));
     assert!(instructions.contains("prioritize recall (`read_memory` /"));

@@ -395,7 +395,115 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
     );
     assert_eq!(
         defaults["result"]["view"]["coreMemoryUris"],
-        json!(["core://agent", "core://my_user", "core://agent/my_user"])
+        json!([
+            "core://agent/coding_operating_manual",
+            "core://my_user/coding_preferences",
+            "core://agent/my_user/collaboration_contract"
+        ])
+    );
+    assert_eq!(
+        defaults["result"]["view"]["bootRoles"],
+        json!([
+            {
+                "role": "agent_operating_manual",
+                "uri": "core://agent/coding_operating_manual",
+                "configured": true,
+                "description": "The assistant's coding operating manual."
+            },
+            {
+                "role": "user_preferences",
+                "uri": "core://my_user/coding_preferences",
+                "configured": true,
+                "description": "Stable user coding preferences for this runtime profile."
+            },
+            {
+                "role": "collaboration_contract",
+                "uri": "core://agent/my_user/collaboration_contract",
+                "configured": true,
+                "description": "Shared long-term collaboration rules for coding tasks."
+            }
+        ])
+    );
+    assert_eq!(workspace["result"]["view"]["unassignedUris"], json!([]));
+}
+
+#[test]
+fn workspace_boot_roles_keep_shape_for_partial_and_extra_profiles() {
+    let (_partial_dir, partial_config) = config_with_settings(ZmemorySettings::from_sources(
+        None,
+        Some(vec![
+            "core://agent/custom_manual".to_string(),
+            "core://my_user/custom_preferences".to_string(),
+        ]),
+        None,
+        None,
+    ));
+
+    let partial_workspace = crate::service::execute_action(
+        &partial_config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://workspace".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("partial workspace view should succeed");
+    assert_eq!(
+        partial_workspace["result"]["view"]["bootRoles"],
+        json!([
+            {
+                "role": "agent_operating_manual",
+                "uri": "core://agent/custom_manual",
+                "configured": true,
+                "description": "The assistant's coding operating manual."
+            },
+            {
+                "role": "user_preferences",
+                "uri": "core://my_user/custom_preferences",
+                "configured": true,
+                "description": "Stable user coding preferences for this runtime profile."
+            },
+            {
+                "role": "collaboration_contract",
+                "uri": null,
+                "configured": false,
+                "description": "Shared long-term collaboration rules for coding tasks."
+            }
+        ])
+    );
+    assert_eq!(
+        partial_workspace["result"]["view"]["unassignedUris"],
+        json!([])
+    );
+
+    let (_extra_dir, extra_config) = config_with_settings(ZmemorySettings::from_sources(
+        None,
+        Some(vec![
+            "core://agent/custom_manual".to_string(),
+            "core://my_user/custom_preferences".to_string(),
+            "core://agent/my_user/custom_contract".to_string(),
+            "project://repo/architecture".to_string(),
+        ]),
+        None,
+        None,
+    ));
+
+    let extra_workspace = crate::service::execute_action(
+        &extra_config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://workspace".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("extra workspace view should succeed");
+    assert_eq!(
+        extra_workspace["result"]["view"]["bootRoles"][2]["uri"],
+        "core://agent/my_user/custom_contract"
+    );
+    assert_eq!(
+        extra_workspace["result"]["view"]["unassignedUris"],
+        json!(["project://repo/architecture"])
     );
 }
 
@@ -722,6 +830,17 @@ fn system_views_reflect_index_recent_and_glossary() {
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::Create,
             uri: Some("core://agent".to_string()),
+            content: Some("Agent root".to_string()),
+            priority: Some(8),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create parent should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent/coding_operating_manual".to_string()),
             content: Some("Profile for agent".to_string()),
             priority: Some(7),
             ..ZmemoryToolCallParam::default()
@@ -732,7 +851,7 @@ fn system_views_reflect_index_recent_and_glossary() {
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::ManageTriggers,
-            uri: Some("core://agent".to_string()),
+            uri: Some("core://agent/coding_operating_manual".to_string()),
             add: Some(vec!["profile".to_string(), "agent".to_string()]),
             ..ZmemoryToolCallParam::default()
         },
@@ -754,21 +873,62 @@ fn system_views_reflect_index_recent_and_glossary() {
     assert_eq!(boot["result"]["view"]["entryCount"], 1);
     assert_eq!(
         boot["result"]["view"]["presentUris"],
-        json!(["core://agent"])
+        json!(["core://agent/coding_operating_manual"])
     );
+    assert_eq!(
+        boot["result"]["view"]["bootRoles"],
+        json!([
+            {
+                "role": "agent_operating_manual",
+                "uri": "core://agent/coding_operating_manual",
+                "configured": true,
+                "description": "The assistant's coding operating manual."
+            },
+            {
+                "role": "user_preferences",
+                "uri": "core://my_user/coding_preferences",
+                "configured": true,
+                "description": "Stable user coding preferences for this runtime profile."
+            },
+            {
+                "role": "collaboration_contract",
+                "uri": "core://agent/my_user/collaboration_contract",
+                "configured": true,
+                "description": "Shared long-term collaboration rules for coding tasks."
+            }
+        ])
+    );
+    assert_eq!(boot["result"]["view"]["unassignedUris"], json!([]));
     assert_eq!(boot["result"]["view"]["missingUriCount"], 2);
-    assert_eq!(boot["result"]["view"]["entries"][0]["uri"], "core://agent");
-    assert_eq!(boot["result"]["view"]["anchors"][0]["uri"], "core://agent");
+    assert_eq!(
+        boot["result"]["view"]["entries"][0]["uri"],
+        "core://agent/coding_operating_manual"
+    );
+    assert_eq!(
+        boot["result"]["view"]["anchors"][0]["uri"],
+        "core://agent/coding_operating_manual"
+    );
+    assert_eq!(
+        boot["result"]["view"]["anchors"][0]["role"],
+        "agent_operating_manual"
+    );
     assert_eq!(boot["result"]["view"]["anchors"][0]["exists"], true);
     assert_eq!(
         boot["result"]["view"]["anchors"][1]["uri"],
-        "core://my_user"
+        "core://my_user/coding_preferences"
+    );
+    assert_eq!(
+        boot["result"]["view"]["anchors"][1]["role"],
+        "user_preferences"
     );
     assert_eq!(boot["result"]["view"]["anchors"][1]["exists"], false);
-    assert_eq!(boot["result"]["view"]["missingUris"][0], "core://my_user");
+    assert_eq!(
+        boot["result"]["view"]["missingUris"][0],
+        "core://my_user/coding_preferences"
+    );
     assert_eq!(
         boot["result"]["view"]["missingUris"][1],
-        "core://agent/my_user"
+        "core://agent/my_user/collaboration_contract"
     );
 
     let defaults = crate::service::execute_action(
@@ -781,6 +941,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     )
     .expect("defaults view should succeed");
     assert_eq!(defaults["result"]["view"]["view"], "defaults");
+    assert_eq!(defaults["result"]["view"]["unassignedUris"], json!([]));
     assert_eq!(
         defaults["result"]["view"]["bootContract"]["entriesListOnlyPresentAnchors"],
         true
@@ -788,6 +949,10 @@ fn system_views_reflect_index_recent_and_glossary() {
     assert_eq!(
         defaults["result"]["view"]["bootContract"]["missingUrisAreAuthoritative"],
         true
+    );
+    assert_eq!(
+        defaults["result"]["view"]["bootContract"]["roles"],
+        defaults["result"]["view"]["bootRoles"]
     );
     assert_eq!(
         defaults["result"]["view"]["defaultPathPolicy"]["mode"],
@@ -843,6 +1008,11 @@ fn system_views_reflect_index_recent_and_glossary() {
         json!(config.workspace_base().display().to_string())
     );
     assert_eq!(workspace["result"]["view"]["bootHealthy"], false);
+    assert_eq!(
+        workspace["result"]["view"]["bootRoles"],
+        boot["result"]["view"]["bootRoles"]
+    );
+    assert_eq!(workspace["result"]["view"]["unassignedUris"], json!([]));
 
     let index = crate::service::execute_action(
         &config,
@@ -854,7 +1024,7 @@ fn system_views_reflect_index_recent_and_glossary() {
         },
     )
     .expect("index view should succeed");
-    assert_eq!(index["result"]["view"]["totalCount"], 1);
+    assert_eq!(index["result"]["view"]["totalCount"], 2);
 
     let recent = crate::service::execute_action(
         &config,
@@ -866,7 +1036,7 @@ fn system_views_reflect_index_recent_and_glossary() {
         },
     )
     .expect("recent view should succeed");
-    assert_eq!(recent["result"]["view"]["entryCount"], 1);
+    assert_eq!(recent["result"]["view"]["entryCount"], 2);
 
     let glossary = crate::service::execute_action(
         &config,
@@ -892,7 +1062,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     .expect("domain-scoped index should succeed");
     assert_eq!(index_by_domain["result"]["view"]["view"], "index");
     assert_eq!(index_by_domain["result"]["view"]["domain"], "core");
-    assert_eq!(index_by_domain["result"]["view"]["entryCount"], 1);
+    assert_eq!(index_by_domain["result"]["view"]["entryCount"], 2);
 
     let paths = crate::service::execute_action(
         &config,
@@ -905,7 +1075,7 @@ fn system_views_reflect_index_recent_and_glossary() {
     )
     .expect("paths view should succeed");
     assert_eq!(paths["result"]["view"]["view"], "paths");
-    assert_eq!(paths["result"]["view"]["entryCount"], 1);
+    assert_eq!(paths["result"]["view"]["entryCount"], 2);
     assert_eq!(paths["result"]["view"]["entries"][0]["uri"], "core://agent");
     assert_eq!(paths["result"]["view"]["entries"][0]["path"], "agent");
 
