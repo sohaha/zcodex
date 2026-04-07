@@ -618,10 +618,10 @@ impl Tui {
             )));
         }
 
+        // Alt-screen: try the cursor-delta heuristic first. If the cursor moved
+        // (e.g., terminal scrolled the alt-screen content on resize), use that.
         if let Ok(cursor_pos) = terminal.get_cursor_position() {
             let last_known_cursor_pos = terminal.last_known_cursor_pos;
-            // Alt-screen overlays still rely on the cursor-delta heuristic because they don't pin
-            // the viewport to the terminal bottom.
             if cursor_pos.y != last_known_cursor_pos.y {
                 let offset_y = cursor_pos.y as i32 - last_known_cursor_pos.y as i32;
                 return Ok(Some(
@@ -629,7 +629,26 @@ impl Tui {
                 ));
             }
         }
-        Ok(None)
+
+        // Fallback when cursor delta is unreliable (common in tmux, some terminals):
+        // rebuild the viewport to fill the new screen size, preserving the
+        // relative vertical position so content stays approximately where it was.
+        let old_viewport = terminal.viewport_area;
+        let rel_y = if last_known_screen_size.height > 0 {
+            old_viewport.y as f64 / last_known_screen_size.height as f64
+        } else {
+            0.0
+        };
+        let new_y = (rel_y * screen_size.height as f64) as u16;
+        let new_height = old_viewport
+            .height
+            .min(screen_size.height.saturating_sub(new_y));
+        Ok(Some(Rect::new(
+            old_viewport.x,
+            new_y,
+            screen_size.width,
+            new_height,
+        )))
     }
 }
 
