@@ -631,23 +631,13 @@ impl Tui {
         }
 
         // Fallback when cursor delta is unreliable (common in tmux, some terminals):
-        // rebuild the viewport to fill the new screen size, preserving the
-        // relative vertical position so content stays approximately where it was.
-        let old_viewport = terminal.viewport_area;
-        let rel_y = if last_known_screen_size.height > 0 {
-            old_viewport.y as f64 / last_known_screen_size.height as f64
-        } else {
-            0.0
-        };
-        let new_y = (rel_y * screen_size.height as f64) as u16;
-        let new_height = old_viewport
-            .height
-            .min(screen_size.height.saturating_sub(new_y));
+        // reset to a full-screen viewport since we can't determine how (or whether)
+        // the terminal scrolled the alt-screen content on resize.
         Ok(Some(Rect::new(
-            old_viewport.x,
-            new_y,
+            terminal.viewport_area.x,
+            0,
             screen_size.width,
-            new_height,
+            screen_size.height,
         )))
     }
 }
