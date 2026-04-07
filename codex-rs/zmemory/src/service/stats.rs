@@ -17,6 +17,7 @@ pub(crate) struct StatsSnapshot {
     pub(crate) glossary_count: i64,
     pub(crate) alias_node_count: i64,
     pub(crate) trigger_node_count: i64,
+    pub(crate) alias_nodes_missing_triggers: i64,
     pub(crate) disclosure_path_count: i64,
     pub(crate) paths_missing_disclosure: i64,
     pub(crate) disclosures_needing_review: i64,
@@ -74,71 +75,93 @@ pub(crate) fn audit_action(conn: &Connection, args: &AuditActionParams) -> Resul
 }
 
 pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot> {
-    let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))?;
-    let memory_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM memories WHERE deprecated = FALSE",
+    let stats_row = conn.query_row(
+        "WITH alias_nodes AS (
+             SELECT e.child_uuid
+             FROM edges e
+             JOIN paths p ON p.edge_id = e.id
+             GROUP BY e.child_uuid
+             HAVING COUNT(*) > 1
+         ),
+         trigger_nodes AS (
+             SELECT DISTINCT node_uuid
+             FROM glossary_keywords
+         )
+         SELECT
+             (SELECT COUNT(*) FROM nodes),
+             (SELECT COUNT(*) FROM memories WHERE deprecated = FALSE),
+             (SELECT COUNT(*) FROM paths),
+             (SELECT COUNT(*) FROM glossary_keywords),
+             (SELECT COUNT(*) FROM alias_nodes),
+             (SELECT COUNT(*) FROM trigger_nodes),
+             (SELECT COUNT(*) FROM alias_nodes WHERE child_uuid NOT IN trigger_nodes),
+             (
+                 SELECT COUNT(*)
+                 FROM edges e
+                 JOIN paths p ON p.edge_id = e.id
+                 WHERE e.disclosure IS NOT NULL AND TRIM(e.disclosure) != ''
+             ),
+             (
+                 SELECT COUNT(*)
+                 FROM edges e
+                 JOIN paths p ON p.edge_id = e.id
+                 WHERE e.disclosure IS NULL OR TRIM(e.disclosure) = ''
+             ),
+             (
+                 SELECT COUNT(*)
+                 FROM edges e
+                 JOIN paths p ON p.edge_id = e.id
+                 WHERE e.disclosure IS NOT NULL
+                   AND TRIM(e.disclosure) != ''
+                   AND (
+                     INSTR(LOWER(e.disclosure), ' or ') > 0
+                     OR INSTR(LOWER(e.disclosure), ' and ') > 0
+                     OR INSTR(e.disclosure, ',') > 0
+                     OR INSTR(e.disclosure, '，') > 0
+                     OR INSTR(e.disclosure, '、') > 0
+                     OR INSTR(e.disclosure, ';') > 0
+                     OR INSTR(e.disclosure, '；') > 0
+                     OR INSTR(e.disclosure, '/') > 0
+                     OR INSTR(e.disclosure, '&') > 0
+                     OR INSTR(e.disclosure, '+') > 0
+                     OR INSTR(e.disclosure, '|') > 0
+                     OR INSTR(e.disclosure, '或') > 0
+                   )
+             ),
+             (SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL),
+             (SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NOT NULL),
+             (SELECT COUNT(*) FROM search_documents),
+             (SELECT COUNT(*) FROM search_documents_fts),
+             (SELECT COUNT(*) FROM audit_log),
+             (SELECT MAX(created_at) FROM audit_log)",
         [],
-        |row| row.get(0),
+        |row| {
+            Ok(StatsSnapshot {
+                node_count: row.get(0)?,
+                memory_count: row.get(1)?,
+                path_count: row.get(2)?,
+                glossary_count: row.get(3)?,
+                alias_node_count: row.get(4)?,
+                trigger_node_count: row.get(5)?,
+                alias_nodes_missing_triggers: row.get(6)?,
+                disclosure_path_count: row.get(7)?,
+                paths_missing_disclosure: row.get(8)?,
+                disclosures_needing_review: row.get(9)?,
+                orphaned_memory_count: row.get(10)?,
+                deprecated_memory_count: row.get(11)?,
+                search_document_count: row.get(12)?,
+                fts_document_count: row.get(13)?,
+                audit_log_count: row.get(14)?,
+                latest_audit_at: row.get(15)?,
+                audit_action_counts: BTreeMap::new(),
+            })
+        },
     )?;
-    let path_count: i64 = conn.query_row("SELECT COUNT(*) FROM paths", [], |row| row.get(0))?;
-    let glossary_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM glossary_keywords", [], |row| {
-            row.get(0)
-        })?;
-    let alias_node_count = alias_node_count(conn)?;
-    let trigger_node_count = trigger_node_count(conn)?;
-    let disclosure_path_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.disclosure IS NOT NULL AND TRIM(e.disclosure) != ''",
-        [],
-        |row| row.get(0),
-    )?;
-    let paths_missing_disclosure = paths_missing_disclosure(conn)?;
-    let disclosures_needing_review = disclosures_needing_review(conn)?;
-    let orphaned_memory_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL",
-        [],
-        |row| row.get(0),
-    )?;
-    let deprecated_memory_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NOT NULL",
-        [],
-        |row| row.get(0),
-    )?;
-    let search_document_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-            row.get(0)
-        })?;
-    let fts_document_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
-            row.get(0)
-        })?;
-    let audit_log_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM audit_log", [], |row| row.get(0))?;
-    let latest_audit_at: Option<String> =
-        conn.query_row("SELECT MAX(created_at) FROM audit_log", [], |row| {
-            row.get(0)
-        })?;
     let audit_action_counts = collect_audit_action_counts(conn)?;
 
     Ok(StatsSnapshot {
-        node_count,
-        memory_count,
-        path_count,
-        glossary_count,
-        alias_node_count,
-        trigger_node_count,
-        disclosure_path_count,
-        paths_missing_disclosure,
-        disclosures_needing_review,
-        orphaned_memory_count,
-        deprecated_memory_count,
-        search_document_count,
-        fts_document_count,
-        audit_log_count,
-        latest_audit_at,
         audit_action_counts,
+        ..stats_row
     })
 }
 
@@ -283,6 +306,7 @@ fn stats_action_with_snapshot(config: &ZmemoryConfig, stats: &StatsSnapshot) -> 
         "deprecatedMemoryCount": stats.deprecated_memory_count,
         "aliasNodeCount": stats.alias_node_count,
         "triggerNodeCount": stats.trigger_node_count,
+        "aliasNodesMissingTriggers": stats.alias_nodes_missing_triggers,
         "disclosurePathCount": stats.disclosure_path_count,
         "pathsMissingDisclosure": stats.paths_missing_disclosure,
         "disclosuresNeedingReview": stats.disclosures_needing_review,
