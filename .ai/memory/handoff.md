@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-07T10:40:14.361Z
-- 本轮摘要：完成 zmemory prompt 变更引起的 12 个 codex-core snapshot 更新：只接受 core/tests/suite 中 compact、compact_resume_fork、model_visible_layout 里与新 Zmemory 文案直接相关的快照变化；相关定向测试已重新通过。仍保留与本次无关的 model_visible_layout_cwd_change_does_not_refresh_agents 既有失败快照产物未处理。
+- 更新时间：2026-04-07T15:10:53.301Z
+- 本轮摘要：同步核对上游 RTK v0.35.0/master 后确认 upstream 仍不支持当前 ztok grep 报错路径；已在 codex-rs/ztok 中补上 grep 风格前置参数重排与 grep->rg 兼容参数映射，修复 codex ztok grep -RInE ... --exclude-dir=...；已通过 codex-ztok 定向单测、codex-cli ztok 集成测试与真实命令复现，codex-cli 全量仅剩既有 tldr_impact_text_renders_summary_lines 失败。
 
 ## 待确认问题
 
