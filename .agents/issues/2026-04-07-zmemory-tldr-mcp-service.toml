@@ -1,0 +1,64 @@
+plan = ".agents/plan/2026-04-07-zmemory-tldr-mcp-service.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "收敛 zmemory 对外 MCP 契约与共享适配层"
+scope = """
+本 issue 负责把 `zmemory` 对外承诺的 MCP 工具集合收敛为第一版 4 个工具：`read_memory`、`search_memory`、`create_memory`、`update_memory`，并抽出可供 core 与 `codex-mcp-server` 共用的参数适配来源，避免两边各维护一份 `tool name -> ZmemoryToolCallParam` 映射逻辑。
+
+包括对现有 `zmemory` schema、共享适配入口和相关单元测试/契约测试的调整。
+不包括 `codex-mcp-server` 的 `tools/list` / `tools/call` 接线，不包括新增 `delete_memory`、`add_alias`、`manage_triggers` 的对外承诺，也不包括更改项目级路径解析语义。
+"""
+touch_points = ["codex-rs/tools/src/zmemory_tool.rs", "codex-rs/core/src/tools/handlers/zmemory.rs", "codex-rs/zmemory/src/tool_api.rs", "codex-rs/tools/src", "codex-rs/core/src/tools"]
+depends_on = []
+done_when = "core 与 `codex-mcp-server` 可复用同一套 `zmemory` MCP 工具集合与参数适配语义，第一版公开工具集合固定为 4 个，且相关契约测试可覆盖该收敛结果。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-tools zmemory_tool && cargo nextest run -p codex-core --test all zmemory_ --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "在 codex mcp-server 中暴露并分发 zmemory MCP 工具"
+scope = """
+本 issue 负责在“每个项目一个 `codex mcp-server`”模型下，把第一版 4 个 `zmemory` MCP 工具接入 `codex mcp-server` 的 `tools/list` 与 `tools/call`，并返回与现有动作层一致的 `content` / `structuredContent`。
+
+包括新增或调整 `mcp-server` 侧的 `zmemory` 适配文件、`message_processor` 接线以及最小 smoke tests。
+不包括单 server 多项目切换，不包括新增调用级 `cwd` / `projectRoot` / `dbPath` 参数，也不包括扩展 `tldr` 的 feature gate 语义。
+"""
+touch_points = ["module:mcp-server", "codex-rs/mcp-server/src/message_processor.rs", "codex-rs/mcp-server/src", "codex-rs/mcp-server/tests/suite/codex_tool.rs"]
+depends_on = ["a1"]
+done_when = "MCP 客户端可通过项目级 `codex mcp-server` 列出并调用 4 个 `zmemory` 工具；`tools/list`、`tools/call(read_memory/search_memory)` 与 unknown tool 负例均有测试覆盖，且返回结构与现有动作层一致。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-mcp-server --test all"
+regress_by = "cargo nextest run -p codex-core --test all zmemory_ --quiet"
+regress_timing = "before_fanout"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "需特别确认 `system://workspace` 在 mcp-server 语境下仍能反映项目级绑定的 DB 与 workspaceBase。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐项目级 MCP 文档并确认 tldr 行为不回退"
+scope = """
+本 issue 负责更新 MCP 对外文档，明确 `zmemory` 工具仅在项目级 `codex mcp-server` 语义下提供服务、调用前应先读取 `system://workspace` 自检，并确认 `tldr` 现有 MCP 暴露与 feature gate 行为不回退。
+
+包括 `codex_mcp_interface` / README 的相关说明与必要测试或验证补充。
+不包括新增 `tldr` 功能，不包括新增部署方式，也不包括把 `zmemory` 扩成独立服务进程。
+"""
+touch_points = ["codex-rs/docs/codex_mcp_interface.md", "codex-rs/README.md", "codex-rs/mcp-server/tests/suite/codex_tool.rs", "command:codex mcp-server"]
+depends_on = ["a2"]
+done_when = "文档已明确项目级 server 绑定语义、`system://workspace` 自检方式与 `tldr` feature gate 使用方式；带/不带 `tldr` feature 的 `tools/list` 行为经过验证且没有回退。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-mcp-server --test all && cargo test -p codex-mcp-server --features tldr --test all tldr_tool_is_listed -- --exact"
+regress_by = "node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js issue .agents/issues/2026-04-07-zmemory-tldr-mcp-service.toml"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_run"
+notes = "文档需明确：不要复用同一个 `codex mcp-server` 在多个项目之间切换 `zmemory` 上下文。"

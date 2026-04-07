@@ -523,7 +523,7 @@ impl HistoryCell for UpdateAvailableHistoryCell {
         } else {
             line![
                 "安装方式见 ",
-                "https://github.com/openai/codex".cyan().underlined(),
+                "https://github.com/sohaha/zcodex".cyan().underlined(),
                 "。"
             ]
         };
@@ -536,11 +536,11 @@ impl HistoryCell for UpdateAvailableHistoryCell {
                 format!("{CODEX_CLI_VERSION} -> {}", self.latest_version).bold(),
             ],
             update_instruction,
-            "",
-            "查看完整更新日志：",
-            "https://github.com/openai/codex/releases/latest"
-                .cyan()
-                .underlined(),
+            // "",
+            // "查看完整更新日志：",
+            // "https://github.com/openai/codex/releases/latest"
+            //     .cyan()
+            //     .underlined(),
         ];
 
         let inner_width = content
