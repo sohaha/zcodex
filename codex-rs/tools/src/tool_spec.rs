@@ -239,10 +239,10 @@ fn normalize_top_level_schema(schema: Value) -> Value {
     let Some(variants) = schema.get("oneOf").and_then(Value::as_array) else {
         return schema;
     };
-    wrap_combiner_in_object("oneOf", variants).unwrap_or(schema)
+    collapse_top_level_one_of_to_object(variants).unwrap_or(schema)
 }
 
-fn wrap_combiner_in_object(kind: &str, variants: &[Value]) -> Option<Value> {
+fn collapse_top_level_one_of_to_object(variants: &[Value]) -> Option<Value> {
     let mut properties = JsonMap::new();
     let mut required_intersection: Option<BTreeSet<String>> = None;
     let mut disallow_additional_properties = true;
@@ -283,7 +283,6 @@ fn wrap_combiner_in_object(kind: &str, variants: &[Value]) -> Option<Value> {
     let mut wrapped = JsonMap::from_iter([
         ("type".to_string(), Value::String("object".to_string())),
         ("properties".to_string(), Value::Object(properties)),
-        (kind.to_string(), Value::Array(variants.to_vec())),
     ]);
 
     if disallow_additional_properties {

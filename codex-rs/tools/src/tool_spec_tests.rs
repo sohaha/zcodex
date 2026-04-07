@@ -167,7 +167,7 @@ fn create_tools_json_for_responses_api_includes_top_level_name() {
 }
 
 #[test]
-fn create_tools_json_for_responses_api_wraps_top_level_one_of_as_object() {
+fn create_tools_json_for_responses_api_flattens_top_level_one_of_to_object() {
     assert_eq!(
         create_tools_json_for_responses_api(&[ToolSpec::Function(ResponsesApiTool {
             name: "demo".to_string(),
@@ -229,26 +229,6 @@ fn create_tools_json_for_responses_api_wraps_top_level_one_of_as_object() {
                 },
                 "required": ["action"],
                 "additionalProperties": false,
-                "oneOf": [
-                    {
-                        "type": "object",
-                        "properties": {
-                            "action": { "type": "string", "enum": ["read"] },
-                            "uri": { "type": "string" },
-                        },
-                        "required": ["action", "uri"],
-                        "additionalProperties": false,
-                    },
-                    {
-                        "type": "object",
-                        "properties": {
-                            "action": { "type": "string", "enum": ["stats"] },
-                            "limit": { "type": "integer" },
-                        },
-                        "required": ["action"],
-                        "additionalProperties": false,
-                    }
-                ],
             },
         })]
     );
