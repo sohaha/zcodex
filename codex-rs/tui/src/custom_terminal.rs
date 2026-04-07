@@ -527,16 +527,23 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
     let previous_buffer = &a.content;
     let next_buffer = &b.content;
 
+    // When buffer areas differ (e.g., after a resize), cell-by-cell comparison is
+    // meaningless because the row strides don't match. Force a full redraw using
+    // the current buffer's area to avoid garbled output.
+    if a.area != b.area {
+        return full_redraw(b);
+    }
+
     let mut updates = vec![];
-    let mut last_nonblank_columns = vec![0; a.area.height as usize];
-    for y in 0..a.area.height {
-        let row_start = y as usize * a.area.width as usize;
-        let row_end = row_start + a.area.width as usize;
+    let mut last_nonblank_columns = vec![0; b.area.height as usize];
+    for y in 0..b.area.height {
+        let row_start = y as usize * b.area.width as usize;
+        let row_end = row_start + b.area.width as usize;
         let row = &next_buffer[row_start..row_end];
         let bg = row.last().map(|cell| cell.bg).unwrap_or(Color::Reset);
 
         // Scan the row to find the rightmost column that still matters: any non-space glyph,
-        // any cell whose bg differs from the row’s trailing bg, or any cell with modifiers.
+        // any cell whose bg differs from the row's trailing bg, or any cell with modifiers.
         // Multi-width glyphs extend that region through their full displayed width.
         // After that point the rest of the row can be cleared with a single ClearToEnd, a perf win
         // versus emitting multiple space Put commands.
@@ -552,7 +559,7 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
         }
 
         if last_nonblank_column + 1 < row.len() {
-            let (x, y) = a.pos_of(row_start + last_nonblank_column + 1);
+            let (x, y) = b.pos_of(row_start + last_nonblank_column + 1);
             updates.push(DrawCommand::ClearToEnd { x, y, bg });
         }
 
@@ -566,8 +573,8 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
     let mut to_skip: usize = 0;
     for (i, (current, previous)) in next_buffer.iter().zip(previous_buffer.iter()).enumerate() {
         if !current.skip && (current != previous || invalidated > 0) && to_skip == 0 {
-            let (x, y) = a.pos_of(i);
-            let row = i / a.area.width as usize;
+            let (x, y) = b.pos_of(i);
+            let row = i / b.area.width as usize;
             if x <= last_nonblank_columns[row] {
                 updates.push(DrawCommand::Put {
                     x,
@@ -584,6 +591,27 @@ fn diff_buffers(a: &Buffer, b: &Buffer) -> Vec<DrawCommand> {
             display_width(previous.symbol()),
         );
         invalidated = std::cmp::max(affected_width, invalidated).saturating_sub(1);
+    }
+    updates
+}
+
+/// Emit draw commands to repaint the entire buffer when areas have diverged.
+fn full_redraw(buffer: &Buffer) -> Vec<DrawCommand> {
+    let mut updates = vec![DrawCommand::ClearToEnd {
+        x: 0,
+        y: buffer.area.y,
+        bg: Color::Reset,
+    }];
+    for (i, cell) in buffer.content.iter().enumerate() {
+        if cell.skip {
+            continue;
+        }
+        let (x, y) = buffer.pos_of(i);
+        updates.push(DrawCommand::Put {
+            x,
+            y,
+            cell: cell.clone(),
+        });
     }
     updates
 }
@@ -764,6 +792,62 @@ mod tests {
                 .iter()
                 .any(|command| matches!(command, DrawCommand::ClearToEnd { x: 2, y: 0, .. })),
             "expected clear-to-end to start after the remaining wide char; commands: {commands:?}"
+        );
+    }
+
+    #[test]
+    fn full_redraw_emits_put_for_every_non_skipped_cell() {
+        let area = Rect::new(0, 0, 3, 2);
+        let mut buffer = Buffer::empty(area);
+        buffer
+            .cell_mut((0, 0))
+            .expect("cell should exist")
+            .set_symbol("A");
+        buffer
+            .cell_mut((1, 1))
+            .expect("cell should exist")
+            .set_symbol("B");
+
+        let commands = full_redraw(&buffer);
+
+        let put_count = commands
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Put { .. }))
+            .count();
+        let clear_count = commands
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::ClearToEnd { .. }))
+            .count();
+
+        assert_eq!(clear_count, 1, "expected exactly one ClearToEnd");
+        assert_eq!(
+            put_count, 6,
+            "expected Put for every cell in the buffer (3x2)"
+        );
+    }
+
+    #[test]
+    fn diff_buffers_forces_full_redraw_on_area_mismatch() {
+        let old_area = Rect::new(0, 0, 4, 3);
+        let new_area = Rect::new(0, 0, 5, 4);
+        let old_buffer = Buffer::empty(old_area);
+        let new_buffer = Buffer::empty(new_area);
+
+        let commands = diff_buffers(&old_buffer, &new_buffer);
+
+        let put_count = commands
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Put { .. }))
+            .count();
+        let clear_count = commands
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::ClearToEnd { .. }))
+            .count();
+
+        assert_eq!(clear_count, 1, "expected exactly one ClearToEnd");
+        assert_eq!(
+            put_count, 20,
+            "expected Put for every cell in the new buffer (5x4)"
         );
     }
 }
