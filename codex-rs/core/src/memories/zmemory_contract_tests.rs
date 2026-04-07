@@ -38,6 +38,7 @@ fn stable_preference_contract_markdown_describes_dedupe_and_update_rules() {
     assert!(markdown.contains("`core://my_user`"));
     assert!(markdown.contains("`core://agent`"));
     assert!(markdown.contains("`core://agent/my_user`"));
+    assert!(markdown.contains("independent from the runtime boot anchor list"));
     assert!(markdown.contains("`read system://workspace`"));
     assert!(markdown.contains("`read` the canonical URI you plan to change"));
     assert!(markdown.contains("`search` for duplicate or alias coverage"));

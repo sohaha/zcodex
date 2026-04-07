@@ -41,6 +41,7 @@ pub(crate) fn stable_preference_contract_markdown() -> String {
          - Use these canonical URIs for high-confidence preference writes:\n\
          {mappings}\n\
          - Treat those three canonical URIs as the stable identity layer for automatic recall and refinement.\n\
+         - These canonical identity memories are independent from the runtime boot anchor list; use `system://workspace` to confirm the active boot profile before assuming which URIs were preloaded.\n\
          - If the input is clearly about assistant identity, user preference, or the collaboration contract, read the matching canonical URI before answering and do not ask the user which path to use.\n\
          - Before writing, inspect the current runtime DB via `read system://workspace`, then `read` the canonical URI you plan to change.\n\
          - You may `search` for duplicate or alias coverage, but search results must never change the canonical target URI.\n\

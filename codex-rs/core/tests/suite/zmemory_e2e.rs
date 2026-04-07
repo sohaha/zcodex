@@ -1592,7 +1592,10 @@ async fn zmemory_function_boot_view_reports_missing_configured_anchors() -> Resu
     let payload = extract_zmemory_json_block(&output);
     assert_eq!(payload["action"], "read");
     assert_eq!(payload["result"]["view"]["view"], "boot");
+    assert_eq!(payload["result"]["view"]["bootHealthy"], false);
     assert_eq!(payload["result"]["view"]["entryCount"], 1);
+    assert_eq!(payload["result"]["view"]["presentUris"][0], "core://agent");
+    assert_eq!(payload["result"]["view"]["missingUriCount"], 2);
     assert_eq!(
         payload["result"]["view"]["entries"][0]["uri"],
         "core://agent"

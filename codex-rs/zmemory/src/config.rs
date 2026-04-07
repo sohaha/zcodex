@@ -9,7 +9,7 @@ pub(crate) const ZMEMORY_PROJECTS_DIR: &str = "projects";
 pub(crate) const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
 const VALID_DOMAINS_ENV: &str = "VALID_DOMAINS";
 const CORE_MEMORY_URIS_ENV: &str = "CORE_MEMORY_URIS";
-const DEFAULT_VALID_DOMAINS: &[&str] = &["core"];
+const DEFAULT_VALID_DOMAINS: &[&str] = &["core", "project", "notes"];
 const DEFAULT_CORE_MEMORY_URIS: &[&str] =
     &["core://agent", "core://my_user", "core://agent/my_user"];
 
@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn settings_default_to_core_domain_and_boot_anchors() {
+    fn settings_default_to_project_aware_domains_and_boot_anchors() {
         let settings = ZmemorySettings::from_env_vars(None, None);
 
         assert_eq!(

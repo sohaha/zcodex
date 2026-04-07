@@ -62,9 +62,10 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 ## 域与 boot 基线
 
 - `[zmemory].valid_domains` / `[zmemory].core_memory_uris` 可直接声明 runtime profile
-- `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core`
+- `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core,project,notes`
 - `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent,core://my_user,core://agent/my_user`
 - 优先级：`[zmemory]` 配置 > 环境变量 > 产品默认值
+- 运行时真相以 `system://workspace` 为准；如果用户在 `config.toml` 或环境变量里覆盖了这些值，不要继续按产品默认值推断当前 profile。
 - `system` 是保留只读域，不需要写进 `VALID_DOMAINS`
 - 当读写到未知 domain 时，会返回 `unknown domain 'X'. valid domains: ...` 这种显式错误，便于 CLI / tool 调用方直接修正输入。
 
@@ -205,6 +206,11 @@ codex zmemory import-memory --items-json '[
 - `system://paths`：显式列出全部活跃记忆路径，适合治理、排查“到底有哪些 path”这类问题。
 
 `system://boot` 现在优先返回 `CORE_MEMORY_URIS` 中已存在的锚点节点，并显式给出缺失锚点列表；不再按全库 priority 直接截取前 N 条。
+
+- `missingUris` 是判断 boot 缺失锚点的唯一权威字段。
+- `entries` / `presentUris` 只列出当前已存在的锚点；某个 URI 没出现在 `entries` 中，不代表它缺失，必须再看 `missingUris`。
+- `anchors` 会按 boot 顺序返回每个锚点的 `uri` 与 `exists` 状态；已存在锚点还会附带 `priority` / `updatedAt`。
+- `bootHealthy` 等价于 `missingUris` 为空，便于 agent 和脚本快速判断 boot 是否完整。
 
 `system://defaults` / `system://workspace` 用来显式区分“产品默认事实”和“当前工作区实际事实”：
 

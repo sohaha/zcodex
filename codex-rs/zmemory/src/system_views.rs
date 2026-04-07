@@ -132,24 +132,43 @@ fn read_boot_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> Re
         .cloned()
         .collect::<Vec<_>>();
     let mut entries = Vec::new();
+    let mut present_uris = Vec::new();
     let mut missing_uris = Vec::new();
+    let mut anchors = Vec::new();
 
     let indexed_entries = search_documents_by_uri(conn, &scoped_uris)?;
     for uri in scoped_uris {
         if let Some(entry) = indexed_entries.get(&uri) {
             entries.push(entry.clone());
+            present_uris.push(uri.clone());
+            anchors.push(json!({
+                "uri": uri,
+                "exists": true,
+                "priority": entry["priority"].clone(),
+                "updatedAt": entry["updatedAt"].clone(),
+            }));
         } else {
-            missing_uris.push(uri);
+            missing_uris.push(uri.clone());
+            anchors.push(json!({
+                "uri": uri,
+                "exists": false,
+            }));
         }
     }
+    let boot_healthy = missing_uris.is_empty();
+    let missing_uri_count = missing_uris.len();
 
     Ok(json!({
         "view": "boot",
         "configuredUriCount": configured_uris.len(),
         "configuredUris": configured_uris,
+        "presentUris": present_uris,
         "missingUris": missing_uris,
+        "missingUriCount": missing_uri_count,
+        "bootHealthy": boot_healthy,
         "entryCount": entries.len(),
         "entries": entries,
+        "anchors": anchors,
     }))
 }
 
@@ -201,6 +220,8 @@ fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
         "bootContract": {
             "view": "boot",
             "limitControlsAnchors": true,
+            "entriesListOnlyPresentAnchors": true,
+            "missingUrisAreAuthoritative": true,
             "anchors": default_core_memory_uris(),
         },
     }))
@@ -212,9 +233,9 @@ fn read_workspace_view(conn: &Connection, config: &ZmemoryConfig) -> Result<Valu
     let default_db_path = zmemory_db_path(config.codex_home(), config.workspace_base());
     let boot = read_boot_view(conn, config, usize::MAX)?;
     let boot_healthy = boot
-        .get("missingUris")
-        .and_then(Value::as_array)
-        .is_some_and(Vec::is_empty);
+        .get("bootHealthy")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
 
     Ok(json!({
         "view": "workspace",

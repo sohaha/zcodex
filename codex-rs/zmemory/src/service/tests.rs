@@ -389,7 +389,10 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
         },
     )
     .expect("defaults view should succeed");
-    assert_eq!(defaults["result"]["view"]["validDomains"], json!(["core"]));
+    assert_eq!(
+        defaults["result"]["view"]["validDomains"],
+        json!(["core", "project", "notes"])
+    );
     assert_eq!(
         defaults["result"]["view"]["coreMemoryUris"],
         json!(["core://agent", "core://my_user", "core://agent/my_user"])
@@ -747,8 +750,21 @@ fn system_views_reflect_index_recent_and_glossary() {
     )
     .expect("boot view should succeed");
     assert_eq!(boot["result"]["view"]["view"], "boot");
+    assert_eq!(boot["result"]["view"]["bootHealthy"], false);
     assert_eq!(boot["result"]["view"]["entryCount"], 1);
+    assert_eq!(
+        boot["result"]["view"]["presentUris"],
+        json!(["core://agent"])
+    );
+    assert_eq!(boot["result"]["view"]["missingUriCount"], 2);
     assert_eq!(boot["result"]["view"]["entries"][0]["uri"], "core://agent");
+    assert_eq!(boot["result"]["view"]["anchors"][0]["uri"], "core://agent");
+    assert_eq!(boot["result"]["view"]["anchors"][0]["exists"], true);
+    assert_eq!(
+        boot["result"]["view"]["anchors"][1]["uri"],
+        "core://my_user"
+    );
+    assert_eq!(boot["result"]["view"]["anchors"][1]["exists"], false);
     assert_eq!(boot["result"]["view"]["missingUris"][0], "core://my_user");
     assert_eq!(
         boot["result"]["view"]["missingUris"][1],
@@ -765,6 +781,14 @@ fn system_views_reflect_index_recent_and_glossary() {
     )
     .expect("defaults view should succeed");
     assert_eq!(defaults["result"]["view"]["view"], "defaults");
+    assert_eq!(
+        defaults["result"]["view"]["bootContract"]["entriesListOnlyPresentAnchors"],
+        true
+    );
+    assert_eq!(
+        defaults["result"]["view"]["bootContract"]["missingUrisAreAuthoritative"],
+        true
+    );
     assert_eq!(
         defaults["result"]["view"]["defaultPathPolicy"]["mode"],
         "projectScoped"

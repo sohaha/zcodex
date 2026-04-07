@@ -19,6 +19,10 @@ How to think about it:
 - Before writing, prefer `zmemory` `read` or `search` to avoid duplicates.
 - Use `read system://workspace` to inspect the current runtime database and
   `read system://defaults` to compare product defaults.
+- Treat `system://workspace` as the source of truth for the active runtime
+  profile. Users may override `valid_domains` and `core_memory_uris` in
+  `config.toml` or via environment variables, so do not assume product
+  defaults are active.
 - Keep disclosures single-purpose so later `stats` and `doctor` review output
   stays actionable.
 - The model-visible zmemory tools are `read_memory`, `search_memory`,
@@ -40,6 +44,13 @@ Low-friction defaults:
 - Default to silent recall. Do not ask the user which memory path to read when
   the request is clearly about stable identity, user preference, or shared
   collaboration rules.
+- When summarizing `system://boot`, treat `missingUris` as the sole source of
+  truth for missing boot anchors.
+- `entries`, `presentUris`, and `anchors[].exists=true` list only anchors that
+  currently exist. Do not infer that a URI is missing merely because it is
+  absent from `entries`.
+- Before claiming the boot state, cross-check `configuredUris`, `presentUris`,
+  `missingUris`, and `bootHealthy`.
 - Use the canonical identity layer first:
   - `core://agent` for the assistant's stable self-reference
   - `core://my_user` for the user's stable preferences and address form
