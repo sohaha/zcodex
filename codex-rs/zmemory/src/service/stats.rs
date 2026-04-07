@@ -218,41 +218,6 @@ pub(crate) fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
     )?)
 }
 
-pub(crate) fn paths_missing_disclosure(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COUNT(*) FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.disclosure IS NULL OR TRIM(e.disclosure) = ''",
-        [],
-        |row| row.get(0),
-    )?)
-}
-
-pub(crate) fn disclosures_needing_review(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COUNT(*) FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.disclosure IS NOT NULL
-           AND TRIM(e.disclosure) != ''
-           AND (
-             INSTR(LOWER(e.disclosure), ' or ') > 0
-             OR INSTR(LOWER(e.disclosure), ' and ') > 0
-             OR INSTR(e.disclosure, ',') > 0
-             OR INSTR(e.disclosure, '，') > 0
-             OR INSTR(e.disclosure, '、') > 0
-             OR INSTR(e.disclosure, ';') > 0
-             OR INSTR(e.disclosure, '；') > 0
-             OR INSTR(e.disclosure, '/') > 0
-             OR INSTR(e.disclosure, '&') > 0
-             OR INSTR(e.disclosure, '+') > 0
-             OR INSTR(e.disclosure, '|') > 0
-             OR INSTR(e.disclosure, '或') > 0
-           )",
-        [],
-        |row| row.get(0),
-    )?)
-}
-
 pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
     let stats_snapshot = collect_stats_snapshot(conn)?;
     let doctor = run_doctor(
