@@ -14,8 +14,7 @@ workspace memory that is separate from the native read-only memory folder.
 - Keep disclosures single-purpose so later `stats` and `doctor` review output
   stays actionable.
 - The model-visible zmemory tools are `read_memory`, `search_memory`,
-  `create_memory`, `update_memory`, `delete_memory`, `add_alias`, and
-  `manage_triggers`.
+  `create_memory`, and `update_memory`.
 
 Active-use triggers:
 
@@ -24,7 +23,7 @@ Active-use triggers:
 - If the URI is unclear, `search_memory` first; do not guess the path.
 - When durable new knowledge appears, use `create_memory` (or `update_memory`
   when refining an existing node).
-- Before `update_memory` or `delete_memory`, read the target node first.
+- Before `update_memory`, read the target node first.
 
 Low-friction defaults:
 

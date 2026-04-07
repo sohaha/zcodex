@@ -531,10 +531,11 @@ fn test_zmemory_legacy_handler_remains_registered_while_tool_is_hidden() {
             "search_memory",
             "create_memory",
             "update_memory",
-            "delete_memory",
-            "add_alias",
-            "manage_triggers",
         ],
+    );
+    assert_contains_handler_names(
+        &handlers,
+        &["delete_memory", "add_alias", "manage_triggers"],
     );
 }
 

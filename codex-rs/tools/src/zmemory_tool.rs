@@ -405,33 +405,6 @@ pub fn create_zmemory_mcp_tools() -> Vec<ToolSpec> {
             ]),
             vec!["uri"],
         ),
-        mcp_tool(
-            "delete_memory",
-            "删除记忆路径（不会擦除底层内容）。",
-            BTreeMap::from([str_prop("uri", Some("要移除的 URI 路径。"))]),
-            vec!["uri"],
-        ),
-        mcp_tool(
-            "add_alias",
-            "为现有记忆创建别名路径。",
-            BTreeMap::from([
-                str_prop("new_uri", Some("新的别名 URI。")),
-                str_prop("target_uri", Some("要指向的目标 URI。")),
-                int_prop("priority", Some("别名路径可选的优先级。")),
-                str_prop("disclosure", Some("别名路径可选的 disclosure。")),
-            ]),
-            vec!["new_uri", "target_uri"],
-        ),
-        mcp_tool(
-            "manage_triggers",
-            "管理某条记忆的触发关键词。",
-            BTreeMap::from([
-                str_prop("uri", Some("目标记忆 URI。")),
-                str_array_prop("add", Some("要新增的关键词。")),
-                str_array_prop("remove", Some("要移除的关键词。")),
-            ]),
-            vec!["uri"],
-        ),
     ]
 }
 
@@ -601,17 +574,6 @@ mod tests {
     }
 
     #[test]
-    fn delete_memory_schema_mentions_path_only_contract() {
-        let tool = function_tool(
-            create_zmemory_mcp_tools()
-                .into_iter()
-                .find(|spec| spec.name() == "delete_memory")
-                .expect("delete_memory tool should exist"),
-        );
-        assert!(tool.description.contains("不会擦除底层内容"));
-    }
-
-    #[test]
     fn create_zmemory_mcp_tools_keep_required_fields_stable() {
         let required_fields = create_zmemory_mcp_tools()
             .into_iter()
@@ -628,10 +590,6 @@ mod tests {
             required_fields,
             BTreeMap::from([
                 (
-                    "add_alias".to_string(),
-                    vec!["new_uri".to_string(), "target_uri".to_string()]
-                ),
-                (
                     "create_memory".to_string(),
                     vec![
                         "parent_uri".to_string(),
@@ -639,8 +597,6 @@ mod tests {
                         "priority".to_string(),
                     ]
                 ),
-                ("delete_memory".to_string(), vec!["uri".to_string()]),
-                ("manage_triggers".to_string(), vec!["uri".to_string()]),
                 ("read_memory".to_string(), vec!["uri".to_string()]),
                 ("search_memory".to_string(), vec!["query".to_string()]),
                 ("update_memory".to_string(), vec!["uri".to_string()]),
