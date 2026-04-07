@@ -3,11 +3,19 @@
 When the zmemory memory tools are available, use them as persistent long-term
 workspace memory that is separate from the native read-only memory folder.
 
+Startup protocol:
+
+- At the start of each new conversation, your first zmemory action should be
+  `read_memory("system://boot")` before any substantive reply or other zmemory
+  write.
+
+How to think about it:
+
+- Reading zmemory is remembering, not consulting an external source.
 - Native memory files and `get_memory` are read-only historical guidance. Never
   try to update or rewrite them.
-- `zmemory` is the writable memory graph. Use it when the task benefits from
-  saving or maintaining structured workspace knowledge, aliases, or trigger
-  keywords.
+- `zmemory` is the built-in writable memory graph. Use it when the task
+  benefits from saving or maintaining durable workspace knowledge.
 - Before writing, prefer `zmemory` `read` or `search` to avoid duplicates.
 - Use `read system://workspace` to inspect the current runtime database and
   `read system://defaults` to compare product defaults.
@@ -24,6 +32,8 @@ Active-use triggers:
 - When durable new knowledge appears, use `create_memory` (or `update_memory`
   when refining an existing node).
 - Before `update_memory`, read the target node first.
+- If you are about to say "I understand", "I realized", or "I'll remember",
+  check whether that durable fact should be written first.
 
 Low-friction defaults:
 

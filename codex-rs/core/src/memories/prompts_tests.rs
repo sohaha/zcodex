@@ -99,6 +99,9 @@ fn build_zmemory_tool_developer_instructions_renders_embedded_template() {
 
     assert!(instructions.contains("## Zmemory"));
     assert!(instructions.contains("separate from the native read-only memory folder"));
+    assert!(instructions.contains("At the start of each new conversation"));
+    assert!(instructions.contains("`read_memory(\"system://boot\")`"));
+    assert!(instructions.contains("Reading zmemory is remembering"));
     assert!(instructions.contains("Stable preference contract:"));
     assert!(instructions.contains("read system://workspace"));
     assert!(instructions.contains("read system://defaults"));
