@@ -74,6 +74,21 @@ resolve_build_profile_dir() {
   printf '%s\n' "$profile"
 }
 
+resolve_rs_ext_target_dir() {
+  local slot
+
+  if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" = "1" ] && [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    printf '%s\n' "$CARGO_TARGET_DIR"
+    return
+  fi
+
+  slot="$(
+    bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" \
+      cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "$@"
+  )"
+  bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot"
+}
+
 resolve_remote_ssh_target() {
   local ssh_schema="${CNB_VSCODE_REMOTE_SSH_SCHEMA:-}"
   local ssh_target
@@ -520,7 +535,8 @@ prepare_cross_wrappers
 
 profile_dir="$(resolve_build_profile_dir "$@")"
 mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
-output_bin="${CARGO_TARGET_DIR:-$codex_rs_dir/target}/$target/$profile_dir/codex"
+target_dir="$(resolve_rs_ext_target_dir "${build_args[@]}")"
+output_bin="$target_dir/$target/$profile_dir/codex"
 
 "$script_dir/rs-ext" cargo build -p codex-cli --bin codex -j "$jobs" --target "$target" "${build_args[@]}"
 ensure_data_const_read_only_flag "$output_bin"
