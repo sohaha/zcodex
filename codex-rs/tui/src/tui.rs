@@ -31,7 +31,6 @@ use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::disable_raw_mode;
 use ratatui::crossterm::terminal::enable_raw_mode;
 use ratatui::layout::Offset;
-use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::layout::Size;
 use ratatui::text::Line;
@@ -454,22 +453,6 @@ impl Tui {
         self.pending_history_lines.clear();
     }
 
-    fn clear_top_for_viewport_change(old_y: u16, new_y: u16, visible_history_rows: u16) -> u16 {
-        old_y.min(new_y).max(visible_history_rows)
-    }
-
-    fn clamp_inline_viewport_area(
-        area: Rect,
-        screen_size: Size,
-        visible_history_rows: u16,
-    ) -> Rect {
-        let mut area = area;
-        let max_y = screen_size.height.saturating_sub(area.height);
-        let min_y = visible_history_rows.min(max_y);
-        area.y = area.y.clamp(min_y, max_y);
-        area
-    }
-
     /// Resize the inline viewport to `height` rows, scrolling content above it if
     /// the viewport would extend past the bottom of the screen. Returns `true` when
     /// the caller must invalidate the diff buffer (Zellij mode), because the scroll
@@ -497,15 +480,9 @@ impl Tui {
             }
             area.y = size.height - area.height;
         }
-        area = Self::clamp_inline_viewport_area(area, size, terminal.visible_history_rows());
         if area != terminal.viewport_area {
             // TODO(nornagon): probably this could be collapsed with the clear + set_viewport_area above.
-            let clear_top = Self::clear_top_for_viewport_change(
-                terminal.viewport_area.y,
-                area.y,
-                terminal.visible_history_rows(),
-            );
-            terminal.clear_from(Position { x: 0, y: clear_top })?;
+            terminal.clear()?;
             terminal.set_viewport_area(area);
         }
 
@@ -576,13 +553,8 @@ impl Tui {
 
             let terminal = &mut self.terminal;
             if let Some(new_area) = pending_viewport_area.take() {
-                let clear_top = Self::clear_top_for_viewport_change(
-                    terminal.viewport_area.y,
-                    new_area.y,
-                    terminal.visible_history_rows(),
-                );
-                terminal.clear_from(Position { x: 0, y: clear_top })?;
                 terminal.set_viewport_area(new_area);
+                terminal.clear()?;
             }
 
             let mut needs_full_repaint =
@@ -621,70 +593,21 @@ impl Tui {
         let terminal = &mut self.terminal;
         let screen_size = terminal.size()?;
         let last_known_screen_size = terminal.last_known_screen_size;
-        if screen_size == last_known_screen_size {
-            return Ok(None);
-        }
-
-        if !self.alt_screen_active.load(Ordering::Relaxed) {
-            return Ok(None);
-        }
-
-        // Alt-screen: try the cursor-delta heuristic first. If the cursor moved
-        // (e.g., terminal scrolled the alt-screen content on resize), use that.
-        if let Ok(cursor_pos) = terminal.get_cursor_position() {
+        if screen_size != last_known_screen_size
+            && let Ok(cursor_pos) = terminal.get_cursor_position()
+        {
             let last_known_cursor_pos = terminal.last_known_cursor_pos;
-            // Alt-screen overlays still rely on the cursor-delta heuristic because they
-            // do not participate in inline history layout.
+            // If we resized AND the cursor moved, we adjust the viewport area to keep the
+            // cursor in the same position. This is a heuristic that seems to work well
+            // at least in iTerm2.
             if cursor_pos.y != last_known_cursor_pos.y {
                 let offset = Offset {
                     x: 0,
                     y: cursor_pos.y as i32 - last_known_cursor_pos.y as i32,
                 };
-                return Ok(Some(Self::clamp_inline_viewport_area(
-                    terminal.viewport_area.offset(offset),
-                    screen_size,
-                    terminal.visible_history_rows(),
-                )));
+                return Ok(Some(terminal.viewport_area.offset(offset)));
             }
         }
-
-        // Fallback when cursor delta is unreliable (common in tmux, some terminals):
-        // reset to a full-screen viewport since we can't determine how (or whether)
-        // the terminal scrolled the alt-screen content on resize.
-        Ok(Some(Rect::new(
-            terminal.viewport_area.x,
-            0,
-            screen_size.width,
-            screen_size.height,
-        )))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn clear_top_for_viewport_change_preserves_history() {
-        let clear_top = Tui::clear_top_for_viewport_change(12, 6, 8);
-
-        assert_eq!(clear_top, 8);
-    }
-
-    #[test]
-    fn clamp_inline_viewport_keeps_history_visible() {
-        let area = Rect::new(0, 2, 80, 10);
-        let clamped = Tui::clamp_inline_viewport_area(area, Size::new(80, 20), 6);
-
-        assert_eq!(clamped, Rect::new(0, 6, 80, 10));
-    }
-
-    #[test]
-    fn clamp_inline_viewport_respects_screen_bottom() {
-        let area = Rect::new(0, 18, 80, 6);
-        let clamped = Tui::clamp_inline_viewport_area(area, Size::new(80, 20), 3);
-
-        assert_eq!(clamped, Rect::new(0, 14, 80, 6));
+        Ok(None)
     }
 }
