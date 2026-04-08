@@ -2,7 +2,7 @@ use super::*;
 use crate::app_event::RateLimitRefreshOrigin;
 use assert_matches::assert_matches;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgpt_auth() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
@@ -28,7 +28,7 @@ async fn status_command_renders_immediately_and_refreshes_rate_limits_for_chatgp
     pretty_assertions::assert_eq!(request_id, 0);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_command_updates_rendered_cell_after_rate_limit_refresh() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
@@ -66,7 +66,7 @@ async fn status_command_updates_rendered_cell_after_rate_limit_refresh() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_command_renders_immediately_without_rate_limit_refresh() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -80,7 +80,7 @@ async fn status_command_renders_immediately_without_rate_limit_refresh() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn status_command_overlapping_refreshes_update_matching_cells_only() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     set_chatgpt_auth(&mut chat);
