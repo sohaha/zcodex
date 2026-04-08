@@ -276,6 +276,14 @@ fn history_returns_full_version_chain_sorted() {
         .expect("versions should be an array");
     assert_eq!(history["action"], "history");
     assert_eq!(history["result"]["uri"], "core://history-node");
+    assert_eq!(
+        sorted_object_keys(&history["result"]),
+        vec!["nodeUuid", "uri", "versions"]
+    );
+    assert_eq!(
+        sorted_object_keys(&versions[0]),
+        vec!["content", "createdAt", "deprecated", "id", "migratedTo"]
+    );
     assert_eq!(versions.len(), 2);
     assert_eq!(versions[0]["content"], "initial #1");
     assert_eq!(versions[0]["deprecated"], false);
@@ -1347,6 +1355,36 @@ fn stats_and_doctor_surface_review_pressure() {
     assert_eq!(stats["result"]["auditActionCounts"]["update"], 1);
     assert_eq!(stats["result"]["auditActionCounts"]["delete-path"], 1);
     assert_eq!(
+        sorted_object_keys(&stats["result"]),
+        vec![
+            "aliasNodeCount",
+            "aliasNodesMissingTriggers",
+            "auditActionCounts",
+            "auditLogCount",
+            "dbPath",
+            "deprecatedMemoryCount",
+            "disclosurePathCount",
+            "disclosuresNeedingReview",
+            "ftsDocumentCount",
+            "glossaryKeywordCount",
+            "latestAuditAt",
+            "memoryCount",
+            "namespace",
+            "namespaceSource",
+            "nodeCount",
+            "orphanedMemoryCount",
+            "pathCount",
+            "pathResolution",
+            "pathsMissingDisclosure",
+            "reason",
+            "searchDocumentCount",
+            "source",
+            "supportsNamespaceSelection",
+            "triggerNodeCount",
+            "workspaceKey",
+        ]
+    );
+    assert_eq!(
         stats["result"]["pathResolution"]["dbPath"],
         json!(config.db_path().display().to_string())
     );
@@ -1449,6 +1487,33 @@ fn stats_and_doctor_surface_review_pressure() {
             "workspaceKey",
         ]
     );
+    assert_eq!(
+        sorted_object_keys(&doctor["result"]),
+        vec![
+            "aliasNodeCount",
+            "aliasNodesMissingTriggers",
+            "dbPath",
+            "deprecatedMemoryCount",
+            "disclosuresNeedingReview",
+            "healthy",
+            "issues",
+            "namespace",
+            "namespaceSource",
+            "orphanedMemoryCount",
+            "pathResolution",
+            "pathsMissingDisclosure",
+            "reason",
+            "source",
+            "stats",
+            "supportsNamespaceSelection",
+            "triggerNodeCount",
+            "workspaceKey",
+        ]
+    );
+    assert_eq!(
+        sorted_object_keys(&doctor["result"]["stats"]),
+        sorted_object_keys(&stats["result"])
+    );
     assert_eq!(doctor["result"]["stats"]["auditLogCount"], 5);
     assert!(doctor["result"]["stats"]["latestAuditAt"].is_string());
     assert_eq!(doctor["result"]["stats"]["auditActionCounts"]["create"], 3);
@@ -1474,6 +1539,11 @@ fn stats_and_doctor_surface_review_pressure() {
         issues
             .iter()
             .any(|issue| issue["code"] == "disclosures_need_review")
+    );
+    assert!(
+        issues
+            .iter()
+            .all(|issue| { sorted_object_keys(issue) == vec!["code", "message"] })
     );
 }
 
@@ -2333,7 +2403,24 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
     )
     .expect("alias view should succeed");
 
+    assert_eq!(
+        sorted_object_keys(&alias_view["result"]),
+        vec!["uri", "view"]
+    );
     let view = &alias_view["result"]["view"];
+    assert_eq!(
+        sorted_object_keys(view),
+        vec![
+            "aliasNodeCount",
+            "aliasNodesMissingTriggers",
+            "coveragePercent",
+            "entries",
+            "entryCount",
+            "recommendations",
+            "triggerNodeCount",
+            "view",
+        ]
+    );
     let recommendations = view["recommendations"]
         .as_array()
         .expect("recommendations should be an array");
@@ -2351,6 +2438,20 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
         recommendations[0]["command"],
         "codex zmemory manage-triggers core://hub/launch-plan --add alpha --add hub --add launch --json"
     );
+    assert_eq!(
+        sorted_object_keys(&recommendations[0]),
+        vec![
+            "action",
+            "advice",
+            "command",
+            "missingTriggers",
+            "nodeUri",
+            "priorityReason",
+            "priorityScore",
+            "reviewPriority",
+            "suggestedKeywords",
+        ]
+    );
 
     let entries = view["entries"]
         .as_array()
@@ -2364,6 +2465,22 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
     assert_eq!(
         entries[0]["suggestedKeywords"],
         json!(["alpha", "hub", "launch"])
+    );
+    assert_eq!(
+        sorted_object_keys(&entries[0]),
+        vec![
+            "aliasCount",
+            "domain",
+            "missingTriggers",
+            "nodeUri",
+            "nodeUuid",
+            "path",
+            "priorityReason",
+            "priorityScore",
+            "reviewPriority",
+            "suggestedKeywords",
+            "triggerCount",
+        ]
     );
 }
 
@@ -2423,6 +2540,29 @@ fn export_by_uri_keeps_requested_path_primary_and_includes_aliases_and_keywords(
         "alias://export-target-copy"
     );
     assert_eq!(export["result"]["count"], 1);
+    assert_eq!(
+        sorted_object_keys(&export["result"]),
+        vec!["count", "items", "scope"]
+    );
+    assert_eq!(
+        sorted_object_keys(&export["result"]["scope"]),
+        vec!["type", "value"]
+    );
+    assert_eq!(
+        sorted_object_keys(&export["result"]["items"][0]),
+        vec![
+            "aliases",
+            "content",
+            "disclosure",
+            "keywords",
+            "priority",
+            "uri"
+        ]
+    );
+    assert_eq!(
+        sorted_object_keys(&export["result"]["items"][0]["aliases"][0]),
+        vec!["disclosure", "priority", "uri"]
+    );
     assert_eq!(
         export["result"]["items"][0]["uri"],
         "alias://export-target-copy"
@@ -2586,28 +2726,34 @@ fn node_snapshot_builder_keeps_primary_aliases_keywords_and_children_in_sync() {
     let snapshot = crate::service::snapshot::load_node_snapshot_for_uri(&config, &conn, &uri)
         .expect("snapshot should load");
 
-    assert_eq!(snapshot.primary_uri, "alias://snapshot-copy");
-    assert_eq!(snapshot.content, "Snapshot parent");
-    assert_eq!(snapshot.priority, 6);
-    assert_eq!(snapshot.disclosure.as_deref(), Some("mirror"));
-    assert_eq!(snapshot.keywords, vec!["profile", "snapshot"]);
-    assert_eq!(snapshot.alias_count, 2);
+    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "alias", "snapshot-copy");
+    let memory_id = crate::schema::active_memory_id_for_node(&conn, config.namespace(), &node_uuid)
+        .expect("active memory query should succeed")
+        .expect("snapshot node should have active memory");
+
     assert_eq!(
-        snapshot.aliases,
-        vec![crate::service::contracts::NodeAliasContract {
-            uri: "core://snapshot-parent".to_string(),
-            priority: 4,
-            disclosure: Some("profile".to_string()),
-        }]
-    );
-    assert_eq!(
-        snapshot.children,
-        vec![crate::service::contracts::NodeChildContract {
-            name: "child".to_string(),
-            priority: 2,
-            disclosure: Some("detail".to_string()),
-            uri: "core://snapshot-parent/child".to_string(),
-        }]
+        snapshot,
+        crate::service::snapshot::NodeSnapshot {
+            node_uuid,
+            memory_id,
+            primary_uri: "alias://snapshot-copy".to_string(),
+            content: "Snapshot parent".to_string(),
+            priority: 6,
+            disclosure: Some("mirror".to_string()),
+            keywords: vec!["profile".to_string(), "snapshot".to_string()],
+            aliases: vec![crate::service::contracts::NodeAliasContract {
+                uri: "core://snapshot-parent".to_string(),
+                priority: 4,
+                disclosure: Some("profile".to_string()),
+            }],
+            children: vec![crate::service::contracts::NodeChildContract {
+                name: "child".to_string(),
+                priority: 2,
+                disclosure: Some("detail".to_string()),
+                uri: "core://snapshot-parent/child".to_string(),
+            }],
+            alias_count: 2,
+        }
     );
 }
 
@@ -2662,6 +2808,20 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
         json!(["agent", "profile"])
     );
     assert_eq!(read_primary["result"]["aliasCount"], 2);
+    assert_eq!(
+        sorted_object_keys(&read_primary["result"]),
+        vec![
+            "aliasCount",
+            "children",
+            "content",
+            "disclosure",
+            "keywords",
+            "memoryId",
+            "nodeUuid",
+            "priority",
+            "uri",
+        ]
+    );
 
     let read_alias = crate::service::execute_action(
         &config,
@@ -2681,6 +2841,20 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
         json!(["agent", "profile"])
     );
     assert_eq!(read_alias["result"]["aliasCount"], 2);
+    assert_eq!(
+        sorted_object_keys(&read_alias["result"]),
+        vec![
+            "aliasCount",
+            "children",
+            "content",
+            "disclosure",
+            "keywords",
+            "memoryId",
+            "nodeUuid",
+            "priority",
+            "uri",
+        ]
+    );
 }
 
 #[test]
@@ -2823,12 +2997,61 @@ fn alias_view_uses_real_existing_path_for_cross_domain_alias_nodes() {
     )
     .expect("alias view should succeed");
 
+    assert_eq!(
+        sorted_object_keys(&alias_view["result"]),
+        vec!["uri", "view"]
+    );
+    assert_eq!(
+        sorted_object_keys(&alias_view["result"]["view"]),
+        vec![
+            "aliasNodeCount",
+            "aliasNodesMissingTriggers",
+            "coveragePercent",
+            "entries",
+            "entryCount",
+            "recommendations",
+            "triggerNodeCount",
+            "view",
+        ]
+    );
+
     let entry = &alias_view["result"]["view"]["entries"][0];
+    assert_eq!(
+        sorted_object_keys(entry),
+        vec![
+            "aliasCount",
+            "domain",
+            "missingTriggers",
+            "nodeUri",
+            "nodeUuid",
+            "path",
+            "priorityReason",
+            "priorityScore",
+            "reviewPriority",
+            "suggestedKeywords",
+            "triggerCount",
+        ]
+    );
     let node_uri = entry["nodeUri"]
         .as_str()
         .expect("nodeUri should be a string");
     assert!(node_uri == "core://project-alpha" || node_uri == "writer://mirror-note");
-    let command = alias_view["result"]["view"]["recommendations"][0]["command"]
+    let recommendation = &alias_view["result"]["view"]["recommendations"][0];
+    assert_eq!(
+        sorted_object_keys(recommendation),
+        vec![
+            "action",
+            "advice",
+            "command",
+            "missingTriggers",
+            "nodeUri",
+            "priorityReason",
+            "priorityScore",
+            "reviewPriority",
+            "suggestedKeywords",
+        ]
+    );
+    let command = recommendation["command"]
         .as_str()
         .expect("command should be a string");
     assert!(command.contains(node_uri));
