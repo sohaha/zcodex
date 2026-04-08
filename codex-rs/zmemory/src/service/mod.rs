@@ -47,9 +47,9 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
             alias::manage_triggers_action(config, &mut conn, params)?
         }
         ZmemoryActionInput::Stats => stats::stats_action(&conn, config)?,
-        ZmemoryActionInput::Audit(params) => stats::audit_action(&conn, params)?,
+        ZmemoryActionInput::Audit(params) => stats::audit_action(&conn, config, params)?,
         ZmemoryActionInput::Doctor => stats::doctor_action(&conn, config)?,
-        ZmemoryActionInput::RebuildSearch => stats::rebuild_search_action(&mut conn)?,
+        ZmemoryActionInput::RebuildSearch => stats::rebuild_search_action(&mut conn, config)?,
     };
     Ok(json!({
         "action": action_name(&typed),

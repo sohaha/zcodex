@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub(crate) const ZMEMORY_DIR: &str = "zmemory";
 pub(crate) const ZMEMORY_PROJECTS_DIR: &str = "projects";
 pub(crate) const ZMEMORY_DB_FILENAME: &str = "zmemory.db";
+pub const DEFAULT_NAMESPACE: &str = "";
 const VALID_DOMAINS_ENV: &str = "VALID_DOMAINS";
 const CORE_MEMORY_URIS_ENV: &str = "CORE_MEMORY_URIS";
 const DEFAULT_VALID_DOMAINS: &[&str] = &["core", "project", "notes"];
@@ -173,6 +174,18 @@ impl ZmemoryConfig {
             values.push("alias".to_string());
         }
         values
+    }
+
+    pub fn namespace(&self) -> &'static str {
+        DEFAULT_NAMESPACE
+    }
+
+    pub fn namespace_source(&self) -> &'static str {
+        "implicitDefault"
+    }
+
+    pub fn supports_namespace_selection(&self) -> bool {
+        false
     }
 }
 

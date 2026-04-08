@@ -34,12 +34,12 @@ pub(crate) fn search_action(
                 sd.priority, sd.disclosure, sd.node_uuid
          FROM search_documents_fts f
          JOIN search_documents sd
-           ON sd.domain = f.domain AND sd.path = f.path
-         WHERE search_documents_fts MATCH ?1",
+           ON sd.namespace = f.namespace AND sd.domain = f.domain AND sd.path = f.path
+         WHERE f.namespace = ?1 AND search_documents_fts MATCH ?2",
     );
 
     let raw_matches = if let Some(scope) = scope {
-        sql.push_str(" AND f.domain = ?2 AND (f.path = ?3 OR f.path LIKE ?4)");
+        sql.push_str(" AND f.domain = ?3 AND (f.path = ?4 OR f.path LIKE ?5)");
         sql.push_str(SEARCH_ORDER_BY);
         let prefix = if scope.path.is_empty() {
             "%".to_string()
@@ -48,7 +48,13 @@ pub(crate) fn search_action(
         };
         let mut stmt = conn.prepare(&sql)?;
         stmt.query_map(
-            params![normalized_query, scope.domain, scope.path, prefix],
+            params![
+                config.namespace(),
+                normalized_query,
+                scope.domain,
+                scope.path,
+                prefix
+            ],
             |row| {
                 Ok(SearchMatch {
                     domain: row.get(0)?,
@@ -65,7 +71,7 @@ pub(crate) fn search_action(
     } else {
         sql.push_str(SEARCH_ORDER_BY);
         let mut stmt = conn.prepare(&sql)?;
-        stmt.query_map(params![normalized_query], |row| {
+        stmt.query_map(params![config.namespace(), normalized_query], |row| {
             Ok(SearchMatch {
                 domain: row.get(0)?,
                 path: row.get(1)?,

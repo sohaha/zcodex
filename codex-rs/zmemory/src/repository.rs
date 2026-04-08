@@ -30,7 +30,7 @@ impl ZmemoryRepository {
 
         let mut conn = Connection::open(self.config.db_path())?;
         conn.busy_timeout(Duration::from_secs(5))?;
-        initialize_database(&mut conn)?;
+        initialize_database(&mut conn, self.config.namespace())?;
         Ok(conn)
     }
 }

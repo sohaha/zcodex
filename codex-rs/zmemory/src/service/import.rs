@@ -24,9 +24,7 @@ pub(crate) fn import_action(
         .collect::<Result<Vec<_>>>()?;
     tx.commit()?;
 
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    let document_count = crate::service::common::search_document_count(conn, config)?;
     Ok(json!({
         "count": results.len(),
         "results": results,

@@ -3203,6 +3203,170 @@ fn reads_and_search_ignore_rows_from_other_namespaces() {
 }
 
 #[test]
+fn batch_actions_document_count_ignores_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://batch-base".to_string()),
+            content: Some("Base memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    clone_search_entry_to_namespace(&conn, "shadow", "", "core://batch-base");
+    drop(conn);
+
+    let batch_create = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::BatchCreate,
+            items: Some(vec![json!({
+                "uri": "core://batch-new",
+                "content": "new memory"
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("batch create should succeed");
+    assert_eq!(batch_create["result"]["documentCount"], 2);
+
+    let batch_update = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::BatchUpdate,
+            items: Some(vec![json!({
+                "uri": "core://batch-base",
+                "append": " updated"
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("batch update should succeed");
+    assert_eq!(batch_update["result"]["documentCount"], 2);
+}
+
+#[test]
+fn import_document_count_ignores_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Import,
+            items: Some(vec![json!({
+                "uri": "core://import-one",
+                "content": "first import"
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("first import should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    clone_search_entry_to_namespace(&conn, "shadow", "", "core://import-one");
+    drop(conn);
+
+    let second_import = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Import,
+            items: Some(vec![json!({
+                "uri": "core://import-two",
+                "content": "second import"
+            })]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("second import should succeed");
+    assert_eq!(second_import["result"]["documentCount"], 2);
+}
+
+#[test]
+fn rebuild_search_action_ignores_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://rebuild-target".to_string()),
+            content: Some("Rebuild target".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    clone_search_entry_to_namespace(&conn, "shadow", "", "core://rebuild-target");
+    conn.execute(
+        "DELETE FROM search_documents_fts WHERE namespace = ?1",
+        params![""],
+    )
+    .expect("default fts rows should delete");
+    drop(conn);
+
+    let rebuild = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::RebuildSearch,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("rebuild should succeed");
+    assert_eq!(rebuild["result"]["documentCount"], 1);
+    assert_eq!(rebuild["result"]["ftsDocumentCount"], 1);
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM search_documents_fts WHERE namespace = ?1",
+            params!["shadow"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("shadow fts count"),
+        1
+    );
+}
+
+#[test]
+fn audit_action_ignores_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://audit-default".to_string()),
+            content: Some("audit memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    conn.execute(
+        "INSERT INTO audit_log(namespace, action, uri, node_uuid, details)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params!["shadow", "create", "core://shadow", "shadow-node", "{}"],
+    )
+    .expect("shadow audit row should insert");
+    drop(conn);
+
+    let audit = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Audit,
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("audit should succeed");
+    assert_eq!(audit["result"]["count"], 1);
+    assert_eq!(audit["result"]["entries"][0]["uri"], "core://audit-default");
+}
+
+#[test]
 fn write_actions_do_not_mutate_other_namespaces() {
     let (_dir, config) = config();
     crate::service::execute_action(
@@ -3565,4 +3729,30 @@ fn insert_namespace_root_path(
     )
     .expect("namespace path should insert");
     edge_id
+}
+
+fn clone_search_entry_to_namespace(
+    conn: &Connection,
+    namespace: &str,
+    source_namespace: &str,
+    uri: &str,
+) {
+    conn.execute(
+        "INSERT INTO search_documents(
+             namespace, domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+         )
+         SELECT ?1, domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+         FROM search_documents
+         WHERE namespace = ?2 AND uri = ?3",
+        params![namespace, source_namespace, uri],
+    )
+    .expect("shadow search document should insert");
+    conn.execute(
+        "INSERT INTO search_documents_fts(namespace, domain, path, node_uuid, uri, content, disclosure, search_terms)
+         SELECT ?1, domain, path, node_uuid, uri, content, disclosure, search_terms
+         FROM search_documents
+         WHERE namespace = ?2 AND uri = ?3",
+        params![namespace, source_namespace, uri],
+    )
+    .expect("shadow fts row should insert");
 }

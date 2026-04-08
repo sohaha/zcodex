@@ -35,18 +35,24 @@ pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<
     Ok(stats_action_with_snapshot(config, &stats))
 }
 
-pub(crate) fn audit_action(conn: &Connection, args: &AuditActionParams) -> Result<Value> {
+pub(crate) fn audit_action(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    args: &AuditActionParams,
+) -> Result<Value> {
     let mut stmt = conn.prepare(
         "SELECT id, action, uri, node_uuid, details, created_at
          FROM audit_log
-         WHERE (?1 IS NULL OR action = ?1)
-           AND (?2 IS NULL OR uri = ?2)
+         WHERE namespace = ?1
+           AND (?2 IS NULL OR action = ?2)
+           AND (?3 IS NULL OR uri = ?3)
          ORDER BY id DESC
-         LIMIT ?3",
+         LIMIT ?4",
     )?;
     let entries = stmt
         .query_map(
             rusqlite::params![
+                config.namespace(),
                 args.audit_action.as_deref(),
                 args.uri.as_ref().map(ToString::to_string),
                 args.limit
