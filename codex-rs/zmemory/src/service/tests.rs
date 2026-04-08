@@ -2780,17 +2780,10 @@ fn doctor_reports_fts_and_keyword_inconsistencies() {
     )
     .expect("path delete should succeed");
 
-    let doctor = crate::service::execute_action(
-        &config,
-        &ZmemoryToolCallParam {
-            action: ZmemoryToolAction::Doctor,
-            ..ZmemoryToolCallParam::default()
-        },
-    )
-    .expect("doctor should succeed");
+    let doctor = crate::service::stats::doctor_action(&conn, &config).expect("doctor should work");
 
-    assert_eq!(doctor["result"]["healthy"], false);
-    let issues = doctor["result"]["issues"]
+    assert_eq!(doctor["healthy"], false);
+    let issues = doctor["issues"]
         .as_array()
         .expect("issues should be an array");
     assert!(
@@ -2803,6 +2796,61 @@ fn doctor_reports_fts_and_keyword_inconsistencies() {
             .iter()
             .any(|issue| issue["code"] == "dangling_keywords")
     );
+}
+
+#[test]
+fn initialize_database_repairs_missing_fts_rows_for_current_namespace() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://repair-fts".to_string()),
+            content: Some("repair token".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let mut conn = Connection::open(config.db_path()).expect("db should open");
+    conn.execute(
+        "DELETE FROM search_documents_fts WHERE namespace = ?1",
+        params![""],
+    )
+    .expect("fts delete should succeed");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM search_documents_fts WHERE namespace = ?1",
+            params![""],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("fts row count after delete"),
+        0
+    );
+
+    crate::schema::initialize_database(&mut conn, "").expect("initialize should repair fts");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM search_documents_fts WHERE namespace = ?1",
+            params![""],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("fts row count after repair"),
+        1
+    );
+    drop(conn);
+
+    let search = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("repair".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(search["result"]["matchCount"], 1);
+    assert_eq!(search["result"]["matches"][0]["uri"], "core://repair-fts");
 }
 
 #[test]

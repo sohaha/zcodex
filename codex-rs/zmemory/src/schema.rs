@@ -337,6 +337,7 @@ pub fn initialize_database(conn: &mut Connection, namespace: &str) -> Result<()>
 
     ensure_domain_root(conn, namespace, DEFAULT_DOMAIN)?;
     ensure_domain_root(conn, namespace, SYSTEM_DOMAIN)?;
+    repair_search_documents_fts(conn, namespace)?;
 
     Ok(())
 }
@@ -380,6 +381,37 @@ pub fn ensure_domain_root(conn: &Connection, namespace: &str, domain: &str) -> R
         "INSERT OR IGNORE INTO paths(namespace, domain, path, edge_id) VALUES (?1, ?2, '', NULL)",
         params![namespace, domain],
     )?;
+    Ok(())
+}
+
+fn repair_search_documents_fts(conn: &Connection, namespace: &str) -> Result<()> {
+    let search_document_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM search_documents WHERE namespace = ?1",
+        [namespace],
+        |row| row.get(0),
+    )?;
+    let fts_document_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM search_documents_fts WHERE namespace = ?1",
+        [namespace],
+        |row| row.get(0),
+    )?;
+
+    if search_document_count == fts_document_count {
+        return Ok(());
+    }
+
+    conn.execute(
+        "DELETE FROM search_documents_fts WHERE namespace = ?1",
+        [namespace],
+    )?;
+    conn.execute(
+        "INSERT INTO search_documents_fts(namespace, domain, path, node_uuid, uri, content, disclosure, search_terms)
+         SELECT namespace, domain, path, node_uuid, uri, content, disclosure, search_terms
+         FROM search_documents
+         WHERE namespace = ?1",
+        [namespace],
+    )?;
+
     Ok(())
 }
 
