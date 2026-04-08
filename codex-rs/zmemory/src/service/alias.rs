@@ -18,9 +18,7 @@ pub(crate) fn add_alias_action(
     let result = add_alias_action_in_tx(config, &tx, args)?;
     tx.commit()?;
 
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    let document_count = common::search_document_count(conn, config)?;
     Ok(augment_document_count(result, document_count))
 }
 
@@ -36,29 +34,34 @@ pub(crate) fn add_alias_action_in_tx(
     common::ensure_writable_domain(config, conn, &new_uri.domain)?;
     common::ensure_readable_domain(config, conn, &target_uri.domain)?;
     anyhow::ensure!(
-        common::find_path_row(conn, new_uri)?.is_none(),
+        common::find_path_row(conn, config, new_uri)?.is_none(),
         "alias path already exists: {new_uri}"
     );
 
-    let target = common::find_path_row(conn, target_uri)?
+    let target = common::find_path_row(conn, config, target_uri)?
         .ok_or_else(|| anyhow::anyhow!("target path does not exist: {target_uri}"))?;
     let parent_uri = new_uri.parent();
     let parent = if parent_uri.is_root() {
         common::PathRow::root()
     } else {
-        common::find_path_row(conn, &parent_uri)?
+        common::find_path_row(conn, config, &parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?
     };
     let priority = args.priority.unwrap_or(target.priority);
     let disclosure = args.disclosure.clone();
     let edge_name = new_uri.leaf_name()?;
-    let existing_edge_id =
-        common::find_edge_id(conn, &parent.node_uuid, &target.node_uuid, edge_name)?;
+    let existing_edge_id = common::find_edge_id(
+        conn,
+        config.namespace(),
+        &parent.node_uuid,
+        &target.node_uuid,
+        edge_name,
+    )?;
 
     let edge_id = if let Some(edge_id) = existing_edge_id {
         let (existing_priority, existing_disclosure): (i64, Option<String>) = conn.query_row(
-            "SELECT priority, disclosure FROM edges WHERE id = ?1",
-            [edge_id],
+            "SELECT priority, disclosure FROM edges WHERE id = ?1 AND namespace = ?2",
+            params![edge_id, config.namespace()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         if let Some(requested_priority) = args.priority {
@@ -76,17 +79,26 @@ pub(crate) fn add_alias_action_in_tx(
         edge_id
     } else {
         conn.execute(
-            "INSERT INTO edges(parent_uuid, child_uuid, name, priority, disclosure) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![parent.node_uuid, target.node_uuid, edge_name, priority, disclosure],
+            "INSERT INTO edges(namespace, parent_uuid, child_uuid, name, priority, disclosure)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                config.namespace(),
+                parent.node_uuid,
+                target.node_uuid,
+                edge_name,
+                priority,
+                disclosure
+            ],
         )?;
         conn.last_insert_rowid()
     };
     conn.execute(
-        "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
-        params![new_uri.domain, new_uri.path, edge_id],
+        "INSERT INTO paths(namespace, domain, path, edge_id) VALUES (?1, ?2, ?3, ?4)",
+        params![config.namespace(), new_uri.domain, new_uri.path, edge_id],
     )?;
     common::insert_audit_log(
         conn,
+        config.namespace(),
         "add-alias",
         Some(&new_uri.to_string()),
         Some(&target.node_uuid),
@@ -97,7 +109,7 @@ pub(crate) fn add_alias_action_in_tx(
             "disclosure": disclosure,
         }),
     )?;
-    index::reindex_node(conn, &target.node_uuid)?;
+    index::reindex_node(conn, config.namespace(), &target.node_uuid)?;
     Ok(json!({
         "uri": new_uri.to_string(),
         "targetUri": target_uri.to_string(),
@@ -117,9 +129,7 @@ pub(crate) fn manage_triggers_action(
     let result = manage_triggers_action_in_tx(config, &tx, args)?;
     tx.commit()?;
 
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    let document_count = common::search_document_count(conn, config)?;
     Ok(augment_document_count(result, document_count))
 }
 
@@ -131,7 +141,7 @@ pub(crate) fn manage_triggers_action_in_tx(
     let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot manage triggers for root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, uri)?
+    let row = common::find_path_row(conn, config, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let add = common::normalize_keywords(args.add.clone());
     let remove = common::normalize_keywords(args.remove.clone());
@@ -142,18 +152,19 @@ pub(crate) fn manage_triggers_action_in_tx(
 
     for keyword in &add {
         conn.execute(
-            "INSERT OR IGNORE INTO glossary_keywords(keyword, node_uuid) VALUES (?1, ?2)",
-            params![keyword, row.node_uuid],
+            "INSERT OR IGNORE INTO glossary_keywords(keyword, node_uuid, namespace) VALUES (?1, ?2, ?3)",
+            params![keyword, row.node_uuid, config.namespace()],
         )?;
     }
     for keyword in &remove {
         conn.execute(
-            "DELETE FROM glossary_keywords WHERE keyword = ?1 AND node_uuid = ?2",
-            params![keyword, row.node_uuid],
+            "DELETE FROM glossary_keywords WHERE keyword = ?1 AND node_uuid = ?2 AND namespace = ?3",
+            params![keyword, row.node_uuid, config.namespace()],
         )?;
     }
     common::insert_audit_log(
         conn,
+        config.namespace(),
         "manage-triggers",
         Some(&uri.to_string()),
         Some(&row.node_uuid),
@@ -162,8 +173,8 @@ pub(crate) fn manage_triggers_action_in_tx(
             "removed": remove,
         }),
     )?;
-    index::reindex_node(conn, &row.node_uuid)?;
-    let current = common::load_keywords(conn, &row.node_uuid)?;
+    index::reindex_node(conn, config.namespace(), &row.node_uuid)?;
+    let current = common::load_keywords(conn, config, &row.node_uuid)?;
 
     Ok(json!({
         "uri": uri.to_string(),

@@ -30,9 +30,9 @@ pub(crate) fn export_action(
 
 fn export_uri_scope(config: &ZmemoryConfig, conn: &Connection, uri: &ZmemoryUri) -> Result<Value> {
     common::ensure_readable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, uri)?
+    let row = common::find_path_row(conn, config, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
-    let item = export_item(conn, &row.node_uuid, Some(uri), None)?;
+    let item = export_item(config, conn, &row.node_uuid, Some(uri), None)?;
     Ok(json!({
         "scope": {
             "type": "uri",
@@ -48,16 +48,18 @@ fn export_domain_scope(config: &ZmemoryConfig, conn: &Connection, domain: &str) 
     let mut stmt = conn.prepare(
         "SELECT DISTINCT e.child_uuid
          FROM paths p
-         JOIN edges e ON e.id = p.edge_id
-         WHERE p.domain = ?1
+         JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+         WHERE p.namespace = ?1 AND p.domain = ?2
          ORDER BY e.child_uuid ASC",
     )?;
     let node_uuids = stmt
-        .query_map([domain], |row| row.get::<_, String>(0))?
+        .query_map(params![config.namespace(), domain], |row| {
+            row.get::<_, String>(0)
+        })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let items = node_uuids
         .iter()
-        .map(|node_uuid| export_item(conn, node_uuid, None, Some(domain)))
+        .map(|node_uuid| export_item(config, conn, node_uuid, None, Some(domain)))
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({
         "scope": {
@@ -70,15 +72,16 @@ fn export_domain_scope(config: &ZmemoryConfig, conn: &Connection, domain: &str) 
 }
 
 fn export_item(
+    config: &ZmemoryConfig,
     conn: &Connection,
     node_uuid: &str,
     requested_uri: Option<&ZmemoryUri>,
     preferred_domain: Option<&str>,
 ) -> Result<Value> {
-    let memory = common::read_active_memory(conn, node_uuid)?
+    let memory = common::read_active_memory(conn, config.namespace(), node_uuid)?
         .ok_or_else(|| anyhow::anyhow!("active memory not found for node {node_uuid}"))?;
-    let keywords = common::load_keywords(conn, node_uuid)?;
-    let mut paths = load_paths(conn, node_uuid)?;
+    let keywords = common::load_keywords(conn, config, node_uuid)?;
+    let mut paths = load_paths(conn, config, node_uuid)?;
     anyhow::ensure!(
         !paths.is_empty(),
         "no live paths found for node {node_uuid}"
@@ -107,15 +110,19 @@ fn export_item(
     }))
 }
 
-fn load_paths(conn: &Connection, node_uuid: &str) -> Result<Vec<ExportPath>> {
+fn load_paths(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    node_uuid: &str,
+) -> Result<Vec<ExportPath>> {
     let mut stmt = conn.prepare(
         "SELECT p.domain, p.path, e.priority, e.disclosure
          FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.child_uuid = ?1
+         JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+         WHERE e.namespace = ?1 AND e.child_uuid = ?2
          ORDER BY e.priority DESC, LENGTH(p.path) ASC, p.domain ASC, p.path ASC",
     )?;
-    stmt.query_map(params![node_uuid], |row| {
+    stmt.query_map(params![config.namespace(), node_uuid], |row| {
         let domain: String = row.get(0)?;
         let path: String = row.get(1)?;
         Ok(ExportPath {

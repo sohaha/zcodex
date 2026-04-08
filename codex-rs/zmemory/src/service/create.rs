@@ -19,9 +19,7 @@ pub(crate) fn create_action(
     let result = create_action_in_tx(config, &tx, args)?;
     tx.commit()?;
 
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    let document_count = common::search_document_count(conn, config)?;
     Ok(augment_create_result(result, document_count))
 }
 
@@ -30,10 +28,10 @@ pub(crate) fn create_action_in_tx(
     conn: &rusqlite::Transaction<'_>,
     args: &CreateActionParams,
 ) -> Result<Value> {
-    let uri = resolve_create_uri(conn, args)?;
+    let uri = resolve_create_uri(config, conn, args)?;
     common::ensure_writable_domain(config, conn, &uri.domain)?;
     anyhow::ensure!(
-        common::find_path_row(conn, &uri)?.is_none(),
+        common::find_path_row(conn, config, &uri)?.is_none(),
         "memory already exists at {uri}"
     );
 
@@ -41,7 +39,7 @@ pub(crate) fn create_action_in_tx(
     let parent = if parent_uri.is_root() {
         common::PathRow::root()
     } else {
-        common::find_path_row(conn, &parent_uri)?
+        common::find_path_row(conn, config, &parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?
     };
     let node_uuid = Uuid::new_v4().to_string();
@@ -50,21 +48,30 @@ pub(crate) fn create_action_in_tx(
 
     conn.execute("INSERT INTO nodes(uuid) VALUES (?1)", [node_uuid.as_str()])?;
     conn.execute(
-        "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
-        params![node_uuid, args.content],
+        "INSERT INTO memories(namespace, node_uuid, content) VALUES (?1, ?2, ?3)",
+        params![config.namespace(), node_uuid, args.content],
     )?;
     let memory_id = conn.last_insert_rowid();
     conn.execute(
-        "INSERT INTO edges(parent_uuid, child_uuid, name, priority, disclosure) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![parent.node_uuid, node_uuid, uri.leaf_name()?, priority, disclosure],
+        "INSERT INTO edges(namespace, parent_uuid, child_uuid, name, priority, disclosure)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            config.namespace(),
+            parent.node_uuid,
+            node_uuid,
+            uri.leaf_name()?,
+            priority,
+            disclosure
+        ],
     )?;
     let edge_id = conn.last_insert_rowid();
     conn.execute(
-        "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
-        params![uri.domain, uri.path, edge_id],
+        "INSERT INTO paths(namespace, domain, path, edge_id) VALUES (?1, ?2, ?3, ?4)",
+        params![config.namespace(), uri.domain, uri.path, edge_id],
     )?;
     common::insert_audit_log(
         conn,
+        config.namespace(),
         "create",
         Some(&uri.to_string()),
         Some(&node_uuid),
@@ -74,7 +81,7 @@ pub(crate) fn create_action_in_tx(
             "disclosure": disclosure,
         }),
     )?;
-    index::reindex_node(conn, &node_uuid)?;
+    index::reindex_node(conn, config.namespace(), &node_uuid)?;
 
     Ok(json!({
         "uri": uri.to_string(),
@@ -90,7 +97,11 @@ fn augment_create_result(mut result: Value, document_count: i64) -> Value {
     result
 }
 
-fn resolve_create_uri(conn: &Connection, args: &CreateActionParams) -> Result<ZmemoryUri> {
+fn resolve_create_uri(
+    config: &ZmemoryConfig,
+    conn: &Connection,
+    args: &CreateActionParams,
+) -> Result<ZmemoryUri> {
     anyhow::ensure!(
         !(args.uri.is_some() && (args.parent_uri.is_some() || args.title.is_some())),
         "`uri` cannot be combined with `parentUri` or `title`",
@@ -109,7 +120,7 @@ fn resolve_create_uri(conn: &Connection, args: &CreateActionParams) -> Result<Zm
             validate_title(&title)?;
             title
         }
-        None => next_auto_child_name(conn, &parent_uri)?,
+        None => next_auto_child_name(config, conn, &parent_uri)?,
     };
     let path = if parent_uri.path.is_empty() {
         name
@@ -137,9 +148,13 @@ fn validate_title(title: &str) -> Result<()> {
     Ok(())
 }
 
-fn next_auto_child_name(conn: &Connection, parent_uri: &ZmemoryUri) -> Result<String> {
+fn next_auto_child_name(
+    config: &ZmemoryConfig,
+    conn: &Connection,
+    parent_uri: &ZmemoryUri,
+) -> Result<String> {
     if !parent_uri.is_root() {
-        common::find_path_row(conn, parent_uri)?
+        common::find_path_row(conn, config, parent_uri)?
             .ok_or_else(|| anyhow::anyhow!("parent path does not exist: {parent_uri}"))?;
     }
 
@@ -154,7 +169,7 @@ fn next_auto_child_name(conn: &Connection, parent_uri: &ZmemoryUri) -> Result<St
             domain: parent_uri.domain.clone(),
             path: child_path,
         };
-        if common::find_path_row(conn, &candidate)?.is_none() {
+        if common::find_path_row(conn, config, &candidate)?.is_none() {
             return Ok(next_index.to_string());
         }
         next_index += 1;

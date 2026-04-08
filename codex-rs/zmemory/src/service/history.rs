@@ -12,16 +12,16 @@ pub(crate) fn history_action(
     uri: &ZmemoryUri,
 ) -> Result<Value> {
     common::ensure_readable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, uri)?
+    let row = common::find_path_row(conn, config, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let mut stmt = conn.prepare(
         "SELECT id, content, deprecated, migrated_to, created_at
          FROM memories
-         WHERE node_uuid = ?1
+         WHERE namespace = ?1 AND node_uuid = ?2
          ORDER BY id DESC",
     )?;
     let versions = stmt
-        .query_map([row.node_uuid.as_str()], |entry| {
+        .query_map([config.namespace(), row.node_uuid.as_str()], |entry| {
             Ok(json!({
                 "id": entry.get::<_, i64>(0)?,
                 "content": entry.get::<_, String>(1)?,

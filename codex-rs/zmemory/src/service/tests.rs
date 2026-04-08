@@ -352,6 +352,15 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
         workspace["result"]["view"]["validDomains"],
         json!(["core", "project", "notes"])
     );
+    assert_eq!(workspace["result"]["view"]["namespace"], "");
+    assert_eq!(
+        workspace["result"]["view"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        workspace["result"]["view"]["supportsNamespaceSelection"],
+        false
+    );
     assert_eq!(
         workspace["result"]["view"]["coreMemoryUris"],
         json!([
@@ -392,6 +401,15 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
     assert_eq!(
         defaults["result"]["view"]["validDomains"],
         json!(["core", "project", "notes"])
+    );
+    assert_eq!(defaults["result"]["view"]["namespace"], "");
+    assert_eq!(
+        defaults["result"]["view"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        defaults["result"]["view"]["supportsNamespaceSelection"],
+        false
     );
     assert_eq!(
         defaults["result"]["view"]["coreMemoryUris"],
@@ -1145,7 +1163,7 @@ fn recent_view_orders_distinct_nodes_by_real_memory_update_time() {
             SELECT e.child_uuid
             FROM edges e
             JOIN paths p ON p.edge_id = e.id
-            WHERE p.domain = 'core' AND p.path = 'older'
+            WHERE p.namespace = '' AND p.domain = 'core' AND p.path = 'older'
          ) AND deprecated = FALSE",
         params!["2024-01-01 00:00:00"],
     )
@@ -1157,7 +1175,7 @@ fn recent_view_orders_distinct_nodes_by_real_memory_update_time() {
             SELECT e.child_uuid
             FROM edges e
             JOIN paths p ON p.edge_id = e.id
-            WHERE p.domain = 'core' AND p.path = 'newer'
+            WHERE p.namespace = '' AND p.domain = 'core' AND p.path = 'newer'
          ) AND deprecated = FALSE",
         params!["2024-01-02 00:00:00"],
     )
@@ -1348,10 +1366,30 @@ fn stats_and_doctor_surface_review_pressure() {
         stats["result"]["reason"],
         stats["result"]["pathResolution"]["reason"]
     );
+    assert_eq!(stats["result"]["namespace"], "");
+    assert_eq!(stats["result"]["namespaceSource"], "implicitDefault");
+    assert_eq!(stats["result"]["supportsNamespaceSelection"], false);
+    assert_eq!(stats["result"]["pathResolution"]["namespace"], "");
+    assert_eq!(
+        stats["result"]["pathResolution"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        stats["result"]["pathResolution"]["supportsNamespaceSelection"],
+        false
+    );
     assert_eq!(stats["result"]["pathResolution"].get("canonicalBase"), None);
     assert_eq!(
         sorted_object_keys(&stats["result"]["pathResolution"]),
-        vec!["dbPath", "reason", "source", "workspaceKey"]
+        vec![
+            "dbPath",
+            "namespace",
+            "namespaceSource",
+            "reason",
+            "source",
+            "supportsNamespaceSelection",
+            "workspaceKey",
+        ]
     );
 
     let doctor = crate::service::execute_action(
@@ -1383,13 +1421,33 @@ fn stats_and_doctor_surface_review_pressure() {
         doctor["result"]["reason"],
         doctor["result"]["pathResolution"]["reason"]
     );
+    assert_eq!(doctor["result"]["namespace"], "");
+    assert_eq!(doctor["result"]["namespaceSource"], "implicitDefault");
+    assert_eq!(doctor["result"]["supportsNamespaceSelection"], false);
+    assert_eq!(doctor["result"]["pathResolution"]["namespace"], "");
+    assert_eq!(
+        doctor["result"]["pathResolution"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        doctor["result"]["pathResolution"]["supportsNamespaceSelection"],
+        false
+    );
     assert_eq!(
         doctor["result"]["pathResolution"].get("canonicalBase"),
         None
     );
     assert_eq!(
         sorted_object_keys(&doctor["result"]["pathResolution"]),
-        vec!["dbPath", "reason", "source", "workspaceKey"]
+        vec![
+            "dbPath",
+            "namespace",
+            "namespaceSource",
+            "reason",
+            "source",
+            "supportsNamespaceSelection",
+            "workspaceKey",
+        ]
     );
     assert_eq!(doctor["result"]["stats"]["auditLogCount"], 5);
     assert!(doctor["result"]["stats"]["latestAuditAt"].is_string());
@@ -2711,11 +2769,14 @@ fn doctor_reports_fts_and_keyword_inconsistencies() {
     .expect("manage triggers should succeed");
 
     let conn = Connection::open(config.db_path()).expect("db should open");
-    conn.execute("DELETE FROM search_documents_fts", [])
-        .expect("fts delete should succeed");
     conn.execute(
-        "DELETE FROM paths WHERE domain = ?1 AND path = ?2",
-        params!["core", "salem"],
+        "DELETE FROM search_documents_fts WHERE namespace = ?1",
+        params![""],
+    )
+    .expect("fts delete should succeed");
+    conn.execute(
+        "DELETE FROM paths WHERE namespace = ?1 AND domain = ?2 AND path = ?3",
+        params!["", "core", "salem"],
     )
     .expect("path delete should succeed");
 
@@ -2744,6 +2805,687 @@ fn doctor_reports_fts_and_keyword_inconsistencies() {
     );
 }
 
+#[test]
+fn schema_migration_adds_namespace_columns_for_upstream_compat() {
+    let dir = TempDir::new().expect("tempdir");
+    let db_path = dir.path().join("legacy-zmemory.db");
+    let mut conn = Connection::open(db_path).expect("db should open");
+    conn.execute_batch(
+        "PRAGMA foreign_keys = ON;
+         CREATE TABLE schema_migrations (
+           version TEXT PRIMARY KEY,
+           applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE nodes (
+           uuid TEXT PRIMARY KEY,
+           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE memories (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           node_uuid TEXT NOT NULL,
+           content TEXT NOT NULL,
+           deprecated BOOLEAN NOT NULL DEFAULT FALSE,
+           migrated_to INTEGER NULL,
+           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE edges (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           parent_uuid TEXT NOT NULL,
+           child_uuid TEXT NOT NULL,
+           name TEXT NOT NULL,
+           priority INTEGER NOT NULL DEFAULT 0,
+           disclosure TEXT NULL,
+           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );
+         CREATE TABLE paths (
+           domain TEXT NOT NULL,
+           path TEXT NOT NULL,
+           edge_id INTEGER NULL,
+           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           PRIMARY KEY (domain, path)
+         );
+         CREATE TABLE search_documents (
+           domain TEXT NOT NULL,
+           path TEXT NOT NULL,
+           node_uuid TEXT NOT NULL,
+           memory_id INTEGER NOT NULL,
+           uri TEXT NOT NULL,
+           content TEXT NOT NULL,
+           disclosure TEXT NULL,
+           search_terms TEXT NOT NULL DEFAULT '',
+           priority INTEGER NOT NULL DEFAULT 0,
+           updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           PRIMARY KEY (domain, path)
+         );
+         CREATE VIRTUAL TABLE search_documents_fts USING fts5 (
+           domain,
+           path,
+           uri,
+           content,
+           disclosure,
+           search_terms,
+           tokenize = 'unicode61'
+         );
+         CREATE TABLE glossary_keywords (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           keyword TEXT NOT NULL,
+           node_uuid TEXT NOT NULL,
+           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+           CONSTRAINT uq_glossary_keyword_node UNIQUE (keyword, node_uuid)
+         );
+         CREATE TABLE audit_log (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           action TEXT NOT NULL,
+           uri TEXT,
+           node_uuid TEXT,
+           details TEXT,
+           created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+         );",
+    )
+    .expect("legacy schema should initialize");
+    conn.execute(
+        "INSERT INTO schema_migrations(version) VALUES
+         ('0001_core'),
+         ('0002_search'),
+         ('0003_search_fts'),
+         ('0004_edges_alias_name'),
+         ('0005_audit_log')",
+        [],
+    )
+    .expect("migration rows should insert");
+
+    let child_uuid = "11111111-1111-1111-1111-111111111111";
+    conn.execute(
+        "INSERT INTO nodes(uuid) VALUES (?1), (?2)",
+        params![crate::schema::ROOT_NODE_UUID, child_uuid],
+    )
+    .expect("nodes should insert");
+    conn.execute(
+        "INSERT INTO memories(id, node_uuid, content) VALUES (?1, ?2, ?3)",
+        params![1, child_uuid, "legacy memory"],
+    )
+    .expect("memory should insert");
+    conn.execute(
+        "INSERT INTO edges(id, parent_uuid, child_uuid, name, disclosure)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            1,
+            crate::schema::ROOT_NODE_UUID,
+            child_uuid,
+            "legacy-node",
+            "Legacy disclosure"
+        ],
+    )
+    .expect("edge should insert");
+    conn.execute(
+        "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
+        params!["core", "legacy-node", 1],
+    )
+    .expect("path should insert");
+    conn.execute(
+        "INSERT INTO search_documents(
+             domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            "core",
+            "legacy-node",
+            child_uuid,
+            1,
+            "core://legacy-node",
+            "legacy memory",
+            "Legacy disclosure",
+            "legacy keyword",
+            0
+        ],
+    )
+    .expect("search document should insert");
+    conn.execute(
+        "INSERT INTO search_documents_fts(domain, path, uri, content, disclosure, search_terms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            "core",
+            "legacy-node",
+            "core://legacy-node",
+            "legacy memory",
+            "Legacy disclosure",
+            "legacy keyword"
+        ],
+    )
+    .expect("legacy fts row should insert");
+    conn.execute(
+        "INSERT INTO glossary_keywords(keyword, node_uuid) VALUES (?1, ?2)",
+        params!["legacy", child_uuid],
+    )
+    .expect("legacy keyword should insert");
+    conn.execute(
+        "INSERT INTO audit_log(action, uri, node_uuid, details) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            "create",
+            "core://legacy-node",
+            child_uuid,
+            r#"{"migrated":true}"#
+        ],
+    )
+    .expect("legacy audit row should insert");
+
+    crate::schema::initialize_database(&mut conn, "").expect("migration should succeed");
+
+    assert_eq!(
+        table_columns(&conn, "memories"),
+        vec![
+            "id",
+            "namespace",
+            "node_uuid",
+            "content",
+            "deprecated",
+            "migrated_to",
+            "created_at",
+        ]
+    );
+    assert_eq!(
+        table_columns(&conn, "edges"),
+        vec![
+            "id",
+            "namespace",
+            "parent_uuid",
+            "child_uuid",
+            "name",
+            "priority",
+            "disclosure",
+            "created_at",
+        ]
+    );
+    assert_eq!(
+        table_columns(&conn, "paths"),
+        vec!["namespace", "domain", "path", "edge_id", "created_at"]
+    );
+    assert_eq!(
+        table_columns(&conn, "search_documents"),
+        vec![
+            "namespace",
+            "domain",
+            "path",
+            "node_uuid",
+            "memory_id",
+            "uri",
+            "content",
+            "disclosure",
+            "search_terms",
+            "priority",
+            "updated_at",
+        ]
+    );
+    assert_eq!(
+        table_columns(&conn, "glossary_keywords"),
+        vec!["id", "keyword", "node_uuid", "namespace", "created_at"]
+    );
+    assert_eq!(
+        table_columns(&conn, "search_documents_fts"),
+        vec![
+            "namespace",
+            "domain",
+            "path",
+            "node_uuid",
+            "uri",
+            "content",
+            "disclosure",
+            "search_terms",
+        ]
+    );
+    assert_eq!(
+        table_columns(&conn, "audit_log"),
+        vec![
+            "id",
+            "namespace",
+            "action",
+            "uri",
+            "node_uuid",
+            "details",
+            "created_at",
+        ]
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE namespace = ?1 AND node_uuid = ?2",
+            params!["", child_uuid],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("migrated memory count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM edges WHERE namespace = ?1 AND child_uuid = ?2",
+            params!["", child_uuid],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("migrated edge count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM search_documents WHERE namespace = ?1 AND uri = ?2",
+            params!["", "core://legacy-node"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("migrated search document count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM search_documents_fts
+             WHERE namespace = ?1 AND search_documents_fts MATCH ?2",
+            params!["", "legacy"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("migrated fts row count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM glossary_keywords WHERE namespace = ?1 AND keyword = ?2",
+            params!["", "legacy"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("migrated keyword count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM audit_log WHERE namespace = ?1 AND uri = ?2",
+            params!["", "core://legacy-node"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("migrated audit row count"),
+        1
+    );
+}
+
+#[test]
+fn reads_and_search_ignore_rows_from_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://salem".to_string()),
+            content: Some("Profile for Salem".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://salem".to_string()),
+            add: Some(vec!["profile".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    conn.execute(
+        "INSERT INTO paths(namespace, domain, path, edge_id, created_at)
+         SELECT ?1, domain, path, edge_id, created_at
+         FROM paths
+         WHERE namespace = ?2 AND domain = ?3 AND path = ?4",
+        params!["shadow", "", "core", "salem"],
+    )
+    .expect("shadow path should insert");
+    conn.execute(
+        "INSERT INTO glossary_keywords(keyword, node_uuid, namespace, created_at)
+         SELECT keyword, node_uuid, ?1, created_at
+         FROM glossary_keywords
+         WHERE namespace = ?2",
+        params!["shadow", ""],
+    )
+    .expect("shadow keywords should insert");
+    conn.execute(
+        "INSERT INTO search_documents(
+             namespace, domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+         )
+         SELECT ?1, domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+         FROM search_documents
+         WHERE namespace = ?2 AND uri = ?3",
+        params!["shadow", "", "core://salem"],
+    )
+    .expect("shadow search document should insert");
+    conn.execute(
+        "INSERT INTO search_documents_fts(namespace, domain, path, node_uuid, uri, content, disclosure, search_terms)
+         SELECT ?1, domain, path, node_uuid, uri, content, disclosure, search_terms
+         FROM search_documents
+         WHERE namespace = ?2 AND uri = ?3",
+        params!["shadow", "", "core://salem"],
+    )
+    .expect("shadow fts row should insert");
+
+    let index = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://index".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("index view should succeed");
+    assert_eq!(index["result"]["view"]["totalCount"], 1);
+    assert_eq!(
+        index["result"]["view"]["entries"].as_array().map(Vec::len),
+        Some(1)
+    );
+
+    let glossary = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://glossary".to_string()),
+            limit: Some(10),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("glossary view should succeed");
+    assert_eq!(glossary["result"]["view"]["entryCount"], 1);
+
+    let search = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Search,
+            query: Some("profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("search should succeed");
+    assert_eq!(search["result"]["matchCount"], 1);
+}
+
+#[test]
+fn write_actions_do_not_mutate_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://salem".to_string()),
+            content: Some("Default Salem".to_string()),
+            priority: Some(1),
+            disclosure: Some("default disclosure".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let node_uuid = node_uuid_for_path(&conn, "", "core", "salem");
+    insert_namespace_memory(&conn, "shadow", &node_uuid, "Shadow Salem", false, None);
+    insert_namespace_root_path(
+        &conn,
+        "shadow",
+        "core",
+        "salem",
+        &node_uuid,
+        7,
+        Some("shadow disclosure"),
+    );
+    drop(conn);
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://salem".to_string()),
+            content: Some("Default Salem Updated".to_string()),
+            priority: Some(2),
+            disclosure: Some("updated disclosure".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let shadow_content: String = conn
+        .query_row(
+            "SELECT content
+             FROM memories
+             WHERE namespace = ?1 AND node_uuid = ?2 AND deprecated = FALSE
+             ORDER BY id DESC
+             LIMIT 1",
+            params!["shadow", &node_uuid],
+            |row| row.get(0),
+        )
+        .expect("shadow active memory");
+    assert_eq!(shadow_content, "Shadow Salem");
+    let shadow_edge = conn
+        .query_row(
+            "SELECT e.priority, e.disclosure
+             FROM paths p
+             JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+             WHERE p.namespace = ?1 AND p.domain = ?2 AND p.path = ?3",
+            params!["shadow", "core", "salem"],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .expect("shadow edge");
+    assert_eq!(shadow_edge, (7, Some("shadow disclosure".to_string())));
+    drop(conn);
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::DeletePath,
+            uri: Some("core://salem".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("delete should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM paths WHERE namespace = ?1 AND domain = ?2 AND path = ?3",
+            params!["shadow", "core", "salem"],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("shadow path count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM memories
+             WHERE namespace = ?1 AND node_uuid = ?2 AND deprecated = FALSE",
+            params!["shadow", &node_uuid],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("shadow active memory count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*)
+             FROM memories
+             WHERE namespace = ?1 AND node_uuid = ?2 AND deprecated = FALSE",
+            params!["", &node_uuid],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("default active memory count"),
+        0
+    );
+}
+
+#[test]
+fn add_alias_does_not_reuse_edges_from_other_namespaces() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://shared-edge".to_string()),
+            content: Some("Shared edge".to_string()),
+            priority: Some(1),
+            disclosure: Some("primary".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let node_uuid = node_uuid_for_path(&conn, "", "core", "shared-edge");
+    let shadow_edge_id = insert_namespace_root_path(
+        &conn,
+        "shadow",
+        "alias",
+        "shared-edge",
+        &node_uuid,
+        9,
+        Some("shadow alias"),
+    );
+    drop(conn);
+
+    let add_alias = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://shared-edge".to_string()),
+            target_uri: Some("core://shared-edge".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("alias://shared-edge".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read alias should succeed");
+    assert_eq!(read["result"]["content"], "Shared edge");
+    assert_eq!(read["result"]["priority"], 1);
+    assert_eq!(read["result"]["disclosure"], "primary");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let default_edge = conn
+        .query_row(
+            "SELECT e.id, e.namespace
+             FROM paths p
+             JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+             WHERE p.namespace = ?1 AND p.domain = ?2 AND p.path = ?3",
+            params!["", "alias", "shared-edge"],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .expect("default alias edge");
+    assert_eq!(add_alias["result"]["edgeId"].as_i64(), Some(default_edge.0));
+    assert_eq!(default_edge.1, "");
+    assert_ne!(default_edge.0, shadow_edge_id);
+}
+
+#[test]
+fn stats_and_doctor_ignore_other_namespace_rows() {
+    let (_dir, config) = config();
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://healthy".to_string()),
+            content: Some("Healthy memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let shadow_conflict_uuid = "22222222-2222-2222-2222-222222222222";
+    let shadow_orphan_uuid = "33333333-3333-3333-3333-333333333333";
+    conn.execute(
+        "INSERT INTO nodes(uuid) VALUES (?1), (?2)",
+        params![shadow_conflict_uuid, shadow_orphan_uuid],
+    )
+    .expect("shadow nodes should insert");
+    insert_namespace_memory(
+        &conn,
+        "shadow",
+        shadow_conflict_uuid,
+        "shadow one",
+        false,
+        None,
+    );
+    insert_namespace_memory(
+        &conn,
+        "shadow",
+        shadow_conflict_uuid,
+        "shadow two",
+        false,
+        None,
+    );
+    insert_namespace_memory(
+        &conn,
+        "shadow",
+        shadow_orphan_uuid,
+        "shadow orphan",
+        true,
+        None,
+    );
+    conn.execute(
+        "INSERT INTO audit_log(namespace, action, uri, node_uuid, details)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            "shadow",
+            "create",
+            "core://shadow",
+            shadow_conflict_uuid,
+            "{}"
+        ],
+    )
+    .expect("shadow audit row should insert");
+    drop(conn);
+
+    let stats = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Stats,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("stats should succeed");
+    assert_eq!(stats["result"]["auditLogCount"], 1);
+    assert_eq!(stats["result"]["orphanedMemoryCount"], 0);
+    assert_eq!(stats["result"]["deprecatedMemoryCount"], 0);
+
+    let doctor = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Doctor,
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("doctor should succeed");
+    assert_eq!(doctor["result"]["healthy"], true);
+    assert_eq!(doctor["result"]["stats"]["auditLogCount"], 1);
+    let issues = doctor["result"]["issues"]
+        .as_array()
+        .expect("issues should be an array");
+    assert!(
+        !issues
+            .iter()
+            .any(|issue| issue["code"] == "multiple_active_memories")
+    );
+    assert!(
+        !issues
+            .iter()
+            .any(|issue| issue["code"] == "orphaned_memories")
+    );
+    assert!(
+        !issues
+            .iter()
+            .any(|issue| issue["code"] == "deprecated_memories_awaiting_review")
+    );
+}
+
 fn sorted_object_keys(value: &Value) -> Vec<&str> {
     let mut keys = value
         .as_object()
@@ -2753,4 +3495,74 @@ fn sorted_object_keys(value: &Value) -> Vec<&str> {
         .collect::<Vec<_>>();
     keys.sort_unstable();
     keys
+}
+
+fn table_columns(conn: &Connection, table: &str) -> Vec<String> {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = conn.prepare(&sql).expect("table info statement");
+    stmt.query_map([], |row| row.get::<_, String>(1))
+        .expect("table info rows")
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .expect("table info columns")
+}
+
+fn node_uuid_for_path(conn: &Connection, namespace: &str, domain: &str, path: &str) -> String {
+    conn.query_row(
+        "SELECT e.child_uuid
+         FROM paths p
+         JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+         WHERE p.namespace = ?1 AND p.domain = ?2 AND p.path = ?3",
+        params![namespace, domain, path],
+        |row| row.get(0),
+    )
+    .expect("node uuid for path")
+}
+
+fn insert_namespace_memory(
+    conn: &Connection,
+    namespace: &str,
+    node_uuid: &str,
+    content: &str,
+    deprecated: bool,
+    migrated_to: Option<i64>,
+) -> i64 {
+    conn.execute(
+        "INSERT INTO memories(namespace, node_uuid, content, deprecated, migrated_to)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![namespace, node_uuid, content, deprecated, migrated_to],
+    )
+    .expect("namespace memory should insert");
+    conn.last_insert_rowid()
+}
+
+fn insert_namespace_root_path(
+    conn: &Connection,
+    namespace: &str,
+    domain: &str,
+    path: &str,
+    node_uuid: &str,
+    priority: i64,
+    disclosure: Option<&str>,
+) -> i64 {
+    assert!(!path.contains('/'), "helper only supports root-level paths");
+    conn.execute(
+        "INSERT INTO edges(namespace, parent_uuid, child_uuid, name, priority, disclosure)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            namespace,
+            crate::schema::ROOT_NODE_UUID,
+            node_uuid,
+            path,
+            priority,
+            disclosure
+        ],
+    )
+    .expect("namespace edge should insert");
+    let edge_id = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO paths(namespace, domain, path, edge_id) VALUES (?1, ?2, ?3, ?4)",
+        params![namespace, domain, path, edge_id],
+    )
+    .expect("namespace path should insert");
+    edge_id
 }

@@ -4,7 +4,12 @@ use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
 
-pub fn run_doctor(conn: &Connection, db_path: &str, stats: &StatsSnapshot) -> Result<Value> {
+pub fn run_doctor(
+    conn: &Connection,
+    db_path: &str,
+    namespace: &str,
+    stats: &StatsSnapshot,
+) -> Result<Value> {
     let search_count = stats.search_document_count;
     let fts_count = stats.fts_document_count;
 
@@ -20,11 +25,11 @@ pub fn run_doctor(conn: &Connection, db_path: &str, stats: &StatsSnapshot) -> Re
         "SELECT COUNT(*) FROM (
             SELECT node_uuid
             FROM memories
-            WHERE deprecated = FALSE
+            WHERE namespace = ?1 AND deprecated = FALSE
             GROUP BY node_uuid
             HAVING COUNT(*) > 1
         )",
-        [],
+        [namespace],
         |row| row.get(0),
     )?;
     if active_memory_conflicts > 0 {
@@ -36,13 +41,14 @@ pub fn run_doctor(conn: &Connection, db_path: &str, stats: &StatsSnapshot) -> Re
 
     let dangling_keywords: i64 = conn.query_row(
         "SELECT COUNT(*) FROM glossary_keywords g
-         WHERE NOT EXISTS (
+         WHERE g.namespace = ?1
+           AND NOT EXISTS (
              SELECT 1
              FROM edges e
-             JOIN paths p ON p.edge_id = e.id
-             WHERE e.child_uuid = g.node_uuid
+             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+             WHERE e.namespace = ?1 AND e.child_uuid = g.node_uuid
          )",
-        [],
+        [namespace],
         |row| row.get(0),
     )?;
     if dangling_keywords > 0 {
@@ -70,7 +76,7 @@ pub fn run_doctor(conn: &Connection, db_path: &str, stats: &StatsSnapshot) -> Re
 
     let alias_nodes = stats.alias_node_count;
     let trigger_nodes = stats.trigger_node_count;
-    let alias_nodes_missing = crate::service::stats::alias_nodes_missing_triggers(conn)?;
+    let alias_nodes_missing = crate::service::stats::alias_nodes_missing_triggers(conn, namespace)?;
     let paths_missing_disclosure = stats.paths_missing_disclosure;
     let disclosures_needing_review = stats.disclosures_needing_review;
     if alias_nodes_missing > 0 {
