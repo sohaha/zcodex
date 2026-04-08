@@ -1,0 +1,22 @@
+plan = ".agents/plan/2026-04-07-ztok-grep-rg-mapping.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "收敛 ztok grep 与 Codex CLI 内部 rg 的映射结论"
+scope = """
+本 issue 负责基于当前仓库源码与 rtk-ai/rtk issue #169 的公开上下文，产出一份可追溯的结论说明，明确 `ztok grep` 与 Codex CLI 内部 `rg` 的对应关系边界。
+
+包括：核对 `shell_command` 的 `rg -> ztok grep` 前置改写、`ztok grep` 运行时优先调用 `rg` 且保留 `grep` fallback、`codex-cli` 平台包分发 `rg` 并通过 `vendor/.../path` 注入 `PATH`、以及当前不完全等价于原生 `rg` 的边界说明。
+不包括修改 `rtk` / `codex-cli` / `codex-rs` 实现，不包括补做完整兼容矩阵，也不包括扩展 issue #169 中未公开给出的设计意图。
+"""
+touch_points = ["module:ztok", "module:core", "command:shell_command", "command:ztok grep", "command:rg", "codex-rs/ztok/src/rewrite.rs", "codex-rs/ztok/src/grep_cmd.rs", "codex-rs/cli/tests/ztok.rs", "codex-cli/bin/codex.js", "codex-cli/scripts/build_npm_package.py", "external"]
+depends_on = []
+done_when = "已形成带源码或公开页面引用的结论，明确说明简单 `rg` 会被改写到 `ztok grep`、`ztok grep` 主后端是 `rg` 且存在 `grep` fallback、Codex CLI 平台包会分发并暴露 `rg`，同时明确该关系仅对应到底层能力链路而非原生 `rg` 语义完全透传。"
+validate_by = "cd /workspace && rg -n \"rewrite_rg|resolved_command\\(\\\"rg\\\"\\)|sanitizeRipgrepConfig|PACKAGE_NATIVE_COMPONENTS|ztok_grep_\" codex-rs/ztok/src/rewrite.rs codex-rs/ztok/src/grep_cmd.rs codex-cli/bin/codex.js codex-cli/scripts/build_npm_package.py codex-rs/cli/tests/ztok.rs"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：spec-reviewer=PASS，code-reviewer=PASS。主代理本地核对确认 `shell_command` 简单 `rg` 会改写到 `ztok grep`，`ztok grep` 主后端优先调用 `rg` 且失败时回退系统 `grep`，Codex CLI 平台包分发 `rg` 并通过 `vendor/.../path` 注入 PATH。结论边界：这是底层能力链路上的对应，不是原生 `rg` 语义完全透传。available capabilities 结论为 none-applicable，因为当前任务是单 issue 静态结论收敛，本地阅读源码、issue 文件与公开页面已足够。issue #169 comment 若公开页面无法稳定取得正文，只能采用可直接确认的公开内容，不外推作者意图。"

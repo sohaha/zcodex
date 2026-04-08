@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-07T15:10:53.301Z
-- 本轮摘要：同步核对上游 RTK v0.35.0/master 后确认 upstream 仍不支持当前 ztok grep 报错路径；已在 codex-rs/ztok 中补上 grep 风格前置参数重排与 grep->rg 兼容参数映射，修复 codex ztok grep -RInE ... --exclude-dir=...；已通过 codex-ztok 定向单测、codex-cli ztok 集成测试与真实命令复现，codex-cli 全量仅剩既有 tldr_impact_text_renders_summary_lines 失败。
+- 更新时间：2026-04-08T00:51:48.696Z
+- 本轮摘要：Cadence execution 完成：已执行并完成 .agents/issues/2026-04-07-ztok-grep-rg-mapping.toml 的 a1，确认 shell_command 的简单 rg 会改写到 ztok grep；ztok grep 主后端优先调用 rg，失败时回退系统 grep；codex-cli 平台包分发 rg 并通过 vendor/.../path 注入 PATH。结论已明确边界：这是底层能力链路对应，不是原生 rg 语义完全透传；issue #169 comment 仍仅采用可直接确认的公开内容。
 
 ## 待确认问题
 
