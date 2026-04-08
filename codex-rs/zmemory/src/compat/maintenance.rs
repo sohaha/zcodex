@@ -53,7 +53,6 @@ impl CompatService {
         Ok(AdminDoctorResponse {
             generated_at: snapshot
                 .latest_audit_at
-                
                 .unwrap_or_else(|| "unavailable".to_string()),
             status: if warnings.is_empty() {
                 "ok".to_string()

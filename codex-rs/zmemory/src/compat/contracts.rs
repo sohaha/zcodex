@@ -159,6 +159,13 @@ pub struct ReviewDeprecatedResponse {
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ReviewRollbackActionResponse {
+    pub node_uuid: String,
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct AdminStatsResponse {
     pub generated_at: String,
     pub active_paths: i64,

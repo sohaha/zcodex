@@ -17,6 +17,7 @@ pub use contracts::RebuildSearchResponse;
 pub use contracts::ReviewDeprecatedResponse;
 pub use contracts::ReviewDiffResponse;
 pub use contracts::ReviewGroupItemResponse;
+pub use contracts::ReviewRollbackActionResponse;
 pub use contracts::SuccessMessageResponse;
 pub use contracts::UpdateNodeResponse;
 

@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T10:00:00.937Z
-- 本轮摘要：完成 zmemory a4：新增 compat adapter 与 codex zmemory serve-compat，修复 axum 路由语法 panic，已用临时 CODEX_HOME 手工验证 /api/browse、/api/review/groups、/api/review/groups/{uuid}/diff、/api/maintenance/stats 与同库 CLI 一致；cargo nextest run -p codex-cli --test zmemory 通过，just fix -p codex-zmemory 通过，just fix -p codex-cli 被无关 tldr_cmd 编译错误阻塞。
+- 更新时间：2026-04-08T10:50:35.241Z
+- 本轮摘要：2026-04-08 完成 zmemory a5 收尾：compat adapter 补齐无 /api 前缀路由、review queue 过滤 orphan，并落地最小 review 写语义（approve/clear-all/rollback）；已用真实 upstream frontend 对接本地 compat adapter 与同一 dbPath，验证 /review approve/rollback、/memory browse、/governance-lab rebuild-search、/maintenance 主链路；已回写 issue、QA、STATE、known-risks 与 docs，保留已验证剩余缺口：/browse/glossary POST/DELETE 尚未实现。
 
 ## 待确认问题
 
