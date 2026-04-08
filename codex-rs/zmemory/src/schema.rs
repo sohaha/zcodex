@@ -295,7 +295,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_namespace_created_at ON audit_log(names
 CREATE INDEX IF NOT EXISTS idx_audit_log_namespace_action_created_at ON audit_log(namespace, action, created_at);
 "#;
 
-const MIGRATIONS: [(&str, &str); 7] = [
+const MIGRATION_0008_NAMESPACE_QUERY_INDEXES: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_paths_namespace_edge_id ON paths(namespace, edge_id);
+CREATE INDEX IF NOT EXISTS idx_search_documents_namespace_node_uuid ON search_documents(namespace, node_uuid);
+CREATE INDEX IF NOT EXISTS idx_search_documents_namespace_memory_id ON search_documents(namespace, memory_id);
+CREATE INDEX IF NOT EXISTS idx_glossary_keywords_namespace_node_uuid ON glossary_keywords(namespace, node_uuid);
+CREATE INDEX IF NOT EXISTS idx_glossary_keywords_namespace_keyword ON glossary_keywords(namespace, keyword);
+"#;
+
+const MIGRATIONS: [(&str, &str); 8] = [
     ("0001_core", MIGRATION_0001_CORE),
     ("0002_search", MIGRATION_0002_SEARCH),
     ("0003_search_fts", MIGRATION_0003_SEARCH_FTS),
@@ -308,6 +316,10 @@ const MIGRATIONS: [(&str, &str); 7] = [
     (
         "0007_namespace_write_isolation",
         MIGRATION_0007_NAMESPACE_WRITE_ISOLATION,
+    ),
+    (
+        "0008_namespace_query_indexes",
+        MIGRATION_0008_NAMESPACE_QUERY_INDEXES,
     ),
 ];
 

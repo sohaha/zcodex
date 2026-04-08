@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T07:40:33.264Z
-- 本轮摘要：完成 zmemory a3：为 read/export/history/stats/doctor/system alias review 引入 typed internal contracts 与 snapshot builder，修复 alias 读取下 child 选择与显式 alias-read 回归测试；已执行 just fmt、cargo nextest run -p codex-zmemory、just fix -p codex-zmemory，并提交 refactor(zmemory): type service contracts and snapshots (99e4d9940)。
+- 更新时间：2026-04-08T08:29:06.307Z
+- 本轮摘要：完成 zmemory a2：补齐 runtime namespace 配置合同、namespace 复合索引迁移与 core/zmemory 覆盖测试；已通过定向测试与 issue 校验，等待按相关文件单独提交。
 
 ## 待确认问题
 

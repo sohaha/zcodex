@@ -269,6 +269,7 @@ async fn reload_project_scoped_config(config: &mut Config, turn: &TurnContext) {
         "zmemory.path",
         "zmemory.valid_domains",
         "zmemory.core_memory_uris",
+        "zmemory.namespace",
     ]
     .into_iter()
     .any(|key| should_reload_project_scoped_key(config, key));

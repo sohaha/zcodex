@@ -290,7 +290,7 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
     );
     assert_eq!(
         payload["result"]["pathResolution"]["supportsNamespaceSelection"],
-        false
+        true
     );
 
     Ok(())
@@ -1774,6 +1774,7 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
                 "core://my_user/coding_preferences".to_string(),
                 "core://agent/my_user/collaboration_contract".to_string(),
             ]),
+            namespace: Some("team-alpha".to_string()),
         }));
     });
     let test = builder.build(&server).await?;
@@ -1822,6 +1823,12 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
             "core://my_user/coding_preferences",
             "core://agent/my_user/collaboration_contract"
         ])
+    );
+    assert_eq!(payload["result"]["view"]["namespace"], "team-alpha");
+    assert_eq!(payload["result"]["view"]["namespaceSource"], "config");
+    assert_eq!(
+        payload["result"]["view"]["supportsNamespaceSelection"],
+        true
     );
     assert_eq!(
         payload["result"]["view"]["bootRoles"],
@@ -1881,6 +1888,7 @@ async fn zmemory_function_workspace_view_reloads_project_scoped_runtime_profile_
     fs::write(
         dot_codex.join("config.toml"),
         r#"[zmemory]
+namespace = "project-alpha"
 valid_domains = ["core", "project"]
 core_memory_uris = [
   "core://agent/project_manual",
@@ -1986,6 +1994,12 @@ core_memory_uris = [
             "core://my_user/project_preferences",
             "core://agent/my_user/project_contract",
         ])
+    );
+    assert_eq!(payload["result"]["view"]["namespace"], "project-alpha");
+    assert_eq!(payload["result"]["view"]["namespaceSource"], "config");
+    assert_eq!(
+        payload["result"]["view"]["supportsNamespaceSelection"],
+        true
     );
     assert_eq!(
         payload["result"]["view"]["bootRoles"],

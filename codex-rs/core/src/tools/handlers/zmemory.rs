@@ -256,6 +256,7 @@ async fn resolve_zmemory_config_for_turn(
             "zmemory.path",
             "zmemory.valid_domains",
             "zmemory.core_memory_uris",
+            "zmemory.namespace",
         ]
         .into_iter()
         .any(|key| {

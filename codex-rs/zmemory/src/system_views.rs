@@ -1,3 +1,4 @@
+use crate::config::DEFAULT_NAMESPACE;
 use crate::config::ZmemoryConfig;
 use crate::config::boot_role_bindings_for_uris;
 use crate::config::default_boot_role_bindings;
@@ -249,9 +250,9 @@ fn read_defaults_view(config: &ZmemoryConfig) -> Result<Value> {
         "view": "defaults",
         "validDomains": default_valid_domains(),
         "coreMemoryUris": default_core_memory_uris(),
-        "namespace": config.namespace(),
-        "namespaceSource": config.namespace_source(),
-        "supportsNamespaceSelection": config.supports_namespace_selection(),
+        "namespace": DEFAULT_NAMESPACE,
+        "namespaceSource": "implicitDefault",
+        "supportsNamespaceSelection": true,
         "bootRoles": role_bindings_json(&boot_roles),
         "unassignedUris": Vec::<String>::new(),
         "defaultPathPolicy": {

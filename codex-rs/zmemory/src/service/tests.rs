@@ -85,6 +85,55 @@ fn create_read_search_and_rebuild_round_trip() {
 }
 
 #[test]
+fn create_and_read_use_configured_namespace() {
+    let (_dir, config) = config_with_settings(
+        ZmemorySettings::from_env_vars(None, None).with_namespace(Some("team-alpha".to_string())),
+    );
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://agent-profile".to_string()),
+            content: Some("Namespaced memory".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+
+    let read = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("core://agent-profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("read should succeed");
+    assert_eq!(read["result"]["content"], "Namespaced memory");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let node_uuid = node_uuid_for_path(&conn, "team-alpha", "core", "agent-profile");
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE namespace = ?1 AND node_uuid = ?2",
+            params!["team-alpha", node_uuid],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("selected namespace memory count"),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM memories WHERE namespace = '' AND node_uuid = ?1",
+            params![node_uuid],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("default namespace memory count"),
+        0
+    );
+}
+
+#[test]
 fn create_supports_parent_uri_and_auto_numbering() {
     let (_dir, config) = config();
     crate::service::execute_action(
@@ -367,7 +416,7 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
     );
     assert_eq!(
         workspace["result"]["view"]["supportsNamespaceSelection"],
-        false
+        true
     );
     assert_eq!(
         workspace["result"]["view"]["coreMemoryUris"],
@@ -417,7 +466,7 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
     );
     assert_eq!(
         defaults["result"]["view"]["supportsNamespaceSelection"],
-        false
+        true
     );
     assert_eq!(
         defaults["result"]["view"]["coreMemoryUris"],
@@ -451,6 +500,48 @@ fn system_views_reflect_runtime_settings_without_changing_defaults() {
         ])
     );
     assert_eq!(workspace["result"]["view"]["unassignedUris"], json!([]));
+}
+
+#[test]
+fn workspace_view_reports_explicit_namespace_while_defaults_stay_global() {
+    let (_dir, config) = config_with_settings(
+        ZmemorySettings::from_env_vars(None, None).with_namespace(Some("team-alpha".to_string())),
+    );
+
+    let workspace = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://workspace".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("workspace view should succeed");
+    assert_eq!(workspace["result"]["view"]["namespace"], "team-alpha");
+    assert_eq!(workspace["result"]["view"]["namespaceSource"], "config");
+    assert_eq!(
+        workspace["result"]["view"]["supportsNamespaceSelection"],
+        true
+    );
+
+    let defaults = crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Read,
+            uri: Some("system://defaults".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("defaults view should succeed");
+    assert_eq!(defaults["result"]["view"]["namespace"], "");
+    assert_eq!(
+        defaults["result"]["view"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        defaults["result"]["view"]["supportsNamespaceSelection"],
+        true
+    );
 }
 
 #[test]
@@ -1406,7 +1497,7 @@ fn stats_and_doctor_surface_review_pressure() {
     );
     assert_eq!(stats["result"]["namespace"], "");
     assert_eq!(stats["result"]["namespaceSource"], "implicitDefault");
-    assert_eq!(stats["result"]["supportsNamespaceSelection"], false);
+    assert_eq!(stats["result"]["supportsNamespaceSelection"], true);
     assert_eq!(stats["result"]["pathResolution"]["namespace"], "");
     assert_eq!(
         stats["result"]["pathResolution"]["namespaceSource"],
@@ -1414,7 +1505,7 @@ fn stats_and_doctor_surface_review_pressure() {
     );
     assert_eq!(
         stats["result"]["pathResolution"]["supportsNamespaceSelection"],
-        false
+        true
     );
     assert_eq!(stats["result"]["pathResolution"].get("canonicalBase"), None);
     assert_eq!(
@@ -1461,7 +1552,7 @@ fn stats_and_doctor_surface_review_pressure() {
     );
     assert_eq!(doctor["result"]["namespace"], "");
     assert_eq!(doctor["result"]["namespaceSource"], "implicitDefault");
-    assert_eq!(doctor["result"]["supportsNamespaceSelection"], false);
+    assert_eq!(doctor["result"]["supportsNamespaceSelection"], true);
     assert_eq!(doctor["result"]["pathResolution"]["namespace"], "");
     assert_eq!(
         doctor["result"]["pathResolution"]["namespaceSource"],
@@ -1469,7 +1560,7 @@ fn stats_and_doctor_surface_review_pressure() {
     );
     assert_eq!(
         doctor["result"]["pathResolution"]["supportsNamespaceSelection"],
-        false
+        true
     );
     assert_eq!(
         doctor["result"]["pathResolution"].get("canonicalBase"),
@@ -3404,6 +3495,34 @@ fn schema_migration_adds_namespace_columns_for_upstream_compat() {
             "details",
             "created_at",
         ]
+    );
+    let index_columns = |index_name: &str| -> Vec<String> {
+        let sql = format!("PRAGMA index_info({index_name})");
+        let mut stmt = conn.prepare(&sql).expect("index info statement");
+        stmt.query_map([], |row| row.get::<_, String>(2))
+            .expect("index info rows")
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .expect("index info columns")
+    };
+    assert_eq!(
+        index_columns("idx_paths_namespace_edge_id"),
+        vec!["namespace", "edge_id"]
+    );
+    assert_eq!(
+        index_columns("idx_search_documents_namespace_node_uuid"),
+        vec!["namespace", "node_uuid"]
+    );
+    assert_eq!(
+        index_columns("idx_search_documents_namespace_memory_id"),
+        vec!["namespace", "memory_id"]
+    );
+    assert_eq!(
+        index_columns("idx_glossary_keywords_namespace_node_uuid"),
+        vec!["namespace", "node_uuid"]
+    );
+    assert_eq!(
+        index_columns("idx_glossary_keywords_namespace_keyword"),
+        vec!["namespace", "keyword"]
     );
     assert_eq!(
         conn.query_row(

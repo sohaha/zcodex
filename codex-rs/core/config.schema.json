@@ -2025,6 +2025,10 @@
           },
           "type": "array"
         },
+        "namespace": {
+          "description": "Optional namespace override for the current runtime profile.",
+          "type": "string"
+        },
         "path": {
           "allOf": [
             {

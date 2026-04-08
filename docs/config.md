@@ -87,6 +87,7 @@ own config block:
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+namespace = "team-alpha"
 valid_domains = ["core", "project", "notes"]
 core_memory_uris = [
   "core://agent/coding_operating_manual",
@@ -98,6 +99,7 @@ core_memory_uris = [
 `[zmemory]` fields:
 
 - `path`: optional database path override
+- `namespace`: optional runtime namespace override for namespace-aware databases
 - `valid_domains`: optional runtime writable domains override
 - `core_memory_uris`: optional runtime boot anchor override
 

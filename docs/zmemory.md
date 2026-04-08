@@ -41,6 +41,7 @@ path = "./agents/memory.db"
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+namespace = "team-alpha"
 valid_domains = ["core", "project", "notes"]
 core_memory_uris = [
   "core://agent/coding_operating_manual",
@@ -52,6 +53,7 @@ core_memory_uris = [
 字段说明：
 
 - `path`：可选数据库路径覆盖
+- `namespace`：可选 runtime namespace 覆盖；默认仍为 `""`
 - `valid_domains`：可选可写域列表覆盖
 - `core_memory_uris`：可选 boot 锚点覆盖
 

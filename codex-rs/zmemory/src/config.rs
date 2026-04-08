@@ -101,6 +101,7 @@ pub struct ZmemoryConfig {
 pub struct ZmemorySettings {
     valid_domains: Vec<String>,
     core_memory_uris: Vec<String>,
+    namespace: Option<String>,
 }
 
 impl ZmemoryConfig {
@@ -176,20 +177,32 @@ impl ZmemoryConfig {
         values
     }
 
-    pub fn namespace(&self) -> &'static str {
-        DEFAULT_NAMESPACE
+    pub fn namespace(&self) -> &str {
+        self.settings
+            .namespace
+            .as_deref()
+            .unwrap_or(DEFAULT_NAMESPACE)
     }
 
-    pub fn namespace_source(&self) -> &'static str {
-        "implicitDefault"
+    pub fn namespace_source(&self) -> &str {
+        if self.settings.namespace.is_some() {
+            "config"
+        } else {
+            "implicitDefault"
+        }
     }
 
     pub fn supports_namespace_selection(&self) -> bool {
-        false
+        true
     }
 }
 
 impl ZmemorySettings {
+    pub fn with_namespace(mut self, namespace: Option<String>) -> Self {
+        self.namespace = normalize_optional_namespace(namespace);
+        self
+    }
+
     pub fn from_config_over_env(
         valid_domains: Option<Vec<String>>,
         core_memory_uris: Option<Vec<String>>,
@@ -223,6 +236,7 @@ impl ZmemorySettings {
                 env_core_memory_uris.as_deref(),
                 DEFAULT_CORE_MEMORY_URIS,
             ),
+            namespace: None,
         }
     }
 }
@@ -304,6 +318,12 @@ fn normalize_values<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String
     deduped
 }
 
+fn normalize_optional_namespace(namespace: Option<String>) -> Option<String> {
+    namespace
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::DEFAULT_CORE_MEMORY_URIS;
@@ -369,6 +389,7 @@ mod tests {
                     .iter()
                     .map(std::string::ToString::to_string)
                     .collect(),
+                namespace: None,
             }
         );
     }
@@ -389,6 +410,7 @@ mod tests {
                     "notes".to_string(),
                 ],
                 core_memory_uris: vec!["core://agent".to_string(), "core://my_user".to_string()],
+                namespace: None,
             }
         );
     }
@@ -417,6 +439,28 @@ mod tests {
                     "core://agent/coding_operating_manual".to_string(),
                     "core://my_user/coding_preferences".to_string(),
                 ],
+                namespace: None,
+            }
+        );
+    }
+
+    #[test]
+    fn settings_allow_explicit_namespace_selection() {
+        let settings = ZmemorySettings::from_env_vars(None, None)
+            .with_namespace(Some("  team-alpha  ".into()));
+
+        assert_eq!(
+            settings,
+            ZmemorySettings {
+                valid_domains: DEFAULT_VALID_DOMAINS
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+                core_memory_uris: DEFAULT_CORE_MEMORY_URIS
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+                namespace: Some("team-alpha".to_string()),
             }
         );
     }
@@ -448,6 +492,21 @@ mod tests {
         assert_eq!(config.db_path(), resolution.db_path.as_path());
         assert_eq!(config.workspace_base(), Path::new("/tmp/workspace"));
         assert_eq!(config.path_resolution(), &resolution);
+    }
+
+    #[test]
+    fn config_reports_explicit_namespace_contract() {
+        let config = ZmemoryConfig::new_with_settings(
+            "/tmp/codex-home",
+            "/tmp/workspace",
+            sample_resolution("/tmp/workspace/memory.db"),
+            ZmemorySettings::from_env_vars(None, None)
+                .with_namespace(Some("workspace-alpha".to_string())),
+        );
+
+        assert_eq!(config.namespace(), "workspace-alpha");
+        assert_eq!(config.namespace_source(), "config");
+        assert!(config.supports_namespace_selection());
     }
 
     #[test]

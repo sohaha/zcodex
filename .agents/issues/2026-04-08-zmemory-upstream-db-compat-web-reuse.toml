@@ -37,10 +37,10 @@ done_when = "本地数据库结构已能明确满足上游 namespace-aware schem
 validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
 regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
 regress_timing = "before_fanout"
-status = "in_progress"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "需要优先保证 DB contract 的单一事实来源；若 schema 迁移会影响现有库，应在本 issue 内同时给出可回滚或可导出的恢复策略。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成 a2：为 `[zmemory]` runtime profile 增加显式 `namespace` 合同，并贯穿 core/cli/zmemory 的 turn-cwd reload 链路；`system://workspace` 现在会暴露当前 runtime namespace 与 `namespaceSource=config`，而 `system://defaults` 继续固定反映产品默认 namespace（空字符串），避免把当前 profile 与默认基线混淆。另新增 `0008_namespace_query_indexes`，把 `paths/search_documents/glossary_keywords` 的 namespace 复合查询索引固化为迁移合同，并补齐迁移测试、namespace 写隔离测试与 core e2e 覆盖。已执行 `cd /workspace/codex-rs && just write-config-schema`、`just fmt`、`cargo nextest run -p codex-zmemory`、`cargo nextest run -p codex-core --test all zmemory_` 完成验证；之后执行 `just fix -p codex-zmemory` 与 `just fix -p codex-core` 做收尾静态检查，未再重跑测试。"
 
 [[issue]]
 id = "a3"
