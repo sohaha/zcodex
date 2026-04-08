@@ -543,9 +543,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::JsRepl,
         key: "js_repl",
         stage: Stage::Experimental {
-            name: "JavaScript REPL",
-            menu_description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v22.22.0 installed.",
-            announcement: "NEW: JavaScript REPL is now available in /experimental. Enable it, then start a new chat or restart Codex to use it.",
+            name: "JavaScript 交互环境",
+            menu_description: "启用一个由 Node 持久驱动的 JavaScript 交互环境，用于交互式网站调试和其他内联 JavaScript 执行能力。需要已安装 Node >= v22.22.0。",
+            announcement: "新功能：/experimental 中现已提供 JavaScript 交互环境。启用后，请新开一个聊天或重启 Codex 再使用。",
         },
         default_enabled: false,
     },
@@ -632,9 +632,9 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::ImageDetailOriginal,
         key: "image_detail_original",
         stage: Stage::Experimental {
-            name: "Original image detail",
-            menu_description: "Let the model inspect tool-emitted images at full resolution on supported models instead of a resized approximation. This affects tool-emitted images such as those produced by `view_image`, not images attached directly in the UI. It is particularly important for localization and precise UI targeting, for reading small text, and for reasoning about precise layout.",
-            announcement: "NEW: Original image detail is now available in /experimental. Enable it to let tools request full-resolution image detail on supported models for CUA and localization tasks.",
+            name: "原始图像细节",
+            menu_description: "让模型在支持的模型上以完整分辨率检查工具输出的图像，而不是使用缩小后的近似图像。这只影响 `view_image` 等工具输出的图像，不影响直接附加在界面中的图像。它对本地化和精确 UI 定位、读取小字号文本以及推理精确布局尤其重要。",
+            announcement: "新功能：/experimental 中现已提供原始图像细节。启用后，工具可在支持的模型上为 CUA 和本地化任务请求完整分辨率的图像细节。",
         },
         default_enabled: false,
     },
@@ -786,8 +786,8 @@ pub const FEATURES: &[FeatureSpec] = &[
         id: Feature::GuardianApproval,
         key: "guardian_approval",
         stage: Stage::Experimental {
-            name: "Guardian Approvals",
-            menu_description: "When Codex needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.",
+            name: "Guardian 审批",
+            menu_description: "当 Codex 需要为较高风险的操作申请批准时（例如逃逸沙箱或访问受阻网络），将符合条件的批准请求路由给一个经过精细提示的安全审查子代理，而不是阻塞当前代理等待你的输入。由于它会为每次批准请求运行一个子代理，因此可能显著消耗更多 token。",
             announcement: "",
         },
         default_enabled: false,
@@ -849,9 +849,9 @@ pub const FEATURES: &[FeatureSpec] = &[
             target_os = "windows"
         )) {
             Stage::Experimental {
-                name: "Prevent sleep while running",
-                menu_description: "Keep your computer awake while Codex is running a thread.",
-                announcement: "NEW: Prevent sleep while running is now available in /experimental.",
+                name: "运行时防止休眠",
+                menu_description: "在 Codex 正在运行线程时保持计算机处于唤醒状态。",
+                announcement: "新功能：/experimental 中现已提供运行时防止休眠。",
             }
         } else {
             Stage::UnderDevelopment

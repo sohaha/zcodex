@@ -59,11 +59,11 @@ fn js_repl_is_experimental_and_user_toggleable() {
     let expected_node_version = include_str!("../../node-version.txt").trim_end();
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("JavaScript REPL"));
+    assert_eq!(stage.experimental_menu_name(), Some("JavaScript 交互环境"));
     assert_eq!(
         stage.experimental_menu_description().map(str::to_owned),
         Some(format!(
-            "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v{expected_node_version} installed."
+            "启用一个由 Node 持久驱动的 JavaScript 交互环境，用于交互式网站调试和其他内联 JavaScript 执行能力。需要已安装 Node >= v{expected_node_version}。"
         ))
     );
     assert_eq!(Feature::JsRepl.default_enabled(), false);
@@ -85,11 +85,11 @@ fn guardian_approval_is_experimental_and_user_toggleable() {
     let stage = spec.stage;
 
     assert!(matches!(stage, Stage::Experimental { .. }));
-    assert_eq!(stage.experimental_menu_name(), Some("Guardian Approvals"));
+    assert_eq!(stage.experimental_menu_name(), Some("Guardian 审批"));
     assert_eq!(
         stage.experimental_menu_description().map(str::to_owned),
         Some(
-            "When Codex needs approval for higher-risk actions (e.g. sandbox escapes or blocked network access), route eligible approval requests to a carefully-prompted security reviewer subagent rather than blocking the agent on your input. This can consume significantly more tokens because it runs a subagent on every approval request.".to_string()
+            "当 Codex 需要为较高风险的操作申请批准时（例如逃逸沙箱或访问受阻网络），将符合条件的批准请求路由给一个经过精细提示的安全审查子代理，而不是阻塞当前代理等待你的输入。由于它会为每次批准请求运行一个子代理，因此可能显著消耗更多 token。".to_string()
         )
     );
     assert_eq!(stage.experimental_announcement(), None);

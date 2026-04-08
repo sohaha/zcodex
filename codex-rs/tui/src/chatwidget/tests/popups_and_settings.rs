@@ -1466,9 +1466,9 @@ async fn experimental_popup_shows_js_repl_node_requirement() {
         .and_then(|spec| spec.stage.experimental_menu_description())
         .expect("expected js_repl experimental description");
     let node_requirement = js_repl_description
-        .split(". ")
-        .find(|sentence| sentence.starts_with("Requires Node >= v"))
-        .map(|sentence| sentence.trim_end_matches(" installed."))
+        .split('。')
+        .find(|sentence| sentence.contains("Node >= v"))
+        .map(str::trim)
         .expect("expected js_repl description to mention the Node requirement");
 
     chat.open_experimental_popup();

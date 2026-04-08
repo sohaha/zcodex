@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T11:11:13.396Z
-- 本轮摘要：初始化 .agents/llmdoc 文档系统：创建 startup、3 份 must、项目概览、3 份架构文档、1 份执行 guide、1 份命令参考、doc-gaps，并在 /tmp/llmdoc/workspace-8af22c44f404/investigations/ 生成 5 份调查草稿。
+- 更新时间：2026-04-08T11:15:11.203Z
+- 本轮摘要：2026-04-08 深度审查：core 高风险分叉点仍在并通过 request_user_input、hierarchical_agents、zmemory cwd reload、auto_tldr 配置保留等定向验证；model_visible_layout 的 AGENTS 刷新快照仅因开发者消息占位符从原始 zmemory 文本变为 <ZMEMORY_INSTRUCTIONS> 而漂移；codex-tui 运行库 cargo check -p codex-tui --lib 通过，但 cargo test -p codex-tui 无法编译，暴露测试侧 API 漂移：history_cell 仍用私有 codex_mcp::mcp 路径、status_command_tests 仍匹配旧的 RefreshRateLimits.request_id 字段、tui/src/lib.rs 测试仍用 codex_config::config_toml::ProjectConfig、chatwidget 测试构建缺少 RealtimeConversationSdp 覆盖。
 
 ## 待确认问题
 

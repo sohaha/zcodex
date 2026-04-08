@@ -260,9 +260,9 @@ impl ExecCell {
             },
             " ".into(),
             if self.is_active() {
-                "Exploring".bold()
+                "探索中".bold()
             } else {
-                "Explored".bold()
+                "已探索".bold()
             },
         ]));
 
@@ -304,7 +304,7 @@ impl ExecCell {
                     })
                     .unique();
                 vec![(
-                    "Read",
+                    "读取",
                     Itertools::intersperse(names.into_iter().map(Into::into), ", ".dim()).collect(),
                 )]
             } else {
@@ -312,23 +312,23 @@ impl ExecCell {
                 for parsed in &call.parsed {
                     match parsed {
                         ParsedCommand::Read { name, .. } => {
-                            lines.push(("Read", vec![name.clone().into()]));
+                            lines.push(("读取", vec![name.clone().into()]));
                         }
                         ParsedCommand::ListFiles { cmd, path } => {
-                            lines.push(("List", vec![path.clone().unwrap_or(cmd.clone()).into()]));
+                            lines.push(("列出", vec![path.clone().unwrap_or(cmd.clone()).into()]));
                         }
                         ParsedCommand::Search { cmd, query, path } => {
                             let spans = match (query, path) {
                                 (Some(q), Some(p)) => {
-                                    vec![q.clone().into(), " in ".dim(), p.clone().into()]
+                                    vec![q.clone().into(), " 于 ".dim(), p.clone().into()]
                                 }
                                 (Some(q), None) => vec![q.clone().into()],
                                 _ => vec![cmd.clone().into()],
                             };
-                            lines.push(("Search", spans));
+                            lines.push(("搜索", spans));
                         }
                         ParsedCommand::Unknown { cmd } => {
-                            lines.push(("Run", vec![cmd.clone().into()]));
+                            lines.push(("执行", vec![cmd.clone().into()]));
                         }
                     }
                 }
@@ -368,11 +368,11 @@ impl ExecCell {
         let title = if is_interaction {
             ""
         } else if self.is_active() {
-            "Running"
+            "执行中"
         } else if call.is_user_shell_command() {
-            "You ran"
+            "你执行了"
         } else {
-            "Ran"
+            "已执行"
         };
 
         let mut header_line = if is_interaction {
@@ -454,7 +454,7 @@ impl ExecCell {
             if raw_output.lines.is_empty() {
                 if !call.is_unified_exec_interaction() {
                     lines.extend(prefix_lines(
-                        vec![Line::from("(no output)".dim())],
+                        vec![Line::from("（无输出）".dim())],
                         Span::from(layout.output_block.initial_prefix).dim(),
                         Span::from(layout.output_block.subsequent_prefix),
                     ));
