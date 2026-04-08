@@ -52,7 +52,7 @@ fn resolve_platform_script(command: &str, hooks_dir: &Path) -> String {
             }
         }
 
-        let base = token.trim_end_matches(wrong_ext);
+        let base = token.strip_suffix(wrong_ext).unwrap();
         let alt_name = format!("{base}{right_ext}");
         let alt_path = hooks_dir.join(&alt_name);
         let alt_exists = if alt_path.is_file() {
