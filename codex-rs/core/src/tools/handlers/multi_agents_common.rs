@@ -265,7 +265,13 @@ async fn reload_project_scoped_config(config: &mut Config, turn: &TurnContext) {
         return;
     }
 
-    let reload_zmemory = should_reload_project_scoped_key(config, "zmemory.path");
+    let reload_zmemory = [
+        "zmemory.path",
+        "zmemory.valid_domains",
+        "zmemory.core_memory_uris",
+    ]
+    .into_iter()
+    .any(|key| should_reload_project_scoped_key(config, key));
     let reload_agent_max_threads = should_reload_project_scoped_key(config, "agents.max_threads");
     let reload_agent_max_depth = should_reload_project_scoped_key(config, "agents.max_depth");
     let reload_agent_job_max_runtime_seconds =

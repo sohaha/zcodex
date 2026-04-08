@@ -1848,6 +1848,169 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_workspace_view_reloads_project_scoped_runtime_profile_after_turn_cwd_override()
+-> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let global_db_path = home.path().join("global-zmemory").join("memory.db");
+    let workspace = TempDir::new()?;
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    std::fs::create_dir_all(
+        global_db_path
+            .parent()
+            .expect("global zmemory path should have a parent"),
+    )?;
+    std::fs::create_dir_all(workspace.path().join(".git"))?;
+    fs::create_dir_all(&nested)?;
+    fs::create_dir_all(&dot_codex)?;
+    fs::write(
+        home.path().join("config.toml"),
+        format!(
+            "[zmemory]\npath = \"{}\"\n\n[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            global_db_path.display(),
+            workspace.path().display()
+        ),
+    )?;
+    fs::write(
+        dot_codex.join("config.toml"),
+        r#"[zmemory]
+valid_domains = ["core", "project"]
+core_memory_uris = [
+  "core://agent/project_manual",
+  "core://my_user/project_preferences",
+  "core://agent/my_user/project_contract",
+]
+"#,
+    )?;
+    let mut builder = test_codex()
+        .with_home(Arc::clone(&home))
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Zmemory)
+                .expect("test config should allow feature update");
+        });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-workspace-profile-override",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "read",
+                    "uri": "system://workspace"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: Some(nested.clone()),
+            approval_policy: Some(AskForApproval::Never),
+            approvals_reviewer: None,
+            sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "inspect overridden zmemory runtime profile".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+
+    let turn_id = wait_for_event_match(&test.codex, |event| match event {
+        EventMsg::TurnStarted(event) => Some(event.turn_id.clone()),
+        _ => None,
+    })
+    .await;
+    wait_for_event(&test.codex, |event| match event {
+        EventMsg::TurnComplete(event) => event.turn_id == turn_id,
+        _ => false,
+    })
+    .await;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-workspace-profile-override")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(
+        payload["result"]["view"]["dbPath"],
+        json!(global_db_path.display().to_string())
+    );
+    assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
+    assert_eq!(payload["result"]["view"]["source"], "explicit");
+    assert_eq!(
+        payload["result"]["view"]["workspaceBase"],
+        json!(workspace.path().display().to_string())
+    );
+    assert_eq!(
+        payload["result"]["view"]["validDomains"],
+        json!(["core", "project"])
+    );
+    assert_eq!(
+        payload["result"]["view"]["coreMemoryUris"],
+        json!([
+            "core://agent/project_manual",
+            "core://my_user/project_preferences",
+            "core://agent/my_user/project_contract",
+        ])
+    );
+    assert_eq!(
+        payload["result"]["view"]["bootRoles"],
+        json!([
+            {
+                "role": "agent_operating_manual",
+                "uri": "core://agent/project_manual",
+                "configured": true,
+                "description": "The assistant's coding operating manual."
+            },
+            {
+                "role": "user_preferences",
+                "uri": "core://my_user/project_preferences",
+                "configured": true,
+                "description": "Stable user coding preferences for this runtime profile."
+            },
+            {
+                "role": "collaboration_contract",
+                "uri": "core://agent/my_user/project_contract",
+                "configured": true,
+                "description": "Shared long-term collaboration rules for coding tasks."
+            }
+        ])
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn zmemory_function_workspace_view_uses_project_path_after_turn_cwd_override() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

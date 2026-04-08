@@ -172,16 +172,21 @@ async fn resolve_zmemory_context_for_turn(
 ) -> ResolvedZmemoryContext {
     let session_config = session.get_config().await;
     let current_zmemory_config = session_config.zmemory.clone();
-    let zmemory_origin = session_config
-        .config_layer_stack
-        .origins()
-        .remove("zmemory.path")
-        .map(|metadata| metadata.name);
-    let should_reload = session_config.cwd.as_path() != turn_context.cwd.as_path()
-        && matches!(
-            zmemory_origin,
-            None | Some(ConfigLayerSource::Project { .. })
-        );
+    let should_reload = session_config.cwd.as_path() != turn_context.cwd.as_path() && {
+        let mut origins = session_config.config_layer_stack.origins();
+        [
+            "zmemory.path",
+            "zmemory.valid_domains",
+            "zmemory.core_memory_uris",
+        ]
+        .into_iter()
+        .any(|key| {
+            matches!(
+                origins.remove(key).map(|metadata| metadata.name),
+                None | Some(ConfigLayerSource::Project { .. })
+            )
+        })
+    };
     let codex_home = turn_context.config.codex_home.clone();
 
     if !should_reload {
