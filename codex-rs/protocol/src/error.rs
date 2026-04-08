@@ -185,9 +185,9 @@ impl CodexErr {
             | CodexErr::AgentLimitReached { .. }
             | CodexErr::Spawn
             | CodexErr::SessionConfiguredNotFirstEvent
-            | CodexErr::UsageLimitReached(_)
-            | CodexErr::ServerOverloaded => false,
+            | CodexErr::UsageLimitReached(_) => false,
             CodexErr::Stream(..)
+            | CodexErr::ServerOverloaded
             | CodexErr::Timeout
             | CodexErr::UnexpectedStatus(_)
             | CodexErr::ResponseStreamFailed(_)

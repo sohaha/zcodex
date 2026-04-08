@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T00:51:48.696Z
-- 本轮摘要：Cadence execution 完成：已执行并完成 .agents/issues/2026-04-07-ztok-grep-rg-mapping.toml 的 a1，确认 shell_command 的简单 rg 会改写到 ztok grep；ztok grep 主后端优先调用 rg，失败时回退系统 grep；codex-cli 平台包分发 rg 并通过 vendor/.../path 注入 PATH。结论已明确边界：这是底层能力链路对应，不是原生 rg 语义完全透传；issue #169 comment 仍仅采用可直接确认的公开内容。
+- 更新时间：2026-04-08T10:00:00.937Z
+- 本轮摘要：完成 zmemory a4：新增 compat adapter 与 codex zmemory serve-compat，修复 axum 路由语法 panic，已用临时 CODEX_HOME 手工验证 /api/browse、/api/review/groups、/api/review/groups/{uuid}/diff、/api/maintenance/stats 与同库 CLI 一致；cargo nextest run -p codex-cli --test zmemory 通过，just fix -p codex-zmemory 通过，just fix -p codex-cli 被无关 tldr_cmd 编译错误阻塞。
 
 ## 待确认问题
 

@@ -18,9 +18,7 @@ pub(crate) fn update_action(
     let tx = conn.transaction()?;
     let result = update_action_in_tx(config, &tx, args)?;
     tx.commit()?;
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    let document_count = common::search_document_count(conn, config)?;
     Ok(augment_update_result(result, document_count))
 }
 
@@ -32,9 +30,9 @@ pub(crate) fn update_action_in_tx(
     let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot update root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, uri)?
+    let row = common::find_path_row(conn, config, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
-    let current_memory = common::read_active_memory(conn, &row.node_uuid)?
+    let current_memory = common::read_active_memory(conn, config.namespace(), &row.node_uuid)?
         .ok_or_else(|| anyhow::anyhow!("active memory not found: {uri}"))?;
 
     let mut content_changed = false;
@@ -47,11 +45,11 @@ pub(crate) fn update_action_in_tx(
         && content != current_memory.content
     {
         conn.execute(
-            "INSERT INTO memories(node_uuid, content) VALUES (?1, ?2)",
-            params![row.node_uuid, content],
+            "INSERT INTO memories(namespace, node_uuid, content) VALUES (?1, ?2, ?3)",
+            params![config.namespace(), row.node_uuid, content],
         )?;
         let replacement_id = conn.last_insert_rowid();
-        mark_other_memories_deprecated(conn, &row.node_uuid, replacement_id)?;
+        mark_other_memories_deprecated(conn, config.namespace(), &row.node_uuid, replacement_id)?;
         new_memory_id = Some(replacement_id);
         content_changed = true;
     }
@@ -59,16 +57,16 @@ pub(crate) fn update_action_in_tx(
     if let Some(updated_priority) = args.priority {
         priority = updated_priority;
         conn.execute(
-            "UPDATE edges SET priority = ?2 WHERE id = ?1",
-            params![row.edge_id, updated_priority],
+            "UPDATE edges SET priority = ?2 WHERE id = ?1 AND namespace = ?3",
+            params![row.edge_id, updated_priority, config.namespace()],
         )?;
     }
 
     if let Some(updated_disclosure) = args.disclosure.clone() {
         disclosure = Some(updated_disclosure.clone());
         conn.execute(
-            "UPDATE edges SET disclosure = ?2 WHERE id = ?1",
-            params![row.edge_id, updated_disclosure],
+            "UPDATE edges SET disclosure = ?2 WHERE id = ?1 AND namespace = ?3",
+            params![row.edge_id, updated_disclosure, config.namespace()],
         )?;
     }
 
@@ -78,6 +76,7 @@ pub(crate) fn update_action_in_tx(
 
     common::insert_audit_log(
         conn,
+        config.namespace(),
         "update",
         Some(&uri.to_string()),
         Some(&row.node_uuid),
@@ -89,7 +88,7 @@ pub(crate) fn update_action_in_tx(
             "disclosure": disclosure,
         }),
     )?;
-    index::reindex_node(conn, &row.node_uuid)?;
+    index::reindex_node(conn, config.namespace(), &row.node_uuid)?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,

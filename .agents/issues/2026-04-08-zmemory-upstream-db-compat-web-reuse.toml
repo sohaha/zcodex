@@ -1,0 +1,106 @@
+plan = ".agents/plan/2026-04-08-zmemory-upstream-db-compat-web-reuse.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "定版上游对齐架构与本地分叉保留清单"
+scope = """
+本 issue 负责把“数据库兼容优先 + upstream-compatible service adapter”的总体路线固化为明确架构决策，并冻结本地分叉增强的保留边界，避免后续实现阶段一边引入上游 web 复用链路，一边继续沿用互相冲突的 `embedded-only` 口径。
+
+包括更新 `.agents/zmemory/architecture.md`、`.agents/zmemory/tech-review.md`、相关说明文档中的目标形态、保留扩展清单与兼容/非兼容边界。
+不包括具体 schema 迁移实现，不包括 review/maintenance HTTP 端点本身的接线实现。
+"""
+touch_points = [".agents/zmemory/architecture.md", ".agents/zmemory/tech-review.md", "docs/zmemory.md", ".agents/plan/2026-04-08-zmemory-upstream-db-compat-web-reuse.md", ".agents/issues/2026-04-08-zmemory-upstream-db-compat-web-reuse.toml"]
+depends_on = []
+done_when = "已明确记录并对外统一：本地后续采用“内核 + 上游兼容适配层”路线；`system://workspace`、`system://defaults`、`system://alias`、`system://paths`、`stats/doctor` 等本地增强的保留方式清晰可查；后续 issue 不再需要猜测哪些能力必须兼容、哪些能力允许保留扩展。"
+validate_by = "手工核对 `.agents/zmemory/architecture.md`、`.agents/zmemory/tech-review.md` 与 `docs/zmemory.md`：确认已明确写出 adapter 路线、保留增强清单与兼容边界；再执行 `node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js issue .agents/issues/2026-04-08-zmemory-upstream-db-compat-web-reuse.toml`。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成阶段 0 文档定版：`.agents/zmemory/architecture.md`、`.agents/zmemory/tech-review.md`、`docs/zmemory.md` 统一改为“嵌入式内核 + upstream-compatible adapter”路线，并冻结 `system://workspace`、`system://defaults`、`system://alias`、`system://paths`、`stats` / `doctor` 为保留扩展；本地 spec/code review 已通过，且已执行 `cadence_validate.js issue` 与文档 diff/格式检查完成最终验证。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "对齐 namespace-aware schema 与运行时数据库契约"
+scope = """
+本 issue 负责收敛本地与上游在 SQLite schema、`namespace` 维度、FTS 结构以及 runtime DB contract 上的核心差异，使 CLI、core、未来兼容层与上游 web 都能稳定消费同一份数据库结构与同一运行时定位规则。
+
+包括 `paths`、`search_documents`、`glossary_keywords` 等主表/索引/FTS 的 schema 对齐、必要迁移策略与兼容性测试，以及 turn cwd 覆盖后仍指向同一目标库的运行时合同校准。
+不包括 row-level review/snapshot 聚合语义，不包括 `/api/review`、`/api/browse`、`/api/maintenance` 端点接线。
+"""
+touch_points = ["schema:sqlite", "codex-rs/zmemory/src/schema.rs", "codex-rs/zmemory/src/path_resolution.rs", "codex-rs/zmemory/src/system_views.rs", "codex-rs/zmemory/src", "codex-rs/core/src/tools/handlers/zmemory.rs", "nocturne_memory/rust/migrations/0001_core.sql", "nocturne_memory/rust/migrations/0004_namespace.sql"]
+depends_on = ["a1"]
+done_when = "本地数据库结构已能明确满足上游 namespace-aware schema 的核心消费前提：关键表、唯一约束、索引/FTS 与 runtime dbPath/namespace 定位规则一致或有显式兼容映射；并且 `system://workspace`、`system://boot` 等运行时视图不会因对齐而静默指向错误数据库。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成 a2：为 `[zmemory]` runtime profile 增加显式 `namespace` 合同，并贯穿 core/cli/zmemory 的 turn-cwd reload 链路；`system://workspace` 现在会暴露当前 runtime namespace 与 `namespaceSource=config`，而 `system://defaults` 继续固定反映产品默认 namespace（空字符串），避免把当前 profile 与默认基线混淆。另新增 `0008_namespace_query_indexes`，把 `paths/search_documents/glossary_keywords` 的 namespace 复合查询索引固化为迁移合同，并补齐迁移测试、namespace 写隔离测试与 core e2e 覆盖。已执行 `cd /workspace/codex-rs && just write-config-schema`、`just fmt`、`cargo nextest run -p codex-zmemory`、`cargo nextest run -p codex-core --test all zmemory_` 完成验证；之后执行 `just fix -p codex-zmemory` 与 `just fix -p codex-core` 做收尾静态检查，未再重跑测试。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐 review、snapshot 与 maintenance 所需数据契约"
+scope = """
+本 issue 负责把上游 web/backend 依赖的 row-level changeset、snapshot、review group、diff、rollback、approve 与 maintenance 治理语义，映射为本地可被稳定消费的数据契约，解决“只有 audit/history，但没有上游 review store”这一结构性缺口。
+
+包括 review 分组键、diff/rollback 所需持久化语义、maintenance stats/doctor/rebuild-search 所依赖的数据面，以及本地 `audit_log`、单节点 `history` 与上游 snapshot contract 的兼容关系说明或实现。
+不包括上游 web 的最终接线页面，不包括 namespace 主表结构调整。
+"""
+touch_points = ["codex-rs/zmemory/src/service/history.rs", "codex-rs/zmemory/src/service/stats.rs", "codex-rs/zmemory/src/system_views.rs", "codex-rs/zmemory/src/service", "nocturne_memory/backend/db/snapshot.py", "nocturne_memory/backend/api/review.py", "nocturne_memory/backend/api/maintenance.py", "nocturne_memory/backend/tests/api/test_api_routes.py"]
+depends_on = ["a1", "a2"]
+done_when = "本地数据层已能支撑或明确映射上游 `review groups -> diff -> rollback/approve` 与 `maintenance stats/doctor/rebuild-search` 主链路所需的 changeset/snapshot 语义；工程师无需再靠猜测决定如何从本地 `audit_log`/`history` 推导上游 review contract。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成 a3：新增 `service::review`，把 alias review groups、node snapshot、changeset history、rollback targets 与 recent audit entries 收敛为统一的 typed internal contract，供后续 adapter 直接消费；并让 `system://alias` 改为复用同一 review group builder，保证 group 列表和 diff/snapshot 使用同一 primary URI 选择逻辑，不再出现列表与 diff 指向不同主路径的隐式分叉。maintenance 侧继续沿用既有 `stats/doctor/rebuild-search` 合同，因此当前缺口主要已从“数据语义不明确”收敛为“尚未暴露 HTTP adapter”。已执行 `cd /workspace/codex-rs && just fmt`、`cargo nextest run -p codex-zmemory`，随后执行 `just fix -p codex-zmemory` 做收尾静态检查，未在 fix 后重跑测试。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "实现上游 web 所需的最小兼容 service adapter"
+scope = """
+本 issue 负责在不把上游整套 backend 逻辑塞回 `codex-zmemory` 内核的前提下，提供可供上游 frontend 直接消费的最小兼容接口，把已对齐的 schema/runtime/review contract 暴露为 `/api/review`、`/api/browse`、`/api/maintenance` 所需的能力。
+
+包括端点映射、同库同 namespace 运行时接线、必要的请求/响应契约适配，以及本地 tool/admin/service surface 与 adapter 之间的职责边界。
+不包括大规模重写上游前端，不包括无关 Codex UI/TUI 功能同步。
+"""
+touch_points = ["api:/api/review", "api:/api/browse", "api:/api/maintenance", "module:zmemory", "module:core", "module:tools", "codex-rs/zmemory/src", "codex-rs/tools/src/zmemory_tool.rs", "codex-rs/core/src/tools/handlers/zmemory.rs", "nocturne_memory/frontend/src/lib/api.js", "nocturne_memory/go/internal/adapters/http/server.go"]
+depends_on = ["a2", "a3"]
+done_when = "上游 frontend 所需的 review、browse、maintenance 入口已有清晰且可调用的兼容适配层；adapter 与 CLI/core 指向同一 dbPath / runtime profile / namespace 解析规则；本地增强能力未因接线而被静默绕过或失效。"
+validate_by = "启动本地兼容层后，使用 `curl` 或等价请求依次验证 `/api/browse`、`/api/review/groups`、`/api/review/groups/{node_uuid}/diff`、`/api/maintenance/stats` 至少能在同一数据库上返回一致数据；若本阶段新增 Rust 自动化覆盖，再执行 `cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet && cargo nextest run -p codex-core --quiet`。"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet && cargo nextest run -p codex-core --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "not_run"
+notes = "已完成 a4：在 `codex-rs/zmemory/src/compat/*` 新增 browse/review/maintenance 兼容合同与查询层，并在 `codex-rs/cli` 新增 `zmemory serve-compat`，通过 axum 暴露 `/api/browse/*`、`/api/review/groups*`、`/api/maintenance/*`，且继续复用与 CLI/core 相同的 dbPath / namespace 解析规则。手工验证中先发现兼容层沿用了旧版 axum `:param` 路由语法导致服务启动即 panic，现已改为 `{param}` 并重新验证：在临时 `CODEX_HOME` 种子数据上，`system://workspace` 显示 dbPath 为 `/workspace/.tmp/zmemory-compat-a4/home/.../zmemory.db`，随后 `curl` `/api/browse/node?domain=core&path=workspace`、`/api/review/groups`、`/api/review/groups/{node_uuid}/diff`、`/api/maintenance/stats` 均与同库 CLI `read` / `stats` 结果一致。自动化验证已执行 `cd /workspace/codex-rs && cargo nextest run -p codex-cli --test zmemory`；此前 compat 主体代码已执行 `cargo nextest run -p codex-zmemory` 通过。`just fix -p codex-zmemory` 已成功并仅收敛 clippy 小修；`just fix -p codex-cli` 目前被工作区既有 `cli/src/tldr_cmd.rs` 缺少新字段初始化的编译错误阻塞，因此本 issue 先将回归状态记为 `not_run`，待该无关阻塞排除后再补完整回归。当前 review 写接口继续显式返回 `501`，不假装成功。"
+
+[[issue]]
+id = "a5"
+sequence = 50
+title = "完成上游 web 真实复用验证与回归收口"
+scope = """
+本 issue 负责用真实的上游 web 对接本地兼容层和同一运行时数据库，验证“数据库兼容 + 薄适配层”路线是否真的成立，并把最终回归风险、剩余缺口与验收结论收口到文档与 QA 记录中。
+
+包括 `review groups -> diff -> rollback/approve`、`maintenance stats/doctor/rebuild-search`、同库同 profile 核对、已知风险与后续建议回写。
+不包括新增上游前端功能，不包括超出本轮计划的全仓同步扩张。
+"""
+touch_points = ["nocturne_memory/frontend/src/App.jsx", "nocturne_memory/frontend/src/lib/api.js", ".agents/zmemory/qa-report.md", ".ai/memory/known-risks.md", "docs/zmemory.md", "external"]
+depends_on = ["a4"]
+done_when = "已用上游 web 在真实链路上确认：页面连接的是与 CLI/core 相同的 dbPath / runtime profile，核心 browse/review/maintenance 主链路可用，并且遗留风险、不可复用点或后续收敛建议已被明确记录，而不是停留在推测。"
+validate_by = "启动上游 frontend 并对接本地兼容层，手工走通 `review groups -> diff -> rollback/approve` 与 `maintenance stats/doctor/rebuild-search` 主链路，同时核对 `system://workspace` 暴露的 `dbPath` 与页面实际读写目标一致；将结果回写到 `.agents/zmemory/qa-report.md`。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "若本 issue 仍无法用真实上游 web 完成闭环，需要明确写出阻塞点属于 schema、review contract 还是 adapter 层，而不是笼统归因于“工具没对齐”。"

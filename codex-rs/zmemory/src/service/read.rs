@@ -1,5 +1,7 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
+use crate::service::contracts::ReadNodeContract;
+use crate::service::snapshot;
 use crate::tool_api::ReadActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
@@ -18,23 +20,18 @@ pub(crate) fn read_action(
     }
     common::ensure_readable_domain(config, conn, &uri.domain)?;
 
-    let row = common::find_path_row(conn, uri)?
-        .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
-    let memory = common::read_active_memory(conn, &row.node_uuid)?
-        .ok_or_else(|| anyhow::anyhow!("active memory not found for {uri}"))?;
-    let keywords = common::load_keywords(conn, &row.node_uuid)?;
-    let children = common::list_children(conn, uri, &row.node_uuid)?;
-    let alias_count = common::count_aliases(conn, &row.node_uuid)?;
+    let snapshot = snapshot::load_node_snapshot_for_uri(config, conn, uri)?;
 
-    Ok(json!({
-        "uri": uri.to_string(),
-        "nodeUuid": row.node_uuid,
-        "memoryId": memory.id,
-        "content": memory.content,
-        "priority": row.priority,
-        "disclosure": row.disclosure,
-        "keywords": keywords,
-        "children": children,
-        "aliasCount": alias_count,
-    }))
+    serde_json::to_value(ReadNodeContract {
+        uri: snapshot.primary_uri,
+        node_uuid: snapshot.node_uuid,
+        memory_id: snapshot.memory_id,
+        content: snapshot.content,
+        priority: snapshot.priority,
+        disclosure: snapshot.disclosure,
+        keywords: snapshot.keywords,
+        children: snapshot.children,
+        alias_count: snapshot.alias_count,
+    })
+    .map_err(Into::into)
 }

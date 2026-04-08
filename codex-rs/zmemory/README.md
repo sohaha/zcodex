@@ -41,6 +41,7 @@
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+namespace = "team-alpha"
 valid_domains = ["core", "project", "notes"]
 core_memory_uris = [
   "core://agent/coding_operating_manual",
@@ -61,7 +62,7 @@ path = "/absolute/path/to/.codex/zmemory/zmemory.db"
 
 ## 域与 boot 基线
 
-- `[zmemory].valid_domains` / `[zmemory].core_memory_uris` 可直接声明 runtime profile
+- `[zmemory].namespace` / `[zmemory].valid_domains` / `[zmemory].core_memory_uris` 可直接声明 runtime profile
 - `VALID_DOMAINS`：逗号分隔的可写域列表；默认 `core,project,notes`
 - `CORE_MEMORY_URIS`：逗号分隔的 boot 锚点 URI；默认 `core://agent/coding_operating_manual,core://my_user/coding_preferences,core://agent/my_user/collaboration_contract`
 - 优先级：`[zmemory]` 配置 > 环境变量 > 产品默认值

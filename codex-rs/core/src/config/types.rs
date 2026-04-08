@@ -15,6 +15,8 @@ pub struct ZmemoryToml {
     pub valid_domains: Option<Vec<String>>,
     /// Optional boot anchor URIs for the current runtime profile.
     pub core_memory_uris: Option<Vec<String>>,
+    /// Optional namespace override for the current runtime profile.
+    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,22 +24,25 @@ pub struct ZmemoryConfig {
     pub path: Option<PathBuf>,
     valid_domains: Option<Vec<String>>,
     core_memory_uris: Option<Vec<String>>,
+    namespace: Option<String>,
 }
 
 impl ZmemoryConfig {
     pub fn from_toml(toml: Option<ZmemoryToml>) -> Self {
-        let (path, valid_domains, core_memory_uris) = match toml {
+        let (path, valid_domains, core_memory_uris, namespace) = match toml {
             Some(toml) => (
                 toml.path.map(AbsolutePathBuf::into_path_buf),
                 toml.valid_domains,
                 toml.core_memory_uris,
+                toml.namespace,
             ),
-            None => (None, None, None),
+            None => (None, None, None, None),
         };
         Self {
             path,
             valid_domains,
             core_memory_uris,
+            namespace,
         }
     }
 
@@ -46,6 +51,7 @@ impl ZmemoryConfig {
             self.valid_domains.clone(),
             self.core_memory_uris.clone(),
         )
+        .with_namespace(self.namespace.clone())
     }
 }
 

@@ -66,12 +66,25 @@ fn tool_parameter_description(
         .and_then(|tools| {
             tools.iter().find_map(|tool| {
                 if tool.get("name").and_then(Value::as_str) == Some(tool_name) {
-                    tool.get("parameters")
-                        .and_then(|parameters| parameters.get("properties"))
-                        .and_then(|properties| properties.get(parameter_name))
-                        .and_then(|parameter| parameter.get("description"))
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
+                    let parameters = tool.get("parameters")?;
+                    parameters
+                        .get("properties")
+                        .into_iter()
+                        .chain(
+                            parameters
+                                .get("oneOf")
+                                .and_then(Value::as_array)
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|variant| variant.get("properties")),
+                        )
+                        .find_map(|properties| {
+                            properties
+                                .get(parameter_name)
+                                .and_then(|parameter| parameter.get("description"))
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        })
                 } else {
                     None
                 }
@@ -187,22 +200,12 @@ async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result
 
     let body = resp_mock.single_request().body_json();
     let tool_names = tool_names(&body);
-    let uri_description = tool_parameter_description(&body, "zmemory", "uri")
-        .expect("zmemory uri description should be present");
-    let limit_description = tool_parameter_description(&body, "zmemory", "limit")
-        .expect("zmemory limit description should be present");
+    let uri_description = tool_parameter_description(&body, "read_memory", "uri")
+        .expect("read_memory uri description should be present");
 
-    assert!(
-        uri_description.contains(
-            "system://boot|defaults|workspace|index|index/<domain>|paths|paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>"
-        )
-    );
+    assert!(uri_description.contains("core://agent"));
+    assert!(uri_description.contains("system://boot"));
     assert!(uri_description.contains("system://paths"));
-    assert!(uri_description.contains("产品默认值"));
-    assert!(uri_description.contains("当前工作区运行时事实"));
-    assert!(limit_description.contains("system://boot"));
-    assert!(limit_description.contains("paths"));
-    assert!(limit_description.contains("alias"));
     assert!(tool_names.contains(&"read_memory".to_string()));
     assert!(tool_names.contains(&"search_memory".to_string()));
 
@@ -256,7 +259,15 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
     assert_eq!(payload["action"], "stats");
     assert_eq!(
         sorted_object_keys(&payload["result"]["pathResolution"]),
-        vec!["dbPath", "reason", "source", "workspaceKey"]
+        vec![
+            "dbPath",
+            "namespace",
+            "namespaceSource",
+            "reason",
+            "source",
+            "supportsNamespaceSelection",
+            "workspaceKey",
+        ]
     );
     assert_eq!(
         payload["result"]["dbPath"],
@@ -273,6 +284,15 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
     assert_ne!(
         payload["result"]["pathResolution"]["workspaceKey"],
         Value::Null
+    );
+    assert_eq!(payload["result"]["pathResolution"]["namespace"], "");
+    assert_eq!(
+        payload["result"]["pathResolution"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        payload["result"]["pathResolution"]["supportsNamespaceSelection"],
+        true
     );
 
     Ok(())
@@ -1359,7 +1379,7 @@ async fn zmemory_mcp_delete_memory_tool_preserves_other_paths_for_same_node() ->
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
+async fn zmemory_function_add_alias_returns_bounded_json() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -1390,9 +1410,10 @@ async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
             ev_response_created("resp-1"),
             ev_function_call(
                 "call-add-alias",
-                "add_alias",
+                "zmemory",
                 &serde_json::to_string(&json!({
-                    "new_uri": "alias://agent-profile",
+                    "action": "add-alias",
+                    "new_uri": "alias://agent-profile-copy",
                     "target_uri": "core://agent-profile",
                     "priority": 3
                 }))?,
@@ -1418,7 +1439,7 @@ async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
         .expect("function tool output should be present");
     let payload = extract_zmemory_json_block(&output);
     assert_eq!(payload["action"], "add-alias");
-    assert_eq!(payload["result"]["uri"], "alias://agent-profile");
+    assert_eq!(payload["result"]["uri"], "alias://agent-profile-copy");
     assert_eq!(payload["result"]["targetUri"], "core://agent-profile");
 
     let read_back = run_zmemory_tool_with_context(
@@ -1428,7 +1449,7 @@ async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
         None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
-            uri: Some("alias://agent-profile".to_string()),
+            uri: Some("alias://agent-profile-copy".to_string()),
             ..ZmemoryToolCallParam::default()
         },
     )?;
@@ -1698,6 +1719,10 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
     assert_eq!(payload["result"]["view"]["view"], "workspace");
     assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
     assert_eq!(payload["result"]["view"]["source"], "explicit");
+    assert_eq!(
+        payload["result"]["view"]["workspaceBase"],
+        json!(test.cwd_path().display().to_string())
+    );
     assert_eq!(payload["result"]["view"]["dbPathDiffers"], true);
     assert_eq!(
         payload["result"]["view"]["defaultDbPath"],
@@ -1751,6 +1776,7 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
                 "core://my_user/coding_preferences".to_string(),
                 "core://agent/my_user/collaboration_contract".to_string(),
             ]),
+            namespace: Some("team-alpha".to_string()),
         }));
     });
     let test = builder.build(&server).await?;
@@ -1800,6 +1826,12 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
             "core://agent/my_user/collaboration_contract"
         ])
     );
+    assert_eq!(payload["result"]["view"]["namespace"], "team-alpha");
+    assert_eq!(payload["result"]["view"]["namespaceSource"], "config");
+    assert_eq!(
+        payload["result"]["view"]["supportsNamespaceSelection"],
+        true
+    );
     assert_eq!(
         payload["result"]["view"]["bootRoles"],
         json!([
@@ -1824,6 +1856,176 @@ async fn zmemory_function_workspace_view_reflects_configured_runtime_profile() -
         ])
     );
     assert_eq!(payload["result"]["view"]["unassignedUris"], json!([]));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn zmemory_function_workspace_view_reloads_project_scoped_runtime_profile_after_turn_cwd_override()
+-> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let global_db_path = home.path().join("global-zmemory").join("memory.db");
+    let workspace = TempDir::new()?;
+    let nested = workspace.path().join("nested");
+    let dot_codex = workspace.path().join(".codex");
+    std::fs::create_dir_all(
+        global_db_path
+            .parent()
+            .expect("global zmemory path should have a parent"),
+    )?;
+    std::fs::create_dir_all(workspace.path().join(".git"))?;
+    fs::create_dir_all(&nested)?;
+    fs::create_dir_all(&dot_codex)?;
+    fs::write(
+        home.path().join("config.toml"),
+        format!(
+            "[zmemory]\npath = \"{}\"\n\n[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            global_db_path.display(),
+            workspace.path().display()
+        ),
+    )?;
+    fs::write(
+        dot_codex.join("config.toml"),
+        r#"[zmemory]
+namespace = "project-alpha"
+valid_domains = ["core", "project"]
+core_memory_uris = [
+  "core://agent/project_manual",
+  "core://my_user/project_preferences",
+  "core://agent/my_user/project_contract",
+]
+"#,
+    )?;
+    let mut builder = test_codex()
+        .with_home(Arc::clone(&home))
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Zmemory)
+                .expect("test config should allow feature update");
+        });
+    let test = builder.build(&server).await?;
+
+    mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_function_call(
+                "call-workspace-profile-override",
+                "zmemory",
+                &serde_json::to_string(&json!({
+                    "action": "read",
+                    "uri": "system://workspace"
+                }))?,
+            ),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let follow_up = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("msg-1", "done"),
+            ev_completed("resp-2"),
+        ]),
+    )
+    .await;
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: Some(nested.clone()),
+            approval_policy: Some(AskForApproval::Never),
+            approvals_reviewer: None,
+            sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "inspect overridden zmemory runtime profile".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+
+    let turn_id = wait_for_event_match(&test.codex, |event| match event {
+        EventMsg::TurnStarted(event) => Some(event.turn_id.clone()),
+        _ => None,
+    })
+    .await;
+    wait_for_event(&test.codex, |event| match event {
+        EventMsg::TurnComplete(event) => event.turn_id == turn_id,
+        _ => false,
+    })
+    .await;
+
+    let output = follow_up
+        .single_request()
+        .function_call_output_text("call-workspace-profile-override")
+        .expect("function tool output should be present");
+    let payload = extract_zmemory_json_block(&output);
+    assert_eq!(
+        payload["result"]["view"]["dbPath"],
+        json!(global_db_path.display().to_string())
+    );
+    assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
+    assert_eq!(payload["result"]["view"]["source"], "explicit");
+    assert_eq!(
+        payload["result"]["view"]["workspaceBase"],
+        json!(workspace.path().display().to_string())
+    );
+    assert_eq!(
+        payload["result"]["view"]["validDomains"],
+        json!(["core", "project"])
+    );
+    assert_eq!(
+        payload["result"]["view"]["coreMemoryUris"],
+        json!([
+            "core://agent/project_manual",
+            "core://my_user/project_preferences",
+            "core://agent/my_user/project_contract",
+        ])
+    );
+    assert_eq!(payload["result"]["view"]["namespace"], "project-alpha");
+    assert_eq!(payload["result"]["view"]["namespaceSource"], "config");
+    assert_eq!(
+        payload["result"]["view"]["supportsNamespaceSelection"],
+        true
+    );
+    assert_eq!(
+        payload["result"]["view"]["bootRoles"],
+        json!([
+            {
+                "role": "agent_operating_manual",
+                "uri": "core://agent/project_manual",
+                "configured": true,
+                "description": "The assistant's coding operating manual."
+            },
+            {
+                "role": "user_preferences",
+                "uri": "core://my_user/project_preferences",
+                "configured": true,
+                "description": "Stable user coding preferences for this runtime profile."
+            },
+            {
+                "role": "collaboration_contract",
+                "uri": "core://agent/my_user/project_contract",
+                "configured": true,
+                "description": "Shared long-term collaboration rules for coding tasks."
+            }
+        ])
+    );
 
     Ok(())
 }

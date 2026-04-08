@@ -1,3 +1,4 @@
+pub mod compat;
 pub mod config;
 mod doctor;
 pub mod path_resolution;

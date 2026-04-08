@@ -3,10 +3,16 @@ use rusqlite::Connection;
 use rusqlite::Transaction;
 use rusqlite::params;
 
-pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
+pub(crate) fn rebuild_search_index(conn: &mut Connection, namespace: &str) -> Result<i64> {
     let tx = conn.transaction()?;
-    tx.execute("DELETE FROM search_documents", [])?;
-    tx.execute("DELETE FROM search_documents_fts", [])?;
+    tx.execute(
+        "DELETE FROM search_documents WHERE namespace = ?1",
+        [namespace],
+    )?;
+    tx.execute(
+        "DELETE FROM search_documents_fts WHERE namespace = ?1",
+        [namespace],
+    )?;
 
     let rows = {
         let mut stmt = tx.prepare(
@@ -22,14 +28,18 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
                 COALESCE((
                     SELECT GROUP_CONCAT(keyword, ' ')
                     FROM glossary_keywords
-                    WHERE node_uuid = e.child_uuid
+                    WHERE namespace = ?1 AND node_uuid = e.child_uuid
                 ), '')
              FROM paths p
-             JOIN edges e ON e.id = p.edge_id
-             JOIN memories m ON m.node_uuid = e.child_uuid AND m.deprecated = FALSE
+             JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+             JOIN memories m
+               ON m.namespace = p.namespace
+              AND m.node_uuid = e.child_uuid
+              AND m.deprecated = FALSE
+             WHERE p.namespace = ?1
              ORDER BY p.domain ASC, p.path ASC",
         )?;
-        stmt.query_map([], |row| {
+        stmt.query_map([namespace], |row| {
             let domain: String = row.get(0)?;
             let path: String = row.get(1)?;
             let node_uuid: String = row.get(2)?;
@@ -52,6 +62,7 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
     {
         insert_search_document(
             &tx,
+            namespace,
             &domain,
             &path,
             &node_uuid,
@@ -65,25 +76,31 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection) -> Result<i64> {
     }
     tx.commit()?;
 
-    conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get(0)
-    })
+    conn.query_row(
+        "SELECT COUNT(*) FROM search_documents WHERE namespace = ?1",
+        [namespace],
+        |row| row.get(0),
+    )
     .map_err(Into::into)
 }
 
-pub(crate) fn reindex_node(tx: &Transaction<'_>, node_uuid: &str) -> Result<()> {
+pub(crate) fn reindex_node(tx: &Transaction<'_>, namespace: &str, node_uuid: &str) -> Result<()> {
     let stale_uris = {
-        let mut stmt = tx.prepare("SELECT uri FROM search_documents WHERE node_uuid = ?1")?;
-        stmt.query_map([node_uuid], |row| row.get::<_, String>(0))?
+        let mut stmt =
+            tx.prepare("SELECT uri FROM search_documents WHERE namespace = ?1 AND node_uuid = ?2")?;
+        stmt.query_map(params![namespace, node_uuid], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?
     };
 
     for uri in stale_uris {
-        tx.execute("DELETE FROM search_documents_fts WHERE uri = ?1", [uri])?;
+        tx.execute(
+            "DELETE FROM search_documents_fts WHERE namespace = ?1 AND uri = ?2",
+            params![namespace, uri],
+        )?;
     }
     tx.execute(
-        "DELETE FROM search_documents WHERE node_uuid = ?1",
-        [node_uuid],
+        "DELETE FROM search_documents WHERE namespace = ?1 AND node_uuid = ?2",
+        params![namespace, node_uuid],
     )?;
 
     let rows = {
@@ -99,15 +116,18 @@ pub(crate) fn reindex_node(tx: &Transaction<'_>, node_uuid: &str) -> Result<()> 
                 COALESCE((
                     SELECT GROUP_CONCAT(keyword, ' ')
                     FROM glossary_keywords
-                    WHERE node_uuid = e.child_uuid
+                    WHERE namespace = ?1 AND node_uuid = e.child_uuid
                 ), '')
              FROM paths p
-             JOIN edges e ON e.id = p.edge_id
-             JOIN memories m ON m.node_uuid = e.child_uuid AND m.deprecated = FALSE
-             WHERE e.child_uuid = ?1
+             JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+             JOIN memories m
+               ON m.namespace = p.namespace
+              AND m.node_uuid = e.child_uuid
+              AND m.deprecated = FALSE
+             WHERE p.namespace = ?1 AND e.child_uuid = ?2
              ORDER BY p.domain ASC, p.path ASC",
         )?;
-        stmt.query_map([node_uuid], |row| {
+        stmt.query_map(params![namespace, node_uuid], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
@@ -125,6 +145,7 @@ pub(crate) fn reindex_node(tx: &Transaction<'_>, node_uuid: &str) -> Result<()> 
     for (domain, path, memory_id, content, updated_at, disclosure, priority, keywords) in rows {
         insert_search_document(
             tx,
+            namespace,
             &domain,
             &path,
             node_uuid,
@@ -142,6 +163,7 @@ pub(crate) fn reindex_node(tx: &Transaction<'_>, node_uuid: &str) -> Result<()> 
 
 fn insert_search_document(
     tx: &Transaction<'_>,
+    namespace: &str,
     domain: &str,
     path: &str,
     node_uuid: &str,
@@ -156,9 +178,10 @@ fn insert_search_document(
     let search_terms = build_search_terms(domain, path, content, keywords);
     tx.execute(
         "INSERT INTO search_documents(
-            domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            namespace, domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
+            namespace,
             domain,
             path,
             node_uuid,
@@ -172,9 +195,18 @@ fn insert_search_document(
         ],
     )?;
     tx.execute(
-        "INSERT INTO search_documents_fts(domain, path, uri, content, disclosure, search_terms)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![domain, path, uri, content, disclosure, search_terms],
+        "INSERT INTO search_documents_fts(namespace, domain, path, node_uuid, uri, content, disclosure, search_terms)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            namespace,
+            domain,
+            path,
+            node_uuid,
+            uri,
+            content,
+            disclosure,
+            search_terms
+        ],
     )?;
     Ok(())
 }

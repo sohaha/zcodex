@@ -132,6 +132,7 @@ mod rollout_list_find;
 mod safety_check_downgrade;
 mod search_tool;
 mod seatbelt;
+mod server_overloaded;
 mod shell_command;
 mod shell_serialization;
 mod shell_snapshot;

@@ -41,6 +41,7 @@ path = "./agents/memory.db"
 ```toml
 [zmemory]
 path = "./agents/memory.db"
+namespace = "team-alpha"
 valid_domains = ["core", "project", "notes"]
 core_memory_uris = [
   "core://agent/coding_operating_manual",
@@ -52,6 +53,7 @@ core_memory_uris = [
 字段说明：
 
 - `path`：可选数据库路径覆盖
+- `namespace`：可选 runtime namespace 覆盖；默认仍为 `""`
 - `valid_domains`：可选可写域列表覆盖
 - `core_memory_uris`：可选 boot 锚点覆盖
 
@@ -205,7 +207,22 @@ core_memory_uris = [
 - `zmemory` 使用独立 SQLite，不写入 `codex-state` 的 state DB
 - `zmemory` 不替换原生 `core/memories` 启动摘要流程
 - CLI 与 core tool 共用同一套 `tool_api / service / schema`
-- `codex-zmemory` 只提供动作层；“哪些内容应主动写入”由 `codex-core` 等上层编排决定
+- `codex-zmemory` 当前仍只提供嵌入式动作层；“哪些内容应主动写入”由 `codex-core` 等上层编排决定
+- 若后续为复用上游 `nocturne_memory` web 启用兼容接口，路线也将是“内核外侧增加薄 adapter”，而不是把 crate 本身扩成独立 daemon / backend
+
+## 上游 web 复用方向（规划中）
+
+当前仓库已把“最大化对齐上游并复用 web”的路线明确为：
+
+1. 先对齐 SQLite schema、`namespace`、runtime `dbPath` / boot contract
+2. 再对齐 review / snapshot / maintenance 所需的数据语义
+3. 最后在内核外增加上游兼容 adapter，对接 `/api/browse`、`/api/review`、`/api/maintenance`
+
+这意味着：
+
+- 当前文档描述的 CLI / core / `system://...` 视图仍是事实来源
+- 未来若接入上游 web，web 也必须连接与 CLI / core 相同的数据库与 runtime profile
+- `system://workspace`、`system://defaults`、`system://alias`、`system://paths` 以及 `stats` / `doctor` 仍保留为本地诊断与治理增强，不会因为对齐上游而被静默删掉
 
 ## 稳定偏好主动写入
 

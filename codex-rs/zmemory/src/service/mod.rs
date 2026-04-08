@@ -7,15 +7,18 @@ use serde_json::json;
 
 mod alias;
 mod batch;
-mod common;
+pub(crate) mod common;
+pub(crate) mod contracts;
 mod create;
 mod delete;
 mod export;
-mod history;
+pub(crate) mod history;
 mod import;
-mod index;
+pub(crate) mod index;
 mod read;
+pub(crate) mod review;
 mod search;
+pub(crate) mod snapshot;
 pub(crate) mod stats;
 mod update;
 
@@ -47,9 +50,9 @@ pub(crate) fn execute_action(config: &ZmemoryConfig, args: &ZmemoryToolCallParam
             alias::manage_triggers_action(config, &mut conn, params)?
         }
         ZmemoryActionInput::Stats => stats::stats_action(&conn, config)?,
-        ZmemoryActionInput::Audit(params) => stats::audit_action(&conn, params)?,
+        ZmemoryActionInput::Audit(params) => stats::audit_action(&conn, config, params)?,
         ZmemoryActionInput::Doctor => stats::doctor_action(&conn, config)?,
-        ZmemoryActionInput::RebuildSearch => stats::rebuild_search_action(&mut conn)?,
+        ZmemoryActionInput::RebuildSearch => stats::rebuild_search_action(&mut conn, config)?,
     };
     Ok(json!({
         "action": action_name(&typed),

@@ -16,30 +16,39 @@ pub(crate) fn delete_path_action(
     let uri = &args.uri;
     anyhow::ensure!(!uri.is_root(), "cannot delete root path");
     common::ensure_writable_domain(config, conn, &uri.domain)?;
-    let row = common::find_path_row(conn, uri)?
+    let row = common::find_path_row(conn, config, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
 
     let tx = conn.transaction()?;
     let deleted_paths = tx.execute(
-        "DELETE FROM paths WHERE domain = ?1 AND path = ?2",
-        params![uri.domain, uri.path],
+        "DELETE FROM paths WHERE namespace = ?1 AND domain = ?2 AND path = ?3",
+        params![config.namespace(), uri.domain, uri.path],
     )?;
-    let deleted_edges = tx.execute("DELETE FROM edges WHERE id = ?1", [row.edge_id])?;
+    let deleted_edges = tx.execute(
+        "DELETE FROM edges WHERE id = ?1 AND namespace = ?2",
+        params![row.edge_id, config.namespace()],
+    )?;
     let remaining_refs: i64 = tx.query_row(
-        "SELECT COUNT(*) FROM edges e JOIN paths p ON p.edge_id = e.id WHERE e.child_uuid = ?1",
-        [row.node_uuid.as_str()],
+        "SELECT COUNT(*)
+         FROM edges e
+         JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+         WHERE e.child_uuid = ?1 AND e.namespace = ?2",
+        params![row.node_uuid.as_str(), config.namespace()],
         |stmt| stmt.get(0),
     )?;
     let deprecated_nodes = if remaining_refs == 0 {
         tx.execute(
-            "UPDATE memories SET deprecated = TRUE WHERE node_uuid = ?1 AND deprecated = FALSE",
-            [row.node_uuid.as_str()],
+            "UPDATE memories
+             SET deprecated = TRUE
+             WHERE namespace = ?1 AND node_uuid = ?2 AND deprecated = FALSE",
+            params![config.namespace(), row.node_uuid.as_str()],
         )?
     } else {
         0
     };
     common::insert_audit_log(
         &tx,
+        config.namespace(),
         "delete-path",
         Some(&uri.to_string()),
         Some(&row.node_uuid),
@@ -50,12 +59,10 @@ pub(crate) fn delete_path_action(
             "remainingRefs": remaining_refs,
         }),
     )?;
-    index::reindex_node(&tx, &row.node_uuid)?;
+    index::reindex_node(&tx, config.namespace(), &row.node_uuid)?;
     tx.commit()?;
 
-    let document_count = conn.query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
-        row.get::<_, i64>(0)
-    })?;
+    let document_count = common::search_document_count(conn, config)?;
     Ok(json!({
         "uri": uri.to_string(),
         "nodeUuid": row.node_uuid,

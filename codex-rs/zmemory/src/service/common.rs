@@ -3,13 +3,15 @@ use crate::repository::ZmemoryRepository;
 use crate::schema::ROOT_NODE_UUID;
 use crate::schema::active_memory_id_for_node;
 use crate::schema::ensure_domain_root;
+use crate::service::contracts::NodeChildContract;
+use crate::service::contracts::PathResolutionContract;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::Transaction;
 use rusqlite::params;
 use serde_json::Value;
-use serde_json::json;
+use std::collections::HashSet;
 
 pub(crate) fn connect(config: &ZmemoryConfig) -> Result<Connection> {
     let repository = ZmemoryRepository::new(config.clone());
@@ -43,6 +45,7 @@ pub(crate) struct MemoryRow {
 
 pub(crate) fn find_path_row(
     conn: &Connection,
+    config: &ZmemoryConfig,
     uri: &crate::tool_api::ZmemoryUri,
 ) -> Result<Option<PathRow>> {
     if uri.is_root() {
@@ -51,9 +54,9 @@ pub(crate) fn find_path_row(
     conn.query_row(
         "SELECT p.edge_id, e.child_uuid, e.priority, e.disclosure
          FROM paths p
-         JOIN edges e ON e.id = p.edge_id
-         WHERE p.domain = ?1 AND p.path = ?2",
-        params![uri.domain, uri.path],
+         JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+         WHERE p.namespace = ?1 AND p.domain = ?2 AND p.path = ?3",
+        params![config.namespace(), uri.domain, uri.path],
         |row| {
             Ok(PathRow {
                 edge_id: row.get(0)?,
@@ -69,13 +72,16 @@ pub(crate) fn find_path_row(
 
 pub(crate) fn find_edge_id(
     conn: &Connection,
+    namespace: &str,
     parent_uuid: &str,
     child_uuid: &str,
     name: &str,
 ) -> Result<Option<i64>> {
     conn.query_row(
-        "SELECT id FROM edges WHERE parent_uuid = ?1 AND child_uuid = ?2 AND name = ?3",
-        params![parent_uuid, child_uuid, name],
+        "SELECT id
+         FROM edges
+         WHERE namespace = ?1 AND parent_uuid = ?2 AND child_uuid = ?3 AND name = ?4",
+        params![namespace, parent_uuid, child_uuid, name],
         |row| row.get(0),
     )
     .optional()
@@ -93,7 +99,7 @@ pub(crate) fn ensure_readable_domain(
         config.valid_domains_for_display().join(", ")
     );
     if domain != "system" {
-        ensure_domain_root(conn, domain)?;
+        ensure_domain_root(conn, config.namespace(), domain)?;
     }
     Ok(())
 }
@@ -107,8 +113,12 @@ pub(crate) fn ensure_writable_domain(
     ensure_readable_domain(config, conn, domain)
 }
 
-pub(crate) fn read_active_memory(conn: &Connection, node_uuid: &str) -> Result<Option<MemoryRow>> {
-    let active_memory_id = active_memory_id_for_node(conn, node_uuid)?;
+pub(crate) fn read_active_memory(
+    conn: &Connection,
+    namespace: &str,
+    node_uuid: &str,
+) -> Result<Option<MemoryRow>> {
+    let active_memory_id = active_memory_id_for_node(conn, namespace, node_uuid)?;
     let Some(active_memory_id) = active_memory_id else {
         return Ok(None);
     };
@@ -128,44 +138,69 @@ pub(crate) fn read_active_memory(conn: &Connection, node_uuid: &str) -> Result<O
 
 pub(crate) fn list_children(
     conn: &Connection,
-    uri: &crate::tool_api::ZmemoryUri,
+    config: &ZmemoryConfig,
+    preferred_domain: &str,
     node_uuid: &str,
-) -> Result<Vec<Value>> {
+) -> Result<Vec<NodeChildContract>> {
     let mut stmt = conn.prepare(
-        "SELECT p.path, e.name, e.priority, e.disclosure
+        "SELECT e.id, e.name, e.priority, e.disclosure, p.domain, p.path
          FROM edges e
-         JOIN paths p ON p.edge_id = e.id
-         WHERE e.parent_uuid = ?1 AND p.domain = ?2
-         ORDER BY e.priority DESC, e.name ASC",
+         JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+         WHERE e.parent_uuid = ?1 AND e.namespace = ?2
+         ORDER BY e.priority DESC,
+                  e.name ASC,
+                  CASE WHEN p.domain = ?3 THEN 0 ELSE 1 END,
+                  LENGTH(p.path) ASC,
+                  p.domain ASC,
+                  p.path ASC",
     )?;
-    stmt.query_map(params![node_uuid, uri.domain.as_str()], |row| {
-        let path: String = row.get(0)?;
-        Ok(json!({
-            "name": row.get::<_, String>(1)?,
-            "priority": row.get::<_, i64>(2)?,
-            "disclosure": row.get::<_, Option<String>>(3)?,
-            "uri": format!("{}://{}", uri.domain, path),
-        }))
+    let rows = stmt
+        .query_map(
+            params![node_uuid, config.namespace(), preferred_domain],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    NodeChildContract {
+                        name: row.get(1)?,
+                        priority: row.get(2)?,
+                        disclosure: row.get(3)?,
+                        uri: format!(
+                            "{}://{}",
+                            row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?
+                        ),
+                    },
+                ))
+            },
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut seen_edges = HashSet::new();
+    let mut children = Vec::new();
+    for (edge_id, child) in rows {
+        if seen_edges.insert(edge_id) {
+            children.push(child);
+        }
+    }
+
+    Ok(children)
+}
+
+pub(crate) fn load_keywords(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    node_uuid: &str,
+) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT keyword
+         FROM glossary_keywords
+         WHERE namespace = ?1 AND node_uuid = ?2
+         ORDER BY keyword ASC",
+    )?;
+    stmt.query_map(params![config.namespace(), node_uuid], |row| {
+        row.get::<_, String>(0)
     })?
     .collect::<rusqlite::Result<Vec<_>>>()
-    .map_err(Into::into)
-}
-
-pub(crate) fn load_keywords(conn: &Connection, node_uuid: &str) -> Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT keyword FROM glossary_keywords WHERE node_uuid = ?1 ORDER BY keyword ASC",
-    )?;
-    stmt.query_map([node_uuid], |row| row.get::<_, String>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(Into::into)
-}
-
-pub(crate) fn count_aliases(conn: &Connection, node_uuid: &str) -> Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM edges e JOIN paths p ON p.edge_id = e.id WHERE e.child_uuid = ?1",
-        [node_uuid],
-        |row| row.get(0),
-    )
     .map_err(Into::into)
 }
 
@@ -186,26 +221,46 @@ pub(crate) fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
     normalized
 }
 
-pub(crate) fn path_resolution_payload(config: &ZmemoryConfig) -> Value {
+pub(crate) fn path_resolution_contract(config: &ZmemoryConfig) -> PathResolutionContract {
     let resolution = config.path_resolution();
-    json!({
-        "dbPath": resolution.db_path.display().to_string(),
-        "workspaceKey": resolution.workspace_key.clone(),
-        "source": resolution.source,
-        "reason": resolution.reason.clone(),
-    })
+    PathResolutionContract {
+        db_path: resolution.db_path.display().to_string(),
+        workspace_key: resolution.workspace_key.clone(),
+        source: resolution.source,
+        reason: resolution.reason.clone(),
+        namespace: config.namespace().to_string(),
+        namespace_source: config.namespace_source().to_string(),
+        supports_namespace_selection: config.supports_namespace_selection(),
+    }
+}
+
+pub(crate) fn search_document_count(conn: &Connection, config: &ZmemoryConfig) -> Result<i64> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM search_documents WHERE namespace = ?1",
+        [config.namespace()],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
 }
 
 pub(crate) fn insert_audit_log(
     tx: &Transaction<'_>,
+    namespace: &str,
     action: &str,
     uri: Option<&str>,
     node_uuid: Option<&str>,
     details: Value,
 ) -> Result<()> {
     tx.execute(
-        "INSERT INTO audit_log(action, uri, node_uuid, details) VALUES (?1, ?2, ?3, ?4)",
-        params![action, uri, node_uuid, serde_json::to_string(&details)?,],
+        "INSERT INTO audit_log(namespace, action, uri, node_uuid, details)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![
+            namespace,
+            action,
+            uri,
+            node_uuid,
+            serde_json::to_string(&details)?,
+        ],
     )?;
     Ok(())
 }

@@ -1,12 +1,16 @@
 use crate::config::ZmemoryConfig;
 use crate::doctor::run_doctor;
 use crate::service::common;
+use crate::service::contracts::AuditEntryContract;
+use crate::service::contracts::AuditResultContract;
+use crate::service::contracts::MaintenanceDoctorContract;
+use crate::service::contracts::MaintenanceStatsContract;
+use crate::service::contracts::RebuildSearchResultContract;
 use crate::service::index;
 use crate::tool_api::AuditActionParams;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
-use serde_json::json;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone)]
@@ -31,87 +35,116 @@ pub(crate) struct StatsSnapshot {
 }
 
 pub(crate) fn stats_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
-    let stats = collect_stats_snapshot(conn)?;
-    Ok(stats_action_with_snapshot(config, &stats))
+    let stats = collect_stats_snapshot(conn, config)?;
+    serde_json::to_value(stats_contract(config, &stats)).map_err(Into::into)
 }
 
-pub(crate) fn audit_action(conn: &Connection, args: &AuditActionParams) -> Result<Value> {
+pub(crate) fn audit_action(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+    args: &AuditActionParams,
+) -> Result<Value> {
     let mut stmt = conn.prepare(
         "SELECT id, action, uri, node_uuid, details, created_at
          FROM audit_log
-         WHERE (?1 IS NULL OR action = ?1)
-           AND (?2 IS NULL OR uri = ?2)
+         WHERE namespace = ?1
+           AND (?2 IS NULL OR action = ?2)
+           AND (?3 IS NULL OR uri = ?3)
          ORDER BY id DESC
-         LIMIT ?3",
+         LIMIT ?4",
     )?;
     let entries = stmt
         .query_map(
             rusqlite::params![
+                config.namespace(),
                 args.audit_action.as_deref(),
                 args.uri.as_ref().map(ToString::to_string),
                 args.limit
             ],
             |row| {
                 let details = row.get::<_, String>(4)?;
-                Ok(json!({
-                    "id": row.get::<_, i64>(0)?,
-                    "action": row.get::<_, String>(1)?,
-                    "uri": row.get::<_, Option<String>>(2)?,
-                    "nodeUuid": row.get::<_, Option<String>>(3)?,
-                    "details": serde_json::from_str::<Value>(&details)
+                Ok(AuditEntryContract {
+                    id: row.get(0)?,
+                    action: row.get(1)?,
+                    uri: row.get(2)?,
+                    node_uuid: row.get(3)?,
+                    details: serde_json::from_str::<Value>(&details)
                         .unwrap_or(Value::String(details)),
-                    "createdAt": row.get::<_, String>(5)?,
-                }))
+                    created_at: row.get(5)?,
+                })
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(json!({
-        "count": entries.len(),
-        "limit": args.limit,
-        "auditAction": args.audit_action,
-        "uri": args.uri.as_ref().map(ToString::to_string),
-        "entries": entries,
-    }))
+
+    serde_json::to_value(AuditResultContract {
+        count: entries.len(),
+        limit: args.limit,
+        audit_action: args.audit_action.clone(),
+        uri: args.uri.as_ref().map(ToString::to_string),
+        entries,
+    })
+    .map_err(Into::into)
 }
 
-pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot> {
+pub(crate) fn collect_stats_snapshot(
+    conn: &Connection,
+    config: &ZmemoryConfig,
+) -> Result<StatsSnapshot> {
+    let namespace = config.namespace();
     let stats_row = conn.query_row(
         "WITH alias_nodes AS (
              SELECT e.child_uuid
              FROM edges e
-             JOIN paths p ON p.edge_id = e.id
+             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+             WHERE e.namespace = ?1
              GROUP BY e.child_uuid
              HAVING COUNT(*) > 1
          ),
          trigger_nodes AS (
              SELECT DISTINCT node_uuid
              FROM glossary_keywords
+             WHERE namespace = ?1
          )
          SELECT
-             (SELECT COUNT(*) FROM nodes),
-             (SELECT COUNT(*) FROM memories WHERE deprecated = FALSE),
-             (SELECT COUNT(*) FROM paths),
-             (SELECT COUNT(*) FROM glossary_keywords),
+             (
+                 SELECT COUNT(DISTINCT COALESCE(e.child_uuid, ?2))
+                 FROM paths p
+                 LEFT JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+                 WHERE p.namespace = ?1
+             ),
+             (
+                 SELECT COUNT(DISTINCT m.id)
+                 FROM memories m
+                 JOIN edges e ON e.child_uuid = m.node_uuid AND e.namespace = m.namespace
+                 JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+                 WHERE m.namespace = ?1 AND m.deprecated = FALSE
+             ),
+             (SELECT COUNT(*) FROM paths WHERE namespace = ?1),
+             (SELECT COUNT(*) FROM glossary_keywords WHERE namespace = ?1),
              (SELECT COUNT(*) FROM alias_nodes),
              (SELECT COUNT(*) FROM trigger_nodes),
              (SELECT COUNT(*) FROM alias_nodes WHERE child_uuid NOT IN trigger_nodes),
              (
                  SELECT COUNT(*)
                  FROM edges e
-                 JOIN paths p ON p.edge_id = e.id
-                 WHERE e.disclosure IS NOT NULL AND TRIM(e.disclosure) != ''
+                 JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+                 WHERE e.namespace = ?1
+                   AND e.disclosure IS NOT NULL
+                   AND TRIM(e.disclosure) != ''
              ),
              (
                  SELECT COUNT(*)
                  FROM edges e
-                 JOIN paths p ON p.edge_id = e.id
-                 WHERE e.disclosure IS NULL OR TRIM(e.disclosure) = ''
+                 JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+                 WHERE e.namespace = ?1
+                   AND (e.disclosure IS NULL OR TRIM(e.disclosure) = '')
              ),
              (
                  SELECT COUNT(*)
                  FROM edges e
-                 JOIN paths p ON p.edge_id = e.id
-                 WHERE e.disclosure IS NOT NULL
+                 JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+                 WHERE e.namespace = ?1
+                   AND e.disclosure IS NOT NULL
                    AND TRIM(e.disclosure) != ''
                    AND (
                      INSTR(LOWER(e.disclosure), ' or ') > 0
@@ -128,13 +161,21 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
                      OR INSTR(e.disclosure, '或') > 0
                    )
              ),
-             (SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NULL),
-             (SELECT COUNT(*) FROM memories WHERE deprecated = TRUE AND migrated_to IS NOT NULL),
-             (SELECT COUNT(*) FROM search_documents),
-             (SELECT COUNT(*) FROM search_documents_fts),
-             (SELECT COUNT(*) FROM audit_log),
-             (SELECT MAX(created_at) FROM audit_log)",
-        [],
+             (
+                 SELECT COUNT(*)
+                 FROM memories
+                 WHERE namespace = ?1 AND deprecated = TRUE AND migrated_to IS NULL
+             ),
+             (
+                 SELECT COUNT(*)
+                 FROM memories
+                 WHERE namespace = ?1 AND deprecated = TRUE AND migrated_to IS NOT NULL
+             ),
+             (SELECT COUNT(*) FROM search_documents WHERE namespace = ?1),
+             (SELECT COUNT(*) FROM search_documents_fts WHERE namespace = ?1),
+             (SELECT COUNT(*) FROM audit_log WHERE namespace = ?1),
+             (SELECT MAX(created_at) FROM audit_log WHERE namespace = ?1)",
+        rusqlite::params![namespace, crate::schema::ROOT_NODE_UUID],
         |row| {
             Ok(StatsSnapshot {
                 node_count: row.get(0)?,
@@ -157,7 +198,7 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
             })
         },
     )?;
-    let audit_action_counts = collect_audit_action_counts(conn)?;
+    let audit_action_counts = collect_audit_action_counts(conn, namespace)?;
 
     Ok(StatsSnapshot {
         audit_action_counts,
@@ -165,132 +206,139 @@ pub(crate) fn collect_stats_snapshot(conn: &Connection) -> Result<StatsSnapshot>
     })
 }
 
-fn collect_audit_action_counts(conn: &Connection) -> Result<BTreeMap<String, i64>> {
+fn collect_audit_action_counts(
+    conn: &Connection,
+    namespace: &str,
+) -> Result<BTreeMap<String, i64>> {
     let mut stmt = conn.prepare(
         "SELECT action, COUNT(*)
          FROM audit_log
+         WHERE namespace = ?1
          GROUP BY action
          ORDER BY action ASC",
     )?;
-    stmt.query_map([], |row| {
+    stmt.query_map([namespace], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
     })?
     .collect::<rusqlite::Result<BTreeMap<_, _>>>()
     .map_err(Into::into)
 }
 
-pub(crate) fn alias_node_count(conn: &Connection) -> Result<i64> {
+pub(crate) fn alias_node_count(conn: &Connection, namespace: &str) -> Result<i64> {
     Ok(conn.query_row(
         "SELECT COUNT(*) FROM (
              SELECT e.child_uuid
              FROM edges e
-             JOIN paths p ON p.edge_id = e.id
+             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+             WHERE e.namespace = ?1
              GROUP BY e.child_uuid
              HAVING COUNT(*) > 1
          )",
-        [],
+        [namespace],
         |row| row.get(0),
     )?)
 }
 
-pub(crate) fn trigger_node_count(conn: &Connection) -> Result<i64> {
+pub(crate) fn trigger_node_count(conn: &Connection, namespace: &str) -> Result<i64> {
     Ok(conn.query_row(
-        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords",
-        [],
+        "SELECT COUNT(DISTINCT node_uuid) FROM glossary_keywords WHERE namespace = ?1",
+        [namespace],
         |row| row.get(0),
     )?)
 }
 
-pub(crate) fn alias_nodes_missing_triggers(conn: &Connection) -> Result<i64> {
+pub(crate) fn alias_nodes_missing_triggers(conn: &Connection, namespace: &str) -> Result<i64> {
     Ok(conn.query_row(
         "SELECT COUNT(*) FROM (
              SELECT e.child_uuid
              FROM edges e
-             JOIN paths p ON p.edge_id = e.id
+             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
+             WHERE e.namespace = ?1
              GROUP BY e.child_uuid
              HAVING COUNT(*) > 1
          ) AS alias_nodes
          WHERE alias_nodes.child_uuid NOT IN (
-             SELECT DISTINCT node_uuid FROM glossary_keywords
+             SELECT DISTINCT node_uuid FROM glossary_keywords WHERE namespace = ?1
          )",
-        [],
+        [namespace],
         |row| row.get(0),
     )?)
 }
 
 pub(crate) fn doctor_action(conn: &Connection, config: &ZmemoryConfig) -> Result<Value> {
-    let stats_snapshot = collect_stats_snapshot(conn)?;
-    let doctor = run_doctor(
-        conn,
-        &config.db_path().display().to_string(),
-        &stats_snapshot,
-    )?;
-    let stats = stats_action_with_snapshot(config, &stats_snapshot);
-    let path_resolution = common::path_resolution_payload(config);
-    Ok(json!({
-        "dbPath": path_resolution["dbPath"].clone(),
-        "workspaceKey": path_resolution["workspaceKey"].clone(),
-        "source": path_resolution["source"].clone(),
-        "reason": path_resolution["reason"].clone(),
-        "healthy": doctor.get("healthy").and_then(serde_json::Value::as_bool).unwrap_or(false),
-        "orphanedMemoryCount": doctor.get("orphanedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
-        "deprecatedMemoryCount": doctor.get("deprecatedMemoryCount").cloned().unwrap_or_else(|| json!(0)),
-        "aliasNodeCount": doctor.get("aliasNodeCount").cloned().unwrap_or_else(|| json!(0)),
-        "triggerNodeCount": doctor.get("triggerNodeCount").cloned().unwrap_or_else(|| json!(0)),
-        "aliasNodesMissingTriggers": doctor
-            .get("aliasNodesMissingTriggers")
-            .cloned()
-            .unwrap_or_else(|| json!(0)),
-        "pathsMissingDisclosure": doctor
-            .get("pathsMissingDisclosure")
-            .cloned()
-            .unwrap_or_else(|| json!(0)),
-        "disclosuresNeedingReview": doctor
-            .get("disclosuresNeedingReview")
-            .cloned()
-            .unwrap_or_else(|| json!(0)),
-        "issues": doctor.get("issues").cloned().unwrap_or_else(|| json!([])),
-        "stats": stats,
-        "pathResolution": path_resolution,
-    }))
-}
+    let stats_snapshot = collect_stats_snapshot(conn, config)?;
+    let stats = stats_contract(config, &stats_snapshot);
+    let doctor = run_doctor(conn, config.namespace(), &stats_snapshot)?;
+    let path_resolution = common::path_resolution_contract(config);
 
-fn stats_action_with_snapshot(config: &ZmemoryConfig, stats: &StatsSnapshot) -> Value {
-    let path_resolution = common::path_resolution_payload(config);
-    json!({
-        "dbPath": path_resolution["dbPath"].clone(),
-        "workspaceKey": path_resolution["workspaceKey"].clone(),
-        "source": path_resolution["source"].clone(),
-        "reason": path_resolution["reason"].clone(),
-        "pathResolution": path_resolution,
-        "nodeCount": stats.node_count,
-        "memoryCount": stats.memory_count,
-        "pathCount": stats.path_count,
-        "glossaryKeywordCount": stats.glossary_count,
-        "orphanedMemoryCount": stats.orphaned_memory_count,
-        "deprecatedMemoryCount": stats.deprecated_memory_count,
-        "aliasNodeCount": stats.alias_node_count,
-        "triggerNodeCount": stats.trigger_node_count,
-        "aliasNodesMissingTriggers": stats.alias_nodes_missing_triggers,
-        "disclosurePathCount": stats.disclosure_path_count,
-        "pathsMissingDisclosure": stats.paths_missing_disclosure,
-        "disclosuresNeedingReview": stats.disclosures_needing_review,
-        "searchDocumentCount": stats.search_document_count,
-        "ftsDocumentCount": stats.fts_document_count,
-        "auditLogCount": stats.audit_log_count,
-        "latestAuditAt": stats.latest_audit_at,
-        "auditActionCounts": stats.audit_action_counts,
+    serde_json::to_value(MaintenanceDoctorContract {
+        db_path: path_resolution.db_path.clone(),
+        workspace_key: path_resolution.workspace_key.clone(),
+        source: path_resolution.source,
+        reason: path_resolution.reason.clone(),
+        namespace: path_resolution.namespace.clone(),
+        namespace_source: path_resolution.namespace_source.clone(),
+        supports_namespace_selection: path_resolution.supports_namespace_selection,
+        healthy: doctor.healthy,
+        orphaned_memory_count: doctor.orphaned_memory_count,
+        deprecated_memory_count: doctor.deprecated_memory_count,
+        alias_node_count: doctor.alias_node_count,
+        trigger_node_count: doctor.trigger_node_count,
+        alias_nodes_missing_triggers: doctor.alias_nodes_missing_triggers,
+        paths_missing_disclosure: doctor.paths_missing_disclosure,
+        disclosures_needing_review: doctor.disclosures_needing_review,
+        issues: doctor.issues,
+        stats,
+        path_resolution,
     })
+    .map_err(Into::into)
 }
 
-pub(crate) fn rebuild_search_action(conn: &mut Connection) -> Result<Value> {
-    let count = index::rebuild_search_index(conn)?;
-    let fts_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM search_documents_fts", [], |row| {
-            row.get(0)
-        })?;
-    Ok(json!({
-        "documentCount": count,
-        "ftsDocumentCount": fts_count,
-    }))
+fn stats_contract(config: &ZmemoryConfig, stats: &StatsSnapshot) -> MaintenanceStatsContract {
+    let path_resolution = common::path_resolution_contract(config);
+    MaintenanceStatsContract {
+        db_path: path_resolution.db_path.clone(),
+        workspace_key: path_resolution.workspace_key.clone(),
+        source: path_resolution.source,
+        reason: path_resolution.reason.clone(),
+        namespace: path_resolution.namespace.clone(),
+        namespace_source: path_resolution.namespace_source.clone(),
+        supports_namespace_selection: path_resolution.supports_namespace_selection,
+        path_resolution,
+        node_count: stats.node_count,
+        memory_count: stats.memory_count,
+        path_count: stats.path_count,
+        glossary_keyword_count: stats.glossary_count,
+        orphaned_memory_count: stats.orphaned_memory_count,
+        deprecated_memory_count: stats.deprecated_memory_count,
+        alias_node_count: stats.alias_node_count,
+        trigger_node_count: stats.trigger_node_count,
+        alias_nodes_missing_triggers: stats.alias_nodes_missing_triggers,
+        disclosure_path_count: stats.disclosure_path_count,
+        paths_missing_disclosure: stats.paths_missing_disclosure,
+        disclosures_needing_review: stats.disclosures_needing_review,
+        search_document_count: stats.search_document_count,
+        fts_document_count: stats.fts_document_count,
+        audit_log_count: stats.audit_log_count,
+        latest_audit_at: stats.latest_audit_at.clone(),
+        audit_action_counts: stats.audit_action_counts.clone(),
+    }
+}
+
+pub(crate) fn rebuild_search_action(
+    conn: &mut Connection,
+    config: &ZmemoryConfig,
+) -> Result<Value> {
+    let count = index::rebuild_search_index(conn, config.namespace())?;
+    let fts_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM search_documents_fts WHERE namespace = ?1",
+        [config.namespace()],
+        |row| row.get(0),
+    )?;
+
+    serde_json::to_value(RebuildSearchResultContract {
+        document_count: count,
+        fts_document_count: fts_count,
+    })
+    .map_err(Into::into)
 }

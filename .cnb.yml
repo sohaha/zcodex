@@ -82,6 +82,16 @@ $:
               tags: cnb:arch:amd64
               cpus: 25
           stages:
+            - name: restore codex home backup
+              script: |
+                set -eu
+                codex_home="${HOME:-/root}/.codex"
+                backup_dir="/workspace/backup/codex"
+                backup_archive="$backup_dir/codex.tar.gz"
+                if [ -f "$backup_archive" ]; then
+                  mkdir -p "$codex_home"
+                  tar -xzf "$backup_archive" -C "$codex_home"
+                fi
             - name: bootstrap rust speedup
               script: |
                 set -eu
@@ -91,10 +101,34 @@ $:
                   apt-get install -y mold sccache
                 fi
                 mkdir -p /workspace/.cargo-target /workspace/.cache/sccache
-            - name: link codex session
+            - name: build
               script: |
                 set -eu
-                mkdir -p /root/.cnb/codex-session/zcodex
-                mkdir -p /root/.codex
-                ln -sfn /root/.cnb/codex-session/zcodex /root/.codex/sessions
                 mise run build &
+          endStages:
+            - name: backup codex home
+              script: |
+                set -eu
+                codex_home="${HOME:-/root}/.codex"
+                backup_dir="/workspace/backup/codex"
+                backup_archive="$backup_dir/codex.tar.gz"
+                session_max_age_days=7
+                if [ ! -d "$codex_home" ]; then
+                  exit 0
+                fi
+                rm -rf "$backup_dir"
+                mkdir -p "$backup_dir"
+                (
+                  cd "$codex_home"
+                  {
+                    find . \
+                      \( -path './log' -o -path './log/*' \
+                      -o -path './tmp' -o -path './tmp/*' \
+                      -o -path './.tmp' -o -path './.tmp/*' \
+                      -o -path './sessions' -o -path './sessions/*' \) -prune \
+                      -o -print0
+                    if [ -d ./sessions ]; then
+                      find ./sessions \( -type f -o -type l \) -mtime "-$session_max_age_days" -print0
+                    fi
+                  } | tar --null -T - -czf "$backup_archive"
+                )
