@@ -382,21 +382,17 @@ struct AppServerCommand {
     )]
     listen: codex_app_server::AppServerTransport,
 
-    /// 控制是否默认启用分析上报。
+    /// 分析上报默认全局关闭。
     ///
-    /// app-server 默认关闭分析上报。用户需要在 config.toml 的 `analytics`
-    /// 配置段中显式选择启用。
-    ///
-    /// 但对于 VSCode IDE 扩展这类第一方用例，我们可通过此标志让分析上报默认启用。
-    /// 用户仍可在 config.toml 中这样设置来选择退出：
+    /// 只有在 `config.toml` 的 `analytics` 配置段中显式设置后才会启用：
     ///
     /// ```toml
     /// [analytics]
-    /// enabled = false
+    /// enabled = true
     /// ```
     ///
-    /// 详情见 https://developers.openai.com/codex/config-advanced/#metrics 。
-    #[arg(long = "analytics-default-enabled")]
+    /// 该参数仅为兼容保留，不再改变默认值。
+    #[arg(long = "analytics-default-enabled", hide = true)]
     analytics_default_enabled: bool,
 
     #[command(flatten)]
@@ -774,7 +770,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             let AppServerCommand {
                 subcommand,
                 listen,
-                analytics_default_enabled,
+                analytics_default_enabled: _analytics_default_enabled,
                 auth,
             } = app_server_cli;
             reject_remote_mode_for_app_server_subcommand(
@@ -790,7 +786,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                         arg0_paths.clone(),
                         root_config_overrides,
                         codex_core::config_loader::LoaderOverrides::default(),
-                        analytics_default_enabled,
+                        /*default_analytics_enabled*/ false,
                         transport,
                         codex_protocol::protocol::SessionSource::VSCode,
                         auth,

@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T11:30:09.433Z
-- 本轮摘要：2026-04-08 已补全 codex-cli/codex-tui 过程状态汉化：实验功能名称与描述改为中文，执行单元统一把 Exploring/Explored、Ran/Running、Search/Read/List/Run、(no output) 改为中文，并同步更新 exec_flow 断言与受影响快照；验证上 codex-features nextest 通过，codex-tui --lib cargo check 通过，codex-tui 测试套仍受既有编译错误阻塞。
+- 更新时间：2026-04-08T11:33:53.908Z
+- 本轮摘要：2026-04-08 修复 codex-tui /status 测试漂移：确认编译漂移已消除后，发现 status_command_tests 在单线程 Tokio runtime 下调用 compose_agents_summary 导致 block_in_place panic；将四个 /status 定向测试统一切到 multi_thread runtime，重新通过 status、buddy、plugins、approvals 定向测试。llmdoc 目录缺失，未执行 llmdoc 文档写回。
 
 ## 待确认问题
 
