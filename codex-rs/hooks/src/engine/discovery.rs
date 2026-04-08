@@ -22,11 +22,20 @@ fn non_platform_script_ext() -> &'static str {
     if cfg!(windows) { ".sh" } else { ".ps1" }
 }
 
+/// Whether a file extension is one of the recognized script types.
+///
+/// Only `.sh` and `.ps1` are eligible for platform-based script resolution.
+/// Extensions like `.ash`, `.bash`, `.eps1` are intentionally excluded.
+fn is_script_ext(ext: &str) -> bool {
+    matches!(ext, ".sh" | ".ps1")
+}
+
 /// Resolve a hook command to a platform-appropriate script when possible.
 ///
-/// Scans the command string for tokens that look like file paths ending with the
-/// non-native script extension (`.ps1` on macOS/Linux, `.sh` on Windows). For each
-/// such token it checks whether a same-name file with the native extension exists
+/// Scans the command string for tokens that look like file paths whose extension
+/// is exactly `.sh` or `.ps1`. If the extension does **not** match the current
+/// platform's preferred script type (`.ps1` on macOS/Linux, `.sh` on Windows),
+/// the function checks whether a same-name file with the native extension exists
 /// (resolved relative to `hooks_dir`). If found, the token is replaced in the
 /// returned command string.
 fn resolve_platform_script(command: &str, hooks_dir: &Path) -> String {
@@ -35,11 +44,25 @@ fn resolve_platform_script(command: &str, hooks_dir: &Path) -> String {
     let mut result = command.to_string();
 
     for token in command.split_whitespace() {
-        if !token.ends_with(wrong_ext) {
-            continue;
-        }
         // Only consider tokens that look like file paths.
         if !token.contains('/') && !token.contains('\\') && !token.starts_with('.') {
+            continue;
+        }
+
+        // Extract the file extension and check that it is exactly .sh or .ps1.
+        let file_name = token
+            .rsplit(|c| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(token);
+        let Some(ext) = file_name.rfind('.') else {
+            continue;
+        };
+        let ext = &file_name[ext..];
+        if !is_script_ext(ext) {
+            continue;
+        }
+        // Only resolve when the extension does not match the current platform.
+        if ext != wrong_ext {
             continue;
         }
 
@@ -262,6 +285,7 @@ mod tests {
     use super::ConfiguredHandler;
     use super::HookHandlerConfig;
     use super::append_group_handlers;
+    use super::is_script_ext;
     use super::non_platform_script_ext;
     use super::platform_script_ext;
     use super::resolve_platform_script;
@@ -494,6 +518,51 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let wrong_ext = non_platform_script_ext();
         let command = format!("./nonexistent{wrong_ext}");
+        let resolved = resolve_platform_script(&command, dir.path());
+        assert_eq!(resolved, command);
+    }
+
+    // --- is_script_ext tests ---
+
+    #[test]
+    fn only_sh_and_ps1_are_script_extensions() {
+        assert!(is_script_ext(".sh"));
+        assert!(is_script_ext(".ps1"));
+        assert!(!is_script_ext(".ash"));
+        assert!(!is_script_ext(".bash"));
+        assert!(!is_script_ext(".eps1"));
+        assert!(!is_script_ext(".txt"));
+        assert!(!is_script_ext(""));
+    }
+
+    #[test]
+    fn non_script_extension_is_ignored_even_if_ends_with_sh() {
+        // `foo.ash` ends with `.sh` but the extension is `.ash`, not `.sh`.
+        let dir = tempfile::tempdir().unwrap();
+        let wrong_ext = non_platform_script_ext();
+        let right_ext = platform_script_ext();
+        // Create the "right" version that should NOT be picked up because
+        // the token's actual extension is `.ash`, not `.sh`/`.ps1`.
+        let ash_file = dir.path().join("tool.ash");
+        let alt_file = dir.path().join(format!("tool{right_ext}"));
+        fs::write(&ash_file, "").unwrap();
+        fs::write(&alt_file, "").unwrap();
+
+        let command = "./tool.ash".to_string();
+        let resolved = resolve_platform_script(&command, dir.path());
+        assert_eq!(resolved, command);
+    }
+
+    #[test]
+    fn non_script_extension_is_ignored_even_if_ends_with_ps1() {
+        let dir = tempfile::tempdir().unwrap();
+        let right_ext = platform_script_ext();
+        let eps1_file = dir.path().join("tool.eps1");
+        let alt_file = dir.path().join(format!("tool{right_ext}"));
+        fs::write(&eps1_file, "").unwrap();
+        fs::write(&alt_file, "").unwrap();
+
+        let command = "./tool.eps1".to_string();
         let resolved = resolve_platform_script(&command, dir.path());
         assert_eq!(resolved, command);
     }
