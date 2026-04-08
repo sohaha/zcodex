@@ -209,6 +209,9 @@ pub struct EmbeddingUnit {
     pub qualified_symbol: Option<String>,
     pub symbol_aliases: Vec<String>,
     pub kind: String,
+    pub owner_symbol: Option<String>,
+    pub owner_kind: Option<String>,
+    pub implemented_trait: Option<String>,
     pub line: usize,
     pub span_end_line: usize,
     pub module_path: Vec<String>,
@@ -230,11 +233,14 @@ impl EmbeddingUnit {
     pub fn build_embedding_text(&self) -> String {
         [
             format!(
-                "symbol={} qualified={} aliases={} kind={} file={} line={} end_line={}",
+                "symbol={} qualified={} aliases={} kind={} owner={} owner_kind={} implemented_trait={} file={} line={} end_line={}",
                 self.symbol.as_deref().unwrap_or("<file>"),
                 self.qualified_symbol.as_deref().unwrap_or("<none>"),
                 join_or_none(&self.symbol_aliases),
                 self.kind,
+                self.owner_symbol.as_deref().unwrap_or("<none>"),
+                self.owner_kind.as_deref().unwrap_or("<none>"),
+                self.implemented_trait.as_deref().unwrap_or("<none>"),
                 self.path.display(),
                 self.line,
                 self.span_end_line,
@@ -769,7 +775,10 @@ fn extract_units(
     language: SupportedLanguage,
     contents: &str,
 ) -> Result<Vec<EmbeddingUnit>> {
-    if language == SupportedLanguage::Rust {
+    if LanguageRegistry::support_for(language)
+        .symbol_extractor
+        .uses_dedicated_extractor()
+    {
         return rust_analysis::extract_units(path, contents);
     }
     Ok(extract_units_fallback(path, language, contents))
@@ -877,6 +886,9 @@ fn build_unit(
         qualified_symbol: None,
         symbol_aliases,
         kind,
+        owner_symbol: None,
+        owner_kind: None,
+        implemented_trait: None,
         line,
         span_end_line: line + code_preview.lines().count().saturating_sub(1),
         module_path,
@@ -1312,6 +1324,9 @@ mod tests {
             qualified_symbol: Some("auth::login".to_string()),
             symbol_aliases: vec!["login".to_string(), "auth::login".to_string()],
             kind: "function".to_string(),
+            owner_symbol: None,
+            owner_kind: None,
+            implemented_trait: None,
             line: 7,
             span_end_line: 11,
             module_path: vec!["auth".to_string()],
@@ -1331,7 +1346,7 @@ mod tests {
         .build_embedding_text();
 
         let expected = [
-            "symbol=login qualified=auth::login aliases=login, auth::login kind=function file=src/lib.rs line=7 end_line=11",
+            "symbol=login qualified=auth::login aliases=login, auth::login kind=function owner=<none> owner_kind=<none> implemented_trait=<none> file=src/lib.rs line=7 end_line=11",
             "module_path=auth visibility=pub signature=pub fn login(token: &str) -> bool",
             "docs: Login entry point",
             "imports: use crate::auth::token;",

@@ -105,18 +105,7 @@ impl ToolHandler for TldrHandler {
 
     async fn handle(&self, invocation: ToolInvocation) -> Result<Self::Output, FunctionCallError> {
         let ToolInvocation { turn, payload, .. } = invocation;
-        let arguments = match payload {
-            ToolPayload::Function { arguments } => arguments,
-            _ => {
-                return Err(FunctionCallError::RespondToModel(
-                    "tldr handler received unsupported payload".to_string(),
-                ));
-            }
-        };
-        let mut args: TldrToolCallParam = parse_arguments(&arguments)?;
-        if args.project.is_none() {
-            args.project = Some(default_tldr_project(turn.cwd.as_path()));
-        }
+        let args = prepare_tldr_args(payload, turn.cwd.as_path())?;
 
         let saved_args = args.clone();
         let problem_kind = turn.tool_routing_directives.read().await.problem_kind;
@@ -151,6 +140,25 @@ impl ToolHandler for TldrHandler {
         );
         Ok(output)
     }
+}
+
+fn prepare_tldr_args(
+    payload: ToolPayload,
+    cwd: &Path,
+) -> Result<TldrToolCallParam, FunctionCallError> {
+    let arguments = match payload {
+        ToolPayload::Function { arguments } => arguments,
+        _ => {
+            return Err(FunctionCallError::RespondToModel(
+                "tldr handler received unsupported payload".to_string(),
+            ));
+        }
+    };
+    let mut args: TldrToolCallParam = parse_arguments(&arguments)?;
+    if args.project.is_none() {
+        args.project = Some(default_tldr_project(cwd));
+    }
+    Ok(args)
 }
 
 async fn maybe_issue_first_structural_warm(
@@ -928,8 +936,8 @@ mod tests {
         let (session, mut turn) = make_session_and_context().await;
         turn.cwd =
             AbsolutePathBuf::try_from(tempdir.path()).expect("tempdir path should be absolute");
-        let output = TldrHandler
-            .handle(invocation(
+        let args = prepare_tldr_args(
+            invocation(
                 Arc::new(session),
                 Arc::new(turn),
                 json!({
@@ -937,15 +945,14 @@ mod tests {
                     "language": "rust",
                     "symbol": "AuthService"
                 }),
-            ))
-            .await
-            .expect("handler should succeed");
-        let text = output.into_text();
+            )
+            .payload,
+            tempdir.path(),
+        )
+        .expect("handler should default project");
 
-        assert!(text.contains("structure rust via "), "{text}");
-        assert!(text.contains("\"project\":"));
-        assert!(text.contains(tempdir.path().to_string_lossy().as_ref()));
-        assert!(text.contains("\"symbol\": \"AuthService\""));
+        assert_eq!(args.project, Some(default_tldr_project(tempdir.path())));
+        assert_eq!(args.symbol.as_deref(), Some("AuthService"));
     }
 
     #[tokio::test]
@@ -990,6 +997,9 @@ mod tests {
                                     line: 1,
                                     span_end_line: 1,
                                     module_path: vec!["auth".to_string()],
+                                    owner_symbol: None,
+                                    owner_kind: None,
+                                    implemented_trait: None,
                                     visibility: Some("pub".to_string()),
                                     signature: Some("pub struct AuthService".to_string()),
                                     docs: Vec::new(),
@@ -1106,6 +1116,9 @@ mod tests {
                                         line: 1,
                                         span_end_line: 1,
                                         module_path: vec!["auth".to_string()],
+                                        owner_symbol: None,
+                                        owner_kind: None,
+                                        implemented_trait: None,
                                         visibility: Some("pub".to_string()),
                                         signature: Some("pub struct AuthService".to_string()),
                                         docs: Vec::new(),
@@ -1237,6 +1250,9 @@ mod tests {
                                     symbol: Some("AuthService".to_string()),
                                     qualified_symbol: None,
                                     kind: "struct".to_string(),
+                                    owner_symbol: None,
+                                    owner_kind: None,
+                                    implemented_trait: None,
                                     module_path: Vec::new(),
                                     visibility: Some("pub".to_string()),
                                     signature: Some("pub struct AuthService".to_string()),
@@ -1325,6 +1341,9 @@ mod tests {
                                     symbol: Some("AuthService".to_string()),
                                     qualified_symbol: Some("auth::AuthService".to_string()),
                                     kind: "struct".to_string(),
+                                    owner_symbol: None,
+                                    owner_kind: None,
+                                    implemented_trait: None,
                                     module_path: Vec::new(),
                                     visibility: Some("pub".to_string()),
                                     signature: Some("pub struct AuthService".to_string()),
@@ -1410,6 +1429,9 @@ mod tests {
                                         symbol: Some("validate".to_string()),
                                         qualified_symbol: None,
                                         kind: "function".to_string(),
+                                        owner_symbol: None,
+                                        owner_kind: None,
+                                        implemented_trait: None,
                                         module_path: Vec::new(),
                                         visibility: None,
                                         signature: Some("fn validate()".to_string()),
@@ -1428,6 +1450,9 @@ mod tests {
                                         symbol: Some("login".to_string()),
                                         qualified_symbol: None,
                                         kind: "function".to_string(),
+                                        owner_symbol: None,
+                                        owner_kind: None,
+                                        implemented_trait: None,
                                         module_path: Vec::new(),
                                         visibility: None,
                                         signature: Some("fn login()".to_string()),
@@ -1515,6 +1540,9 @@ mod tests {
                                     symbol: Some("main".to_string()),
                                     qualified_symbol: None,
                                     kind: "function".to_string(),
+                                    owner_symbol: None,
+                                    owner_kind: None,
+                                    implemented_trait: None,
                                     module_path: vec!["crate".to_string()],
                                     visibility: None,
                                     signature: Some("fn main()".to_string()),

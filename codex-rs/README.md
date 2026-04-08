@@ -96,6 +96,8 @@ cargo build --release -p codex-cli --features tldr
 ./target/release/codex tldr daemon --project /path/to/project --json status
 ```
 
+当前 `tldr` 的多语言关系分析能力已显式分级：Rust 使用 dedicated extractor，并能在结构化 analysis 输出中提供更精确的 owner / trait impl 关系；TypeScript、JavaScript、Python、Go、PHP、Zig 目前仍主要依赖 heuristic extractor，返回的类型/实现关系应视为启发式结果，而不是与 Rust 同等级的语义建模。
+
 ### 通知
 
 你可以配置一个脚本，在代理完成一轮任务时触发通知。[通知文档](../docs/config.md#notify) 中提供了示例，说明如何在 macOS 上通过 [terminal-notifier](https://github.com/julienXX/terminal-notifier) 获取桌面通知。当 Codex 检测到在 Windows Terminal 的 WSL 2 环境中运行（设置了 `WT_SESSION`），TUI 会自动降级为原生 Windows toast 通知，即使 Windows Terminal 不支持 OSC 9，也能显示审批与完成提示。

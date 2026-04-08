@@ -1,0 +1,85 @@
+plan = ".agents/plan/2026-04-08-tldr-rust-symbol-graph-completeness.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "完成多语言能力审计与边界定义"
+scope = """
+本 issue 负责审计 `codex-native-tldr` 各已支持语言当前使用的是专用提取器还是 fallback 启发式，并明确“类型/实现/关联方法”关系分析的真实支持边界，避免继续把未验证能力当作已支持能力对外承诺。
+
+包括 `lang_support`、`semantic.rs` 中多语言提取入口与 fallback 现状的核查、边界测试或断言，以及必要的支持说明补充。
+不包括 Rust 关系模型的完整实现，不包括 analysis 查询聚合与 graph edge 展示层的最终消费逻辑。
+"""
+touch_points = ["codex-rs/native-tldr/src/lang_support/mod.rs", "codex-rs/native-tldr/src/semantic.rs", "codex-rs/native-tldr/src", "codex-rs/docs", "codex-rs/README.md"]
+depends_on = []
+done_when = "已支持语言当前的关系分析能力边界有明确、可测试的结论：能够可靠表达的能力被保留并说明，不能可靠表达的能力被显式标注或降级承诺，不再维持语义模糊状态。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr semantic lang_support --quiet"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成多语言能力边界固化：新增 `SymbolExtractorKind` 与 `SymbolRelationshipSupport` 元数据，并让 `semantic::extract_units` 通过语言支持表决定是否走专用提取器。当前验证结论已被代码与测试锁定：只有 Rust 使用专用符号提取器并标记为 precise relationship support，其它已支持语言当前均为 heuristic。执行期使用了 tldr capability 来复核 `extract_units_fallback` 的调用链与边界。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "重建 Rust 符号关系抽取模型"
+scope = """
+本 issue 负责在 `codex-native-tldr` 的 Rust 分析链路中显式补齐类型、trait、impl、trait impl 与关联方法/函数之间的关系基础数据，使后续查询与图构建不再只依赖扁平 symbol 与字符串别名。
+
+包括 `rust_analysis` 与其直接产出的符号单元/关系信息的调整，以及对应的单元测试。
+不包括 analysis 查询聚合与 graph edge 展示层的最终消费逻辑，不包括 CLI/MCP/Core 的对外文案与契约更新。
+"""
+touch_points = ["codex-rs/native-tldr/src/rust_analysis.rs", "codex-rs/native-tldr/src/semantic.rs", "codex-rs/native-tldr/src"]
+depends_on = ["a1"]
+done_when = "Rust 符号提取结果能够稳定表达类型与其关联方法、impl 或 trait impl 的归属/实现关系，且不再需要依赖单纯追加 `symbol_aliases` 来描述这些关系；对应测试覆盖典型 struct → impl → method 与 trait impl 场景。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr rust_analysis semantic --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成 Rust 关系模型补强：为符号单元补齐 `owner_symbol`、`owner_kind`、`implemented_trait` 字段，并让 `rust_analysis` 在 trait / impl / trait impl 场景下稳定产出这些关系信息。已新增 trait impl 回归样例，并通过 `cargo nextest run -p codex-native-tldr rust_analysis semantic` 验证。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "重构查询聚合、图关系输出与跨语言边界呈现"
+scope = """
+本 issue 负责把前两阶段产出的关系信息接入 `analysis` 查询与结构化图输出，让按类型名查询时可聚合关联方法/impl，并对非 Rust 语言统一呈现已确认的能力边界。
+
+包括 `analysis.rs` 中的 `filter_units`、symbol query 语义、graph node/edge 构建、边界提示与相应契约测试。
+不包括上层 Core/MCP 文案或文档最终校准。
+"""
+touch_points = ["codex-rs/native-tldr/src/analysis.rs", "codex-rs/native-tldr/src/project_analysis.rs", "codex-rs/native-tldr/src/api/mod.rs", "codex-rs/native-tldr/src"]
+depends_on = ["a2"]
+done_when = "按类型名执行 Rust `tldr context`/相关结构分析时，不再只返回孤立类型节点，而能体现其关联方法或 impl 关系；其他语言输出与第一阶段确认的能力边界一致；现有函数级调用图与相关 summary/structured detail 不发生无意回退。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr analysis --quiet"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成 analysis 聚合与边界呈现：类型查询现在会匹配 `owner_symbol` / `implemented_trait` 并建立 `owns`、`implements` 图边，`AnalysisUnitDetail` 新增 owner/trait impl 字段；同时 analysis structured content 新增 `symbolExtractor` 与 `relationshipSupport`，显式说明当前语言是 dedicated 还是 heuristic。已通过 `cargo nextest run -p codex-native-tldr` 全量验证，确认函数级调用图未回退。"
+
+[[issue]]
+id = "a4"
+sequence = 40
+title = "校准上层契约、文档与验证链路"
+scope = """
+本 issue 负责在符号关系与 analysis 输出调整后，校准受影响的上层消费契约与验证链路，包括必要的 Core/MCP 回归测试，以及在结构化输出或使用说明发生变化时同步更新文档。
+
+包括 `codex-core`、`codex-mcp-server` 中与 `tldr` 结果消费直接相关的测试或断言调整，以及必要文档更新。
+不包括新增 `tldr` 功能入口，不包括无关模块重构。
+"""
+touch_points = ["module:core", "module:mcp-server", "codex-rs/core/src/tools/handlers/tldr.rs", "codex-rs/mcp-server/src/tldr_tool.rs", "codex-rs/docs", "codex-rs/README.md"]
+depends_on = ["a3"]
+done_when = "受影响的 Core/MCP `tldr` 消费测试通过；若本次改动改变了结构化输出字段、能力边界说明或使用说明，相关文档已同步且与当前行为一致。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-mcp-server tldr_tool --quiet && cargo nextest run -p codex-core --quiet"
+regress_by = "node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js issue .agents/issues/2026-04-08-tldr-rust-symbol-graph-completeness.toml"
+regress_timing = "after_done"
+status = "done"
+validate_status = "failed"
+regress_status = "passed"
+notes = "已完成上层契约与文档校准：补齐 core / mcp-server 测试中的 `AnalysisUnitDetail`、`EmbeddingUnit` 新字段，并更新 `docs/codex_mcp_interface.md` 与 `README.md`，明确 `symbolExtractor` / `relationshipSupport` 及当前仅 Rust 为 dedicated + precise。后续又把 `handler_defaults_project_to_turn_cwd` 改成验证 handler 参数归一化逻辑，不再依赖真实 daemon，因此 `cargo nextest run -p codex-core tldr` 现已 43/43 通过。验证现状：`cargo nextest run -p codex-mcp-server --features tldr tldr_tool` 通过；`cargo nextest run -p codex-core` 仍受当前工作树内既有 `project_doc` 失败影响，故 issue 级 `validate_status` 仍保留 failed。"

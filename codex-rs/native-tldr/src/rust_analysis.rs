@@ -39,6 +39,9 @@ struct RustSymbolRecord {
     qualified_symbol: Option<String>,
     symbol_aliases: Vec<String>,
     kind: String,
+    owner_symbol: Option<String>,
+    owner_kind: Option<String>,
+    implemented_trait: Option<String>,
     line: usize,
     span_end_line: usize,
     module_path: Vec<String>,
@@ -62,7 +65,20 @@ struct VisitContext<'a> {
     file_imports: &'a [String],
     file_module_path: &'a [String],
     inline_modules: Vec<String>,
-    container: Option<String>,
+    container: Option<ContainerContext>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContainerContext {
+    symbol: String,
+    kind: ContainerKind,
+    implemented_trait: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ContainerKind {
+    Trait,
+    Impl,
 }
 
 impl<'a> VisitContext<'a> {
@@ -95,7 +111,7 @@ impl<'a> VisitContext<'a> {
         }
     }
 
-    fn with_container(&self, container: Option<String>) -> Self {
+    fn with_container(&self, container: Option<ContainerContext>) -> Self {
         Self {
             path: self.path,
             source: self.source,
@@ -164,7 +180,11 @@ fn collect_symbols(
                 if let Some(name) = trait_name
                     && let Some(body) = declaration_list(child)
                 {
-                    let next = context.with_container(Some(name));
+                    let next = context.with_container(Some(ContainerContext {
+                        symbol: name,
+                        kind: ContainerKind::Trait,
+                        implemented_trait: None,
+                    }));
                     collect_symbols(body, &next, records);
                 }
             }
@@ -224,11 +244,26 @@ fn build_record(
     let references = collect_reference_names(node, context.source, &symbol);
     let cfg = control_flow_facts(node, context.source);
     let dfg = data_flow_facts(node, context.source);
-    let qualified_symbol = qualified_symbol(&module_path, context.container.as_deref(), &symbol);
+    let owner_symbol = context
+        .container
+        .as_ref()
+        .map(|container| container.symbol.clone());
+    let owner_kind = context
+        .container
+        .as_ref()
+        .map(|container| match container.kind {
+            ContainerKind::Trait => "trait".to_string(),
+            ContainerKind::Impl => "impl".to_string(),
+        });
+    let implemented_trait = context
+        .container
+        .as_ref()
+        .and_then(|container| container.implemented_trait.clone());
+    let qualified_symbol = qualified_symbol(&module_path, owner_symbol.as_deref(), &symbol);
     let symbol_aliases = symbol_aliases(
         &symbol,
         qualified_symbol.as_deref(),
-        context.container.as_deref(),
+        owner_symbol.as_deref(),
         &module_path,
     );
     Some(RustSymbolRecord {
@@ -238,6 +273,9 @@ fn build_record(
         qualified_symbol,
         symbol_aliases,
         kind,
+        owner_symbol,
+        owner_kind,
+        implemented_trait,
         line,
         span_end_line,
         module_path,
@@ -267,10 +305,16 @@ fn collect_use_statements(root: Node<'_>, source: &str) -> Vec<String> {
     uses
 }
 
-fn impl_container(node: Node<'_>, source: &str) -> Option<String> {
-    node.child_by_field_name("type")
+fn impl_container(node: Node<'_>, source: &str) -> Option<ContainerContext> {
+    let symbol = node
+        .child_by_field_name("type")
         .and_then(|value| trimmed_node_text(value, source))
-        .map(|value| normalize_container_name(&value))
+        .map(|value| normalize_container_name(&value))?;
+    Some(ContainerContext {
+        symbol,
+        kind: ContainerKind::Impl,
+        implemented_trait: impl_trait_name(node, source),
+    })
 }
 
 fn declaration_list(node: Node<'_>) -> Option<Node<'_>> {
@@ -601,6 +645,13 @@ fn normalize_container_name(value: &str) -> String {
         .to_string()
 }
 
+fn impl_trait_name(node: Node<'_>, source: &str) -> Option<String> {
+    let header = signature_text(node, source)?;
+    let header = header.strip_prefix("impl ")?.trim();
+    let trait_name = header.split_once(" for ")?.0.trim();
+    (!trait_name.is_empty()).then(|| normalize_container_name(trait_name))
+}
+
 fn identifier_tokens(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
@@ -700,6 +751,9 @@ impl From<RustSymbolRecord> for EmbeddingUnit {
             qualified_symbol: record.qualified_symbol,
             symbol_aliases: record.symbol_aliases,
             kind: record.kind,
+            owner_symbol: record.owner_symbol,
+            owner_kind: record.owner_kind,
+            implemented_trait: record.implemented_trait,
             line: record.line,
             span_end_line: record.span_end_line,
             module_path: record.module_path,
@@ -761,6 +815,9 @@ pub mod auth {
             .find(|unit| unit.symbol.as_deref() == Some("login"))
             .expect("login symbol should exist");
         assert_eq!(login.kind, "method");
+        assert_eq!(login.owner_symbol.as_deref(), Some("AuthService"));
+        assert_eq!(login.owner_kind.as_deref(), Some("impl"));
+        assert_eq!(login.implemented_trait, None);
         assert_eq!(
             login.qualified_symbol.as_deref(),
             Some("auth::AuthService::login")
@@ -780,6 +837,7 @@ pub mod auth {
             validate.qualified_symbol.as_deref(),
             Some("auth::AuthService::validate")
         );
+        assert_eq!(validate.owner_symbol.as_deref(), Some("AuthService"));
         assert!(validate.dfg_summary.contains("locals=1"));
 
         let module = units
@@ -816,5 +874,51 @@ fn login() {
             .expect("login symbol should exist");
         assert!(login.calls.contains(&"auth::validate".to_string()));
         assert!(!login.calls.contains(&"validate".to_string()));
+    }
+
+    #[test]
+    fn rust_units_capture_trait_impl_relationships() {
+        let units = extract_units(
+            Path::new("src/lib.rs"),
+            r#"
+trait Runner {
+    fn run(&self);
+}
+
+struct TaskRunner;
+
+impl Runner for TaskRunner {
+    fn run(&self) {
+        self.finish();
+    }
+}
+
+impl TaskRunner {
+    fn finish(&self) {}
+}
+"#,
+        )
+        .expect("rust extraction should succeed");
+
+        let run = units
+            .iter()
+            .find(|unit| {
+                unit.symbol.as_deref() == Some("run")
+                    && unit.implemented_trait.as_deref() == Some("Runner")
+            })
+            .expect("trait impl method should exist");
+        assert_eq!(run.kind, "method");
+        assert_eq!(run.owner_symbol.as_deref(), Some("TaskRunner"));
+        assert_eq!(run.owner_kind.as_deref(), Some("impl"));
+        assert_eq!(run.implemented_trait.as_deref(), Some("Runner"));
+        assert_eq!(run.qualified_symbol.as_deref(), Some("TaskRunner::run"));
+
+        let finish = units
+            .iter()
+            .find(|unit| unit.symbol.as_deref() == Some("finish"))
+            .expect("inherent impl method should exist");
+        assert_eq!(finish.owner_symbol.as_deref(), Some("TaskRunner"));
+        assert_eq!(finish.owner_kind.as_deref(), Some("impl"));
+        assert_eq!(finish.implemented_trait, None);
     }
 }

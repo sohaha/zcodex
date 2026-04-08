@@ -218,6 +218,31 @@ fn build_analysis_detail(
                 );
             }
         }
+        if let Some(owner) = unit.owner_symbol.as_ref() {
+            ensure_external_node_with_kind(&mut node_by_id, owner, "symbol");
+            if let Some(to) = &from {
+                push_edge(
+                    &mut edges,
+                    &mut edge_keys,
+                    owner.clone(),
+                    to.clone(),
+                    "owns",
+                );
+            }
+        }
+        if let (Some(owner), Some(implemented_trait)) =
+            (unit.owner_symbol.as_ref(), unit.implemented_trait.as_ref())
+        {
+            ensure_external_node_with_kind(&mut node_by_id, owner, "symbol");
+            ensure_external_node_with_kind(&mut node_by_id, implemented_trait, "symbol");
+            push_edge(
+                &mut edges,
+                &mut edge_keys,
+                owner.clone(),
+                implemented_trait.clone(),
+                "implements",
+            );
+        }
         reference_count += unit.references.len();
         import_count += unit.imports.len();
     }
@@ -274,6 +299,9 @@ fn build_analysis_detail(
                 symbol: unit.symbol.clone(),
                 qualified_symbol: unit.qualified_symbol.clone(),
                 kind: unit.kind.clone(),
+                owner_symbol: unit.owner_symbol.clone(),
+                owner_kind: unit.owner_kind.clone(),
+                implemented_trait: unit.implemented_trait.clone(),
                 module_path: unit.module_path.clone(),
                 visibility: unit.visibility.clone(),
                 signature: unit.signature.clone(),
@@ -874,6 +902,13 @@ fn join_or_none(values: &[String]) -> String {
 fn symbol_matches(unit: &EmbeddingUnit, symbol: &str) -> bool {
     unit.symbol.as_deref() == Some(symbol)
         || unit.qualified_symbol.as_deref() == Some(symbol)
+        || unit.owner_symbol.as_deref() == Some(symbol)
+        || unit.implemented_trait.as_deref() == Some(symbol)
+        || (symbol.contains("::")
+            && unit
+                .qualified_symbol
+                .as_deref()
+                .is_some_and(|qualified| qualified.starts_with(&format!("{symbol}::"))))
         || unit.symbol_aliases.iter().any(|alias| alias == symbol)
 }
 
@@ -1268,7 +1303,12 @@ mod auth {
             Some("auth::AuthService::login")
         );
         assert_eq!(details.files[0].symbol_count, 1);
-        assert_eq!(details.nodes[0].id, "auth::AuthService::login");
+        assert!(
+            details
+                .nodes
+                .iter()
+                .any(|node| node.id == "auth::AuthService::login")
+        );
     }
 
     #[test]
@@ -1529,5 +1569,105 @@ fn login() {
         )
         .expect("analysis should succeed");
         assert!(audit.summary.contains("incoming [none]"));
+    }
+
+    #[test]
+    fn structure_analysis_includes_methods_when_querying_owner_symbol() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            r#"
+mod auth {
+    pub struct AuthService;
+
+    impl AuthService {
+        pub fn login(&self) {
+            self.validate();
+        }
+
+        fn validate(&self) {}
+    }
+}
+"#,
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        for symbol in ["AuthService", "auth::AuthService"] {
+            let response = analyze_project(
+                tempdir.path(),
+                &config,
+                AnalysisRequest {
+                    kind: AnalysisKind::Ast,
+                    language: SupportedLanguage::Rust,
+                    symbol: Some(symbol.to_string()),
+                    path: None,
+                    paths: Vec::new(),
+                    line: None,
+                },
+            )
+            .expect("analysis should succeed");
+
+            let details = response.details.expect("details should exist");
+            assert!(details.units.iter().any(|unit| {
+                unit.qualified_symbol.as_deref() == Some("auth::AuthService::login")
+            }));
+            assert!(details.units.iter().any(|unit| {
+                unit.qualified_symbol.as_deref() == Some("auth::AuthService::validate")
+            }));
+            assert!(details.edges.iter().any(|edge| {
+                edge.kind == "owns"
+                    && edge.from == "AuthService"
+                    && edge.to == "auth::AuthService::login"
+            }));
+        }
+    }
+
+    #[test]
+    fn structure_analysis_tracks_trait_impl_edges() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        std::fs::create_dir_all(tempdir.path().join("src")).expect("src dir should exist");
+        std::fs::write(
+            tempdir.path().join("src/lib.rs"),
+            r#"
+trait Runner {
+    fn run(&self);
+}
+
+struct TaskRunner;
+
+impl Runner for TaskRunner {
+    fn run(&self) {}
+}
+"#,
+        )
+        .expect("fixture should write");
+        let config = TldrConfig::for_project(tempdir.path().to_path_buf());
+
+        let response = analyze_project(
+            tempdir.path(),
+            &config,
+            AnalysisRequest {
+                kind: AnalysisKind::Ast,
+                language: SupportedLanguage::Rust,
+                symbol: Some("Runner".to_string()),
+                path: None,
+                paths: Vec::new(),
+                line: None,
+            },
+        )
+        .expect("analysis should succeed");
+
+        let details = response.details.expect("details should exist");
+        assert!(
+            details
+                .units
+                .iter()
+                .any(|unit| unit.implemented_trait.as_deref() == Some("Runner"))
+        );
+        assert!(details.edges.iter().any(|edge| {
+            edge.kind == "implements" && edge.from == "TaskRunner" && edge.to == "Runner"
+        }));
     }
 }
