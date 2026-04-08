@@ -1,49 +1,54 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
+use crate::service::contracts::ExportNodeContract;
+use crate::service::contracts::ExportResultContract;
+use crate::service::contracts::ExportScopeContract;
+use crate::service::snapshot;
 use crate::tool_api::ExportActionParams;
 use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::params;
 use serde_json::Value;
-use serde_json::json;
-
-#[derive(Debug, Clone)]
-struct ExportPath {
-    uri: String,
-    domain: String,
-    priority: i64,
-    disclosure: Option<String>,
-}
 
 pub(crate) fn export_action(
     config: &ZmemoryConfig,
     conn: &Connection,
     args: &ExportActionParams,
 ) -> Result<Value> {
-    match (&args.uri, &args.domain) {
-        (Some(uri), None) => export_uri_scope(config, conn, uri),
-        (None, Some(domain)) => export_domain_scope(config, conn, domain),
+    let result = match (&args.uri, &args.domain) {
+        (Some(uri), None) => export_uri_scope(config, conn, uri)?,
+        (None, Some(domain)) => export_domain_scope(config, conn, domain)?,
         _ => anyhow::bail!("exactly one of `uri` or `domain` is required for action=export"),
-    }
+    };
+
+    serde_json::to_value(result).map_err(Into::into)
 }
 
-fn export_uri_scope(config: &ZmemoryConfig, conn: &Connection, uri: &ZmemoryUri) -> Result<Value> {
+fn export_uri_scope(
+    config: &ZmemoryConfig,
+    conn: &Connection,
+    uri: &ZmemoryUri,
+) -> Result<ExportResultContract> {
     common::ensure_readable_domain(config, conn, &uri.domain)?;
     let row = common::find_path_row(conn, config, uri)?
         .ok_or_else(|| anyhow::anyhow!("memory not found: {uri}"))?;
     let item = export_item(config, conn, &row.node_uuid, Some(uri), None)?;
-    Ok(json!({
-        "scope": {
-            "type": "uri",
-            "value": uri.to_string(),
+    Ok(ExportResultContract {
+        scope: ExportScopeContract {
+            r#type: "uri".to_string(),
+            value: uri.to_string(),
         },
-        "count": 1,
-        "items": [item],
-    }))
+        count: 1,
+        items: vec![item],
+    })
 }
 
-fn export_domain_scope(config: &ZmemoryConfig, conn: &Connection, domain: &str) -> Result<Value> {
+fn export_domain_scope(
+    config: &ZmemoryConfig,
+    conn: &Connection,
+    domain: &str,
+) -> Result<ExportResultContract> {
     common::ensure_readable_domain(config, conn, domain)?;
     let mut stmt = conn.prepare(
         "SELECT DISTINCT e.child_uuid
@@ -61,14 +66,15 @@ fn export_domain_scope(config: &ZmemoryConfig, conn: &Connection, domain: &str) 
         .iter()
         .map(|node_uuid| export_item(config, conn, node_uuid, None, Some(domain)))
         .collect::<Result<Vec<_>>>()?;
-    Ok(json!({
-        "scope": {
-            "type": "domain",
-            "value": domain,
+
+    Ok(ExportResultContract {
+        scope: ExportScopeContract {
+            r#type: "domain".to_string(),
+            value: domain.to_string(),
         },
-        "count": items.len(),
-        "items": items,
-    }))
+        count: items.len(),
+        items,
+    })
 }
 
 fn export_item(
@@ -77,82 +83,20 @@ fn export_item(
     node_uuid: &str,
     requested_uri: Option<&ZmemoryUri>,
     preferred_domain: Option<&str>,
-) -> Result<Value> {
-    let memory = common::read_active_memory(conn, config.namespace(), node_uuid)?
-        .ok_or_else(|| anyhow::anyhow!("active memory not found for node {node_uuid}"))?;
-    let keywords = common::load_keywords(conn, config, node_uuid)?;
-    let mut paths = load_paths(conn, config, node_uuid)?;
-    anyhow::ensure!(
-        !paths.is_empty(),
-        "no live paths found for node {node_uuid}"
-    );
-
-    let primary_index = select_primary_index(&paths, requested_uri, preferred_domain)?;
-    let primary = paths.remove(primary_index);
-    let aliases = paths
-        .into_iter()
-        .map(|path| {
-            json!({
-                "uri": path.uri,
-                "priority": path.priority,
-                "disclosure": path.disclosure,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    Ok(json!({
-        "uri": primary.uri,
-        "content": memory.content,
-        "priority": primary.priority,
-        "disclosure": primary.disclosure,
-        "keywords": keywords,
-        "aliases": aliases,
-    }))
-}
-
-fn load_paths(
-    conn: &Connection,
-    config: &ZmemoryConfig,
-    node_uuid: &str,
-) -> Result<Vec<ExportPath>> {
-    let mut stmt = conn.prepare(
-        "SELECT p.domain, p.path, e.priority, e.disclosure
-         FROM edges e
-         JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
-         WHERE e.namespace = ?1 AND e.child_uuid = ?2
-         ORDER BY e.priority DESC, LENGTH(p.path) ASC, p.domain ASC, p.path ASC",
+) -> Result<ExportNodeContract> {
+    let snapshot = snapshot::load_node_snapshot_for_node(
+        config,
+        conn,
+        node_uuid,
+        requested_uri,
+        preferred_domain,
     )?;
-    stmt.query_map(params![config.namespace(), node_uuid], |row| {
-        let domain: String = row.get(0)?;
-        let path: String = row.get(1)?;
-        Ok(ExportPath {
-            uri: format!("{domain}://{path}"),
-            domain,
-            priority: row.get(2)?,
-            disclosure: row.get(3)?,
-        })
-    })?
-    .collect::<rusqlite::Result<Vec<_>>>()
-    .map_err(Into::into)
-}
-
-fn select_primary_index(
-    paths: &[ExportPath],
-    requested_uri: Option<&ZmemoryUri>,
-    preferred_domain: Option<&str>,
-) -> Result<usize> {
-    if let Some(uri) = requested_uri {
-        let target = uri.to_string();
-        return paths
-            .iter()
-            .position(|path| path.uri == target)
-            .ok_or_else(|| anyhow::anyhow!("requested export path not found: {target}"));
-    }
-    if let Some(domain) = preferred_domain {
-        return paths
-            .iter()
-            .position(|path| path.domain == domain)
-            .ok_or_else(|| anyhow::anyhow!("no export path found in domain {domain}"));
-    }
-    Ok(0)
+    Ok(ExportNodeContract {
+        uri: snapshot.primary_uri,
+        content: snapshot.content,
+        priority: snapshot.priority,
+        disclosure: snapshot.disclosure,
+        keywords: snapshot.keywords,
+        aliases: snapshot.aliases,
+    })
 }

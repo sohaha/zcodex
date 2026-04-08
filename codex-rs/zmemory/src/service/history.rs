@@ -1,10 +1,11 @@
 use crate::config::ZmemoryConfig;
 use crate::service::common;
+use crate::service::contracts::ChangeSetRecord;
+use crate::service::contracts::HistoryVersionContract;
 use crate::tool_api::ZmemoryUri;
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::Value;
-use serde_json::json;
 
 pub(crate) fn history_action(
     config: &ZmemoryConfig,
@@ -22,18 +23,20 @@ pub(crate) fn history_action(
     )?;
     let versions = stmt
         .query_map([config.namespace(), row.node_uuid.as_str()], |entry| {
-            Ok(json!({
-                "id": entry.get::<_, i64>(0)?,
-                "content": entry.get::<_, String>(1)?,
-                "deprecated": entry.get::<_, bool>(2)?,
-                "migratedTo": entry.get::<_, Option<i64>>(3)?,
-                "createdAt": entry.get::<_, String>(4)?,
-            }))
+            Ok(HistoryVersionContract {
+                id: entry.get(0)?,
+                content: entry.get(1)?,
+                deprecated: entry.get(2)?,
+                migrated_to: entry.get(3)?,
+                created_at: entry.get(4)?,
+            })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(json!({
-        "uri": uri.to_string(),
-        "nodeUuid": row.node_uuid,
-        "versions": versions,
-    }))
+
+    serde_json::to_value(ChangeSetRecord {
+        uri: uri.to_string(),
+        node_uuid: row.node_uuid,
+        versions,
+    })
+    .map_err(Into::into)
 }

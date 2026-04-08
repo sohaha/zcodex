@@ -2530,6 +2530,88 @@ fn export_by_domain_uses_domain_scoped_primary_paths() {
 }
 
 #[test]
+fn node_snapshot_builder_keeps_primary_aliases_keywords_and_children_in_sync() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snapshot-parent".to_string()),
+            content: Some("Snapshot parent".to_string()),
+            priority: Some(4),
+            disclosure: Some("profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("parent create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://snapshot-parent/child".to_string()),
+            content: Some("Snapshot child".to_string()),
+            priority: Some(2),
+            disclosure: Some("detail".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("child create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://snapshot-copy".to_string()),
+            target_uri: Some("core://snapshot-parent".to_string()),
+            priority: Some(6),
+            disclosure: Some("mirror".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("alias create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://snapshot-parent".to_string()),
+            add: Some(vec!["profile".to_string(), "snapshot".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let uri =
+        crate::tool_api::ZmemoryUri::parse("alias://snapshot-copy").expect("uri should parse");
+    let snapshot = crate::service::snapshot::load_node_snapshot_for_uri(&config, &conn, &uri)
+        .expect("snapshot should load");
+
+    assert_eq!(snapshot.primary_uri, "alias://snapshot-copy");
+    assert_eq!(snapshot.content, "Snapshot parent");
+    assert_eq!(snapshot.priority, 6);
+    assert_eq!(snapshot.disclosure.as_deref(), Some("mirror"));
+    assert_eq!(snapshot.keywords, vec!["profile", "snapshot"]);
+    assert_eq!(snapshot.alias_count, 2);
+    assert_eq!(
+        snapshot.aliases,
+        vec![crate::service::contracts::NodeAliasContract {
+            uri: "core://snapshot-parent".to_string(),
+            priority: 4,
+            disclosure: Some("profile".to_string()),
+        }]
+    );
+    assert_eq!(
+        snapshot.children,
+        vec![crate::service::contracts::NodeChildContract {
+            name: "child".to_string(),
+            priority: 2,
+            disclosure: Some("detail".to_string()),
+            uri: "core://snapshot-parent/child".to_string(),
+        }]
+    );
+}
+
+#[test]
 fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
     let (_dir, config) = config();
 
@@ -2590,7 +2672,15 @@ fn import_creates_memories_aliases_and_keywords_in_one_transaction() {
         },
     )
     .expect("read alias should succeed");
+    assert_eq!(read_alias["result"]["uri"], "alias://import-target-copy");
     assert_eq!(read_alias["result"]["content"], "Imported content");
+    assert_eq!(read_alias["result"]["priority"], 5);
+    assert_eq!(read_alias["result"]["disclosure"], "mirror");
+    assert_eq!(
+        read_alias["result"]["keywords"],
+        json!(["agent", "profile"])
+    );
+    assert_eq!(read_alias["result"]["aliasCount"], 2);
 }
 
 #[test]

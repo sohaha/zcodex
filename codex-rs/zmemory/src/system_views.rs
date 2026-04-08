@@ -6,6 +6,9 @@ use crate::config::default_valid_domains;
 use crate::config::project_key_for_workspace;
 use crate::config::unassigned_boot_uris;
 use crate::config::zmemory_db_path;
+use crate::service::contracts::AliasReviewViewContract;
+use crate::service::contracts::ReviewGroupContract;
+use crate::service::contracts::ReviewRecommendationContract;
 use anyhow::Result;
 use anyhow::anyhow;
 use rusqlite::Connection;
@@ -550,39 +553,41 @@ fn read_alias_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> R
     } else {
         (((alias_nodes - alias_nodes_missing) * 100) / alias_nodes).clamp(0, 100)
     };
-    let recommendations: Vec<Value> = entries
+    let recommendations = entries
         .iter()
-        .filter(|entry| entry["missingTriggers"].as_bool().unwrap_or(false))
+        .filter(|entry| entry.missing_triggers)
         .take(3)
-        .map(|entry| {
-            let node_uri = entry["nodeUri"].as_str().unwrap_or_default();
-            json!({
-                "nodeUri": node_uri,
-                "missingTriggers": entry["missingTriggers"],
-                "priorityScore": entry["priorityScore"],
-                "reviewPriority": entry["reviewPriority"],
-                "priorityReason": entry["priorityReason"],
-                "suggestedKeywords": entry["suggestedKeywords"],
-                "action": "manage-triggers",
-                "advice": "add specific trigger keywords to this alias node",
-                "command": suggestion_command(node_uri, &entry["suggestedKeywords"]),
-            })
+        .map(|entry| ReviewRecommendationContract {
+            node_uri: entry.node_uri.clone(),
+            missing_triggers: entry.missing_triggers,
+            priority_score: entry.priority_score,
+            review_priority: entry.review_priority.clone(),
+            priority_reason: entry.priority_reason.clone(),
+            suggested_keywords: entry.suggested_keywords.clone(),
+            action: "manage-triggers".to_string(),
+            advice: "add specific trigger keywords to this alias node".to_string(),
+            command: suggestion_command(&entry.node_uri, &entry.suggested_keywords),
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-    Ok(json!({
-        "view": "alias",
-        "entryCount": entries.len(),
-        "aliasNodeCount": alias_nodes,
-        "triggerNodeCount": trigger_nodes,
-        "aliasNodesMissingTriggers": alias_nodes_missing,
-        "coveragePercent": coverage_percent,
-        "recommendations": recommendations,
-        "entries": entries,
-    }))
+    serde_json::to_value(AliasReviewViewContract {
+        view: "alias".to_string(),
+        entry_count: entries.len(),
+        alias_node_count: alias_nodes,
+        trigger_node_count: trigger_nodes,
+        alias_nodes_missing_triggers: alias_nodes_missing,
+        coverage_percent,
+        recommendations,
+        entries,
+    })
+    .map_err(Into::into)
 }
 
-fn alias_entries(conn: &Connection, namespace: &str, limit: usize) -> Result<Vec<Value>> {
+fn alias_entries(
+    conn: &Connection,
+    namespace: &str,
+    limit: usize,
+) -> Result<Vec<ReviewGroupContract>> {
     let mut stmt = conn.prepare(
         "SELECT alias.node_uuid,
                 alias.alias_count,
@@ -637,24 +642,15 @@ fn alias_entries(conn: &Connection, namespace: &str, limit: usize) -> Result<Vec
 
     let mut entries = grouped
         .into_values()
-        .map(AliasNodeAggregate::into_json)
+        .map(AliasNodeAggregate::into_review_group)
         .collect::<Result<Vec<_>>>()?;
 
     entries.sort_by(|left, right| {
-        let right_score = right["priorityScore"].as_i64().unwrap_or(0);
-        let left_score = left["priorityScore"].as_i64().unwrap_or(0);
-        right_score
-            .cmp(&left_score)
-            .then_with(|| {
-                let right_aliases = right["aliasCount"].as_i64().unwrap_or(0);
-                let left_aliases = left["aliasCount"].as_i64().unwrap_or(0);
-                right_aliases.cmp(&left_aliases)
-            })
-            .then_with(|| {
-                let left_uri = left["nodeUri"].as_str().unwrap_or_default();
-                let right_uri = right["nodeUri"].as_str().unwrap_or_default();
-                left_uri.cmp(right_uri)
-            })
+        right
+            .priority_score
+            .cmp(&left.priority_score)
+            .then_with(|| right.alias_count.cmp(&left.alias_count))
+            .then_with(|| left.node_uri.cmp(&right.node_uri))
     });
 
     entries.truncate(limit);
@@ -670,7 +666,7 @@ struct AliasNodeAggregate {
 }
 
 impl AliasNodeAggregate {
-    fn into_json(self) -> Result<Value> {
+    fn into_review_group(self) -> Result<ReviewGroupContract> {
         let (domain, path) = self
             .paths
             .first()
@@ -687,19 +683,19 @@ impl AliasNodeAggregate {
             Vec::new()
         };
 
-        Ok(json!({
-            "nodeUuid": self.node_uuid,
-            "domain": domain,
-            "path": path,
-            "aliasCount": self.alias_count,
-            "triggerCount": self.trigger_count,
-            "missingTriggers": missing_triggers,
-            "reviewPriority": review_priority,
-            "priorityScore": priority_score,
-            "priorityReason": priority_reason,
-            "suggestedKeywords": suggested_keywords,
-            "nodeUri": node_uri,
-        }))
+        Ok(ReviewGroupContract {
+            node_uuid: self.node_uuid,
+            domain,
+            path,
+            alias_count: self.alias_count,
+            trigger_count: self.trigger_count,
+            missing_triggers,
+            review_priority: review_priority.to_string(),
+            priority_score,
+            priority_reason,
+            suggested_keywords,
+            node_uri,
+        })
     }
 }
 
@@ -738,17 +734,13 @@ fn infer_alias_keywords_from_paths(paths: &[(String, String)]) -> Vec<String> {
     keywords.into_iter().take(3).collect()
 }
 
-fn suggestion_command(node_uri: &str, suggested_keywords: &Value) -> String {
-    let Some(suggested_keywords) = suggested_keywords.as_array() else {
-        return format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json");
-    };
+fn suggestion_command(node_uri: &str, suggested_keywords: &[String]) -> String {
     if suggested_keywords.is_empty() {
         return format!("codex zmemory manage-triggers {node_uri} --add <keyword> --json");
     }
 
     let args = suggested_keywords
         .iter()
-        .filter_map(Value::as_str)
         .map(|keyword| format!("--add {keyword}"))
         .collect::<Vec<_>>()
         .join(" ");

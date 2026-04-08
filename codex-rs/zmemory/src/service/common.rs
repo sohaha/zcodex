@@ -3,13 +3,15 @@ use crate::repository::ZmemoryRepository;
 use crate::schema::ROOT_NODE_UUID;
 use crate::schema::active_memory_id_for_node;
 use crate::schema::ensure_domain_root;
+use crate::service::contracts::NodeChildContract;
+use crate::service::contracts::PathResolutionContract;
 use anyhow::Result;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::Transaction;
 use rusqlite::params;
 use serde_json::Value;
-use serde_json::json;
+use std::collections::HashSet;
 
 pub(crate) fn connect(config: &ZmemoryConfig) -> Result<Connection> {
     let repository = ZmemoryRepository::new(config.clone());
@@ -137,30 +139,51 @@ pub(crate) fn read_active_memory(
 pub(crate) fn list_children(
     conn: &Connection,
     config: &ZmemoryConfig,
-    uri: &crate::tool_api::ZmemoryUri,
+    preferred_domain: &str,
     node_uuid: &str,
-) -> Result<Vec<Value>> {
+) -> Result<Vec<NodeChildContract>> {
     let mut stmt = conn.prepare(
-        "SELECT p.path, e.name, e.priority, e.disclosure
+        "SELECT e.id, e.name, e.priority, e.disclosure, p.domain, p.path
          FROM edges e
          JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
-         WHERE e.parent_uuid = ?1 AND e.namespace = ?2 AND p.domain = ?3
-         ORDER BY e.priority DESC, e.name ASC",
+         WHERE e.parent_uuid = ?1 AND e.namespace = ?2
+         ORDER BY e.priority DESC,
+                  e.name ASC,
+                  CASE WHEN p.domain = ?3 THEN 0 ELSE 1 END,
+                  LENGTH(p.path) ASC,
+                  p.domain ASC,
+                  p.path ASC",
     )?;
-    stmt.query_map(
-        params![node_uuid, config.namespace(), uri.domain.as_str()],
-        |row| {
-            let path: String = row.get(0)?;
-            Ok(json!({
-                "name": row.get::<_, String>(1)?,
-                "priority": row.get::<_, i64>(2)?,
-                "disclosure": row.get::<_, Option<String>>(3)?,
-                "uri": format!("{}://{}", uri.domain, path),
-            }))
-        },
-    )?
-    .collect::<rusqlite::Result<Vec<_>>>()
-    .map_err(Into::into)
+    let rows = stmt
+        .query_map(
+            params![node_uuid, config.namespace(), preferred_domain],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    NodeChildContract {
+                        name: row.get(1)?,
+                        priority: row.get(2)?,
+                        disclosure: row.get(3)?,
+                        uri: format!(
+                            "{}://{}",
+                            row.get::<_, String>(4)?,
+                            row.get::<_, String>(5)?
+                        ),
+                    },
+                ))
+            },
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut seen_edges = HashSet::new();
+    let mut children = Vec::new();
+    for (edge_id, child) in rows {
+        if seen_edges.insert(edge_id) {
+            children.push(child);
+        }
+    }
+
+    Ok(children)
 }
 
 pub(crate) fn load_keywords(
@@ -181,22 +204,6 @@ pub(crate) fn load_keywords(
     .map_err(Into::into)
 }
 
-pub(crate) fn count_aliases(
-    conn: &Connection,
-    config: &ZmemoryConfig,
-    node_uuid: &str,
-) -> Result<i64> {
-    conn.query_row(
-        "SELECT COUNT(*)
-         FROM edges e
-         JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
-         WHERE e.child_uuid = ?1 AND e.namespace = ?2",
-        params![node_uuid, config.namespace()],
-        |row| row.get(0),
-    )
-    .map_err(Into::into)
-}
-
 pub(crate) fn normalize_optional_text(raw: Option<&str>) -> Option<String> {
     raw.map(str::trim)
         .filter(|value| !value.is_empty())
@@ -214,17 +221,17 @@ pub(crate) fn normalize_keywords(keywords: Vec<String>) -> Vec<String> {
     normalized
 }
 
-pub(crate) fn path_resolution_payload(config: &ZmemoryConfig) -> Value {
+pub(crate) fn path_resolution_contract(config: &ZmemoryConfig) -> PathResolutionContract {
     let resolution = config.path_resolution();
-    json!({
-        "dbPath": resolution.db_path.display().to_string(),
-        "workspaceKey": resolution.workspace_key.clone(),
-        "source": resolution.source,
-        "reason": resolution.reason.clone(),
-        "namespace": config.namespace(),
-        "namespaceSource": config.namespace_source(),
-        "supportsNamespaceSelection": config.supports_namespace_selection(),
-    })
+    PathResolutionContract {
+        db_path: resolution.db_path.display().to_string(),
+        workspace_key: resolution.workspace_key.clone(),
+        source: resolution.source,
+        reason: resolution.reason.clone(),
+        namespace: config.namespace().to_string(),
+        namespace_source: config.namespace_source().to_string(),
+        supports_namespace_selection: config.supports_namespace_selection(),
+    }
 }
 
 pub(crate) fn search_document_count(conn: &Connection, config: &ZmemoryConfig) -> Result<i64> {
