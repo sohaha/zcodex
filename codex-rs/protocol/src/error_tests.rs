@@ -72,6 +72,11 @@ fn server_overloaded_maps_to_protocol() {
 }
 
 #[test]
+fn server_overloaded_is_retryable() {
+    assert!(CodexErr::ServerOverloaded.is_retryable());
+}
+
+#[test]
 fn sandbox_denied_uses_aggregated_output_when_stderr_empty() {
     let output = ExecToolCallOutput {
         exit_code: 77,
