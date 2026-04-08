@@ -2527,7 +2527,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
     );
     assert_eq!(
         recommendations[0]["command"],
-        "codex zmemory manage-triggers core://hub/launch-plan --add alpha --add hub --add launch --json"
+        "codex zmemory manage-triggers core://project-alpha --add alpha --add hub --add launch --json"
     );
     assert_eq!(
         sorted_object_keys(&recommendations[0]),
@@ -2547,7 +2547,7 @@ fn alias_view_includes_priority_reasons_and_suggested_keywords() {
     let entries = view["entries"]
         .as_array()
         .expect("entries should be an array");
-    assert_eq!(entries[0]["nodeUri"], "core://hub/launch-plan");
+    assert_eq!(entries[0]["nodeUri"], "core://project-alpha");
     assert_eq!(entries[0]["reviewPriority"], "high");
     assert_eq!(
         entries[0]["priorityReason"],
@@ -2845,6 +2845,92 @@ fn node_snapshot_builder_keeps_primary_aliases_keywords_and_children_in_sync() {
             }],
             alias_count: 2,
         }
+    );
+}
+
+#[test]
+fn review_group_diff_contract_keeps_snapshot_history_and_audit_in_sync() {
+    let (_dir, config) = config();
+
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Create,
+            uri: Some("core://review-target".to_string()),
+            content: Some("Review target".to_string()),
+            priority: Some(3),
+            disclosure: Some("profile".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("create should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::Update,
+            uri: Some("core://review-target".to_string()),
+            append: Some(" updated".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("update should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::AddAlias,
+            new_uri: Some("alias://review-copy".to_string()),
+            target_uri: Some("core://review-target".to_string()),
+            priority: Some(8),
+            disclosure: Some("mirror".to_string()),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("add alias should succeed");
+    crate::service::execute_action(
+        &config,
+        &ZmemoryToolCallParam {
+            action: ZmemoryToolAction::ManageTriggers,
+            uri: Some("core://review-target".to_string()),
+            add: Some(vec!["review".to_string(), "target".to_string()]),
+            ..ZmemoryToolCallParam::default()
+        },
+    )
+    .expect("manage triggers should succeed");
+
+    let conn = Connection::open(config.db_path()).expect("db should open");
+    let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "review-target");
+    let diff = crate::service::review::review_group_diff_for_node_uuid(&conn, &config, &node_uuid)
+        .expect("review diff should build");
+
+    assert_eq!(diff.group.node_uri, "alias://review-copy");
+    assert_eq!(diff.group.alias_count, 2);
+    assert_eq!(diff.group.trigger_count, 2);
+    assert_eq!(diff.group.missing_triggers, false);
+    assert_eq!(diff.snapshot.uri, "alias://review-copy");
+    assert_eq!(diff.snapshot.content, "Review target updated");
+    assert_eq!(diff.snapshot.alias_count, 2);
+    assert_eq!(
+        diff.snapshot.aliases,
+        vec![crate::service::contracts::NodeAliasContract {
+            uri: "core://review-target".to_string(),
+            priority: 3,
+            disclosure: Some("profile".to_string()),
+        }]
+    );
+    assert_eq!(diff.changeset.uri, "alias://review-copy");
+    assert_eq!(diff.changeset.node_uuid, node_uuid);
+    assert_eq!(diff.changeset.versions.len(), 2);
+    assert_eq!(diff.changeset.versions[0].content, "Review target updated");
+    assert_eq!(diff.rollback_targets.len(), 1);
+    assert_eq!(diff.rollback_targets[0].content, "Review target");
+    let audit_actions = diff
+        .recent_audit_entries
+        .iter()
+        .map(|entry| entry.action.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        audit_actions,
+        vec!["manage-triggers", "add-alias", "update", "create"]
     );
 }
 

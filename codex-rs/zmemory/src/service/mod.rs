@@ -16,6 +16,7 @@ mod history;
 mod import;
 mod index;
 mod read;
+pub(crate) mod review;
 mod search;
 mod snapshot;
 pub(crate) mod stats;

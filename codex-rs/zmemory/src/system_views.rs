@@ -8,7 +8,6 @@ use crate::config::project_key_for_workspace;
 use crate::config::unassigned_boot_uris;
 use crate::config::zmemory_db_path;
 use crate::service::contracts::AliasReviewViewContract;
-use crate::service::contracts::ReviewGroupContract;
 use crate::service::contracts::ReviewRecommendationContract;
 use anyhow::Result;
 use anyhow::anyhow;
@@ -16,7 +15,6 @@ use rusqlite::Connection;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 
 pub fn read_system_view(
     conn: &Connection,
@@ -547,7 +545,7 @@ fn read_alias_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> R
     let trigger_nodes = crate::service::stats::trigger_node_count(conn, config.namespace())?;
     let alias_nodes_missing =
         crate::service::stats::alias_nodes_missing_triggers(conn, config.namespace())?;
-    let entries = alias_entries(conn, config.namespace(), limit)?;
+    let entries = crate::service::review::review_groups(conn, config, limit)?;
 
     let coverage_percent = if alias_nodes == 0 {
         100
@@ -582,157 +580,6 @@ fn read_alias_view(conn: &Connection, config: &ZmemoryConfig, limit: usize) -> R
         entries,
     })
     .map_err(Into::into)
-}
-
-fn alias_entries(
-    conn: &Connection,
-    namespace: &str,
-    limit: usize,
-) -> Result<Vec<ReviewGroupContract>> {
-    let mut stmt = conn.prepare(
-        "SELECT alias.node_uuid,
-                alias.alias_count,
-                COALESCE(trigger_counts.count, 0) AS trigger_count,
-                p.domain,
-                p.path
-         FROM (
-             SELECT e.child_uuid AS node_uuid,
-                    COUNT(*) AS alias_count
-             FROM edges e
-             JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
-             WHERE e.namespace = ?1
-             GROUP BY e.child_uuid
-             HAVING COUNT(*) > 1
-         ) alias
-         JOIN edges e ON e.namespace = ?1 AND e.child_uuid = alias.node_uuid
-         JOIN paths p ON p.edge_id = e.id AND p.namespace = e.namespace
-         LEFT JOIN (
-             SELECT node_uuid, COUNT(*) AS count
-             FROM glossary_keywords
-             WHERE namespace = ?1
-             GROUP BY node_uuid
-         ) trigger_counts ON trigger_counts.node_uuid = alias.node_uuid
-         WHERE e.namespace = ?1
-         ORDER BY alias.alias_count DESC, alias.node_uuid ASC, p.domain ASC, p.path ASC",
-    )?;
-
-    let rows = stmt
-        .query_map([namespace], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    let mut grouped = BTreeMap::<String, AliasNodeAggregate>::new();
-    for (node_uuid, alias_count, trigger_count, domain, path) in rows {
-        let aggregate = grouped
-            .entry(node_uuid.clone())
-            .or_insert_with(|| AliasNodeAggregate {
-                node_uuid,
-                alias_count,
-                trigger_count,
-                paths: Vec::new(),
-            });
-        aggregate.paths.push((domain, path));
-    }
-
-    let mut entries = grouped
-        .into_values()
-        .map(AliasNodeAggregate::into_review_group)
-        .collect::<Result<Vec<_>>>()?;
-
-    entries.sort_by(|left, right| {
-        right
-            .priority_score
-            .cmp(&left.priority_score)
-            .then_with(|| right.alias_count.cmp(&left.alias_count))
-            .then_with(|| left.node_uri.cmp(&right.node_uri))
-    });
-
-    entries.truncate(limit);
-
-    Ok(entries)
-}
-
-struct AliasNodeAggregate {
-    node_uuid: String,
-    alias_count: i64,
-    trigger_count: i64,
-    paths: Vec<(String, String)>,
-}
-
-impl AliasNodeAggregate {
-    fn into_review_group(self) -> Result<ReviewGroupContract> {
-        let (domain, path) = self
-            .paths
-            .first()
-            .cloned()
-            .ok_or_else(|| anyhow!("alias node {} has no active paths", self.node_uuid))?;
-        let node_uri = format!("{domain}://{path}");
-        let missing_triggers = self.trigger_count == 0;
-        let (review_priority, priority_score) =
-            alias_review_priority(self.alias_count, missing_triggers);
-        let priority_reason = alias_priority_reason(self.alias_count, missing_triggers);
-        let suggested_keywords = if missing_triggers {
-            infer_alias_keywords_from_paths(&self.paths)
-        } else {
-            Vec::new()
-        };
-
-        Ok(ReviewGroupContract {
-            node_uuid: self.node_uuid,
-            domain,
-            path,
-            alias_count: self.alias_count,
-            trigger_count: self.trigger_count,
-            missing_triggers,
-            review_priority: review_priority.to_string(),
-            priority_score,
-            priority_reason,
-            suggested_keywords,
-            node_uri,
-        })
-    }
-}
-
-fn alias_review_priority(alias_count: i64, missing_triggers: bool) -> (&'static str, i64) {
-    if missing_triggers {
-        let priority = if alias_count >= 3 { "high" } else { "medium" };
-        let score = 100 + alias_count;
-        (priority, score)
-    } else {
-        let priority = if alias_count >= 4 { "medium" } else { "low" };
-        (priority, alias_count)
-    }
-}
-
-fn alias_priority_reason(alias_count: i64, missing_triggers: bool) -> String {
-    if missing_triggers {
-        format!("missing triggers across {alias_count} alias paths")
-    } else {
-        format!("covered by triggers across {alias_count} alias paths")
-    }
-}
-
-fn infer_alias_keywords_from_paths(paths: &[(String, String)]) -> Vec<String> {
-    let mut keywords = BTreeSet::new();
-    for (_, path) in paths {
-        for segment in path.split('/') {
-            for token in segment.split(['-', '_']) {
-                let candidate = token.trim().to_lowercase();
-                if candidate.len() >= 2 && candidate.chars().any(|ch| ch.is_ascii_alphabetic()) {
-                    keywords.insert(candidate);
-                }
-            }
-        }
-    }
-
-    keywords.into_iter().take(3).collect()
 }
 
 fn suggestion_command(node_uri: &str, suggested_keywords: &[String]) -> String {

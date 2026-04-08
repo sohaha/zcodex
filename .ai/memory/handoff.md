@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T08:29:06.307Z
-- 本轮摘要：完成 zmemory a2：补齐 runtime namespace 配置合同、namespace 复合索引迁移与 core/zmemory 覆盖测试；已通过定向测试与 issue 校验，等待按相关文件单独提交。
+- 更新时间：2026-04-08T09:00:09.909Z
+- 本轮摘要：完成 zmemory a3：新增 review groups/diff/rollback target/recent audit 内部合同，并让 system://alias 与 snapshot 共享同一主 URI 选择逻辑；已通过 codex-zmemory 定向测试与 issue 校验，等待单独提交。
 
 ## 待确认问题
 

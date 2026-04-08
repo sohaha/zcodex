@@ -91,6 +91,21 @@ pub(crate) struct ChangeSetRecord {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ReviewNodeSnapshotContract {
+    pub(crate) uri: String,
+    pub(crate) node_uuid: String,
+    pub(crate) memory_id: i64,
+    pub(crate) content: String,
+    pub(crate) priority: i64,
+    pub(crate) disclosure: Option<String>,
+    pub(crate) keywords: Vec<String>,
+    pub(crate) aliases: Vec<NodeAliasContract>,
+    pub(crate) children: Vec<NodeChildContract>,
+    pub(crate) alias_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ReviewGroupContract {
     pub(crate) node_uuid: String,
     pub(crate) domain: String,
@@ -130,6 +145,26 @@ pub(crate) struct AliasReviewViewContract {
     pub(crate) coverage_percent: i64,
     pub(crate) recommendations: Vec<ReviewRecommendationContract>,
     pub(crate) entries: Vec<ReviewGroupContract>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReviewRollbackTargetContract {
+    pub(crate) id: i64,
+    pub(crate) content: String,
+    pub(crate) deprecated: bool,
+    pub(crate) migrated_to: Option<i64>,
+    pub(crate) created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReviewGroupDiffContract {
+    pub(crate) group: ReviewGroupContract,
+    pub(crate) snapshot: ReviewNodeSnapshotContract,
+    pub(crate) changeset: ChangeSetRecord,
+    pub(crate) rollback_targets: Vec<ReviewRollbackTargetContract>,
+    pub(crate) recent_audit_entries: Vec<AuditEntryContract>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

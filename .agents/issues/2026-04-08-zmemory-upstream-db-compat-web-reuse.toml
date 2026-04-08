@@ -58,10 +58,10 @@ done_when = "本地数据层已能支撑或明确映射上游 `review groups -> 
 validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
 regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-zmemory --quiet"
 regress_timing = "before_fanout"
-status = "todo"
-validate_status = "not_run"
-regress_status = "not_run"
-notes = "若最终决定保留本地扩展数据结构，也必须在本 issue 内明确哪些字段属于上游兼容合同，哪些仅为本地附加信号，避免后续 adapter 层重新发明 review 语义。"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成 a3：新增 `service::review`，把 alias review groups、node snapshot、changeset history、rollback targets 与 recent audit entries 收敛为统一的 typed internal contract，供后续 adapter 直接消费；并让 `system://alias` 改为复用同一 review group builder，保证 group 列表和 diff/snapshot 使用同一 primary URI 选择逻辑，不再出现列表与 diff 指向不同主路径的隐式分叉。maintenance 侧继续沿用既有 `stats/doctor/rebuild-search` 合同，因此当前缺口主要已从“数据语义不明确”收敛为“尚未暴露 HTTP adapter”。已执行 `cd /workspace/codex-rs && just fmt`、`cargo nextest run -p codex-zmemory`，随后执行 `just fix -p codex-zmemory` 做收尾静态检查，未在 fix 后重跑测试。"
 
 [[issue]]
 id = "a4"
