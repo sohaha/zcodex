@@ -7,18 +7,18 @@ use serde_json::json;
 
 mod alias;
 mod batch;
-mod common;
+pub(crate) mod common;
 pub(crate) mod contracts;
 mod create;
 mod delete;
 mod export;
-mod history;
+pub(crate) mod history;
 mod import;
-mod index;
+pub(crate) mod index;
 mod read;
 pub(crate) mod review;
 mod search;
-mod snapshot;
+pub(crate) mod snapshot;
 pub(crate) mod stats;
 mod update;
 

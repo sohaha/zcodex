@@ -195,6 +195,15 @@ impl ZmemoryConfig {
     pub fn supports_namespace_selection(&self) -> bool {
         true
     }
+
+    pub fn with_namespace(&self, namespace: Option<String>) -> Self {
+        Self::new_with_settings(
+            self.codex_home.clone(),
+            self.workspace_base.clone(),
+            self.path_resolution.clone(),
+            self.settings.clone().with_namespace(namespace),
+        )
+    }
 }
 
 impl ZmemorySettings {

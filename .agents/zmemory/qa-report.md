@@ -120,3 +120,21 @@ dependencies: [tech-review, tasks]
   - `cargo test -p codex-zmemory search_uses_token_boundaries_instead_of_raw_cjk_substrings --quiet` ✅
 - 说明：
   - 本轮 docs/skill 变更未新增 Rust 行为，因此未重复扩跑更大矩阵；CLI 端到端仍建议在干净环境里复核，以避免当前工作区无关构建噪音。
+
+## 2026-04-08 a4 compat adapter 验证
+- 本轮新增 `codex-rs/zmemory/src/compat/*` 与 `codex-rs/cli/src/zmemory_compat_server.rs`，落地薄兼容层：`codex zmemory serve-compat` 现在可直接暴露 `/api/browse/*`、`/api/review/groups*`、`/api/maintenance/*`。
+- 手工验证先暴露出真实启动缺陷：兼容层路由仍用了旧 axum `:param` 语法，服务启动即 panic；修复为 `{param}` 后，兼容层可稳定启动。
+- 手工链路使用临时 `CODEX_HOME=/workspace/.tmp/zmemory-compat-a4/home` 种子数据，先用 CLI 创建 `core://workspace`、alias、trigger 与更新历史，再读取 `system://workspace` 确认实际 dbPath 为 `/workspace/.tmp/zmemory-compat-a4/home/.../zmemory.db`。
+- 随后用同一 `codex-home` 启动 `zmemory serve-compat`，并通过 `curl` 验证：
+  - `/api/browse/node?domain=core&path=workspace` 返回的 `uri/node_uuid/content/priority/glossary_keywords` 与 CLI `read core://workspace` 一致；
+  - `/api/review/groups` 与 `/api/review/groups/{node_uuid}/diff` 指向同一 node，diff 能看到 `before_content=compat v1`、`current_content=compat v2`、alias 与 glossary 变化；
+  - `/api/maintenance/stats` 的 `active_paths/unique_nodes/glossary_keywords/orphaned_memories/deprecated_memories` 与 CLI `zmemory stats --json` 一致。
+- 自动化验证：
+  - `cd /workspace/codex-rs && cargo nextest run -p codex-cli --test zmemory` ✅
+  - 本轮 route 修复前，compat 主体代码已执行 `cd /workspace/codex-rs && cargo nextest run -p codex-zmemory` ✅
+- 收尾静态检查：
+  - `cd /workspace/codex-rs && just fix -p codex-zmemory` ✅（仅自动收敛 compat 文件的 clippy 小修，按仓库规则未在 fix 后重跑测试）
+  - `cd /workspace/codex-rs && just fix -p codex-cli` ❌，当前被工作区既有 `cli/src/tldr_cmd.rs` 中 `AnalysisUnitDetail` / `EmbeddingUnit` 缺少新字段初始化阻塞，非本轮 compat adapter 引入
+- 当前明确保留的缺口：
+  - review 写接口仍显式返回 `501`，当前只支持 inspection，不假装支持 rollback/approve；
+  - 若后续要推进 a5，优先补 review 写语义的真实落地，再做上游 web 全链路复用。

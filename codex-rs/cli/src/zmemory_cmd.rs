@@ -4,6 +4,10 @@ use clap::Subcommand;
 use clap::ValueEnum;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::find_codex_home;
+use codex_zmemory::compat::CompatService;
+use codex_zmemory::config::ZmemoryConfig as RuntimeZmemoryConfig;
+use codex_zmemory::path_resolution::resolve_workspace_base_path;
+use codex_zmemory::resolve_zmemory_path;
 use codex_zmemory::tool_api::ZmemoryToolAction;
 use codex_zmemory::tool_api::ZmemoryToolCallParam;
 use codex_zmemory::tool_api::run_zmemory_tool_with_context;
@@ -59,6 +63,9 @@ pub enum ZmemorySubcommand {
     RebuildSearch(ZmemoryOutputCommand),
     /// 导出内置系统视图。
     Export(ZmemoryExportCommand),
+    /// 启动上游 web 兼容 API 适配层。
+    #[command(name = "serve-compat")]
+    ServeCompat(ZmemoryServeCompatCommand),
 }
 
 #[derive(Debug, Parser)]
@@ -241,6 +248,14 @@ pub struct ZmemoryExportCommand {
     pub output: ZmemoryOutputCommand,
 }
 
+#[derive(Debug, Parser)]
+pub struct ZmemoryServeCompatCommand {
+    #[arg(long, default_value = "127.0.0.1:3030", value_name = "地址")]
+    pub bind: String,
+    #[command(flatten)]
+    pub output: ZmemoryOutputCommand,
+}
+
 pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
     let (args, output) = match cli.subcommand {
         ZmemorySubcommand::Read(command) => (
@@ -398,6 +413,36 @@ pub async fn run_zmemory_command(cli: ZmemoryCli) -> Result<()> {
             },
             command.output,
         ),
+        ZmemorySubcommand::ServeCompat(command) => {
+            let codex_home = command.output.codex_home.unwrap_or(find_codex_home()?);
+            let cwd = std::env::current_dir()?;
+            let config = ConfigBuilder::default()
+                .codex_home(codex_home.clone())
+                .fallback_cwd(Some(cwd.clone()))
+                .build()
+                .await?;
+            let workspace_base = resolve_workspace_base_path(config.cwd.as_path())?;
+            let path_resolution = resolve_zmemory_path(
+                &codex_home,
+                config.cwd.as_path(),
+                config.zmemory.path.as_deref(),
+            )?;
+            let runtime_config = RuntimeZmemoryConfig::new_with_settings(
+                codex_home,
+                workspace_base,
+                path_resolution,
+                config.zmemory.to_runtime_settings(),
+            );
+            println!(
+                "zmemory compat adapter listening on http://{}",
+                command.bind
+            );
+            return crate::zmemory_compat_server::serve_compat(
+                command.bind,
+                CompatService::new(runtime_config),
+            )
+            .await;
+        }
     };
 
     let codex_home = output.codex_home.unwrap_or(find_codex_home()?);

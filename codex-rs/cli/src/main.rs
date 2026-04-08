@@ -47,6 +47,7 @@ mod tldr_cmd;
 #[cfg(not(windows))]
 mod wsl_paths;
 mod zmemory_cmd;
+mod zmemory_compat_server;
 
 use crate::mcp_cmd::McpCli;
 use crate::tldr_cmd::TldrCli;

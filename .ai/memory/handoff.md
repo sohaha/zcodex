@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T09:00:09.909Z
-- 本轮摘要：完成 zmemory a3：新增 review groups/diff/rollback target/recent audit 内部合同，并让 system://alias 与 snapshot 共享同一主 URI 选择逻辑；已通过 codex-zmemory 定向测试与 issue 校验，等待单独提交。
+- 更新时间：2026-04-08T10:00:00.937Z
+- 本轮摘要：完成 zmemory a4：新增 compat adapter 与 codex zmemory serve-compat，修复 axum 路由语法 panic，已用临时 CODEX_HOME 手工验证 /api/browse、/api/review/groups、/api/review/groups/{uuid}/diff、/api/maintenance/stats 与同库 CLI 一致；cargo nextest run -p codex-cli --test zmemory 通过，just fix -p codex-zmemory 通过，just fix -p codex-cli 被无关 tldr_cmd 编译错误阻塞。
 
 ## 待确认问题
 
