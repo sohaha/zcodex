@@ -1717,6 +1717,10 @@ async fn zmemory_function_workspace_view_distinguishes_defaults_from_explicit_ru
     assert_eq!(payload["result"]["view"]["view"], "workspace");
     assert_eq!(payload["result"]["view"]["hasExplicitZmemoryPath"], true);
     assert_eq!(payload["result"]["view"]["source"], "explicit");
+    assert_eq!(
+        payload["result"]["view"]["workspaceBase"],
+        json!(test.cwd_path().display().to_string())
+    );
     assert_eq!(payload["result"]["view"]["dbPathDiffers"], true);
     assert_eq!(
         payload["result"]["view"]["defaultDbPath"],

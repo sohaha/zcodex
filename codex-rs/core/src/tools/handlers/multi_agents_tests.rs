@@ -2,6 +2,8 @@ use super::*;
 use crate::ThreadManager;
 use crate::codex::TurnContext;
 use crate::codex::make_session_and_context;
+use crate::config::Config;
+use crate::config::ConfigBuilder;
 use crate::config::DEFAULT_AGENT_MAX_DEPTH;
 use crate::function_tool::FunctionCallError;
 use crate::session_prefix::format_subagent_notification_message;
@@ -44,14 +46,17 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::user_input::UserInput;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use core_test_support::TempDirExt;
 use pretty_assertions::assert_eq;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use tempfile::TempDir;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
@@ -88,6 +93,84 @@ fn thread_manager() -> ThreadManager {
         CodexAuth::from_api_key("dummy"),
         built_in_model_providers(/* openai_base_url */ /*openai_base_url*/ None)["openai"].clone(),
     )
+}
+
+struct ProjectScopedZmemoryFixture {
+    _home: TempDir,
+    _workspace: TempDir,
+    nested: AbsolutePathBuf,
+    base_config: Config,
+    project_config: Config,
+}
+
+async fn prepare_project_scoped_zmemory_fixture() -> ProjectScopedZmemoryFixture {
+    let home = tempfile::tempdir().expect("create codex home");
+    let workspace = tempfile::tempdir().expect("create workspace");
+    let nested = AbsolutePathBuf::from_absolute_path(workspace.path().join("nested"))
+        .expect("nested path should be absolute");
+    let dot_codex = workspace.path().join(".codex");
+    let global_db_path = home.path().join("global-zmemory").join("memory.db");
+    let project_core_memory_uris = [
+        "core://agent/project_manual",
+        "core://my_user/project_preferences",
+        "core://agent/my_user/project_contract",
+    ];
+
+    fs::create_dir_all(workspace.path().join(".git")).expect("create project marker");
+    fs::create_dir_all(&nested).expect("create nested workspace");
+    fs::create_dir_all(&dot_codex).expect("create project config dir");
+    fs::create_dir_all(
+        global_db_path
+            .parent()
+            .expect("global zmemory path should have a parent"),
+    )
+    .expect("create global zmemory dir");
+
+    fs::write(
+        home.path().join("config.toml"),
+        format!(
+            "[zmemory]\npath = \"{}\"\n\n[projects.\"{}\"]\ntrust_level = \"trusted\"\n",
+            global_db_path.display(),
+            workspace.path().display()
+        ),
+    )
+    .expect("write home config");
+    fs::write(
+        dot_codex.join("config.toml"),
+        format!(
+            r#"[zmemory]
+valid_domains = ["core", "project"]
+core_memory_uris = [
+  "{}",
+  "{}",
+  "{}",
+]
+"#,
+            project_core_memory_uris[0], project_core_memory_uris[1], project_core_memory_uris[2]
+        ),
+    )
+    .expect("write project config");
+
+    let base_config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .fallback_cwd(Some(home.path().to_path_buf()))
+        .build()
+        .await
+        .expect("load base config");
+    let project_config = ConfigBuilder::default()
+        .codex_home(home.path().to_path_buf())
+        .fallback_cwd(Some(nested.clone().to_path_buf()))
+        .build()
+        .await
+        .expect("load project config");
+
+    ProjectScopedZmemoryFixture {
+        _home: home,
+        _workspace: workspace,
+        nested,
+        base_config,
+        project_config,
+    }
 }
 
 fn history_contains_inter_agent_communication(
@@ -3359,4 +3442,99 @@ async fn build_agent_resume_config_clears_base_instructions() {
         .set(turn.sandbox_policy.get().clone())
         .expect("sandbox policy set");
     assert_eq!(config, expected);
+}
+
+#[tokio::test]
+async fn build_agent_spawn_config_reloads_project_scoped_zmemory_profile_for_turn_cwd_override() {
+    let fixture = prepare_project_scoped_zmemory_fixture().await;
+    let (_session, mut turn) = make_session_and_context().await;
+    let base_instructions = BaseInstructions {
+        text: "base".to_string(),
+    };
+
+    turn.config = Arc::new(fixture.base_config.clone());
+    turn.cwd = fixture.nested.clone();
+
+    let config = build_agent_spawn_config(&base_instructions, &turn)
+        .await
+        .expect("spawn config");
+
+    let mut expected = fixture.base_config.clone();
+    expected.zmemory = fixture.project_config.zmemory.clone();
+    expected.agent_max_threads = fixture.project_config.agent_max_threads;
+    expected.agent_max_depth = fixture.project_config.agent_max_depth;
+    expected.agent_job_max_runtime_seconds = fixture.project_config.agent_job_max_runtime_seconds;
+    expected.agent_roles = fixture.project_config.agent_roles.clone();
+    expected.base_instructions = Some(base_instructions.text);
+    expected.model = Some(turn.model_info.slug.clone());
+    expected.model_provider = turn.provider.clone();
+    expected.model_reasoning_effort = turn.reasoning_effort;
+    expected.model_reasoning_summary = Some(turn.reasoning_summary);
+    expected.developer_instructions = turn.developer_instructions.clone();
+    expected.compact_prompt = turn.compact_prompt.clone();
+    expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
+    expected.codex_linux_sandbox_exe = turn.codex_linux_sandbox_exe.clone();
+    expected.cwd = turn.cwd.clone();
+    expected
+        .permissions
+        .approval_policy
+        .set(turn.approval_policy.value())
+        .expect("approval policy set");
+    expected
+        .permissions
+        .sandbox_policy
+        .set(turn.sandbox_policy.get().clone())
+        .expect("sandbox policy set");
+    expected.permissions.file_system_sandbox_policy = turn.file_system_sandbox_policy.clone();
+    expected.permissions.network_sandbox_policy = turn.network_sandbox_policy;
+
+    assert_eq!(config, expected);
+    assert_eq!(config.zmemory, fixture.project_config.zmemory);
+    assert_eq!(config.agent_roles, fixture.project_config.agent_roles);
+}
+
+#[tokio::test]
+async fn build_agent_resume_config_reloads_project_scoped_zmemory_profile_for_turn_cwd_override() {
+    let fixture = prepare_project_scoped_zmemory_fixture().await;
+    let (_session, mut turn) = make_session_and_context().await;
+
+    turn.config = Arc::new(fixture.base_config.clone());
+    turn.cwd = fixture.nested.clone();
+
+    let config = build_agent_resume_config(&turn, /*child_depth*/ 0)
+        .await
+        .expect("resume config");
+
+    let mut expected = fixture.base_config.clone();
+    expected.zmemory = fixture.project_config.zmemory.clone();
+    expected.agent_max_threads = fixture.project_config.agent_max_threads;
+    expected.agent_max_depth = fixture.project_config.agent_max_depth;
+    expected.agent_job_max_runtime_seconds = fixture.project_config.agent_job_max_runtime_seconds;
+    expected.agent_roles = fixture.project_config.agent_roles.clone();
+    expected.base_instructions = None;
+    expected.model = Some(turn.model_info.slug.clone());
+    expected.model_provider = turn.provider.clone();
+    expected.model_reasoning_effort = turn.reasoning_effort;
+    expected.model_reasoning_summary = Some(turn.reasoning_summary);
+    expected.developer_instructions = turn.developer_instructions.clone();
+    expected.compact_prompt = turn.compact_prompt.clone();
+    expected.permissions.shell_environment_policy = turn.shell_environment_policy.clone();
+    expected.codex_linux_sandbox_exe = turn.codex_linux_sandbox_exe.clone();
+    expected.cwd = turn.cwd.clone();
+    expected
+        .permissions
+        .approval_policy
+        .set(turn.approval_policy.value())
+        .expect("approval policy set");
+    expected
+        .permissions
+        .sandbox_policy
+        .set(turn.sandbox_policy.get().clone())
+        .expect("sandbox policy set");
+    expected.permissions.file_system_sandbox_policy = turn.file_system_sandbox_policy.clone();
+    expected.permissions.network_sandbox_policy = turn.network_sandbox_policy;
+
+    assert_eq!(config, expected);
+    assert_eq!(config.zmemory, fixture.project_config.zmemory);
+    assert_eq!(config.agent_roles, fixture.project_config.agent_roles);
 }
