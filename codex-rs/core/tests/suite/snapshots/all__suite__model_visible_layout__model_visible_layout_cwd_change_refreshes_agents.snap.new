@@ -1,0 +1,35 @@
+---
+source: core/tests/suite/model_visible_layout.rs
+assertion_line: 289
+expression: "format_labeled_requests_snapshot(\"第二轮切换到带有不同 AGENTS.md 的目录后，序列化的 AGENTS 包装消息会刷新为新的项目指令。\",\n&[(\"第一个请求（agents_one）\", &requests[0]),\n(\"第二个请求（agents_two cwd）\", &requests[1]),])"
+---
+Scenario: 第二轮切换到带有不同 AGENTS.md 的目录后，序列化的 AGENTS 包装消息会刷新为新的项目指令。
+
+## 第一个请求（agents_one）
+00:message/developer[3]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] <ZMEMORY_INSTRUCTIONS>
+    [03] <SKILLS_INSTRUCTIONS>
+01:message/user[2]:
+    [01] <AGENTS_MD>
+    [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
+02:message/user:进入 agents_one 的第一轮
+
+## 第二个请求（agents_two cwd）
+00:message/developer[3]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] <ZMEMORY_INSTRUCTIONS>
+    [03] <SKILLS_INSTRUCTIONS>
+01:message/user[2]:
+    [01] <AGENTS_MD>
+    [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
+02:message/user:进入 agents_one 的第一轮
+03:message/assistant:第一轮完成
+04:message/developer[3]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] <ZMEMORY_INSTRUCTIONS>
+    [03] <SKILLS_INSTRUCTIONS>
+05:message/user[2]:
+    [01] <AGENTS_MD>
+    [02] <ENVIRONMENT_CONTEXT:cwd=<CWD>>
+06:message/user:切到 agents_two 的第二轮
