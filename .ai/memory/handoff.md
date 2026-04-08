@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T10:50:35.241Z
-- 本轮摘要：2026-04-08 完成 zmemory a5 收尾：compat adapter 补齐无 /api 前缀路由、review queue 过滤 orphan，并落地最小 review 写语义（approve/clear-all/rollback）；已用真实 upstream frontend 对接本地 compat adapter 与同一 dbPath，验证 /review approve/rollback、/memory browse、/governance-lab rebuild-search、/maintenance 主链路；已回写 issue、QA、STATE、known-risks 与 docs，保留已验证剩余缺口：/browse/glossary POST/DELETE 尚未实现。
+- 更新时间：2026-04-08T11:06:00.466Z
+- 本轮摘要：2026-04-08 为 zmemory compat review 补细粒度回归：在 codex-rs/zmemory/src/compat/review.rs 新增 approve、clear-all、rollback（已有节点/新建节点）与 orphan 过滤 5 条单元测试；已执行 cargo nextest run -p codex-zmemory compat::review::tests、cargo nextest run -p codex-zmemory，并跑过 just fix -p codex-zmemory。
 
 ## 待确认问题
 

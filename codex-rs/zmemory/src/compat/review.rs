@@ -656,3 +656,329 @@ fn glossary_changes(
     }
     changes
 }
+
+#[cfg(test)]
+mod tests {
+    use super::CompatService;
+    use super::pending_audit_entries;
+    use crate::config::ZmemoryConfig;
+    use crate::path_resolution::resolve_workspace_base_path;
+    use crate::path_resolution::resolve_zmemory_path;
+    use crate::tool_api::ZmemoryToolAction;
+    use crate::tool_api::ZmemoryToolCallParam;
+    use pretty_assertions::assert_eq;
+    use rusqlite::Connection;
+    use rusqlite::params;
+    use serde_json::Value;
+    use tempfile::TempDir;
+
+    fn compat_service() -> (TempDir, CompatService, ZmemoryConfig) {
+        let dir = TempDir::new().expect("tempdir");
+        let resolution =
+            resolve_zmemory_path(dir.path(), dir.path(), None).expect("resolve zmemory path");
+        let workspace_base =
+            resolve_workspace_base_path(dir.path()).expect("resolve workspace base");
+        let config = ZmemoryConfig::new(dir.path().to_path_buf(), workspace_base, resolution);
+        let service = CompatService::new(config.clone());
+        (dir, service, config)
+    }
+
+    fn execute(config: &ZmemoryConfig, params: ZmemoryToolCallParam) -> Value {
+        crate::service::execute_action(config, &params).expect("action should succeed")
+    }
+
+    fn create(config: &ZmemoryConfig, uri: &str, content: &str) {
+        let _ = execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Create,
+                uri: Some(uri.to_string()),
+                content: Some(content.to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        );
+    }
+
+    fn update_append(config: &ZmemoryConfig, uri: &str, append: &str) {
+        let _ = execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Update,
+                uri: Some(uri.to_string()),
+                append: Some(append.to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        );
+    }
+
+    fn add_alias(config: &ZmemoryConfig, source_uri: &str, alias_uri: &str) {
+        let _ = execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::AddAlias,
+                target_uri: Some(source_uri.to_string()),
+                new_uri: Some(alias_uri.to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        );
+    }
+
+    fn manage_triggers(config: &ZmemoryConfig, uri: &str, added: &[&str]) {
+        let _ = execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::ManageTriggers,
+                uri: Some(uri.to_string()),
+                add: Some(added.iter().map(ToString::to_string).collect()),
+                ..ZmemoryToolCallParam::default()
+            },
+        );
+    }
+
+    fn delete_path(config: &ZmemoryConfig, uri: &str) {
+        let _ = execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::DeletePath,
+                uri: Some(uri.to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        );
+    }
+
+    fn read_content(config: &ZmemoryConfig, uri: &str) -> String {
+        execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Read,
+                uri: Some(uri.to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )["result"]["content"]
+            .as_str()
+            .expect("content should exist")
+            .to_string()
+    }
+
+    fn search_match_count(config: &ZmemoryConfig, query: &str) -> i64 {
+        execute(
+            config,
+            ZmemoryToolCallParam {
+                action: ZmemoryToolAction::Search,
+                query: Some(query.to_string()),
+                ..ZmemoryToolCallParam::default()
+            },
+        )["result"]["matchCount"]
+            .as_i64()
+            .expect("match count should exist")
+    }
+
+    fn node_uuid_for_path(conn: &Connection, namespace: &str, domain: &str, path: &str) -> String {
+        conn.query_row(
+            "SELECT e.child_uuid
+             FROM paths p
+             JOIN edges e ON e.id = p.edge_id AND e.namespace = p.namespace
+             WHERE p.namespace = ?1 AND p.domain = ?2 AND p.path = ?3",
+            params![namespace, domain, path],
+            |row| row.get(0),
+        )
+        .expect("node uuid for path")
+    }
+
+    fn latest_audit_action(conn: &Connection, namespace: &str, node_uuid: &str) -> String {
+        conn.query_row(
+            "SELECT action
+             FROM audit_log
+             WHERE namespace = ?1 AND node_uuid = ?2
+             ORDER BY id DESC
+             LIMIT 1",
+            params![namespace, node_uuid],
+            |row| row.get(0),
+        )
+        .expect("latest audit action")
+    }
+
+    #[test]
+    fn approve_review_group_clears_pending_entries() {
+        let (_dir, service, config) = compat_service();
+        create(&config, "core://approve-target", "Approval target");
+        update_append(&config, "core://approve-target", " updated");
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "approve-target");
+        assert_eq!(service.review_groups(None).expect("review groups").len(), 1);
+        drop(conn);
+
+        let message = service
+            .approve_review_group(None, &node_uuid)
+            .expect("approve should succeed");
+        assert_eq!(
+            message,
+            format!("Approved node '{node_uuid}' (2 actions cleared)")
+        );
+        assert!(
+            service
+                .review_groups(None)
+                .expect("review groups")
+                .is_empty()
+        );
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        assert!(
+            pending_audit_entries(&conn, config.namespace(), &node_uuid)
+                .expect("pending entries")
+                .is_empty()
+        );
+        assert_eq!(
+            latest_audit_action(&conn, config.namespace(), &node_uuid),
+            "review-approve"
+        );
+    }
+
+    #[test]
+    fn clear_review_groups_marks_each_group_resolved() {
+        let (_dir, service, config) = compat_service();
+        create(&config, "core://clear-one", "First");
+        create(&config, "core://clear-two", "Second");
+
+        let message = service
+            .clear_review_groups(None)
+            .expect("clear all should succeed");
+        assert_eq!(message, "All changes integrated (2 groups cleared)");
+        assert!(
+            service
+                .review_groups(None)
+                .expect("review groups")
+                .is_empty()
+        );
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        let clear_all_markers = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM audit_log
+                 WHERE namespace = ?1
+                   AND action = 'review-approve'
+                   AND json_extract(details, '$.clearAll') = 1",
+                [config.namespace()],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("clear-all markers");
+        assert_eq!(clear_all_markers, 2);
+    }
+
+    #[test]
+    fn rollback_review_group_restores_existing_node_state() {
+        let (_dir, service, config) = compat_service();
+        create(&config, "core://rollback-target", "Rollback base");
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "rollback-target");
+        drop(conn);
+        let _ = service
+            .approve_review_group(None, &node_uuid)
+            .expect("approve baseline");
+
+        update_append(&config, "core://rollback-target", " v2");
+        add_alias(&config, "core://rollback-target", "alias://rollback-copy");
+        manage_triggers(
+            &config,
+            "core://rollback-target",
+            &["rollback-trigger-only"],
+        );
+        assert_eq!(search_match_count(&config, "rollback-trigger-only"), 1);
+
+        let response = service
+            .rollback_review_group(None, &node_uuid)
+            .expect("rollback should succeed");
+        assert_eq!(response.node_uuid, node_uuid);
+        assert!(response.success);
+        assert_eq!(response.message, format!("Rolled back node '{node_uuid}'"));
+        assert!(
+            service
+                .review_groups(None)
+                .expect("review groups")
+                .is_empty()
+        );
+        assert_eq!(
+            read_content(&config, "core://rollback-target"),
+            "Rollback base"
+        );
+        assert_eq!(search_match_count(&config, "rollback-trigger-only"), 0);
+        assert!(
+            crate::service::execute_action(
+                &config,
+                &ZmemoryToolCallParam {
+                    action: ZmemoryToolAction::Read,
+                    uri: Some("alias://rollback-copy".to_string()),
+                    ..ZmemoryToolCallParam::default()
+                },
+            )
+            .is_err()
+        );
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        assert!(
+            pending_audit_entries(&conn, config.namespace(), &node_uuid)
+                .expect("pending entries")
+                .is_empty()
+        );
+        assert_eq!(
+            latest_audit_action(&conn, config.namespace(), &node_uuid),
+            "review-rollback"
+        );
+    }
+
+    #[test]
+    fn rollback_review_group_deletes_newly_created_node() {
+        let (_dir, service, config) = compat_service();
+        create(&config, "core://rollback-created", "Created during review");
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        let node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "rollback-created");
+        drop(conn);
+
+        let response = service
+            .rollback_review_group(None, &node_uuid)
+            .expect("rollback should succeed");
+        assert_eq!(response.message, format!("Rolled back node '{node_uuid}'"));
+        assert!(
+            service
+                .review_groups(None)
+                .expect("review groups")
+                .is_empty()
+        );
+        assert!(
+            crate::service::execute_action(
+                &config,
+                &ZmemoryToolCallParam {
+                    action: ZmemoryToolAction::Read,
+                    uri: Some("core://rollback-created".to_string()),
+                    ..ZmemoryToolCallParam::default()
+                },
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn review_groups_skip_orphan_nodes_without_diff() {
+        let (_dir, service, config) = compat_service();
+        create(&config, "core://valid-review", "Valid review");
+        update_append(&config, "core://valid-review", " updated");
+        create(&config, "core://orphan-review", "Orphan review");
+        delete_path(&config, "core://orphan-review");
+
+        let (conn, _) = service.connect(None).expect("service connection");
+        let valid_node_uuid = node_uuid_for_path(&conn, config.namespace(), "core", "valid-review");
+        let pending_nodes =
+            super::pending_review_node_uuids(&conn, config.namespace()).expect("pending nodes");
+        drop(conn);
+
+        assert_eq!(pending_nodes.len(), 2);
+        let groups = service.review_groups(None).expect("review groups");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].node_uuid, valid_node_uuid);
+        assert_eq!(groups[0].display_uri, "core://valid-review");
+    }
+}
