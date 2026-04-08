@@ -64,12 +64,25 @@ fn tool_parameter_description(
         .and_then(|tools| {
             tools.iter().find_map(|tool| {
                 if tool.get("name").and_then(Value::as_str) == Some(tool_name) {
-                    tool.get("parameters")
-                        .and_then(|parameters| parameters.get("properties"))
-                        .and_then(|properties| properties.get(parameter_name))
-                        .and_then(|parameter| parameter.get("description"))
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
+                    let parameters = tool.get("parameters")?;
+                    parameters
+                        .get("properties")
+                        .into_iter()
+                        .chain(
+                            parameters
+                                .get("oneOf")
+                                .and_then(Value::as_array)
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|variant| variant.get("properties")),
+                        )
+                        .find_map(|properties| {
+                            properties
+                                .get(parameter_name)
+                                .and_then(|parameter| parameter.get("description"))
+                                .and_then(Value::as_str)
+                                .map(str::to_owned)
+                        })
                 } else {
                     None
                 }
@@ -185,22 +198,12 @@ async fn zmemory_tool_request_documents_defaults_and_workspace_views() -> Result
 
     let body = resp_mock.single_request().body_json();
     let tool_names = tool_names(&body);
-    let uri_description = tool_parameter_description(&body, "zmemory", "uri")
-        .expect("zmemory uri description should be present");
-    let limit_description = tool_parameter_description(&body, "zmemory", "limit")
-        .expect("zmemory limit description should be present");
+    let uri_description = tool_parameter_description(&body, "read_memory", "uri")
+        .expect("read_memory uri description should be present");
 
-    assert!(
-        uri_description.contains(
-            "system://boot|defaults|workspace|index|index/<domain>|paths|paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>"
-        )
-    );
+    assert!(uri_description.contains("core://agent"));
+    assert!(uri_description.contains("system://boot"));
     assert!(uri_description.contains("system://paths"));
-    assert!(uri_description.contains("产品默认值"));
-    assert!(uri_description.contains("当前工作区运行时事实"));
-    assert!(limit_description.contains("system://boot"));
-    assert!(limit_description.contains("paths"));
-    assert!(limit_description.contains("alias"));
     assert!(tool_names.contains(&"read_memory".to_string()));
     assert!(tool_names.contains(&"search_memory".to_string()));
 
@@ -254,7 +257,15 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
     assert_eq!(payload["action"], "stats");
     assert_eq!(
         sorted_object_keys(&payload["result"]["pathResolution"]),
-        vec!["dbPath", "reason", "source", "workspaceKey"]
+        vec![
+            "dbPath",
+            "namespace",
+            "namespaceSource",
+            "reason",
+            "source",
+            "supportsNamespaceSelection",
+            "workspaceKey",
+        ]
     );
     assert_eq!(
         payload["result"]["dbPath"],
@@ -271,6 +282,15 @@ async fn zmemory_function_stats_exposes_strict_path_resolution_shape() -> Result
     assert_ne!(
         payload["result"]["pathResolution"]["workspaceKey"],
         Value::Null
+    );
+    assert_eq!(payload["result"]["pathResolution"]["namespace"], "");
+    assert_eq!(
+        payload["result"]["pathResolution"]["namespaceSource"],
+        "implicitDefault"
+    );
+    assert_eq!(
+        payload["result"]["pathResolution"]["supportsNamespaceSelection"],
+        false
     );
 
     Ok(())
@@ -1357,7 +1377,7 @@ async fn zmemory_mcp_delete_memory_tool_preserves_other_paths_for_same_node() ->
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
+async fn zmemory_function_add_alias_returns_bounded_json() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -1388,9 +1408,10 @@ async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
             ev_response_created("resp-1"),
             ev_function_call(
                 "call-add-alias",
-                "add_alias",
+                "zmemory",
                 &serde_json::to_string(&json!({
-                    "new_uri": "alias://agent-profile",
+                    "action": "add-alias",
+                    "new_uri": "alias://agent-profile-copy",
                     "target_uri": "core://agent-profile",
                     "priority": 3
                 }))?,
@@ -1416,7 +1437,7 @@ async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
         .expect("function tool output should be present");
     let payload = extract_zmemory_json_block(&output);
     assert_eq!(payload["action"], "add-alias");
-    assert_eq!(payload["result"]["uri"], "alias://agent-profile");
+    assert_eq!(payload["result"]["uri"], "alias://agent-profile-copy");
     assert_eq!(payload["result"]["targetUri"], "core://agent-profile");
 
     let read_back = run_zmemory_tool_with_context(
@@ -1426,7 +1447,7 @@ async fn zmemory_mcp_add_alias_tool_maps_to_add_alias_action() -> Result<()> {
         None,
         ZmemoryToolCallParam {
             action: ZmemoryToolAction::Read,
-            uri: Some("alias://agent-profile".to_string()),
+            uri: Some("alias://agent-profile-copy".to_string()),
             ..ZmemoryToolCallParam::default()
         },
     )?;
