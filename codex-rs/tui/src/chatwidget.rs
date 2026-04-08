@@ -7121,6 +7121,7 @@ impl ChatWidget {
                     self.on_realtime_conversation_closed(ev);
                 }
             }
+            EventMsg::RealtimeConversationSdp(_) => {}
             EventMsg::ItemCompleted(event) => {
                 let item = event.item;
                 if !from_replay && let codex_protocol::items::TurnItem::UserMessage(item) = &item {
