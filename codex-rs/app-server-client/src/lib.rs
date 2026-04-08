@@ -1107,6 +1107,9 @@ mod tests {
                 items: Vec::new(),
                 status: codex_app_server_protocol::TurnStatus::Completed,
                 error: None,
+                started_at: None,
+                completed_at: Some(0),
+                duration_ms: Some(1),
             },
         })
     }
@@ -1881,6 +1884,9 @@ mod tests {
                             items: Vec::new(),
                             status: codex_app_server_protocol::TurnStatus::Completed,
                             error: None,
+                            started_at: None,
+                            completed_at: Some(0),
+                            duration_ms: None,
                         },
                     }
                 )

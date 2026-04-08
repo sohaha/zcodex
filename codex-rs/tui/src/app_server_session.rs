@@ -42,6 +42,7 @@ use codex_app_server_protocol::ThreadRealtimeAppendTextParams;
 use codex_app_server_protocol::ThreadRealtimeAppendTextResponse;
 use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStartResponse;
+use codex_app_server_protocol::ThreadRealtimeStartTransport;
 use codex_app_server_protocol::ThreadRealtimeStopParams;
 use codex_app_server_protocol::ThreadRealtimeStopResponse;
 use codex_app_server_protocol::ThreadResumeParams;
@@ -64,7 +65,9 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_core::config::Config;
-use codex_core::message_history;
+#[cfg(test)]
+use codex_core::message_history::append_entry as append_message_history_entry;
+use codex_core::message_history::history_metadata as message_history_metadata;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelAvailabilityNux;
@@ -74,6 +77,7 @@ use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::ConversationStartParams;
+use codex_protocol::protocol::ConversationStartTransport;
 use codex_protocol::protocol::ConversationTextParams;
 use codex_protocol::protocol::CreditsSnapshot;
 use codex_protocol::protocol::RateLimitSnapshot;
@@ -88,22 +92,31 @@ use color_eyre::eyre::WrapErr;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// Data collected during the TUI bootstrap phase that the main event loop
+/// needs to configure the UI, telemetry, and initial rate-limit prefetch.
+///
+/// Rate-limit snapshots are intentionally **not** included here; they are
+/// fetched asynchronously after bootstrap returns so that the TUI can render
+/// its first frame without waiting for the rate-limit round-trip.
 pub(crate) struct AppServerBootstrap {
-    pub(crate) account_auth_mode: Option<AuthMode>,
     pub(crate) account_email: Option<String>,
     pub(crate) auth_mode: Option<TelemetryAuthMode>,
     pub(crate) status_account_display: Option<StatusAccountDisplay>,
     pub(crate) plan_type: Option<codex_protocol::account::PlanType>,
+    /// Whether the configured model provider needs OpenAI-style auth. Combined
+    /// with `has_chatgpt_account` to decide if a startup rate-limit prefetch
+    /// should be fired.
+    pub(crate) requires_openai_auth: bool,
     pub(crate) default_model: String,
     pub(crate) feedback_audience: FeedbackAudience,
     pub(crate) has_chatgpt_account: bool,
     pub(crate) available_models: Vec<ModelPreset>,
-    pub(crate) rate_limit_snapshots: Vec<RateLimitSnapshot>,
 }
 
 pub(crate) struct AppServerSession {
     client: AppServerClient,
     next_request_id: i64,
+    remote_cwd_override: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,7 +163,17 @@ impl AppServerSession {
         Self {
             client,
             next_request_id: 1,
+            remote_cwd_override: None,
         }
+    }
+
+    pub(crate) fn with_remote_cwd_override(mut self, remote_cwd_override: Option<PathBuf>) -> Self {
+        self.remote_cwd_override = remote_cwd_override;
+        self
+    }
+
+    pub(crate) fn remote_cwd_override(&self) -> Option<&std::path::Path> {
+        self.remote_cwd_override.as_deref()
     }
 
     pub(crate) fn is_remote(&self) -> bool {
@@ -158,17 +181,7 @@ impl AppServerSession {
     }
 
     pub(crate) async fn bootstrap(&mut self, config: &Config) -> Result<AppServerBootstrap> {
-        let account_request_id = self.next_request_id();
-        let account: GetAccountResponse = self
-            .client
-            .request_typed(ClientRequest::GetAccount {
-                request_id: account_request_id,
-                params: GetAccountParams {
-                    refresh_token: false,
-                },
-            })
-            .await
-            .wrap_err("account/read failed during TUI bootstrap")?;
+        let account = self.read_account().await?;
         let model_request_id = self.next_request_id();
         let models: ModelListResponse = self
             .client
@@ -200,7 +213,6 @@ impl AppServerSession {
             .wrap_err("model/list returned no models for TUI bootstrap")?;
 
         let (
-            account_auth_mode,
             account_email,
             auth_mode,
             status_account_display,
@@ -209,7 +221,6 @@ impl AppServerSession {
             has_chatgpt_account,
         ) = match account.account {
             Some(Account::ApiKey {}) => (
-                Some(AuthMode::ApiKey),
                 None,
                 Some(TelemetryAuthMode::ApiKey),
                 Some(StatusAccountDisplay::ApiKey),
@@ -224,7 +235,6 @@ impl AppServerSession {
                     FeedbackAudience::External
                 };
                 (
-                    Some(AuthMode::Chatgpt),
                     Some(email.clone()),
                     Some(TelemetryAuthMode::Chatgpt),
                     Some(StatusAccountDisplay::ChatGpt {
@@ -236,48 +246,36 @@ impl AppServerSession {
                     true,
                 )
             }
-            None => (
-                None,
-                None,
-                None,
-                None,
-                None,
-                FeedbackAudience::External,
-                false,
-            ),
+            None => (None, None, None, None, FeedbackAudience::External, false),
         };
-        let rate_limit_snapshots = if account.requires_openai_auth && has_chatgpt_account {
-            let rate_limit_request_id = self.next_request_id();
-            match self
-                .client
-                .request_typed(ClientRequest::GetAccountRateLimits {
-                    request_id: rate_limit_request_id,
-                    params: None,
-                })
-                .await
-            {
-                Ok(rate_limits) => app_server_rate_limit_snapshots_to_core(rate_limits),
-                Err(err) => {
-                    tracing::warn!("account/rateLimits/read failed during TUI bootstrap: {err}");
-                    Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
-
         Ok(AppServerBootstrap {
-            account_auth_mode,
             account_email,
             auth_mode,
             status_account_display,
             plan_type,
+            requires_openai_auth: account.requires_openai_auth,
             default_model,
             feedback_audience,
             has_chatgpt_account,
             available_models,
-            rate_limit_snapshots,
         })
+    }
+
+    /// Fetches the current account info without refreshing the auth token.
+    ///
+    /// Used by both `bootstrap` (to populate the initial UI) and `get_login_status`
+    /// (to check auth mode without the overhead of a full bootstrap).
+    pub(crate) async fn read_account(&mut self) -> Result<GetAccountResponse> {
+        let account_request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::GetAccount {
+                request_id: account_request_id,
+                params: GetAccountParams {
+                    refresh_token: false,
+                },
+            })
+            .await
+            .wrap_err("account/read failed during TUI bootstrap")
     }
 
     pub(crate) async fn next_event(&mut self) -> Option<AppServerEvent> {
@@ -290,7 +288,11 @@ impl AppServerSession {
             .client
             .request_typed(ClientRequest::ThreadStart {
                 request_id,
-                params: thread_start_params_from_config(config, self.thread_params_mode()),
+                params: thread_start_params_from_config(
+                    config,
+                    self.thread_params_mode(),
+                    self.remote_cwd_override.as_deref(),
+                ),
             })
             .await
             .wrap_err("thread/start failed during TUI bootstrap")?;
@@ -311,6 +313,7 @@ impl AppServerSession {
                     config.clone(),
                     thread_id,
                     self.thread_params_mode(),
+                    self.remote_cwd_override.as_deref(),
                 ),
             })
             .await
@@ -332,6 +335,7 @@ impl AppServerSession {
                     config.clone(),
                     thread_id,
                     self.thread_params_mode(),
+                    self.remote_cwd_override.as_deref(),
                 ),
             })
             .await
@@ -641,6 +645,14 @@ impl AppServerSession {
                     thread_id: thread_id.to_string(),
                     prompt: params.prompt,
                     session_id: params.session_id,
+                    transport: params.transport.map(|transport| match transport {
+                        ConversationStartTransport::Websocket => {
+                            ThreadRealtimeStartTransport::Websocket
+                        }
+                        ConversationStartTransport::Webrtc { sdp } => {
+                            ThreadRealtimeStartTransport::Webrtc { sdp }
+                        }
+                    }),
                 },
             })
             .await
@@ -792,6 +804,7 @@ fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
             })
             .collect(),
         supports_personality: model.supports_personality,
+        additional_speed_tiers: model.additional_speed_tiers,
         is_default: model.is_default,
         upgrade,
         show_in_picker: !model.hidden,
@@ -839,11 +852,12 @@ fn sandbox_mode_from_policy(
 fn thread_start_params_from_config(
     config: &Config,
     thread_params_mode: ThreadParamsMode,
+    remote_cwd_override: Option<&std::path::Path>,
 ) -> ThreadStartParams {
     ThreadStartParams {
         model: config.model.clone(),
         model_provider: thread_params_mode.model_provider_from_config(config),
-        cwd: thread_cwd_from_config(config, thread_params_mode),
+        cwd: thread_cwd_from_config(config, thread_params_mode, remote_cwd_override),
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(config),
         sandbox: sandbox_mode_from_policy(config.permissions.sandbox_policy.get().clone()),
@@ -858,12 +872,13 @@ fn thread_resume_params_from_config(
     config: Config,
     thread_id: ThreadId,
     thread_params_mode: ThreadParamsMode,
+    remote_cwd_override: Option<&std::path::Path>,
 ) -> ThreadResumeParams {
     ThreadResumeParams {
         thread_id: thread_id.to_string(),
         model: config.model.clone(),
         model_provider: thread_params_mode.model_provider_from_config(&config),
-        cwd: thread_cwd_from_config(&config, thread_params_mode),
+        cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(&config),
         sandbox: sandbox_mode_from_policy(config.permissions.sandbox_policy.get().clone()),
@@ -877,12 +892,13 @@ fn thread_fork_params_from_config(
     config: Config,
     thread_id: ThreadId,
     thread_params_mode: ThreadParamsMode,
+    remote_cwd_override: Option<&std::path::Path>,
 ) -> ThreadForkParams {
     ThreadForkParams {
         thread_id: thread_id.to_string(),
         model: config.model.clone(),
         model_provider: thread_params_mode.model_provider_from_config(&config),
-        cwd: thread_cwd_from_config(&config, thread_params_mode),
+        cwd: thread_cwd_from_config(&config, thread_params_mode, remote_cwd_override),
         approval_policy: Some(config.permissions.approval_policy.value().into()),
         approvals_reviewer: approvals_reviewer_override_from_config(&config),
         sandbox: sandbox_mode_from_policy(config.permissions.sandbox_policy.get().clone()),
@@ -893,10 +909,16 @@ fn thread_fork_params_from_config(
     }
 }
 
-fn thread_cwd_from_config(config: &Config, thread_params_mode: ThreadParamsMode) -> Option<String> {
+fn thread_cwd_from_config(
+    config: &Config,
+    thread_params_mode: ThreadParamsMode,
+    remote_cwd_override: Option<&std::path::Path>,
+) -> Option<String> {
     match thread_params_mode {
         ThreadParamsMode::Embedded => Some(config.cwd.to_string_lossy().to_string()),
-        ThreadParamsMode::Remote => None,
+        ThreadParamsMode::Remote => {
+            remote_cwd_override.map(|cwd| cwd.to_string_lossy().to_string())
+        }
     }
 }
 
@@ -1050,7 +1072,7 @@ async fn thread_session_state_from_thread_response(
         .map(ThreadId::from_string)
         .transpose()
         .map_err(|err| format!("forked_from_id is invalid: {err}"))?;
-    let (history_log_id, history_entry_count) = message_history::history_metadata(config).await;
+    let (history_log_id, history_entry_count) = message_history_metadata(config).await;
     let history_entry_count = u64::try_from(history_entry_count).unwrap_or(u64::MAX);
 
     Ok(ThreadSessionState {
@@ -1143,26 +1165,76 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config = build_config(&temp_dir).await;
 
-        let params = thread_start_params_from_config(&config, ThreadParamsMode::Embedded);
+        let params = thread_start_params_from_config(
+            &config,
+            ThreadParamsMode::Embedded,
+            /*remote_cwd_override*/ None,
+        );
 
         assert_eq!(params.cwd, Some(config.cwd.to_string_lossy().to_string()));
         assert_eq!(params.model_provider, Some(config.model_provider_id));
     }
 
     #[tokio::test]
-    async fn thread_lifecycle_params_omit_local_overrides_for_remote_sessions() {
+    async fn thread_lifecycle_params_omit_cwd_without_remote_override_for_remote_sessions() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let config = build_config(&temp_dir).await;
         let thread_id = ThreadId::new();
 
-        let start = thread_start_params_from_config(&config, ThreadParamsMode::Remote);
-        let resume =
-            thread_resume_params_from_config(config.clone(), thread_id, ThreadParamsMode::Remote);
-        let fork = thread_fork_params_from_config(config, thread_id, ThreadParamsMode::Remote);
+        let start = thread_start_params_from_config(
+            &config,
+            ThreadParamsMode::Remote,
+            /*remote_cwd_override*/ None,
+        );
+        let resume = thread_resume_params_from_config(
+            config.clone(),
+            thread_id,
+            ThreadParamsMode::Remote,
+            /*remote_cwd_override*/ None,
+        );
+        let fork = thread_fork_params_from_config(
+            config,
+            thread_id,
+            ThreadParamsMode::Remote,
+            /*remote_cwd_override*/ None,
+        );
 
         assert_eq!(start.cwd, None);
         assert_eq!(resume.cwd, None);
         assert_eq!(fork.cwd, None);
+        assert_eq!(start.model_provider, None);
+        assert_eq!(resume.model_provider, None);
+        assert_eq!(fork.model_provider, None);
+    }
+
+    #[tokio::test]
+    async fn thread_lifecycle_params_forward_explicit_remote_cwd_override_for_remote_sessions() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = build_config(&temp_dir).await;
+        let thread_id = ThreadId::new();
+        let remote_cwd = PathBuf::from("repo/on/server");
+
+        let start = thread_start_params_from_config(
+            &config,
+            ThreadParamsMode::Remote,
+            Some(remote_cwd.as_path()),
+        );
+        let resume = thread_resume_params_from_config(
+            config.clone(),
+            thread_id,
+            ThreadParamsMode::Remote,
+            Some(remote_cwd.as_path()),
+        );
+        let fork = thread_fork_params_from_config(
+            config,
+            thread_id,
+            ThreadParamsMode::Remote,
+            Some(remote_cwd.as_path()),
+        );
+
+        assert_eq!(start.cwd.as_deref(), Some("repo/on/server"));
+        assert_eq!(resume.cwd.as_deref(), Some("repo/on/server"));
+        assert_eq!(fork.cwd.as_deref(), Some("repo/on/server"));
         assert_eq!(start.model_provider, None);
         assert_eq!(resume.model_provider, None);
         assert_eq!(fork.model_provider, None);
@@ -1211,6 +1283,9 @@ mod tests {
                     ],
                     status: TurnStatus::Completed,
                     error: None,
+                    started_at: None,
+                    completed_at: None,
+                    duration_ms: None,
                 }],
             },
             model: "gpt-5.4".to_string(),
@@ -1237,10 +1312,10 @@ mod tests {
         let config = build_config(&temp_dir).await;
         let thread_id = ThreadId::new();
 
-        message_history::append_entry("older", &thread_id, &config)
+        append_message_history_entry("older", &thread_id, &config)
             .await
             .expect("history append should succeed");
-        message_history::append_entry("newer", &thread_id, &config)
+        append_message_history_entry("newer", &thread_id, &config)
             .await
             .expect("history append should succeed");
 

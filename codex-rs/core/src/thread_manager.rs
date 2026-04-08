@@ -32,6 +32,7 @@ use codex_protocol::error::Result as CodexResult;
 #[cfg(test)]
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InitialHistory;
@@ -43,9 +44,11 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::W3cTraceContext;
+use codex_state::DirectionalThreadSpawnEdgeStatus;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -202,6 +205,9 @@ pub(crate) struct ThreadManagerState {
     thread_created_tx: broadcast::Sender<ThreadId>,
     auth_manager: Arc<AuthManager>,
     models_manager: Arc<ModelsManager>,
+    models_manager_codex_home: PathBuf,
+    models_manager_catalog: Option<ModelsResponse>,
+    collaboration_modes_config: CollaborationModesConfig,
     environment_manager: Arc<EnvironmentManager>,
     skills_manager: Arc<SkillsManager>,
     plugins_manager: Arc<PluginsManager>,
@@ -227,6 +233,7 @@ impl ThreadManager {
             .get(OPENAI_PROVIDER_ID)
             .cloned()
             .unwrap_or_else(|| ModelProviderInfo::create_openai_provider(/*base_url*/ None));
+        let models_manager_catalog = config.model_catalog.clone();
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(
             codex_home.clone(),
@@ -244,12 +251,15 @@ impl ThreadManager {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
                 models_manager: Arc::new(ModelsManager::new_with_provider(
-                    codex_home,
+                    codex_home.clone(),
                     auth_manager.clone(),
-                    config.model_catalog.clone(),
-                    collaboration_modes_config,
+                    models_manager_catalog.clone(),
+                    collaboration_modes_config.clone(),
                     openai_models_provider,
                 )),
+                models_manager_codex_home: codex_home,
+                models_manager_catalog,
+                collaboration_modes_config,
                 environment_manager,
                 skills_manager,
                 plugins_manager,
@@ -315,10 +325,13 @@ impl ThreadManager {
                 threads: Arc::new(RwLock::new(HashMap::new())),
                 thread_created_tx,
                 models_manager: Arc::new(ModelsManager::with_provider_for_tests(
-                    codex_home,
+                    codex_home.clone(),
                     auth_manager.clone(),
                     provider,
                 )),
+                models_manager_codex_home: codex_home,
+                models_manager_catalog: None,
+                collaboration_modes_config: CollaborationModesConfig::default(),
                 environment_manager,
                 skills_manager,
                 plugins_manager,
@@ -399,6 +412,53 @@ impl ThreadManager {
 
     pub async fn get_thread(&self, thread_id: ThreadId) -> CodexResult<Arc<CodexThread>> {
         self.state.get_thread(thread_id).await
+    }
+
+    /// List `thread_id` plus all known descendants in its spawn subtree.
+    pub async fn list_agent_subtree_thread_ids(
+        &self,
+        thread_id: ThreadId,
+    ) -> CodexResult<Vec<ThreadId>> {
+        let thread = self.state.get_thread(thread_id).await?;
+
+        let mut subtree_thread_ids = Vec::new();
+        let mut seen_thread_ids = HashSet::new();
+        subtree_thread_ids.push(thread_id);
+        seen_thread_ids.insert(thread_id);
+
+        if let Some(state_db_ctx) = thread_state_db(thread.as_ref()).await {
+            for status in [
+                DirectionalThreadSpawnEdgeStatus::Open,
+                DirectionalThreadSpawnEdgeStatus::Closed,
+            ] {
+                for descendant_id in state_db_ctx
+                    .list_thread_spawn_descendants_with_status(thread_id, status)
+                    .await
+                    .map_err(|err| {
+                        CodexErr::Fatal(format!("failed to load thread-spawn descendants: {err}"))
+                    })?
+                {
+                    if seen_thread_ids.insert(descendant_id) {
+                        subtree_thread_ids.push(descendant_id);
+                    }
+                }
+            }
+        }
+
+        for descendant_id in thread
+            .codex
+            .session
+            .services
+            .agent_control
+            .list_live_agent_subtree_thread_ids(thread_id)
+            .await?
+        {
+            if seen_thread_ids.insert(descendant_id) {
+                subtree_thread_ids.push(descendant_id);
+            }
+        }
+
+        Ok(subtree_thread_ids)
     }
 
     pub async fn start_thread(&self, config: Config) -> CodexResult<NewThread> {
@@ -652,6 +712,23 @@ impl ThreadManager {
     }
 }
 
+async fn thread_state_db(thread: &CodexThread) -> Option<codex_rollout::state_db::StateDbHandle> {
+    if let Some(state_db_ctx) = thread.state_db() {
+        return Some(state_db_ctx);
+    }
+    let config = thread.codex.session.get_config().await;
+    if let Some(state_db_ctx) = codex_rollout::state_db::init(&config).await {
+        Some(state_db_ctx)
+    } else {
+        codex_state::StateRuntime::init(
+            config.sqlite_home.clone(),
+            config.model_provider_id.clone(),
+        )
+        .await
+        .ok()
+    }
+}
+
 impl ThreadManagerState {
     pub(crate) async fn list_thread_ids(&self) -> Vec<ThreadId> {
         self.threads.read().await.keys().copied().collect()
@@ -846,12 +923,26 @@ impl ThreadManagerState {
             self.skills_manager.as_ref(),
             self.plugins_manager.as_ref(),
         );
+        let models_manager = if Arc::ptr_eq(&auth_manager, &self.auth_manager)
+            && config.codex_home == self.models_manager_codex_home
+            && config.model_catalog == self.models_manager_catalog
+        {
+            Arc::clone(&self.models_manager)
+        } else {
+            Arc::new(ModelsManager::new_with_provider(
+                config.codex_home.clone(),
+                auth_manager.clone(),
+                config.model_catalog.clone(),
+                self.collaboration_modes_config.clone(),
+                config.model_provider.clone(),
+            ))
+        };
         let CodexSpawnOk {
             codex, thread_id, ..
         } = Codex::spawn(CodexSpawnArgs {
             config,
             auth_manager,
-            models_manager: Arc::clone(&self.models_manager),
+            models_manager,
             environment_manager: Arc::clone(&self.environment_manager),
             skills_manager: Arc::clone(&self.skills_manager),
             plugins_manager: Arc::clone(&self.plugins_manager),
@@ -1010,6 +1101,8 @@ fn append_interrupted_boundary(history: InitialHistory, turn_id: Option<String>)
     let aborted_event = RolloutItem::EventMsg(EventMsg::TurnAborted(TurnAbortedEvent {
         turn_id,
         reason: TurnAbortReason::Interrupted,
+        completed_at: None,
+        duration_ms: None,
     }));
 
     match history {

@@ -2399,7 +2399,7 @@ fn add_alias_rejects_shared_edge_metadata_conflicts() {
     )
     .expect("create should succeed");
 
-    let error = crate::service::execute_action(
+    let alias = crate::service::execute_action(
         &config,
         &ZmemoryToolCallParam {
             action: ZmemoryToolAction::AddAlias,
@@ -2410,13 +2410,10 @@ fn add_alias_rejects_shared_edge_metadata_conflicts() {
             ..ZmemoryToolCallParam::default()
         },
     )
-    .expect_err("conflicting alias metadata should fail");
+    .expect("domain-scoped alias metadata should succeed");
 
-    assert!(
-        error
-            .to_string()
-            .contains("alias edge metadata conflicts for alias://shared-edge")
-    );
+    assert_eq!(alias["result"]["priority"], 1);
+    assert_eq!(alias["result"]["disclosure"], "primary");
 }
 
 #[test]

@@ -23,6 +23,7 @@ use crate::tools::runtimes::apply_patch::ApplyPatchRuntime;
 use crate::tools::sandboxing::ToolCtx;
 use codex_apply_patch::ApplyPatchAction;
 use codex_apply_patch::ApplyPatchFileChange;
+use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_sandboxing::policy_transforms::effective_file_system_sandbox_policy;
@@ -33,11 +34,14 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+#[cfg(test)]
+use codex_exec_server::LOCAL_FS;
+
 pub struct ApplyPatchHandler;
 
 fn file_paths_for_action(action: &ApplyPatchAction) -> Vec<AbsolutePathBuf> {
     let mut keys = Vec::new();
-    let cwd = action.cwd.as_path();
+    let cwd = &action.cwd;
 
     for (path, change) in action.changes() {
         if let Some(key) = to_abs_path(cwd, path) {
@@ -55,14 +59,14 @@ fn file_paths_for_action(action: &ApplyPatchAction) -> Vec<AbsolutePathBuf> {
     keys
 }
 
-fn to_abs_path(cwd: &Path, path: &Path) -> Option<AbsolutePathBuf> {
-    AbsolutePathBuf::resolve_path_against_base(path, cwd).ok()
+fn to_abs_path(cwd: &AbsolutePathBuf, path: &Path) -> Option<AbsolutePathBuf> {
+    Some(AbsolutePathBuf::resolve_path_against_base(path, cwd))
 }
 
 fn write_permissions_for_paths(
     file_paths: &[AbsolutePathBuf],
     file_system_sandbox_policy: &codex_protocol::permissions::FileSystemSandboxPolicy,
-    cwd: &Path,
+    cwd: &AbsolutePathBuf,
 ) -> Option<PermissionProfile> {
     let write_paths = file_paths
         .iter()
@@ -71,7 +75,9 @@ fn write_permissions_for_paths(
                 .unwrap_or_else(|| path.clone())
                 .into_path_buf()
         })
-        .filter(|path| !file_system_sandbox_policy.can_write_path_with_cwd(path.as_path(), cwd))
+        .filter(|path| {
+            !file_system_sandbox_policy.can_write_path_with_cwd(path.as_path(), cwd.as_path())
+        })
         .collect::<BTreeSet<_>>()
         .into_iter()
         .map(AbsolutePathBuf::from_absolute_path)
@@ -110,7 +116,7 @@ async fn effective_patch_permissions(
     let effective_additional_permissions = apply_granted_turn_permissions(
         session,
         crate::sandboxing::SandboxPermissions::UseDefault,
-        write_permissions_for_paths(&file_paths, &file_system_sandbox_policy, turn.cwd.as_path()),
+        write_permissions_for_paths(&file_paths, &file_system_sandbox_policy, &turn.cwd),
     )
     .await;
 
@@ -167,7 +173,14 @@ impl ToolHandler for ApplyPatchHandler {
         // Avoid building temporary ExecParams/command vectors; derive directly from inputs.
         let cwd = turn.cwd.clone();
         let command = vec!["apply_patch".to_string(), patch_input.clone()];
-        match codex_apply_patch::maybe_parse_apply_patch_verified(&command, &cwd) {
+        let Some(environment) = turn.environment.as_ref() else {
+            return Err(FunctionCallError::RespondToModel(
+                "apply_patch is unavailable in this session".to_string(),
+            ));
+        };
+        let fs = environment.get_filesystem();
+        match codex_apply_patch::maybe_parse_apply_patch_verified(&command, &cwd, fs.as_ref()).await
+        {
             codex_apply_patch::MaybeApplyPatchVerified::Body(changes) => {
                 let (file_paths, effective_additional_permissions, file_system_sandbox_policy) =
                     effective_patch_permissions(session.as_ref(), turn.as_ref(), &changes).await;
@@ -254,7 +267,8 @@ impl ToolHandler for ApplyPatchHandler {
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn intercept_apply_patch(
     command: &[String],
-    cwd: &Path,
+    cwd: &AbsolutePathBuf,
+    fs: &dyn ExecutorFileSystem,
     timeout_ms: Option<u64>,
     session: Arc<Session>,
     turn: Arc<TurnContext>,
@@ -262,7 +276,7 @@ pub(crate) async fn intercept_apply_patch(
     call_id: &str,
     tool_name: &str,
 ) -> Result<Option<FunctionToolOutput>, FunctionCallError> {
-    match codex_apply_patch::maybe_parse_apply_patch_verified(command, cwd) {
+    match codex_apply_patch::maybe_parse_apply_patch_verified(command, cwd, fs).await {
         codex_apply_patch::MaybeApplyPatchVerified::Body(changes) => {
             session
                 .record_model_warning(
@@ -352,9 +366,23 @@ async fn run_apply_patch_in_process(
 ) -> Result<codex_protocol::exec_output::ExecToolCallOutput, String> {
     let start = std::time::Instant::now();
     let (patch, path_rewrites) = absolutize_apply_patch(action);
+    let cwd = std::env::current_dir()
+        .map_err(|err| format!("failed to resolve cwd for apply_patch: {err}"))
+        .and_then(|path| {
+            AbsolutePathBuf::try_from(path)
+                .map_err(|err| format!("failed to absolutize cwd for apply_patch: {err}"))
+        })?;
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    let exit_code = match codex_apply_patch::apply_patch(&patch, &mut stdout, &mut stderr) {
+    let exit_code = match codex_apply_patch::apply_patch(
+        &patch,
+        &cwd,
+        &mut stderr,
+        &mut stdout,
+        LOCAL_FS.as_ref(),
+    )
+    .await
+    {
         Ok(()) => 0,
         Err(_) => 1,
     };
@@ -447,9 +475,6 @@ fn rewrite_apply_patch_output(output: String, path_rewrites: &[(String, String)]
 #[cfg(test)]
 fn rewrite_apply_patch_output_line(line: &str, path_rewrites: &[(String, String)]) -> String {
     [
-        "A ",
-        "M ",
-        "D ",
         "Failed to create parent directories for ",
         "Failed to write file ",
         "Failed to delete file ",

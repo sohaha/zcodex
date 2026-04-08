@@ -8,7 +8,7 @@ use crate::tools::router::ToolRouterParams;
 use codex_app_server_protocol::AppInfo;
 use codex_features::Feature;
 use codex_features::Features;
-use codex_mcp::mcp::CODEX_APPS_MCP_SERVER_NAME;
+use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
 use codex_models_manager::bundled_models_response;
 use codex_models_manager::model_info::with_config_overrides;
 use codex_protocol::config_types::WebSearchMode;
@@ -302,6 +302,7 @@ fn test_build_specs_gpt5_codex_default() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -330,6 +331,7 @@ fn test_build_specs_gpt51_codex_default() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -360,6 +362,7 @@ fn test_build_specs_gpt5_codex_unified_exec_web_search() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -390,6 +393,7 @@ fn test_build_specs_gpt51_codex_unified_exec_web_search() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -418,6 +422,7 @@ fn test_gpt_5_1_codex_max_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -446,6 +451,7 @@ fn test_codex_5_1_mini_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -474,6 +480,7 @@ fn test_gpt_5_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -501,6 +508,7 @@ fn test_gpt_5_1_defaults() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -531,6 +539,7 @@ fn test_gpt_5_1_codex_max_unified_exec_web_search() {
             "update_plan",
             "tldr",
             "request_user_input",
+            "zmemory",
             "read_memory",
             "search_memory",
             "create_memory",
@@ -896,7 +905,7 @@ fn test_mcp_tool_property_missing_type_defaults_to_string() {
 }
 
 #[test]
-fn test_mcp_tool_integer_normalized_to_number() {
+fn test_mcp_tool_integer_schema_is_preserved() {
     let config = test_config();
     let model_info = construct_model_info_offline("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
@@ -938,7 +947,7 @@ fn test_mcp_tool_integer_normalized_to_number() {
             parameters: JsonSchema::Object {
                 properties: BTreeMap::from([(
                     "page".to_string(),
-                    JsonSchema::Number { description: None }
+                    JsonSchema::Integer { description: None }
                 )]),
                 required: None,
                 additional_properties: None,
@@ -1012,7 +1021,7 @@ fn test_mcp_tool_array_without_items_gets_default_string_items() {
 }
 
 #[test]
-fn test_mcp_tool_anyof_defaults_to_string() {
+fn test_mcp_tool_anyof_schema_is_preserved() {
     let config = test_config();
     let model_info = construct_model_info_offline("gpt-5-codex", &config);
     let mut features = Features::with_defaults();
@@ -1056,7 +1065,12 @@ fn test_mcp_tool_anyof_defaults_to_string() {
             parameters: JsonSchema::Object {
                 properties: BTreeMap::from([(
                     "value".to_string(),
-                    JsonSchema::String { description: None }
+                    JsonSchema::AnyOf {
+                        variants: vec![
+                            JsonSchema::String { description: None },
+                            JsonSchema::Number { description: None },
+                        ],
+                    }
                 )]),
                 required: None,
                 additional_properties: None,

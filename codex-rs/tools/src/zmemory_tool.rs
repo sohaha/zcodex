@@ -111,10 +111,15 @@ pub fn create_zmemory_tool() -> ToolSpec {
                         str_prop(
                             "uri",
                             Some(
-                                "目标 URI。支持系统视图：system://boot|defaults|workspace|index|index/<domain>|system://paths|system://paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>。",
+                                "目标 URI。支持系统视图：system://boot|defaults|workspace|index|index/<domain>|paths|paths/<domain>|recent|recent/<n>|glossary|alias|alias/<n>；其中 system://defaults 表示产品默认值，system://workspace 表示当前工作区运行时事实，system://paths 与 system://paths/<domain> 会展示路径视图。",
                             ),
                         ),
-                        int_prop("limit", Some("system 视图的结果条目上限。")),
+                        int_prop(
+                            "limit",
+                            Some(
+                                "system://boot、system://paths、system://alias 等系统视图的结果条目上限。",
+                            ),
+                        ),
                     ]),
                     required: Some(vec!["action".to_string(), "uri".to_string()]),
                     additional_properties: Some(false.into()),

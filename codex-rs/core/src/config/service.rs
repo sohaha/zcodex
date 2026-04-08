@@ -1,5 +1,5 @@
-use super::ConfigToml;
 use super::deserialize_config_toml_with_base;
+use crate::config::ConfigToml;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::managed_features::validate_explicit_feature_settings_in_config_toml;
@@ -140,6 +140,16 @@ impl ConfigService {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn without_managed_config_for_tests(codex_home: PathBuf) -> Self {
+        Self::new(
+            codex_home,
+            Vec::new(),
+            LoaderOverrides::without_managed_config_for_tests(),
+            CloudRequirementsLoader::default(),
+        )
+    }
+
     pub async fn read(
         &self,
         params: ConfigReadParams,
@@ -255,8 +265,7 @@ impl ConfigService {
         edits: Vec<(String, JsonValue, MergeStrategy)>,
     ) -> Result<ConfigWriteResponse, ConfigServiceError> {
         let allowed_path =
-            AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, &self.codex_home)
-                .map_err(|err| ConfigServiceError::io("failed to resolve user config path", err))?;
+            AbsolutePathBuf::resolve_path_against_base(CONFIG_TOML_FILE, &self.codex_home);
         let provided_path = match file_path {
             Some(path) => AbsolutePathBuf::from_absolute_path(PathBuf::from(path))
                 .map_err(|err| ConfigServiceError::io("failed to resolve user config path", err))?,

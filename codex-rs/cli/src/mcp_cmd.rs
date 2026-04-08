@@ -14,18 +14,18 @@ use codex_core::config::find_codex_home;
 use codex_core::config::load_global_mcp_servers;
 use codex_core::mcp::McpManager;
 use codex_core::plugins::PluginsManager;
-use codex_mcp::mcp::auth::McpOAuthLoginSupport;
-use codex_mcp::mcp::auth::ResolvedMcpOAuthScopes;
-use codex_mcp::mcp::auth::compute_auth_statuses;
-use codex_mcp::mcp::auth::discover_supported_scopes;
-use codex_mcp::mcp::auth::oauth_login_support;
-use codex_mcp::mcp::auth::resolve_oauth_scopes;
-use codex_mcp::mcp::auth::should_retry_without_scopes;
+use codex_mcp::McpOAuthLoginSupport;
+use codex_mcp::ResolvedMcpOAuthScopes;
+use codex_mcp::compute_auth_statuses;
+use codex_mcp::discover_supported_scopes;
+use codex_mcp::oauth_login_support;
+use codex_mcp::resolve_oauth_scopes;
+use codex_mcp::should_retry_without_scopes;
 use codex_protocol::protocol::McpAuthStatus;
 use codex_rmcp_client::delete_oauth_tokens;
 use codex_rmcp_client::perform_oauth_login;
 use codex_utils_cli::CliConfigOverrides;
-use codex_utils_cli::format_env_display::format_env_display;
+use codex_utils_cli::format_env_display;
 
 /// 子命令：
 /// - `list`   — 列出已配置的服务器（可配合 `--json`）
@@ -199,7 +199,7 @@ impl McpCli {
 async fn perform_oauth_login_retry_without_scopes(
     name: &str,
     url: &str,
-    store_mode: codex_rmcp_client::OAuthCredentialsStoreMode,
+    store_mode: codex_config::types::OAuthCredentialsStoreMode,
     http_headers: Option<HashMap<String, String>>,
     env_http_headers: Option<HashMap<String, String>>,
     resolved_scopes: &ResolvedMcpOAuthScopes,
@@ -565,7 +565,7 @@ async fn run_list(config_overrides: &CliConfigOverrides, list_args: ListArgs) ->
                 } else {
                     args.join(" ")
                 };
-                let env_display = format_env_display(env.as_ref(), env_vars);
+                let env_display = format_env_display(env.as_ref(), env_vars.as_slice());
                 let cwd_display = cwd
                     .as_ref()
                     .map(|path| path.display().to_string())
@@ -832,7 +832,7 @@ async fn run_get(config_overrides: &CliConfigOverrides, get_args: GetArgs) -> Re
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| "-".to_string());
             println!("  目录: {cwd_display}");
-            let env_display = format_env_display(env.as_ref(), env_vars);
+            let env_display = format_env_display(env.as_ref(), env_vars.as_slice());
             println!("  环境变量: {env_display}");
         }
         McpServerTransportConfig::StreamableHttp {

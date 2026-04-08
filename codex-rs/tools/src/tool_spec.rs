@@ -316,7 +316,54 @@ fn merge_property_schema(properties: &mut JsonMap<String, Value>, key: &str, can
         return;
     }
 
+    if let Some(schema) = merge_same_schema_kind_with_description(existing, &candidate) {
+        *existing = schema;
+        return;
+    }
+
     *existing = merge_any_of_schemas(existing.take(), candidate);
+}
+
+fn merge_same_schema_kind_with_description(existing: &Value, candidate: &Value) -> Option<Value> {
+    let existing = existing.as_object()?;
+    let candidate = candidate.as_object()?;
+    if existing.get("type") != candidate.get("type")
+        || existing.get("enum").is_some()
+        || candidate.get("enum").is_some()
+    {
+        return None;
+    }
+
+    let mut existing_without_description = existing.clone();
+    existing_without_description.remove("description");
+    let mut candidate_without_description = candidate.clone();
+    candidate_without_description.remove("description");
+    if existing_without_description != candidate_without_description {
+        return None;
+    }
+
+    let descriptions = [existing.get("description"), candidate.get("description")]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .fold(Vec::<String>::new(), |mut acc, value| {
+            if !acc.iter().any(|item| item == value) {
+                acc.push(value.to_string());
+            }
+            acc
+        });
+
+    let mut merged = existing_without_description;
+    if !descriptions.is_empty() {
+        merged.insert(
+            "description".to_string(),
+            Value::String(descriptions.join("\n")),
+        );
+    }
+
+    Some(Value::Object(merged))
 }
 
 fn merge_literal_string_schemas(existing: &Value, candidate: &Value) -> Option<Value> {

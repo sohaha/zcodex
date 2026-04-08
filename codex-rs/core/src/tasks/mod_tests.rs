@@ -1,9 +1,9 @@
 use super::emit_turn_network_proxy_metric;
 use crate::codex::make_session_and_context;
+use codex_otel::MetricsClient;
+use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
-use codex_otel::metrics::MetricsClient;
-use codex_otel::metrics::MetricsConfig;
-use codex_otel::metrics::names::TURN_NETWORK_PROXY_METRIC;
+use codex_otel::TURN_NETWORK_PROXY_METRIC;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::SessionSource;
 use opentelemetry::KeyValue;

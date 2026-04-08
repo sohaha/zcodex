@@ -395,6 +395,9 @@ fn server_notification_thread_target(
         ServerNotification::ThreadRealtimeOutputAudioDelta(notification) => {
             Some(notification.thread_id.as_str())
         }
+        ServerNotification::ThreadRealtimeSdp(notification) => {
+            Some(notification.thread_id.as_str())
+        }
         ServerNotification::ThreadRealtimeError(notification) => {
             Some(notification.thread_id.as_str())
         }
@@ -505,6 +508,7 @@ fn server_notification_thread_events(
                 id: String::new(),
                 msg: EventMsg::TurnStarted(TurnStartedEvent {
                     turn_id: notification.turn.id,
+                    started_at: notification.turn.started_at,
                     model_context_window: None,
                     collaboration_mode_kind: ModeKind::default(),
                 }),
@@ -628,6 +632,17 @@ fn server_notification_thread_events(
                 }),
             }],
         )),
+        ServerNotification::ThreadRealtimeSdp(notification) => Some((
+            ThreadId::from_string(&notification.thread_id).ok()?,
+            vec![Event {
+                id: String::new(),
+                msg: EventMsg::RealtimeConversationSdp(
+                    codex_protocol::protocol::RealtimeConversationSdpEvent {
+                        sdp: notification.sdp,
+                    },
+                ),
+            }],
+        )),
         ServerNotification::ThreadRealtimeError(notification) => Some((
             ThreadId::from_string(&notification.thread_id).ok()?,
             vec![Event {
@@ -680,6 +695,7 @@ fn turn_snapshot_events(
         id: String::new(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: turn.id.clone(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::default(),
         }),
@@ -745,6 +761,8 @@ fn append_terminal_turn_events(events: &mut Vec<Event>, turn: &Turn, include_fai
             msg: EventMsg::TurnComplete(TurnCompleteEvent {
                 turn_id: turn.id.clone(),
                 last_agent_message: None,
+                completed_at: turn.completed_at,
+                duration_ms: turn.duration_ms,
             }),
         }),
         TurnStatus::Interrupted => events.push(Event {
@@ -752,6 +770,8 @@ fn append_terminal_turn_events(events: &mut Vec<Event>, turn: &Turn, include_fai
             msg: EventMsg::TurnAborted(TurnAbortedEvent {
                 turn_id: Some(turn.id.clone()),
                 reason: TurnAbortReason::Interrupted,
+                completed_at: turn.completed_at,
+                duration_ms: turn.duration_ms,
             }),
         }),
         TurnStatus::Failed => {
@@ -772,6 +792,8 @@ fn append_terminal_turn_events(events: &mut Vec<Event>, turn: &Turn, include_fai
                 msg: EventMsg::TurnComplete(TurnCompleteEvent {
                     turn_id: turn.id.clone(),
                     last_agent_message: None,
+                    completed_at: turn.completed_at,
+                    duration_ms: turn.duration_ms,
                 }),
             });
         }
@@ -1107,6 +1129,9 @@ mod tests {
                     items: Vec::new(),
                     status: TurnStatus::Completed,
                     error: None,
+                    started_at: None,
+                    completed_at: Some(0),
+                    duration_ms: None,
                 },
             }),
         )
@@ -1125,6 +1150,8 @@ mod tests {
         };
         assert_eq!(completed.turn_id, turn_id);
         assert_eq!(completed.last_agent_message, None);
+        assert_eq!(completed.completed_at, Some(0));
+        assert_eq!(completed.duration_ms, None);
     }
 
     #[test]
@@ -1288,6 +1315,9 @@ mod tests {
                 }],
                 status: TurnStatus::Completed,
                 error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
             }],
         };
 
@@ -1319,6 +1349,9 @@ mod tests {
                     items: Vec::new(),
                     status: TurnStatus::Interrupted,
                     error: None,
+                    started_at: None,
+                    completed_at: Some(0),
+                    duration_ms: None,
                 },
             }),
         )
@@ -1355,6 +1388,9 @@ mod tests {
                         codex_error_info: Some(CodexErrorInfo::Other),
                         additional_details: None,
                     }),
+                    started_at: None,
+                    completed_at: Some(0),
+                    duration_ms: None,
                 },
             }),
         )
@@ -1457,12 +1493,18 @@ mod tests {
                         ],
                         status: TurnStatus::Completed,
                         error: None,
+                        started_at: None,
+                        completed_at: None,
+                        duration_ms: None,
                     },
                     Turn {
                         id: "turn-interrupted".to_string(),
                         items: Vec::new(),
                         status: TurnStatus::Interrupted,
                         error: None,
+                        started_at: None,
+                        completed_at: None,
+                        duration_ms: None,
                     },
                     Turn {
                         id: "turn-failed".to_string(),
@@ -1473,6 +1515,9 @@ mod tests {
                             codex_error_info: Some(CodexErrorInfo::Other),
                             additional_details: None,
                         }),
+                        started_at: None,
+                        completed_at: None,
+                        duration_ms: None,
                     },
                 ],
             },
@@ -1485,7 +1530,10 @@ mod tests {
         assert!(matches!(events[2].msg, EventMsg::ItemCompleted(_)));
         assert!(matches!(events[3].msg, EventMsg::TurnComplete(_)));
         assert!(matches!(events[4].msg, EventMsg::TurnStarted(_)));
-        let EventMsg::TurnAborted(TurnAbortedEvent { turn_id, reason }) = &events[5].msg else {
+        let EventMsg::TurnAborted(TurnAbortedEvent {
+            turn_id, reason, ..
+        }) = &events[5].msg
+        else {
             panic!("expected interrupted turn replay");
         };
         assert_eq!(turn_id.as_deref(), Some("turn-interrupted"));
@@ -1532,6 +1580,9 @@ mod tests {
                 ],
                 status: TurnStatus::Completed,
                 error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
             },
             /*show_raw_agent_reasoning*/ false,
         );
@@ -1575,6 +1626,9 @@ mod tests {
                 }],
                 status: TurnStatus::Completed,
                 error: None,
+                started_at: None,
+                completed_at: None,
+                duration_ms: None,
             },
             /*show_raw_agent_reasoning*/ true,
         );

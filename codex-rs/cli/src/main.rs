@@ -11,12 +11,12 @@ use codex_chatgpt::apply_command::run_apply_command;
 use codex_cli::LandlockCommand;
 use codex_cli::SeatbeltCommand;
 use codex_cli::WindowsCommand;
-use codex_cli::login::read_api_key_from_stdin;
-use codex_cli::login::run_login_status;
-use codex_cli::login::run_login_with_api_key;
-use codex_cli::login::run_login_with_chatgpt;
-use codex_cli::login::run_login_with_device_code;
-use codex_cli::login::run_logout;
+use codex_cli::read_api_key_from_stdin;
+use codex_cli::run_login_status;
+use codex_cli::run_login_with_api_key;
+use codex_cli::run_login_with_chatgpt;
+use codex_cli::run_login_with_device_code;
+use codex_cli::run_logout;
 use codex_cloud_tasks::Cli as CloudTasksCli;
 use codex_exec::Cli as ExecCli;
 use codex_exec::Command as ExecCommand;
@@ -28,7 +28,7 @@ use codex_state::state_db_path;
 use codex_tui::AppExitInfo;
 use codex_tui::Cli as TuiCli;
 use codex_tui::ExitReason;
-use codex_tui::update_action::UpdateAction;
+use codex_tui::UpdateAction;
 use codex_utils_cli::CliConfigOverrides;
 use codex_ztok::alias_name as ztok_alias_name;
 use codex_ztok::is_alias_invocation as is_ztok_alias_invocation;
@@ -60,6 +60,8 @@ use codex_core::config::find_codex_home;
 use codex_features::FEATURES;
 use codex_features::Stage;
 use codex_features::is_known_feature_key;
+use codex_protocol::protocol::AskForApproval;
+use codex_protocol::user_input::UserInput;
 use codex_terminal_detection::TerminalName;
 
 /// Codex 命令行工具
@@ -197,6 +199,9 @@ enum DebugSubcommand {
     /// 用于调试应用服务器的工具。
     AppServer(DebugAppServerCommand),
 
+    /// Render the model-visible prompt input list as JSON.
+    PromptInput(DebugPromptInputCommand),
+
     /// 内部：重置本地记忆状态以重新开始。
     #[clap(hide = true)]
     ClearMemories,
@@ -219,6 +224,17 @@ struct DebugAppServerSendMessageV2Command {
     /// 要发送的用户消息。
     #[arg(value_name = "用户消息", required = true)]
     user_message: String,
+}
+
+#[derive(Debug, Parser)]
+struct DebugPromptInputCommand {
+    /// Optional user prompt to append after session context.
+    #[arg(value_name = "PROMPT")]
+    prompt: Option<String>,
+
+    /// Optional image(s) to attach to the user prompt.
+    #[arg(long = "image", short = 'i', value_name = "FILE", value_delimiter = ',', num_args = 1..)]
+    images: Vec<PathBuf>,
 }
 
 #[derive(Debug, Parser)]
@@ -357,8 +373,7 @@ struct AppServerCommand {
     #[command(subcommand)]
     subcommand: Option<AppServerSubcommand>,
 
-    /// 传输监听地址。支持：`stdio://`（默认）、
-    /// `ws://IP:PORT`。
+    /// 传输监听地址。支持：`stdio://`（默认）、`ws://IP:PORT`、`off`。
     #[arg(
         long = "listen",
         value_name = "URL",
@@ -453,12 +468,16 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
         ..
     } = exit_info;
 
-    if token_usage.is_zero() {
-        return Vec::new();
-    }
-
     let mut lines = vec![format_localized_token_usage(&token_usage)];
-
+    if !token_usage.is_zero() {
+        lines.insert(
+            0,
+            format!(
+                "{}",
+                codex_protocol::protocol::FinalOutput::from(token_usage.clone())
+            ),
+        );
+    }
     if let Some(resume_cmd) =
         codex_core::util::resume_command(thread_name.as_deref(), conversation_id)
     {
@@ -951,7 +970,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     &mut seatbelt_cli.config_overrides,
                     root_config_overrides.clone(),
                 );
-                codex_cli::debug_sandbox::run_command_under_seatbelt(
+                codex_cli::run_command_under_seatbelt(
                     seatbelt_cli,
                     arg0_paths.codex_linux_sandbox_exe.clone(),
                 )
@@ -967,7 +986,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     &mut landlock_cli.config_overrides,
                     root_config_overrides.clone(),
                 );
-                codex_cli::debug_sandbox::run_command_under_landlock(
+                codex_cli::run_command_under_landlock(
                     landlock_cli,
                     arg0_paths.codex_linux_sandbox_exe.clone(),
                 )
@@ -983,7 +1002,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     &mut windows_cli.config_overrides,
                     root_config_overrides.clone(),
                 );
-                codex_cli::debug_sandbox::run_command_under_windows(
+                codex_cli::run_command_under_windows(
                     windows_cli,
                     arg0_paths.codex_linux_sandbox_exe.clone(),
                 )
@@ -998,6 +1017,20 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                     "debug app-server",
                 )?;
                 run_debug_app_server_command(cmd).await?;
+            }
+            DebugSubcommand::PromptInput(cmd) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "debug prompt-input",
+                )?;
+                run_debug_prompt_input_command(
+                    cmd,
+                    root_config_overrides,
+                    interactive,
+                    arg0_paths.clone(),
+                )
+                .await?;
             }
             DebugSubcommand::ClearMemories => {
                 reject_remote_mode_for_subcommand(
@@ -1166,6 +1199,72 @@ fn maybe_print_under_development_feature_warning(
         "已启用开发中的功能：{feature}。开发中的功能尚未完善，行为可能不稳定。若要关闭此警告，请在 {} 中设置 `suppress_unstable_features_warning = true`。",
         config_path.display()
     );
+}
+
+async fn run_debug_prompt_input_command(
+    cmd: DebugPromptInputCommand,
+    root_config_overrides: CliConfigOverrides,
+    interactive: TuiCli,
+    arg0_paths: Arg0DispatchPaths,
+) -> anyhow::Result<()> {
+    let mut cli_kv_overrides = root_config_overrides
+        .parse_overrides()
+        .map_err(anyhow::Error::msg)?;
+    if interactive.web_search {
+        cli_kv_overrides.push((
+            "web_search".to_string(),
+            toml::Value::String("live".to_string()),
+        ));
+    }
+
+    let approval_policy = if interactive.full_auto {
+        Some(AskForApproval::OnRequest)
+    } else if interactive.dangerously_bypass_approvals_and_sandbox {
+        Some(AskForApproval::Never)
+    } else {
+        interactive.approval_policy.map(Into::into)
+    };
+    let sandbox_mode = if interactive.full_auto {
+        Some(codex_protocol::config_types::SandboxMode::WorkspaceWrite)
+    } else if interactive.dangerously_bypass_approvals_and_sandbox {
+        Some(codex_protocol::config_types::SandboxMode::DangerFullAccess)
+    } else {
+        interactive.sandbox_mode.map(Into::into)
+    };
+    let overrides = ConfigOverrides {
+        model: interactive.model,
+        config_profile: interactive.config_profile,
+        approval_policy,
+        sandbox_mode,
+        cwd: interactive.cwd,
+        codex_self_exe: arg0_paths.codex_self_exe,
+        codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe,
+        main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe,
+        show_raw_agent_reasoning: interactive.oss.then_some(true),
+        ephemeral: Some(true),
+        additional_writable_roots: interactive.add_dir,
+        ..Default::default()
+    };
+    let config =
+        Config::load_with_cli_overrides_and_harness_overrides(cli_kv_overrides, overrides).await?;
+
+    let mut input = interactive
+        .images
+        .into_iter()
+        .chain(cmd.images)
+        .map(|path| UserInput::LocalImage { path })
+        .collect::<Vec<_>>();
+    if let Some(prompt) = cmd.prompt.or(interactive.prompt) {
+        input.push(UserInput::Text {
+            text: prompt.replace("\r\n", "\n").replace('\r', "\n"),
+            text_elements: Vec::new(),
+        });
+    }
+
+    let prompt_input = codex_core::build_prompt_input(config, input).await?;
+    println!("{}", serde_json::to_string_pretty(&prompt_input)?);
+
+    Ok(())
 }
 
 async fn run_debug_clear_memories_command(
@@ -1746,6 +1845,32 @@ mod tests {
         app_server
     }
 
+    #[test]
+    fn debug_prompt_input_parses_prompt_and_images() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "debug",
+            "prompt-input",
+            "hello",
+            "--image",
+            "/tmp/a.png,/tmp/b.png",
+        ])
+        .expect("parse");
+
+        let Some(Subcommand::Debug(DebugCommand {
+            subcommand: DebugSubcommand::PromptInput(cmd),
+        })) = cli.subcommand
+        else {
+            panic!("expected debug prompt-input subcommand");
+        };
+
+        assert_eq!(cmd.prompt.as_deref(), Some("hello"));
+        assert_eq!(
+            cmd.images,
+            vec![PathBuf::from("/tmp/a.png"), PathBuf::from("/tmp/b.png")]
+        );
+    }
+
     fn sample_exit_info(conversation_id: Option<&str>, thread_name: Option<&str>) -> AppExitInfo {
         let token_usage = TokenUsage {
             output_tokens: 2,
@@ -2136,6 +2261,12 @@ mod tests {
             app_server.listen,
             codex_app_server::AppServerTransport::Stdio
         );
+    }
+
+    #[test]
+    fn app_server_listen_off_parses() {
+        let app_server = app_server_from_args(["codex", "app-server", "--listen", "off"].as_ref());
+        assert_eq!(app_server.listen, codex_app_server::AppServerTransport::Off);
     }
 
     #[test]

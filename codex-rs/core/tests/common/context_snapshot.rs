@@ -272,6 +272,9 @@ fn canonicalize_snapshot_text(text: &str) -> String {
     if text.starts_with("<permissions instructions>") {
         return "<PERMISSIONS_INSTRUCTIONS>".to_string();
     }
+    if text.starts_with("## Zmemory") {
+        return "<ZMEMORY_INSTRUCTIONS>".to_string();
+    }
     if text.starts_with(APPS_INSTRUCTIONS_OPEN_TAG) {
         return "<APPS_INSTRUCTIONS>".to_string();
     }
@@ -326,7 +329,8 @@ fn canonicalize_snapshot_text(text: &str) -> String {
 }
 
 fn is_capability_instruction_text(text: &str) -> bool {
-    text.starts_with(APPS_INSTRUCTIONS_OPEN_TAG)
+    text.starts_with("## Zmemory")
+        || text.starts_with(APPS_INSTRUCTIONS_OPEN_TAG)
         || text.starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG)
         || text.starts_with(PLUGINS_INSTRUCTIONS_OPEN_TAG)
 }
@@ -449,6 +453,7 @@ mod tests {
             "role": "developer",
             "content": [
                 { "type": "input_text", "text": "<permissions instructions>\n...</permissions instructions>" },
+                { "type": "input_text", "text": "## Zmemory\n\nbody" },
                 { "type": "input_text", "text": "<skills_instructions>\n## Skills\n...</skills_instructions>" },
                 { "type": "input_text", "text": "<plugins_instructions>\n## Plugins\n...</plugins_instructions>" }
             ]

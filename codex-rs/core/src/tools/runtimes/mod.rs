@@ -4,6 +4,7 @@ Module: runtimes
 Concrete ToolRuntime implementations for specific tools. Each runtime stays
 small and focused and reuses the orchestrator for approvals + sandbox + retry.
 */
+use crate::exec_env::CODEX_THREAD_ID_ENV_VAR;
 use crate::path_utils;
 use crate::shell::Shell;
 use crate::tools::sandboxing::ToolError;
@@ -12,9 +13,9 @@ use codex_sandboxing::SandboxCommand;
 use std::collections::HashMap;
 use std::path::Path;
 
-pub mod apply_patch;
-pub mod shell;
-pub mod unified_exec;
+pub(crate) mod apply_patch;
+pub(crate) mod shell;
+pub(crate) mod unified_exec;
 
 /// Shared helper to construct sandbox transform inputs from a tokenized command line.
 /// Validates that at least a program is present.
@@ -48,11 +49,19 @@ pub(crate) fn build_sandbox_command(
 /// This wrapper script uses POSIX constructs (`if`, `.`, `exec`) so it can
 /// be run by Bash/Zsh/sh. On non-matching commands, or when command cwd does
 /// not match the snapshot cwd, this is a no-op.
+///
+/// `explicit_env_overrides` and `env` are intentionally separate inputs.
+/// `explicit_env_overrides` contains policy-driven shell env overrides that
+/// should win after the snapshot is sourced, while `env` is the full live exec
+/// environment. We need access to both so snapshot restore logic can preserve
+/// runtime-only vars like `CODEX_THREAD_ID` without pretending they came from
+/// the explicit override policy.
 pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     command: &[String],
     session_shell: &Shell,
     cwd: &Path,
     explicit_env_overrides: &HashMap<String, String>,
+    env: &HashMap<String, String>,
 ) -> Vec<String> {
     if cfg!(windows) {
         return command.to_vec();
@@ -74,21 +83,28 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
         .iter()
         .map(|arg| format!(" '{}'", shell_single_quote(arg)))
         .collect::<String>();
-    let (override_captures, override_exports) = build_override_exports(explicit_env_overrides);
+    let mut override_env = explicit_env_overrides.clone();
+    if let Some(thread_id) = env.get(CODEX_THREAD_ID_ENV_VAR) {
+        override_env.insert(CODEX_THREAD_ID_ENV_VAR.to_string(), thread_id.clone());
+    }
+    let (override_captures, override_exports) = build_override_exports(&override_env);
     let ripgrep_cleanup = invalid_ripgrep_config_unset();
     let snapshot = session_shell
         .shell_snapshot()
-        .filter(|snapshot| snapshot.path.exists())
-        .filter(|snapshot| {
-            if let (Ok(snapshot_cwd), Ok(command_cwd)) = (
-                path_utils::normalize_for_path_comparison(snapshot.cwd.as_path()),
-                path_utils::normalize_for_path_comparison(cwd),
-            ) {
-                snapshot_cwd == command_cwd
-            } else {
-                snapshot.cwd == cwd
-            }
-        });
+        .filter(|snapshot| snapshot.path.exists());
+    if let Some(snapshot) = snapshot.as_ref() {
+        let cwd_matches = if let (Ok(snapshot_cwd), Ok(command_cwd)) = (
+            path_utils::normalize_for_path_comparison(snapshot.cwd.as_path()),
+            path_utils::normalize_for_path_comparison(cwd),
+        ) {
+            snapshot_cwd == command_cwd
+        } else {
+            snapshot.cwd == cwd
+        };
+        if !cwd_matches {
+            return command.to_vec();
+        }
+    }
 
     match snapshot {
         Some(snapshot) => {

@@ -117,7 +117,9 @@ pub(super) use codex_protocol::models::FileSystemPermissions;
 pub(super) use codex_protocol::models::MessagePhase;
 pub(super) use codex_protocol::models::NetworkPermissions;
 pub(super) use codex_protocol::models::PermissionProfile;
+pub(super) use codex_protocol::openai_models::ModelInfo;
 pub(super) use codex_protocol::openai_models::ModelPreset;
+pub(super) use codex_protocol::openai_models::ModelsResponse;
 pub(super) use codex_protocol::openai_models::ReasoningEffortPreset;
 pub(super) use codex_protocol::openai_models::default_input_modalities;
 pub(super) use codex_protocol::parse_command::ParsedCommand;
@@ -197,6 +199,7 @@ pub(super) use crossterm::event::KeyCode;
 pub(super) use crossterm::event::KeyEvent;
 pub(super) use crossterm::event::KeyModifiers;
 pub(super) use insta::assert_snapshot;
+pub(super) use serde_json::json;
 #[cfg(target_os = "windows")]
 pub(super) use serial_test::serial;
 pub(super) use std::collections::BTreeMap;
@@ -210,7 +213,14 @@ pub(super) use tokio::sync::mpsc::unbounded_channel;
 pub(super) use toml::Value as TomlValue;
 
 pub(super) fn chatwidget_snapshot_dir() -> PathBuf {
-    codex_utils_cargo_bin::find_resource!("src/chatwidget/snapshots").expect("snapshot dir")
+    let snapshot_file = codex_utils_cargo_bin::find_resource!(
+        "src/chatwidget/snapshots/codex_tui__chatwidget__tests__chatwidget_tall.snap"
+    )
+    .expect("snapshot file");
+    snapshot_file
+        .parent()
+        .unwrap_or_else(|| panic!("snapshot file has no parent: {}", snapshot_file.display()))
+        .to_path_buf()
 }
 
 macro_rules! assert_chatwidget_snapshot {
@@ -255,4 +265,5 @@ mod status_command_tests;
 
 pub(crate) use helpers::make_chatwidget_manual_with_sender;
 pub(crate) use helpers::set_chatgpt_auth;
+pub(crate) use helpers::set_fast_mode_test_catalog;
 pub(super) use helpers::*;

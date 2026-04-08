@@ -7,15 +7,15 @@ use codex_config::ConstraintResult;
 use codex_config::FeatureRequirementsToml;
 use codex_config::RequirementSource;
 use codex_config::Sourced;
-
-use crate::config::ConfigToml;
-use crate::config::profile::ConfigProfile;
+use codex_config::profile_toml::ConfigProfile;
 use codex_features::Feature;
 use codex_features::FeatureConfigSource;
 use codex_features::FeatureOverrides;
 use codex_features::Features;
 use codex_features::canonical_feature_for_key;
 use codex_features::feature_for_key;
+
+use crate::config::ConfigToml;
 
 /// Wrapper around [`Features`] which enforces constraints defined in
 /// `FeatureRequirementsToml` and provides normalization to ensure constraints

@@ -5,6 +5,7 @@ use chrono::DateTime;
 use chrono::Local;
 use codex_core::config::Config;
 use codex_core::project_doc::discover_project_doc_paths;
+use codex_exec_server::LOCAL_FS;
 use codex_protocol::account::PlanType;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
@@ -50,7 +51,15 @@ pub(crate) fn compose_model_display(
 }
 
 pub(crate) fn compose_agents_summary(config: &Config) -> String {
-    match discover_project_doc_paths(config) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return "无".to_string();
+    };
+
+    let paths = tokio::task::block_in_place(|| {
+        handle.block_on(discover_project_doc_paths(config, LOCAL_FS.as_ref()))
+    });
+
+    match paths {
         Ok(paths) => {
             let mut rels: Vec<String> = Vec::new();
             for p in paths {
@@ -59,14 +68,14 @@ pub(crate) fn compose_agents_summary(config: &Config) -> String {
                     .map(|name| name.to_string_lossy().to_string())
                     .unwrap_or_else(|| "<未知>".to_string());
                 let display = if let Some(parent) = p.parent() {
-                    if parent == config.cwd.as_path() {
+                    if parent.as_path() == config.cwd.as_path() {
                         file_name.clone()
                     } else {
                         let mut cur = config.cwd.as_path();
                         let mut ups = 0usize;
                         let mut reached = false;
                         while let Some(c) = cur.parent() {
-                            if cur == parent {
+                            if cur == parent.as_path() {
                                 reached = true;
                                 break;
                             }
@@ -76,14 +85,14 @@ pub(crate) fn compose_agents_summary(config: &Config) -> String {
                         if reached {
                             let up = format!("..{}", std::path::MAIN_SEPARATOR);
                             format!("{}{}", up.repeat(ups), file_name)
-                        } else if let Ok(stripped) = p.strip_prefix(&config.cwd) {
+                        } else if let Ok(stripped) = p.strip_prefix(config.cwd.as_path()) {
                             normalize_agents_display_path(stripped)
                         } else {
-                            normalize_agents_display_path(&p)
+                            normalize_agents_display_path(p.as_path())
                         }
                     }
                 } else {
-                    normalize_agents_display_path(&p)
+                    normalize_agents_display_path(p.as_path())
                 };
                 rels.push(display);
             }
@@ -184,6 +193,10 @@ pub(crate) fn format_reset_timestamp(dt: DateTime<Local>, captured_at: DateTime<
     } else {
         format!("{time} {}", dt.format("%-m月%-d日"))
     }
+}
+
+pub(crate) fn discover_agents_summary(config: &Config) -> String {
+    compose_agents_summary(config)
 }
 
 fn title_case(s: &str) -> String {

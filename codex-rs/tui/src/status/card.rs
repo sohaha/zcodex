@@ -430,6 +430,17 @@ impl StatusHistoryCell {
                 ));
                 lines
             }
+            StatusRateLimitData::Unavailable => {
+                vec![formatter.line(
+                    "限额",
+                    vec![Span::from(if state.refreshing_rate_limits {
+                        "正在刷新限额..."
+                    } else {
+                        "暂无数据"
+                    })
+                    .dim()],
+                )]
+            }
             StatusRateLimitData::Missing => {
                 vec![formatter.line(
                     "限额",
@@ -519,7 +530,9 @@ impl StatusHistoryCell {
                 }
                 push_label(labels, seen, "警告");
             }
-            StatusRateLimitData::Missing => push_label(labels, seen, "限额"),
+            StatusRateLimitData::Unavailable | StatusRateLimitData::Missing => {
+                push_label(labels, seen, "限额")
+            }
         }
     }
 }

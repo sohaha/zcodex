@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::path::Path;
 
 /// Schema for the `[features]` map with known + legacy keys only.
-pub(crate) fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
+pub fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
     let mut object = SchemaObject {
         instance_type: Some(InstanceType::Object.into()),
         ..Default::default()
@@ -41,7 +41,7 @@ pub(crate) fn features_schema(schema_gen: &mut SchemaGenerator) -> Schema {
 }
 
 /// Schema for the `[mcp_servers]` map using the raw input shape.
-pub(crate) fn mcp_servers_schema(schema_gen: &mut SchemaGenerator) -> Schema {
+pub fn mcp_servers_schema(schema_gen: &mut SchemaGenerator) -> Schema {
     let mut object = SchemaObject {
         instance_type: Some(InstanceType::Object.into()),
         ..Default::default()
@@ -67,7 +67,7 @@ pub fn config_schema() -> RootSchema {
 }
 
 /// Canonicalize a JSON value by sorting its keys.
-fn canonicalize(value: &Value) -> Value {
+pub fn canonicalize(value: &Value) -> Value {
     match value {
         Value::Array(items) => Value::Array(items.iter().map(canonicalize).collect()),
         Value::Object(map) => {

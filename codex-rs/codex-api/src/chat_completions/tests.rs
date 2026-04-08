@@ -33,6 +33,7 @@ fn request_with_tools(tools: Vec<Value>, input: Vec<ResponseItem>) -> ResponsesA
         stream: true,
         include: Vec::new(),
         service_tier: Some("priority".to_string()),
+        client_metadata: None,
         prompt_cache_key: None,
         text: None,
     }
@@ -177,6 +178,7 @@ fn build_request_folds_system_and_developer_history() {
         stream: false,
         include: Vec::new(),
         service_tier: None,
+        client_metadata: None,
         prompt_cache_key: None,
         text: None,
     };
@@ -608,6 +610,7 @@ fn build_request_maps_reasoning_response_format_and_tool_controls() {
         stream: true,
         include: Vec::new(),
         service_tier: Some("priority".to_string()),
+        client_metadata: None,
         prompt_cache_key: None,
         text: Some(TextControls {
             verbosity: None,

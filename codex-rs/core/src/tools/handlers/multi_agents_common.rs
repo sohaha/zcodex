@@ -234,7 +234,9 @@ pub(crate) async fn build_agent_shared_config(
     let mut config = (*base_config).clone();
     config.model = Some(turn.model_info.slug.clone());
     config.model_provider = turn.provider.clone();
-    config.sync_active_model_provider();
+    config
+        .model_providers
+        .insert(config.model_provider_id.clone(), turn.provider.clone());
     config.model_reasoning_effort = turn.reasoning_effort;
     config.model_reasoning_summary = Some(turn.reasoning_summary);
     config.developer_instructions = turn.developer_instructions.clone();

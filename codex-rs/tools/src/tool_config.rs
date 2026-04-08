@@ -116,6 +116,7 @@ pub struct ToolsConfig {
     pub shell_type: ConfigShellToolType,
     pub shell_command_backend: ShellCommandBackendConfig,
     pub unified_exec_shell_mode: UnifiedExecShellMode,
+    pub has_environment: bool,
     pub allow_login_shell: bool,
     pub auto_tldr_routing: AutoTldrRoutingMode,
     pub apply_patch_tool_type: Option<ApplyPatchToolType>,
@@ -134,7 +135,7 @@ pub struct ToolsConfig {
     pub can_request_original_image_detail: bool,
     pub collab_tools: bool,
     pub multi_agent_v2: bool,
-    pub request_user_input: bool,
+    pub hide_spawn_agent_metadata: bool,
     pub default_mode_request_user_input: bool,
     pub experimental_supported_tools: Vec<String>,
     pub agent_jobs_tools: bool,
@@ -172,10 +173,10 @@ impl ToolsConfig {
             include_js_repl && features.enabled(Feature::JsReplToolsOnly);
         let include_collab_tools = features.enabled(Feature::Collab);
         let include_multi_agent_v2 = features.enabled(Feature::MultiAgentV2);
+        let hide_spawn_agent_metadata = features.enabled(Feature::DebugHideSpawnAgentMetadata);
         let include_agent_jobs = features.enabled(Feature::SpawnCsv);
-        let include_request_user_input = !matches!(session_source, SessionSource::SubAgent(_));
         let include_default_mode_request_user_input =
-            include_request_user_input && features.enabled(Feature::DefaultModeRequestUserInput);
+            features.enabled(Feature::DefaultModeRequestUserInput);
         let include_search_tool =
             model_info.supports_search_tool && features.enabled(Feature::ToolSearch);
         let include_tool_suggest = features.enabled(Feature::ToolSuggest)
@@ -233,6 +234,7 @@ impl ToolsConfig {
             shell_type,
             shell_command_backend,
             unified_exec_shell_mode: UnifiedExecShellMode::Direct,
+            has_environment: true,
             allow_login_shell: true,
             auto_tldr_routing: AutoTldrRoutingMode::default(),
             apply_patch_tool_type,
@@ -251,7 +253,7 @@ impl ToolsConfig {
             can_request_original_image_detail: include_original_image_detail,
             collab_tools: include_collab_tools,
             multi_agent_v2: include_multi_agent_v2,
-            request_user_input: include_request_user_input,
+            hide_spawn_agent_metadata,
             default_mode_request_user_input: include_default_mode_request_user_input,
             experimental_supported_tools: model_info.experimental_supported_tools.clone(),
             agent_jobs_tools: include_agent_jobs,
@@ -273,6 +275,11 @@ impl ToolsConfig {
 
     pub fn with_auto_tldr_routing(mut self, auto_tldr_routing: AutoTldrRoutingMode) -> Self {
         self.auto_tldr_routing = auto_tldr_routing;
+        self
+    }
+
+    pub fn with_has_environment(mut self, has_environment: bool) -> Self {
+        self.has_environment = has_environment;
         self
     }
 

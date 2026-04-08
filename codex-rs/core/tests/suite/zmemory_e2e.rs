@@ -36,7 +36,9 @@ use tempfile::TempDir;
 fn extract_zmemory_json_block(text: &str) -> Value {
     let (_, json_and_suffix) = text
         .split_once(&format!("\n{ZMEMORY_JSON_BEGIN}\n"))
-        .expect("zmemory output should include a begin marker on its own line");
+        .unwrap_or_else(|| {
+            panic!("zmemory output should include a begin marker on its own line: {text}")
+        });
     let json = json_and_suffix
         .strip_suffix(&format!("\n{ZMEMORY_JSON_END}"))
         .expect("zmemory output should include the closing marker");

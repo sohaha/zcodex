@@ -1155,6 +1155,7 @@ mod tests {
             stream: true,
             include: Vec::new(),
             service_tier: None,
+            client_metadata: None,
             prompt_cache_key: None,
             text: Some(crate::common::TextControls {
                 verbosity: None,

@@ -197,7 +197,7 @@ async fn request_user_input_round_trip_for_mode(mode: ModeKind) -> anyhow::Resul
     Ok(())
 }
 
-async fn assert_request_user_input_rejected<F>(mode_name: &str, build_mode: F) -> anyhow::Result<()>
+async fn assert_request_user_input_rejected<F>(mode: ModeKind, build_mode: F) -> anyhow::Result<()>
 where
     F: FnOnce(String) -> CollaborationMode,
 {
@@ -213,7 +213,7 @@ where
         ..
     } = builder.build(&server).await?;
 
-    let mode_slug = mode_name.to_lowercase().replace(' ', "-");
+    let mode_slug = format!("{mode:?}").to_lowercase();
     let call_id = format!("user-input-{mode_slug}-call");
     let request_args = json!({
         "questions": [{
@@ -274,7 +274,7 @@ where
     assert_eq!(success, None);
     assert_eq!(
         output,
-        format!("request_user_input is unavailable in {mode_name} mode")
+        format!("request_user_input 在 {} 模式不可用", mode.display_name())
     );
 
     Ok(())
@@ -282,7 +282,7 @@ where
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_rejected_in_execute_mode_alias() -> anyhow::Result<()> {
-    assert_request_user_input_rejected("Execute", |model| CollaborationMode {
+    assert_request_user_input_rejected(ModeKind::Execute, |model| CollaborationMode {
         mode: ModeKind::Execute,
         settings: Settings {
             model,
@@ -295,7 +295,7 @@ async fn request_user_input_rejected_in_execute_mode_alias() -> anyhow::Result<(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_rejected_in_default_mode_by_default() -> anyhow::Result<()> {
-    assert_request_user_input_rejected("Default", |model| CollaborationMode {
+    assert_request_user_input_rejected(ModeKind::Default, |model| CollaborationMode {
         mode: ModeKind::Default,
         settings: Settings {
             model,
@@ -313,7 +313,7 @@ async fn request_user_input_round_trip_in_default_mode_with_feature() -> anyhow:
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_rejected_in_pair_mode_alias() -> anyhow::Result<()> {
-    assert_request_user_input_rejected("Pair Programming", |model| CollaborationMode {
+    assert_request_user_input_rejected(ModeKind::PairProgramming, |model| CollaborationMode {
         mode: ModeKind::PairProgramming,
         settings: Settings {
             model,

@@ -294,6 +294,7 @@ fn queued_message_edit_binding_for_terminal(terminal_info: TerminalInfo) -> KeyB
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
 use crate::app_event::ExitMode;
+use crate::app_event::RateLimitRefreshOrigin;
 #[cfg(target_os = "windows")]
 use crate::app_event::WindowsSandboxEnableMode;
 use crate::app_event_sender::AppEventSender;
@@ -5024,15 +5025,7 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::ForkCurrentSession);
             }
             SlashCommand::Init => {
-                let init_target = match self.config.cwd.join(DEFAULT_PROJECT_DOC_FILENAME) {
-                    Ok(path) => path,
-                    Err(err) => {
-                        self.add_error_message(format!(
-                            "准备 {DEFAULT_PROJECT_DOC_FILENAME} 失败：{err}",
-                        ));
-                        return;
-                    }
-                };
+                let init_target = self.config.cwd.as_path().join(DEFAULT_PROJECT_DOC_FILENAME);
                 if init_target.exists() {
                     let message = format!(
                         "{DEFAULT_PROJECT_DOC_FILENAME} 已存在于此处。为避免覆盖，已跳过 /init。"
@@ -5247,8 +5240,9 @@ impl ChatWidget {
                     self.next_status_refresh_request_id =
                         self.next_status_refresh_request_id.wrapping_add(1);
                     self.add_status_output(/*refreshing_rate_limits*/ true, Some(request_id));
-                    self.app_event_tx
-                        .send(AppEvent::RefreshRateLimits { request_id });
+                    self.app_event_tx.send(AppEvent::RefreshRateLimits {
+                        origin: RateLimitRefreshOrigin::StatusCommand { request_id },
+                    });
                 } else {
                     self.add_status_output(
                         /*refreshing_rate_limits*/ false, /*request_id*/ None,
@@ -5947,6 +5941,9 @@ impl ChatWidget {
                 items,
                 status,
                 error,
+                started_at: _,
+                completed_at: _,
+                duration_ms: _,
             } = turn;
             if matches!(status, TurnStatus::InProgress) {
                 self.last_non_retry_error = None;
@@ -5967,6 +5964,9 @@ impl ChatWidget {
                             items: Vec::new(),
                             status,
                             error,
+                            started_at: None,
+                            completed_at: None,
+                            duration_ms: None,
                         },
                     },
                     Some(replay_kind),
@@ -6595,6 +6595,7 @@ impl ChatWidget {
             | ServerNotification::ThreadRealtimeTranscriptUpdated(_)
             | ServerNotification::WindowsWorldWritableWarning(_)
             | ServerNotification::WindowsSandboxSetupCompleted(_)
+            | ServerNotification::ThreadRealtimeSdp(_)
             | ServerNotification::AccountLoginCompleted(_) => {}
         }
     }

@@ -21,10 +21,20 @@ use crate::unified_exec::MIN_EMPTY_YIELD_TIME_MS;
 use crate::windows_sandbox::WindowsSandboxLevelExt;
 use crate::windows_sandbox::resolve_windows_sandbox_mode;
 use crate::windows_sandbox::resolve_windows_sandbox_private_desktop;
-use codex_app_server_protocol::Tools;
 use codex_app_server_protocol::UserSavedConfig;
+use codex_config::config_toml::AgentsToml;
+use codex_config::config_toml::GhostSnapshotToml;
+use codex_config::config_toml::RealtimeAudioConfig;
+use codex_config::config_toml::RealtimeAudioToml;
+use codex_config::config_toml::RealtimeConfig;
+use codex_config::config_toml::RealtimeToml;
+use codex_config::config_toml::ToolsToml;
+use codex_config::config_toml::validate_model_providers;
+use codex_config::permissions_toml::PermissionsToml;
+use codex_config::profile_toml::ConfigProfile;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::AppsConfigToml;
+use codex_config::types::AuthCredentialsStoreMode;
 use codex_config::types::BuddySoul;
 use codex_config::types::DEFAULT_OTEL_ENVIRONMENT;
 use codex_config::types::History;
@@ -37,6 +47,7 @@ use codex_config::types::ModelAvailabilityNuxConfig;
 use codex_config::types::Notice;
 use codex_config::types::NotificationMethod;
 use codex_config::types::Notifications;
+use codex_config::types::OAuthCredentialsStoreMode;
 use codex_config::types::OtelConfig;
 use codex_config::types::OtelConfigToml;
 use codex_config::types::OtelExporterKind;
@@ -56,15 +67,11 @@ use codex_features::FeatureConfigSource;
 use codex_features::FeatureOverrides;
 use codex_features::Features;
 use codex_features::FeaturesToml;
-use codex_git_utils::resolve_root_git_project_for_trust;
-use codex_login::AuthCredentialsStoreMode;
-use codex_mcp::mcp::McpConfig;
+use codex_login::AuthManagerConfig;
+use codex_mcp::McpConfig;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
-use codex_model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
-use codex_model_provider_info::OLLAMA_OSS_PROVIDER_ID;
-use codex_model_provider_info::OPENAI_PROVIDER_ID;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::ModelsManagerConfig;
 use codex_protocol::config_types::AltScreenMode;
@@ -77,7 +84,6 @@ use codex_protocol::config_types::TrustLevel;
 use codex_protocol::config_types::Verbosity;
 use codex_protocol::config_types::WebSearchConfig;
 use codex_protocol::config_types::WebSearchMode;
-use codex_protocol::config_types::WebSearchToolConfig;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -86,14 +92,11 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ReadOnlyAccess;
 use codex_protocol::protocol::SandboxPolicy;
-use codex_rmcp_client::OAuthCredentialsStoreMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde::Deserializer;
 use serde::Serialize;
-use similar::DiffableStr;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -103,7 +106,7 @@ use std::path::PathBuf;
 use crate::config::permissions::compile_permission_profile;
 use crate::config::permissions::get_readable_roots_required_for_codex_runtime;
 use crate::config::permissions::network_proxy_config_from_profile_network;
-use crate::config::profile::ConfigProfile;
+use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_network_proxy::NetworkProxyConfig;
 use toml::Value as TomlValue;
 use toml_edit::DocumentMut;
@@ -113,9 +116,8 @@ pub mod edit;
 mod managed_features;
 mod network_proxy_spec;
 mod permissions;
-pub mod profile;
-pub mod schema;
-pub mod service;
+mod schema;
+pub(crate) mod service;
 pub mod types;
 pub use codex_config::Constrained;
 pub use codex_config::ConstraintError;
@@ -126,16 +128,6 @@ pub use codex_tools::AutoTldrRoutingMode;
 pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
-pub use permissions::FilesystemPermissionToml;
-pub use permissions::FilesystemPermissionsToml;
-pub use permissions::NetworkDomainPermissionToml;
-pub use permissions::NetworkDomainPermissionsToml;
-pub use permissions::NetworkToml;
-pub use permissions::NetworkUnixSocketPermissionToml;
-pub use permissions::NetworkUnixSocketPermissionsToml;
-pub use permissions::PermissionProfileToml;
-pub use permissions::PermissionsToml;
-pub(crate) use permissions::overlay_network_domain_permissions;
 pub(crate) use permissions::resolve_permission_profile;
 pub use service::ConfigService;
 pub use service::ConfigServiceError;
@@ -151,12 +143,6 @@ pub(crate) const DEFAULT_AGENT_MAX_DEPTH: i32 = 1;
 pub(crate) const DEFAULT_AGENT_JOB_MAX_RUNTIME_SECONDS: Option<u64> = None;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
-const OPENAI_BASE_URL_ENV_VAR: &str = "OPENAI_BASE_URL";
-const RESERVED_MODEL_PROVIDER_IDS: [&str; 3] = [
-    OPENAI_PROVIDER_ID,
-    OLLAMA_OSS_PROVIDER_ID,
-    LMSTUDIO_OSS_PROVIDER_ID,
-];
 
 fn resolve_sqlite_home_env(resolved_cwd: &Path) -> Option<PathBuf> {
     let raw = std::env::var(codex_state::SQLITE_HOME_ENV).ok()?;
@@ -297,6 +283,15 @@ pub struct Config {
     /// Guardian-specific developer instructions override from requirements.toml.
     pub guardian_developer_instructions: Option<String>,
 
+    /// Whether to inject the `<permissions instructions>` developer block.
+    pub include_permissions_instructions: bool,
+
+    /// Whether to inject the `<apps_instructions>` developer block.
+    pub include_apps_instructions: bool,
+
+    /// Whether to inject the `<environment_context>` user block.
+    pub include_environment_context: bool,
+
     /// Compact prompt override.
     pub compact_prompt: Option<String>,
 
@@ -364,7 +359,7 @@ pub struct Config {
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///
-    /// This is the same `tui.alternate_screen` value from `config.toml` (see [`Tui`]).
+    /// This is the same `tui.alternate_screen` value from `config.toml`.
     /// - `auto` (default): Disable alternate screen in Zellij, enable elsewhere.
     /// - `always`: Always use alternate screen (original behavior).
     /// - `never`: Never use alternate screen (inline mode, preserves scrollback).
@@ -631,6 +626,20 @@ pub struct Config {
     pub otel: codex_config::types::OtelConfig,
 }
 
+impl AuthManagerConfig for Config {
+    fn codex_home(&self) -> PathBuf {
+        self.codex_home.clone()
+    }
+
+    fn cli_auth_credentials_store_mode(&self) -> AuthCredentialsStoreMode {
+        self.cli_auth_credentials_store_mode
+    }
+
+    fn forced_chatgpt_workspace_id(&self) -> Option<String> {
+        self.forced_chatgpt_workspace_id.clone()
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ConfigBuilder {
     codex_home: Option<PathBuf>,
@@ -726,6 +735,11 @@ impl ConfigBuilder {
             codex_home,
             config_layer_stack,
         )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn without_managed_config_for_tests() -> Self {
+        Self::default().loader_overrides(LoaderOverrides::without_managed_config_for_tests())
     }
 }
 
@@ -1069,7 +1083,7 @@ pub(crate) fn set_project_trust_level_inner(
     //
     // [projects]
     // "/path/to/project" = { trust_level = "trusted" }
-    let project_key = project_path.to_string_lossy().to_string();
+    let project_key = project_trust_key(project_path);
 
     // Ensure top-level `projects` exists as a non-inline, explicit table. If it
     // exists but was previously represented as a non-table (e.g., inline),
@@ -1139,26 +1153,7 @@ pub fn set_project_trust_level(
 
 /// Save the default OSS provider preference to config.toml
 pub fn set_default_oss_provider(codex_home: &Path, provider: &str) -> std::io::Result<()> {
-    // Validate that the provider is one of the known OSS providers
-    match provider {
-        LMSTUDIO_OSS_PROVIDER_ID | OLLAMA_OSS_PROVIDER_ID => {
-            // Valid provider, continue
-        }
-        LEGACY_OLLAMA_CHAT_PROVIDER_ID => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                OLLAMA_CHAT_PROVIDER_REMOVED_ERROR,
-            ));
-        }
-        _ => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!(
-                    "Invalid OSS provider '{provider}'. Must be one of: {LMSTUDIO_OSS_PROVIDER_ID}, {OLLAMA_OSS_PROVIDER_ID}"
-                ),
-            ));
-        }
-    }
+    codex_config::config_toml::validate_oss_provider(provider)?;
     use toml_edit::value;
 
     let edits = [ConfigEdit::SetPath {
@@ -1262,6 +1257,15 @@ pub struct ConfigToml {
     /// Developer instructions inserted as a `developer` role message.
     #[serde(default)]
     pub developer_instructions: Option<String>,
+
+    /// Whether to inject the `<permissions instructions>` developer block.
+    pub include_permissions_instructions: Option<bool>,
+
+    /// Whether to inject the `<apps_instructions>` developer block.
+    pub include_apps_instructions: Option<bool>,
+
+    /// Whether to inject the `<environment_context>` user block.
+    pub include_environment_context: Option<bool>,
 
     /// Optional path to a file containing model instructions that will override
     /// the built-in instructions for the selected model. Users are STRONGLY
@@ -1511,7 +1515,7 @@ pub struct ConfigToml {
     pub windows_wsl_setup_acknowledged: Option<bool>,
 
     /// Collection of in-product notices (different from notifications)
-    /// See [`codex_config::types::Notice`] for more details
+    /// See [`crate::types::Notice`] for more details
     pub notice: Option<Notice>,
 
     /// Legacy, now use features
@@ -1550,208 +1554,15 @@ impl From<ConfigToml> for UserSavedConfig {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ProjectConfig {
-    pub trust_level: Option<TrustLevel>,
-}
-
-impl ProjectConfig {
-    pub fn is_trusted(&self) -> bool {
-        matches!(self.trust_level, Some(TrustLevel::Trusted))
-    }
-
-    pub fn is_untrusted(&self) -> bool {
-        matches!(self.trust_level, Some(TrustLevel::Untrusted))
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct RealtimeAudioConfig {
-    pub microphone: Option<String>,
-    pub speaker: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum RealtimeWsMode {
-    #[default]
-    Conversational,
-    Transcription,
-}
-
-pub use codex_protocol::protocol::RealtimeConversationVersion as RealtimeWsVersion;
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeConfig {
-    pub version: RealtimeWsVersion,
-    #[serde(rename = "type")]
-    pub session_type: RealtimeWsMode,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeToml {
-    pub version: Option<RealtimeWsVersion>,
-    #[serde(rename = "type")]
-    pub session_type: Option<RealtimeWsMode>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct RealtimeAudioToml {
-    pub microphone: Option<String>,
-    pub speaker: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct ToolsToml {
-    #[serde(
-        default,
-        deserialize_with = "deserialize_optional_web_search_tool_config"
-    )]
-    pub web_search: Option<WebSearchToolConfig>,
-
-    /// Enable the `view_image` tool that lets the agent attach local images.
-    #[serde(default)]
-    pub view_image: Option<bool>,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum WebSearchToolConfigInput {
-    Enabled(bool),
-    Config(WebSearchToolConfig),
-}
-
-fn deserialize_optional_web_search_tool_config<'de, D>(
-    deserializer: D,
-) -> Result<Option<WebSearchToolConfig>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Option::<WebSearchToolConfigInput>::deserialize(deserializer)?;
-
-    Ok(match value {
-        None => None,
-        Some(WebSearchToolConfigInput::Enabled(enabled)) => {
-            let _ = enabled;
-            None
-        }
-        Some(WebSearchToolConfigInput::Config(config)) => Some(config),
-    })
-}
-
-fn resolve_tool_suggest_config(config_toml: &ConfigToml) -> ToolSuggestConfig {
-    let discoverables = config_toml
-        .tool_suggest
-        .as_ref()
-        .into_iter()
-        .flat_map(|tool_suggest| tool_suggest.discoverables.iter())
-        .filter_map(|discoverable| {
-            let trimmed = discoverable.id.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(ToolSuggestDiscoverable {
-                    kind: discoverable.kind,
-                    id: trimmed.to_string(),
-                })
-            }
-        })
-        .collect();
-
-    ToolSuggestConfig { discoverables }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct AgentsToml {
-    /// Maximum number of agent threads that can be open concurrently.
-    /// When unset, no limit is enforced.
-    #[schemars(range(min = 1))]
-    pub max_threads: Option<usize>,
-    /// Maximum nesting depth allowed for spawned agent threads.
-    /// Root sessions start at depth 0.
-    #[schemars(range(min = 1))]
-    pub max_depth: Option<i32>,
-    /// Default maximum runtime in seconds for agent job workers.
-    #[schemars(range(min = 1))]
-    pub job_max_runtime_seconds: Option<u64>,
-
-    /// User-defined role declarations keyed by role name.
-    ///
-    /// Example:
-    /// ```toml
-    /// [agents.researcher]
-    /// description = "Research-focused role."
-    /// config_file = "./agents/researcher.toml"
-    /// nickname_candidates = ["Herodotus", "Ibn Battuta"]
-    /// ```
-    #[serde(default, flatten)]
-    pub roles: BTreeMap<String, AgentRoleToml>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AgentRoleConfig {
-    /// Human-facing role documentation used in spawn tool guidance.
-    /// Required for loaded user-defined roles after deprecated/new metadata precedence resolves.
-    pub description: Option<String>,
-    /// Path to a role-specific config layer.
-    pub config_file: Option<PathBuf>,
-    /// Candidate nicknames for agents spawned with this role.
-    pub nickname_candidates: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct AgentRoleToml {
-    /// Human-facing role documentation used in spawn tool guidance.
-    /// Required unless supplied by the referenced agent role file.
-    pub description: Option<String>,
-
-    /// Path to a role-specific config layer.
-    /// Relative paths are resolved relative to the `config.toml` that defines them.
-    pub config_file: Option<AbsolutePathBuf>,
-
-    /// Candidate nicknames for agents spawned with this role.
-    pub nickname_candidates: Option<Vec<String>>,
-}
-
-impl From<ToolsToml> for Tools {
-    fn from(tools_toml: ToolsToml) -> Self {
-        Self {
-            web_search: tools_toml.web_search.is_some().then_some(true),
-            view_image: tools_toml.view_image,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)]
-pub struct GhostSnapshotToml {
-    /// Exclude untracked files larger than this many bytes from ghost snapshots.
-    #[serde(alias = "ignore_untracked_files_over_bytes")]
-    pub ignore_large_untracked_files: Option<i64>,
-    /// Ignore untracked directories that contain this many files or more.
-    /// (Still emits a warning unless warnings are disabled.)
-    #[serde(alias = "large_untracked_dir_warning_threshold")]
-    pub ignore_large_untracked_dirs: Option<i64>,
-    /// Disable all ghost snapshot warning events.
-    pub disable_warnings: Option<bool>,
-}
-
 impl ConfigToml {
     /// Derive the effective sandbox policy from the configuration.
-    fn derive_sandbox_policy(
+    pub fn derive_sandbox_policy(
         &self,
         sandbox_mode_override: Option<SandboxMode>,
         profile_sandbox_mode: Option<SandboxMode>,
         windows_sandbox_level: WindowsSandboxLevel,
         resolved_cwd: &Path,
-        sandbox_policy_constraint: Option<&Constrained<SandboxPolicy>>,
+        sandbox_policy_constraint: Option<&crate::config::Constrained<SandboxPolicy>>,
     ) -> SandboxPolicy {
         let sandbox_mode_was_explicit = sandbox_mode_override.is_some()
             || profile_sandbox_mode.is_some()
@@ -1760,14 +1571,10 @@ impl ConfigToml {
             .or(profile_sandbox_mode)
             .or(self.sandbox_mode)
             .or_else(|| {
-                // If no sandbox_mode is set but this directory has a trust decision,
-                // default to workspace-write except on unsandboxed Windows where we
-                // default to read-only.
                 self.get_active_project(resolved_cwd).and_then(|p| {
                     if p.is_trusted() || p.is_untrusted() {
                         if cfg!(target_os = "windows")
-                            && windows_sandbox_level
-                                == codex_protocol::config_types::WindowsSandboxLevel::Disabled
+                            && windows_sandbox_level == WindowsSandboxLevel::Disabled
                         {
                             Some(SandboxMode::ReadOnly)
                         } else {
@@ -1800,9 +1607,7 @@ impl ConfigToml {
         };
         let downgrade_workspace_write_if_unsupported = |policy: &mut SandboxPolicy| {
             if cfg!(target_os = "windows")
-                // If the experimental Windows sandbox is enabled, do not force a downgrade.
-                && windows_sandbox_level
-                    == codex_protocol::config_types::WindowsSandboxLevel::Disabled
+                && windows_sandbox_level == WindowsSandboxLevel::Disabled
                 && matches!(&*policy, SandboxPolicy::WorkspaceWrite { .. })
             {
                 *policy = SandboxPolicy::new_read_only_policy();
@@ -1825,23 +1630,27 @@ impl ConfigToml {
         sandbox_policy
     }
 
-    /// Resolves the cwd to an existing project, or returns None if ConfigToml
-    /// does not contain a project corresponding to cwd or a git repo for cwd
     pub fn get_active_project(&self, resolved_cwd: &Path) -> Option<ProjectConfig> {
         let projects = self.projects.clone().unwrap_or_default();
 
-        if let Some(project_config) = projects.get(&resolved_cwd.to_string_lossy().to_string()) {
+        let resolved_cwd_key = project_trust_key(resolved_cwd);
+        let resolved_cwd_raw_key = resolved_cwd.to_string_lossy().to_string();
+        if let Some(project_config) = projects
+            .get(&resolved_cwd_key)
+            .or_else(|| projects.get(&resolved_cwd_raw_key))
+        {
             return Some(project_config.clone());
         }
 
-        // If cwd lives inside a git repo/worktree, check whether the root git project
-        // (the primary repository working directory) is trusted. This lets
-        // worktrees inherit trust from the main project.
-        if let Some(repo_root) = resolve_root_git_project_for_trust(resolved_cwd)
-            && let Some(project_config_for_root) =
-                projects.get(&repo_root.to_string_lossy().to_string_lossy().to_string())
-        {
-            return Some(project_config_for_root.clone());
+        if let Some(repo_root) = resolve_root_git_project_for_trust(resolved_cwd) {
+            let repo_root_key = project_trust_key(repo_root.as_path());
+            let repo_root_raw_key = repo_root.to_string_lossy().to_string();
+            if let Some(project_config_for_root) = projects
+                .get(&repo_root_key)
+                .or_else(|| projects.get(&repo_root_raw_key))
+            {
+                return Some(project_config_for_root.clone());
+            }
         }
 
         None
@@ -1867,6 +1676,72 @@ impl ConfigToml {
             None => Ok(ConfigProfile::default()),
         }
     }
+}
+
+fn project_trust_key(project_path: &Path) -> String {
+    dunce::canonicalize(project_path)
+        .unwrap_or_else(|_| project_path.to_path_buf())
+        .to_string_lossy()
+        .to_string()
+}
+
+fn deserialize_model_providers<'de, D>(
+    deserializer: D,
+) -> Result<HashMap<String, ModelProviderInfo>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
+    validate_model_providers(&model_providers).map_err(serde::de::Error::custom)?;
+    Ok(model_providers)
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct ProjectConfig {
+    pub trust_level: Option<TrustLevel>,
+}
+
+impl ProjectConfig {
+    pub fn is_trusted(&self) -> bool {
+        matches!(self.trust_level, Some(TrustLevel::Trusted))
+    }
+
+    pub fn is_untrusted(&self) -> bool {
+        matches!(self.trust_level, Some(TrustLevel::Untrusted))
+    }
+}
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentRoleConfig {
+    /// Human-facing role documentation used in spawn tool guidance.
+    /// Required for loaded user-defined roles after deprecated/new metadata precedence resolves.
+    pub description: Option<String>,
+    /// Path to a role-specific config layer.
+    pub config_file: Option<PathBuf>,
+    /// Candidate nicknames for agents spawned with this role.
+    pub nickname_candidates: Option<Vec<String>>,
+}
+
+fn resolve_tool_suggest_config(config_toml: &ConfigToml) -> ToolSuggestConfig {
+    let discoverables = config_toml
+        .tool_suggest
+        .as_ref()
+        .into_iter()
+        .flat_map(|tool_suggest| tool_suggest.discoverables.iter())
+        .filter_map(|discoverable| {
+            let trimmed = discoverable.id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(ToolSuggestDiscoverable {
+                    kind: discoverable.kind,
+                    id: trimmed.to_string(),
+                })
+            }
+        })
+        .collect();
+
+    ToolSuggestConfig { discoverables }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1947,49 +1822,6 @@ pub struct ConfigOverrides {
     pub ephemeral: Option<bool>,
     /// Additional directories that should be treated as writable roots for this session.
     pub additional_writable_roots: Vec<PathBuf>,
-}
-
-fn validate_reserved_model_provider_ids(
-    model_providers: &HashMap<String, ModelProviderInfo>,
-) -> Result<(), String> {
-    let mut conflicts = model_providers
-        .keys()
-        .filter(|key| RESERVED_MODEL_PROVIDER_IDS.contains(&key.as_str()))
-        .map(|key| format!("`{key}`"))
-        .collect::<Vec<_>>();
-    conflicts.sort_unstable();
-    if conflicts.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
-            "model_providers contains reserved built-in provider IDs: {}. \
-Built-in providers cannot be overridden. Rename your custom provider (for example, `openai-custom`).",
-            conflicts.join(", ")
-        ))
-    }
-}
-
-fn validate_model_providers(
-    model_providers: &HashMap<String, ModelProviderInfo>,
-) -> Result<(), String> {
-    validate_reserved_model_provider_ids(model_providers)?;
-    for (key, provider) in model_providers {
-        provider
-            .validate()
-            .map_err(|message| format!("model_providers.{key}: {message}"))?;
-    }
-    Ok(())
-}
-
-fn deserialize_model_providers<'de, D>(
-    deserializer: D,
-) -> Result<HashMap<String, ModelProviderInfo>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let model_providers = HashMap::<String, ModelProviderInfo>::deserialize(deserializer)?;
-    validate_model_providers(&model_providers).map_err(serde::de::Error::custom)?;
-    Ok(model_providers)
 }
 
 /// Resolves the OSS provider from CLI override, profile config, or global config.
@@ -2119,6 +1951,7 @@ impl Config {
         // Config.
         let ConfigRequirements {
             approval_policy: mut constrained_approval_policy,
+            approvals_reviewer: mut constrained_approvals_reviewer,
             sandbox_policy: mut constrained_sandbox_policy,
             web_search_mode: mut constrained_web_search_mode,
             feature_requirements,
@@ -2224,7 +2057,7 @@ impl Config {
         let mut additional_writable_roots: Vec<AbsolutePathBuf> = additional_writable_roots
             .into_iter()
             .map(|path| AbsolutePathBuf::resolve_path_against_base(path, resolved_cwd.as_path()))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect();
         let active_project = cfg
             .get_active_project(resolved_cwd.as_path())
             .unwrap_or(ProjectConfig { trust_level: None });
@@ -2367,10 +2200,22 @@ impl Config {
             );
             approval_policy = constrained_approval_policy.value();
         }
-        let approvals_reviewer = approvals_reviewer_override
+        let approvals_reviewer_was_explicit = approvals_reviewer_override.is_some()
+            || config_profile.approvals_reviewer.is_some()
+            || cfg.approvals_reviewer.is_some();
+        let mut approvals_reviewer = approvals_reviewer_override
             .or(config_profile.approvals_reviewer)
             .or(cfg.approvals_reviewer)
             .unwrap_or(ApprovalsReviewer::User);
+        if !approvals_reviewer_was_explicit
+            && let Err(err) = constrained_approvals_reviewer.can_set(&approvals_reviewer)
+        {
+            tracing::warn!(
+                error = %err,
+                "default approvals reviewer is disallowed by requirements; falling back to required default"
+            );
+            approvals_reviewer = constrained_approvals_reviewer.value();
+        }
         let web_search_mode = resolve_web_search_mode(&cfg, &config_profile, &features)
             .unwrap_or(WebSearchMode::Cached);
         let web_search_config = resolve_web_search_config(&cfg, &config_profile);
@@ -2384,24 +2229,8 @@ impl Config {
             .openai_base_url
             .clone()
             .filter(|value| !value.is_empty());
-        let openai_base_url_from_env = std::env::var(OPENAI_BASE_URL_ENV_VAR)
-            .ok()
-            .filter(|value| !value.is_empty());
-        if openai_base_url_from_env.is_some() {
-            if openai_base_url.is_some() {
-                tracing::warn!(
-                    env_var = OPENAI_BASE_URL_ENV_VAR,
-                    "deprecated env var is ignored because `openai_base_url` is set in config.toml"
-                );
-            } else {
-                startup_warnings.push(format!(
-                    "`{OPENAI_BASE_URL_ENV_VAR}` is deprecated. Set `openai_base_url` in config.toml instead."
-                ));
-            }
-        }
-        let effective_openai_base_url = openai_base_url.or(openai_base_url_from_env);
 
-        let mut model_providers = built_in_model_providers(effective_openai_base_url);
+        let mut model_providers = built_in_model_providers(openai_base_url);
         // Merge user-defined providers into the built-in list.
         for (key, provider) in cfg.model_providers.into_iter() {
             model_providers.entry(key).or_insert(provider);
@@ -2602,6 +2431,18 @@ impl Config {
             Self::try_read_non_empty_file(model_instructions_path, "model instructions file")?;
         let base_instructions = base_instructions.or(file_base_instructions);
         let developer_instructions = developer_instructions.or(cfg.developer_instructions);
+        let include_permissions_instructions = config_profile
+            .include_permissions_instructions
+            .or(cfg.include_permissions_instructions)
+            .unwrap_or(true);
+        let include_apps_instructions = config_profile
+            .include_apps_instructions
+            .or(cfg.include_apps_instructions)
+            .unwrap_or(true);
+        let include_environment_context = config_profile
+            .include_environment_context
+            .or(cfg.include_environment_context)
+            .unwrap_or(true);
         let guardian_developer_instructions = guardian_developer_instructions_from_requirements(
             config_layer_stack.requirements_toml(),
         );
@@ -2672,6 +2513,12 @@ impl Config {
             "approval_policy",
             approval_policy,
             &mut constrained_approval_policy,
+            &mut startup_warnings,
+        )?;
+        apply_requirement_constrained_value(
+            "approvals_reviewer",
+            approvals_reviewer,
+            &mut constrained_approvals_reviewer,
             &mut startup_warnings,
         )?;
         apply_requirement_constrained_value(
@@ -2763,7 +2610,7 @@ impl Config {
                 windows_sandbox_mode,
                 windows_sandbox_private_desktop,
             },
-            approvals_reviewer,
+            approvals_reviewer: constrained_approvals_reviewer.value(),
             enforce_residency: enforce_residency.value,
             notify: cfg.notify,
             user_instructions,
@@ -2772,6 +2619,9 @@ impl Config {
             developer_instructions,
             compact_prompt,
             commit_attribution,
+            include_permissions_instructions,
+            include_apps_instructions,
+            include_environment_context,
             // The config.toml omits "_mode" because it's a config file. However, "_mode"
             // is important in code to differentiate the mode from the store implementation.
             cli_auth_credentials_store_mode: cfg.cli_auth_credentials_store.unwrap_or_default(),

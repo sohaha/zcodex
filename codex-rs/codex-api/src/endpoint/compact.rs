@@ -88,6 +88,7 @@ impl<T: HttpTransport, A: AuthProvider> CompactClient<T, A> {
             stream: false,
             include: Vec::new(),
             service_tier: None,
+            client_metadata: None,
             prompt_cache_key: None,
             text: create_text_param_for_request(
                 /*verbosity*/ None,

@@ -73,6 +73,7 @@ async fn turn_started_uses_runtime_context_window_before_first_token_count() {
         id: "turn-start".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: Some(950_000),
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -565,20 +566,28 @@ async fn commentary_completion_restores_status_indicator_before_exec_begin() {
 #[tokio::test]
 async fn fast_status_indicator_requires_chatgpt_auth() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     chat.set_service_tier(Some(ServiceTier::Fast));
 
     assert!(!chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
 
     set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
 
     assert!(chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
 }
 
 #[tokio::test]
-async fn fast_status_indicator_is_hidden_for_non_gpt54_model() {
+async fn fast_status_indicator_is_hidden_for_models_without_fast_support() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(!get_available_model(&chat, "gpt-5.3-codex").supports_fast_mode());
     chat.set_service_tier(Some(ServiceTier::Fast));
     set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(!get_available_model(&chat, "gpt-5.3-codex").supports_fast_mode());
 
     assert!(!chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
 }
@@ -586,7 +595,11 @@ async fn fast_status_indicator_is_hidden_for_non_gpt54_model() {
 #[tokio::test]
 async fn fast_status_indicator_is_hidden_when_fast_mode_is_off() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
 
     assert!(!chat.should_show_fast_status(chat.current_model(), chat.current_service_tier(),));
 }
@@ -620,6 +633,7 @@ async fn ui_snapshots_small_heights_task_running() {
         id: "task-1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -653,6 +667,7 @@ async fn status_widget_and_approval_modal_snapshot() {
         id: "task-1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -715,6 +730,7 @@ async fn status_widget_active_snapshot() {
         id: "task-1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -869,6 +885,8 @@ async fn status_line_branch_refreshes_after_turn_complete() {
         msg: EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: "turn-1".to_string(),
             last_agent_message: None,
+            completed_at: None,
+            duration_ms: None,
         }),
     });
 
@@ -887,6 +905,8 @@ async fn status_line_branch_refreshes_after_interrupt() {
         msg: EventMsg::TurnAborted(codex_protocol::protocol::TurnAbortedEvent {
             turn_id: Some("turn-1".to_string()),
             reason: TurnAbortReason::Interrupted,
+            completed_at: None,
+            duration_ms: None,
         }),
     });
 
@@ -930,8 +950,10 @@ async fn status_line_fast_mode_footer_snapshot() {
 }
 
 #[tokio::test]
-async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
+async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     chat.config.cwd = test_project_path().abs();
     chat.config.tui_status_line = Some(vec![
         "model-with-reasoning".to_string(),
@@ -941,6 +963,8 @@ async fn status_line_model_with_reasoning_includes_fast_for_gpt54_only() {
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
     chat.set_service_tier(Some(ServiceTier::Fast));
     set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     chat.refresh_status_line();
     let test_cwd = test_path_display("/tmp/project");
 
@@ -1035,6 +1059,8 @@ async fn status_line_model_with_reasoning_fast_footer_snapshot() {
     use ratatui::backend::TestBackend;
 
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.4")).await;
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     chat.show_welcome_banner = false;
     chat.config.cwd = test_project_path().abs();
     chat.config.tui_status_line = Some(vec![
@@ -1045,6 +1071,8 @@ async fn status_line_model_with_reasoning_fast_footer_snapshot() {
     chat.set_reasoning_effort(Some(ReasoningEffortConfig::XHigh));
     chat.set_service_tier(Some(ServiceTier::Fast));
     set_chatgpt_auth(&mut chat);
+    set_fast_mode_test_catalog(&mut chat);
+    assert!(get_available_model(&chat, "gpt-5.4").supports_fast_mode());
     chat.refresh_status_line();
 
     let width = 80;
@@ -1112,6 +1140,7 @@ async fn multiple_agent_messages_in_single_turn_emit_multiple_headers() {
         id: "s1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -1134,6 +1163,8 @@ async fn multiple_agent_messages_in_single_turn_emit_multiple_headers() {
         msg: EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: "turn-1".to_string(),
             last_agent_message: None,
+            completed_at: None,
+            duration_ms: None,
         }),
     });
 
@@ -1417,6 +1448,7 @@ async fn chatwidget_exec_and_status_layout_vt100_snapshot() {
         id: "t1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -1469,6 +1501,7 @@ async fn chatwidget_markdown_code_blocks_vt100_snapshot() {
         id: "t1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),
@@ -1543,6 +1576,8 @@ printf 'fenced within fenced\n'
         msg: EventMsg::TurnComplete(TurnCompleteEvent {
             turn_id: "turn-1".to_string(),
             last_agent_message: None,
+            completed_at: None,
+            duration_ms: None,
         }),
     });
     for lines in drain_insert_history(&mut rx) {
@@ -1564,6 +1599,7 @@ async fn chatwidget_tall() {
         id: "t1".into(),
         msg: EventMsg::TurnStarted(TurnStartedEvent {
             turn_id: "turn-1".to_string(),
+            started_at: None,
             model_context_window: None,
             collaboration_mode_kind: ModeKind::Default,
         }),

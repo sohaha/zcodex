@@ -76,6 +76,8 @@ use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::LoginApiKeyParams;
 use codex_app_server_protocol::LogoutAccountResponse;
 use codex_app_server_protocol::MarketplaceInterface;
+use codex_app_server_protocol::McpResourceReadParams;
+use codex_app_server_protocol::McpResourceReadResponse;
 use codex_app_server_protocol::McpServerOauthLoginCompletedNotification;
 use codex_app_server_protocol::McpServerOauthLoginParams;
 use codex_app_server_protocol::McpServerOauthLoginResponse;
@@ -143,6 +145,7 @@ use codex_app_server_protocol::ThreadRealtimeAppendTextParams;
 use codex_app_server_protocol::ThreadRealtimeAppendTextResponse;
 use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStartResponse;
+use codex_app_server_protocol::ThreadRealtimeStartTransport;
 use codex_app_server_protocol::ThreadRealtimeStopParams;
 use codex_app_server_protocol::ThreadRealtimeStopResponse;
 use codex_app_server_protocol::ThreadResumeParams;
@@ -245,10 +248,11 @@ use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::login_with_api_key;
 use codex_login::request_device_code;
 use codex_login::run_login_server;
-use codex_mcp::mcp::auth::discover_supported_scopes;
-use codex_mcp::mcp::auth::resolve_oauth_scopes;
-use codex_mcp::mcp::collect_mcp_snapshot;
-use codex_mcp::mcp::group_tools_by_server;
+use codex_mcp::McpConfig;
+use codex_mcp::collect_mcp_snapshot;
+use codex_mcp::discover_supported_scopes;
+use codex_mcp::group_tools_by_server;
+use codex_mcp::resolve_oauth_scopes;
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::CollaborationMode;
@@ -264,6 +268,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::ConversationStartParams;
+use codex_protocol::protocol::ConversationStartTransport;
 use codex_protocol::protocol::ConversationTextParams;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::GitInfo as CoreGitInfo;
@@ -688,6 +693,7 @@ impl CodexMessageProcessor {
         connection_id: ConnectionId,
         request: ClientRequest,
         app_server_client_name: Option<String>,
+        app_server_client_version: Option<String>,
         request_context: RequestContext,
     ) {
         let to_connection_request_id = |request_id| ConnectionRequestId {
@@ -787,6 +793,10 @@ impl CodexMessageProcessor {
                 self.plugin_read(to_connection_request_id(request_id), params)
                     .await;
             }
+            ClientRequest::McpResourceRead { request_id, params } => {
+                self.mcp_resource_read(to_connection_request_id(request_id), params)
+                    .await;
+            }
             ClientRequest::AppsList { request_id, params } => {
                 self.apps_list(to_connection_request_id(request_id), params)
                     .await;
@@ -808,6 +818,7 @@ impl CodexMessageProcessor {
                     to_connection_request_id(request_id),
                     params,
                     app_server_client_name.clone(),
+                    app_server_client_version.clone(),
                 )
                 .await;
             }
@@ -5091,7 +5102,7 @@ impl CodexMessageProcessor {
         request_id: ConnectionRequestId,
         params: ListMcpServerStatusParams,
         config: Config,
-        mcp_config: codex_mcp::mcp::McpConfig,
+        mcp_config: McpConfig,
         auth: Option<CodexAuth>,
     ) {
         let snapshot = collect_mcp_snapshot(
@@ -5147,7 +5158,7 @@ impl CodexMessageProcessor {
 
         let data: Vec<McpServerStatus> = server_names[start..end]
             .iter()
-            .map(|name| McpServerStatus {
+            .map(|name: &String| McpServerStatus {
                 name: name.clone(),
                 tools: tools_by_server.get(name).cloned().unwrap_or_default(),
                 resources: snapshot.resources.get(name).cloned().unwrap_or_default(),
@@ -5174,6 +5185,44 @@ impl CodexMessageProcessor {
         let response = ListMcpServerStatusResponse { data, next_cursor };
 
         outgoing.send_response(request_id, response).await;
+    }
+
+    async fn mcp_resource_read(
+        &self,
+        request_id: ConnectionRequestId,
+        params: McpResourceReadParams,
+    ) {
+        let (_, thread) = match self.load_thread(&params.thread_id).await {
+            Ok(result) => result,
+            Err(error) => {
+                self.outgoing.send_error(request_id, error).await;
+                return;
+            }
+        };
+
+        let response = match thread.read_mcp_resource(&params.server, &params.uri).await {
+            Ok(payload) => match serde_json::from_value::<McpResourceReadResponse>(payload) {
+                Ok(response) => response,
+                Err(error) => {
+                    self.send_internal_error(
+                        request_id,
+                        format!("failed to decode MCP resource response: {error}"),
+                    )
+                    .await;
+                    return;
+                }
+            },
+            Err(error) => {
+                self.send_internal_error(
+                    request_id,
+                    format!("failed to read MCP resource: {error:#}"),
+                )
+                .await;
+                return;
+            }
+        };
+
+        self.outgoing.send_response(request_id, response).await;
     }
 
     async fn send_invalid_request_error(&self, request_id: ConnectionRequestId, message: String) {
@@ -5511,7 +5560,11 @@ impl CodexMessageProcessor {
                 .set_enabled(Feature::Apps, thread.enabled(Feature::Apps));
         }
 
-        if !config.features.apps_enabled(Some(&self.auth_manager)).await {
+        let auth = self.auth_manager.auth().await;
+        if !config
+            .features
+            .apps_enabled_for_auth(auth.as_ref().is_some_and(CodexAuth::is_chatgpt_auth))
+        {
             self.outgoing
                 .send_response(
                     request_id,
@@ -6176,9 +6229,11 @@ impl CodexMessageProcessor {
                 }
 
                 let plugin_apps = load_plugin_apps(result.installed_path.as_path());
+                let auth = self.auth_manager.auth().await;
                 let apps_needing_auth = if plugin_apps.is_empty()
-                    || !config.features.apps_enabled(Some(&self.auth_manager)).await
-                {
+                    || !config.features.apps_enabled_for_auth(
+                        auth.as_ref().is_some_and(CodexAuth::is_chatgpt_auth),
+                    ) {
                     Vec::new()
                 } else {
                     let (all_connectors_result, accessible_connectors_result) = tokio::join!(
@@ -6373,6 +6428,7 @@ impl CodexMessageProcessor {
         request_id: ConnectionRequestId,
         params: TurnStartParams,
         app_server_client_name: Option<String>,
+        app_server_client_version: Option<String>,
     ) {
         if let Err(error) = Self::validate_v2_input_limit(&params.input) {
             self.outgoing.send_error(request_id, error).await;
@@ -6385,8 +6441,12 @@ impl CodexMessageProcessor {
                 return;
             }
         };
-        if let Err(error) =
-            Self::set_app_server_client_name(thread.as_ref(), app_server_client_name).await
+        if let Err(error) = Self::set_app_server_client_info(
+            thread.as_ref(),
+            app_server_client_name,
+            app_server_client_version,
+        )
+        .await
         {
             self.outgoing.send_error(request_id, error).await;
             return;
@@ -6464,6 +6524,9 @@ impl CodexMessageProcessor {
                     items: vec![],
                     error: None,
                     status: TurnStatus::InProgress,
+                    started_at: None,
+                    completed_at: None,
+                    duration_ms: None,
                 };
 
                 let response = TurnStartResponse { turn };
@@ -6480,16 +6543,17 @@ impl CodexMessageProcessor {
         }
     }
 
-    async fn set_app_server_client_name(
+    async fn set_app_server_client_info(
         thread: &CodexThread,
         app_server_client_name: Option<String>,
+        app_server_client_version: Option<String>,
     ) -> Result<(), JSONRPCErrorError> {
         thread
-            .set_app_server_client_name(app_server_client_name)
+            .set_app_server_client_info(app_server_client_name, app_server_client_version)
             .await
             .map_err(|err| JSONRPCErrorError {
                 code: INTERNAL_ERROR_CODE,
-                message: format!("设置 app server 客户端名称失败：{err}"),
+                message: format!("设置 app server 客户端信息失败：{err}"),
                 data: None,
             })
     }
@@ -6649,6 +6713,14 @@ impl CodexMessageProcessor {
                 Op::RealtimeConversationStart(ConversationStartParams {
                     prompt: params.prompt,
                     session_id: params.session_id,
+                    transport: params.transport.map(|transport| match transport {
+                        ThreadRealtimeStartTransport::Websocket => {
+                            ConversationStartTransport::Websocket
+                        }
+                        ThreadRealtimeStartTransport::Webrtc { sdp } => {
+                            ConversationStartTransport::Webrtc { sdp }
+                        }
+                    }),
                 }),
             )
             .await;
@@ -6794,8 +6866,13 @@ impl CodexMessageProcessor {
             items,
             error: None,
             status: TurnStatus::InProgress,
+            started_at: None,
+            completed_at: None,
+            duration_ms: None,
         }
     }
+
+    pub(crate) fn handle_config_mutation(&self) {}
 
     async fn emit_review_started(
         &self,

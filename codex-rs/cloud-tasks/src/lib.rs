@@ -1582,7 +1582,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         let current = ov.selected_attempt + 1;
                                         app.status =
                                             format!("正在查看第 {current}/{total} 次尝试");
-                                        ov.sd.to_top();
+                                        ov.sd.scroll_to_top();
                                         needs_redraw = true;
                                     }
                             };
@@ -1658,7 +1658,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         let has_diff = ov.current_attempt().is_some_and(app::AttemptView::has_diff) || ov.base_can_apply;
                                         if has_text && has_diff {
                                             ov.set_view(app::DetailView::Prompt);
-                                            ov.sd.to_top();
+                                            ov.sd.scroll_to_top();
                                             needs_redraw = true;
                                         }
                                     }
@@ -1669,7 +1669,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                         let has_diff = ov.current_attempt().is_some_and(app::AttemptView::has_diff) || ov.base_can_apply;
                                         if has_text && has_diff {
                                             ov.set_view(app::DetailView::Diff);
-                                            ov.sd.to_top();
+                                            ov.sd.scroll_to_top();
                                             needs_redraw = true;
                                         }
                                     }
@@ -1700,8 +1700,8 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     if let Some(ov) = &mut app.diff_overlay { let step = ov.sd.state.viewport_h.saturating_sub(1) as i16; ov.sd.page_by(-step); }
                                     needs_redraw = true;
                                 }
-                                KeyCode::Home => { if let Some(ov) = &mut app.diff_overlay { ov.sd.to_top(); } needs_redraw = true; }
-                                KeyCode::End  => { if let Some(ov) = &mut app.diff_overlay { ov.sd.to_bottom(); } needs_redraw = true; }
+                                KeyCode::Home => { if let Some(ov) = &mut app.diff_overlay { ov.sd.scroll_to_top(); } needs_redraw = true; }
+                                KeyCode::End  => { if let Some(ov) = &mut app.diff_overlay { ov.sd.scroll_to_bottom(); } needs_redraw = true; }
                                 _ => {}
                             }
                         } else if app.env_modal.is_some() {

@@ -30,7 +30,6 @@ codex-login = { workspace = true }
 codex-models-manager = { workspace = true }
 codex-native-tldr = { workspace = true, optional = true }
 codex-protocol = { workspace = true }
-codex-shell-command = { workspace = true }
 codex-utils-cli = { workspace = true }
 codex-utils-json-to-toml = { workspace = true }
 once_cell = { workspace = true }
@@ -50,6 +49,7 @@ tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
 [dev-dependencies]
+codex-shell-command = { workspace = true }
 core_test_support = { workspace = true }
 mcp_test_support = { workspace = true }
 os_info = { workspace = true }

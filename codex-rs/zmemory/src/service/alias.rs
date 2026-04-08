@@ -54,32 +54,44 @@ pub(crate) fn add_alias_action_in_tx(
     let edge_name = new_uri.leaf_name()?;
     let existing_edge_id =
         common::find_edge_id(conn, &parent.node_uuid, &target.node_uuid, edge_name)?;
+    let existing_edge_in_domain = existing_edge_id
+        .map(|edge_id| {
+            conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM paths WHERE edge_id = ?1 AND domain = ?2)",
+                params![edge_id, new_uri.domain],
+                |row| row.get::<_, bool>(0),
+            )
+        })
+        .transpose()?
+        .unwrap_or(false);
 
-    let edge_id = if let Some(edge_id) = existing_edge_id {
+    let (edge_id, priority, disclosure) = if let Some(edge_id) = existing_edge_id {
         let (existing_priority, existing_disclosure): (i64, Option<String>) = conn.query_row(
             "SELECT priority, disclosure FROM edges WHERE id = ?1",
             [edge_id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if let Some(requested_priority) = args.priority {
-            anyhow::ensure!(
-                requested_priority == existing_priority,
-                "alias edge metadata conflicts for {new_uri}: requested priority {requested_priority} but existing priority is {existing_priority}",
-            );
+        if existing_edge_in_domain {
+            if let Some(requested_priority) = args.priority {
+                anyhow::ensure!(
+                    requested_priority == existing_priority,
+                    "alias edge metadata conflicts for {new_uri}: requested priority {requested_priority} but existing priority is {existing_priority}",
+                );
+            }
+            if let Some(requested_disclosure) = args.disclosure.as_deref() {
+                anyhow::ensure!(
+                    Some(requested_disclosure) == existing_disclosure.as_deref(),
+                    "alias edge metadata conflicts for {new_uri}: requested disclosure {requested_disclosure:?} but existing disclosure is {existing_disclosure:?}",
+                );
+            }
         }
-        if let Some(requested_disclosure) = args.disclosure.as_deref() {
-            anyhow::ensure!(
-                Some(requested_disclosure) == existing_disclosure.as_deref(),
-                "alias edge metadata conflicts for {new_uri}: requested disclosure {requested_disclosure:?} but existing disclosure is {existing_disclosure:?}",
-            );
-        }
-        edge_id
+        (edge_id, existing_priority, existing_disclosure)
     } else {
         conn.execute(
             "INSERT INTO edges(parent_uuid, child_uuid, name, priority, disclosure) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![parent.node_uuid, target.node_uuid, edge_name, priority, disclosure],
         )?;
-        conn.last_insert_rowid()
+        (conn.last_insert_rowid(), priority, disclosure)
     };
     conn.execute(
         "INSERT INTO paths(domain, path, edge_id) VALUES (?1, ?2, ?3)",
