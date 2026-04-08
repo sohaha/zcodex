@@ -207,22 +207,25 @@ core_memory_uris = [
 - `zmemory` 使用独立 SQLite，不写入 `codex-state` 的 state DB
 - `zmemory` 不替换原生 `core/memories` 启动摘要流程
 - CLI 与 core tool 共用同一套 `tool_api / service / schema`
-- `codex-zmemory` 当前仍只提供嵌入式动作层；“哪些内容应主动写入”由 `codex-core` 等上层编排决定
-- 若后续为复用上游 `nocturne_memory` web 启用兼容接口，路线也将是“内核外侧增加薄 adapter”，而不是把 crate 本身扩成独立 daemon / backend
+- `codex-zmemory` 内核仍聚焦嵌入式动作层；面向上游 web 的兼容 HTTP 接口由 `codex-cli` 的 `zmemory serve-compat` 在内核外提供
+- 即使已支持上游 web 复用，路线仍是“内核外侧增加薄 adapter”，而不是把 crate 本身扩成独立 daemon / backend
 
-## 上游 web 复用方向（规划中）
+## 上游 web 复用现状
 
-当前仓库已把“最大化对齐上游并复用 web”的路线明确为：
+当前仓库已经完成以下链路：
 
 1. 先对齐 SQLite schema、`namespace`、runtime `dbPath` / boot contract
 2. 再对齐 review / snapshot / maintenance 所需的数据语义
-3. 最后在内核外增加上游兼容 adapter，对接 `/api/browse`、`/api/review`、`/api/maintenance`
+3. 在内核外增加 `codex zmemory serve-compat`，对接 `/api/browse`、`/api/review`、`/api/maintenance`
+4. 用真实上游 frontend 复用 browse / review / maintenance 主链路
 
 这意味着：
 
 - 当前文档描述的 CLI / core / `system://...` 视图仍是事实来源
-- 未来若接入上游 web，web 也必须连接与 CLI / core 相同的数据库与 runtime profile
+- 上游 web 必须连接与 CLI / core 相同的数据库与 runtime profile；当前 compat adapter 同时接受 `/api/*` 与代理剥前缀后的 `/*` 请求形态
 - `system://workspace`、`system://defaults`、`system://alias`、`system://paths` 以及 `stats` / `doctor` 仍保留为本地诊断与治理增强，不会因为对齐上游而被静默删掉
+- `/review` 已支持最小 approve / clear-all / rollback 写语义，且 review queue 会过滤无法构建 diff 的 orphan 节点，避免页面因为无效分组打挂
+- 当前剩余缺口是 upstream memory browser 的 keyword manager 仍依赖 `/browse/glossary` POST / DELETE；compat adapter 只实现了 GET，因此不能宣称上游 web 已全量可写
 
 ## 稳定偏好主动写入
 

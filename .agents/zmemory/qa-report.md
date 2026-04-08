@@ -138,3 +138,30 @@ dependencies: [tech-review, tasks]
 - 当前明确保留的缺口：
   - review 写接口仍显式返回 `501`，当前只支持 inspection，不假装支持 rollback/approve；
   - 若后续要推进 a5，优先补 review 写语义的真实落地，再做上游 web 全链路复用。
+
+## 2026-04-08 a5 上游 web 真实复用验证
+- 本轮在 a4 薄兼容层基础上，补齐了两类真实前端复用阻塞：
+  - `codex-rs/cli/src/zmemory_compat_server.rs` 同时接受 `/api/*` 与无 `/api` 前缀路由，兼容 upstream frontend 在 Vite/nginx 代理下会剥掉 `/api` 的请求形态；
+  - `codex-rs/zmemory/src/compat/review.rs` 只把仍可构建 diff 的 pending node 暴露给 `/review/groups`，避免 orphan 节点把 review 页面打挂，并补上最小 review 写语义：approve / clear-all 通过 `review-approve` marker 清空 pending queue，rollback 通过本地 audit 逆操作 + `review-rollback` marker 回滚 `create` / `add-alias` / `manage-triggers` / `update` / `delete-path`。
+- 真实对接环境：
+  - 上游 frontend checkout：`/workspace/.tmp/nocturne_memory`（HEAD `a574c2d92bcfe377441e35d27f883fe1cb39e1e1`）
+  - frontend：`http://127.0.0.1:3000`
+  - compat adapter：`http://127.0.0.1:8000`
+  - 临时 `CODEX_HOME`：`/workspace/.tmp/zmemory-compat-a5/home`
+  - 同库核对：`system://workspace.dbPath=/workspace/.tmp/zmemory-compat-a5/home/zmemory/projects/workspace-c52ddf65534b/zmemory.db`
+- 真实页面验证结果：
+  - `/review`：已通过真实页面按钮走通 `approve` 与 `rollback`；其中 `rollback` 通过页面内覆写 `window.confirm = () => true` 稳定触发 `POST /api/review/groups/{node_uuid}/rollback`，返回 200，随后 `/api/review/groups` 为空；
+  - `/memory?domain=core&path=approval`：页面展示 `approval v2`、alias `core://approval-alias`、keywords `approve` / `keep`，与 CLI `read core://approval` 一致；
+  - `/governance-lab`：页面显示待审分组 `0`，并成功执行 `重建搜索索引`；alert 返回 `搜索索引已重建，处理 2 个节点。`；
+  - `/maintenance`：页面可展示 orphan / deprecated 样本，且已回滚的 `rollbackui` 节点未泄漏进 maintenance 结果。
+- 同库一致性核对：
+  - CLI `stats`：`active_paths=4`、`unique_nodes=2`、`glossaryKeywordCount=2`、`orphanedMemoryCount=1`、`deprecatedMemoryCount=2`
+  - HTTP `/maintenance/stats`：`active_paths=4`、`unique_nodes=2`、`glossary_keywords=2`、`orphaned_memories=1`、`deprecated_memories=2`
+- 自动化验证：
+  - `cd /workspace/codex-rs && cargo nextest run -p codex-zmemory` ✅
+  - `cd /workspace/codex-rs && cargo nextest run -p codex-cli --test zmemory` ✅
+- 收尾静态检查：
+  - `cd /workspace/codex-rs && just fix -p codex-zmemory` ✅
+  - `cd /workspace/codex-rs && just fix -p codex-cli` ❌，仍被无关 `codex-rs/cli/src/tldr_cmd.rs` 的 `AnalysisUnitDetail` / `EmbeddingUnit` 字段初始化缺失阻塞，非本轮改动引入
+- 当前非阻塞剩余缺口：
+  - upstream memory browser 的 keyword manager 仍依赖 `/browse/glossary` 的 POST/DELETE；当前 compat adapter 只实现 GET，因此本轮只验证了 browse/review/maintenance 主链路可复用，不能宣称 memory browser 已全量可写。

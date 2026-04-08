@@ -22,6 +22,7 @@ use codex_zmemory::compat::RebuildSearchResponse;
 use codex_zmemory::compat::ReviewDeprecatedResponse;
 use codex_zmemory::compat::ReviewDiffResponse;
 use codex_zmemory::compat::ReviewGroupItemResponse;
+use codex_zmemory::compat::ReviewRollbackActionResponse;
 use codex_zmemory::compat::SuccessMessageResponse;
 use codex_zmemory::compat::UpdateNodeResponse;
 use serde::Deserialize;
@@ -60,39 +61,39 @@ pub async fn serve_compat(bind: String, service: CompatService) -> Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
-        .route("/api/browse/domains", get(list_domains))
-        .route("/api/browse/namespaces", get(list_namespaces))
-        .route("/api/browse/node", get(get_node).put(update_node))
-        .route("/api/browse/glossary", get(get_glossary))
-        .route("/api/review/groups", get(review_groups))
-        .route(
-            "/api/review/groups/{node_uuid}/diff",
-            get(review_group_diff),
-        )
-        .route(
-            "/api/review/groups/{node_uuid}/rollback",
-            post(review_write_not_implemented),
-        )
-        .route(
-            "/api/review/groups/{node_uuid}",
-            delete(review_write_not_implemented),
-        )
-        .route("/api/review", delete(review_write_not_implemented))
-        .route("/api/review/deprecated", get(review_deprecated))
-        .route("/api/maintenance/stats", get(admin_stats))
-        .route("/api/maintenance/doctor", get(admin_doctor))
-        .route("/api/maintenance/orphans", get(list_orphans))
-        .route(
-            "/api/maintenance/orphans/{memory_id}",
-            get(orphan_detail).delete(delete_orphan),
-        )
-        .route("/api/maintenance/rebuild-search", post(rebuild_search))
+        .merge(compat_routes())
+        .nest("/api", compat_routes())
         .with_state(state);
 
     let addr: SocketAddr = bind.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn compat_routes() -> Router<AppState> {
+    Router::new()
+        .route("/browse/domains", get(list_domains))
+        .route("/browse/namespaces", get(list_namespaces))
+        .route("/browse/node", get(get_node).put(update_node))
+        .route("/browse/glossary", get(get_glossary))
+        .route("/review/groups", get(review_groups))
+        .route("/review/groups/{node_uuid}/diff", get(review_group_diff))
+        .route(
+            "/review/groups/{node_uuid}/rollback",
+            post(review_group_rollback),
+        )
+        .route("/review/groups/{node_uuid}", delete(review_group_approve))
+        .route("/review", delete(review_clear_all))
+        .route("/review/deprecated", get(review_deprecated))
+        .route("/maintenance/stats", get(admin_stats))
+        .route("/maintenance/doctor", get(admin_doctor))
+        .route("/maintenance/orphans", get(list_orphans))
+        .route(
+            "/maintenance/orphans/{memory_id}",
+            get(orphan_detail).delete(delete_orphan),
+        )
+        .route("/maintenance/rebuild-search", post(rebuild_search))
 }
 
 async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
@@ -205,14 +206,42 @@ async fn review_group_diff(
     ))
 }
 
-async fn review_write_not_implemented() -> CompatResult<SuccessMessageResponse> {
-    Err((
-        StatusCode::NOT_IMPLEMENTED,
-        Json(ErrorDetailResponse {
-            detail: "local compatibility adapter currently exposes review inspection only"
-                .to_string(),
-        }),
+async fn review_group_rollback(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(node_uuid): Path<String>,
+) -> CompatResult<ReviewRollbackActionResponse> {
+    Ok(Json(
+        state
+            .service
+            .rollback_review_group(requested_namespace(&headers), &node_uuid)
+            .map_err(map_compat_err)?,
     ))
+}
+
+async fn review_group_approve(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(node_uuid): Path<String>,
+) -> CompatResult<SuccessMessageResponse> {
+    Ok(Json(SuccessMessageResponse {
+        message: state
+            .service
+            .approve_review_group(requested_namespace(&headers), &node_uuid)
+            .map_err(map_compat_err)?,
+    }))
+}
+
+async fn review_clear_all(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> CompatResult<SuccessMessageResponse> {
+    Ok(Json(SuccessMessageResponse {
+        message: state
+            .service
+            .clear_review_groups(requested_namespace(&headers))
+            .map_err(map_compat_err)?,
+    }))
 }
 
 async fn review_deprecated(

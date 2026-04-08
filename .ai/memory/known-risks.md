@@ -13,3 +13,4 @@
 - 新增或改动直接读取 `turn.config.*` 的 handler 时，需要显式验证 turn cwd override 后是否重新解析 project-scoped 配置，而不是复用线程初始配置。
 - 子线程相关链路继续重点回归：`spawn_agent`、`resume_agent`、`agent_jobs` 必须继承当前 turn cwd 下解析出的 `zmemory` 配置，而不是父线程启动时的项目路径。
 - 以后使用 `sync-openai-codex-pr` 或其他上游同步流程前，必须先列出“本分叉独有功能/文案保留清单”，同步后逐项核对；至少覆盖 `auto_tldr_routing`、`reference_context_item`/完整上下文重注入、`AGENTS.md` 重新解析、TUI 中文文案、buddy 可见性/状态展示与插件弹窗。
+- 2026-04-08 已验证 upstream web 的 browse/review/maintenance 主链路可复用，但 memory browser 的 keyword manager 仍依赖 `/browse/glossary` POST/DELETE；当前 compat adapter 只实现 GET，不能把上游 web 记为“全量可写”，后续若开放 glossary 写入需补齐显式接口与回归。
