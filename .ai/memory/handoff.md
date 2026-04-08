@@ -2,8 +2,8 @@
 
 ## 当前焦点
 
-- 更新时间：2026-04-08T00:51:48.696Z
-- 本轮摘要：Cadence execution 完成：已执行并完成 .agents/issues/2026-04-07-ztok-grep-rg-mapping.toml 的 a1，确认 shell_command 的简单 rg 会改写到 ztok grep；ztok grep 主后端优先调用 rg，失败时回退系统 grep；codex-cli 平台包分发 rg 并通过 vendor/.../path 注入 PATH。结论已明确边界：这是底层能力链路对应，不是原生 rg 语义完全透传；issue #169 comment 仍仅采用可直接确认的公开内容。
+- 更新时间：2026-04-08T07:40:33.264Z
+- 本轮摘要：完成 zmemory a3：为 read/export/history/stats/doctor/system alias review 引入 typed internal contracts 与 snapshot builder，修复 alias 读取下 child 选择与显式 alias-read 回归测试；已执行 just fmt、cargo nextest run -p codex-zmemory、just fix -p codex-zmemory，并提交 refactor(zmemory): type service contracts and snapshots (99e4d9940)。
 
 ## 待确认问题
 
