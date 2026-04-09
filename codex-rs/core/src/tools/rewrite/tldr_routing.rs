@@ -297,6 +297,7 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::REAL_QUERY_MATRIX;
     use crate::tools::rewrite::test_corpus::project_route_counts;
     use crate::tools::rewrite::test_corpus::project_signal_counts;
     use crate::tools::rewrite::test_corpus::route_label;
@@ -365,87 +366,35 @@ mod tests {
 
     #[test]
     fn search_route_real_query_matrix_stays_stable() {
-        let cases = [
-            (
-                "create_tldr_tool",
-                SearchRoute::ContextSymbol,
-                SearchSignal::BareSymbol,
-                "structural_symbol_query",
-                Some("structural_shell_symbol_intercept"),
-            ),
-            (
-                "`Foo.bar()`",
-                SearchRoute::ContextSymbol,
-                SearchSignal::WrappedSymbol,
-                "structural_wrapped_symbol_query",
-                Some("structural_shell_wrapped_symbol_intercept"),
-            ),
-            (
-                "Foo.bar",
-                SearchRoute::ContextSymbol,
-                SearchSignal::MemberSymbol,
-                "structural_member_symbol_query",
-                Some("structural_shell_member_symbol_intercept"),
-            ),
-            (
-                "where is create_tldr_tool used",
-                SearchRoute::SemanticQuery,
-                SearchSignal::NaturalLanguage,
-                "structural_natural_language_search_query",
-                Some("structural_shell_natural_language_intercept"),
-            ),
-            (
-                "src/tools/spec.rs",
-                SearchRoute::SemanticQuery,
-                SearchSignal::PathLike,
-                "structural_pathlike_search_query",
-                Some("structural_shell_pathlike_intercept"),
-            ),
-            (
-                "panic handler",
-                SearchRoute::SemanticQuery,
-                SearchSignal::NaturalLanguage,
-                "structural_natural_language_search_query",
-                Some("structural_shell_natural_language_intercept"),
-            ),
-            (
-                "ToolCallRuntimeImpl",
-                SearchRoute::ContextSymbol,
-                SearchSignal::BareSymbol,
-                "structural_symbol_query",
-                Some("structural_shell_symbol_intercept"),
-            ),
-            (
-                "error_boundary_component",
-                SearchRoute::ContextSymbol,
-                SearchSignal::BareSymbol,
-                "structural_symbol_query",
-                Some("structural_shell_symbol_intercept"),
-            ),
-            (
-                "symbol lookup without spaces",
-                SearchRoute::SemanticQuery,
-                SearchSignal::NaturalLanguage,
-                "structural_natural_language_search_query",
-                Some("structural_shell_natural_language_intercept"),
-            ),
-        ];
-
-        for (pattern, expected_route, expected_signal, expected_reason, expected_intercept) in cases
-        {
-            let classification = classify_search_route(pattern, &ToolRoutingDirectives::default())
-                .expect("route should succeed");
-            assert_eq!(classification.route, expected_route, "pattern: {pattern}");
-            assert_eq!(classification.signal, expected_signal, "pattern: {pattern}");
+        for case in REAL_QUERY_MATRIX {
+            let classification =
+                classify_search_route(case.pattern, &ToolRoutingDirectives::default())
+                    .expect("route should succeed");
+            assert_eq!(
+                classification.route, case.route,
+                "pattern: {}",
+                case.pattern
+            );
+            assert_eq!(
+                classification.signal, case.signal,
+                "pattern: {}",
+                case.pattern
+            );
             assert_eq!(
                 corpus_structural_search_reason(classification.signal),
-                expected_reason,
-                "pattern: {pattern}"
+                corpus_structural_search_reason(case.signal),
+                "pattern: {}",
+                case.pattern
             );
             assert_eq!(
                 shell_intercept_reason(ProblemKind::Structural, classification.signal),
-                expected_intercept,
-                "pattern: {pattern}"
+                Some(
+                    crate::tools::rewrite::test_corpus::structural_shell_intercept_reason(
+                        case.signal
+                    )
+                ),
+                "pattern: {}",
+                case.pattern
             );
         }
     }

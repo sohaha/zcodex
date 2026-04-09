@@ -8,6 +8,12 @@ pub(crate) struct QueryCorpusCase {
     pub(crate) signal: SearchSignal,
 }
 
+pub(crate) struct QueryMatrixCase {
+    pub(crate) pattern: &'static str,
+    pub(crate) route: SearchRoute,
+    pub(crate) signal: SearchSignal,
+}
+
 pub(crate) fn route_label(route: SearchRoute) -> &'static str {
     match route {
         SearchRoute::ContextSymbol => "context",
@@ -109,6 +115,54 @@ pub(crate) const PROJECT_QUERY_CORPUS: [QueryCorpusCase; 5] = [
         pattern: "core/src/tools/rewrite/engine.rs",
         route: SearchRoute::SemanticQuery,
         signal: SearchSignal::PathLike,
+    },
+];
+
+pub(crate) const REAL_QUERY_MATRIX: [QueryMatrixCase; 9] = [
+    QueryMatrixCase {
+        pattern: "create_tldr_tool",
+        route: SearchRoute::ContextSymbol,
+        signal: SearchSignal::BareSymbol,
+    },
+    QueryMatrixCase {
+        pattern: "`Foo.bar()`",
+        route: SearchRoute::ContextSymbol,
+        signal: SearchSignal::WrappedSymbol,
+    },
+    QueryMatrixCase {
+        pattern: "Foo.bar",
+        route: SearchRoute::ContextSymbol,
+        signal: SearchSignal::MemberSymbol,
+    },
+    QueryMatrixCase {
+        pattern: "where is create_tldr_tool used",
+        route: SearchRoute::SemanticQuery,
+        signal: SearchSignal::NaturalLanguage,
+    },
+    QueryMatrixCase {
+        pattern: "src/tools/spec.rs",
+        route: SearchRoute::SemanticQuery,
+        signal: SearchSignal::PathLike,
+    },
+    QueryMatrixCase {
+        pattern: "panic handler",
+        route: SearchRoute::SemanticQuery,
+        signal: SearchSignal::NaturalLanguage,
+    },
+    QueryMatrixCase {
+        pattern: "ToolCallRuntimeImpl",
+        route: SearchRoute::ContextSymbol,
+        signal: SearchSignal::BareSymbol,
+    },
+    QueryMatrixCase {
+        pattern: "error_boundary_component",
+        route: SearchRoute::ContextSymbol,
+        signal: SearchSignal::BareSymbol,
+    },
+    QueryMatrixCase {
+        pattern: "symbol lookup without spaces",
+        route: SearchRoute::SemanticQuery,
+        signal: SearchSignal::NaturalLanguage,
     },
 ];
 
