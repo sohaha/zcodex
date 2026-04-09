@@ -490,6 +490,105 @@ mod tests {
     }
 
     #[test]
+    fn current_project_query_corpus_summary_stays_stable() {
+        use std::collections::BTreeMap;
+
+        let corpus = [
+            (
+                "rewrite_tool_call",
+                Ok((SearchRoute::ContextSymbol, SearchSignal::BareSymbol)),
+            ),
+            (
+                "`emit_tool_route_metric()`",
+                Ok((SearchRoute::ContextSymbol, SearchSignal::WrappedSymbol)),
+            ),
+            (
+                "decision.signal",
+                Ok((SearchRoute::ContextSymbol, SearchSignal::MemberSymbol)),
+            ),
+            (
+                "ToolCallSource::Direct",
+                Ok((SearchRoute::ContextSymbol, SearchSignal::BareSymbol)),
+            ),
+            (
+                "where is TurnContext defined",
+                Ok((SearchRoute::SemanticQuery, SearchSignal::NaturalLanguage)),
+            ),
+            (
+                "panic handler",
+                Ok((SearchRoute::SemanticQuery, SearchSignal::NaturalLanguage)),
+            ),
+            (
+                "core/src/tools/rewrite/engine.rs",
+                Ok((SearchRoute::SemanticQuery, SearchSignal::PathLike)),
+            ),
+            (
+                "codex-rs/otel/src/metrics/names.rs",
+                Ok((SearchRoute::SemanticQuery, SearchSignal::PathLike)),
+            ),
+            ("foo.*bar", Err("raw_pattern_regex")),
+        ];
+
+        let mut route_counts = BTreeMap::new();
+        let mut signal_counts = BTreeMap::new();
+        let mut passthrough_counts = BTreeMap::new();
+
+        for (pattern, expected) in corpus {
+            match (
+                classify_search_route(pattern, &ToolRoutingDirectives::default()),
+                expected,
+            ) {
+                (Ok(classification), Ok((expected_route, expected_signal))) => {
+                    assert_eq!(classification.route, expected_route, "pattern: {pattern}");
+                    assert_eq!(classification.signal, expected_signal, "pattern: {pattern}");
+                    *route_counts
+                        .entry(match classification.route {
+                            SearchRoute::ContextSymbol => "context",
+                            SearchRoute::SemanticQuery => "semantic",
+                        })
+                        .or_insert(0usize) += 1;
+                    *signal_counts
+                        .entry(match classification.signal {
+                            SearchSignal::BareSymbol => "bare_symbol",
+                            SearchSignal::WrappedSymbol => "wrapped_symbol",
+                            SearchSignal::MemberSymbol => "member_symbol",
+                            SearchSignal::NaturalLanguage => "natural_language",
+                            SearchSignal::PathLike => "path_like",
+                            SearchSignal::GenericSemantic => "generic_semantic",
+                        })
+                        .or_insert(0usize) += 1;
+                }
+                (Err(reason), Err(expected_reason)) => {
+                    assert_eq!(reason, expected_reason, "pattern: {pattern}");
+                    *passthrough_counts.entry(reason).or_insert(0usize) += 1;
+                }
+                (actual, expected) => panic!(
+                    "pattern {pattern} classified unexpectedly: actual={actual:?} expected={expected:?}"
+                ),
+            }
+        }
+
+        assert_eq!(
+            route_counts,
+            BTreeMap::from([("context", 4usize), ("semantic", 4usize)])
+        );
+        assert_eq!(
+            signal_counts,
+            BTreeMap::from([
+                ("bare_symbol", 2usize),
+                ("member_symbol", 1usize),
+                ("natural_language", 2usize),
+                ("path_like", 2usize),
+                ("wrapped_symbol", 1usize)
+            ])
+        );
+        assert_eq!(
+            passthrough_counts,
+            BTreeMap::from([("raw_pattern_regex", 1usize)])
+        );
+    }
+
+    #[test]
     fn passthrough_reason_for_read_respects_force_raw() {
         let reason = passthrough_reason_for_read(&ToolRoutingDirectives {
             force_raw_read: true,
