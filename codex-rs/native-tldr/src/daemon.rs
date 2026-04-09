@@ -1118,7 +1118,7 @@ fn daemon_project_hash(project_root: &Path) -> String {
     hash[..8].to_string()
 }
 
-fn daemon_artifact_dir_for_project(project_root: &Path) -> PathBuf {
+pub(crate) fn daemon_artifact_dir_for_project(project_root: &Path) -> PathBuf {
     daemon_artifact_scope_dir().join(daemon_project_hash(project_root))
 }
 

@@ -7,7 +7,7 @@
 - 统一引擎入口 `TldrEngine`
 - 17 种语言注册：C、C++、C#、Elixir、Go、Java、JavaScript、Lua、Luau、PHP、Python、Ruby、Rust、Scala、Swift、TypeScript、Zig
 - `structure` / `search` / `extract` / `imports` / `importers` / `context` / `impact` / `calls` / `dead` / `arch` / `change-impact` / `cfg` / `dfg` / `slice` / `diagnostics` / `doctor` 分析入口
-- semantic phase-2：真实 dense embedding、`.tldr/cache/semantic/<language>/` 本地持久化、brute-force 向量检索、`warm` 触发 reindex
+- semantic phase-2：真实 dense embedding、系统运行时目录/临时目录下 `codex-native-tldr/<scope>/<project-hash>/cache/semantic/<language>/` 本地持久化、brute-force 向量检索、`warm` 触发 reindex
 - daemon / session / health / status 生命周期闭环
 - CLI `codex ztldr ...` 接入
 - MCP `ztldr` tool 接入
@@ -65,12 +65,14 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 - 否则回退：`$TMPDIR/codex-native-tldr/<uid>/`
 - `socket/pid` 位于：`.../<project-hash>/`
 - `lock/launch.lock` 位于 scope 根目录，避免项目 artifact 目录被删时一并丢失互斥语义
+- semantic cache 位于：`.../<project-hash>/cache/semantic/<language>/`
 
 非 Unix 下回退到：
 
 - scope 根目录：`$TMPDIR/codex-native-tldr/`
 - `socket/pid` 位于：`.../<project-hash>/`
 - `lock/launch.lock` 位于 scope 根目录
+- semantic cache 位于：`.../<project-hash>/cache/semantic/<language>/`
 
 文件名保持稳定：
 
@@ -84,7 +86,7 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 - daemon-first 是 Unix 主路径；分析类与 semantic 在 daemon 不可用时可回退本地引擎，但 daemon action（`ping/warm/snapshot/status/notify`）仍要求 daemon 可用
 - `status` 的配置摘要会暴露 `session_idle_timeout_secs`，便于观察当前空闲自退阈值
 - `structure` 当前对应代码结构分析；`tree` 仍保留给未来的真实 file-tree contract，当前不会再作为 AST 别名
-- semantic 默认开启，并在首次查询时按语言 lazy 建索引；首次 fresh build 会把 units/vector/manifest 落到 `.tldr/cache/semantic/<language>/`
+- semantic 默认开启，并在首次查询时按语言 lazy 建索引；首次 fresh build 会把 units/vector/manifest 落到系统运行时目录或系统临时目录下的 `codex-native-tldr/<scope>/<project-hash>/cache/semantic/<language>/`
 - semantic / status 对外 schema 已收口到稳定 view；更激进的 payload 控制仍可继续增强
 - semantic embedding 的 ONNX Runtime 现改为运行时动态加载；构建时不再静态链接预编译 ORT，但执行 semantic embedding 前需要让 `libonnxruntime.so` 可被动态加载器找到，或设置 `ORT_DYLIB_PATH=/path/to/libonnxruntime.so`
 - 若当前环境暂时无法提供可加载的 ORT 动态库，`semantic` 现在会自动回退到非 embedding 路径；命令仍会成功返回，普通 CLI 输出不会额外打断用户

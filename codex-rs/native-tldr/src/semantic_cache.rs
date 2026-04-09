@@ -1,3 +1,4 @@
+use crate::daemon::daemon_artifact_dir_for_project;
 use crate::lang_support::SupportedLanguage;
 use crate::semantic::EmbeddingUnit;
 use crate::semantic::SemanticConfig;
@@ -157,8 +158,7 @@ pub(crate) fn source_fingerprint(
 }
 
 fn cache_dir(project_root: &Path, language: SupportedLanguage) -> std::path::PathBuf {
-    project_root
-        .join(".tldr")
+    daemon_artifact_dir_for_project(project_root)
         .join("cache")
         .join("semantic")
         .join(language.as_str())
@@ -257,4 +257,42 @@ fn persist_vectors(vectors_path: &Path, units: &[EmbeddingUnit], dimensions: usi
     writer
         .flush()
         .with_context(|| format!("flush semantic vectors {}", vectors_path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cache_dir;
+    use crate::lang_support::SupportedLanguage;
+    use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
+
+    #[test]
+    fn cache_dir_uses_runtime_artifact_root_instead_of_project_root() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let project_root = tempdir.path().join("project");
+        std::fs::create_dir_all(&project_root).expect("project root should exist");
+
+        let cache_dir = cache_dir(&project_root, SupportedLanguage::Rust);
+
+        assert!(!cache_dir.starts_with(&project_root));
+        assert_eq!(
+            cache_dir.file_name().and_then(|value| value.to_str()),
+            Some("rust")
+        );
+        assert_eq!(
+            cache_dir
+                .parent()
+                .and_then(|value| value.file_name())
+                .and_then(|value| value.to_str()),
+            Some("semantic")
+        );
+        assert_eq!(
+            cache_dir
+                .parent()
+                .and_then(|value| value.parent())
+                .and_then(|value| value.file_name())
+                .and_then(|value| value.to_str()),
+            Some("cache")
+        );
+    }
 }

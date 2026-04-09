@@ -1682,24 +1682,13 @@ fn login() {
             .expect("initial index build should succeed");
         assert_eq!(first.units[0].symbol.as_deref(), Some("login"));
         assert_eq!(semantic_index_build_count(), 1);
-        assert!(
-            tempdir
-                .path()
-                .join(".tldr/cache/semantic/rust/manifest.json")
-                .exists()
-        );
-        assert!(
-            tempdir
-                .path()
-                .join(".tldr/cache/semantic/rust/units.jsonl")
-                .exists()
-        );
-        assert!(
-            tempdir
-                .path()
-                .join(".tldr/cache/semantic/rust/vectors.f32")
-                .exists()
-        );
+        let cache_dir = crate::daemon::daemon_artifact_dir_for_project(tempdir.path())
+            .join("cache")
+            .join("semantic")
+            .join("rust");
+        assert!(cache_dir.join("manifest.json").exists());
+        assert!(cache_dir.join("units.jsonl").exists());
+        assert!(cache_dir.join("vectors.f32").exists());
 
         let reused = SemanticIndexer::new(SemanticConfig::default().with_enabled(true))
             .load_or_build_index(tempdir.path(), SupportedLanguage::Rust)

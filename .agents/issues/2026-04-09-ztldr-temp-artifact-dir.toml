@@ -1,0 +1,43 @@
+plan = ".agents/plan/2026-04-09-ztldr-temp-artifact-dir.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "收敛 ztldr runtime/cache 路径并迁出项目根 .tldr"
+scope = """
+本 issue 负责把 semantic cache 的默认落盘路径从 `project_root/.tldr/cache/semantic/<language>/` 迁移到系统运行时目录或系统临时目录下的项目隔离路径，并复用现有的项目哈希/运行时目录策略，避免 `ztldr` 首次建索引时污染项目根目录。
+
+包括 `codex-rs/native-tldr` 中与 semantic cache 路径解析、目录创建和磁盘复用直接相关的实现与测试。
+不包括 `.tldrignore` 的位置和语义调整，不包括 daemon socket/pid/lock 现有路径策略改动，也不包括新增缓存管理命令或新的持久化配置面。
+"""
+touch_points = ["codex-rs/native-tldr/src/semantic_cache.rs", "codex-rs/native-tldr/src/daemon.rs", "codex-rs/native-tldr/src/semantic.rs"]
+depends_on = []
+done_when = "semantic cache 默认不再写入项目根 `.tldr/`，而是写入系统运行时目录或系统临时目录下的项目隔离路径；相同项目仍能复用磁盘缓存，且现有 daemon artifact 路径行为未被回归破坏。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr load_or_build_index_persists_and_reuses_disk_cache daemon_status_reports_config_and_reindex_state --quiet"
+regress_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr --quiet"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成默认 semantic cache 路径迁移：`semantic_cache` 现复用 daemon 的项目级 runtime artifact 目录，不再向项目根写入 `.tldr/`。本地执行 `just native-tldr-test-fast`，137/137 通过，覆盖了缓存复用、新增路径测试与 daemon 相关回归。执行期 capability 使用 `ztldr` 做路径/调用定位；未使用子代理。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "同步 semantic cache 新默认路径的文档与验证断言"
+scope = """
+本 issue 负责把 `codex-native-tldr` 中所有直接声明默认 semantic cache 位于项目根 `.tldr/cache/semantic/<language>/` 的 README、测试断言和相关说明同步到新的系统临时/运行时目录语义，确保实现、文档与测试口径一致。
+
+包括 README 文本、路径相关测试断言与必要的验证说明更新。
+不包括新增额外用户配置项，不包括修改 `ztldr` 分析能力、embedding 行为或其他与路径无关的文档内容。
+"""
+touch_points = ["codex-rs/native-tldr/README.md", "codex-rs/native-tldr/src/semantic.rs", "codex-rs/native-tldr/src/semantic_cache.rs"]
+depends_on = ["a1"]
+done_when = "仓库中不再把 semantic cache 默认描述为项目根 `.tldr/cache/semantic/<language>/`；相关测试断言改为检查新的默认路径语义，且文档明确该缓存属于可重建 artifact。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr --quiet"
+regress_by = "node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js issue .agents/issues/2026-04-09-ztldr-temp-artifact-dir.toml"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已同步 README 与测试断言：semantic cache 默认路径文案改为系统运行时目录/临时目录下的项目隔离路径，并明确 `.tldrignore` 仍是项目根输入文件。回归执行 `node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js issue .agents/issues/2026-04-09-ztldr-temp-artifact-dir.toml` 通过；同时用 `RIPGREP_CONFIG_PATH=/dev/null rg -n \"\\.tldr/cache/semantic|project_root/.tldr|\\.tldr/\" codex-rs/native-tldr codex-rs/README.md docs -g '!target'` 复查，不再存在旧默认路径文案。"
