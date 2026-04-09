@@ -356,6 +356,93 @@ mod tests {
     }
 
     #[test]
+    fn search_route_real_query_matrix_stays_stable() {
+        let cases = [
+            (
+                "create_tldr_tool",
+                SearchRoute::ContextSymbol,
+                SearchSignal::BareSymbol,
+                "structural_symbol_query",
+                Some("structural_shell_symbol_intercept"),
+            ),
+            (
+                "`Foo.bar()`",
+                SearchRoute::ContextSymbol,
+                SearchSignal::WrappedSymbol,
+                "structural_wrapped_symbol_query",
+                Some("structural_shell_wrapped_symbol_intercept"),
+            ),
+            (
+                "Foo.bar",
+                SearchRoute::ContextSymbol,
+                SearchSignal::MemberSymbol,
+                "structural_member_symbol_query",
+                Some("structural_shell_member_symbol_intercept"),
+            ),
+            (
+                "where is create_tldr_tool used",
+                SearchRoute::SemanticQuery,
+                SearchSignal::NaturalLanguage,
+                "structural_natural_language_search_query",
+                Some("structural_shell_natural_language_intercept"),
+            ),
+            (
+                "src/tools/spec.rs",
+                SearchRoute::SemanticQuery,
+                SearchSignal::PathLike,
+                "structural_pathlike_search_query",
+                Some("structural_shell_pathlike_intercept"),
+            ),
+            (
+                "panic handler",
+                SearchRoute::SemanticQuery,
+                SearchSignal::NaturalLanguage,
+                "structural_natural_language_search_query",
+                Some("structural_shell_natural_language_intercept"),
+            ),
+            (
+                "ToolCallRuntimeImpl",
+                SearchRoute::ContextSymbol,
+                SearchSignal::BareSymbol,
+                "structural_symbol_query",
+                Some("structural_shell_symbol_intercept"),
+            ),
+            (
+                "error_boundary_component",
+                SearchRoute::ContextSymbol,
+                SearchSignal::BareSymbol,
+                "structural_symbol_query",
+                Some("structural_shell_symbol_intercept"),
+            ),
+            (
+                "symbol lookup without spaces",
+                SearchRoute::SemanticQuery,
+                SearchSignal::NaturalLanguage,
+                "structural_natural_language_search_query",
+                Some("structural_shell_natural_language_intercept"),
+            ),
+        ];
+
+        for (pattern, expected_route, expected_signal, expected_reason, expected_intercept) in cases
+        {
+            let classification = classify_search_route(pattern, &ToolRoutingDirectives::default())
+                .expect("route should succeed");
+            assert_eq!(classification.route, expected_route, "pattern: {pattern}");
+            assert_eq!(classification.signal, expected_signal, "pattern: {pattern}");
+            assert_eq!(
+                search_reason(ProblemKind::Structural, classification.signal),
+                expected_reason,
+                "pattern: {pattern}"
+            );
+            assert_eq!(
+                shell_intercept_reason(ProblemKind::Structural, classification.signal),
+                expected_intercept,
+                "pattern: {pattern}"
+            );
+        }
+    }
+
+    #[test]
     fn passthrough_reason_for_read_respects_force_raw() {
         let reason = passthrough_reason_for_read(&ToolRoutingDirectives {
             force_raw_read: true,
