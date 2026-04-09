@@ -443,6 +443,53 @@ mod tests {
     }
 
     #[test]
+    fn context_like_queries_can_opt_out_of_context_route_without_losing_signal() {
+        let classification = classify_search_route(
+            "create_tldr_tool",
+            &ToolRoutingDirectives {
+                prefer_context_search: false,
+                ..Default::default()
+            },
+        )
+        .expect("route should succeed");
+        assert_eq!(classification.route, SearchRoute::SemanticQuery);
+        assert_eq!(classification.signal, SearchSignal::BareSymbol);
+    }
+
+    #[test]
+    fn factual_queries_only_classify_when_force_tldr_is_enabled() {
+        let reason = classify_search_route(
+            "create_tldr_tool",
+            &ToolRoutingDirectives {
+                problem_kind: ProblemKind::Factual,
+                ..Default::default()
+            },
+        )
+        .expect_err("factual query should passthrough by default");
+        assert_eq!(reason, "factual_query");
+
+        let classification = classify_search_route(
+            "create_tldr_tool",
+            &ToolRoutingDirectives {
+                problem_kind: ProblemKind::Factual,
+                force_tldr: true,
+                ..Default::default()
+            },
+        )
+        .expect("forced factual query should classify");
+        assert_eq!(classification.route, SearchRoute::ContextSymbol);
+        assert_eq!(classification.signal, SearchSignal::BareSymbol);
+        assert_eq!(
+            search_reason(ProblemKind::Factual, classification.signal),
+            "factual_symbol_query"
+        );
+        assert_eq!(
+            shell_intercept_reason(ProblemKind::Factual, classification.signal),
+            None
+        );
+    }
+
+    #[test]
     fn passthrough_reason_for_read_respects_force_raw() {
         let reason = passthrough_reason_for_read(&ToolRoutingDirectives {
             force_raw_read: true,
