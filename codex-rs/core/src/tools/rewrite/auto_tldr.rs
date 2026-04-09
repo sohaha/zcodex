@@ -7,6 +7,7 @@ use crate::tools::rewrite::decision::ToolRewriteDecision;
 use crate::tools::rewrite::resolve_tldr_project_root;
 use crate::tools::rewrite::tldr_routing::SearchRoute;
 use crate::tools::rewrite::tldr_routing::classify_search_route;
+use crate::tools::rewrite::tldr_routing::context_symbol;
 use crate::tools::rewrite::tldr_routing::non_code_reason;
 use crate::tools::rewrite::tldr_routing::search_action;
 use crate::tools::rewrite::tldr_routing::search_reason;
@@ -50,8 +51,8 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         }
     };
 
-    let route = match classify_search_route(args.pattern.as_str(), &directives) {
-        Ok(route) => route,
+    let classification = match classify_search_route(args.pattern.as_str(), &directives) {
+        Ok(classification) => classification,
         Err(reason) => {
             return ToolRewriteDecision::Passthrough { call, reason };
         }
@@ -73,14 +74,14 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
     };
 
     let pattern = args.pattern.trim().to_string();
-    let reason = search_reason(directives.problem_kind, route);
-    let action = search_action(route);
+    let reason = search_reason(directives.problem_kind, classification.signal);
+    let action = search_action(classification.route);
     let project_root = resolve_tldr_project_root(turn.cwd.as_path(), Some(search_path.as_path()));
     let project = project_root.display().to_string();
-    let (symbol, query) = match route {
-        SearchRoute::ContextSymbol => (Some(pattern), None),
-        SearchRoute::SemanticQuery => (None, Some(pattern)),
-    };
+    let symbol = matches!(classification.route, SearchRoute::ContextSymbol)
+        .then(|| context_symbol(pattern.as_str()))
+        .flatten();
+    let query = matches!(classification.route, SearchRoute::SemanticQuery).then_some(pattern);
 
     let rewritten_args = TldrToolCallParam {
         action: action.clone(),

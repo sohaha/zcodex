@@ -2,6 +2,7 @@ use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::resolve_tldr_project_root;
 use crate::tools::rewrite::tldr_routing::SearchRoute;
 use crate::tools::rewrite::tldr_routing::classify_search_route;
+use crate::tools::rewrite::tldr_routing::context_symbol;
 use crate::tools::rewrite::tldr_routing::search_action;
 use crate::tools::rewrite::tldr_routing::shell_intercept_message;
 use crate::tools::rewrite::tldr_routing::shell_intercept_reason;
@@ -25,15 +26,16 @@ pub(crate) fn maybe_intercept_shell_search(
         .or_else(|| extract_search_query(raw_command))
         .or_else(|| extract_find_xargs_query(raw_command))?;
 
-    let route = classify_search_route(query.pattern.as_str(), directives).ok()?;
+    let classification = classify_search_route(query.pattern.as_str(), directives).ok()?;
 
-    let reason = shell_intercept_reason(directives.problem_kind)?;
-    let action = search_action(route);
+    let reason = shell_intercept_reason(directives.problem_kind, classification.signal)?;
+    let action = search_action(classification.route);
     let project_root = resolve_tldr_project_root(cwd, Some(cwd));
-    let (symbol, query_text) = match route {
-        SearchRoute::ContextSymbol => (Some(query.pattern.clone()), None),
-        SearchRoute::SemanticQuery => (None, Some(query.pattern.clone())),
-    };
+    let symbol = matches!(classification.route, SearchRoute::ContextSymbol)
+        .then(|| context_symbol(query.pattern.as_str()))
+        .flatten();
+    let query_text =
+        matches!(classification.route, SearchRoute::SemanticQuery).then_some(query.pattern.clone());
     let args = TldrToolCallParam {
         action,
         project: Some(project_root.display().to_string()),
@@ -270,7 +272,7 @@ mod tests {
         assert!(
             interception
                 .message
-                .contains("structural_shell_search_intercept")
+                .contains("structural_shell_symbol_intercept")
         );
         assert!(interception.message.contains(r#""action":"context""#));
         assert!(
@@ -307,7 +309,7 @@ mod tests {
         assert!(
             interception
                 .message
-                .contains("mixed_shell_search_intercept")
+                .contains("mixed_shell_symbol_intercept")
         );
         assert!(interception.message.contains(r#""action":"context""#));
     }

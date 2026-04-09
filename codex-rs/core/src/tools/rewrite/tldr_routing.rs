@@ -11,6 +11,22 @@ pub(crate) enum SearchRoute {
     SemanticQuery,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SearchSignal {
+    BareSymbol,
+    WrappedSymbol,
+    MemberSymbol,
+    NaturalLanguage,
+    PathLike,
+    GenericSemantic,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SearchClassification {
+    pub(crate) route: SearchRoute,
+    pub(crate) signal: SearchSignal,
+}
+
 pub(crate) fn passthrough_reason_for_search(
     directives: &ToolRoutingDirectives,
 ) -> Option<&'static str> {
@@ -42,7 +58,7 @@ pub(crate) fn passthrough_reason_for_read(
 pub(crate) fn classify_search_route(
     pattern: &str,
     directives: &ToolRoutingDirectives,
-) -> Result<SearchRoute, &'static str> {
+) -> Result<SearchClassification, &'static str> {
     if let Some(reason) = passthrough_reason_for_search(directives) {
         return Err(reason);
     }
@@ -50,14 +66,22 @@ pub(crate) fn classify_search_route(
     if pattern.is_empty() {
         return Err("unknown_passthrough");
     }
-    if looks_like_regex_pattern(pattern) {
+
+    let Some(signal) = classify_search_signal(pattern) else {
         return Err("raw_pattern_regex");
-    }
-    if directives.prefer_context_search && looks_like_symbol(pattern) {
-        Ok(SearchRoute::ContextSymbol)
+    };
+
+    let route = if directives.prefer_context_search && is_context_signal(signal) {
+        SearchRoute::ContextSymbol
     } else {
-        Ok(SearchRoute::SemanticQuery)
-    }
+        SearchRoute::SemanticQuery
+    };
+
+    Ok(SearchClassification { route, signal })
+}
+
+pub(crate) fn context_symbol(pattern: &str) -> Option<String> {
+    context_symbol_candidate(pattern).map(str::to_owned)
 }
 
 pub(crate) fn search_action(route: SearchRoute) -> TldrToolAction {
@@ -67,14 +91,32 @@ pub(crate) fn search_action(route: SearchRoute) -> TldrToolAction {
     }
 }
 
-pub(crate) fn search_reason(problem_kind: ProblemKind, route: SearchRoute) -> &'static str {
-    match (problem_kind, route) {
-        (ProblemKind::Structural, SearchRoute::ContextSymbol) => "structural_symbol_query",
-        (ProblemKind::Mixed, SearchRoute::ContextSymbol) => "mixed_symbol_query",
-        (ProblemKind::Factual, SearchRoute::ContextSymbol) => "factual_symbol_query",
-        (ProblemKind::Structural, SearchRoute::SemanticQuery) => "structural_code_search_query",
-        (ProblemKind::Mixed, SearchRoute::SemanticQuery) => "mixed_code_search_query",
-        (ProblemKind::Factual, SearchRoute::SemanticQuery) => "factual_code_search_query",
+pub(crate) fn search_reason(problem_kind: ProblemKind, signal: SearchSignal) -> &'static str {
+    match (problem_kind, signal) {
+        (ProblemKind::Structural, SearchSignal::BareSymbol) => "structural_symbol_query",
+        (ProblemKind::Mixed, SearchSignal::BareSymbol) => "mixed_symbol_query",
+        (ProblemKind::Factual, SearchSignal::BareSymbol) => "factual_symbol_query",
+        (ProblemKind::Structural, SearchSignal::WrappedSymbol) => "structural_wrapped_symbol_query",
+        (ProblemKind::Mixed, SearchSignal::WrappedSymbol) => "mixed_wrapped_symbol_query",
+        (ProblemKind::Factual, SearchSignal::WrappedSymbol) => "factual_wrapped_symbol_query",
+        (ProblemKind::Structural, SearchSignal::MemberSymbol) => "structural_member_symbol_query",
+        (ProblemKind::Mixed, SearchSignal::MemberSymbol) => "mixed_member_symbol_query",
+        (ProblemKind::Factual, SearchSignal::MemberSymbol) => "factual_member_symbol_query",
+        (ProblemKind::Structural, SearchSignal::NaturalLanguage) => {
+            "structural_natural_language_search_query"
+        }
+        (ProblemKind::Mixed, SearchSignal::NaturalLanguage) => {
+            "mixed_natural_language_search_query"
+        }
+        (ProblemKind::Factual, SearchSignal::NaturalLanguage) => {
+            "factual_natural_language_search_query"
+        }
+        (ProblemKind::Structural, SearchSignal::PathLike) => "structural_pathlike_search_query",
+        (ProblemKind::Mixed, SearchSignal::PathLike) => "mixed_pathlike_search_query",
+        (ProblemKind::Factual, SearchSignal::PathLike) => "factual_pathlike_search_query",
+        (ProblemKind::Structural, SearchSignal::GenericSemantic) => "structural_code_search_query",
+        (ProblemKind::Mixed, SearchSignal::GenericSemantic) => "mixed_code_search_query",
+        (ProblemKind::Factual, SearchSignal::GenericSemantic) => "factual_code_search_query",
     }
 }
 
@@ -86,11 +128,28 @@ pub(crate) fn extract_reason(problem_kind: ProblemKind) -> &'static str {
     }
 }
 
-pub(crate) fn shell_intercept_reason(problem_kind: ProblemKind) -> Option<&'static str> {
+pub(crate) fn shell_intercept_reason(
+    problem_kind: ProblemKind,
+    signal: SearchSignal,
+) -> Option<&'static str> {
     match problem_kind {
-        ProblemKind::Structural => Some("structural_shell_search_intercept"),
-        ProblemKind::Mixed => Some("mixed_shell_search_intercept"),
         ProblemKind::Factual => None,
+        ProblemKind::Structural => Some(match signal {
+            SearchSignal::BareSymbol => "structural_shell_symbol_intercept",
+            SearchSignal::WrappedSymbol => "structural_shell_wrapped_symbol_intercept",
+            SearchSignal::MemberSymbol => "structural_shell_member_symbol_intercept",
+            SearchSignal::NaturalLanguage => "structural_shell_natural_language_intercept",
+            SearchSignal::PathLike => "structural_shell_pathlike_intercept",
+            SearchSignal::GenericSemantic => "structural_shell_search_intercept",
+        }),
+        ProblemKind::Mixed => Some(match signal {
+            SearchSignal::BareSymbol => "mixed_shell_symbol_intercept",
+            SearchSignal::WrappedSymbol => "mixed_shell_wrapped_symbol_intercept",
+            SearchSignal::MemberSymbol => "mixed_shell_member_symbol_intercept",
+            SearchSignal::NaturalLanguage => "mixed_shell_natural_language_intercept",
+            SearchSignal::PathLike => "mixed_shell_pathlike_intercept",
+            SearchSignal::GenericSemantic => "mixed_shell_search_intercept",
+        }),
     }
 }
 
@@ -130,6 +189,79 @@ pub(crate) fn to_tldr_language(language: SupportedLanguage) -> TldrToolLanguage 
     }
 }
 
+fn classify_search_signal(pattern: &str) -> Option<SearchSignal> {
+    if let Some(symbol) = context_symbol_candidate(pattern) {
+        return Some(if has_symbol_wrapper(pattern) {
+            SearchSignal::WrappedSymbol
+        } else if symbol.contains(['.', '#']) {
+            SearchSignal::MemberSymbol
+        } else {
+            SearchSignal::BareSymbol
+        });
+    }
+    if looks_like_regex_pattern(pattern) {
+        return None;
+    }
+    if looks_like_natural_language(pattern) {
+        Some(SearchSignal::NaturalLanguage)
+    } else if looks_like_path(pattern) {
+        Some(SearchSignal::PathLike)
+    } else {
+        Some(SearchSignal::GenericSemantic)
+    }
+}
+
+fn is_context_signal(signal: SearchSignal) -> bool {
+    matches!(
+        signal,
+        SearchSignal::BareSymbol | SearchSignal::WrappedSymbol | SearchSignal::MemberSymbol
+    )
+}
+
+fn context_symbol_candidate(pattern: &str) -> Option<&str> {
+    let trimmed = pattern.trim();
+    if trimmed.contains(char::is_whitespace) {
+        return None;
+    }
+    let trimmed = trim_symbol_wrappers(trimmed)?;
+    if trimmed.is_empty() || looks_like_sentence_fragment(trimmed) {
+        return None;
+    }
+    let trimmed = trimmed.strip_suffix("()").unwrap_or(trimmed);
+    looks_like_symbol(trimmed).then_some(trimmed)
+}
+
+fn has_symbol_wrapper(pattern: &str) -> bool {
+    let trimmed = pattern.trim();
+    trimmed.starts_with(['`', '"', '\'']) || trimmed.ends_with(['`', '"', '\''])
+}
+
+fn trim_symbol_wrappers(pattern: &str) -> Option<&str> {
+    let trimmed = pattern.trim_matches(|ch| matches!(ch, '`' | '"' | '\''));
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn looks_like_natural_language(pattern: &str) -> bool {
+    pattern.contains(char::is_whitespace)
+        || pattern.ends_with('?')
+        || [
+            "how", "why", "what", "where", "which", "find", "show", "list",
+        ]
+        .iter()
+        .any(|prefix| pattern.starts_with(prefix))
+}
+
+fn looks_like_path(pattern: &str) -> bool {
+    pattern.contains('/') || pattern.ends_with(".rs") || pattern.ends_with(".ts")
+}
+
+fn looks_like_sentence_fragment(pattern: &str) -> bool {
+    pattern.contains('/')
+        || pattern.contains('=')
+        || pattern.contains(',')
+        || pattern.ends_with('?')
+}
+
 fn looks_like_regex_pattern(pattern: &str) -> bool {
     pattern.chars().any(|ch| {
         matches!(
@@ -147,13 +279,15 @@ fn looks_like_symbol(pattern: &str) -> bool {
     if !(first.is_ascii_alphabetic() || first == '_') {
         return false;
     }
-    chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | ':'))
+    chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | ':' | '.' | '#'))
 }
 
 #[cfg(test)]
 mod tests {
     use super::SearchRoute;
+    use super::SearchSignal;
     use super::classify_search_route;
+    use super::context_symbol;
     use super::extract_reason;
     use super::passthrough_reason_for_read;
     use super::passthrough_reason_for_search;
@@ -165,9 +299,53 @@ mod tests {
 
     #[test]
     fn search_route_prefers_context_for_symbol_queries() {
-        let route = classify_search_route("create_tldr_tool", &ToolRoutingDirectives::default())
+        let classification =
+            classify_search_route("create_tldr_tool", &ToolRoutingDirectives::default())
+                .expect("route should succeed");
+        assert_eq!(classification.route, SearchRoute::ContextSymbol);
+        assert_eq!(classification.signal, SearchSignal::BareSymbol);
+    }
+
+    #[test]
+    fn search_route_accepts_wrapped_method_symbols() {
+        let classification =
+            classify_search_route("`Foo.bar()`", &ToolRoutingDirectives::default())
+                .expect("route should succeed");
+        assert_eq!(classification.route, SearchRoute::ContextSymbol);
+        assert_eq!(classification.signal, SearchSignal::WrappedSymbol);
+        assert_eq!(context_symbol("`Foo.bar()`"), Some("Foo.bar".to_string()));
+    }
+
+    #[test]
+    fn search_route_uses_member_signal_for_dotted_symbols() {
+        let classification = classify_search_route("Foo.bar", &ToolRoutingDirectives::default())
             .expect("route should succeed");
-        assert_eq!(route, SearchRoute::ContextSymbol);
+        assert_eq!(classification.route, SearchRoute::ContextSymbol);
+        assert_eq!(classification.signal, SearchSignal::MemberSymbol);
+        assert_eq!(
+            search_reason(ProblemKind::Structural, classification.signal),
+            "structural_member_symbol_query"
+        );
+    }
+
+    #[test]
+    fn search_route_uses_semantic_for_natural_language_questions() {
+        let classification = classify_search_route(
+            "where is create_tldr_tool used",
+            &ToolRoutingDirectives::default(),
+        )
+        .expect("route should succeed");
+        assert_eq!(classification.route, SearchRoute::SemanticQuery);
+        assert_eq!(classification.signal, SearchSignal::NaturalLanguage);
+    }
+
+    #[test]
+    fn search_route_uses_semantic_for_paths() {
+        let classification =
+            classify_search_route("src/tools/spec.rs", &ToolRoutingDirectives::default())
+                .expect("route should succeed");
+        assert_eq!(classification.route, SearchRoute::SemanticQuery);
+        assert_eq!(classification.signal, SearchSignal::PathLike);
     }
 
     #[test]
@@ -207,13 +385,16 @@ mod tests {
     #[test]
     fn reason_templates_match_problem_kind() {
         assert_eq!(
-            search_reason(ProblemKind::Mixed, SearchRoute::SemanticQuery),
+            search_reason(ProblemKind::Mixed, SearchSignal::GenericSemantic),
             "mixed_code_search_query"
         );
         assert_eq!(
             extract_reason(ProblemKind::Structural),
             "structural_file_extract"
         );
-        assert_eq!(shell_intercept_reason(ProblemKind::Factual), None);
+        assert_eq!(
+            shell_intercept_reason(ProblemKind::Factual, SearchSignal::GenericSemantic),
+            None
+        );
     }
 }
