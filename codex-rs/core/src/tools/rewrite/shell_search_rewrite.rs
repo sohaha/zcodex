@@ -425,6 +425,86 @@ mod tests {
     }
 
     #[test]
+    fn current_project_shell_corpus_summary_stays_stable() {
+        use std::collections::BTreeMap;
+
+        let corpus = [
+            (
+                "rg rewrite_tool_call core/src/tools/rewrite/engine.rs",
+                Some(("structural_shell_symbol_intercept", "context")),
+            ),
+            (
+                "rg '`emit_tool_route_metric()`' core/src/tools/rewrite/engine.rs",
+                Some(("structural_shell_wrapped_symbol_intercept", "context")),
+            ),
+            (
+                "rg decision.signal core/src/tools/rewrite",
+                Some(("structural_shell_member_symbol_intercept", "context")),
+            ),
+            (
+                "rg core/src/tools/rewrite/engine.rs core/src",
+                Some(("structural_shell_pathlike_intercept", "semantic")),
+            ),
+            (
+                "rg 'where is TurnContext defined' core/src",
+                Some(("structural_shell_natural_language_intercept", "semantic")),
+            ),
+            ("rg 'foo.*bar' core/src", None),
+        ];
+
+        let mut reason_counts = BTreeMap::new();
+        let mut action_counts = BTreeMap::new();
+        let mut passthrough_count = 0usize;
+
+        for (command, expected) in corpus {
+            let interception = maybe_intercept_shell_search(
+                command,
+                &command.replace("rg", "ztok grep"),
+                Path::new("/workspace/codex-rs"),
+                &ToolRoutingDirectives::default(),
+            );
+
+            match (interception, expected) {
+                (Some(interception), Some((expected_reason, expected_action))) => {
+                    assert!(
+                        interception.message.contains(expected_reason),
+                        "command: {command}"
+                    );
+                    assert!(
+                        interception
+                            .message
+                            .contains(&format!(r#""action":"{expected_action}""#)),
+                        "command: {command}"
+                    );
+                    *reason_counts.entry(expected_reason).or_insert(0usize) += 1;
+                    *action_counts.entry(expected_action).or_insert(0usize) += 1;
+                }
+                (None, None) => passthrough_count += 1,
+                (Some(_), None) => panic!("command {command} should have stayed on raw shell path"),
+                (None, Some((expected_reason, expected_action))) => panic!(
+                    "command {command} should have intercepted with {expected_reason} and {expected_action}"
+                ),
+            }
+        }
+
+        assert_eq!(
+            reason_counts,
+            BTreeMap::from([
+                ("structural_shell_member_symbol_intercept", 1usize),
+                ("structural_shell_natural_language_intercept", 1usize),
+                ("structural_shell_pathlike_intercept", 1usize),
+                ("structural_shell_symbol_intercept", 1usize),
+                ("structural_shell_wrapped_symbol_intercept", 1usize),
+            ])
+        );
+        assert_eq!(
+            action_counts,
+            BTreeMap::from([("context", 3usize), ("semantic", 2usize)])
+        );
+        assert_eq!(passthrough_count, 1);
+    }
+
+    #[test]
     fn regex_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
             "rg 'foo.*bar' src",
