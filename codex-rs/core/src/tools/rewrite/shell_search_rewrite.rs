@@ -351,6 +351,21 @@ mod tests {
     }
 
     #[test]
+    fn explicit_raw_request_stays_on_shell_path() {
+        let interception = maybe_intercept_shell_search(
+            "rg create_tldr_tool src",
+            "ztok grep create_tldr_tool src",
+            Path::new("/workspace/codex-rs"),
+            &ToolRoutingDirectives {
+                disable_auto_tldr_once: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(interception.is_some(), false);
+    }
+
+    #[test]
     fn factual_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
             "rg default_timeout src",

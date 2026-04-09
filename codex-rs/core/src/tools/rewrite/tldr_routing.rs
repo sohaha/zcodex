@@ -156,6 +156,7 @@ mod tests {
     use super::classify_search_route;
     use super::extract_reason;
     use super::passthrough_reason_for_read;
+    use super::passthrough_reason_for_search;
     use super::search_reason;
     use super::shell_intercept_reason;
     use crate::tools::rewrite::ProblemKind;
@@ -183,6 +184,24 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(reason, Some("force_raw_read"));
+    }
+
+    #[test]
+    fn passthrough_reason_for_search_respects_explicit_raw_request() {
+        let reason = passthrough_reason_for_search(&ToolRoutingDirectives {
+            disable_auto_tldr_once: true,
+            ..Default::default()
+        });
+        assert_eq!(reason, Some("explicit_raw_request"));
+    }
+
+    #[test]
+    fn passthrough_reason_for_search_respects_force_raw_grep() {
+        let reason = passthrough_reason_for_search(&ToolRoutingDirectives {
+            force_raw_grep: true,
+            ..Default::default()
+        });
+        assert_eq!(reason, Some("force_raw_grep"));
     }
 
     #[test]
