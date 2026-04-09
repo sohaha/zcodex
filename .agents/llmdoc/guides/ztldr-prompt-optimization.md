@@ -33,7 +33,8 @@
 
 ## 运行时可观测性
 - `codex-rs/core/src/tools/rewrite/decision.rs` 的 `ToolRewriteDecision` 已承载 `signal: Option<SearchSignal>`，search 链路新增分类元数据时优先沿这条 contract 继续传递。
-- `codex-rs/core/src/tools/rewrite/engine.rs` 会把 `reason`、`action`、`signal` 一起写到 `codex_core::tool_route`；排查误判先看日志，不要先回退到扩写入口 prompt。
+- `codex-rs/core/src/tools/rewrite/engine.rs` 会把 `reason`、`action`、`signal` 一起写到 `codex_core::tool_route`，并同步上报 `codex.tool_route` counter；排查误判先看 metrics 与日志，不要先回退到扩写入口 prompt。
+- `codex.tool_route` 缺失值统一记为 `none`，避免聚合时混入空字符串维度。
 - `read_file` 路由不消费 search signal；如果 read 链路也需要元数据，单独定义字段，不要复用 `SearchSignal`。
 
 ## 常见陷阱

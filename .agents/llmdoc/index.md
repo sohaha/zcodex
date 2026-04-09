@@ -24,6 +24,7 @@
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-routing-contract-unification.md`：ztldr 路由 contract 一次性收敛反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-query-signal-observability.md`：ztldr query signal 落到统一日志面的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-tool-route-metrics.md`：ztldr route 指标化与聚合面的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ctf-resume-clean-then-resume.md`：CTF 会话在复用现有 resume 选择器时接入 clean-then-resume 的实现与验证阻塞反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
 
