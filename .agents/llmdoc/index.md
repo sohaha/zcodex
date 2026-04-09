@@ -22,6 +22,7 @@
 - `.agents/llmdoc/guides/ztldr-prompt-optimization.md`：优化 `ztldr` 工具描述、路由提示与相关文档时的事实源、触点与最小验证闭环。
 - `.agents/llmdoc/reference/build-and-test-commands.md`：常用 `just`、`mise`、schema 和测试命令。
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
+- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-routing-contract-unification.md`：ztldr 路由 contract 一次性收敛反思。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。

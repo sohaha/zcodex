@@ -35,3 +35,8 @@
 - 只改 tool description，不改 shell interception message，broad grep/read 起手问题仍会保留。
 - 未以 `tool_api.rs` 为事实源，导致 action 列表和真实能力再次漂移。
 - 在 Cadence issue `notes` 中写带引号的单行命令，导致 TOML 解析失败；这类内容优先改成多行字符串。
+
+## 路由 contract 收敛（2026-04-09）
+- 统一路由事实源已下沉到 `codex-rs/core/src/tools/rewrite/tldr_routing.rs`。
+- 之后修改 `auto_tldr` / `read_gate` / `shell_search_rewrite` 路由行为时，先改该模块，再同步入口接线与测试。
+- 避免在入口继续追加大段提示词；优先复用统一短解释模板。
