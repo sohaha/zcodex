@@ -24,10 +24,6 @@ function Normalize-Version {
         return "latest"
     }
 
-    if ($RawVersion.StartsWith("rust-v")) {
-        return $RawVersion.Substring(6)
-    }
-
     if ($RawVersion.StartsWith("v")) {
         return $RawVersion.Substring(1)
     }
@@ -41,7 +37,11 @@ function Get-ReleaseUrl {
         [string]$ResolvedVersion
     )
 
-    return "https://github.com/openai/codex/releases/download/rust-v$ResolvedVersion/$AssetName"
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_BASE_URL)) {
+        return "$($env:CODEX_BASE_URL.TrimEnd('/'))/$AssetName"
+    }
+
+    return "https://github.com/sohaha/zcodex/releases/download/v$ResolvedVersion/$AssetName"
 }
 
 function Path-Contains {
@@ -70,7 +70,7 @@ function Resolve-Version {
         return $normalizedVersion
     }
 
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/openai/codex/releases/latest"
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/sohaha/zcodex/releases/latest"
     if (-not $release.tag_name) {
         Write-Error "Failed to resolve the latest Codex release version."
         exit 1

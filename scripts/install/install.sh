@@ -4,6 +4,7 @@ set -eu
 
 VERSION="${1:-latest}"
 INSTALL_DIR="${CODEX_INSTALL_DIR:-$HOME/.local/bin}"
+BASE_URL="${CODEX_BASE_URL:-}"
 path_action="already"
 path_profile=""
 
@@ -15,9 +16,6 @@ normalize_version() {
   case "$1" in
     "" | latest)
       printf 'latest\n'
-      ;;
-    rust-v*)
-      printf '%s\n' "${1#rust-v}"
       ;;
     v*)
       printf '%s\n' "${1#v}"
@@ -33,13 +31,30 @@ download_file() {
   output="$2"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$output"
+    curl -fL --progress-bar "$url" -o "$output"
     return
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$output" "$url"
+    wget -q --show-progress -O "$output" "$url"
     return
+  fi
+
+  echo "curl or wget is required to install Codex." >&2
+  exit 1
+}
+
+probe_remote_file() {
+  url="$1"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsIL "$url" >/dev/null 2>&1
+    return $?
+  fi
+
+  if command -v wget >/dev/null 2>&1; then
+    wget -q --spider "$url" >/dev/null 2>&1
+    return $?
   fi
 
   echo "curl or wget is required to install Codex." >&2
@@ -101,7 +116,100 @@ release_url_for_asset() {
   asset="$1"
   resolved_version="$2"
 
-  printf 'https://github.com/openai/codex/releases/download/rust-v%s/%s\n' "$resolved_version" "$asset"
+  if [ -n "$BASE_URL" ]; then
+    printf '%s/%s\n' "${BASE_URL%/}" "$asset"
+    return
+  fi
+
+  printf 'https://github.com/sohaha/zcodex/releases/download/v%s/%s\n' "$resolved_version" "$asset"
+}
+
+copy_if_exists() {
+  source_path="$1"
+  dest_path="$2"
+
+  if [ ! -f "$source_path" ]; then
+    return 1
+  fi
+
+  cp "$source_path" "$dest_path"
+  return 0
+}
+
+install_rg_if_available() {
+  for rg_path in \
+    "$tmp_dir/package/vendor/$primary_vendor_target/path/rg" \
+    "$tmp_dir/package/vendor/$secondary_vendor_target/path/rg"
+  do
+    if [ -f "$rg_path" ]; then
+      cp "$rg_path" "$INSTALL_DIR/rg"
+      chmod 0755 "$INSTALL_DIR/rg"
+      return
+    fi
+  done
+
+  step "rg is not bundled in this release; keeping existing system rg if available"
+}
+
+install_from_npm_package() {
+  tar -xzf "$archive_path" -C "$tmp_dir"
+
+  step "Installing to $INSTALL_DIR"
+  mkdir -p "$INSTALL_DIR"
+
+  for codex_path in \
+    "$tmp_dir/package/vendor/$primary_vendor_target/codex/codex" \
+    "$tmp_dir/package/vendor/$secondary_vendor_target/codex/codex"
+  do
+    if copy_if_exists "$codex_path" "$INSTALL_DIR/codex"; then
+      chmod 0755 "$INSTALL_DIR/codex"
+      install_rg_if_available
+      return
+    fi
+  done
+
+  echo "Downloaded npm package does not contain a supported Codex binary layout." >&2
+  exit 1
+}
+
+install_from_tarball_release() {
+  archive_target="$1"
+
+  tar -xzf "$archive_path" -C "$tmp_dir"
+
+  step "Installing to $INSTALL_DIR"
+  mkdir -p "$INSTALL_DIR"
+
+  for codex_path in \
+    "$tmp_dir/codex-$archive_target" \
+    "$tmp_dir/codex"
+  do
+    if copy_if_exists "$codex_path" "$INSTALL_DIR/codex"; then
+      chmod 0755 "$INSTALL_DIR/codex"
+      step "Installed fallback archive format for target: $archive_target"
+      step "rg is not bundled in fallback archives; install ripgrep separately if needed"
+      return
+    fi
+  done
+
+  echo "Downloaded archive does not contain an installable Codex binary." >&2
+  exit 1
+}
+
+download_first_available_asset() {
+  resolved_version="$1"
+  shift
+
+  for asset_name in "$@"; do
+    asset_url="$(release_url_for_asset "$asset_name" "$resolved_version")"
+    if probe_remote_file "$asset_url"; then
+      downloaded_asset="$asset_name"
+      download_file "$asset_url" "$archive_path"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 require_command() {
@@ -122,8 +230,8 @@ resolve_version() {
     return
   fi
 
-  release_json="$(download_text "https://api.github.com/repos/openai/codex/releases/latest")"
-  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
+  release_json="$(download_text "https://api.github.com/repos/sohaha/zcodex/releases/latest")"
+  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"\(rust-\)\{0,1\}v\([^"]*\)".*/\2/p' | head -n 1)"
 
   if [ -z "$resolved" ]; then
     echo "Failed to resolve the latest Codex release version." >&2
@@ -168,21 +276,29 @@ fi
 if [ "$os" = "darwin" ]; then
   if [ "$arch" = "aarch64" ]; then
     npm_tag="darwin-arm64"
-    vendor_target="aarch64-apple-darwin"
+    primary_vendor_target="aarch64-apple-darwin"
+    secondary_vendor_target="aarch64-apple-darwin"
+    fallback_archive_target="aarch64-apple-darwin"
     platform_label="macOS (Apple Silicon)"
   else
     npm_tag="darwin-x64"
-    vendor_target="x86_64-apple-darwin"
+    primary_vendor_target="x86_64-apple-darwin"
+    secondary_vendor_target="x86_64-apple-darwin"
+    fallback_archive_target="x86_64-apple-darwin"
     platform_label="macOS (Intel)"
   fi
 else
   if [ "$arch" = "aarch64" ]; then
     npm_tag="linux-arm64"
-    vendor_target="aarch64-unknown-linux-musl"
+    primary_vendor_target="aarch64-unknown-linux-musl"
+    secondary_vendor_target="aarch64-unknown-linux-gnu"
+    fallback_archive_target="aarch64-unknown-linux-gnu"
     platform_label="Linux (ARM64)"
   else
     npm_tag="linux-x64"
-    vendor_target="x86_64-unknown-linux-musl"
+    primary_vendor_target="x86_64-unknown-linux-musl"
+    secondary_vendor_target="x86_64-unknown-linux-gnu"
+    fallback_archive_target="x86_64-unknown-linux-gnu"
     platform_label="Linux (x64)"
   fi
 fi
@@ -197,8 +313,9 @@ step "$install_mode Codex CLI"
 step "Detected platform: $platform_label"
 
 resolved_version="$(resolve_version)"
-asset="codex-npm-$npm_tag-$resolved_version.tgz"
-download_url="$(release_url_for_asset "$asset" "$resolved_version")"
+npm_asset="codex-npm-$npm_tag-$resolved_version.tgz"
+fallback_archive_asset="codex-$fallback_archive_target.tar.gz"
+downloaded_asset=""
 
 step "Resolved version: $resolved_version"
 
@@ -208,19 +325,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-archive_path="$tmp_dir/$asset"
+archive_path="$tmp_dir/codex-download"
 
 step "Downloading Codex CLI"
-download_file "$download_url" "$archive_path"
-
-tar -xzf "$archive_path" -C "$tmp_dir"
-
-step "Installing to $INSTALL_DIR"
-mkdir -p "$INSTALL_DIR"
-cp "$tmp_dir/package/vendor/$vendor_target/codex/codex" "$INSTALL_DIR/codex"
-cp "$tmp_dir/package/vendor/$vendor_target/path/rg" "$INSTALL_DIR/rg"
-chmod 0755 "$INSTALL_DIR/codex"
-chmod 0755 "$INSTALL_DIR/rg"
+if download_first_available_asset "$resolved_version" "$npm_asset"; then
+  step "Using release asset: $downloaded_asset"
+  install_from_npm_package
+elif download_first_available_asset "$resolved_version" "$fallback_archive_asset"; then
+  step "Using fallback release asset: $downloaded_asset"
+  install_from_tarball_release "$fallback_archive_target"
+else
+  echo "Failed to find a supported Codex release asset for $platform_label." >&2
+  echo "Tried assets: $npm_asset, $fallback_archive_asset" >&2
+  exit 1
+fi
 
 add_to_path
 
