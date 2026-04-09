@@ -38,6 +38,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         return ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",
+            signal: None,
         };
     };
 
@@ -47,6 +48,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
             return ToolRewriteDecision::Passthrough {
                 call,
                 reason: "unknown_passthrough",
+                signal: None,
             };
         }
     };
@@ -54,7 +56,11 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
     let classification = match classify_search_route(args.pattern.as_str(), &directives) {
         Ok(classification) => classification,
         Err(reason) => {
-            return ToolRewriteDecision::Passthrough { call, reason };
+            return ToolRewriteDecision::Passthrough {
+                call,
+                reason,
+                signal: None,
+            };
         }
     };
 
@@ -70,6 +76,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         return ToolRewriteDecision::Passthrough {
             call,
             reason: non_code_reason(&search_path),
+            signal: Some(classification.signal),
         };
     };
 
@@ -106,6 +113,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
             return ToolRewriteDecision::Passthrough {
                 call,
                 reason: "unknown_passthrough",
+                signal: Some(classification.signal),
             };
         }
     };
@@ -119,6 +127,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         },
         reason,
         action: Some(action),
+        signal: Some(classification.signal),
     }
 }
 
@@ -252,6 +261,7 @@ mod tests {
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,
+            ..
         } = decision
         else {
             panic!("expected passthrough");
@@ -287,6 +297,7 @@ mod tests {
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,
+            ..
         } = decision
         else {
             panic!("expected passthrough");
@@ -411,6 +422,7 @@ mod tests {
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,
+            ..
         } = decision
         else {
             panic!("expected passthrough");

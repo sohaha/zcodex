@@ -4,6 +4,7 @@ use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::auto_tldr::rewrite_grep_files_to_tldr;
 use crate::tools::rewrite::decision::ToolRewriteDecision;
 use crate::tools::rewrite::read_gate::rewrite_read_file_to_tldr;
+use crate::tools::rewrite::tldr_routing::SearchSignal;
 use crate::tools::router::ToolCall;
 use codex_native_tldr::tool_api::TldrToolAction;
 use tracing::info;
@@ -21,11 +22,13 @@ pub(crate) async fn rewrite_tool_call(
         ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",
+            signal: None,
         }
     } else if mode.is_off() {
         ToolRewriteDecision::Passthrough {
             call,
             reason: "mode_off",
+            signal: None,
         }
     } else {
         let directives = turn.tool_routing_directives.read().await.clone();
@@ -48,6 +51,7 @@ async fn route_auto_tldr(
         _ => ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",
+            signal: None,
         },
     }
 }
@@ -61,6 +65,10 @@ fn log_tool_route(
 ) {
     let to_tool = decision.call().tool_name.as_str();
     let action = decision.action().map(tldr_action_name).unwrap_or_default();
+    let signal = decision
+        .signal()
+        .map(search_signal_name)
+        .unwrap_or_default();
 
     match decision {
         ToolRewriteDecision::Passthrough { .. } => info!(
@@ -72,6 +80,7 @@ fn log_tool_route(
             reason = decision.reason(),
             call_id,
             source = ?source,
+            signal,
             "tool route decision"
         ),
         ToolRewriteDecision::Rewrite { .. } => info!(
@@ -84,6 +93,7 @@ fn log_tool_route(
             call_id,
             source = ?source,
             action,
+            signal,
             "tool route decision"
         ),
     }
@@ -113,5 +123,16 @@ fn tldr_action_name(action: &TldrToolAction) -> &'static str {
         TldrToolAction::Snapshot => "snapshot",
         TldrToolAction::Status => "status",
         TldrToolAction::Notify => "notify",
+    }
+}
+
+fn search_signal_name(signal: SearchSignal) -> &'static str {
+    match signal {
+        SearchSignal::BareSymbol => "bare_symbol",
+        SearchSignal::WrappedSymbol => "wrapped_symbol",
+        SearchSignal::MemberSymbol => "member_symbol",
+        SearchSignal::NaturalLanguage => "natural_language",
+        SearchSignal::PathLike => "path_like",
+        SearchSignal::GenericSemantic => "generic_semantic",
     }
 }

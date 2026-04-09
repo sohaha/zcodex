@@ -36,11 +36,16 @@ pub(crate) async fn rewrite_read_file_to_tldr(
         return ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",
+            signal: None,
         };
     };
 
     if let Some(reason) = passthrough_reason_for_read(&directives) {
-        return ToolRewriteDecision::Passthrough { call, reason };
+        return ToolRewriteDecision::Passthrough {
+            call,
+            reason,
+            signal: None,
+        };
     }
 
     let args: ReadFileArgs = match serde_json::from_str(arguments) {
@@ -49,6 +54,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
             return ToolRewriteDecision::Passthrough {
                 call,
                 reason: "unknown_passthrough",
+                signal: None,
             };
         }
     };
@@ -58,6 +64,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
         return ToolRewriteDecision::Passthrough {
             call,
             reason: "unknown_passthrough",
+            signal: None,
         };
     }
 
@@ -72,6 +79,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
         return ToolRewriteDecision::Passthrough {
             call,
             reason: non_code_reason(&resolved_path),
+            signal: None,
         };
     };
 
@@ -103,11 +111,13 @@ pub(crate) async fn rewrite_read_file_to_tldr(
             return ToolRewriteDecision::Passthrough {
                 call,
                 reason: "unknown_passthrough",
+                signal: None,
             };
         }
     };
 
     ToolRewriteDecision::Rewrite {
+        signal: None,
         call: ToolCall {
             tool_name: "ztldr".to_string(),
             tool_namespace: None,
@@ -222,6 +232,7 @@ mod tests {
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,
+            ..
         } = decision
         else {
             panic!("expected passthrough");
