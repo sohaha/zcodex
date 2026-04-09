@@ -383,6 +383,48 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_symbol_shell_queries_keep_wrapped_intercept_reason() {
+        let interception = maybe_intercept_shell_search(
+            "rg -n '`Foo.bar()`' src/main.rs",
+            "ztok grep -n '`Foo.bar()`' src/main.rs",
+            Path::new("/workspace/codex-rs"),
+            &ToolRoutingDirectives::default(),
+        )
+        .expect("should intercept");
+
+        assert!(
+            interception
+                .message
+                .contains("structural_shell_wrapped_symbol_intercept")
+        );
+        assert!(interception.message.contains(r#""action":"context""#));
+        assert!(interception.message.contains(r#""symbol":"Foo.bar""#));
+    }
+
+    #[test]
+    fn pathlike_shell_queries_use_semantic_intercept_reason() {
+        let interception = maybe_intercept_shell_search(
+            "rg src/tools/spec.rs src",
+            "ztok grep src/tools/spec.rs src",
+            Path::new("/workspace/codex-rs"),
+            &ToolRoutingDirectives::default(),
+        )
+        .expect("should intercept");
+
+        assert!(
+            interception
+                .message
+                .contains("structural_shell_pathlike_intercept")
+        );
+        assert!(interception.message.contains(r#""action":"semantic""#));
+        assert!(
+            interception
+                .message
+                .contains(r#""query":"src/tools/spec.rs""#)
+        );
+    }
+
+    #[test]
     fn regex_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
             "rg 'foo.*bar' src",

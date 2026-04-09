@@ -184,6 +184,7 @@ mod tests {
         )
         .await;
 
+        assert_eq!(decision.signal(), None);
         let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
             panic!("expected rewrite");
         };
@@ -229,6 +230,7 @@ mod tests {
         )
         .await;
 
+        assert_eq!(decision.signal(), None);
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,

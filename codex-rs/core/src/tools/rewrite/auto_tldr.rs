@@ -191,6 +191,7 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::decision::ToolRewriteDecision;
     use crate::tools::rewrite::resolve_tldr_project_root;
+    use crate::tools::rewrite::tldr_routing::SearchSignal;
     use crate::tools::router::ToolCall;
     use codex_native_tldr::tool_api::TldrToolAction;
     use codex_native_tldr::tool_api::TldrToolCallParam;
@@ -221,6 +222,7 @@ mod tests {
         )
         .await;
 
+        assert_eq!(decision.signal(), Some(SearchSignal::BareSymbol));
         let ToolRewriteDecision::Rewrite { call, reason, .. } = decision else {
             panic!("expected rewrite");
         };
@@ -258,6 +260,7 @@ mod tests {
         )
         .await;
 
+        assert_eq!(decision.signal(), None);
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,
@@ -294,6 +297,7 @@ mod tests {
         )
         .await;
 
+        assert_eq!(decision.signal(), Some(SearchSignal::BareSymbol));
         let ToolRewriteDecision::Passthrough {
             call: passthrough,
             reason,
