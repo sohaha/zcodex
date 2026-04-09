@@ -33,6 +33,610 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::time::sleep;
 
+static TLDR_TOOL_OUTPUT_SCHEMA: Lazy<serde_json::Value> = Lazy::new(|| match serde_json::from_str(
+    r##"{
+          "type": "object",
+          "$defs": {
+            "analysisUnit": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "line": { "type": "integer" },
+                "span_end_line": { "type": "integer" },
+                "symbol": { "type": ["string", "null"] },
+                "qualified_symbol": { "type": ["string", "null"] },
+                "kind": { "type": "string" },
+                "owner_symbol": { "type": ["string", "null"] },
+                "owner_kind": { "type": ["string", "null"] },
+                "implemented_trait": { "type": ["string", "null"] },
+                "module_path": { "type": "array", "items": { "type": "string" } },
+                "visibility": { "type": ["string", "null"] },
+                "signature": { "type": ["string", "null"] },
+                "calls": { "type": "array", "items": { "type": "string" } },
+                "called_by": { "type": "array", "items": { "type": "string" } },
+                "references": { "type": "array", "items": { "type": "string" } },
+                "imports": { "type": "array", "items": { "type": "string" } },
+                "dependencies": { "type": "array", "items": { "type": "string" } },
+                "cfg_summary": { "type": "string" },
+                "dfg_summary": { "type": "string" }
+              }
+            },
+            "analysisDetails": {
+              "type": "object",
+              "properties": {
+                "indexed_files": { "type": "integer" },
+                "total_symbols": { "type": "integer" },
+                "symbol_query": { "type": ["string", "null"] },
+                "truncated": { "type": "boolean" },
+                "change_paths": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "slice_target": {
+                  "type": ["object", "null"],
+                  "properties": {
+                    "path": { "type": "string" },
+                    "symbol": { "type": ["string", "null"] },
+                    "line": { "type": "integer" },
+                    "direction": { "type": "string" }
+                  }
+                },
+                "slice_lines": {
+                  "type": "array",
+                  "items": { "type": "integer" }
+                },
+                "overview": { "$ref": "#/$defs/analysisOverview" },
+                "files": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisFile" }
+                },
+                "nodes": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisNode" }
+                },
+                "edges": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisEdge" }
+                },
+                "symbol_index": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisSymbolIndexEntry" }
+                },
+                "units": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisUnit" }
+                }
+              }
+            },
+            "analysisOverview": {
+              "type": "object",
+              "properties": {
+                "kinds": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisCount" }
+                },
+                "outgoing_edges": { "type": "integer" },
+                "incoming_edges": { "type": "integer" },
+                "reference_count": { "type": "integer" },
+                "import_count": { "type": "integer" }
+              }
+            },
+            "analysisCount": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "count": { "type": "integer" }
+              }
+            },
+            "analysisFile": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "symbol_count": { "type": "integer" },
+                "kinds": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/analysisCount" }
+                }
+              }
+            },
+            "analysisEdge": {
+              "type": "object",
+              "properties": {
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "kind": { "type": "string" }
+              }
+            },
+            "analysisNode": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "label": { "type": "string" },
+                "kind": { "type": "string" },
+                "path": { "type": ["string", "null"] },
+                "line": { "type": ["integer", "null"] },
+                "signature": { "type": ["string", "null"] }
+              }
+            },
+            "analysisSymbolIndexEntry": {
+              "type": "object",
+              "properties": {
+                "symbol": { "type": "string" },
+                "node_ids": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            },
+            "importMatch": {
+              "type": "object",
+              "properties": {
+                "path": { "type": "string" },
+                "line": { "type": "integer" },
+                "symbol": { "type": ["string", "null"] },
+                "import": { "type": "string" }
+              }
+            },
+            "analysis": {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string" },
+                "summary": { "type": "string" },
+                "details": { "$ref": "#/$defs/analysisDetails" }
+              },
+              "required": ["kind", "summary", "details"]
+            },
+            "reindexReport": {
+              "type": ["object", "null"],
+              "properties": {
+                "status": { "type": "string" },
+                "languages": { "type": "array", "items": { "type": "string" } },
+                "indexed_files": { "type": "integer" },
+                "indexed_units": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "started_at": { "type": "string" },
+                "finished_at": { "type": "string" },
+                "message": { "type": "string" },
+                "embedding_enabled": { "type": "boolean" },
+                "embedding_dimensions": { "type": "integer" }
+              }
+            },
+            "structuredFailure": {
+              "type": ["object", "null"],
+              "properties": {
+                "error_type": { "type": "string" },
+                "reason": { "type": "string" },
+                "retryable": { "type": "boolean" },
+                "retry_hint": { "type": ["string", "null"] }
+              }
+            },
+            "degradedMode": {
+              "type": ["object", "null"],
+              "properties": {
+                "is_degraded": { "type": "boolean" },
+                "mode": { "type": "string" },
+                "fallback_path": { "type": "string" },
+                "reason": { "type": ["string", "null"] }
+              }
+            },
+            "semantic": {
+              "type": "object",
+              "properties": {
+                "query": { "type": "string" },
+                "enabled": { "type": "boolean" },
+                "indexedFiles": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "embeddingUsed": { "type": "boolean" },
+                "message": { "type": "string" },
+                "degradedMode": { "$ref": "#/$defs/degradedMode" },
+                "matches": {
+                  "type": "array",
+                    "items": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": { "type": ["string", "null"] },
+                      "qualifiedSymbol": { "type": ["string", "null"] },
+                      "kind": { "type": "string" },
+                      "signature": { "type": ["string", "null"] },
+                      "path": { "type": "string" },
+                      "line": { "type": "integer" },
+                      "snippet": { "type": "string" },
+                      "embedding_score": { "type": ["number", "null"] }
+                    }
+                  }
+                }
+              }
+            },
+            "analysisResult": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": ["structure", "extract", "context", "impact", "calls", "dead", "arch", "change-impact", "cfg", "dfg", "slice"]
+                },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "supportLevel": { "type": "string" },
+                "symbolExtractor": { "type": "string" },
+                "relationshipSupport": { "type": "string" },
+                "fallbackStrategy": { "type": "string" },
+                "summary": { "type": "string" },
+                "symbol": { "type": ["string", "null"] },
+                "path": { "type": ["string", "null"] },
+                "line": { "type": ["integer", "null"] },
+                "paths": {
+                  "type": ["array", "null"],
+                  "items": { "type": "string" }
+                },
+                "analysis": { "$ref": "#/$defs/analysis" }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "supportLevel",
+                "symbolExtractor",
+                "relationshipSupport",
+                "fallbackStrategy",
+                "summary",
+                "analysis"
+              ]
+            },
+            "semanticResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "semantic" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "query": { "type": "string" },
+                "enabled": { "type": "boolean" },
+                "indexedFiles": { "type": "integer" },
+                "truncated": { "type": "boolean" },
+                "embeddingUsed": { "type": "boolean" },
+                "message": { "type": "string" },
+                "matches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "symbol": { "type": ["string", "null"] },
+                      "qualifiedSymbol": { "type": ["string", "null"] },
+                      "kind": { "type": "string" },
+                      "signature": { "type": ["string", "null"] },
+                      "path": { "type": "string" },
+                      "line": { "type": "integer" },
+                      "snippet": { "type": "string" },
+                      "embedding_score": { "type": ["number", "null"] }
+                    }
+                  }
+                },
+                "semantic": { "$ref": "#/$defs/semantic" }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "query",
+                "enabled",
+                "indexedFiles",
+                "truncated",
+                "embeddingUsed",
+                "message",
+                "degradedMode",
+                "matches",
+                "semantic"
+              ]
+            },
+            "importsResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "imports" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "path": { "type": "string" },
+                "imports": {
+                  "type": "object",
+                  "properties": {
+                    "path": { "type": "string" },
+                    "language": { "type": "string" },
+                    "indexedFiles": { "type": "integer" },
+                    "imports": {
+                      "type": "array",
+                      "items": { "type": "string" }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "path",
+                "imports"
+              ]
+            },
+            "importersResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "importers" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "module": { "type": "string" },
+                "importers": {
+                  "type": "object",
+                  "properties": {
+                    "module": { "type": "string" },
+                    "language": { "type": "string" },
+                    "indexedFiles": { "type": "integer" },
+                    "matches": {
+                      "type": "array",
+                      "items": { "$ref": "#/$defs/importMatch" }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "module",
+                "importers"
+              ]
+            },
+            "searchResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "search" },
+                "project": { "type": "string" },
+                "language": { "type": ["string", "null"] },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "pattern": { "type": "string" },
+                "search": {
+                  "type": "object",
+                  "properties": {
+                    "pattern": { "type": "string" },
+                    "indexed_files": { "type": "integer" },
+                    "truncated": { "type": "boolean" },
+                    "matches": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": { "type": "string" },
+                          "line": { "type": "integer" },
+                          "content": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "pattern",
+                "search"
+              ]
+            },
+            "diagnosticsResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "diagnostics" },
+                "project": { "type": "string" },
+                "language": { "type": "string" },
+                "source": { "type": "string" },
+                "message": { "type": "string" },
+                "path": { "type": "string" },
+                "diagnostics": {
+                  "type": "object",
+                  "properties": {
+                    "language": { "type": "string" },
+                    "path": { "type": "string" },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tool": { "type": "string" },
+                          "available": { "type": "boolean" },
+                          "kind": { "type": "string" }
+                        }
+                      }
+                    },
+                    "diagnostics": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": { "type": "string" },
+                          "line": { "type": "integer" },
+                          "column": { "type": "integer" },
+                          "severity": { "type": "string" },
+                          "message": { "type": "string" },
+                          "code": { "type": ["string", "null"] },
+                          "source": { "type": "string" }
+                        }
+                      }
+                    },
+                    "truncated": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "language",
+                "source",
+                "message",
+                "path",
+                "diagnostics"
+              ]
+            },
+            "doctorResult": {
+              "type": "object",
+              "properties": {
+                "action": { "const": "doctor" },
+                "project": { "type": "string" },
+                "language": { "type": ["string", "null"] },
+                "message": { "type": "string" },
+                "tools": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "tool": { "type": "string" },
+                      "available": { "type": "boolean" },
+                      "purpose": { "type": "string" },
+                      "languages": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                      },
+                      "install_hint": { "type": ["string", "null"] }
+                    }
+                  }
+                },
+                "doctor": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string" },
+                    "tools": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tool": { "type": "string" },
+                          "available": { "type": "boolean" },
+                          "purpose": { "type": "string" },
+                          "languages": {
+                            "type": "array",
+                            "items": { "type": "string" }
+                          },
+                          "install_hint": { "type": ["string", "null"] }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "action",
+                "project",
+                "message",
+                "tools",
+                "doctor"
+              ]
+            },
+            "daemonResult": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "enum": ["ping", "warm", "snapshot", "status", "notify"]
+                },
+                "project": { "type": "string" },
+                "status": { "type": "string" },
+                "message": { "type": "string" },
+                "structuredFailure": { "$ref": "#/$defs/structuredFailure" },
+                "degradedMode": { "$ref": "#/$defs/degradedMode" },
+                "snapshot": {
+                  "type": "object",
+                  "properties": {
+                    "cached_entries": { "type": "integer" },
+                    "dirty_files": { "type": "integer" },
+                    "dirty_file_threshold": { "type": "integer" },
+                    "reindex_pending": { "type": "boolean" },
+                    "background_reindex_in_progress": { "type": "boolean" },
+                    "last_query_at": { "type": ["string", "null"] },
+                    "last_reindex": { "$ref": "#/$defs/reindexReport" },
+                    "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" },
+                    "lastStructuredFailure": { "$ref": "#/$defs/structuredFailure" },
+                    "degradedModeActive": { "type": "boolean" },
+                    "last_warm": {
+                      "type": "object",
+                      "properties": {
+                        "status": { "type": "string" },
+                        "languages": {
+                          "type": "array",
+                          "items": { "type": "string" }
+                        },
+                        "started_at": { "type": "string" },
+                        "finished_at": { "type": "string" },
+                        "message": { "type": "string" }
+                      }
+                    }
+                  }
+                },
+                "daemonStatus": {
+                  "type": "object",
+                  "properties": {
+                    "project_root": { "type": "string" },
+                    "socket_path": { "type": "string" },
+                    "pid_path": { "type": "string" },
+                    "lock_path": { "type": "string" },
+                    "socket_exists": { "type": "boolean" },
+                    "pid_is_live": { "type": "boolean" },
+                    "lock_is_held": { "type": "boolean" },
+                    "healthy": { "type": "boolean" },
+                    "stale_socket": { "type": "boolean" },
+                    "stale_pid": { "type": "boolean" },
+                    "health_reason": { "type": ["string", "null"] },
+                    "recovery_hint": { "type": ["string", "null"] },
+                    "structuredFailure": { "$ref": "#/$defs/structuredFailure" },
+                    "degradedMode": { "$ref": "#/$defs/degradedMode" },
+                    "semantic_reindex_pending": { "type": "boolean" },
+                    "semantic_reindex_in_progress": { "type": "boolean" },
+                    "last_query_at": { "type": ["string", "null"] },
+                    "config": {
+                      "type": "object",
+                      "properties": {
+                        "auto_start": { "type": "boolean" },
+                        "socket_mode": { "type": "string" },
+                        "semantic_enabled": { "type": "boolean" },
+                        "semantic_auto_reindex_threshold": { "type": "integer" },
+                        "session_dirty_file_threshold": { "type": "integer" },
+                        "session_idle_timeout_secs": { "type": "integer" }
+                      }
+                    }
+                  }
+                },
+                "reindexReport": { "$ref": "#/$defs/reindexReport" }
+              },
+              "required": ["action", "project", "status", "message", "structuredFailure", "degradedMode"]
+            }
+          },
+          "oneOf": [
+            { "$ref": "#/$defs/analysisResult" },
+            { "$ref": "#/$defs/searchResult" },
+            { "$ref": "#/$defs/importsResult" },
+            { "$ref": "#/$defs/importersResult" },
+            { "$ref": "#/$defs/semanticResult" },
+            { "$ref": "#/$defs/diagnosticsResult" },
+            { "$ref": "#/$defs/doctorResult" },
+            { "$ref": "#/$defs/daemonResult" }
+          ]
+        }"##,
+) {
+    Ok(schema) => schema,
+    Err(error) => panic!("output schema literal should parse: {error}"),
+});
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum TldrToolAction {
@@ -1205,607 +1809,7 @@ where
 }
 
 pub fn tldr_tool_output_schema() -> serde_json::Value {
-    serde_json::from_str(
-        r##"{
-          "type": "object",
-          "$defs": {
-            "analysisUnit": {
-              "type": "object",
-              "properties": {
-                "path": { "type": "string" },
-                "line": { "type": "integer" },
-                "span_end_line": { "type": "integer" },
-                "symbol": { "type": ["string", "null"] },
-                "qualified_symbol": { "type": ["string", "null"] },
-                "kind": { "type": "string" },
-                "owner_symbol": { "type": ["string", "null"] },
-                "owner_kind": { "type": ["string", "null"] },
-                "implemented_trait": { "type": ["string", "null"] },
-                "module_path": { "type": "array", "items": { "type": "string" } },
-                "visibility": { "type": ["string", "null"] },
-                "signature": { "type": ["string", "null"] },
-                "calls": { "type": "array", "items": { "type": "string" } },
-                "called_by": { "type": "array", "items": { "type": "string" } },
-                "references": { "type": "array", "items": { "type": "string" } },
-                "imports": { "type": "array", "items": { "type": "string" } },
-                "dependencies": { "type": "array", "items": { "type": "string" } },
-                "cfg_summary": { "type": "string" },
-                "dfg_summary": { "type": "string" }
-              }
-            },
-            "analysisDetails": {
-              "type": "object",
-              "properties": {
-                "indexed_files": { "type": "integer" },
-                "total_symbols": { "type": "integer" },
-                "symbol_query": { "type": ["string", "null"] },
-                "truncated": { "type": "boolean" },
-                "change_paths": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                },
-                "slice_target": {
-                  "type": ["object", "null"],
-                  "properties": {
-                    "path": { "type": "string" },
-                    "symbol": { "type": ["string", "null"] },
-                    "line": { "type": "integer" },
-                    "direction": { "type": "string" }
-                  }
-                },
-                "slice_lines": {
-                  "type": "array",
-                  "items": { "type": "integer" }
-                },
-                "overview": { "$ref": "#/$defs/analysisOverview" },
-                "files": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisFile" }
-                },
-                "nodes": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisNode" }
-                },
-                "edges": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisEdge" }
-                },
-                "symbol_index": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisSymbolIndexEntry" }
-                },
-                "units": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisUnit" }
-                }
-              }
-            },
-            "analysisOverview": {
-              "type": "object",
-              "properties": {
-                "kinds": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisCount" }
-                },
-                "outgoing_edges": { "type": "integer" },
-                "incoming_edges": { "type": "integer" },
-                "reference_count": { "type": "integer" },
-                "import_count": { "type": "integer" }
-              }
-            },
-            "analysisCount": {
-              "type": "object",
-              "properties": {
-                "name": { "type": "string" },
-                "count": { "type": "integer" }
-              }
-            },
-            "analysisFile": {
-              "type": "object",
-              "properties": {
-                "path": { "type": "string" },
-                "symbol_count": { "type": "integer" },
-                "kinds": {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/analysisCount" }
-                }
-              }
-            },
-            "analysisEdge": {
-              "type": "object",
-              "properties": {
-                "from": { "type": "string" },
-                "to": { "type": "string" },
-                "kind": { "type": "string" }
-              }
-            },
-            "analysisNode": {
-              "type": "object",
-              "properties": {
-                "id": { "type": "string" },
-                "label": { "type": "string" },
-                "kind": { "type": "string" },
-                "path": { "type": ["string", "null"] },
-                "line": { "type": ["integer", "null"] },
-                "signature": { "type": ["string", "null"] }
-              }
-            },
-            "analysisSymbolIndexEntry": {
-              "type": "object",
-              "properties": {
-                "symbol": { "type": "string" },
-                "node_ids": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                }
-              }
-            },
-            "importMatch": {
-              "type": "object",
-              "properties": {
-                "path": { "type": "string" },
-                "line": { "type": "integer" },
-                "symbol": { "type": ["string", "null"] },
-                "import": { "type": "string" }
-              }
-            },
-            "analysis": {
-              "type": "object",
-              "properties": {
-                "kind": { "type": "string" },
-                "summary": { "type": "string" },
-                "details": { "$ref": "#/$defs/analysisDetails" }
-              },
-              "required": ["kind", "summary", "details"]
-            },
-            "reindexReport": {
-              "type": ["object", "null"],
-              "properties": {
-                "status": { "type": "string" },
-                "languages": { "type": "array", "items": { "type": "string" } },
-                "indexed_files": { "type": "integer" },
-                "indexed_units": { "type": "integer" },
-                "truncated": { "type": "boolean" },
-                "started_at": { "type": "string" },
-                "finished_at": { "type": "string" },
-                "message": { "type": "string" },
-                "embedding_enabled": { "type": "boolean" },
-                "embedding_dimensions": { "type": "integer" }
-              }
-            },
-            "structuredFailure": {
-              "type": ["object", "null"],
-              "properties": {
-                "error_type": { "type": "string" },
-                "reason": { "type": "string" },
-                "retryable": { "type": "boolean" },
-                "retry_hint": { "type": ["string", "null"] }
-              }
-            },
-            "degradedMode": {
-              "type": ["object", "null"],
-              "properties": {
-                "is_degraded": { "type": "boolean" },
-                "mode": { "type": "string" },
-                "fallback_path": { "type": "string" },
-                "reason": { "type": ["string", "null"] }
-              }
-            },
-            "semantic": {
-              "type": "object",
-              "properties": {
-                "query": { "type": "string" },
-                "enabled": { "type": "boolean" },
-                "indexedFiles": { "type": "integer" },
-                "truncated": { "type": "boolean" },
-                "embeddingUsed": { "type": "boolean" },
-                "message": { "type": "string" },
-                "degradedMode": { "$ref": "#/$defs/degradedMode" },
-                "matches": {
-                  "type": "array",
-                    "items": {
-                    "type": "object",
-                    "properties": {
-                      "symbol": { "type": ["string", "null"] },
-                      "qualifiedSymbol": { "type": ["string", "null"] },
-                      "kind": { "type": "string" },
-                      "signature": { "type": ["string", "null"] },
-                      "path": { "type": "string" },
-                      "line": { "type": "integer" },
-                      "snippet": { "type": "string" },
-                      "embedding_score": { "type": ["number", "null"] }
-                    }
-                  }
-                }
-              }
-            },
-            "analysisResult": {
-              "type": "object",
-              "properties": {
-                "action": {
-                  "enum": ["structure", "extract", "context", "impact", "calls", "dead", "arch", "change-impact", "cfg", "dfg", "slice"]
-                },
-                "project": { "type": "string" },
-                "language": { "type": "string" },
-                "source": { "type": "string" },
-                "message": { "type": "string" },
-                "supportLevel": { "type": "string" },
-                "symbolExtractor": { "type": "string" },
-                "relationshipSupport": { "type": "string" },
-                "fallbackStrategy": { "type": "string" },
-                "summary": { "type": "string" },
-                "symbol": { "type": ["string", "null"] },
-                "path": { "type": ["string", "null"] },
-                "line": { "type": ["integer", "null"] },
-                "paths": {
-                  "type": ["array", "null"],
-                  "items": { "type": "string" }
-                },
-                "analysis": { "$ref": "#/$defs/analysis" }
-              },
-              "required": [
-                "action",
-                "project",
-                "language",
-                "source",
-                "message",
-                "supportLevel",
-                "symbolExtractor",
-                "relationshipSupport",
-                "fallbackStrategy",
-                "summary",
-                "analysis"
-              ]
-            },
-            "semanticResult": {
-              "type": "object",
-              "properties": {
-                "action": { "const": "semantic" },
-                "project": { "type": "string" },
-                "language": { "type": "string" },
-                "source": { "type": "string" },
-                "query": { "type": "string" },
-                "enabled": { "type": "boolean" },
-                "indexedFiles": { "type": "integer" },
-                "truncated": { "type": "boolean" },
-                "embeddingUsed": { "type": "boolean" },
-                "message": { "type": "string" },
-                "matches": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "symbol": { "type": ["string", "null"] },
-                      "qualifiedSymbol": { "type": ["string", "null"] },
-                      "kind": { "type": "string" },
-                      "signature": { "type": ["string", "null"] },
-                      "path": { "type": "string" },
-                      "line": { "type": "integer" },
-                      "snippet": { "type": "string" },
-                      "embedding_score": { "type": ["number", "null"] }
-                    }
-                  }
-                },
-                "semantic": { "$ref": "#/$defs/semantic" }
-              },
-              "required": [
-                "action",
-                "project",
-                "language",
-                "source",
-                "query",
-                "enabled",
-                "indexedFiles",
-                "truncated",
-                "embeddingUsed",
-                "message",
-                "degradedMode",
-                "matches",
-                "semantic"
-              ]
-            },
-            "importsResult": {
-              "type": "object",
-              "properties": {
-                "action": { "const": "imports" },
-                "project": { "type": "string" },
-                "language": { "type": "string" },
-                "source": { "type": "string" },
-                "message": { "type": "string" },
-                "path": { "type": "string" },
-                "imports": {
-                  "type": "object",
-                  "properties": {
-                    "path": { "type": "string" },
-                    "language": { "type": "string" },
-                    "indexedFiles": { "type": "integer" },
-                    "imports": {
-                      "type": "array",
-                      "items": { "type": "string" }
-                    }
-                  }
-                }
-              },
-              "required": [
-                "action",
-                "project",
-                "language",
-                "source",
-                "message",
-                "path",
-                "imports"
-              ]
-            },
-            "importersResult": {
-              "type": "object",
-              "properties": {
-                "action": { "const": "importers" },
-                "project": { "type": "string" },
-                "language": { "type": "string" },
-                "source": { "type": "string" },
-                "message": { "type": "string" },
-                "module": { "type": "string" },
-                "importers": {
-                  "type": "object",
-                  "properties": {
-                    "module": { "type": "string" },
-                    "language": { "type": "string" },
-                    "indexedFiles": { "type": "integer" },
-                    "matches": {
-                      "type": "array",
-                      "items": { "$ref": "#/$defs/importMatch" }
-                    }
-                  }
-                }
-              },
-              "required": [
-                "action",
-                "project",
-                "language",
-                "source",
-                "message",
-                "module",
-                "importers"
-              ]
-            },
-            "searchResult": {
-              "type": "object",
-              "properties": {
-                "action": { "const": "search" },
-                "project": { "type": "string" },
-                "language": { "type": ["string", "null"] },
-                "source": { "type": "string" },
-                "message": { "type": "string" },
-                "pattern": { "type": "string" },
-                "search": {
-                  "type": "object",
-                  "properties": {
-                    "pattern": { "type": "string" },
-                    "indexed_files": { "type": "integer" },
-                    "truncated": { "type": "boolean" },
-                    "matches": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "path": { "type": "string" },
-                          "line": { "type": "integer" },
-                          "content": { "type": "string" }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "required": [
-                "action",
-                "project",
-                "language",
-                "source",
-                "message",
-                "pattern",
-                "search"
-              ]
-            },
-            "diagnosticsResult": {
-              "type": "object",
-              "properties": {
-                "action": { "const": "diagnostics" },
-                "project": { "type": "string" },
-                "language": { "type": "string" },
-                "source": { "type": "string" },
-                "message": { "type": "string" },
-                "path": { "type": "string" },
-                "diagnostics": {
-                  "type": "object",
-                  "properties": {
-                    "language": { "type": "string" },
-                    "path": { "type": "string" },
-                    "tools": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "tool": { "type": "string" },
-                          "available": { "type": "boolean" },
-                          "kind": { "type": "string" }
-                        }
-                      }
-                    },
-                    "diagnostics": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "path": { "type": "string" },
-                          "line": { "type": "integer" },
-                          "column": { "type": "integer" },
-                          "severity": { "type": "string" },
-                          "message": { "type": "string" },
-                          "code": { "type": ["string", "null"] },
-                          "source": { "type": "string" }
-                        }
-                      }
-                    },
-                    "truncated": { "type": "boolean" },
-                    "message": { "type": "string" }
-                  }
-                }
-              },
-              "required": [
-                "action",
-                "project",
-                "language",
-                "source",
-                "message",
-                "path",
-                "diagnostics"
-              ]
-            },
-            "doctorResult": {
-              "type": "object",
-              "properties": {
-                "action": { "const": "doctor" },
-                "project": { "type": "string" },
-                "language": { "type": ["string", "null"] },
-                "message": { "type": "string" },
-                "tools": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "tool": { "type": "string" },
-                      "available": { "type": "boolean" },
-                      "purpose": { "type": "string" },
-                      "languages": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                      },
-                      "install_hint": { "type": ["string", "null"] }
-                    }
-                  }
-                },
-                "doctor": {
-                  "type": "object",
-                  "properties": {
-                    "message": { "type": "string" },
-                    "tools": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "tool": { "type": "string" },
-                          "available": { "type": "boolean" },
-                          "purpose": { "type": "string" },
-                          "languages": {
-                            "type": "array",
-                            "items": { "type": "string" }
-                          },
-                          "install_hint": { "type": ["string", "null"] }
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "required": [
-                "action",
-                "project",
-                "message",
-                "tools",
-                "doctor"
-              ]
-            },
-            "daemonResult": {
-              "type": "object",
-              "properties": {
-                "action": {
-                  "enum": ["ping", "warm", "snapshot", "status", "notify"]
-                },
-                "project": { "type": "string" },
-                "status": { "type": "string" },
-                "message": { "type": "string" },
-                "structuredFailure": { "$ref": "#/$defs/structuredFailure" },
-                "degradedMode": { "$ref": "#/$defs/degradedMode" },
-                "snapshot": {
-                  "type": "object",
-                  "properties": {
-                    "cached_entries": { "type": "integer" },
-                    "dirty_files": { "type": "integer" },
-                    "dirty_file_threshold": { "type": "integer" },
-                    "reindex_pending": { "type": "boolean" },
-                    "background_reindex_in_progress": { "type": "boolean" },
-                    "last_query_at": { "type": ["string", "null"] },
-                    "last_reindex": { "$ref": "#/$defs/reindexReport" },
-                    "last_reindex_attempt": { "$ref": "#/$defs/reindexReport" },
-                    "lastStructuredFailure": { "$ref": "#/$defs/structuredFailure" },
-                    "degradedModeActive": { "type": "boolean" },
-                    "last_warm": {
-                      "type": "object",
-                      "properties": {
-                        "status": { "type": "string" },
-                        "languages": {
-                          "type": "array",
-                          "items": { "type": "string" }
-                        },
-                        "started_at": { "type": "string" },
-                        "finished_at": { "type": "string" },
-                        "message": { "type": "string" }
-                      }
-                    }
-                  }
-                },
-                "daemonStatus": {
-                  "type": "object",
-                  "properties": {
-                    "project_root": { "type": "string" },
-                    "socket_path": { "type": "string" },
-                    "pid_path": { "type": "string" },
-                    "lock_path": { "type": "string" },
-                    "socket_exists": { "type": "boolean" },
-                    "pid_is_live": { "type": "boolean" },
-                    "lock_is_held": { "type": "boolean" },
-                    "healthy": { "type": "boolean" },
-                    "stale_socket": { "type": "boolean" },
-                    "stale_pid": { "type": "boolean" },
-                    "health_reason": { "type": ["string", "null"] },
-                    "recovery_hint": { "type": ["string", "null"] },
-                    "structuredFailure": { "$ref": "#/$defs/structuredFailure" },
-                    "degradedMode": { "$ref": "#/$defs/degradedMode" },
-                    "semantic_reindex_pending": { "type": "boolean" },
-                    "semantic_reindex_in_progress": { "type": "boolean" },
-                    "last_query_at": { "type": ["string", "null"] },
-                    "config": {
-                      "type": "object",
-                      "properties": {
-                        "auto_start": { "type": "boolean" },
-                        "socket_mode": { "type": "string" },
-                        "semantic_enabled": { "type": "boolean" },
-                        "semantic_auto_reindex_threshold": { "type": "integer" },
-                        "session_dirty_file_threshold": { "type": "integer" },
-                        "session_idle_timeout_secs": { "type": "integer" }
-                      }
-                    }
-                  }
-                },
-                "reindexReport": { "$ref": "#/$defs/reindexReport" }
-              },
-              "required": ["action", "project", "status", "message", "structuredFailure", "degradedMode"]
-            }
-          },
-          "oneOf": [
-            { "$ref": "#/$defs/analysisResult" },
-            { "$ref": "#/$defs/searchResult" },
-            { "$ref": "#/$defs/importsResult" },
-            { "$ref": "#/$defs/importersResult" },
-            { "$ref": "#/$defs/semanticResult" },
-            { "$ref": "#/$defs/diagnosticsResult" },
-            { "$ref": "#/$defs/doctorResult" },
-            { "$ref": "#/$defs/daemonResult" }
-          ]
-        }"##,
-    )
-    .expect("output schema literal should parse")
+    TLDR_TOOL_OUTPUT_SCHEMA.clone()
 }
 
 #[cfg(test)]

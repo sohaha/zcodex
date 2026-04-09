@@ -190,7 +190,7 @@ fn default_onnxruntime_dylib_name() -> &'static str {
 fn ensure_onnxruntime_dylib_loadable_at(path: &Path) -> Result<()> {
     let c_path = CString::new(path.as_os_str().as_bytes())
         .with_context(|| format!("invalid ONNX Runtime dylib path `{}`", path.display()))?;
-    let symbol = CString::new("OrtGetApiBase").expect("symbol literal must not contain NUL");
+    let symbol = c"OrtGetApiBase";
 
     unsafe {
         let _ = libc::dlerror();

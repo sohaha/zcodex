@@ -57,6 +57,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::PoisonError;
 use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,7 +132,7 @@ impl TldrEngine {
         let guard = self
             .semantic_indexes
             .read()
-            .expect("semantic index cache lock should not be poisoned");
+            .unwrap_or_else(PoisonError::into_inner);
         guard.get(&language).cloned()
     }
 
@@ -163,7 +164,7 @@ impl TldrEngine {
         let index = indexer.load_or_build_index(&self.config.project_root, language)?;
         self.semantic_indexes
             .write()
-            .expect("semantic index cache lock should not be poisoned")
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(language, index.clone());
         Ok(index)
     }
@@ -230,7 +231,7 @@ impl TldrEngine {
         let mut cache = self
             .semantic_indexes
             .write()
-            .expect("semantic index cache lock should not be poisoned");
+            .unwrap_or_else(PoisonError::into_inner);
         cache.clear();
         for index in indexes {
             cache.insert(index.language, index);

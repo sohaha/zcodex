@@ -287,9 +287,12 @@ pub enum ParserInitError {
 
 impl LanguageRegistry {
     pub fn support_for(language: SupportedLanguage) -> &'static LanguageSupport {
-        LANGUAGE_SUPPORT
-            .get(language.as_str())
-            .expect("supported languages must exist in the registry")
+        let language_name = language.as_str();
+        let Some(support) = LANGUAGE_SUPPORT.get(language_name) else {
+            unreachable!("supported languages must exist in the registry: {language_name}");
+        };
+
+        support
     }
 
     pub fn parser_for(&self, language: SupportedLanguage) -> Result<Parser, ParserInitError> {
