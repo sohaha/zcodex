@@ -1095,9 +1095,7 @@ impl CodexMessageProcessor {
     }
 
     // Build options for a ChatGPT login attempt; performs validation.
-    async fn login_chatgpt_common(
-        &self,
-    ) -> std::result::Result<LoginServerOptions, JSONRPCErrorError> {
+    fn login_chatgpt_common(&self) -> std::result::Result<LoginServerOptions, JSONRPCErrorError> {
         let config = self.config.as_ref();
 
         if self.auth_manager.is_external_chatgpt_auth_active() {
@@ -1112,15 +1110,13 @@ impl CodexMessageProcessor {
             });
         }
 
-        let mut opts = LoginServerOptions {
-            open_browser: false,
-            ..LoginServerOptions::new(
-                config.codex_home.clone(),
-                CLIENT_ID.to_string(),
-                config.forced_chatgpt_workspace_id.clone(),
-                config.cli_auth_credentials_store_mode,
-            )
-        };
+        let mut opts = LoginServerOptions::new(
+            config.codex_home.clone(),
+            CLIENT_ID.to_string(),
+            config.forced_chatgpt_workspace_id.clone(),
+            config.cli_auth_credentials_store_mode,
+        );
+        opts.open_browser = false;
         #[cfg(debug_assertions)]
         if let Ok(issuer) = std::env::var(LOGIN_ISSUER_OVERRIDE_ENV_VAR)
             && !issuer.trim().is_empty()
@@ -1145,7 +1141,7 @@ impl CodexMessageProcessor {
     }
 
     async fn login_chatgpt_v2(&mut self, request_id: ConnectionRequestId) {
-        match self.login_chatgpt_common().await {
+        match self.login_chatgpt_common() {
             Ok(opts) => match run_login_server(opts) {
                 Ok(server) => {
                     let login_id = Uuid::new_v4();
@@ -1254,7 +1250,7 @@ impl CodexMessageProcessor {
     }
 
     async fn login_chatgpt_device_code_v2(&mut self, request_id: ConnectionRequestId) {
-        match self.login_chatgpt_common().await {
+        match self.login_chatgpt_common() {
             Ok(opts) => match request_device_code(&opts).await {
                 Ok(device_code) => {
                     let login_id = Uuid::new_v4();

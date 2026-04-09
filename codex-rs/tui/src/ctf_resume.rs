@@ -183,7 +183,7 @@ mod tests {
         assert!(!cleaned.contains("\"type\":\"agent_reasoning\""));
         let backups = std::fs::read_dir(temp_home.path())
             .expect("list backups")
-            .filter_map(|entry| entry.ok())
+            .filter_map(std::result::Result::ok)
             .filter(|entry| entry.file_name().to_string_lossy().contains(".bak."))
             .count();
         assert_eq!(backups, 1);

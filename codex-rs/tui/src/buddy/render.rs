@@ -575,7 +575,7 @@ fn rarity_style(bones: &BuddyBones) -> Style {
 
 fn shiny_style() -> Style {
     Style::default()
-        .fg(Color::Yellow)
+        .fg(Color::Magenta)
         .add_modifier(Modifier::BOLD)
 }
 

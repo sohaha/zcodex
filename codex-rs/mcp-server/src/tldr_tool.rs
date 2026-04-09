@@ -266,6 +266,7 @@ fn tldr_error_structured_content_for_project(
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
 
+#[allow(dead_code)]
 async fn ensure_daemon_running(project_root: &Path) -> Result<bool> {
     Ok(ensure_daemon_running_detailed(project_root).await?.ready)
 }
@@ -1171,7 +1172,6 @@ mod tests {
         let result_json = serde_json::to_value(&result).expect("tool result serializes");
         let structured = result
             .structured_content
-            .clone()
             .expect("structured content should be present");
         assert_eq!(
             result_json["content"][0]["text"],
@@ -1229,7 +1229,6 @@ mod tests {
         let result_json = serde_json::to_value(&result).expect("tool result should serialize");
         let structured = result
             .structured_content
-            .clone()
             .expect("structured content should be present");
         assert_eq!(
             result_json["content"][0]["text"],
@@ -1308,7 +1307,6 @@ mod tests {
         let result_json = serde_json::to_value(&result).expect("tool result serializes");
         let structured = result
             .structured_content
-            .clone()
             .expect("structured content should be present");
         assert_eq!(
             result_json["content"][0]["text"],
