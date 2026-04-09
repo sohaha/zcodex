@@ -25,6 +25,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fs::File;
 use std::fs::OpenOptions;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -52,6 +54,10 @@ const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(1);
 #[cfg(unix)]
 const DAEMON_HEAVY_IO_TIMEOUT: Duration = Duration::from_secs(180);
+#[cfg(unix)]
+const UNIX_SOCKET_PATH_MAX_BYTES: usize = 103;
+#[cfg(unix)]
+const UNIX_TEMP_ARTIFACT_ROOT: &str = "/tmp";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DaemonConfig {
@@ -1083,34 +1089,30 @@ impl Drop for ActiveConnectionGuard {
 }
 
 pub fn socket_path_for_project(project_root: &Path) -> PathBuf {
-    daemon_artifact_dir_for_project(project_root).join(format!(
-        "codex-native-tldr-{}.sock",
-        daemon_project_hash(project_root)
-    ))
+    let project_hash = daemon_project_hash(project_root);
+    daemon_artifact_dir_for_project_hash(project_root, &project_hash)
+        .join(daemon_socket_file_name(&project_hash))
 }
 
 pub fn pid_path_for_project(project_root: &Path) -> PathBuf {
-    daemon_artifact_dir_for_project(project_root).join(format!(
-        "codex-native-tldr-{}.pid",
-        daemon_project_hash(project_root)
-    ))
+    let project_hash = daemon_project_hash(project_root);
+    daemon_artifact_dir_for_project_hash(project_root, &project_hash)
+        .join(daemon_pid_file_name(&project_hash))
 }
 
 pub fn lock_path_for_project(project_root: &Path) -> PathBuf {
-    daemon_artifact_scope_dir().join(format!(
-        "codex-native-tldr-{}.lock",
-        daemon_project_hash(project_root)
-    ))
+    let project_hash = daemon_project_hash(project_root);
+    daemon_artifact_scope_dir(project_root, &project_hash)
+        .join(daemon_lock_file_name(&project_hash))
 }
 
 pub fn launch_lock_path_for_project(project_root: &Path) -> PathBuf {
-    daemon_artifact_scope_dir().join(format!(
-        "codex-native-tldr-{}.launch.lock",
-        daemon_project_hash(project_root)
-    ))
+    let project_hash = daemon_project_hash(project_root);
+    daemon_artifact_scope_dir(project_root, &project_hash)
+        .join(daemon_launch_lock_file_name(&project_hash))
 }
 
-fn daemon_project_hash(project_root: &Path) -> String {
+pub(crate) fn daemon_project_hash(project_root: &Path) -> String {
     let hash = format!(
         "{:x}",
         md5_compute(project_root.to_string_lossy().as_bytes())
@@ -1119,20 +1121,74 @@ fn daemon_project_hash(project_root: &Path) -> String {
 }
 
 pub(crate) fn daemon_artifact_dir_for_project(project_root: &Path) -> PathBuf {
-    daemon_artifact_scope_dir().join(daemon_project_hash(project_root))
+    let project_hash = daemon_project_hash(project_root);
+    daemon_artifact_dir_for_project_hash(project_root, &project_hash)
 }
 
-fn daemon_artifact_scope_dir() -> PathBuf {
+pub(crate) fn temp_artifact_dir_for_project(project_root: &Path) -> PathBuf {
+    daemon_temp_artifact_scope_dir().join(daemon_project_hash(project_root))
+}
+
+fn daemon_socket_file_name(project_hash: &str) -> String {
+    format!("codex-native-tldr-{project_hash}.sock")
+}
+
+fn daemon_pid_file_name(project_hash: &str) -> String {
+    format!("codex-native-tldr-{project_hash}.pid")
+}
+
+fn daemon_lock_file_name(project_hash: &str) -> String {
+    format!("codex-native-tldr-{project_hash}.lock")
+}
+
+fn daemon_launch_lock_file_name(project_hash: &str) -> String {
+    format!("codex-native-tldr-{project_hash}.launch.lock")
+}
+
+fn daemon_artifact_dir_for_project_hash(project_root: &Path, project_hash: &str) -> PathBuf {
+    daemon_artifact_scope_dir(project_root, project_hash).join(project_hash)
+}
+
+fn daemon_artifact_scope_dir(_project_root: &Path, project_hash: &str) -> PathBuf {
     #[cfg(unix)]
     {
         let uid = unsafe { libc::geteuid() };
         let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
-        daemon_artifact_scope_dir_for_runtime_dir(runtime_dir.as_deref(), uid)
+        daemon_artifact_scope_dir_for_project_hash(runtime_dir.as_deref(), uid, project_hash)
     }
 
     #[cfg(not(unix))]
     {
         daemon_artifact_scope_dir_for_runtime_dir(None)
+    }
+}
+
+fn daemon_temp_artifact_scope_dir() -> PathBuf {
+    #[cfg(unix)]
+    {
+        let uid = unsafe { libc::geteuid() };
+        PathBuf::from(UNIX_TEMP_ARTIFACT_ROOT)
+            .join("codex-native-tldr")
+            .join(uid.to_string())
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::env::temp_dir().join("codex-native-tldr")
+    }
+}
+
+#[cfg(unix)]
+fn daemon_artifact_scope_dir_for_project_hash(
+    runtime_dir: Option<&Path>,
+    uid: libc::uid_t,
+    project_hash: &str,
+) -> PathBuf {
+    let preferred_scope_dir = daemon_artifact_scope_dir_for_runtime_dir(runtime_dir, uid);
+    if unix_socket_path_fits(&preferred_scope_dir, project_hash) {
+        preferred_scope_dir
+    } else {
+        daemon_temp_artifact_scope_dir()
     }
 }
 
@@ -1144,19 +1200,22 @@ fn daemon_artifact_scope_dir_for_runtime_dir(
     if let Some(runtime_dir) = runtime_dir
         && runtime_dir.is_absolute()
     {
-        let scope_dir = runtime_dir.join("codex-native-tldr").join(uid.to_string());
-        if std::fs::create_dir_all(&scope_dir).is_ok() {
-            return scope_dir;
-        }
+        return runtime_dir.join("codex-native-tldr").join(uid.to_string());
     }
-    std::env::temp_dir()
-        .join("codex-native-tldr")
-        .join(uid.to_string())
+    daemon_temp_artifact_scope_dir()
 }
 
 #[cfg(not(unix))]
 fn daemon_artifact_scope_dir_for_runtime_dir(_runtime_dir: Option<&Path>) -> PathBuf {
-    std::env::temp_dir().join("codex-native-tldr")
+    daemon_temp_artifact_scope_dir()
+}
+
+#[cfg(unix)]
+fn unix_socket_path_fits(scope_dir: &Path, project_hash: &str) -> bool {
+    let socket_path = scope_dir
+        .join(project_hash)
+        .join(daemon_socket_file_name(project_hash));
+    socket_path.as_os_str().as_bytes().len() < UNIX_SOCKET_PATH_MAX_BYTES
 }
 
 fn ensure_daemon_artifact_parent(path: &Path) -> Result<()> {
@@ -1549,10 +1608,14 @@ mod tests {
     use super::TldrDaemon;
     use super::TldrDaemonCommand;
     use super::TldrDaemonResponse;
+    #[cfg(unix)]
+    use super::daemon_artifact_scope_dir_for_project_hash;
     use super::daemon_artifact_scope_dir_for_runtime_dir;
     use super::daemon_health;
     use super::daemon_lock_is_held;
     use super::daemon_project_hash;
+    #[cfg(unix)]
+    use super::daemon_temp_artifact_scope_dir;
     use super::ensure_daemon_artifact_parent;
     use super::io_timeout_for_command;
     use super::launch_lock_is_held;
@@ -1560,6 +1623,8 @@ mod tests {
     use super::lock_path_for_project;
     use super::pid_is_alive;
     use super::query_daemon;
+    #[cfg(unix)]
+    use super::unix_socket_path_fits;
     use super::write_pid_file;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
@@ -2554,23 +2619,26 @@ mod tests {
             unsafe { libc::geteuid() },
         );
 
-        assert!(scope_dir.starts_with(std::env::temp_dir()));
+        assert_eq!(scope_dir, daemon_temp_artifact_scope_dir());
     }
 
     #[cfg(unix)]
     #[test]
-    fn daemon_artifact_paths_fall_back_when_absolute_xdg_runtime_dir_is_unusable() {
+    fn daemon_artifact_paths_fall_back_when_runtime_socket_path_is_too_long() {
         let tempdir = tempdir().expect("tempdir should exist");
-        let blocked_runtime_dir = tempdir.path().join("blocked-runtime-dir");
-        std::fs::write(&blocked_runtime_dir, "not a directory")
-            .expect("blocked runtime dir placeholder should exist");
+        let project_root = tempdir.path().join("long-runtime-socket-project");
+        let project_hash = daemon_project_hash(&project_root);
+        let runtime_dir = tempdir.path().join("runtime").join("x".repeat(128));
+        std::fs::create_dir_all(&runtime_dir).expect("runtime dir should be created");
 
-        let scope_dir =
-            daemon_artifact_scope_dir_for_runtime_dir(Some(&blocked_runtime_dir), unsafe {
-                libc::geteuid()
-            });
+        let scope_dir = daemon_artifact_scope_dir_for_project_hash(
+            Some(&runtime_dir),
+            unsafe { libc::geteuid() },
+            &project_hash,
+        );
 
-        assert!(scope_dir.starts_with(std::env::temp_dir()));
+        assert_eq!(scope_dir, daemon_temp_artifact_scope_dir());
+        assert!(unix_socket_path_fits(&scope_dir, &project_hash));
     }
 
     #[test]
