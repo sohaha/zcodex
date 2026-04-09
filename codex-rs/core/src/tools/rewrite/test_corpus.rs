@@ -1,5 +1,6 @@
 use crate::tools::rewrite::tldr_routing::SearchRoute;
 use crate::tools::rewrite::tldr_routing::SearchSignal;
+use std::collections::BTreeMap;
 
 pub(crate) struct QueryCorpusCase {
     pub(crate) pattern: &'static str,
@@ -45,6 +46,42 @@ pub(crate) fn structural_shell_intercept_reason(signal: SearchSignal) -> &'stati
         SearchSignal::PathLike => "structural_shell_pathlike_intercept",
         SearchSignal::GenericSemantic => "structural_shell_search_intercept",
     }
+}
+
+pub(crate) fn project_route_counts() -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for case in PROJECT_QUERY_CORPUS {
+        *counts.entry(route_label(case.route)).or_insert(0usize) += 1;
+    }
+    counts
+}
+
+pub(crate) fn project_signal_counts() -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for case in PROJECT_QUERY_CORPUS {
+        *counts.entry(signal_label(case.signal)).or_insert(0usize) += 1;
+    }
+    counts
+}
+
+pub(crate) fn project_structural_search_reason_counts() -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for case in PROJECT_QUERY_CORPUS {
+        *counts
+            .entry(structural_search_reason(case.signal))
+            .or_insert(0usize) += 1;
+    }
+    counts
+}
+
+pub(crate) fn project_structural_shell_reason_counts() -> BTreeMap<&'static str, usize> {
+    let mut counts = BTreeMap::new();
+    for case in PROJECT_QUERY_CORPUS {
+        *counts
+            .entry(structural_shell_intercept_reason(case.signal))
+            .or_insert(0usize) += 1;
+    }
+    counts
 }
 
 pub(crate) const PROJECT_QUERY_CORPUS: [QueryCorpusCase; 5] = [

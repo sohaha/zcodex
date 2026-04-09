@@ -257,6 +257,8 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::project_route_counts;
+    use crate::tools::rewrite::test_corpus::project_structural_shell_reason_counts;
     use crate::tools::rewrite::test_corpus::route_label;
     use crate::tools::rewrite::test_corpus::structural_shell_intercept_reason;
     use pretty_assertions::assert_eq;
@@ -502,20 +504,8 @@ mod tests {
             }
         }
 
-        assert_eq!(
-            reason_counts,
-            BTreeMap::from([
-                ("structural_shell_member_symbol_intercept", 1usize),
-                ("structural_shell_natural_language_intercept", 1usize),
-                ("structural_shell_pathlike_intercept", 1usize),
-                ("structural_shell_symbol_intercept", 1usize),
-                ("structural_shell_wrapped_symbol_intercept", 1usize),
-            ])
-        );
-        assert_eq!(
-            action_counts,
-            BTreeMap::from([("context", 3usize), ("semantic", 2usize)])
-        );
+        assert_eq!(reason_counts, project_structural_shell_reason_counts());
+        assert_eq!(action_counts, project_route_counts());
         assert_eq!(passthrough_count, 1);
     }
 

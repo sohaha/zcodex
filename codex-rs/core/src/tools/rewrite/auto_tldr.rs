@@ -193,6 +193,9 @@ mod tests {
     use crate::tools::rewrite::resolve_tldr_project_root;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::project_route_counts;
+    use crate::tools::rewrite::test_corpus::project_signal_counts;
+    use crate::tools::rewrite::test_corpus::project_structural_search_reason_counts;
     use crate::tools::rewrite::test_corpus::route_label;
     use crate::tools::rewrite::test_corpus::signal_label;
     use crate::tools::rewrite::test_corpus::structural_search_reason;
@@ -357,32 +360,15 @@ mod tests {
                 .or_insert(0usize) += 1;
         }
 
-        assert_eq!(
-            reason_counts,
-            BTreeMap::from([
-                ("raw_pattern_regex", 1usize),
-                ("structural_member_symbol_query", 1usize),
-                ("structural_natural_language_search_query", 1usize),
-                ("structural_pathlike_search_query", 1usize),
-                ("structural_symbol_query", 1usize),
-                ("structural_wrapped_symbol_query", 1usize),
-            ])
-        );
-        assert_eq!(
-            action_counts,
-            BTreeMap::from([("context", 3usize), ("none", 1usize), ("semantic", 2usize)])
-        );
-        assert_eq!(
-            signal_counts,
-            BTreeMap::from([
-                ("bare_symbol", 1usize),
-                ("member_symbol", 1usize),
-                ("natural_language", 1usize),
-                ("none", 1usize),
-                ("path_like", 1usize),
-                ("wrapped_symbol", 1usize),
-            ])
-        );
+        let mut expected_reason_counts = project_structural_search_reason_counts();
+        expected_reason_counts.insert("raw_pattern_regex", 1usize);
+        assert_eq!(reason_counts, expected_reason_counts);
+        let mut expected_action_counts = project_route_counts();
+        expected_action_counts.insert("none", 1usize);
+        assert_eq!(action_counts, expected_action_counts);
+        let mut expected_signal_counts = project_signal_counts();
+        expected_signal_counts.insert("none", 1usize);
+        assert_eq!(signal_counts, expected_signal_counts);
     }
 
     #[tokio::test]

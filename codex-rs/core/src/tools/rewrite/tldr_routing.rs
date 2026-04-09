@@ -297,6 +297,8 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::project_route_counts;
+    use crate::tools::rewrite::test_corpus::project_signal_counts;
     use crate::tools::rewrite::test_corpus::route_label;
     use crate::tools::rewrite::test_corpus::signal_label;
     use crate::tools::rewrite::test_corpus::structural_search_reason as corpus_structural_search_reason;
@@ -531,7 +533,7 @@ mod tests {
                 (Ok(classification), Ok((expected_route, expected_signal))) => {
                     assert_eq!(classification.route, expected_route, "pattern: {pattern}");
                     assert_eq!(classification.signal, expected_signal, "pattern: {pattern}");
-                                        *route_counts
+                    *route_counts
                         .entry(route_label(classification.route))
                         .or_insert(0usize) += 1;
                     *signal_counts
@@ -548,20 +550,20 @@ mod tests {
             }
         }
 
-        assert_eq!(
-            route_counts,
-            BTreeMap::from([("context", 4usize), ("semantic", 4usize)])
-        );
-        assert_eq!(
-            signal_counts,
-            BTreeMap::from([
-                ("bare_symbol", 2usize),
-                ("member_symbol", 1usize),
-                ("natural_language", 2usize),
-                ("path_like", 2usize),
-                ("wrapped_symbol", 1usize)
-            ])
-        );
+        let mut expected_route_counts = project_route_counts();
+        *expected_route_counts.entry("context").or_insert(0usize) += 1;
+        *expected_route_counts.entry("semantic").or_insert(0usize) += 2;
+        assert_eq!(route_counts, expected_route_counts);
+
+        let mut expected_signal_counts = project_signal_counts();
+        *expected_signal_counts
+            .entry("bare_symbol")
+            .or_insert(0usize) += 1;
+        *expected_signal_counts
+            .entry("natural_language")
+            .or_insert(0usize) += 1;
+        *expected_signal_counts.entry("path_like").or_insert(0usize) += 1;
+        assert_eq!(signal_counts, expected_signal_counts);
         assert_eq!(
             passthrough_counts,
             BTreeMap::from([("raw_pattern_regex", 1usize)])
