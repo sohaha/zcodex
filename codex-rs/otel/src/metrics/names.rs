@@ -25,6 +25,7 @@ pub const TURN_TTFT_DURATION_METRIC: &str = "codex.turn.ttft.duration_ms";
 pub const TURN_TTFM_DURATION_METRIC: &str = "codex.turn.ttfm.duration_ms";
 pub const TURN_NETWORK_PROXY_METRIC: &str = "codex.turn.network_proxy";
 pub const TURN_TOOL_CALL_METRIC: &str = "codex.turn.tool.call";
+pub const TOOL_ROUTE_METRIC: &str = "codex.tool_route";
 pub const TURN_TOKEN_USAGE_METRIC: &str = "codex.turn.token_usage";
 pub const PROFILE_USAGE_METRIC: &str = "codex.profile.usage";
 pub const CURATED_PLUGINS_STARTUP_SYNC_METRIC: &str = "codex.plugins.startup_sync";

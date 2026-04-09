@@ -8,9 +8,8 @@ use crate::tools::rewrite::tldr_routing::SearchSignal;
 use crate::tools::router::ToolCall;
 use codex_native_tldr::tool_api::TldrToolAction;
 use codex_otel::SessionTelemetry;
+use codex_otel::TOOL_ROUTE_METRIC;
 use tracing::info;
-
-const TOOL_ROUTE_METRIC: &str = "codex.tool_route";
 
 pub(crate) async fn rewrite_tool_call(
     turn: &TurnContext,
