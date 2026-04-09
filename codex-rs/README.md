@@ -96,7 +96,7 @@ cargo build --release -p codex-cli --features tldr
 ./target/release/codex ztldr daemon --project /path/to/project --json status
 ```
 
-当前 `tldr` 的多语言关系分析能力已显式分级：Rust 使用 dedicated extractor，并能在结构化 analysis 输出中提供更精确的 owner / trait impl 关系；TypeScript、JavaScript、Python、Go、PHP、Zig 目前仍主要依赖 heuristic extractor，返回的类型/实现关系应视为启发式结果，而不是与 Rust 同等级的语义建模。
+当前 `ztldr` 的多语言关系分析能力已显式分级：Rust 使用 dedicated extractor，并能在结构化 analysis 输出中提供更精确的 owner / trait impl 关系；TypeScript、JavaScript、Python、Go、PHP、Zig 目前仍主要依赖 heuristic extractor，返回的类型/实现关系应视为启发式结果，而不是与 Rust 同等级的语义建模。
 
 ### 通知
 
