@@ -1855,7 +1855,7 @@ fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
 
 fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
     [
-        OsString::from("tldr"),
+        OsString::from("ztldr"),
         OsString::from("internal-daemon"),
         OsString::from("--project"),
         project_root.as_os_str().to_os_string(),
@@ -2764,7 +2764,7 @@ mod lifecycle_tests {
         assert_eq!(
             args,
             [
-                "tldr".into(),
+                "ztldr".into(),
                 "internal-daemon".into(),
                 "--project".into(),
                 project_root.as_os_str().to_os_string(),
@@ -3216,7 +3216,7 @@ mod lifecycle_tests {
                                 kind: StructuredFailureKind::DaemonUnavailable,
                                 reason: "daemon failed to start".to_string(),
                                 retryable: true,
-                                retry_hint: Some("run `codex tldr daemon start`".to_string()),
+                                retry_hint: Some("run `codex ztldr daemon start`".to_string()),
                             }),
                             degraded_mode: Some(DegradedMode {
                                 kind: DegradedModeKind::DiagnosticOnly,
@@ -3241,7 +3241,7 @@ mod lifecycle_tests {
                         kind: StructuredFailureKind::DaemonUnavailable,
                         reason: "daemon failed to start".to_string(),
                         retryable: true,
-                        retry_hint: Some("run `codex tldr daemon start`".to_string()),
+                        retry_hint: Some("run `codex ztldr daemon start`".to_string()),
                     }),
                     degraded_mode: Some(DegradedMode {
                         kind: DegradedModeKind::DiagnosticOnly,

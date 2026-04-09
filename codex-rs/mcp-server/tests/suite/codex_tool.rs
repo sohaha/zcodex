@@ -556,8 +556,8 @@ async fn tldr_tool_is_not_listed_when_feature_is_disabled() -> anyhow::Result<()
     assert!(
         tools
             .iter()
-            .all(|tool| tool.get("name").and_then(serde_json::Value::as_str) != Some("tldr")),
-        "did not expect `tldr` tool in tools/list when feature is disabled, got {tools:?}"
+            .all(|tool| tool.get("name").and_then(serde_json::Value::as_str) != Some("ztldr")),
+        "did not expect `ztldr` tool in tools/list when feature is disabled, got {tools:?}"
     );
 
     Ok(())
@@ -599,8 +599,8 @@ mod tldr_tests {
         assert!(
             tools
                 .iter()
-                .any(|tool| tool.get("name").and_then(serde_json::Value::as_str) == Some("tldr")),
-            "expected `tldr` tool in tools/list, got {tools:?}"
+                .any(|tool| tool.get("name").and_then(serde_json::Value::as_str) == Some("ztldr")),
+            "expected `ztldr` tool in tools/list, got {tools:?}"
         );
 
         Ok(())
@@ -630,7 +630,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(
                     serde_json::json!({
                         "action": "structure",
@@ -757,7 +757,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("structure")),
                     (
@@ -820,7 +820,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(
                     serde_json::json!({
                         "action": "context",
@@ -881,7 +881,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(
                     serde_json::json!({
                         "action": "structure",
@@ -997,7 +997,7 @@ mod tldr_tests {
             } = create_mcp_process(Vec::new()).await?;
             let request_id = mcp_process
                 .send_named_tool_call(
-                    "tldr",
+                    "ztldr",
                     Some(serde_json::Map::from_iter([
                         ("action".to_string(), json!("structure")),
                         (
@@ -1077,7 +1077,7 @@ mod tldr_tests {
             } = create_mcp_process(Vec::new()).await?;
             let request_id = mcp_process
                 .send_named_tool_call(
-                    "tldr",
+                    "ztldr",
                     Some(serde_json::Map::from_iter([
                         ("action".to_string(), json!("structure")),
                         (
@@ -1143,7 +1143,7 @@ mod tldr_tests {
             } = create_mcp_process(Vec::new()).await?;
             let request_id = mcp_process
                 .send_named_tool_call(
-                    "tldr",
+                    "ztldr",
                     Some(serde_json::Map::from_iter([
                         ("action".to_string(), json!("context")),
                         (
@@ -1225,7 +1225,7 @@ mod tldr_tests {
             } = create_mcp_process(Vec::new()).await?;
             let request_id = mcp_process
                 .send_named_tool_call(
-                    "tldr",
+                    "ztldr",
                     Some(serde_json::Map::from_iter([
                         ("action".to_string(), json!("context")),
                         (
@@ -1292,7 +1292,7 @@ mod tldr_tests {
             } = create_mcp_process(Vec::new()).await?;
             let request_id = mcp_process
                 .send_named_tool_call(
-                    "tldr",
+                    "ztldr",
                     Some(serde_json::Map::from_iter([
                         ("action".to_string(), json!("impact")),
                         (
@@ -1371,7 +1371,7 @@ mod tldr_tests {
             } = create_mcp_process(Vec::new()).await?;
             let request_id = mcp_process
                 .send_named_tool_call(
-                    "tldr",
+                    "ztldr",
                     Some(serde_json::Map::from_iter([
                         ("action".to_string(), json!("impact")),
                         (
@@ -1505,7 +1505,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("semantic")),
                     (
@@ -1615,7 +1615,7 @@ mod tldr_tests {
             params: serde_json::Map<String, serde_json::Value>,
         ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
             let request_id = mcp_process
-                .send_named_tool_call("tldr", Some(params))
+                .send_named_tool_call("ztldr", Some(params))
                 .await?;
             let response = timeout(
                 DEFAULT_READ_TIMEOUT,
@@ -1931,7 +1931,7 @@ mod tldr_tests {
             params: serde_json::Map<String, serde_json::Value>,
         ) -> anyhow::Result<serde_json::Map<String, serde_json::Value>> {
             let request_id = mcp_process
-                .send_named_tool_call("tldr", Some(params))
+                .send_named_tool_call("ztldr", Some(params))
                 .await?;
             let response = timeout(
                 DEFAULT_READ_TIMEOUT,
@@ -2073,7 +2073,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("warm")),
                     (
@@ -2179,7 +2179,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("notify")),
                     (
@@ -2277,7 +2277,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("snapshot")),
                     (
@@ -2373,7 +2373,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("ping")),
                     (
@@ -2441,7 +2441,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("ping")),
                     (
@@ -2472,7 +2472,7 @@ mod tldr_tests {
             "diagnostic_only"
         );
         let expected_message = format!(
-            "tldr tool failed: native-tldr daemon is unavailable for {}: daemon unavailable (missing socket and pid) (hint: run `codex tldr ...` to auto-start the internal daemon or inspect logs)",
+            "ztldr tool failed: native-tldr daemon is unavailable for {}: daemon unavailable (missing socket and pid) (hint: run `codex ztldr ...` to auto-start the internal daemon or inspect logs)",
             canonical_project.display()
         );
         let actual_text = result["content"][0]["text"]
@@ -2590,7 +2590,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("status")),
                     (
@@ -2648,7 +2648,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("semantic")),
                     (
@@ -2716,7 +2716,7 @@ mod tldr_tests {
 
         let request_id = mcp_process
             .send_named_tool_call(
-                "tldr",
+                "ztldr",
                 Some(serde_json::Map::from_iter([
                     ("action".to_string(), json!("semantic")),
                     (

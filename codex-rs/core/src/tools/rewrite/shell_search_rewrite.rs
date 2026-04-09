@@ -63,7 +63,7 @@ pub(crate) fn maybe_intercept_shell_search(
 
     Some(ShellSearchInterception {
         message: format!(
-            "Intercepted broad shell search ({reason}). Use the tldr tool first for this code-understanding query instead of broad shell grep.\nSuggested tldr arguments: {arguments}"
+            "Intercepted broad shell search ({reason}). Use the ztldr tool first for this code-understanding query instead of broad shell grep.\nSuggested ztldr arguments: {arguments}"
         ),
     })
 }

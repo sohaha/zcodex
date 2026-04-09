@@ -9,8 +9,8 @@
 - `structure` / `search` / `extract` / `imports` / `importers` / `context` / `impact` / `calls` / `dead` / `arch` / `change-impact` / `cfg` / `dfg` / `slice` / `diagnostics` / `doctor` 分析入口
 - semantic phase-2：真实 dense embedding、`.tldr/cache/semantic/<language>/` 本地持久化、brute-force 向量检索、`warm` 触发 reindex
 - daemon / session / health / status 生命周期闭环
-- CLI `codex tldr ...` 接入
-- MCP `tldr` tool 接入
+- CLI `codex ztldr ...` 接入
+- MCP `ztldr` tool 接入
 - 项目级配置：`project/.codex/tldr.toml`
 
 ## 本地交付与启动
@@ -24,8 +24,8 @@
 
 ```bash
 cargo build --release -p codex-cli -p codex-mcp-server
-./target/release/codex tldr languages
-./target/release/codex tldr daemon --project /path/to/project --json status
+./target/release/codex ztldr languages
+./target/release/codex ztldr daemon --project /path/to/project --json status
 
 # repo 根目录下的快速回归
 just tldr-test-fast
@@ -40,7 +40,7 @@ mise run test --slot tldr-semantic tldr-semantic
 
 说明：
 
-- `codex tldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起内部 daemon 模式
+- `codex ztldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起内部 daemon 模式
 - daemon 在空闲超出 `session.idle_timeout_secs` 后会自动退出，默认 1800 秒；`status` 会返回当前阈值
 - 上面的 `just` / `mise` 入口会给 tldr 链路拆分独立的 `CARGO_HOME` / `CARGO_TARGET_DIR`，并固定 `CARGO_INCREMENTAL=0`，减少多会话并发时的 Cargo 锁与 `sccache` 冲突
 - CLI 分析命令目前对应为：`structure -> structure`、`search -> search`、`extract -> extract`、`imports -> imports`、`importers -> importers`、`context -> context`、`impact -> impact`、`calls -> calls`、`dead -> dead`、`arch -> arch`、`diagnostics -> diagnostics`、`doctor -> doctor`
@@ -117,7 +117,7 @@ Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离
 
 ```bash
 export ORT_DYLIB_PATH=/opt/onnxruntime/lib/libonnxruntime.so
-./target/release/codex tldr semantic --project /path/to/project --lang rust "query"
+./target/release/codex ztldr semantic --project /path/to/project --lang rust "query"
 ```
 
 ### 没有 runtime 时会怎样
@@ -143,7 +143,7 @@ enabled = false
 ## agent-first 指引
 
 - 参考说明：`../../docs/tldr-agent-first-guidance/tool-description.md`
-- 当问题属于结构化代码理解、依赖关系、影响分析、诊断、语义搜索时，应优先考虑 `tldr`
+- 当问题属于结构化代码理解、依赖关系、影响分析、诊断、语义搜索时，应优先考虑 `ztldr`
 - 当结果含有 `degradedMode` 时，说明当前结果是降级路径，不应当作 daemon 正常成功
 - 当结果含有 `structuredFailure` 时，应读取：
   - `error_type`

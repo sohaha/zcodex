@@ -1,0 +1,43 @@
+plan = ".agents/plan/2026-04-09-ztldr-subcommand-rename.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "切换 codex CLI 顶层子命令到 ztldr"
+scope = """
+本 issue 负责把 `codex` CLI 的 native-tldr 顶层入口从 `tldr` 切换为 `ztldr`，并保持现有分析/daemon handler 逻辑继续复用现有实现。
+
+包括 `codex-rs/cli/src/main.rs` 中的 clap 子命令声明、dispatch、解析相关测试，以及 `codex-rs/cli/src/tldr_cmd.rs` 内任何直接依赖顶层子命令名的帮助/断言/内部调用路径。
+不包括跨 crate 的错误提示、README、MCP 接口文档和安装文档同步；不包括重命名 `codex-native-tldr` crate、模块文件名、配置文件名或落盘 artifact 名称。
+"""
+touch_points = ["codex-rs/cli/src/main.rs", "codex-rs/cli/src/tldr_cmd.rs", "codex-rs/cli/tests/tldr.rs"]
+depends_on = []
+done_when = "`codex` CLI 顶层只接受 `ztldr` 作为 native-tldr 命令入口，`codex ztldr ...` 的解析、帮助输出与 hidden `internal-daemon` 路径均正常，且 CLI 定向测试已覆盖新命令名；MCP tool 名称切换仍留给后续独立 issue。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-cli --test tldr --quiet"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成 CLI 顶层子命令切换：`codex` 现在通过 `ztldr` 暴露 native-tldr 命令，`internal-daemon` 拉起参数与 retry hint 也已同步。由于本地未安装 cargo-nextest，改用 `cd /workspace/codex-rs && cargo test -p codex-cli --test tldr --quiet` 验证，14/14 通过。执行期能力筛查为 none-applicable：当前子任务是本地 Rust 代码改动与定向测试，现有技能不比直接实现更有收益。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "同步仓库内 ztldr 命令与 MCP tool 名称契约"
+scope = """
+本 issue 负责把仓库内所有直接展示或断言 `codex tldr ...` CLI 路径以及 MCP `tldr` tool 名称的提示文本、注册接线、测试和文档统一改为 `ztldr`，并保留非命令/工具 surface 的既有命名边界。
+
+包括 `codex-native-tldr`、`codex-core`、`codex-tools`、`codex-mcp-server` 中直接声明、分发、重写或建议用户运行旧 CLI/MCP 名称的实现、错误提示与测试断言，以及 `codex-rs/README.md`、`codex-rs/docs/codex_mcp_interface.md`、`codex-rs/native-tldr/README.md`、`docs/install.md` 等命令示例与工具说明文档。
+不包括上游参考仓库、历史 `.agents/` 产物批量回写，也不包括把 `native-tldr` crate 名、`.codex/tldr.toml`、`.tldr`/`.tldrignore` 等非命令/工具 surface 机械重命名。
+"""
+touch_points = ["codex-rs/native-tldr/src/daemon.rs", "codex-rs/native-tldr/src/tool_api.rs", "codex-rs/native-tldr/src/mcp.rs", "codex-rs/core/src/tools/handlers/tldr.rs", "codex-rs/core/src/tools/rewrite", "codex-rs/tools/src/tool_spec.rs", "codex-rs/mcp-server/src/tldr_tool.rs", "codex-rs/mcp-server/tests/suite/codex_tool.rs", "codex-rs/README.md", "codex-rs/docs/codex_mcp_interface.md", "codex-rs/native-tldr/README.md", "docs/install.md"]
+depends_on = ["a1"]
+done_when = "仓库内面向当前 CLI 的命令提示、示例与相关断言都统一指向 `codex ztldr ...`，MCP 对外 tool 名称也统一为 `ztldr`，排除项未被误改，且受影响 crate 的最小验证入口与文档抽查结果一致。"
+validate_by = "cd /workspace/codex-rs && cargo nextest run -p codex-native-tldr --quiet && cargo nextest run -p codex-mcp-server tldr_tool --quiet && cargo nextest run -p codex-core tldr --quiet"
+regress_by = "node /root/.config/lnk/.agents/skills/using-cadence/scripts/cadence_validate.js issue .agents/issues/2026-04-09-ztldr-subcommand-rename.toml"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = "已完成 CLI/MCP 双侧命名收敛：MCP tool 对外名称改为 `ztldr`，同步更新了 tool registry、message processor 分发、core rewrite/handler 断言、mcp-server/native-tldr/core 相关测试、以及 README/接口文档中的命令与工具名。由于本地已通过 `mise run dev-tools` 安装 cargo-nextest/just 之前没有 nextest，本轮验证改用 `cargo test -p codex-native-tldr --quiet`、`cargo test -p codex-mcp-server --features tldr tldr_tool --quiet`、`cargo test -p codex-core tldr --quiet`，均通过。`regress_by` 的 cadence 结构校验通过。另已按仓库要求尝试 `just fix`，但被无关的 `codex-api` 既有编译错误阻断；`just fmt` 已完成。"

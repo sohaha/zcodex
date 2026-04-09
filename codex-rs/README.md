@@ -79,7 +79,7 @@ npx @modelcontextprotocol/inspector codex mcp-server
 
 使用 `codex mcp` 管理 `config.toml` 中定义的 MCP server launcher（添加/列出/查看/删除），使用 `codex mcp-server` 直接运行 MCP 服务端。
 
-`codex-mcp-server` 默认不编译 `tldr` MCP tool；如需对外暴露该能力，可以直接构建服务端，或从 `codex-cli` 透传开启 `tldr` feature，例如：
+`codex-mcp-server` 默认不编译 `ztldr` MCP tool；如需对外暴露该能力，可以直接构建服务端，或从 `codex-cli` 透传开启 `tldr` feature，例如：
 
 ```shell
 cargo build --release -p codex-mcp-server --features tldr
@@ -92,8 +92,8 @@ cargo build --release -p codex-cli --features tldr
 如果要一起验证 native-tldr 相关能力，可额外执行：
 
 ```shell
-./target/release/codex tldr languages
-./target/release/codex tldr daemon --project /path/to/project --json status
+./target/release/codex ztldr languages
+./target/release/codex ztldr daemon --project /path/to/project --json status
 ```
 
 当前 `tldr` 的多语言关系分析能力已显式分级：Rust 使用 dedicated extractor，并能在结构化 analysis 输出中提供更精确的 owner / trait impl 关系；TypeScript、JavaScript、Python、Go、PHP、Zig 目前仍主要依赖 heuristic extractor，返回的类型/实现关系应视为启发式结果，而不是与 Rust 同等级的语义建模。

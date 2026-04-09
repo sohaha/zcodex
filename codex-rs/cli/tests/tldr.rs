@@ -38,7 +38,7 @@ async fn tldr_structure_json_preserves_graph_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "structure",
             "--lang",
             "rust",
@@ -122,7 +122,7 @@ async fn tldr_context_json_preserves_call_graph_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "context",
             "--lang",
             "rust",
@@ -177,7 +177,7 @@ async fn tldr_structure_json_supports_language_matrix() -> Result<()> {
         let mut cmd = codex_command(codex_home.path())?;
         let output = cmd
             .args([
-                "tldr",
+                "ztldr",
                 "structure",
                 "--lang",
                 language,
@@ -225,7 +225,7 @@ async fn tldr_impact_json_preserves_pdg_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "impact",
             "--lang",
             "rust",
@@ -286,7 +286,7 @@ async fn tldr_impact_text_renders_summary_lines() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "impact",
             "--lang",
             "rust",
@@ -304,12 +304,12 @@ async fn tldr_impact_text_renders_summary_lines() -> Result<()> {
         .clone();
 
     let text = String::from_utf8(output).expect("output should be utf-8");
-    assert!(text.contains("language: rust"));
-    assert!(text.contains("source: "));
-    assert!(text.contains("support: DataFlow"));
-    assert!(text.contains("fallback: structure + search"));
-    assert!(text.contains("message: "));
-    assert!(text.contains("summary: impact summary:"));
+    assert!(text.contains("语言：rust"));
+    assert!(text.contains("来源："));
+    assert!(text.contains("支持级别：DataFlow"));
+    assert!(text.contains("回退策略：structure + search"));
+    assert!(text.contains("消息："));
+    assert!(text.contains("摘要：impact summary:"));
     assert!(text.contains("impact summary: 1 callers found for helper across 1 files"));
 
     Ok(())
@@ -328,7 +328,7 @@ async fn tldr_cfg_json_preserves_cfg_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "cfg",
             "--lang",
             "rust",
@@ -379,7 +379,7 @@ async fn tldr_dfg_json_preserves_dfg_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "dfg",
             "--lang",
             "rust",
@@ -427,7 +427,7 @@ async fn tldr_daemon_notify_json_preserves_snapshot_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -467,7 +467,7 @@ async fn tldr_daemon_ping_json_preserves_status_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -501,7 +501,7 @@ async fn tldr_daemon_warm_json_preserves_snapshot_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -540,7 +540,7 @@ async fn tldr_daemon_snapshot_json_preserves_snapshot_contract() -> Result<()> {
     let mut cmd = codex_command(codex_home.path())?;
     let output = cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -575,7 +575,7 @@ async fn tldr_daemon_status_json_preserves_status_contract() -> Result<()> {
     let mut notify_cmd = codex_command(codex_home.path())?;
     notify_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -591,7 +591,7 @@ async fn tldr_daemon_status_json_preserves_status_contract() -> Result<()> {
     let mut status_cmd = codex_command(codex_home.path())?;
     let output = status_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -629,7 +629,7 @@ async fn tldr_daemon_notify_then_snapshot_reflects_dirty_file_count() -> Result<
     let mut notify_cmd = codex_command(codex_home.path())?;
     notify_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -645,7 +645,7 @@ async fn tldr_daemon_notify_then_snapshot_reflects_dirty_file_count() -> Result<
     let mut snapshot_cmd = codex_command(codex_home.path())?;
     let output = snapshot_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -679,7 +679,7 @@ async fn tldr_daemon_notify_then_warm_then_status_clears_reindex_pending() -> Re
     let mut notify_cmd = codex_command(codex_home.path())?;
     notify_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -695,7 +695,7 @@ async fn tldr_daemon_notify_then_warm_then_status_clears_reindex_pending() -> Re
     let mut warm_cmd = codex_command(codex_home.path())?;
     warm_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project
@@ -710,7 +710,7 @@ async fn tldr_daemon_notify_then_warm_then_status_clears_reindex_pending() -> Re
     let mut status_cmd = codex_command(codex_home.path())?;
     let output = status_cmd
         .args([
-            "tldr",
+            "ztldr",
             "daemon",
             "--project",
             project

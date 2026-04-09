@@ -120,6 +120,7 @@ enum Subcommand {
     Ztok(ZtokArgs),
 
     /// 运行原生 TLDR 代码上下文分析命令。
+    #[clap(name = "ztldr")]
     Tldr(TldrCli),
 
     /// 管理本地 zmemory 长期记忆。
@@ -754,7 +755,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
                 root_remote_auth_token_env.as_deref(),
-                "tldr",
+                "ztldr",
             )?;
             tldr_cmd::run_tldr_command(tldr_cli).await?;
         }
@@ -2361,7 +2362,7 @@ mod tests {
 
     #[test]
     fn tldr_daemon_ping_parses() {
-        let cli = MultitoolCli::try_parse_from(["codex", "tldr", "daemon", "ping"])
+        let cli = MultitoolCli::try_parse_from(["codex", "ztldr", "daemon", "ping"])
             .expect("parse should succeed");
         assert!(matches!(cli.subcommand, Some(Subcommand::Tldr(_))));
     }
@@ -2400,7 +2401,7 @@ mod tests {
     fn tldr_extract_parses_path_and_optional_language() {
         let cli = MultitoolCli::try_parse_from([
             "codex",
-            "tldr",
+            "ztldr",
             "extract",
             "--project",
             ".",
@@ -2423,7 +2424,7 @@ mod tests {
 
     #[test]
     fn tldr_daemon_status_parses() {
-        let cli = MultitoolCli::try_parse_from(["codex", "tldr", "daemon", "status"])
+        let cli = MultitoolCli::try_parse_from(["codex", "ztldr", "daemon", "status"])
             .expect("parse should succeed");
         assert!(matches!(cli.subcommand, Some(Subcommand::Tldr(_))));
     }

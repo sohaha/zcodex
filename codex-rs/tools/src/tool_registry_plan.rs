@@ -201,7 +201,7 @@ pub fn build_tool_registry_plan(
         /*supports_parallel_tool_calls*/ false,
         config.code_mode_enabled,
     );
-    plan.register_handler("tldr", ToolHandlerKind::Tldr);
+    plan.register_handler("ztldr", ToolHandlerKind::Tldr);
 
     if config.has_environment && config.js_repl_enabled {
         plan.push_spec(

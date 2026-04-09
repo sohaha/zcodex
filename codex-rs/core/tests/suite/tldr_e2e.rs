@@ -49,7 +49,7 @@ async fn tldr_function_output_exposes_bounded_json_to_model() -> Result<()> {
             ev_response_created("resp-1"),
             ev_function_call(
                 "call-1",
-                "tldr",
+                "ztldr",
                 &serde_json::to_string(&json!({
                     "action": "context",
                     "language": "rust",

@@ -14,7 +14,7 @@
 - `codex-rs/zmemory`：独立 SQLite 长期记忆内核。
 
 ## 流程
-- 用户通常从 `codex` 主命令进入，由 `cli` 选择进入 TUI、exec、app-server、mcp-server、zmemory 或 tldr 等运行面。
+- 用户通常从 `codex` 主命令进入，由 `cli` 选择进入 TUI、exec、app-server、mcp-server、zmemory 或 `ztldr` 等运行面。
 - `tui`、`exec`、`app-server` 等上层都依赖 `core` 统一处理模型调用、工具、配置与执行策略。
 - `app-server` 和 `mcp-server` 面向外部客户端，`protocol` 负责稳定类型边界。
 - `native-tldr` 与 `zmemory` 是横切能力：前者提供代码结构分析，后者提供可写持久记忆。

@@ -45,8 +45,8 @@ pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
     let input_schema = create_tool_input_schema(schema, "TLDR tool schema should serialize");
 
     Tool {
-        name: "tldr".into(),
-        title: Some("Native TLDR".to_string()),
+        name: "ztldr".into(),
+        title: Some("Native ZTLDR".to_string()),
         description: Some(
             "Structured code context analysis via native-tldr with daemon-first execution.".into(),
         ),
@@ -66,9 +66,11 @@ pub(crate) async fn run_tldr_tool(arguments: Option<JsonObject>) -> CallToolResu
     let args = match arguments.map(serde_json::Value::Object) {
         Some(json_val) => match serde_json::from_value::<TldrToolCallParam>(json_val) {
             Ok(args) => args,
-            Err(err) => return error_result(format!("Failed to parse tldr tool arguments: {err}")),
+            Err(err) => {
+                return error_result(format!("Failed to parse ztldr tool arguments: {err}"));
+            }
         },
-        None => return error_result("Missing arguments for tldr tool-call.".to_string()),
+        None => return error_result("Missing arguments for ztldr tool-call.".to_string()),
     };
 
     run_tldr_tool_with_mcp_hooks(
@@ -125,7 +127,7 @@ where
     match result {
         Ok(result) => success_result(result.text, result.structured_content),
         Err(err) => {
-            let text = format!("tldr tool failed: {err}");
+            let text = format!("ztldr tool failed: {err}");
             CallToolResult {
                 content: vec![Content::text(text.clone())],
                 structured_content: tldr_error_structured_content_for_project(
@@ -308,7 +310,7 @@ fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
 
 fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
     [
-        OsString::from("tldr"),
+        OsString::from("ztldr"),
         OsString::from("internal-daemon"),
         OsString::from("--project"),
         project_root.as_os_str().to_os_string(),
@@ -501,8 +503,8 @@ mod tests {
     fn verify_tldr_tool_json_schema() {
         let tool = create_tool_for_tldr_tool_call_param();
         let tool_json = serde_json::to_value(&tool).expect("tool serializes");
-        assert_eq!(tool_json["name"], "tldr");
-        assert_eq!(tool_json["title"], "Native TLDR");
+        assert_eq!(tool_json["name"], "ztldr");
+        assert_eq!(tool_json["title"], "Native ZTLDR");
         assert_eq!(
             tool_json["description"],
             "Structured code context analysis via native-tldr with daemon-first execution."
@@ -1901,7 +1903,7 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         assert_eq!(
             result_json["content"][0]["text"],
-            "tldr tool failed: `language` is required for action=structure"
+            "ztldr tool failed: `language` is required for action=structure"
         );
     }
 
@@ -1930,7 +1932,7 @@ mod tests {
         let text = serde_json::to_value(&result).expect("call tool result should serialize");
         assert_eq!(result.is_error, Some(true));
         assert!(text["content"][0]["text"].as_str().is_some_and(|value| {
-            value.contains("tldr tool failed: native-tldr daemon is unavailable for")
+            value.contains("ztldr tool failed: native-tldr daemon is unavailable for")
         }));
         assert_eq!(
             text["structuredContent"]["structuredFailure"]["error_type"],
@@ -1943,7 +1945,7 @@ mod tests {
         assert!(
             text["structuredContent"]["structuredFailure"]["retry_hint"]
                 .as_str()
-                .is_some_and(|value| value.contains("run `codex tldr ...`"))
+                .is_some_and(|value| value.contains("run `codex ztldr ...`"))
         );
         assert_eq!(
             text["structuredContent"]["degradedMode"]["mode"],

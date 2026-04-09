@@ -33,7 +33,7 @@ async fn runtime_seam_rewrites_grep_files_to_tldr_before_dispatch() {
     )
     .await;
 
-    assert_eq!(rewritten.tool_name, "tldr");
+    assert_eq!(rewritten.tool_name, "ztldr");
     let ToolPayload::Function { arguments } = rewritten.payload else {
         panic!("expected function payload");
     };

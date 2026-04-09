@@ -55,7 +55,7 @@ npx @modelcontextprotocol/inspector codex mcp-server
 
 Use the separate `codex mcp` subcommand to manage configured MCP server launchers in `config.toml`.
 
-`codex-mcp-server` does not include the `tldr` MCP tool by default. To enable it, either build the standalone server binary with the `tldr` feature or propagate the feature through `codex-cli`:
+`codex-mcp-server` does not include the `ztldr` MCP tool by default. To enable it, either build the standalone server binary with the `tldr` feature or propagate the feature through `codex-cli`:
 
 ```bash
 cargo build --release -p codex-mcp-server --features tldr
@@ -65,18 +65,18 @@ cargo build --release -p codex-cli --features tldr
 ./target/release/codex mcp-server
 ```
 
-To smoke-test the native-tldr sidecar used by the optional `tldr` MCP tool:
+To smoke-test the native-tldr sidecar used by the optional `ztldr` MCP tool:
 
 ```bash
-./target/release/codex tldr languages
-./target/release/codex tldr daemon --project /path/to/project --json status
+./target/release/codex ztldr languages
+./target/release/codex ztldr daemon --project /path/to/project --json status
 ```
 
 Notes:
 
 - `codex-mcp-server` runs over stdio and does not expose an HTTP port.
-- On Unix, `codex tldr daemon ...` may auto-start an internal daemon mode inside the current `codex` binary.
-- The MCP `tldr` tool reuses daemon query/retry logic but does not auto-start the daemon itself.
+- On Unix, `codex ztldr daemon ...` may auto-start an internal daemon mode inside the current `codex` binary.
+- The MCP `ztldr` tool reuses daemon query/retry logic but does not auto-start the daemon itself.
 
 ## Threads and turns
 
@@ -132,7 +132,7 @@ Clients should render events and, when present, surface approval requests (see n
 
 ## Tool responses
 
-The `codex`, `codex-reply`, and `tldr` tools return standard MCP `CallToolResult` payloads. For compatibility with MCP clients that prefer `structuredContent`, Codex mirrors the content blocks inside `structuredContent`.
+The `codex`, `codex-reply`, and `ztldr` tools return standard MCP `CallToolResult` payloads. For compatibility with MCP clients that prefer `structuredContent`, Codex mirrors the content blocks inside `structuredContent`.
 
 Example:
 
@@ -146,11 +146,11 @@ Example:
 }
 ```
 
-### `tldr` tool
+### `ztldr` tool
 
 This tool is available only when `codex-mcp-server` is built with `--features tldr`.
 
-The `tldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Daemon actions still require a live daemon. The current action surface is:
+The `ztldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Daemon actions still require a live daemon. The current action surface is:
 
 - `structure`
 - `extract`

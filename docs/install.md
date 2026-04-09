@@ -81,7 +81,7 @@ mise run build release
 
 # 如果你要实际运行 native-tldr 的 semantic embedding，
 # 还需要在运行时提供共享库：
-ORT_DYLIB_PATH=/path/to/libonnxruntime.so ./target/debug/codex tldr languages
+ORT_DYLIB_PATH=/path/to/libonnxruntime.so ./target/debug/codex ztldr languages
 
 # 在 glibc < 2.38 的 Linux 上，如果当前工作区仍会被
 # fastembed/ort 的预编译 ONNX Runtime 阻塞，`mise run build`

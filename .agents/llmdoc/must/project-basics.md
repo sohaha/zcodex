@@ -11,7 +11,7 @@
 - `codex app-server`：给 IDE/外部客户端的 JSON-RPC 服务面。
 - `codex mcp-server`：把 Codex 暴露为 MCP server。
 - `codex zmemory`：可写长期记忆工具链。
-- `codex tldr` / native-tldr：项目语义提炼与守护进程能力。
+- `codex ztldr` / native-tldr：项目语义提炼与守护进程能力；MCP 对外工具名也已统一为 `ztldr`，但 feature 名、crate 名与 `.codex/tldr.toml` 保持不变。
 
 ## 主要目录
 - `codex-rs/`：Rust workspace，仓库核心实现。

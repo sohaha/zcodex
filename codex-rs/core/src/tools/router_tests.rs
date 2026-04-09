@@ -256,12 +256,12 @@ fn fake_responses_tool(name: &str) -> ToolSpec {
 fn fake_router() -> Arc<ToolRouter> {
     let mut builder = ToolRegistryBuilder::new();
     builder.push_spec_with_parallel_support(fake_responses_tool("grep_files"), true);
-    builder.push_spec_with_parallel_support(fake_responses_tool("tldr"), true);
+    builder.push_spec_with_parallel_support(fake_responses_tool("ztldr"), true);
     builder.register_handler(
         "grep_files",
         Arc::new(FakeFunctionHandler { label: "grep" }),
     );
-    builder.register_handler("tldr", Arc::new(FakeFunctionHandler { label: "tldr" }));
+    builder.register_handler("ztldr", Arc::new(FakeFunctionHandler { label: "ztldr" }));
 
     let (specs, registry) = builder.build();
     let model_visible_specs = specs.iter().map(|spec| spec.spec.clone()).collect();
@@ -310,7 +310,7 @@ async fn runtime_dispatch_routes_rewritten_grep_files_to_tldr_handler() {
         .into_response();
 
     let text = output_text(result);
-    assert!(text.starts_with("tldr:"), "unexpected response: {text}");
+    assert!(text.starts_with("ztldr:"), "unexpected response: {text}");
     assert!(
         text.contains(r#""action":"context""#),
         "unexpected rewritten args: {text}"

@@ -126,7 +126,7 @@ pub fn create_tldr_tool() -> ToolSpec {
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
-        name: "tldr".to_string(),
+        name: "ztldr".to_string(),
         description:
             "Structured code context analysis via native-tldr with daemon-first execution."
                 .to_string(),

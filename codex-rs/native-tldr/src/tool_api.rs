@@ -2349,7 +2349,7 @@ mod tests {
                 .to_string()
                 .contains("daemon unavailable (missing socket and pid)"),
         );
-        assert!(error.to_string().contains("hint: run `codex tldr ...`"));
+        assert!(error.to_string().contains("hint: run `codex ztldr ...`"));
     }
 
     #[tokio::test]

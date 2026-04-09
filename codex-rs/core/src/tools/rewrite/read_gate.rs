@@ -127,7 +127,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
 
     ToolRewriteDecision::Rewrite {
         call: ToolCall {
-            tool_name: "tldr".to_string(),
+            tool_name: "ztldr".to_string(),
             tool_namespace: None,
             call_id: call.call_id,
             payload: ToolPayload::Function { arguments },

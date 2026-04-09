@@ -573,7 +573,7 @@ fn daemon_launcher_command(project_root: &Path) -> Result<Command> {
 
 fn daemon_launcher_args(project_root: &Path) -> [OsString; 4] {
     [
-        OsString::from("tldr"),
+        OsString::from("ztldr"),
         OsString::from("internal-daemon"),
         OsString::from("--project"),
         project_root.as_os_str().to_os_string(),
@@ -748,7 +748,7 @@ mod helper_tests {
         assert_eq!(
             args,
             [
-                OsString::from("tldr"),
+                OsString::from("ztldr"),
                 OsString::from("internal-daemon"),
                 OsString::from("--project"),
                 OsString::from("/tmp/project-root"),
@@ -835,7 +835,7 @@ mod tests {
             turn,
             tracker: Arc::new(Mutex::new(TurnDiffTracker::default())),
             call_id: "call-1".to_string(),
-            tool_name: "tldr".to_string(),
+            tool_name: "ztldr".to_string(),
             tool_namespace: None,
             payload: ToolPayload::Function {
                 arguments: arguments.to_string(),
@@ -2018,7 +2018,7 @@ mod tests {
         let payload = extract_json_block(&text);
         assert!(text.contains("native-tldr daemon is unavailable for"));
         assert!(text.contains("daemon unavailable (missing socket and pid)"));
-        assert!(text.contains("hint: run `codex tldr ...`"));
+        assert!(text.contains("hint: run `codex ztldr ...`"));
         assert!(text.contains("structured failure: daemon_unavailable"));
         assert_eq!(payload["action"], "status");
         assert_eq!(

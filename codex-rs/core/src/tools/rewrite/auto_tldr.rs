@@ -156,7 +156,7 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
 
     ToolRewriteDecision::Rewrite {
         call: ToolCall {
-            tool_name: "tldr".to_string(),
+            tool_name: "ztldr".to_string(),
             tool_namespace: None,
             call_id: call.call_id,
             payload: ToolPayload::Function { arguments },
@@ -312,7 +312,7 @@ mod tests {
             panic!("expected rewrite");
         };
         assert_eq!(reason, "structural_symbol_query");
-        assert_eq!(call.tool_name, "tldr");
+        assert_eq!(call.tool_name, "ztldr");
         let ToolPayload::Function { arguments } = call.payload else {
             panic!("expected function payload");
         };

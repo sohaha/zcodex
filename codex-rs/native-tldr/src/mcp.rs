@@ -10,7 +10,7 @@ pub struct TldrToolDescriptor {
 impl Default for TldrToolDescriptor {
     fn default() -> Self {
         Self {
-            name: "tldr".to_string(),
+            name: "ztldr".to_string(),
             description: "Structured code context analysis for Codex".to_string(),
         }
     }

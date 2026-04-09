@@ -47,36 +47,55 @@ pub(crate) fn classify_tool_routing_intent(input: &[UserInput]) -> ToolRoutingIn
 }
 
 fn classify_normalized_text(normalized: &str) -> ToolRoutingIntent {
-    let mentions_tldr = normalized.contains("tldr");
-    let disable_auto_tldr_once = mentions_tldr
+    let mentions_ztldr = normalized.contains("ztldr") || normalized.contains("tldr");
+    let disable_auto_tldr_once = mentions_ztldr
         && contains_any(
             normalized,
             &[
+                "不要 ztldr",
+                "不要ztldr",
                 "不要 tldr",
                 "不要tldr",
+                "不用 ztldr",
+                "不用ztldr",
                 "不用 tldr",
                 "不用tldr",
+                "别用 ztldr",
+                "别用ztldr",
                 "别用 tldr",
                 "别用tldr",
+                "don't use ztldr",
                 "don't use tldr",
+                "do not use ztldr",
                 "do not use tldr",
+                "skip ztldr",
                 "skip tldr",
             ],
         );
-    let force_tldr = mentions_tldr
+    let force_tldr = mentions_ztldr
         && !disable_auto_tldr_once
         && contains_any(
             normalized,
             &[
+                "用 ztldr",
+                "用ztldr",
                 "用 tldr",
                 "用tldr",
+                "先用 ztldr",
+                "先用ztldr",
                 "先用 tldr",
                 "先用tldr",
+                "直接 ztldr",
+                "直接ztldr",
                 "直接 tldr",
                 "直接tldr",
+                "ztldr 看",
+                "ztldr分析",
+                "ztldr 分析",
                 "tldr 看",
                 "tldr分析",
                 "tldr 分析",
+                "use ztldr",
                 "use tldr",
                 "analyze with tldr",
             ],
@@ -270,7 +289,7 @@ mod tests {
     #[test]
     fn extracts_explicit_raw_grep_directives() {
         let directives = classify_tool_routing_intent(&[UserInput::Text {
-            text: "不要 tldr，按 regex 用 ripgrep 精确 grep。".to_string(),
+            text: "不要 ztldr，按 regex 用 ripgrep 精确 grep。".to_string(),
             text_elements: Vec::new(),
         }]);
 

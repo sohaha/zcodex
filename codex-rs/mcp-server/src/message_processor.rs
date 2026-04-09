@@ -353,7 +353,7 @@ impl MessageProcessor {
                     .await
             }
             #[cfg(feature = "tldr")]
-            "tldr" => {
+            "ztldr" => {
                 let result = run_tldr_tool(arguments).await;
                 self.outgoing.send_response(id, result).await;
             }

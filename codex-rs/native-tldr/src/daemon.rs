@@ -268,7 +268,7 @@ impl TldrDaemon {
                     search: None,
                     diagnostics: None,
                     semantic: None,
-                    snapshot: Some(snapshot.clone()),
+                    snapshot: Some(snapshot),
                     daemon_status: Some(daemon_status),
                     reindex_report: outcome.reindex_report,
                 })
@@ -403,7 +403,7 @@ impl TldrDaemon {
                     importers: None,
                     search: None,
                     diagnostics: None,
-                    snapshot: Some(snapshot.clone()),
+                    snapshot: Some(snapshot),
                     reindex_report: session.last_reindex_attempt_report(),
                     daemon_status: Some(daemon_status),
                     ..TldrDaemonResponse::ok("status")
@@ -1299,7 +1299,7 @@ fn health_diagnostics(
             reason: "daemon unavailable (missing socket and pid)".to_string(),
             retryable: true,
             retry_hint: Some(
-                "run `codex tldr ...` to auto-start the internal daemon or inspect logs"
+                "run `codex ztldr ...` to auto-start the internal daemon or inspect logs"
                     .to_string(),
             ),
         }),
