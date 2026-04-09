@@ -18,6 +18,7 @@
 ## 踩坑
 - 仓库环境里 `rg` 会默认读取缺失的 `/root/.config/ripgreprc`，在“无匹配”时会夹带噪声；做无匹配扫描时最好显式加 `RIPGREP_CONFIG_PATH=/dev/null`。
 - Cadence 执行期若要把验证证据写回 issue notes，尽量直接用已执行的稳定命令结果，避免临时脚本依赖 `python` 这类当前环境未必存在的解释器。
+- 深度审查后又补出一个真实回归点：仅凭“`XDG_RUNTIME_DIR` 是绝对路径”并不足以安全采用；若该路径存在但不可写/不是目录，semantic cache 会从“以前还能工作”退化成启动即失败。最终应在选择 runtime 目录时先验证可创建，再回退到 `temp_dir`。
 
 ## 后续建议
 - 以后再遇到“项目根被 ztldr 污染”的反馈，先区分是输入文件（如 `.tldrignore`）还是 runtime artifact，不要一概按“全部迁走”处理。

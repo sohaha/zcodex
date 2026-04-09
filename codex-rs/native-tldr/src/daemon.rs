@@ -1144,7 +1144,10 @@ fn daemon_artifact_scope_dir_for_runtime_dir(
     if let Some(runtime_dir) = runtime_dir
         && runtime_dir.is_absolute()
     {
-        return runtime_dir.join("codex-native-tldr").join(uid.to_string());
+        let scope_dir = runtime_dir.join("codex-native-tldr").join(uid.to_string());
+        if std::fs::create_dir_all(&scope_dir).is_ok() {
+            return scope_dir;
+        }
     }
     std::env::temp_dir()
         .join("codex-native-tldr")
@@ -2550,6 +2553,22 @@ mod tests {
             ),
             unsafe { libc::geteuid() },
         );
+
+        assert!(scope_dir.starts_with(std::env::temp_dir()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn daemon_artifact_paths_fall_back_when_absolute_xdg_runtime_dir_is_unusable() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let blocked_runtime_dir = tempdir.path().join("blocked-runtime-dir");
+        std::fs::write(&blocked_runtime_dir, "not a directory")
+            .expect("blocked runtime dir placeholder should exist");
+
+        let scope_dir =
+            daemon_artifact_scope_dir_for_runtime_dir(Some(&blocked_runtime_dir), unsafe {
+                libc::geteuid()
+            });
 
         assert!(scope_dir.starts_with(std::env::temp_dir()));
     }
