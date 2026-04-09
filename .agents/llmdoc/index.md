@@ -34,6 +34,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-summary-helpers.md`：ztldr 三层 summary 测试共享标签与计数 helper 的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-real-query-matrix-facts.md`：ztldr 真实 query matrix 收敛到共享事实源的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-shell-fixtures.md`：ztldr shell 命令变体收敛到共享 fixture 的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-grep-tool-calls.md`：ztldr grep tool call builder 收敛的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-grep-payloads.md`：ztldr grep JSON payload 收敛到共享 helper 的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-daemon-socket-path-length.md`：macOS 上 ztldr daemon 因 Unix socket 路径超长而启动失败的根因与修法反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ctf-resume-clean-then-resume.md`：CTF 会话在复用现有 resume 选择器时接入 clean-then-resume 的实现与验证阻塞反思。
