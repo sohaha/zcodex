@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(classification.route, SearchRoute::ContextSymbol);
         assert_eq!(classification.signal, SearchSignal::MemberSymbol);
         assert_eq!(
-            search_reason(ProblemKind::Structural, classification.signal),
+            corpus_structural_search_reason(classification.signal),
             "structural_member_symbol_query"
         );
     }
@@ -436,7 +436,7 @@ mod tests {
             assert_eq!(classification.route, expected_route, "pattern: {pattern}");
             assert_eq!(classification.signal, expected_signal, "pattern: {pattern}");
             assert_eq!(
-                search_reason(ProblemKind::Structural, classification.signal),
+                corpus_structural_search_reason(classification.signal),
                 expected_reason,
                 "pattern: {pattern}"
             );
@@ -535,14 +535,7 @@ mod tests {
                         .entry(route_label(classification.route))
                         .or_insert(0usize) += 1;
                     *signal_counts
-                        .entry(match classification.signal {
-                            SearchSignal::BareSymbol => "bare_symbol",
-                            SearchSignal::WrappedSymbol => "wrapped_symbol",
-                            SearchSignal::MemberSymbol => "member_symbol",
-                            SearchSignal::NaturalLanguage => "natural_language",
-                            SearchSignal::PathLike => "path_like",
-                            SearchSignal::GenericSemantic => "generic_semantic",
-                        })
+                        .entry(signal_label(classification.signal))
                         .or_insert(0usize) += 1;
                 }
                 (Err(reason), Err(expected_reason)) => {
