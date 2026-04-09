@@ -1,8 +1,12 @@
-use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::resolve_tldr_project_root;
+use crate::tools::rewrite::tldr_routing::SearchRoute;
+use crate::tools::rewrite::tldr_routing::classify_search_route;
+use crate::tools::rewrite::tldr_routing::search_action;
+use crate::tools::rewrite::tldr_routing::shell_intercept_message;
+use crate::tools::rewrite::tldr_routing::shell_intercept_reason;
+use crate::tools::rewrite::tldr_routing::to_tldr_language;
 use codex_native_tldr::lang_support::SupportedLanguage;
-use codex_native_tldr::tool_api::TldrToolAction;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolLanguage;
 use std::path::Path;
@@ -17,33 +21,25 @@ pub(crate) fn maybe_intercept_shell_search(
     cwd: &Path,
     directives: &ToolRoutingDirectives,
 ) -> Option<ShellSearchInterception> {
-    if directives.disable_auto_tldr_once
-        || directives.force_raw_grep
-        || matches!(directives.problem_kind, ProblemKind::Factual)
-    {
-        return None;
-    }
-
     let query = extract_search_query(routed_command)
         .or_else(|| extract_search_query(raw_command))
         .or_else(|| extract_find_xargs_query(raw_command))?;
 
-    if looks_like_regex_pattern(&query.pattern) {
-        return None;
-    }
+    let route = classify_search_route(query.pattern.as_str(), directives).ok()?;
 
-    let action = if directives.prefer_context_search && looks_like_symbol(&query.pattern) {
-        TldrToolAction::Context
-    } else {
-        TldrToolAction::Semantic
-    };
+    let reason = shell_intercept_reason(directives.problem_kind)?;
+    let action = search_action(route);
     let project_root = resolve_tldr_project_root(cwd, Some(cwd));
+    let (symbol, query_text) = match route {
+        SearchRoute::ContextSymbol => (Some(query.pattern.clone()), None),
+        SearchRoute::SemanticQuery => (None, Some(query.pattern.clone())),
+    };
     let args = TldrToolCallParam {
-        action: action.clone(),
+        action,
         project: Some(project_root.display().to_string()),
         language: infer_language(query.paths.iter().map(String::as_str)),
-        symbol: matches!(action, TldrToolAction::Context).then(|| query.pattern.clone()),
-        query: matches!(action, TldrToolAction::Semantic).then(|| query.pattern.clone()),
+        symbol,
+        query: query_text,
         module: None,
         path: None,
         line: None,
@@ -55,16 +51,9 @@ pub(crate) fn maybe_intercept_shell_search(
         include_install_hints: None,
     };
     let arguments = serde_json::to_string(&args).ok()?;
-    let reason = match directives.problem_kind {
-        ProblemKind::Structural => "structural_shell_search_intercept",
-        ProblemKind::Mixed => "mixed_shell_search_intercept",
-        ProblemKind::Factual => return None,
-    };
 
     Some(ShellSearchInterception {
-        message: format!(
-            "Intercepted broad shell search ({reason}). This looks like a structural code-understanding query, so use ztldr first (context for symbols, semantic for natural-language code search) before broad grep.\nPrefer raw grep/read only for regex patterns, exact text checks, or when the user explicitly requests raw search.\nIf ztldr returns degradedMode or structuredFailure, report that explicitly instead of presenting it as normal success.\nSuggested ztldr arguments: {arguments}"
-        ),
+        message: shell_intercept_message(reason, &arguments),
     })
 }
 
@@ -256,51 +245,7 @@ fn infer_language_from_token(token: &str) -> Option<TldrToolLanguage> {
 }
 
 fn infer_language_from_path(path: &Path) -> Option<TldrToolLanguage> {
-    Some(supported_to_tool_language(SupportedLanguage::from_path(
-        path,
-    )?))
-}
-
-fn supported_to_tool_language(language: SupportedLanguage) -> TldrToolLanguage {
-    match language {
-        SupportedLanguage::C => TldrToolLanguage::C,
-        SupportedLanguage::Cpp => TldrToolLanguage::Cpp,
-        SupportedLanguage::CSharp => TldrToolLanguage::Csharp,
-        SupportedLanguage::Elixir => TldrToolLanguage::Elixir,
-        SupportedLanguage::Go => TldrToolLanguage::Go,
-        SupportedLanguage::Java => TldrToolLanguage::Java,
-        SupportedLanguage::JavaScript => TldrToolLanguage::Javascript,
-        SupportedLanguage::Lua => TldrToolLanguage::Lua,
-        SupportedLanguage::Luau => TldrToolLanguage::Luau,
-        SupportedLanguage::Php => TldrToolLanguage::Php,
-        SupportedLanguage::Python => TldrToolLanguage::Python,
-        SupportedLanguage::Ruby => TldrToolLanguage::Ruby,
-        SupportedLanguage::Rust => TldrToolLanguage::Rust,
-        SupportedLanguage::Scala => TldrToolLanguage::Scala,
-        SupportedLanguage::Swift => TldrToolLanguage::Swift,
-        SupportedLanguage::TypeScript => TldrToolLanguage::Typescript,
-        SupportedLanguage::Zig => TldrToolLanguage::Zig,
-    }
-}
-
-fn looks_like_regex_pattern(pattern: &str) -> bool {
-    pattern.chars().any(|ch| {
-        matches!(
-            ch,
-            '\\' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
-        )
-    })
-}
-
-fn looks_like_symbol(pattern: &str) -> bool {
-    let mut chars = pattern.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | ':'))
+    Some(to_tldr_language(SupportedLanguage::from_path(path)?))
 }
 
 #[cfg(test)]
@@ -337,7 +282,7 @@ mod tests {
         assert!(
             interception
                 .message
-                .contains("Prefer raw grep/read only for regex patterns, exact text checks, or when the user explicitly requests raw search.")
+                .contains("Pass through raw grep/read for regex patterns, exact text checks, or explicit raw requests.")
         );
         assert!(
             interception

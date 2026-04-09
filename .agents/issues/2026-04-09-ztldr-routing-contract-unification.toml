@@ -1,0 +1,65 @@
+plan = ".agents/plan/2026-04-09-ztldr-routing-contract-unification.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "抽象统一的 ztldr 路由 contract"
+scope = """
+在 `codex-rs/core/src/tools/rewrite/` 新增共享路由模块，统一表达 query 分类、推荐 action、路由意图与 raw passthrough 原因，供 `auto_tldr`、`shell_search_rewrite`、`read_gate` 复用。
+本 issue 只建立 contract 与最小单元覆盖，不在本阶段重写三个入口行为。
+"""
+touch_points = ["module:core", "command:ztldr", "codex-rs/core/src/tools/rewrite"]
+depends_on = []
+done_when = "共享路由 contract 已落地且可被三入口调用，包含分类、意图、passthrough 原因与最小可复用解释字段。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core auto_tldr"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：新增统一路由 contract 模块 `tldr_routing.rs`，统一分类、action、reason、passthrough 与短解释模板；新增 contract 单元测试。spec-reviewer=PASS，code-reviewer=PASS。CAPABILITY_USE: ztldr ping（确认会话能力可用并纳入本轮执行）。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "三入口接入统一 contract 并收敛提示输出"
+scope = """
+将 `auto_tldr.rs`、`shell_search_rewrite.rs`、`read_gate.rs` 接入共享 contract，统一“是否改写、改写到哪个 action、为何保留 raw”的决策语义，并把分散长文案收敛为统一短解释模板。
+保留既有 raw escape hatch 边界：explicit raw、factual、regex/exact-text、non-code。
+"""
+touch_points = ["module:core", "command:ztldr", "command:grep", "command:read_file", "codex-rs/core/src/tools/rewrite/auto_tldr.rs", "codex-rs/core/src/tools/rewrite/shell_search_rewrite.rs", "codex-rs/core/src/tools/rewrite/read_gate.rs"]
+depends_on = ["a1"]
+done_when = "三入口路由行为在结构化与 raw 场景上保持一致，且提示输出不再各处维护长文本。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core shell_search_rewrite && cargo test -p codex-core read_gate && cargo test -p codex-core auto_tldr"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：`auto_tldr`、`read_gate`、`shell_search_rewrite` 接入统一 contract，移除分散重复路由逻辑并收敛为共享短解释模板；raw escape hatch（explicit raw/factual/regex）保持。spec-reviewer=PASS，code-reviewer=PASS。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐定向测试并做最小文档同步"
+scope = """
+根据统一 contract 的最终行为，补齐或调整定向测试，重点覆盖：结构化 read 改写、factual passthrough、force_raw_read/disable_auto_tldr_once passthrough、语言 fallback。
+仅在行为边界变化时对 `docs/tldr-agent-first-guidance/tool-description.md` 做最小同步，避免再次扩写长提示词。
+"""
+touch_points = ["module:core", "command:ztldr", "docs/tldr-agent-first-guidance/tool-description.md", "codex-rs/core/src/tools/rewrite"]
+depends_on = ["a2"]
+done_when = "关键路由边界有稳定测试覆盖，必要文档同步完成且未引入新的提示词膨胀。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core shell_search_rewrite && cargo test -p codex-core read_gate && cargo test -p codex-core auto_tldr"
+regress_by = "cd /workspace && rg -n \"ztldr|raw|passthrough|degradedMode|structuredFailure\" docs/tldr-agent-first-guidance/tool-description.md"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = """
+已完成：补齐/更新定向测试，覆盖结构化改写与 factual/regex passthrough 等边界；文档无需扩写，仅执行回归核对。spec-reviewer=PASS，code-reviewer=PASS。
+验证命令：
+- cd /workspace/codex-rs && cargo test -p codex-core auto_tldr
+- cd /workspace/codex-rs && cargo test -p codex-core read_gate
+- cd /workspace/codex-rs && cargo test -p codex-core shell_search_rewrite
+- cd /workspace && rg -n "ztldr|raw|passthrough|degradedMode|structuredFailure" docs/tldr-agent-first-guidance/tool-description.md
+"""

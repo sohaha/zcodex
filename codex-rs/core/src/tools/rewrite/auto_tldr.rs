@@ -2,13 +2,17 @@ use crate::codex::TurnContext;
 use crate::config::AutoTldrRoutingMode;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::AutoTldrContext;
-use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::decision::ToolRewriteDecision;
 use crate::tools::rewrite::resolve_tldr_project_root;
+use crate::tools::rewrite::tldr_routing::SearchRoute;
+use crate::tools::rewrite::tldr_routing::classify_search_route;
+use crate::tools::rewrite::tldr_routing::non_code_reason;
+use crate::tools::rewrite::tldr_routing::search_action;
+use crate::tools::rewrite::tldr_routing::search_reason;
+use crate::tools::rewrite::tldr_routing::to_tldr_language;
 use crate::tools::router::ToolCall;
 use codex_native_tldr::lang_support::SupportedLanguage;
-use codex_native_tldr::tool_api::TldrToolAction;
 use codex_native_tldr::tool_api::TldrToolCallParam;
 use codex_native_tldr::tool_api::TldrToolLanguage;
 use serde::Deserialize;
@@ -36,27 +40,6 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         };
     };
 
-    if directives.disable_auto_tldr_once {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "explicit_raw_request",
-        };
-    }
-
-    if directives.force_raw_grep {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "force_raw_grep",
-        };
-    }
-
-    if matches!(directives.problem_kind, ProblemKind::Factual) && !directives.force_tldr {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "factual_query",
-        };
-    }
-
     let args: GrepFilesArgs = match serde_json::from_str(arguments) {
         Ok(args) => args,
         Err(_) => {
@@ -67,20 +50,12 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         }
     };
 
-    let pattern = args.pattern.trim();
-    if pattern.is_empty() {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "unknown_passthrough",
-        };
-    }
-
-    if looks_like_regex_pattern(pattern) {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "raw_pattern_regex",
-        };
-    }
+    let route = match classify_search_route(args.pattern.as_str(), &directives) {
+        Ok(route) => route,
+        Err(reason) => {
+            return ToolRewriteDecision::Passthrough { call, reason };
+        }
+    };
 
     let search_path = turn.resolve_path(args.path.clone());
     let auto_tldr_context = turn.auto_tldr_context.read().await.clone();
@@ -97,35 +72,15 @@ pub(crate) async fn rewrite_grep_files_to_tldr(
         };
     };
 
+    let pattern = args.pattern.trim().to_string();
+    let reason = search_reason(directives.problem_kind, route);
+    let action = search_action(route);
     let project_root = resolve_tldr_project_root(turn.cwd.as_path(), Some(search_path.as_path()));
     let project = project_root.display().to_string();
-
-    let (action, reason, symbol, query) =
-        if directives.prefer_context_search && looks_like_symbol(pattern) {
-            let reason = match directives.problem_kind {
-                ProblemKind::Structural => "structural_symbol_query",
-                ProblemKind::Mixed => "mixed_symbol_query",
-                ProblemKind::Factual => "factual_symbol_query",
-            };
-            (
-                TldrToolAction::Context,
-                reason,
-                Some(pattern.to_string()),
-                None,
-            )
-        } else {
-            let reason = match directives.problem_kind {
-                ProblemKind::Structural => "structural_code_search_query",
-                ProblemKind::Mixed => "mixed_code_search_query",
-                ProblemKind::Factual => "factual_code_search_query",
-            };
-            (
-                TldrToolAction::Semantic,
-                reason,
-                None,
-                Some(pattern.to_string()),
-            )
-        };
+    let (symbol, query) = match route {
+        SearchRoute::ContextSymbol => (Some(pattern), None),
+        SearchRoute::SemanticQuery => (None, Some(pattern)),
+    };
 
     let rewritten_args = TldrToolCallParam {
         action: action.clone(),
@@ -183,9 +138,7 @@ fn infer_language(
 }
 
 fn infer_language_from_path(path: &Path) -> Option<TldrToolLanguage> {
-    Some(supported_to_tool_language(SupportedLanguage::from_path(
-        path,
-    )?))
+    Some(to_tldr_language(SupportedLanguage::from_path(path)?))
 }
 
 fn infer_language_from_include(include: &str) -> Option<TldrToolLanguage> {
@@ -215,56 +168,6 @@ fn infer_language_from_include(include: &str) -> Option<TldrToolLanguage> {
     GLOB_LANGUAGE_HINTS
         .iter()
         .find_map(|(needle, language)| include.contains(needle).then_some(*language))
-}
-
-fn supported_to_tool_language(language: SupportedLanguage) -> TldrToolLanguage {
-    match language {
-        SupportedLanguage::C => TldrToolLanguage::C,
-        SupportedLanguage::Cpp => TldrToolLanguage::Cpp,
-        SupportedLanguage::CSharp => TldrToolLanguage::Csharp,
-        SupportedLanguage::Elixir => TldrToolLanguage::Elixir,
-        SupportedLanguage::Go => TldrToolLanguage::Go,
-        SupportedLanguage::Java => TldrToolLanguage::Java,
-        SupportedLanguage::JavaScript => TldrToolLanguage::Javascript,
-        SupportedLanguage::Lua => TldrToolLanguage::Lua,
-        SupportedLanguage::Luau => TldrToolLanguage::Luau,
-        SupportedLanguage::Php => TldrToolLanguage::Php,
-        SupportedLanguage::Python => TldrToolLanguage::Python,
-        SupportedLanguage::Ruby => TldrToolLanguage::Ruby,
-        SupportedLanguage::Rust => TldrToolLanguage::Rust,
-        SupportedLanguage::Scala => TldrToolLanguage::Scala,
-        SupportedLanguage::Swift => TldrToolLanguage::Swift,
-        SupportedLanguage::TypeScript => TldrToolLanguage::Typescript,
-        SupportedLanguage::Zig => TldrToolLanguage::Zig,
-    }
-}
-
-fn looks_like_regex_pattern(pattern: &str) -> bool {
-    pattern.chars().any(|ch| {
-        matches!(
-            ch,
-            '\\' | '^' | '$' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
-        )
-    })
-}
-
-fn looks_like_symbol(pattern: &str) -> bool {
-    let mut chars = pattern.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | ':'))
-}
-
-fn non_code_reason(search_path: &Path) -> &'static str {
-    if search_path.extension().is_some() {
-        "non_code_path"
-    } else {
-        "unknown_passthrough"
-    }
 }
 
 #[cfg(test)]

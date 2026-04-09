@@ -7,6 +7,7 @@ mod engine;
 mod project_root;
 mod read_gate;
 pub(crate) mod shell_search_rewrite;
+mod tldr_routing;
 
 pub(crate) use classification::ProblemKind;
 pub(crate) use context::AutoTldrContext;

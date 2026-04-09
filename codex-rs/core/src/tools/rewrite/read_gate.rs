@@ -2,10 +2,13 @@ use crate::codex::TurnContext;
 use crate::config::AutoTldrRoutingMode;
 use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::AutoTldrContext;
-use crate::tools::rewrite::ProblemKind;
 use crate::tools::rewrite::ToolRoutingDirectives;
 use crate::tools::rewrite::decision::ToolRewriteDecision;
 use crate::tools::rewrite::resolve_tldr_project_root;
+use crate::tools::rewrite::tldr_routing::extract_reason;
+use crate::tools::rewrite::tldr_routing::non_code_reason;
+use crate::tools::rewrite::tldr_routing::passthrough_reason_for_read;
+use crate::tools::rewrite::tldr_routing::to_tldr_language;
 use crate::tools::router::ToolCall;
 use codex_native_tldr::lang_support::SupportedLanguage;
 use codex_native_tldr::tool_api::TldrToolAction;
@@ -36,25 +39,8 @@ pub(crate) async fn rewrite_read_file_to_tldr(
         };
     };
 
-    if directives.disable_auto_tldr_once {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "explicit_raw_request",
-        };
-    }
-
-    if directives.force_raw_read {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "force_raw_read",
-        };
-    }
-
-    if matches!(directives.problem_kind, ProblemKind::Factual) && !directives.force_tldr {
-        return ToolRewriteDecision::Passthrough {
-            call,
-            reason: "factual_query",
-        };
+    if let Some(reason) = passthrough_reason_for_read(&directives) {
+        return ToolRewriteDecision::Passthrough { call, reason };
     }
 
     let args: ReadFileArgs = match serde_json::from_str(arguments) {
@@ -89,11 +75,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
         };
     };
 
-    let reason = match directives.problem_kind {
-        ProblemKind::Structural => "structural_file_extract",
-        ProblemKind::Mixed => "mixed_file_extract",
-        ProblemKind::Factual => "factual_file_extract",
-    };
+    let reason = extract_reason(directives.problem_kind);
     let project = resolve_tldr_project_root(turn.cwd.as_path(), Some(resolved_path.as_path()))
         .display()
         .to_string();
@@ -143,41 +125,11 @@ fn infer_language(
     mode: AutoTldrRoutingMode,
     force_tldr: bool,
 ) -> Option<TldrToolLanguage> {
-    let inferred = SupportedLanguage::from_path(resolved_path).map(supported_to_tool_language);
+    let inferred = SupportedLanguage::from_path(resolved_path).map(to_tldr_language);
     if force_tldr || mode.uses_last_tldr_context() {
         inferred.or(auto_tldr_context.last_language)
     } else {
         inferred
-    }
-}
-
-fn supported_to_tool_language(language: SupportedLanguage) -> TldrToolLanguage {
-    match language {
-        SupportedLanguage::C => TldrToolLanguage::C,
-        SupportedLanguage::Cpp => TldrToolLanguage::Cpp,
-        SupportedLanguage::CSharp => TldrToolLanguage::Csharp,
-        SupportedLanguage::Elixir => TldrToolLanguage::Elixir,
-        SupportedLanguage::Go => TldrToolLanguage::Go,
-        SupportedLanguage::Java => TldrToolLanguage::Java,
-        SupportedLanguage::JavaScript => TldrToolLanguage::Javascript,
-        SupportedLanguage::Lua => TldrToolLanguage::Lua,
-        SupportedLanguage::Luau => TldrToolLanguage::Luau,
-        SupportedLanguage::Php => TldrToolLanguage::Php,
-        SupportedLanguage::Python => TldrToolLanguage::Python,
-        SupportedLanguage::Ruby => TldrToolLanguage::Ruby,
-        SupportedLanguage::Rust => TldrToolLanguage::Rust,
-        SupportedLanguage::Scala => TldrToolLanguage::Scala,
-        SupportedLanguage::Swift => TldrToolLanguage::Swift,
-        SupportedLanguage::TypeScript => TldrToolLanguage::Typescript,
-        SupportedLanguage::Zig => TldrToolLanguage::Zig,
-    }
-}
-
-fn non_code_reason(search_path: &Path) -> &'static str {
-    if search_path.extension().is_some() {
-        "non_code_path"
-    } else {
-        "unknown_passthrough"
     }
 }
 
