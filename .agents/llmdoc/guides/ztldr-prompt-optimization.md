@@ -25,10 +25,16 @@
 4. 最后同步 `docs/tldr-agent-first-guidance/tool-description.md` 与 `codex-rs/docs/codex_mcp_interface.md`。
 
 ## 最小验证闭环
+- `cd /workspace/codex-rs && cargo check -p codex-core --lib`
 - `cd /workspace/codex-rs && cargo test -p codex-tools tool_spec`
 - `cd /workspace/codex-rs && cargo test -p codex-mcp-server tldr_tool`
 - `cd /workspace/codex-rs && cargo test -p codex-core shell_search_rewrite`
 - `cd /workspace && rg -n "ztldr|degradedMode|structuredFailure" docs/tldr-agent-first-guidance/tool-description.md codex-rs/docs/codex_mcp_interface.md`
+
+## 运行时可观测性
+- `codex-rs/core/src/tools/rewrite/decision.rs` 的 `ToolRewriteDecision` 已承载 `signal: Option<SearchSignal>`，search 链路新增分类元数据时优先沿这条 contract 继续传递。
+- `codex-rs/core/src/tools/rewrite/engine.rs` 会把 `reason`、`action`、`signal` 一起写到 `codex_core::tool_route`；排查误判先看日志，不要先回退到扩写入口 prompt。
+- `read_file` 路由不消费 search signal；如果 read 链路也需要元数据，单独定义字段，不要复用 `SearchSignal`。
 
 ## 常见陷阱
 - 只改文档，不改代码侧 description，模型行为不会明显变化。
