@@ -193,6 +193,7 @@ mod tests {
     use crate::tools::rewrite::resolve_tldr_project_root;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::grep_payload;
     use crate::tools::rewrite::test_corpus::project_route_counts;
     use crate::tools::rewrite::test_corpus::project_signal_counts;
     use crate::tools::rewrite::test_corpus::project_structural_search_reason_counts;
@@ -218,7 +219,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-1".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
+                arguments: grep_payload("create_tldr_tool", Some("*.rs")),
             },
         };
 
@@ -256,7 +257,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-2".to_string(),
             payload: ToolPayload::Function {
-                arguments: format!(r#"{{"pattern":"{PROJECT_REGEX_PATTERN}","include":"*.rs"}}"#),
+                arguments: grep_payload(PROJECT_REGEX_PATTERN, Some("*.rs")),
             },
         };
 
@@ -295,10 +296,7 @@ mod tests {
                 let signal = Some(signal_label(case.signal));
                 (
                     format!("call-corpus-{}", index + 1),
-                    format!(
-                        r#"{{"pattern":"{pattern}","include":"*.rs"}}"#,
-                        pattern = case.pattern
-                    ),
+                    grep_payload(case.pattern, Some("*.rs")),
                     reason,
                     action,
                     signal,
@@ -306,7 +304,7 @@ mod tests {
             })
             .chain([(
                 "call-corpus-regex".to_string(),
-                format!(r#"{{"pattern":"{PROJECT_REGEX_PATTERN}","include":"*.rs"}}"#),
+                grep_payload(PROJECT_REGEX_PATTERN, Some("*.rs")),
                 "raw_pattern_regex",
                 None,
                 None,
@@ -333,8 +331,8 @@ mod tests {
             )
             .await;
 
-            let action = match decision.action() {
-                Some(action) => Some(route_label(match action {
+            let action = decision.action().map(|action| {
+                route_label(match action {
                     TldrToolAction::Context => {
                         crate::tools::rewrite::tldr_routing::SearchRoute::ContextSymbol
                     }
@@ -342,9 +340,8 @@ mod tests {
                         crate::tools::rewrite::tldr_routing::SearchRoute::SemanticQuery
                     }
                     other => panic!("unexpected action {other:?}"),
-                })),
-                None => None,
-            };
+                })
+            });
             let signal = decision.signal().map(signal_label);
 
             assert_eq!(decision.reason(), expected_reason, "call: {call_id}");
@@ -383,7 +380,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-3".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"ToolCallRuntime"}"#.to_string(),
+                arguments: grep_payload("ToolCallRuntime", None),
             },
         };
 
@@ -424,7 +421,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-3".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"ToolCallRuntime"}"#.to_string(),
+                arguments: grep_payload("ToolCallRuntime", None),
             },
         };
 
@@ -468,7 +465,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-4".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"ToolCallRuntime"}"#.to_string(),
+                arguments: grep_payload("ToolCallRuntime", None),
             },
         };
 
@@ -506,7 +503,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-5".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"default_timeout","include":"*.rs"}"#.to_string(),
+                arguments: grep_payload("default_timeout", Some("*.rs")),
             },
         };
 
@@ -545,7 +542,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-6".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
+                arguments: grep_payload("create_tldr_tool", Some("*.rs")),
             },
         };
 

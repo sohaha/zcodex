@@ -96,14 +96,10 @@ pub(crate) fn project_structural_shell_reason_counts() -> BTreeMap<&'static str,
     counts
 }
 
-pub(crate) fn shell_rewritten_command(pattern: &str) -> String {
-    match pattern {
-        "where is TurnContext defined" => "rg 'where is TurnContext defined' core/src".to_string(),
-        "decision.signal" => "rg decision.signal core/src/tools/rewrite".to_string(),
-        "core/src/tools/rewrite/engine.rs" => {
-            "rg core/src/tools/rewrite/engine.rs core/src".to_string()
-        }
-        _ => format!("rg {pattern} core/src/tools/rewrite/engine.rs"),
+pub(crate) fn grep_payload(pattern: &str, include: Option<&str>) -> String {
+    match include {
+        Some(include) => format!(r#"{{"pattern":"{pattern}","include":"{include}"}}"#),
+        None => format!(r#"{{"pattern":"{pattern}"}}"#),
     }
 }
 
