@@ -105,6 +105,7 @@ mod collaboration_modes;
 mod color;
 pub(crate) mod custom_terminal;
 pub use custom_terminal::Terminal;
+mod ctf_resume;
 mod cwd_prompt;
 mod debug_config;
 mod diff_render;
@@ -1283,6 +1284,10 @@ async fn run_ratatui_app(
         resume_picker::SessionSelection::StartFresh
     };
     shutdown_app_server_if_present(session_lookup_app_server.take()).await;
+
+    if cli.resume_ctf_clean {
+        ctf_resume::clean_resume_selection_if_needed(&config, &session_selection).await?;
+    }
 
     let current_cwd = config.cwd.clone();
     let allow_prompt = !remote_mode && cli.cwd.is_none();

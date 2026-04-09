@@ -11,6 +11,11 @@ use codex_chatgpt::apply_command::run_apply_command;
 use codex_cli::LandlockCommand;
 use codex_cli::SeatbeltCommand;
 use codex_cli::WindowsCommand;
+use codex_cli::ctf_cmd::CtfCommand;
+use codex_cli::ctf_cmd::CtfResumeCommand;
+use codex_cli::ctf_cmd::CtfSubcommand;
+use codex_cli::ctf_cmd::apply_ctf_overrides;
+use codex_cli::ctf_cmd::run_ctf_clean_command;
 use codex_cli::read_api_key_from_stdin;
 use codex_cli::run_login_status;
 use codex_cli::run_login_with_api_key;
@@ -106,6 +111,9 @@ enum Subcommand {
 
     /// 以非交互模式执行代码评审。
     Review(ReviewArgs),
+
+    /// 启动带内置 CTF 指令模板的新交互会话。
+    Ctf(CtfCommand),
 
     /// 管理登录。
     Login(LoginCommand),
@@ -730,6 +738,54 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             );
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
+        Some(Subcommand::Ctf(ctf_cli)) => match ctf_cli.subcommand {
+            Some(CtfSubcommand::Clean(clean)) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "ctf clean",
+                )?;
+                run_ctf_clean_command(clean, root_config_overrides.clone()).await?;
+            }
+            Some(CtfSubcommand::Resume(resume)) => {
+                reject_remote_mode_for_subcommand(
+                    root_remote.as_deref(),
+                    root_remote_auth_token_env.as_deref(),
+                    "ctf resume",
+                )?;
+                eprintln!(
+                    "CTF resume：若所选会话带有 CTF 标记，将在恢复前自动清理拒绝消息与 reasoning 记录。"
+                );
+                interactive = finalize_ctf_resume_interactive(
+                    interactive,
+                    root_config_overrides.clone(),
+                    resume,
+                );
+                let exit_info =
+                    run_interactive_tui(interactive, None, None, arg0_paths.clone()).await?;
+                handle_app_exit(exit_info)?;
+            }
+            None => {
+                let mut ctf_interactive = interactive;
+                merge_interactive_cli_flags(&mut ctf_interactive, ctf_cli.start.interactive);
+                prepend_config_flags(
+                    &mut ctf_interactive.config_overrides,
+                    root_config_overrides.clone(),
+                );
+                apply_ctf_overrides(
+                    &mut ctf_interactive.config_overrides,
+                    ctf_cli.start.template,
+                );
+                let exit_info = run_interactive_tui(
+                    ctf_interactive,
+                    root_remote.clone(),
+                    root_remote_auth_token_env.clone(),
+                    arg0_paths.clone(),
+                )
+                .await?;
+                handle_app_exit(exit_info)?;
+            }
+        },
         Some(Subcommand::McpServer) => {
             reject_remote_mode_for_subcommand(
                 root_remote.as_deref(),
@@ -1465,6 +1521,24 @@ fn finalize_resume_interactive(
     interactive
 }
 
+fn finalize_ctf_resume_interactive(
+    interactive: TuiCli,
+    root_config_overrides: CliConfigOverrides,
+    resume: CtfResumeCommand,
+) -> TuiCli {
+    let mut interactive = finalize_resume_interactive(
+        interactive,
+        root_config_overrides,
+        resume.session_id,
+        resume.last,
+        resume.all,
+        /*include_non_interactive*/ false,
+        resume.interactive,
+    );
+    interactive.resume_ctf_clean = true;
+    interactive
+}
+
 /// Build the final `TuiCli` for a `codex fork` invocation.
 fn finalize_fork_interactive(
     mut interactive: TuiCli,
@@ -1789,6 +1863,27 @@ mod tests {
         finalize_fork_interactive(interactive, root_overrides, session_id, last, all, fork_cli)
     }
 
+    fn finalize_ctf_resume_from_args(args: &[&str]) -> TuiCli {
+        let cli = MultitoolCli::try_parse_from(args).expect("parse");
+        let MultitoolCli {
+            interactive,
+            config_overrides: root_overrides,
+            subcommand,
+            feature_toggles: _,
+            remote: _,
+        } = cli;
+
+        let Subcommand::Ctf(CtfCommand {
+            start: _,
+            subcommand: Some(CtfSubcommand::Resume(resume)),
+        }) = subcommand.expect("ctf resume present")
+        else {
+            unreachable!()
+        };
+
+        finalize_ctf_resume_interactive(interactive, root_overrides, resume)
+    }
+
     #[test]
     fn exec_resume_last_accepts_prompt_positional() {
         let cli =
@@ -2084,6 +2179,30 @@ mod tests {
         assert!(interactive.resume_picker);
         assert!(!interactive.resume_last);
         assert_eq!(interactive.resume_session_id, None);
+    }
+
+    #[test]
+    fn ctf_resume_marks_clean_before_resume() {
+        let interactive =
+            finalize_ctf_resume_from_args(["codex", "ctf", "resume", "--last"].as_ref());
+
+        assert!(interactive.resume_ctf_clean);
+        assert!(!interactive.resume_picker);
+        assert!(interactive.resume_last);
+        assert_eq!(interactive.resume_session_id, None);
+    }
+
+    #[test]
+    fn ctf_resume_alias_merges_interactive_flags() {
+        let interactive = finalize_ctf_resume_from_args(
+            ["codex", "ctf", "r", "sid", "-m", "gpt-5.1-test"].as_ref(),
+        );
+
+        assert!(interactive.resume_ctf_clean);
+        assert!(!interactive.resume_picker);
+        assert!(!interactive.resume_last);
+        assert_eq!(interactive.resume_session_id.as_deref(), Some("sid"));
+        assert_eq!(interactive.model.as_deref(), Some("gpt-5.1-test"));
     }
 
     #[test]

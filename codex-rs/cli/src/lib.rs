@@ -1,3 +1,5 @@
+pub mod ctf_cmd;
+pub mod ctf_config;
 pub(crate) mod debug_sandbox;
 mod exit_status;
 pub(crate) mod login;

@@ -1,5 +1,8 @@
 use crate::config::Config;
 pub use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
+pub use codex_rollout::CTF_CLEAN_DEFAULT_REPLACEMENT;
+pub use codex_rollout::CtfCleanOptions;
+pub use codex_rollout::CtfCleanSummary;
 pub use codex_rollout::Cursor;
 pub use codex_rollout::EventPersistenceMode;
 pub use codex_rollout::INTERACTIVE_SESSION_SOURCES;
@@ -11,6 +14,7 @@ pub use codex_rollout::ThreadItem;
 pub use codex_rollout::ThreadSortKey;
 pub use codex_rollout::ThreadsPage;
 pub use codex_rollout::append_thread_name;
+pub use codex_rollout::clean_ctf_rollout;
 pub use codex_rollout::find_archived_thread_path_by_id_str;
 #[deprecated(note = "use find_thread_path_by_id_str")]
 pub use codex_rollout::find_conversation_path_by_id_str;

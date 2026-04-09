@@ -312,10 +312,11 @@ mod tests {
         assert_eq!(request.method, Method::POST);
         assert_eq!(request.url, "https://api.anthropic.com/v1/messages");
         let body = request.body.expect("request body should be present");
-        assert_eq!(body["model"], "claude-test");
-        assert_eq!(body["stream"], false);
-        assert!(body.get("tools").is_none());
-        let system = body["system"]
+        let json = body.json().expect("request body should be JSON");
+        assert_eq!(json["model"], "claude-test");
+        assert_eq!(json["stream"], false);
+        assert!(json.get("tools").is_none());
+        let system = json["system"]
             .as_str()
             .expect("system prompt should be a string");
         assert!(system.starts_with("compact this thread\n\nRespond with JSON only."));
