@@ -295,6 +295,8 @@ mod tests {
     use super::shell_intercept_reason;
     use crate::tools::rewrite::ProblemKind;
     use crate::tools::rewrite::ToolRoutingDirectives;
+    use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
+    use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -350,8 +352,9 @@ mod tests {
 
     #[test]
     fn search_route_passthroughs_for_regex() {
-        let reason = classify_search_route("foo.*bar", &ToolRoutingDirectives::default())
-            .expect_err("regex should passthrough");
+        let reason =
+            classify_search_route(PROJECT_REGEX_PATTERN, &ToolRoutingDirectives::default())
+                .expect_err("regex should passthrough");
         assert_eq!(reason, "raw_pattern_regex");
     }
 
@@ -493,41 +496,25 @@ mod tests {
     fn current_project_query_corpus_summary_stays_stable() {
         use std::collections::BTreeMap;
 
-        let corpus = [
-            (
-                "rewrite_tool_call",
-                Ok((SearchRoute::ContextSymbol, SearchSignal::BareSymbol)),
-            ),
-            (
-                "`emit_tool_route_metric()`",
-                Ok((SearchRoute::ContextSymbol, SearchSignal::WrappedSymbol)),
-            ),
-            (
-                "decision.signal",
-                Ok((SearchRoute::ContextSymbol, SearchSignal::MemberSymbol)),
-            ),
-            (
-                "ToolCallSource::Direct",
-                Ok((SearchRoute::ContextSymbol, SearchSignal::BareSymbol)),
-            ),
-            (
-                "where is TurnContext defined",
-                Ok((SearchRoute::SemanticQuery, SearchSignal::NaturalLanguage)),
-            ),
-            (
-                "panic handler",
-                Ok((SearchRoute::SemanticQuery, SearchSignal::NaturalLanguage)),
-            ),
-            (
-                "core/src/tools/rewrite/engine.rs",
-                Ok((SearchRoute::SemanticQuery, SearchSignal::PathLike)),
-            ),
-            (
-                "codex-rs/otel/src/metrics/names.rs",
-                Ok((SearchRoute::SemanticQuery, SearchSignal::PathLike)),
-            ),
-            ("foo.*bar", Err("raw_pattern_regex")),
-        ];
+        let corpus = PROJECT_QUERY_CORPUS
+            .into_iter()
+            .map(|case| (case.pattern, Ok((case.route, case.signal))))
+            .chain([
+                (
+                    "ToolCallSource::Direct",
+                    Ok((SearchRoute::ContextSymbol, SearchSignal::BareSymbol)),
+                ),
+                (
+                    "panic handler",
+                    Ok((SearchRoute::SemanticQuery, SearchSignal::NaturalLanguage)),
+                ),
+                (
+                    "codex-rs/otel/src/metrics/names.rs",
+                    Ok((SearchRoute::SemanticQuery, SearchSignal::PathLike)),
+                ),
+                (PROJECT_REGEX_PATTERN, Err("raw_pattern_regex")),
+            ])
+            .collect::<Vec<_>>();
 
         let mut route_counts = BTreeMap::new();
         let mut signal_counts = BTreeMap::new();

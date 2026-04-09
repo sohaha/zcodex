@@ -255,6 +255,8 @@ mod tests {
     use super::maybe_intercept_shell_search;
     use crate::tools::rewrite::ProblemKind;
     use crate::tools::rewrite::ToolRoutingDirectives;
+    use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
+    use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
     use pretty_assertions::assert_eq;
     use std::path::Path;
     use tempfile::tempdir;
@@ -428,29 +430,62 @@ mod tests {
     fn current_project_shell_corpus_summary_stays_stable() {
         use std::collections::BTreeMap;
 
-        let corpus = [
-            (
-                "rg rewrite_tool_call core/src/tools/rewrite/engine.rs",
-                Some(("structural_shell_symbol_intercept", "context")),
-            ),
-            (
-                "rg '`emit_tool_route_metric()`' core/src/tools/rewrite/engine.rs",
-                Some(("structural_shell_wrapped_symbol_intercept", "context")),
-            ),
-            (
-                "rg decision.signal core/src/tools/rewrite",
-                Some(("structural_shell_member_symbol_intercept", "context")),
-            ),
-            (
-                "rg core/src/tools/rewrite/engine.rs core/src",
-                Some(("structural_shell_pathlike_intercept", "semantic")),
-            ),
-            (
-                "rg 'where is TurnContext defined' core/src",
-                Some(("structural_shell_natural_language_intercept", "semantic")),
-            ),
-            ("rg 'foo.*bar' core/src", None),
-        ];
+        let corpus: Vec<(String, Option<(&str, &str)>)> = PROJECT_QUERY_CORPUS
+            .into_iter()
+            .map(|case| {
+                let reason = match case.signal {
+                    crate::tools::rewrite::tldr_routing::SearchSignal::BareSymbol => {
+                        "structural_shell_symbol_intercept"
+                    }
+                    crate::tools::rewrite::tldr_routing::SearchSignal::WrappedSymbol => {
+                        "structural_shell_wrapped_symbol_intercept"
+                    }
+                    crate::tools::rewrite::tldr_routing::SearchSignal::MemberSymbol => {
+                        "structural_shell_member_symbol_intercept"
+                    }
+                    crate::tools::rewrite::tldr_routing::SearchSignal::NaturalLanguage => {
+                        "structural_shell_natural_language_intercept"
+                    }
+                    crate::tools::rewrite::tldr_routing::SearchSignal::PathLike => {
+                        "structural_shell_pathlike_intercept"
+                    }
+                    crate::tools::rewrite::tldr_routing::SearchSignal::GenericSemantic => {
+                        "structural_shell_search_intercept"
+                    }
+                };
+                let action = match case.route {
+                    crate::tools::rewrite::tldr_routing::SearchRoute::ContextSymbol => "context",
+                    crate::tools::rewrite::tldr_routing::SearchRoute::SemanticQuery => "semantic",
+                };
+                (
+                    format!("rg {} core/src/tools/rewrite/engine.rs", case.pattern),
+                    Some((reason, action)),
+                )
+            })
+            .map(|(command, expected)| {
+                if command.contains("where is TurnContext defined") {
+                    (
+                        "rg 'where is TurnContext defined' core/src".to_string(),
+                        expected,
+                    )
+                } else if command.contains("core/src/tools/rewrite/engine.rs")
+                    && expected == Some(("structural_shell_pathlike_intercept", "semantic"))
+                {
+                    (
+                        "rg core/src/tools/rewrite/engine.rs core/src".to_string(),
+                        expected,
+                    )
+                } else if command.contains("decision.signal") {
+                    (
+                        "rg decision.signal core/src/tools/rewrite".to_string(),
+                        expected,
+                    )
+                } else {
+                    (command, expected)
+                }
+            })
+            .chain([(format!("rg '{PROJECT_REGEX_PATTERN}' core/src"), None)])
+            .collect::<Vec<_>>();
 
         let mut reason_counts = BTreeMap::new();
         let mut action_counts = BTreeMap::new();
@@ -458,7 +493,7 @@ mod tests {
 
         for (command, expected) in corpus {
             let interception = maybe_intercept_shell_search(
-                command,
+                &command,
                 &command.replace("rg", "ztok grep"),
                 Path::new("/workspace/codex-rs"),
                 &ToolRoutingDirectives::default(),
@@ -507,8 +542,8 @@ mod tests {
     #[test]
     fn regex_queries_stay_on_shell_path() {
         let interception = maybe_intercept_shell_search(
-            "rg 'foo.*bar' src",
-            "ztok grep 'foo.*bar' src",
+            &format!("rg '{PROJECT_REGEX_PATTERN}' src"),
+            &format!("ztok grep '{PROJECT_REGEX_PATTERN}' src"),
             Path::new("/workspace/codex-rs"),
             &ToolRoutingDirectives::default(),
         );

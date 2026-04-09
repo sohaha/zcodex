@@ -191,6 +191,8 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::decision::ToolRewriteDecision;
     use crate::tools::rewrite::resolve_tldr_project_root;
+    use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
+    use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
     use crate::tools::rewrite::tldr_routing::SearchSignal;
     use crate::tools::router::ToolCall;
     use codex_native_tldr::tool_api::TldrToolAction;
@@ -248,7 +250,10 @@ mod tests {
             tool_namespace: None,
             call_id: "call-2".to_string(),
             payload: ToolPayload::Function {
-                arguments: r#"{"pattern":"foo.*bar","include":"*.rs"}"#.to_string(),
+                arguments: format!(
+                    r#"{{"pattern":"{}","include":"*.rs"}}"#,
+                    PROJECT_REGEX_PATTERN
+                ),
             },
         };
 
@@ -278,50 +283,53 @@ mod tests {
         use std::collections::BTreeMap;
 
         let (_, turn) = make_session_and_context().await;
-        let corpus = [
-            (
-                "call-corpus-1",
-                r#"{"pattern":"rewrite_tool_call","include":"*.rs"}"#,
-                "structural_symbol_query",
-                Some("context"),
-                Some("bare_symbol"),
-            ),
-            (
-                "call-corpus-2",
-                r#"{"pattern":"`emit_tool_route_metric()`","include":"*.rs"}"#,
-                "structural_wrapped_symbol_query",
-                Some("context"),
-                Some("wrapped_symbol"),
-            ),
-            (
-                "call-corpus-3",
-                r#"{"pattern":"decision.signal","include":"*.rs"}"#,
-                "structural_member_symbol_query",
-                Some("context"),
-                Some("member_symbol"),
-            ),
-            (
-                "call-corpus-4",
-                r#"{"pattern":"where is TurnContext defined","include":"*.rs"}"#,
-                "structural_natural_language_search_query",
-                Some("semantic"),
-                Some("natural_language"),
-            ),
-            (
-                "call-corpus-5",
-                r#"{"pattern":"core/src/tools/rewrite/engine.rs","include":"*.rs"}"#,
-                "structural_pathlike_search_query",
-                Some("semantic"),
-                Some("path_like"),
-            ),
-            (
-                "call-corpus-6",
-                r#"{"pattern":"foo.*bar","include":"*.rs"}"#,
+        let corpus = PROJECT_QUERY_CORPUS
+            .into_iter()
+            .enumerate()
+            .map(|(index, case)| {
+                let reason = match case.signal {
+                    SearchSignal::BareSymbol => "structural_symbol_query",
+                    SearchSignal::WrappedSymbol => "structural_wrapped_symbol_query",
+                    SearchSignal::MemberSymbol => "structural_member_symbol_query",
+                    SearchSignal::NaturalLanguage => "structural_natural_language_search_query",
+                    SearchSignal::PathLike => "structural_pathlike_search_query",
+                    SearchSignal::GenericSemantic => "structural_code_search_query",
+                };
+                let action = match case.route {
+                    crate::tools::rewrite::tldr_routing::SearchRoute::ContextSymbol => {
+                        Some("context")
+                    }
+                    crate::tools::rewrite::tldr_routing::SearchRoute::SemanticQuery => {
+                        Some("semantic")
+                    }
+                };
+                let signal = match case.signal {
+                    SearchSignal::BareSymbol => Some("bare_symbol"),
+                    SearchSignal::WrappedSymbol => Some("wrapped_symbol"),
+                    SearchSignal::MemberSymbol => Some("member_symbol"),
+                    SearchSignal::NaturalLanguage => Some("natural_language"),
+                    SearchSignal::PathLike => Some("path_like"),
+                    SearchSignal::GenericSemantic => Some("generic_semantic"),
+                };
+                (
+                    format!("call-corpus-{}", index + 1),
+                    format!(
+                        r#"{{"pattern":"{pattern}","include":"*.rs"}}"#,
+                        pattern = case.pattern
+                    ),
+                    reason,
+                    action,
+                    signal,
+                )
+            })
+            .chain([(
+                "call-corpus-regex".to_string(),
+                format!(r#"{{"pattern":"{PROJECT_REGEX_PATTERN}","include":"*.rs"}}"#),
                 "raw_pattern_regex",
                 None,
                 None,
-            ),
-        ];
+            )])
+            .collect::<Vec<_>>();
 
         let mut reason_counts = BTreeMap::new();
         let mut action_counts = BTreeMap::new();
