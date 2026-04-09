@@ -255,8 +255,8 @@ mod tests {
     use super::maybe_intercept_shell_search;
     use crate::tools::rewrite::ProblemKind;
     use crate::tools::rewrite::ToolRoutingDirectives;
-    use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::PROJECT_SHELL_CORPUS;
     use crate::tools::rewrite::test_corpus::project_route_counts;
     use crate::tools::rewrite::test_corpus::project_structural_shell_reason_counts;
     use crate::tools::rewrite::test_corpus::route_label;
@@ -434,39 +434,19 @@ mod tests {
     fn current_project_shell_corpus_summary_stays_stable() {
         use std::collections::BTreeMap;
 
-        let corpus: Vec<(String, Option<(&str, &str)>)> = PROJECT_QUERY_CORPUS
+        let corpus: Vec<(String, Option<(&str, &str)>)> = PROJECT_SHELL_CORPUS
             .into_iter()
             .map(|case| {
-                let reason = structural_shell_intercept_reason(case.signal);
-                let action = route_label(case.route);
                 (
-                    format!("rg {} core/src/tools/rewrite/engine.rs", case.pattern),
-                    Some((reason, action)),
+                    case.command.to_string(),
+                    case.route.zip(case.signal).map(|(route, signal)| {
+                        (
+                            structural_shell_intercept_reason(signal),
+                            route_label(route),
+                        )
+                    }),
                 )
             })
-            .map(|(command, expected)| {
-                if command.contains("where is TurnContext defined") {
-                    (
-                        "rg 'where is TurnContext defined' core/src".to_string(),
-                        expected,
-                    )
-                } else if command.contains("core/src/tools/rewrite/engine.rs")
-                    && expected == Some(("structural_shell_pathlike_intercept", "semantic"))
-                {
-                    (
-                        "rg core/src/tools/rewrite/engine.rs core/src".to_string(),
-                        expected,
-                    )
-                } else if command.contains("decision.signal") {
-                    (
-                        "rg decision.signal core/src/tools/rewrite".to_string(),
-                        expected,
-                    )
-                } else {
-                    (command, expected)
-                }
-            })
-            .chain([(format!("rg '{PROJECT_REGEX_PATTERN}' core/src"), None)])
             .collect::<Vec<_>>();
 
         let mut reason_counts = BTreeMap::new();

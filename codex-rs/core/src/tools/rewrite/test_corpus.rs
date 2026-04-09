@@ -14,6 +14,12 @@ pub(crate) struct QueryMatrixCase {
     pub(crate) signal: SearchSignal,
 }
 
+pub(crate) struct ShellCorpusCase {
+    pub(crate) command: &'static str,
+    pub(crate) route: Option<SearchRoute>,
+    pub(crate) signal: Option<SearchSignal>,
+}
+
 pub(crate) fn route_label(route: SearchRoute) -> &'static str {
     match route {
         SearchRoute::ContextSymbol => "context",
@@ -90,6 +96,17 @@ pub(crate) fn project_structural_shell_reason_counts() -> BTreeMap<&'static str,
     counts
 }
 
+pub(crate) fn shell_rewritten_command(pattern: &str) -> String {
+    match pattern {
+        "where is TurnContext defined" => "rg 'where is TurnContext defined' core/src".to_string(),
+        "decision.signal" => "rg decision.signal core/src/tools/rewrite".to_string(),
+        "core/src/tools/rewrite/engine.rs" => {
+            "rg core/src/tools/rewrite/engine.rs core/src".to_string()
+        }
+        _ => format!("rg {pattern} core/src/tools/rewrite/engine.rs"),
+    }
+}
+
 pub(crate) const PROJECT_QUERY_CORPUS: [QueryCorpusCase; 5] = [
     QueryCorpusCase {
         pattern: "rewrite_tool_call",
@@ -163,6 +180,39 @@ pub(crate) const REAL_QUERY_MATRIX: [QueryMatrixCase; 9] = [
         pattern: "symbol lookup without spaces",
         route: SearchRoute::SemanticQuery,
         signal: SearchSignal::NaturalLanguage,
+    },
+];
+
+pub(crate) const PROJECT_SHELL_CORPUS: [ShellCorpusCase; 6] = [
+    ShellCorpusCase {
+        command: "rg rewrite_tool_call core/src/tools/rewrite/engine.rs",
+        route: Some(SearchRoute::ContextSymbol),
+        signal: Some(SearchSignal::BareSymbol),
+    },
+    ShellCorpusCase {
+        command: "rg `emit_tool_route_metric()` core/src/tools/rewrite/engine.rs",
+        route: Some(SearchRoute::ContextSymbol),
+        signal: Some(SearchSignal::WrappedSymbol),
+    },
+    ShellCorpusCase {
+        command: "rg decision.signal core/src/tools/rewrite",
+        route: Some(SearchRoute::ContextSymbol),
+        signal: Some(SearchSignal::MemberSymbol),
+    },
+    ShellCorpusCase {
+        command: "rg 'where is TurnContext defined' core/src",
+        route: Some(SearchRoute::SemanticQuery),
+        signal: Some(SearchSignal::NaturalLanguage),
+    },
+    ShellCorpusCase {
+        command: "rg core/src/tools/rewrite/engine.rs core/src",
+        route: Some(SearchRoute::SemanticQuery),
+        signal: Some(SearchSignal::PathLike),
+    },
+    ShellCorpusCase {
+        command: "rg 'foo.*bar' core/src",
+        route: None,
+        signal: None,
     },
 ];
 
