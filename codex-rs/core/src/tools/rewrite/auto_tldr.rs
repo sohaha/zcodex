@@ -274,6 +274,133 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn current_project_grep_corpus_summary_stays_stable() {
+        use std::collections::BTreeMap;
+
+        let (_, turn) = make_session_and_context().await;
+        let corpus = [
+            (
+                "call-corpus-1",
+                r#"{"pattern":"rewrite_tool_call","include":"*.rs"}"#,
+                "structural_symbol_query",
+                Some("context"),
+                Some("bare_symbol"),
+            ),
+            (
+                "call-corpus-2",
+                r#"{"pattern":"`emit_tool_route_metric()`","include":"*.rs"}"#,
+                "structural_wrapped_symbol_query",
+                Some("context"),
+                Some("wrapped_symbol"),
+            ),
+            (
+                "call-corpus-3",
+                r#"{"pattern":"decision.signal","include":"*.rs"}"#,
+                "structural_member_symbol_query",
+                Some("context"),
+                Some("member_symbol"),
+            ),
+            (
+                "call-corpus-4",
+                r#"{"pattern":"where is TurnContext defined","include":"*.rs"}"#,
+                "structural_natural_language_search_query",
+                Some("semantic"),
+                Some("natural_language"),
+            ),
+            (
+                "call-corpus-5",
+                r#"{"pattern":"core/src/tools/rewrite/engine.rs","include":"*.rs"}"#,
+                "structural_pathlike_search_query",
+                Some("semantic"),
+                Some("path_like"),
+            ),
+            (
+                "call-corpus-6",
+                r#"{"pattern":"foo.*bar","include":"*.rs"}"#,
+                "raw_pattern_regex",
+                None,
+                None,
+            ),
+        ];
+
+        let mut reason_counts = BTreeMap::new();
+        let mut action_counts = BTreeMap::new();
+        let mut signal_counts = BTreeMap::new();
+
+        for (call_id, arguments, expected_reason, expected_action, expected_signal) in corpus {
+            let decision = rewrite_grep_files_to_tldr(
+                &turn,
+                ToolCall {
+                    tool_name: "grep_files".to_string(),
+                    tool_namespace: None,
+                    call_id: call_id.to_string(),
+                    payload: ToolPayload::Function {
+                        arguments: arguments.to_string(),
+                    },
+                },
+                ToolRoutingDirectives::default(),
+                AutoTldrRoutingMode::Safe,
+            )
+            .await;
+
+            let action = match decision.action() {
+                Some(TldrToolAction::Context) => Some("context"),
+                Some(TldrToolAction::Semantic) => Some("semantic"),
+                Some(other) => panic!("unexpected action {other:?}"),
+                None => None,
+            };
+            let signal = match decision.signal() {
+                Some(SearchSignal::BareSymbol) => Some("bare_symbol"),
+                Some(SearchSignal::WrappedSymbol) => Some("wrapped_symbol"),
+                Some(SearchSignal::MemberSymbol) => Some("member_symbol"),
+                Some(SearchSignal::NaturalLanguage) => Some("natural_language"),
+                Some(SearchSignal::PathLike) => Some("path_like"),
+                Some(SearchSignal::GenericSemantic) => Some("generic_semantic"),
+                None => None,
+            };
+
+            assert_eq!(decision.reason(), expected_reason, "call: {call_id}");
+            assert_eq!(action, expected_action, "call: {call_id}");
+            assert_eq!(signal, expected_signal, "call: {call_id}");
+
+            *reason_counts.entry(expected_reason).or_insert(0usize) += 1;
+            *action_counts
+                .entry(expected_action.unwrap_or("none"))
+                .or_insert(0usize) += 1;
+            *signal_counts
+                .entry(expected_signal.unwrap_or("none"))
+                .or_insert(0usize) += 1;
+        }
+
+        assert_eq!(
+            reason_counts,
+            BTreeMap::from([
+                ("raw_pattern_regex", 1usize),
+                ("structural_member_symbol_query", 1usize),
+                ("structural_natural_language_search_query", 1usize),
+                ("structural_pathlike_search_query", 1usize),
+                ("structural_symbol_query", 1usize),
+                ("structural_wrapped_symbol_query", 1usize),
+            ])
+        );
+        assert_eq!(
+            action_counts,
+            BTreeMap::from([("context", 3usize), ("none", 1usize), ("semantic", 2usize)])
+        );
+        assert_eq!(
+            signal_counts,
+            BTreeMap::from([
+                ("bare_symbol", 1usize),
+                ("member_symbol", 1usize),
+                ("natural_language", 1usize),
+                ("none", 1usize),
+                ("path_like", 1usize),
+                ("wrapped_symbol", 1usize),
+            ])
+        );
+    }
+
+    #[tokio::test]
     async fn safe_mode_does_not_reuse_last_tldr_language_without_explicit_hint() {
         let (_, turn) = make_session_and_context().await;
         *turn.auto_tldr_context.write().await = AutoTldrContext {
