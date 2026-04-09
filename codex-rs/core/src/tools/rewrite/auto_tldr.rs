@@ -194,6 +194,8 @@ mod tests {
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
     use crate::tools::rewrite::test_corpus::grep_payload;
+    use crate::tools::rewrite::test_corpus::grep_tool_call;
+    use crate::tools::rewrite::test_corpus::grep_tool_call_from_arguments;
     use crate::tools::rewrite::test_corpus::project_route_counts;
     use crate::tools::rewrite::test_corpus::project_signal_counts;
     use crate::tools::rewrite::test_corpus::project_structural_search_reason_counts;
@@ -201,7 +203,6 @@ mod tests {
     use crate::tools::rewrite::test_corpus::signal_label;
     use crate::tools::rewrite::test_corpus::structural_search_reason;
     use crate::tools::rewrite::tldr_routing::SearchSignal;
-    use crate::tools::router::ToolCall;
     use codex_native_tldr::tool_api::TldrToolAction;
     use codex_native_tldr::tool_api::TldrToolCallParam;
     use codex_native_tldr::tool_api::TldrToolLanguage;
@@ -214,14 +215,7 @@ mod tests {
             resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
                 .display()
                 .to_string();
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-1".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload("create_tldr_tool", Some("*.rs")),
-            },
-        };
+        let call = grep_tool_call("call-1", "create_tldr_tool", Some("*.rs"));
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,
@@ -252,14 +246,7 @@ mod tests {
     #[tokio::test]
     async fn keeps_regex_grep_queries_on_raw_handler_path() {
         let (_, turn) = make_session_and_context().await;
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-2".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload(PROJECT_REGEX_PATTERN, Some("*.rs")),
-            },
-        };
+        let call = grep_tool_call("call-2", PROJECT_REGEX_PATTERN, Some("*.rs"));
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,
@@ -318,14 +305,7 @@ mod tests {
         for (call_id, arguments, expected_reason, expected_action, expected_signal) in corpus {
             let decision = rewrite_grep_files_to_tldr(
                 &turn,
-                ToolCall {
-                    tool_name: "grep_files".to_string(),
-                    tool_namespace: None,
-                    call_id: call_id.to_string(),
-                    payload: ToolPayload::Function {
-                        arguments: arguments.to_string(),
-                    },
-                },
+                grep_tool_call_from_arguments(&call_id, arguments),
                 ToolRoutingDirectives::default(),
                 AutoTldrRoutingMode::Safe,
             )
@@ -375,14 +355,7 @@ mod tests {
             last_language: Some(TldrToolLanguage::Rust),
             ..Default::default()
         };
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-3".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload("ToolCallRuntime", None),
-            },
-        };
+        let call = grep_tool_call("call-3", "ToolCallRuntime", None);
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,
@@ -416,14 +389,7 @@ mod tests {
             last_language: Some(TldrToolLanguage::Rust),
             ..Default::default()
         };
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-3".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload("ToolCallRuntime", None),
-            },
-        };
+        let call = grep_tool_call("call-3", "ToolCallRuntime", None);
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,
@@ -460,14 +426,7 @@ mod tests {
             last_language: Some(TldrToolLanguage::Rust),
             ..Default::default()
         };
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-4".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload("ToolCallRuntime", None),
-            },
-        };
+        let call = grep_tool_call("call-4", "ToolCallRuntime", None);
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,
@@ -498,14 +457,7 @@ mod tests {
     #[tokio::test]
     async fn factual_queries_stay_on_raw_grep_path_even_when_code_like() {
         let (_, turn) = make_session_and_context().await;
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-5".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload("default_timeout", Some("*.rs")),
-            },
-        };
+        let call = grep_tool_call("call-5", "default_timeout", Some("*.rs"));
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,
@@ -537,14 +489,7 @@ mod tests {
             resolve_tldr_project_root(turn.cwd.as_path(), Some(turn.cwd.as_path()))
                 .display()
                 .to_string();
-        let call = ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
-            call_id: "call-6".to_string(),
-            payload: ToolPayload::Function {
-                arguments: grep_payload("create_tldr_tool", Some("*.rs")),
-            },
-        };
+        let call = grep_tool_call("call-6", "create_tldr_tool", Some("*.rs"));
 
         let decision = rewrite_grep_files_to_tldr(
             &turn,

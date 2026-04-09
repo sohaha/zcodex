@@ -1,5 +1,7 @@
+use crate::tools::context::ToolPayload;
 use crate::tools::rewrite::tldr_routing::SearchRoute;
 use crate::tools::rewrite::tldr_routing::SearchSignal;
+use crate::tools::router::ToolCall;
 use std::collections::BTreeMap;
 
 pub(crate) struct QueryCorpusCase {
@@ -100,6 +102,19 @@ pub(crate) fn grep_payload(pattern: &str, include: Option<&str>) -> String {
     match include {
         Some(include) => format!(r#"{{"pattern":"{pattern}","include":"{include}"}}"#),
         None => format!(r#"{{"pattern":"{pattern}"}}"#),
+    }
+}
+
+pub(crate) fn grep_tool_call(call_id: &str, pattern: &str, include: Option<&str>) -> ToolCall {
+    grep_tool_call_from_arguments(call_id, grep_payload(pattern, include))
+}
+
+pub(crate) fn grep_tool_call_from_arguments(call_id: &str, arguments: String) -> ToolCall {
+    ToolCall {
+        tool_name: "grep_files".to_string(),
+        tool_namespace: None,
+        call_id: call_id.to_string(),
+        payload: ToolPayload::Function { arguments },
     }
 }
 
