@@ -1,0 +1,43 @@
+plan = ".agents/plan/2026-04-09-cnb-cargo-dependency-image.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "核实 CNB 官方可复用构建依赖机制"
+scope = """
+本 issue 负责基于 CNB 官方资料确认哪些标准机制可以在临时或反复重建的环境中复用构建阶段依赖与层缓存，并明确这些机制的适用前提、限制和与“中间层依赖镜像”概念的对应关系。
+
+包括 buildpacks.io 官方文档中与 cache image、build image / builder、build inputs 相关的机制核实与事实摘录。
+不包括针对具体云厂商控制台、具体 builder 发行版或当前仓库构建配置做实机操作；不包括未经来源支撑的经验性推断。
+"""
+touch_points = ["external"]
+depends_on = []
+done_when = "已确认至少一条来自 CNB 官方文档的核心可行路径，并整理出与当前问题直接相关的机制清单、适用前提和限制，能够支撑后续 Cargo 场景映射。"
+validate_by = "手动核对最终调研笔记：每个核心结论都能追溯到明确的官方 CNB 文档链接，且已区分事实、限制与推断。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已核实官方 CNB 文档：cache image 用于在不同主机间保留 build-optimizing layers，适合临时环境；builder/build image 主要用于预置构建环境与系统依赖，不等同于 Cargo 依赖缓存。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "输出面向 Cargo 云开发环境的方案比较与推荐"
+scope = """
+本 issue 负责把已核实的 CNB 机制映射到 Rust/Cargo 依赖下载优化场景，形成面向当前云开发环境的方案比较、推荐顺序、平台前提和实施前待确认项，并直接反馈给用户。
+
+包括分析 cache image 对 Cargo 依赖复用的直接价值、自定义 build image / builder 对预置工具链或系统包的价值边界，以及是否需要补充主流 Rust buildpack 文档作为辅助说明。
+不包括直接修改仓库、提交配置变更或对未知平台做兼容性承诺。
+"""
+touch_points = ["external"]
+depends_on = ["a1"]
+done_when = "已给出至少两种可行路径的差异、推荐顺序、适用前提与限制，并明确指出针对当前“环境反复重建导致 Cargo 依赖重复下载”问题的首选方案和后续待确认信息。"
+validate_by = "手动检查最终答复：包含至少两种方案、每种方案的适用场景与限制、明确推荐结论、以及可点击的来源链接；内容直接回应 Cargo 依赖重复下载问题。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已输出推荐：优先使用 cache image 复用 Cargo 相关缓存层；若平台不支持远端缓存镜像，再考虑宿主机 volume 或自定义 buildpack/builder。补充说明仅作为次级建议，不替代官方结论。"

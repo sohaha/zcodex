@@ -71,6 +71,15 @@ $:
   vscode:
       clouddev:
           imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
+          docker:
+              image: docker.cnb.cool/zls-tools/vm/rust:latest
+              volumes:
+                - /root/.cargo/registry:copy-on-write
+                - /root/.cargo/git:copy-on-write
+                - /root/.rustup:copy-on-write
+                - /root/.cache:copy-on-write
+                - /root/.local/bin:copy-on-write
+                - /root/.local/share/mise:copy-on-write
           env:
               CARGO_TARGET_DIR: /workspace/.cargo-target
               CARGO_INCREMENTAL: "1"
@@ -95,10 +104,14 @@ $:
             - name: bootstrap rust speedup
               script: |
                 set -eu
+                export PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
                 export DEBIAN_FRONTEND=noninteractive
-                if ! command -v mold >/dev/null 2>&1 || ! command -v sccache >/dev/null 2>&1; then
+                if ! command -v mold >/dev/null 2>&1; then
                   apt-get update
-                  apt-get install -y mold sccache
+                  apt-get install -y mold
+                fi
+                if ! command -v sccache >/dev/null 2>&1; then
+                  cargo install sccache --root /root/.local
                 fi
                 mkdir -p /workspace/.cargo-target /workspace/.cache/sccache
             - name: build
