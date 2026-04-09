@@ -250,10 +250,7 @@ mod tests {
             tool_namespace: None,
             call_id: "call-2".to_string(),
             payload: ToolPayload::Function {
-                arguments: format!(
-                    r#"{{"pattern":"{}","include":"*.rs"}}"#,
-                    PROJECT_REGEX_PATTERN
-                ),
+                arguments: format!(r#"{{"pattern":"{PROJECT_REGEX_PATTERN}","include":"*.rs"}}"#),
             },
         };
 
