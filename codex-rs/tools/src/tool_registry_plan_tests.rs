@@ -121,6 +121,8 @@ fn test_full_toolset_specs_for_gpt5_codex_unified_exec_web_search() {
     }
 
     if config.zmemory_tool_enabled {
+        let spec = create_zmemory_tool();
+        expected.insert(spec.name().to_string(), spec);
         for spec in create_zmemory_mcp_tools() {
             expected.insert(spec.name().to_string(), spec);
         }

@@ -3936,7 +3936,7 @@ impl ChatWidget {
         if let Some(status_message) = event.run.status_message
             && !status_message.is_empty()
         {
-            message.push_str("：");
+            message.push('：');
             message.push_str(&status_message);
         }
         self.add_to_history(history_cell::new_info_event(message, /*hint*/ None));

@@ -297,6 +297,9 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::route_label;
+    use crate::tools::rewrite::test_corpus::signal_label;
+    use crate::tools::rewrite::test_corpus::structural_search_reason as corpus_structural_search_reason;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -528,11 +531,8 @@ mod tests {
                 (Ok(classification), Ok((expected_route, expected_signal))) => {
                     assert_eq!(classification.route, expected_route, "pattern: {pattern}");
                     assert_eq!(classification.signal, expected_signal, "pattern: {pattern}");
-                    *route_counts
-                        .entry(match classification.route {
-                            SearchRoute::ContextSymbol => "context",
-                            SearchRoute::SemanticQuery => "semantic",
-                        })
+                                        *route_counts
+                        .entry(route_label(classification.route))
                         .or_insert(0usize) += 1;
                     *signal_counts
                         .entry(match classification.signal {

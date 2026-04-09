@@ -3,6 +3,18 @@ use rusqlite::Connection;
 use rusqlite::Transaction;
 use rusqlite::params;
 
+struct SearchDocumentRow<'a> {
+    domain: &'a str,
+    path: &'a str,
+    node_uuid: &'a str,
+    memory_id: i64,
+    content: &'a str,
+    disclosure: Option<&'a str>,
+    priority: i64,
+    updated_at: &'a str,
+    keywords: &'a str,
+}
+
 pub(crate) fn rebuild_search_index(conn: &mut Connection, namespace: &str) -> Result<i64> {
     let tx = conn.transaction()?;
     tx.execute(
@@ -63,15 +75,17 @@ pub(crate) fn rebuild_search_index(conn: &mut Connection, namespace: &str) -> Re
         insert_search_document(
             &tx,
             namespace,
-            &domain,
-            &path,
-            &node_uuid,
-            memory_id,
-            &content,
-            disclosure.as_deref(),
-            priority,
-            &updated_at,
-            &keywords,
+            SearchDocumentRow {
+                domain: &domain,
+                path: &path,
+                node_uuid: &node_uuid,
+                memory_id,
+                content: &content,
+                disclosure: disclosure.as_deref(),
+                priority,
+                updated_at: &updated_at,
+                keywords: &keywords,
+            },
         )?;
     }
     tx.commit()?;
@@ -146,15 +160,17 @@ pub(crate) fn reindex_node(tx: &Transaction<'_>, namespace: &str, node_uuid: &st
         insert_search_document(
             tx,
             namespace,
-            &domain,
-            &path,
-            node_uuid,
-            memory_id,
-            &content,
-            disclosure.as_deref(),
-            priority,
-            &updated_at,
-            &keywords,
+            SearchDocumentRow {
+                domain: &domain,
+                path: &path,
+                node_uuid,
+                memory_id,
+                content: &content,
+                disclosure: disclosure.as_deref(),
+                priority,
+                updated_at: &updated_at,
+                keywords: &keywords,
+            },
         )?;
     }
 
@@ -164,34 +180,26 @@ pub(crate) fn reindex_node(tx: &Transaction<'_>, namespace: &str, node_uuid: &st
 fn insert_search_document(
     tx: &Transaction<'_>,
     namespace: &str,
-    domain: &str,
-    path: &str,
-    node_uuid: &str,
-    memory_id: i64,
-    content: &str,
-    disclosure: Option<&str>,
-    priority: i64,
-    updated_at: &str,
-    keywords: &str,
+    row: SearchDocumentRow<'_>,
 ) -> Result<()> {
-    let uri = format!("{domain}://{path}");
-    let search_terms = build_search_terms(domain, path, content, keywords);
+    let uri = format!("{}://{}", row.domain, row.path);
+    let search_terms = build_search_terms(row.domain, row.path, row.content, row.keywords);
     tx.execute(
         "INSERT INTO search_documents(
             namespace, domain, path, node_uuid, memory_id, uri, content, disclosure, search_terms, priority, updated_at
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             namespace,
-            domain,
-            path,
-            node_uuid,
-            memory_id,
+            row.domain,
+            row.path,
+            row.node_uuid,
+            row.memory_id,
             uri,
-            content,
-            disclosure,
+            row.content,
+            row.disclosure,
             search_terms,
-            priority,
-            updated_at
+            row.priority,
+            row.updated_at
         ],
     )?;
     tx.execute(
@@ -199,12 +207,12 @@ fn insert_search_document(
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             namespace,
-            domain,
-            path,
-            node_uuid,
+            row.domain,
+            row.path,
+            row.node_uuid,
             uri,
-            content,
-            disclosure,
+            row.content,
+            row.disclosure,
             search_terms
         ],
     )?;

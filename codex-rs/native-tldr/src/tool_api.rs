@@ -778,6 +778,15 @@ pub type EnsureDaemonDetailedFuture<'a> =
 static DAEMON_LIFECYCLE_MANAGER: Lazy<DaemonLifecycleManager> =
     Lazy::new(DaemonLifecycleManager::default);
 
+#[derive(Debug, Clone)]
+struct AnalysisToolRequest {
+    action: TldrToolAction,
+    language: SupportedLanguage,
+    symbol: Option<String>,
+    path: Option<String>,
+    line: Option<usize>,
+}
+
 pub async fn run_tldr_tool_with_hooks<Q, E>(
     args: TldrToolCallParam,
     query: Q,
@@ -793,11 +802,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Structure,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Structure,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -819,11 +830,13 @@ where
             let language = required_or_inferred_language(&args, Some(path.as_str()))?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Extract,
-                language,
-                args.symbol,
-                Some(path),
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Extract,
+                    language,
+                    symbol: args.symbol,
+                    path: Some(path),
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -849,11 +862,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Context,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Context,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -863,11 +878,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Impact,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Impact,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -877,11 +894,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Calls,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Calls,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -891,11 +910,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Dead,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Dead,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -905,11 +926,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Arch,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Arch,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -928,11 +951,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Cfg,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Cfg,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -942,11 +967,13 @@ where
             let language = required_language(&args)?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Dfg,
-                language,
-                args.symbol,
-                None,
-                None,
+                AnalysisToolRequest {
+                    action: TldrToolAction::Dfg,
+                    language,
+                    symbol: args.symbol,
+                    path: None,
+                    line: None,
+                },
                 &query,
                 &ensure_running,
             )
@@ -963,11 +990,13 @@ where
             let language = required_or_inferred_language(&args, Some(path.as_str()))?;
             run_analysis_tool(
                 &project_root,
-                TldrToolAction::Slice,
-                language,
-                args.symbol,
-                Some(path),
-                Some(line),
+                AnalysisToolRequest {
+                    action: TldrToolAction::Slice,
+                    language,
+                    symbol: args.symbol,
+                    path: Some(path),
+                    line: Some(line),
+                },
                 &query,
                 &ensure_running,
             )
@@ -1052,11 +1081,7 @@ where
 
 async fn run_analysis_tool<Q, E>(
     project_root: &Path,
-    action: TldrToolAction,
-    language: SupportedLanguage,
-    symbol: Option<String>,
-    path: Option<String>,
-    line: Option<usize>,
+    tool_request: AnalysisToolRequest,
     query: &Q,
     ensure_running: &E,
 ) -> Result<TldrToolResult>
@@ -1064,7 +1089,7 @@ where
     Q: for<'a> Fn(&'a Path, &'a TldrDaemonCommand) -> QueryDaemonFuture<'a>,
     E: for<'a> Fn(&'a Path) -> EnsureDaemonFuture<'a>,
 {
-    let kind = match action {
+    let kind = match tool_request.action {
         TldrToolAction::Structure => AnalysisKind::Ast,
         TldrToolAction::Extract => AnalysisKind::Extract,
         TldrToolAction::Context => AnalysisKind::CallGraph,
@@ -1079,23 +1104,29 @@ where
     };
     let request = AnalysisRequest {
         kind,
-        language,
-        symbol: symbol.clone(),
-        path: path.clone(),
-        line,
+        language: tool_request.language,
+        symbol: tool_request.symbol.clone(),
+        path: tool_request.path.clone(),
+        line: tool_request.line,
         paths: Vec::new(),
     };
     let daemon_response = query_daemon_with_hooks(
         project_root,
         &TldrDaemonCommand::Analyze {
-            key: analysis_cache_key(kind, language, symbol.as_deref(), path.as_deref(), line),
+            key: analysis_cache_key(
+                kind,
+                tool_request.language,
+                tool_request.symbol.as_deref(),
+                tool_request.path.as_deref(),
+                tool_request.line,
+            ),
             request: request.clone(),
         },
         query,
         ensure_running,
     )
     .await?;
-    let support = LanguageRegistry::support_for(language);
+    let support = LanguageRegistry::support_for(tool_request.language);
     let (source, message, analysis) = if let Some(response) = daemon_response {
         let analysis = response
             .analysis
@@ -1115,9 +1146,9 @@ where
     };
 
     let structured_content = json!({
-        "action": action_name(&action),
+        "action": action_name(&tool_request.action),
         "project": project_root,
-        "language": language.as_str(),
+        "language": tool_request.language.as_str(),
         "source": source,
         "message": message,
         "supportLevel": format!("{:?}", support.support_level),
@@ -1125,16 +1156,16 @@ where
         "relationshipSupport": support.symbol_relationship_support.as_str(),
         "fallbackStrategy": support.fallback_strategy,
         "summary": analysis.summary,
-        "symbol": symbol,
-        "path": path,
-        "line": line,
+        "symbol": tool_request.symbol,
+        "path": tool_request.path,
+        "line": tool_request.line,
         "paths": serde_json::Value::Null,
         "analysis": analysis,
     });
     let text = format!(
         "{} {} via {source}: {}",
-        action_name(&action),
-        language.as_str(),
+        action_name(&tool_request.action),
+        tool_request.language.as_str(),
         structured_content["summary"].as_str().unwrap_or_default()
     );
     Ok(TldrToolResult {

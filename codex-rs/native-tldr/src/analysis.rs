@@ -21,6 +21,17 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::path::PathBuf;
 
+struct AnalysisDetailInput<'a> {
+    indexed_files: usize,
+    all_units: &'a [EmbeddingUnit],
+    units: &'a [&'a EmbeddingUnit],
+    symbol_query: Option<String>,
+    change_paths: &'a [PathBuf],
+    path: Option<&'a Path>,
+    line: Option<usize>,
+    include_slice: bool,
+}
+
 pub(crate) fn analyze_project(
     project_root: &Path,
     config: &TldrConfig,
@@ -93,29 +104,20 @@ pub(crate) fn analyze_project_with_index(
     Ok(AnalysisResponse {
         kind: request.kind,
         summary,
-        details: Some(build_analysis_detail(
-            index.indexed_files,
-            &index.units,
-            &units,
-            request.symbol.clone(),
-            &change_paths,
-            path.as_deref(),
-            request.line,
-            request.kind == AnalysisKind::Slice,
-        )),
+        details: Some(build_analysis_detail(AnalysisDetailInput {
+            indexed_files: index.indexed_files,
+            all_units: &index.units,
+            units: &units,
+            symbol_query: request.symbol.clone(),
+            change_paths: &change_paths,
+            path: path.as_deref(),
+            line: request.line,
+            include_slice: request.kind == AnalysisKind::Slice,
+        })),
     })
 }
 
-fn build_analysis_detail(
-    indexed_files: usize,
-    all_units: &[EmbeddingUnit],
-    units: &[&EmbeddingUnit],
-    symbol_query: Option<String>,
-    change_paths: &[PathBuf],
-    path: Option<&Path>,
-    line: Option<usize>,
-    include_slice: bool,
-) -> AnalysisDetail {
+fn build_analysis_detail(input: AnalysisDetailInput<'_>) -> AnalysisDetail {
     const MAX_UNITS: usize = 20;
     const MAX_FILES: usize = 20;
     const MAX_EDGES: usize = 50;
@@ -130,21 +132,22 @@ fn build_analysis_detail(
     let mut incoming_edges = 0;
     let mut reference_count = 0;
     let mut import_count = 0;
-    let slice_target = include_slice.then(|| AnalysisSliceTarget {
-        path: path
+    let slice_target = input.include_slice.then(|| AnalysisSliceTarget {
+        path: input
+            .path
             .map(|value| value.display().to_string())
             .unwrap_or_else(|| "<unknown>".to_string()),
-        symbol: symbol_query.clone(),
-        line: line.unwrap_or_default(),
+        symbol: input.symbol_query.clone(),
+        line: input.line.unwrap_or_default(),
         direction: "backward".to_string(),
     });
-    let slice_lines = if include_slice {
-        compute_slice_lines(all_units, units, path, line)
+    let slice_lines = if input.include_slice {
+        compute_slice_lines(input.all_units, input.units, input.path, input.line)
     } else {
         Vec::new()
     };
 
-    for unit in units {
+    for unit in input.units {
         *by_kind.entry(unit.kind.clone()).or_default() += 1;
         let file_path = unit.path.display().to_string();
         let file_entry = by_file.entry(file_path.clone()).or_default();
@@ -248,11 +251,12 @@ fn build_analysis_detail(
     }
 
     AnalysisDetail {
-        indexed_files,
-        total_symbols: units.len(),
-        symbol_query,
-        truncated: units.len() > MAX_UNITS,
-        change_paths: change_paths
+        indexed_files: input.indexed_files,
+        total_symbols: input.units.len(),
+        symbol_query: input.symbol_query,
+        truncated: input.units.len() > MAX_UNITS,
+        change_paths: input
+            .change_paths
             .iter()
             .map(|value| value.display().to_string())
             .collect(),
@@ -289,7 +293,8 @@ fn build_analysis_detail(
                 node_ids: node_ids.into_iter().collect(),
             })
             .collect(),
-        units: units
+        units: input
+            .units
             .iter()
             .take(MAX_UNITS)
             .map(|unit| AnalysisUnitDetail {

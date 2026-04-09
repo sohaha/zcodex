@@ -257,6 +257,8 @@ mod tests {
     use crate::tools::rewrite::ToolRoutingDirectives;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::route_label;
+    use crate::tools::rewrite::test_corpus::structural_shell_intercept_reason;
     use pretty_assertions::assert_eq;
     use std::path::Path;
     use tempfile::tempdir;
@@ -433,30 +435,8 @@ mod tests {
         let corpus: Vec<(String, Option<(&str, &str)>)> = PROJECT_QUERY_CORPUS
             .into_iter()
             .map(|case| {
-                let reason = match case.signal {
-                    crate::tools::rewrite::tldr_routing::SearchSignal::BareSymbol => {
-                        "structural_shell_symbol_intercept"
-                    }
-                    crate::tools::rewrite::tldr_routing::SearchSignal::WrappedSymbol => {
-                        "structural_shell_wrapped_symbol_intercept"
-                    }
-                    crate::tools::rewrite::tldr_routing::SearchSignal::MemberSymbol => {
-                        "structural_shell_member_symbol_intercept"
-                    }
-                    crate::tools::rewrite::tldr_routing::SearchSignal::NaturalLanguage => {
-                        "structural_shell_natural_language_intercept"
-                    }
-                    crate::tools::rewrite::tldr_routing::SearchSignal::PathLike => {
-                        "structural_shell_pathlike_intercept"
-                    }
-                    crate::tools::rewrite::tldr_routing::SearchSignal::GenericSemantic => {
-                        "structural_shell_search_intercept"
-                    }
-                };
-                let action = match case.route {
-                    crate::tools::rewrite::tldr_routing::SearchRoute::ContextSymbol => "context",
-                    crate::tools::rewrite::tldr_routing::SearchRoute::SemanticQuery => "semantic",
-                };
+                let reason = structural_shell_intercept_reason(case.signal);
+                let action = route_label(case.route);
                 (
                     format!("rg {} core/src/tools/rewrite/engine.rs", case.pattern),
                     Some((reason, action)),

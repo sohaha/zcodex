@@ -107,6 +107,8 @@ struct PreparedShellCommand {
     search_command: String,
 }
 
+type PreparedCommandRewrite = (String, Option<String>, Option<String>, Option<String>);
+
 impl ShellHandler {
     fn to_exec_params(
         params: &ShellToolCallParams,
@@ -160,7 +162,7 @@ impl ShellCommandHandler {
     fn prepare_command(
         command: &str,
         codex_self_exe: Option<&Path>,
-    ) -> Result<(String, Option<String>, Option<String>, Option<String>), FunctionCallError> {
+    ) -> Result<PreparedCommandRewrite, FunctionCallError> {
         let analysis = analyze_shell_command(command);
         match analysis.kind {
             ShellCommandRewriteKind::AlreadyZtok => {

@@ -134,7 +134,7 @@ impl BuddyWidget {
         self.state.last_action = Some(BuddyLastAction::Petted);
 
         BuddyCommandResult {
-            message: format!("你抚摸了 {}。{}", name, reaction_text),
+            message: format!("你抚摸了 {name}。{reaction_text}"),
             hint: Some("用 `/buddy status` 查看稀有度、特征和心情。".to_string()),
         }
     }

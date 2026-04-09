@@ -227,7 +227,7 @@ impl ModelProviderInfo {
                 })?;
                 let _ = headers
                     .entry(HeaderName::from_static("x-api-key"))
-                    .or_insert(header_value.clone());
+                    .or_insert(header_value);
                 let auth_value =
                     HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(|err| {
                         CodexErr::InvalidRequest(format!("invalid Authorization header: {err}"))

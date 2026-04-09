@@ -50,10 +50,7 @@ fn resolve_platform_script(command: &str, hooks_dir: &Path) -> String {
         }
 
         // Extract the file extension and check that it is exactly .sh or .ps1.
-        let file_name = token
-            .rsplit(|c| c == '/' || c == '\\')
-            .next()
-            .unwrap_or(token);
+        let file_name = token.rsplit(['/', '\\']).next().unwrap_or(token);
         let Some(ext) = file_name.rfind('.') else {
             continue;
         };
@@ -75,7 +72,9 @@ fn resolve_platform_script(command: &str, hooks_dir: &Path) -> String {
             }
         }
 
-        let base = token.strip_suffix(wrong_ext).unwrap();
+        let Some(base) = token.strip_suffix(wrong_ext) else {
+            continue;
+        };
         let alt_name = format!("{base}{right_ext}");
         let alt_path = hooks_dir.join(&alt_name);
         let alt_exists = if alt_path.is_file() {
@@ -539,7 +538,6 @@ mod tests {
     fn non_script_extension_is_ignored_even_if_ends_with_sh() {
         // `foo.ash` ends with `.sh` but the extension is `.ash`, not `.sh`.
         let dir = tempfile::tempdir().unwrap();
-        let wrong_ext = non_platform_script_ext();
         let right_ext = platform_script_ext();
         // Create the "right" version that should NOT be picked up because
         // the token's actual extension is `.ash`, not `.sh`/`.ps1`.

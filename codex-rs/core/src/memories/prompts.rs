@@ -198,7 +198,7 @@ pub(crate) fn build_zmemory_tool_developer_instructions() -> String {
             "stable_preference_contract",
             stable_preference_contract.as_str(),
         )])
-        .expect("embedded zmemory prompt template should render")
+        .unwrap_or_else(|err| panic!("embedded zmemory prompt template should render: {err}"))
 }
 
 #[cfg(test)]

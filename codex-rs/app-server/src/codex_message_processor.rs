@@ -483,19 +483,6 @@ impl CodexMessageProcessor {
         self.thread_manager.skills_manager().clear_cache();
     }
 
-    pub(crate) async fn maybe_start_plugin_startup_tasks_for_latest_config(&self) {
-        match self.load_latest_config(/*fallback_cwd*/ None).await {
-            Ok(config) => self
-                .thread_manager
-                .plugins_manager()
-                .maybe_start_plugin_startup_tasks_for_config(
-                    &config,
-                    self.thread_manager.auth_manager(),
-                ),
-            Err(err) => warn!("failed to load latest config for plugin startup tasks: {err:?}"),
-        }
-    }
-
     fn current_account_updated_notification(&self) -> AccountUpdatedNotification {
         let auth = self.auth_manager.auth_cached();
         AccountUpdatedNotification {
@@ -1152,11 +1139,7 @@ impl CodexMessageProcessor {
             } else {
                 INTERNAL_ERROR_CODE
             },
-            message: if is_not_found {
-                format!("请求设备码失败：{err}")
-            } else {
-                format!("请求设备码失败：{err}")
-            },
+            message: format!("请求设备码失败：{err}"),
             data: None,
         }
     }
@@ -9470,6 +9453,7 @@ mod tests {
             state.track_current_turn_event(&EventMsg::TurnStarted(
                 codex_protocol::protocol::TurnStartedEvent {
                     turn_id: "turn-1".to_string(),
+                    started_at: None,
                     model_context_window: None,
                     collaboration_mode_kind: Default::default(),
                 },

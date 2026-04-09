@@ -225,9 +225,10 @@ pub fn create_tools_json_for_responses_api(
 
 fn responses_api_tool_json(tool: &ToolSpec) -> Result<Value, serde_json::Error> {
     match tool {
-        ToolSpec::Function(ResponsesApiTool { parameters, .. })
-            if matches!(parameters, JsonSchema::OneOf { .. }) =>
-        {
+        ToolSpec::Function(ResponsesApiTool {
+            parameters: JsonSchema::OneOf { .. },
+            ..
+        }) => {
             let mut json = serde_json::to_value(tool)?;
             if let Some(parameters) = json.get_mut("parameters") {
                 *parameters = normalize_top_level_schema(parameters.take());

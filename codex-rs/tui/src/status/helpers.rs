@@ -195,10 +195,6 @@ pub(crate) fn format_reset_timestamp(dt: DateTime<Local>, captured_at: DateTime<
     }
 }
 
-pub(crate) fn discover_agents_summary(config: &Config) -> String {
-    compose_agents_summary(config)
-}
-
 fn title_case(s: &str) -> String {
     if s.is_empty() {
         return String::new();

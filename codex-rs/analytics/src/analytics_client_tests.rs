@@ -504,6 +504,7 @@ fn subagent_thread_started_thread_spawn_serializes_parent_thread_id() {
             subagent_source: SubAgentSource::ThreadSpawn {
                 parent_thread_id,
                 depth: 1,
+                parent_model: None,
                 agent_path: None,
                 agent_nickname: None,
                 agent_role: None,

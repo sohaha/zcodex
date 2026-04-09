@@ -31,12 +31,12 @@ download_file() {
   output="$2"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$output"
+    curl -fL --progress-bar "$url" -o "$output"
     return
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$output" "$url"
+    wget -q --show-progress -O "$output" "$url"
     return
   fi
 
@@ -44,17 +44,16 @@ download_file() {
   exit 1
 }
 
-try_download_file() {
+probe_remote_file() {
   url="$1"
-  output="$2"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$url" -o "$output" >/dev/null 2>&1
+    curl -fsIL "$url" >/dev/null 2>&1
     return $?
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget -q -O "$output" "$url" >/dev/null 2>&1
+    wget -q --spider "$url" >/dev/null 2>&1
     return $?
   fi
 
@@ -203,8 +202,9 @@ download_first_available_asset() {
 
   for asset_name in "$@"; do
     asset_url="$(release_url_for_asset "$asset_name" "$resolved_version")"
-    if try_download_file "$asset_url" "$archive_path"; then
+    if probe_remote_file "$asset_url"; then
       downloaded_asset="$asset_name"
+      download_file "$asset_url" "$archive_path"
       return 0
     fi
   done

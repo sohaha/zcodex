@@ -43,8 +43,7 @@ fn guardian_review_request_includes_patch_context() {
     let path = std::env::temp_dir()
         .join("guardian-apply-patch-test.txt")
         .abs();
-    let absolute_path = AbsolutePathBuf::try_from(path.clone()).expect("absolute path");
-    let action = ApplyPatchAction::new_add_for_test(&absolute_path, "hello".to_string());
+    let action = ApplyPatchAction::new_add_for_test(&path, "hello".to_string());
     let expected_cwd = action.cwd.to_path_buf();
     let expected_patch = action.patch.clone();
     let request = ApplyPatchRequest {
@@ -82,7 +81,7 @@ fn guardian_review_request_includes_patch_context() {
 #[test]
 fn build_command_spec_keeps_linux_sandbox_separator_before_apply_patch_flag() {
     let path = std::env::temp_dir().join("apply-patch-separator-test.txt");
-    let absolute_path = AbsolutePathBuf::try_from(path.clone()).expect("absolute path");
+    let absolute_path = AbsolutePathBuf::try_from(path).expect("absolute path");
     let action = ApplyPatchAction::new_add_for_test(&absolute_path, "hello".to_string());
     let request = ApplyPatchRequest {
         action,

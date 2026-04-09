@@ -1,16 +1,22 @@
+#[cfg(test)]
 use crate::config::ConfigToml;
 use codex_config::types::RawMcpServerConfig;
 use codex_features::FEATURES;
 use codex_features::legacy_feature_keys;
 use schemars::r#gen::SchemaGenerator;
+#[cfg(test)]
 use schemars::r#gen::SchemaSettings;
 use schemars::schema::InstanceType;
 use schemars::schema::ObjectValidation;
+#[cfg(test)]
 use schemars::schema::RootSchema;
 use schemars::schema::Schema;
 use schemars::schema::SchemaObject;
+#[cfg(test)]
 use serde_json::Map;
+#[cfg(test)]
 use serde_json::Value;
+#[cfg(test)]
 use std::path::Path;
 
 /// Schema for the `[features]` map with known + legacy keys only.
@@ -57,6 +63,7 @@ pub fn mcp_servers_schema(schema_gen: &mut SchemaGenerator) -> Schema {
 }
 
 /// Build the config schema for `config.toml`.
+#[cfg(test)]
 pub fn config_schema() -> RootSchema {
     SchemaSettings::draft07()
         .with(|settings| {
@@ -67,6 +74,7 @@ pub fn config_schema() -> RootSchema {
 }
 
 /// Canonicalize a JSON value by sorting its keys.
+#[cfg(test)]
 pub fn canonicalize(value: &Value) -> Value {
     match value {
         Value::Array(items) => Value::Array(items.iter().map(canonicalize).collect()),
@@ -84,6 +92,7 @@ pub fn canonicalize(value: &Value) -> Value {
 }
 
 /// Render the config schema as pretty-printed JSON.
+#[cfg(test)]
 pub fn config_schema_json() -> anyhow::Result<Vec<u8>> {
     let schema = config_schema();
     let value = serde_json::to_value(schema)?;
@@ -93,6 +102,7 @@ pub fn config_schema_json() -> anyhow::Result<Vec<u8>> {
 }
 
 /// Write the config schema fixture to disk.
+#[cfg(test)]
 pub fn write_config_schema(out_path: &Path) -> anyhow::Result<()> {
     let json = config_schema_json()?;
     std::fs::write(out_path, json)?;

@@ -702,6 +702,7 @@ mod tests {
     use codex_core::config::ConfigBuilder;
     use pretty_assertions::assert_eq;
     use std::ops::Deref;
+    use std::path::Path;
     use std::path::PathBuf;
 
     struct StartedTestClient {
@@ -743,9 +744,9 @@ mod tests {
         codex_home
     }
 
-    async fn build_test_config(codex_home: &PathBuf) -> Config {
+    async fn build_test_config(codex_home: &Path) -> Config {
         ConfigBuilder::default()
-            .codex_home(codex_home.clone())
+            .codex_home(codex_home.to_path_buf())
             .build()
             .await
             .expect("test config should load")

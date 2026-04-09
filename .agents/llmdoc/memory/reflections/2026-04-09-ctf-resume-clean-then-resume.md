@@ -26,3 +26,7 @@
 ## 后续建议
 - 以后如果还要引入“resume 前附加一步处理”的变体，优先沿用“CLI 显式子命令 + TUI 内部标记 + 选择后 hook”的模式，不要污染通用 resume 主路径。
 - 若需要把 pre-resume hook 做成可复用框架，再考虑抽象；当前只有 CTF 一条路径时，保持专用模块更容易控边界。
+
+## 收尾补记
+- `format_exit_messages()` 现在会先输出 protocol `FinalOutput` 的英文 token usage，再输出中文本地化 usage；CLI 断言需要按双语输出更新，不能再假设零 usage 时返回空列表。
+- Cadence issue 文件里的 `validate_status` / `regress_status` 必须使用 `passed`，不能写成 `pass`，否则 `cadence_validate.js` 会在回归阶段直接失败。

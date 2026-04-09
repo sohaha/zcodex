@@ -242,7 +242,7 @@ struct LegacyZmemoryToolCallParam {
 #[serde(untagged)]
 enum ZmemoryToolCallParamRepr {
     Tagged(TaggedZmemoryToolCallParam),
-    Legacy(LegacyZmemoryToolCallParam),
+    Legacy(Box<LegacyZmemoryToolCallParam>),
 }
 
 impl Default for ZmemoryToolCallParam {
@@ -279,7 +279,7 @@ impl<'de> Deserialize<'de> for ZmemoryToolCallParam {
     {
         match ZmemoryToolCallParamRepr::deserialize(deserializer)? {
             ZmemoryToolCallParamRepr::Tagged(tagged) => Ok(tagged.into()),
-            ZmemoryToolCallParamRepr::Legacy(legacy) => Ok(legacy.into()),
+            ZmemoryToolCallParamRepr::Legacy(legacy) => Ok((*legacy).into()),
         }
     }
 }

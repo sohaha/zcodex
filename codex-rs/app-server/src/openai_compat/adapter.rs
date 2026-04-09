@@ -58,12 +58,12 @@ impl UpstreamAdapter {
         }
     }
 
-    pub(super) fn wire_api_name(&self) -> &'static str {
+    pub(super) fn wire_api_name(self) -> &'static str {
         self.spec.wire_api_name
     }
 
     pub(super) fn resolve_request(
-        &self,
+        self,
         endpoint: CompatEndpoint,
     ) -> Result<ResolvedUpstreamRequest, ApiError> {
         let path = endpoint.resolve_path(self.spec)?;

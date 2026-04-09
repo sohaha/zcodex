@@ -1,3 +1,5 @@
+use ratatui::style::Color;
+use ratatui::style::Modifier;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -131,7 +133,7 @@ fn render_narrow_line(
         spans.push(" ".into());
         spans.push(bones.rarity.stars_span());
         if bones.shiny {
-            spans.push(" *".yellow().bold());
+            spans.push(Span::styled(" *", shiny_style()));
         }
     }
     Line::from(spans)
@@ -227,7 +229,7 @@ fn render_identity_line(bones: &BuddyBones, name: &str, state: &BuddyState) -> L
     ];
     if bones.shiny {
         spans.push(" · ".dim());
-        spans.push("闪亮".yellow().bold());
+        spans.push(Span::styled("闪亮", shiny_style()));
     }
     Line::from(spans)
 }
@@ -566,9 +568,15 @@ fn rarity_style(bones: &BuddyBones) -> Style {
         BuddyRarity::Uncommon => Style::default().green(),
         BuddyRarity::Rare => Style::default().cyan(),
         BuddyRarity::Epic => Style::default().magenta(),
-        BuddyRarity::Legendary => Style::default().yellow().bold(),
+        BuddyRarity::Legendary => shiny_style(),
     };
     if bones.shiny { base.bold() } else { base }
+}
+
+fn shiny_style() -> Style {
+    Style::default()
+        .fg(Color::Yellow)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn truncate_with_ellipsis(text: &str, width: u16) -> String {

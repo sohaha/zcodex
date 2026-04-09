@@ -47,7 +47,8 @@ const COLLABORATION_AGENT_ANCHOR_CONTENT: &str =
     "Canonical assistant identity anchor for collaboration preferences.";
 const COLLABORATION_CONTRACT_HEADER: &str = "Shared collaboration contract:";
 static QUOTED_VALUE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"["“”'‘’「」『』]([^"“”'‘’「」『』]+)["“”'‘’「」『』]"#).expect("valid regex")
+    Regex::new(r#"["“”'‘’「」『』]([^"“”'‘’「」『』]+)["“”'‘’「」『』]"#)
+        .unwrap_or_else(|err| panic!("valid regex: {err}"))
 });
 
 pub(crate) async fn capture_stable_preference_memories(

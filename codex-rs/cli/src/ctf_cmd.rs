@@ -48,7 +48,7 @@ pub enum CtfSubcommand {
 
     /// 恢复 CTF 会话，并在恢复前显式执行 clean。
     #[clap(visible_alias = "r")]
-    Resume(CtfResumeCommand),
+    Resume(Box<CtfResumeCommand>),
 }
 
 #[derive(Debug, Args)]

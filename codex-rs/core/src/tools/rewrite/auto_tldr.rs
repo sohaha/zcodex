@@ -193,6 +193,9 @@ mod tests {
     use crate::tools::rewrite::resolve_tldr_project_root;
     use crate::tools::rewrite::test_corpus::PROJECT_QUERY_CORPUS;
     use crate::tools::rewrite::test_corpus::PROJECT_REGEX_PATTERN;
+    use crate::tools::rewrite::test_corpus::route_label;
+    use crate::tools::rewrite::test_corpus::signal_label;
+    use crate::tools::rewrite::test_corpus::structural_search_reason;
     use crate::tools::rewrite::tldr_routing::SearchSignal;
     use crate::tools::router::ToolCall;
     use codex_native_tldr::tool_api::TldrToolAction;
@@ -284,30 +287,9 @@ mod tests {
             .into_iter()
             .enumerate()
             .map(|(index, case)| {
-                let reason = match case.signal {
-                    SearchSignal::BareSymbol => "structural_symbol_query",
-                    SearchSignal::WrappedSymbol => "structural_wrapped_symbol_query",
-                    SearchSignal::MemberSymbol => "structural_member_symbol_query",
-                    SearchSignal::NaturalLanguage => "structural_natural_language_search_query",
-                    SearchSignal::PathLike => "structural_pathlike_search_query",
-                    SearchSignal::GenericSemantic => "structural_code_search_query",
-                };
-                let action = match case.route {
-                    crate::tools::rewrite::tldr_routing::SearchRoute::ContextSymbol => {
-                        Some("context")
-                    }
-                    crate::tools::rewrite::tldr_routing::SearchRoute::SemanticQuery => {
-                        Some("semantic")
-                    }
-                };
-                let signal = match case.signal {
-                    SearchSignal::BareSymbol => Some("bare_symbol"),
-                    SearchSignal::WrappedSymbol => Some("wrapped_symbol"),
-                    SearchSignal::MemberSymbol => Some("member_symbol"),
-                    SearchSignal::NaturalLanguage => Some("natural_language"),
-                    SearchSignal::PathLike => Some("path_like"),
-                    SearchSignal::GenericSemantic => Some("generic_semantic"),
-                };
+                let reason = structural_search_reason(case.signal);
+                let action = Some(route_label(case.route));
+                let signal = Some(signal_label(case.signal));
                 (
                     format!("call-corpus-{}", index + 1),
                     format!(
@@ -349,20 +331,18 @@ mod tests {
             .await;
 
             let action = match decision.action() {
-                Some(TldrToolAction::Context) => Some("context"),
-                Some(TldrToolAction::Semantic) => Some("semantic"),
-                Some(other) => panic!("unexpected action {other:?}"),
+                Some(action) => Some(route_label(match action {
+                    TldrToolAction::Context => {
+                        crate::tools::rewrite::tldr_routing::SearchRoute::ContextSymbol
+                    }
+                    TldrToolAction::Semantic => {
+                        crate::tools::rewrite::tldr_routing::SearchRoute::SemanticQuery
+                    }
+                    other => panic!("unexpected action {other:?}"),
+                })),
                 None => None,
             };
-            let signal = match decision.signal() {
-                Some(SearchSignal::BareSymbol) => Some("bare_symbol"),
-                Some(SearchSignal::WrappedSymbol) => Some("wrapped_symbol"),
-                Some(SearchSignal::MemberSymbol) => Some("member_symbol"),
-                Some(SearchSignal::NaturalLanguage) => Some("natural_language"),
-                Some(SearchSignal::PathLike) => Some("path_like"),
-                Some(SearchSignal::GenericSemantic) => Some("generic_semantic"),
-                None => None,
-            };
+            let signal = decision.signal().map(signal_label);
 
             assert_eq!(decision.reason(), expected_reason, "call: {call_id}");
             assert_eq!(action, expected_action, "call: {call_id}");

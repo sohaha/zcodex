@@ -261,6 +261,7 @@ async fn chat_completions_client_uses_chat_completions_path() -> Result<()> {
         service_tier: None,
         prompt_cache_key: None,
         text: None,
+        client_metadata: None,
     };
     let _stream = client
         .stream_request(request, ResponsesOptions::default())
@@ -454,6 +455,7 @@ async fn anthropic_stream_request_preserves_session_headers() -> Result<()> {
         service_tier: None,
         prompt_cache_key: None,
         text: None,
+        client_metadata: None,
     };
 
     let _stream = client

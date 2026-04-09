@@ -944,10 +944,7 @@ impl ModelClientSession {
 
     async fn take_last_response(&mut self) -> Option<LastResponse> {
         let receiver = self.websocket_session.last_response_rx.take()?;
-        match receiver.await {
-            Ok(last_response) => Some(last_response),
-            Err(_err) => None,
-        }
+        receiver.await.ok()
     }
 
     fn prepare_websocket_request(

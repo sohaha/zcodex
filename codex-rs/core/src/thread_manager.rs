@@ -254,7 +254,7 @@ impl ThreadManager {
                     codex_home.clone(),
                     auth_manager.clone(),
                     models_manager_catalog.clone(),
-                    collaboration_modes_config.clone(),
+                    collaboration_modes_config,
                     openai_models_provider,
                 )),
                 models_manager_codex_home: codex_home,
@@ -933,7 +933,7 @@ impl ThreadManagerState {
                 config.codex_home.clone(),
                 auth_manager.clone(),
                 config.model_catalog.clone(),
-                self.collaboration_modes_config.clone(),
+                self.collaboration_modes_config,
                 config.model_provider.clone(),
             ))
         };

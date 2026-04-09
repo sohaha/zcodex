@@ -126,11 +126,10 @@ async fn parse_action(cwd: &Path, patch: &str) -> ApplyPatchAction {
     let argv = vec!["apply_patch".to_string(), patch.to_string()];
     let verified =
         codex_apply_patch::maybe_parse_apply_patch_verified(&argv, &cwd, LOCAL_FS.as_ref()).await;
-    let verified = match verified {
+    match verified {
         MaybeApplyPatchVerified::Body(verified) => verified,
         other => panic!("expected patch body, got: {other:?}"),
-    };
-    verified
+    }
 }
 
 #[test]

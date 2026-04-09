@@ -1,4 +1,5 @@
 use crate::daemon::daemon_artifact_dir_for_project;
+use crate::daemon::temp_artifact_dir_for_project;
 use crate::lang_support::SupportedLanguage;
 use crate::semantic::EmbeddingUnit;
 use crate::semantic::SemanticConfig;
@@ -41,49 +42,51 @@ pub(crate) fn load_index(
     language: SupportedLanguage,
     source_fingerprint: &str,
 ) -> Result<Option<SemanticIndex>> {
-    let cache_dir = cache_dir(project_root, language);
-    let manifest_path = cache_dir.join(MANIFEST_FILE);
-    if !manifest_path.exists() {
-        return Ok(None);
-    }
+    for cache_dir in cache_dir_candidates(project_root, language) {
+        let manifest_path = cache_dir.join(MANIFEST_FILE);
+        if !manifest_path.exists() {
+            continue;
+        }
 
-    let manifest: SemanticIndexManifest = serde_json::from_str(
-        &fs::read_to_string(&manifest_path)
-            .with_context(|| format!("read semantic manifest {}", manifest_path.display()))?,
-    )
-    .with_context(|| format!("parse semantic manifest {}", manifest_path.display()))?;
-    if manifest.version != CACHE_VERSION
-        || manifest.language != language
-        || manifest.model != config.model
-        || manifest.source_fingerprint != source_fingerprint
-        || manifest.embedding_enabled != config.embedding_enabled()
-        || manifest.embedding_dimensions != config.embedding_dimensions()
-    {
-        return Ok(None);
-    }
+        let manifest: SemanticIndexManifest = serde_json::from_str(
+            &fs::read_to_string(&manifest_path)
+                .with_context(|| format!("read semantic manifest {}", manifest_path.display()))?,
+        )
+        .with_context(|| format!("parse semantic manifest {}", manifest_path.display()))?;
+        if manifest.version != CACHE_VERSION
+            || manifest.language != language
+            || manifest.model != config.model
+            || manifest.source_fingerprint != source_fingerprint
+            || manifest.embedding_enabled != config.embedding_enabled()
+            || manifest.embedding_dimensions != config.embedding_dimensions()
+        {
+            continue;
+        }
 
-    let units_path = cache_dir.join(UNITS_FILE);
-    let units = load_units(&units_path)?;
+        let units_path = cache_dir.join(UNITS_FILE);
+        let units = load_units(&units_path)?;
 
-    let units = if manifest.embedding_enabled && manifest.embedding_dimensions > 0 {
-        attach_vectors(
+        let units = if manifest.embedding_enabled && manifest.embedding_dimensions > 0 {
+            attach_vectors(
+                units,
+                &cache_dir.join(VECTORS_FILE),
+                manifest.embedding_dimensions,
+                manifest.unit_count,
+            )?
+        } else {
+            units
+        };
+
+        return Ok(Some(SemanticIndex {
+            language,
+            indexed_files: manifest.indexed_files,
             units,
-            &cache_dir.join(VECTORS_FILE),
-            manifest.embedding_dimensions,
-            manifest.unit_count,
-        )?
-    } else {
-        units
-    };
-
-    Ok(Some(SemanticIndex {
-        language,
-        indexed_files: manifest.indexed_files,
-        units,
-        embedding_enabled: manifest.embedding_enabled,
-        embedding_dimensions: manifest.embedding_dimensions,
-        source_fingerprint: manifest.source_fingerprint,
-    }))
+            embedding_enabled: manifest.embedding_enabled,
+            embedding_dimensions: manifest.embedding_dimensions,
+            source_fingerprint: manifest.source_fingerprint,
+        }));
+    }
+    Ok(None)
 }
 
 pub(crate) fn persist_index(
@@ -92,9 +95,7 @@ pub(crate) fn persist_index(
     index: &SemanticIndex,
     source_fingerprint: &str,
 ) -> Result<()> {
-    let cache_dir = cache_dir(project_root, index.language);
-    fs::create_dir_all(&cache_dir)
-        .with_context(|| format!("create semantic cache dir {}", cache_dir.display()))?;
+    let cache_dir = writable_cache_dir(project_root, index.language)?;
 
     persist_units(&cache_dir.join(UNITS_FILE), &index.units)?;
     if index.embedding_enabled && index.embedding_dimensions > 0 {
@@ -157,11 +158,66 @@ pub(crate) fn source_fingerprint(
     Ok(format!("{:x}", md5::compute(digest_input)))
 }
 
-fn cache_dir(project_root: &Path, language: SupportedLanguage) -> std::path::PathBuf {
-    daemon_artifact_dir_for_project(project_root)
+fn cache_dir(artifact_dir: &Path, language: SupportedLanguage) -> std::path::PathBuf {
+    artifact_dir
         .join("cache")
         .join("semantic")
         .join(language.as_str())
+}
+
+fn cache_dir_candidates(
+    project_root: &Path,
+    language: SupportedLanguage,
+) -> Vec<std::path::PathBuf> {
+    let primary_artifact_dir = daemon_artifact_dir_for_project(project_root);
+    let fallback_artifact_dir = temp_artifact_dir_for_project(project_root);
+    cache_dir_candidates_for_artifact_dirs(&primary_artifact_dir, &fallback_artifact_dir, language)
+}
+
+fn cache_dir_candidates_for_artifact_dirs(
+    primary_artifact_dir: &Path,
+    fallback_artifact_dir: &Path,
+    language: SupportedLanguage,
+) -> Vec<std::path::PathBuf> {
+    let primary = cache_dir(primary_artifact_dir, language);
+    let fallback = cache_dir(fallback_artifact_dir, language);
+    if primary == fallback {
+        vec![primary]
+    } else {
+        vec![primary, fallback]
+    }
+}
+
+fn writable_cache_dir(
+    project_root: &Path,
+    language: SupportedLanguage,
+) -> Result<std::path::PathBuf> {
+    let primary_artifact_dir = daemon_artifact_dir_for_project(project_root);
+    let fallback_artifact_dir = temp_artifact_dir_for_project(project_root);
+    writable_cache_dir_for_artifact_dirs(&primary_artifact_dir, &fallback_artifact_dir, language)
+}
+
+fn writable_cache_dir_for_artifact_dirs(
+    primary_artifact_dir: &Path,
+    fallback_artifact_dir: &Path,
+    language: SupportedLanguage,
+) -> Result<std::path::PathBuf> {
+    let candidates = cache_dir_candidates_for_artifact_dirs(
+        primary_artifact_dir,
+        fallback_artifact_dir,
+        language,
+    );
+    let mut errors = Vec::new();
+    for cache_dir in candidates {
+        match fs::create_dir_all(&cache_dir) {
+            Ok(()) => return Ok(cache_dir),
+            Err(err) => errors.push(format!("{}: {}", cache_dir.display(), err)),
+        }
+    }
+    anyhow::bail!(
+        "create semantic cache dir failed for all candidates: {}",
+        errors.join("; ")
+    );
 }
 
 fn load_units(units_path: &Path) -> Result<Vec<EmbeddingUnit>> {
@@ -262,6 +318,11 @@ fn persist_vectors(vectors_path: &Path, units: &[EmbeddingUnit], dimensions: usi
 #[cfg(test)]
 mod tests {
     use super::cache_dir;
+
+    use super::cache_dir_candidates_for_artifact_dirs;
+    use super::writable_cache_dir_for_artifact_dirs;
+    use crate::daemon::daemon_artifact_dir_for_project;
+
     use crate::lang_support::SupportedLanguage;
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
@@ -272,7 +333,10 @@ mod tests {
         let project_root = tempdir.path().join("project");
         std::fs::create_dir_all(&project_root).expect("project root should exist");
 
-        let cache_dir = cache_dir(&project_root, SupportedLanguage::Rust);
+        let cache_dir = cache_dir(
+            &daemon_artifact_dir_for_project(&project_root),
+            SupportedLanguage::Rust,
+        );
 
         assert!(!cache_dir.starts_with(&project_root));
         assert_eq!(
@@ -293,6 +357,51 @@ mod tests {
                 .and_then(|value| value.file_name())
                 .and_then(|value| value.to_str()),
             Some("cache")
+        );
+    }
+
+    #[test]
+    fn cache_dir_candidates_include_temp_fallback_after_runtime_root() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let primary_artifact_dir = tempdir.path().join("runtime-artifact");
+        let fallback_artifact_dir = tempdir.path().join("temp-artifact");
+
+        let candidates = cache_dir_candidates_for_artifact_dirs(
+            &primary_artifact_dir,
+            &fallback_artifact_dir,
+            SupportedLanguage::Rust,
+        );
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(
+            candidates[0],
+            cache_dir(&primary_artifact_dir, SupportedLanguage::Rust)
+        );
+        assert_eq!(
+            candidates[1],
+            cache_dir(&fallback_artifact_dir, SupportedLanguage::Rust)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn writable_cache_dir_falls_back_when_runtime_root_is_blocked() {
+        let tempdir = tempdir().expect("tempdir should exist");
+        let blocked_primary_artifact_dir = tempdir.path().join("blocked-primary-artifact");
+        std::fs::write(&blocked_primary_artifact_dir, "not a directory")
+            .expect("blocked primary artifact placeholder should exist");
+        let fallback_artifact_dir = tempdir.path().join("fallback-artifact");
+
+        let selected_cache_dir = writable_cache_dir_for_artifact_dirs(
+            &blocked_primary_artifact_dir,
+            &fallback_artifact_dir,
+            SupportedLanguage::Rust,
+        )
+        .expect("fallback cache dir should be created");
+
+        assert_eq!(
+            selected_cache_dir,
+            cache_dir(&fallback_artifact_dir, SupportedLanguage::Rust)
         );
     }
 }

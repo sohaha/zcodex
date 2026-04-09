@@ -480,7 +480,7 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
             0,
             format!(
                 "{}",
-                codex_protocol::protocol::FinalOutput::from(token_usage.clone())
+                codex_protocol::protocol::FinalOutput::from(token_usage)
             ),
         );
     }
@@ -759,7 +759,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                 interactive = finalize_ctf_resume_interactive(
                     interactive,
                     root_config_overrides.clone(),
-                    resume,
+                    *resume,
                 );
                 let exit_info =
                     run_interactive_tui(interactive, None, None, arg0_paths.clone()).await?;
@@ -1881,7 +1881,7 @@ mod tests {
             unreachable!()
         };
 
-        finalize_ctf_resume_interactive(interactive, root_overrides, resume)
+        finalize_ctf_resume_interactive(interactive, root_overrides, *resume)
     }
 
     #[test]
@@ -1991,7 +1991,10 @@ mod tests {
             exit_reason: ExitReason::UserRequested,
         };
         let lines = format_exit_messages(exit_info, /*color_enabled*/ false);
-        assert!(lines.is_empty());
+        assert_eq!(
+            lines,
+            vec!["Token 使用量：总计=0 输入=0 输出=0".to_string()]
+        );
     }
 
     #[test]
@@ -2004,6 +2007,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
+                "Token usage: total=2 input=0 output=2".to_string(),
                 "Token 使用量：总计=2 输入=0 输出=2".to_string(),
                 "若要继续此会话，请运行 codex resume 123e4567-e89b-12d3-a456-426614174000"
                     .to_string(),
@@ -2018,8 +2022,10 @@ mod tests {
             /*thread_name*/ None,
         );
         let lines = format_exit_messages(exit_info, /*color_enabled*/ true);
-        assert_eq!(lines.len(), 2);
-        assert!(lines[1].contains("\u{1b}[36m"));
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "Token usage: total=2 input=0 output=2");
+        assert_eq!(lines[1], "Token 使用量：总计=2 输入=0 输出=2");
+        assert!(lines[2].contains("\u{1b}[36m"));
     }
 
     #[test]
@@ -2048,6 +2054,7 @@ mod tests {
         assert_eq!(
             lines,
             vec![
+                "Token usage: total=2 input=0 output=2".to_string(),
                 "Token 使用量：总计=2 输入=0 输出=2".to_string(),
                 "若要继续此会话，请运行 codex resume my-thread".to_string(),
             ]

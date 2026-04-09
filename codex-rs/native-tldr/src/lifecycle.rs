@@ -176,6 +176,7 @@ impl DaemonLifecycleManager {
         Ok(daemon_ready_result(project_root, false))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn ensure_running_with_launcher_lock<L, A, C, D, O, W>(
         &self,
         project_root: &Path,
@@ -208,6 +209,7 @@ impl DaemonLifecycleManager {
             .ready)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn ensure_running_with_launcher_lock_detailed<L, A, C, D, O, W>(
         &self,
         project_root: &Path,

@@ -188,6 +188,7 @@ mod tests {
     use crate::endpoint::realtime_websocket::RealtimeEventParser;
     use crate::endpoint::realtime_websocket::RealtimeSessionMode;
     use crate::provider::RetryConfig;
+    use crate::provider::WireApi;
     use async_trait::async_trait;
     use codex_client::Request;
     use codex_client::Response;
@@ -240,6 +241,7 @@ mod tests {
         Provider {
             name: "test".to_string(),
             base_url: base_url.to_string(),
+            wire_api: WireApi::default(),
             query_params: None,
             headers: HeaderMap::new(),
             retry: RetryConfig {

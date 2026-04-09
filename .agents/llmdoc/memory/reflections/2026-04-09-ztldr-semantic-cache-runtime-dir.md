@@ -23,3 +23,12 @@
 ## 后续建议
 - 以后再遇到“项目根被 ztldr 污染”的反馈，先区分是输入文件（如 `.tldrignore`）还是 runtime artifact，不要一概按“全部迁走”处理。
 - 如果后续需要给 semantic cache 增加显式配置项，优先在统一的 runtime artifact 路径模型上扩展，而不是重新引入 `project_root/.tldr` 默认值。
+
+## 深度审查后的修正
+- 仅把 semantic cache 迁到 runtime/tmp 目录还不够；如果把“运行时目录不可写时回退”放在 daemon artifact 根目录选择层，会让 socket、pid、lock 也跟着静默漂移到临时目录，破坏 daemon IPC 路径稳定性。
+- 本次修正把职责重新拆开：`native-tldr/src/daemon.rs` 只做路径解析，不再因为目录不可写而换根；`native-tldr/src/semantic_cache.rs` 自己在写盘时尝试 runtime 目录，失败后才回退到 temp 目录。
+- semantic cache 读取端也同步改为按 primary/fallback 两个候选目录顺序查找，这样此前因不可写而落到 temp 的缓存仍可复用，不会每次都重新建索引。
+
+## 额外经验
+- 测试里不要再通过修改 `XDG_RUNTIME_DIR` 进程环境去验证这类路径策略；直接向 helper 注入 primary/fallback artifact dir，更容易稳定复现“主目录不可写但 fallback 可用”的场景，也避免并行测试互相污染。
+- 对 runtime artifact 相关问题做审查时，要先分清“路径选择层”和“写盘回退层”；前者决定 daemon 对外可观测路径，后者才允许围绕可写性做容错，两者不能混用。
