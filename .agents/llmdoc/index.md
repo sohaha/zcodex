@@ -31,6 +31,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shell-corpus-summary.md`：基于当前项目 shell 查询样本的 summary 回归反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-grep-corpus-summary.md`：基于当前项目 grep rewrite 样本的 summary 回归反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-test-corpus.md`：ztldr 三层测试共享样本事实源的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-shared-summary-helpers.md`：ztldr 三层 summary 测试共享标签与计数 helper 的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-daemon-socket-path-length.md`：macOS 上 ztldr daemon 因 Unix socket 路径超长而启动失败的根因与修法反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ctf-resume-clean-then-resume.md`：CTF 会话在复用现有 resume 选择器时接入 clean-then-resume 的实现与验证阻塞反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
