@@ -47,9 +47,7 @@ pub(crate) fn create_tool_for_tldr_tool_call_param() -> Tool {
     Tool {
         name: "ztldr".into(),
         title: Some("Native ZTLDR".to_string()),
-        description: Some(
-            "Structured code context analysis via native-tldr with daemon-first execution.".into(),
-        ),
+        description: Some("Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly.".into()),
         input_schema,
         output_schema: Some(match tldr_tool_output_schema() {
             serde_json::Value::Object(map) => Arc::new(map),
@@ -507,7 +505,7 @@ mod tests {
         assert_eq!(tool_json["title"], "Native ZTLDR");
         assert_eq!(
             tool_json["description"],
-            "Structured code context analysis via native-tldr with daemon-first execution."
+            "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
         );
         assert_eq!(tool_json["inputSchema"]["type"], "object");
         assert_eq!(

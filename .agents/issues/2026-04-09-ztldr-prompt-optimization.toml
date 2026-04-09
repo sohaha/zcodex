@@ -1,0 +1,61 @@
+plan = ".agents/plan/2026-04-09-ztldr-prompt-optimization.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "统一 ztldr 的代码侧描述口径"
+scope = """
+收敛 `codex-rs/mcp-server/src/tldr_tool.rs` 与 `codex-rs/tools/src/tool_spec.rs` 中对 `ztldr` 的主 description 和参数说明，确保它们以真实 `TldrToolAction` 为事实源，并明确“何时先用 / 何时不优先用 / 降级与失败如何解释”的决策导向语义。
+不在本 issue 中修改 `native-tldr` 引擎能力，也不扩展新的 action。
+"""
+touch_points = ["module:mcp-server", "module:tools", "command:ztldr", "codex-rs/mcp-server/src/tldr_tool.rs", "codex-rs/tools/src/tool_spec.rs", "codex-rs/native-tldr/src/tool_api.rs"]
+depends_on = []
+done_when = "`ztldr` 在 MCP 与 tool spec 两个对模型暴露的入口上使用一致且不失真的决策型描述，动作/参数说明不再与真实能力表冲突。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-tools tool_spec && cargo test -p codex-mcp-server tldr_tool"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：代码侧 ztldr description 与参数说明已统一到真实 action surface；本地 spec-reviewer=PASS，code-reviewer=PASS。验证通过：cargo test -p codex-tools tool_spec；cargo test -p codex-mcp-server tldr_tool。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "强化 broad shell search 的 ztldr 拦截提示"
+scope = """
+更新 `codex-rs/core/src/tools/rewrite/shell_search_rewrite.rs` 中的拦截消息，使其不仅提示先用 `ztldr`，还要说明拦截原因、推荐 action、raw grep/read 的直通边界，以及遇到 `degradedMode` / `structuredFailure` 时的解释要求。
+同时补充或更新相邻测试，确保 regex、显式 raw 请求和 factual 查询的直通边界不被误伤。
+"""
+touch_points = ["module:core", "command:ztldr", "command:grep", "command:rg", "codex-rs/core/src/tools/rewrite/shell_search_rewrite.rs"]
+depends_on = ["a1"]
+done_when = "shell 搜索拦截提示具备可决策性与可回退性，且相关测试覆盖结构化拦截与 raw 直通边界。"
+validate_by = "cd /workspace/codex-rs && cargo test -p codex-core shell_search_rewrite"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "已完成：shell 搜索拦截提示已补充拦截原因、raw escape hatch 与 degradedMode/structuredFailure 解释要求；本地 spec-reviewer=PASS，code-reviewer=PASS。验证通过：cargo test -p codex-core shell_search_rewrite。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "同步 ztldr 的 agent-first 与 MCP 文档"
+scope = """
+基于前两项落地后的统一口径，更新 `docs/tldr-agent-first-guidance/tool-description.md` 与 `codex-rs/docs/codex_mcp_interface.md`。
+前者负责说明 agent 何时优先使用 `ztldr`、何时不优先使用、降级/失败时如何表述；后者继续承担接口 contract 说明，但需与代码侧 action、字段和可靠性语义保持一致。
+不把接口文档扩写成新的系统提示，不引入仓库外实现细节。
+"""
+touch_points = ["docs/tldr-agent-first-guidance/tool-description.md", "codex-rs/docs/codex_mcp_interface.md", "command:ztldr"]
+depends_on = ["a1", "a2"]
+done_when = "agent-first 文档与 MCP 接口文档完成同步，分别覆盖路由决策与接口 contract，且不再与代码侧描述冲突。"
+validate_by = "cd /workspace && rg -n \"ztldr|degradedMode|structuredFailure\" docs/tldr-agent-first-guidance/tool-description.md codex-rs/docs/codex_mcp_interface.md"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = """
+已完成：agent-first 与 MCP 文档已同步到当前代码口径；本地 spec-reviewer=PASS，code-reviewer=PASS。验证通过：rg -n "ztldr|degradedMode|structuredFailure" docs/tldr-agent-first-guidance/tool-description.md codex-rs/docs/codex_mcp_interface.md。
+"""

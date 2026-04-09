@@ -80,7 +80,7 @@ pub fn create_tldr_tool() -> ToolSpec {
             "action".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Action to run: tree, context, impact, semantic, ping, warm, snapshot, status, or notify."
+                    "Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, diagnostics, doctor. Daemon: ping, warm, snapshot, status, notify."
                         .to_string(),
                 ),
             },
@@ -98,7 +98,7 @@ pub fn create_tldr_tool() -> ToolSpec {
             "language".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Language for tree/context/impact/semantic: rust, typescript, javascript, python, go, php, or zig."
+                    "Optional language. Supported: rust, c, cpp, csharp, elixir, java, typescript, javascript, lua, luau, python, go, php, ruby, scala, swift, zig."
                         .to_string(),
                 ),
             },
@@ -107,29 +107,32 @@ pub fn create_tldr_tool() -> ToolSpec {
             "symbol".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional symbol name for tree/context/impact queries.".to_string(),
+                    "Optional symbol for structure/context/impact/calls/dead/arch/cfg/dfg/slice."
+                        .to_string(),
                 ),
             },
         ),
         (
             "query".to_string(),
             JsonSchema::String {
-                description: Some("Natural-language query for semantic search.".to_string()),
+                description: Some("Query text for action=search or action=semantic.".to_string()),
             },
         ),
         (
             "path".to_string(),
             JsonSchema::String {
-                description: Some("Path to notify for action=notify.".to_string()),
+                description: Some(
+                    "Path for action=extract/imports/slice, or changed path for action=notify."
+                        .to_string(),
+                ),
             },
         ),
     ]);
 
     ToolSpec::Function(ResponsesApiTool {
         name: "ztldr".to_string(),
-        description:
-            "Structured code context analysis via native-tldr with daemon-first execution."
-                .to_string(),
+        description: "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
+            .to_string(),
         strict: false,
         defer_loading: None,
         parameters: JsonSchema::Object {

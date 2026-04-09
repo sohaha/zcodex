@@ -2,6 +2,7 @@ use super::ConfiguredToolSpec;
 use super::ResponsesApiWebSearchFilters;
 use super::ResponsesApiWebSearchUserLocation;
 use super::ToolSpec;
+use super::create_tldr_tool;
 use crate::AdditionalProperties;
 use crate::FreeformTool;
 use crate::FreeformToolFormat;
@@ -101,6 +102,28 @@ fn configured_tool_spec_name_delegates_to_tool_spec() {
         )
         .name(),
         "lookup_order"
+    );
+}
+
+#[test]
+fn create_tldr_tool_exposes_decision_guidance_and_current_action_surface() {
+    let ToolSpec::Function(tool) = create_tldr_tool() else {
+        panic!("expected function tool");
+    };
+
+    assert_eq!(tool.name, "ztldr");
+    assert_eq!(
+        tool.description,
+        "Use ztldr first for structural code understanding (symbols, calls, impact, semantic code search) before broad grep/read. Prefer raw grep/read for regex or exact text checks. If output includes degradedMode or structuredFailure, report it explicitly."
+    );
+    let JsonSchema::Object { properties, .. } = tool.parameters else {
+        panic!("expected object schema");
+    };
+    assert_eq!(
+        properties["action"],
+        JsonSchema::String {
+            description: Some("Action to run. Analysis/search: structure, search, extract, imports, importers, context, impact, calls, dead, arch, change-impact, cfg, dfg, slice, semantic, diagnostics, doctor. Daemon: ping, warm, snapshot, status, notify.".to_string()),
+        }
     );
 }
 

@@ -11,10 +11,11 @@
 
 优先使用 `ztldr`：
 
-1. 代码结构分析：`structure` / `extract` / `context`
-2. 影响与依赖分析：`impact` / `calls` / `change-impact`
-3. 项目级诊断：`diagnostics` / `doctor`
-4. 语义代码搜索：`semantic`
+1. 代码结构分析：`structure` / `extract` / `context` / `cfg` / `dfg` / `slice`
+2. 影响与依赖分析：`impact` / `calls` / `change-impact` / `dead` / `arch`
+3. 导入关系：`imports` / `importers`
+4. 项目级诊断：`diagnostics` / `doctor`
+5. 代码搜索：`search` / `semantic`
 
 优先用源码/测试核对，而不是只依赖 `ztldr`：
 
@@ -28,6 +29,7 @@
 1. 纯聊天
 2. 纯文本写作
 3. 与代码结构无关的简单问答
+4. 明确是 regex 匹配或逐字文本核对的 raw grep/read
 
 ## 优先规则
 
@@ -42,6 +44,7 @@
 - 结构化代码问题：先 `ztldr`，再决定是否补充文件阅读。
 - 混合问题：先 `ztldr` 建结构，再读源码验事实。
 - 纯事实核对问题：直接读配置、源码、测试或文档。
+- 明确 regex 或逐字文本核对：优先 raw grep/read，不强行走 `ztldr`。
 - 如果已经开始为结构化问题连续 grep/read 多个文件，应该回退并尝试 `ztldr`，除非用户明确要求 raw grep/read。
 
 ## 失败与降级语义

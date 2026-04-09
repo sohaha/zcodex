@@ -150,16 +150,25 @@ Example:
 
 This tool is available only when `codex-mcp-server` is built with `--features tldr`.
 
-The `ztldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Daemon actions still require a live daemon. The current action surface is:
+The `ztldr` tool exposes native code-context analysis with daemon-first execution and local fallback for analysis/semantic actions. Use it first for structural code understanding such as symbols, call relationships, impact analysis, and semantic code search; prefer raw grep/read for regex-heavy or exact-text verification. Daemon actions still require a live daemon. The current action surface is:
 
 - `structure`
+- `search`
 - `extract`
+- `imports`
+- `importers`
 - `context`
 - `impact`
+- `calls`
+- `dead`
+- `arch`
+- `change-impact`
 - `cfg`
 - `dfg`
 - `slice`
 - `semantic`
+- `diagnostics`
+- `doctor`
 - `ping`
 - `warm`
 - `snapshot`
@@ -169,10 +178,11 @@ The `ztldr` tool exposes native code-context analysis with daemon-first executio
 Typical inputs:
 
 - `project` - absolute or relative project root
-- `language` - one of `rust|typescript|javascript|python|go|php|zig`; `extract` can infer from file extension when omitted
-- `symbol` - optional symbol name for `structure|context|impact|cfg|dfg`; required symbol-like target for `slice`
-- `query` - semantic query string for `semantic`
-- `path` - file path for `extract` / `slice` and dirty file path for `notify`
+- `language` - optional language, one of `rust|c|cpp|csharp|elixir|java|typescript|javascript|lua|luau|python|go|php|ruby|scala|swift|zig`; `extract` and `imports` can infer from file extension when omitted
+- `symbol` - optional symbol name for `structure|context|impact|calls|dead|arch|cfg|dfg`; required symbol-like target for `slice`
+- `query` - query string for `search` or `semantic`
+- `module` - required module path for `importers`
+- `path` - file path for `extract|imports|slice` and dirty file path for `notify`
 - `line` - target line for `slice`
 
 For analysis actions, the structured output includes `action`, `project`, `language`, `source`, `message`, `supportLevel`, `fallbackStrategy`, `symbolExtractor`, `relationshipSupport`, and `summary`.

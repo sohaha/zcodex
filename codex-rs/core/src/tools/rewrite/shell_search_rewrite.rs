@@ -63,7 +63,7 @@ pub(crate) fn maybe_intercept_shell_search(
 
     Some(ShellSearchInterception {
         message: format!(
-            "Intercepted broad shell search ({reason}). Use the ztldr tool first for this code-understanding query instead of broad shell grep.\nSuggested ztldr arguments: {arguments}"
+            "Intercepted broad shell search ({reason}). This looks like a structural code-understanding query, so use ztldr first (context for symbols, semantic for natural-language code search) before broad grep.\nPrefer raw grep/read only for regex patterns, exact text checks, or when the user explicitly requests raw search.\nIf ztldr returns degradedMode or structuredFailure, report that explicitly instead of presenting it as normal success.\nSuggested ztldr arguments: {arguments}"
         ),
     })
 }
@@ -334,6 +334,16 @@ mod tests {
                 .contains(r#""symbol":"create_tldr_tool""#)
         );
         assert!(interception.message.contains(r#""language":"rust""#));
+        assert!(
+            interception
+                .message
+                .contains("Prefer raw grep/read only for regex patterns, exact text checks, or when the user explicitly requests raw search.")
+        );
+        assert!(
+            interception
+                .message
+                .contains("If ztldr returns degradedMode or structuredFailure")
+        );
     }
 
     #[test]
