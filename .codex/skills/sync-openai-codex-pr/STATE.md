@@ -2,8 +2,8 @@
 
 - upstream_repo: https://github.com/openai/codex.git
 - upstream_branch: main
-- last_synced_sha: ab6cce62b8a7c12c35a2f91a3373b66d2a828a1d
-- last_synced_at_utc: 2026-04-02T14:19:41Z
+- last_synced_sha: 1de0085418340b3e7f7136cfb5e56b4bebafc584
+- last_synced_at_utc: 2026-04-10T10:42:01Z
 - last_synced_base_branch: web
-- last_sync_commit: 2dcd73acac23f068a2238ddfe7ffb24cf607c18b
-- notes: 同步 openai/codex main (e47ed5e..ab6cce6)，仅 1 个提交 chore: rework state machine further (#16567)。4 文件变更，3 个机械冲突已解决，无用户可见文案需汉化。
+- last_sync_commit: 631b289347cb116d79e22f33b286427a7016e9fa
+- notes: 同步 openai/codex main (ab6cce6..1de0085)，含多模块更新与新 crate 引入，冲突以本地实现优先融合；补齐 core 测试变更与 snapshot，同步后合并至 web。
