@@ -24,6 +24,7 @@
 - 根目录 `justfile` 默认 `working-directory := "codex-rs"`，所以多数命令会自动在 Rust workspace 内运行。
 - `justfile` 为多个 cargo 流程分配独立 `CARGO_HOME` 和 `CARGO_TARGET_DIR`，是仓库官方避免锁竞争的做法。
 - 常规本地开发优先局部测试；只有确实需要时再跑 `just test` 或 Bazel 全量。
+- Clouddev 使用 Rust 工具链镜像时，不要把 `/root/.local/bin` 或 `/root/.local/share/mise` 挂成 `copy-on-write`；这会遮住镜像里预装的 `mise`、`lnk` 和对应工具链。
 
 ## 事实来源
 - `justfile`
