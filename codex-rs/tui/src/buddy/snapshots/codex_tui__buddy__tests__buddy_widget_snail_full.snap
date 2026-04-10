@@ -1,0 +1,9 @@
+---
+source: tui/src/buddy/mod.rs
+assertion_line: 508
+expression: snapshot_buffer(&buf)
+---
+  ^  .--.
+   \ ( @ )
+    ~~~~~
+  Shelly ★ 常 见  蜗 牛  · 坐 立 不 安

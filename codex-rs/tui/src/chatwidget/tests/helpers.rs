@@ -145,10 +145,21 @@ pub(super) async fn make_chatwidget_manual(
     tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
     tokio::sync::mpsc::UnboundedReceiver<Op>,
 ) {
+    let cfg = test_config().await;
+    make_chatwidget_manual_with_config(cfg, model_override).await
+}
+
+pub(super) async fn make_chatwidget_manual_with_config(
+    mut cfg: Config,
+    model_override: Option<&str>,
+) -> (
+    ChatWidget,
+    tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<Op>,
+) {
     let (tx_raw, rx) = unbounded_channel::<AppEvent>();
     let app_event_tx = AppEventSender::new(tx_raw);
     let (op_tx, op_rx) = unbounded_channel::<Op>();
-    let mut cfg = test_config().await;
     let resolved_model = model_override
         .map(str::to_owned)
         .unwrap_or_else(|| codex_core::test_support::get_model_offline(cfg.model.as_deref()));

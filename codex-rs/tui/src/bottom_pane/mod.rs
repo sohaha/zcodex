@@ -1209,6 +1209,15 @@ impl BottomPane {
         result
     }
 
+    pub(crate) fn show_full_buddy(&mut self, seed: &str) -> BuddyCommandResult {
+        let result = self.buddy.show_full(seed);
+        self.request_redraw();
+        if let Some(delay) = self.buddy.next_redraw_in() {
+            self.request_redraw_in(delay);
+        }
+        result
+    }
+
     pub(crate) fn hide_buddy(&mut self) -> BuddyCommandResult {
         let result = self.buddy.hide();
         self.request_redraw();

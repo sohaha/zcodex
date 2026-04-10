@@ -1457,6 +1457,16 @@ impl App {
     }
 
     async fn persist_buddy_visibility(&mut self, visible: bool) {
+        self.persist_buddy_visibility_mode(visible, /*full*/ false)
+            .await;
+    }
+
+    async fn persist_buddy_full_visibility(&mut self) {
+        self.persist_buddy_visibility_mode(/*visible*/ true, /*full*/ true)
+            .await;
+    }
+
+    async fn persist_buddy_visibility_mode(&mut self, visible: bool, full: bool) {
         let segments = if let Some(profile) = self.active_profile.as_deref() {
             vec![
                 "profiles".to_string(),
@@ -1483,7 +1493,11 @@ impl App {
         }
 
         self.config.tui_show_buddy = visible;
-        let result = self.chat_widget.sync_buddy_visibility(visible);
+        let result = if full {
+            self.chat_widget.sync_buddy_full_visibility()
+        } else {
+            self.chat_widget.sync_buddy_visibility(visible)
+        };
         self.chat_widget
             .add_info_message(result.message, result.hint);
         self.chat_widget.submit_op(AppCommand::reload_user_config());
@@ -5244,6 +5258,9 @@ impl App {
             AppEvent::PersistBuddyVisibility(visible) => {
                 self.persist_buddy_visibility(visible).await;
             }
+            AppEvent::PersistBuddyFullVisibility => {
+                self.persist_buddy_full_visibility().await;
+            }
             AppEvent::PersistPlanModeReasoningEffort(effort) => {
                 let profile = self.active_profile.as_deref();
                 let segments = if let Some(profile) = profile {
@@ -8318,6 +8335,34 @@ guardian_approval = true
             .collect::<Vec<_>>()
             .join("\n");
         assert!(rendered.contains("小伙伴回来了：") || rendered.contains("小伙伴已孵化："));
+        assert_eq!(op_rx.try_recv(), Ok(Op::ReloadUserConfig));
+
+        let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
+        assert!(config.contains("show_buddy = true"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn persist_buddy_full_visibility_updates_runtime_and_config() -> Result<()> {
+        let (mut app, mut app_event_rx, mut op_rx) = make_test_app_with_channels().await;
+        let codex_home = tempdir()?;
+        app.config.codex_home = codex_home.path().to_path_buf();
+
+        app.persist_buddy_full_visibility().await;
+
+        assert!(app.config.tui_show_buddy);
+        assert!(app.chat_widget.config_ref().tui_show_buddy);
+        let cell = match app_event_rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+            other => panic!("expected InsertHistoryCell event, got {other:?}"),
+        };
+        let rendered = cell
+            .display_lines(/*width*/ 120)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("小伙伴进入全形象常驻："));
         assert_eq!(op_rx.try_recv(), Ok(Op::ReloadUserConfig));
 
         let config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;

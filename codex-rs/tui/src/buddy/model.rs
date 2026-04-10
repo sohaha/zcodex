@@ -10,6 +10,7 @@ pub(crate) const TICK_DURATION: Duration = Duration::from_millis(500);
 pub(crate) const PET_FEEDBACK_DURATION: Duration = Duration::from_millis(2500);
 pub(crate) const REACTION_DURATION: Duration = Duration::from_millis(10_000);
 pub(crate) const REACTION_FADE_WINDOW: Duration = Duration::from_millis(3_000);
+pub(crate) const FULL_LAYOUT_INTRO_DURATION: Duration = Duration::from_millis(6_000);
 
 const IDLE_SEQUENCE: [BuddyFrame; 12] = [
     BuddyFrame::FidgetUp,
@@ -35,10 +36,12 @@ const DRAGON_NAMES: &[&str] = &["Cobalt", "Rune", "Singe", "Tempest", "Flare"];
 const GHOST_NAMES: &[&str] = &["Wisp", "Velour", "Echo", "Glint", "Murmur"];
 const ROBOT_NAMES: &[&str] = &["Patch", "Relay", "Sprocket", "Mica", "Vector"];
 const DUCK_NAMES: &[&str] = &["Waddle", "Puddle", "Quill", "Sunny", "Pebble"];
+const GOOSE_NAMES: &[&str] = &["Honk", "Marsh", "Brisket", "Gale", "Pond"];
 const BLOB_NAMES: &[&str] = &["Gloop", "Puff", "Melt", "Bloop", "Squish"];
 const OCTOPUS_NAMES: &[&str] = &["Inky", "Drift", "Tangle", "Orbit", "Suction"];
 const PENGUIN_NAMES: &[&str] = &["Frost", "Chill", "Glide", "Waddle", "Icicle"];
 const TURTLE_NAMES: &[&str] = &["Shellby", "Harbor", "Moss", "Drift", "Bramble"];
+const SNAIL_NAMES: &[&str] = &["Shelly", "Dew", "Mallow", "Spiral", "Moss"];
 const AXOLOTL_NAMES: &[&str] = &["Axel", "Gilly", "Ripple", "Bloom", "Nemo"];
 const CAPYBARA_NAMES: &[&str] = &["Capy", "Mocha", "Sundae", "River", "Comfy"];
 const CACTUS_NAMES: &[&str] = &["Spike", "Prickle", "Sage", "Aloe", "Tumble"];
@@ -64,10 +67,12 @@ pub(crate) enum BuddySpecies {
     Ghost,
     Robot,
     Duck,
+    Goose,
     Blob,
     Octopus,
     Penguin,
     Turtle,
+    Snail,
     Axolotl,
     Capybara,
     Cactus,
@@ -87,10 +92,12 @@ impl BuddySpecies {
             Self::Ghost => "幽灵",
             Self::Robot => "机器人",
             Self::Duck => "鸭子",
+            Self::Goose => "鹅",
             Self::Blob => "史莱姆",
             Self::Octopus => "章鱼",
             Self::Penguin => "企鹅",
             Self::Turtle => "乌龟",
+            Self::Snail => "蜗牛",
             Self::Axolotl => "美西螈",
             Self::Capybara => "水豚",
             Self::Cactus => "仙人掌",
@@ -110,10 +117,12 @@ impl BuddySpecies {
             Self::Ghost => GHOST_NAMES,
             Self::Robot => ROBOT_NAMES,
             Self::Duck => DUCK_NAMES,
+            Self::Goose => GOOSE_NAMES,
             Self::Blob => BLOB_NAMES,
             Self::Octopus => OCTOPUS_NAMES,
             Self::Penguin => PENGUIN_NAMES,
             Self::Turtle => TURTLE_NAMES,
+            Self::Snail => SNAIL_NAMES,
             Self::Axolotl => AXOLOTL_NAMES,
             Self::Capybara => CAPYBARA_NAMES,
             Self::Cactus => CACTUS_NAMES,
@@ -133,10 +142,12 @@ impl BuddySpecies {
             Self::Ghost => &["礼貌地飘上来。", "安静地浮现。"],
             Self::Robot => &["清脆启动。", "利落归位。"],
             Self::Duck => &["摇摇摆摆走来。", "嘎一声报到。"],
+            Self::Goose => &["昂着脖子巡了过来。", "像来接管底栏一样落位。"],
             Self::Blob => &["软软滚了过来。", "慢慢摊开坐好。"],
             Self::Octopus => &["触手先到了。", "像进了小潮池。"],
             Self::Penguin => &["带着凉意滑进来。", "拍着翅膀站好。"],
             Self::Turtle => &["慢悠悠挪到位。", "稳稳停好。"],
+            Self::Snail => &["背着壳慢慢滑来。", "安静地把自己停在一边。"],
             Self::Axolotl => &["轻轻漂来。", "摆摆小鳃落座。"],
             Self::Capybara => &["悠然趴下。", "像来晒太阳一样。"],
             Self::Cactus => &["稳稳站好。", "一点也不慌。"],
@@ -156,10 +167,12 @@ impl BuddySpecies {
             Self::Ghost => &["轻轻飘回来。", "一点声响都没有。"],
             Self::Robot => &["精准归位。", "待机后重新上线。"],
             Self::Duck => &["摇摆着回到视野。", "嘎一声催你继续。"],
+            Self::Goose => &["昂首阔步地回来了。", "像准备继续维持秩序。"],
             Self::Blob => &["又软软摊开了。", "回到原位继续待着。"],
             Self::Octopus => &["触手绕了回来。", "稳稳占回位置。"],
             Self::Penguin => &["带着小凉意回来了。", "滑回位，站得很稳。"],
             Self::Turtle => &["慢慢回来。", "壳一落地就稳了。"],
+            Self::Snail => &["慢悠悠滑回来了。", "把壳稳稳停在你身边。"],
             Self::Axolotl => &["轻轻漂回。", "小鳃一动就到你身边。"],
             Self::Capybara => &["淡定地回来了。", "又悠然趴好。"],
             Self::Cactus => &["稳稳站回原位。", "刺一点都没乱。"],
@@ -191,10 +204,20 @@ impl BuddySpecies {
                 "跳了段小小伺服舞。",
             ],
             Self::Duck => &["嘎嘎回应。", "开心地抖抖羽毛。", "贴过来求更多。"],
+            Self::Goose => &[
+                "矜持地点了点头。",
+                "满意地抖了抖翅膀。",
+                "像夸你摸得很专业。",
+            ],
             Self::Blob => &["开心地弹了一下。", "软乎乎贴过来。", "晃了晃像在道谢。"],
             Self::Octopus => &["触手轻轻缠了一下。", "把开心藏在触手里。", "点点头回应你。"],
             Self::Penguin => &["翅膀一摆，心情更好。", "微微摇晃了一下。", "贴过来蹭蹭。"],
             Self::Turtle => &["慢慢靠近。", "眼神放松了些。", "点点头表示认可。"],
+            Self::Snail => &[
+                "触角轻轻探了探。",
+                "慢慢把壳往你这边挪。",
+                "安静地表示很受用。",
+            ],
             Self::Axolotl => &["小鳃抖了抖。", "软软靠近一点。", "漂着转了一圈。"],
             Self::Capybara => &[
                 "舒服地叹了口气。",
@@ -222,10 +245,12 @@ impl BuddySpecies {
             Self::Ghost => &["礼貌地漂在一旁。", "挥了挥半透明小爪子。"],
             Self::Robot => &["进入待机。", "可爱系统在线。"],
             Self::Duck => &["在底栏轻轻晃着。", "嘎地一声招呼你。"],
+            Self::Goose => &["昂着脖子盯着你。", "像在等你通过摸摸申请。"],
             Self::Blob => &["软软地趴着等你。", "缓慢地抖了抖。"],
             Self::Octopus => &["触手轻轻摆着。", "在旁边安静围观。"],
             Self::Penguin => &["带着一点凉意看着你。", "翅膀轻轻拍了拍。"],
             Self::Turtle => &["慢慢观察着。", "壳边轻轻动了下。"],
+            Self::Snail => &["正慢慢探出触角。", "背着壳耐心等你。"],
             Self::Axolotl => &["小鳃轻轻摆动。", "漂在旁边等你。"],
             Self::Capybara => &["淡定地晒着太阳。", "看你忙完再说。"],
             Self::Cactus => &["稳稳立着。", "像个安静小守卫。"],
@@ -473,10 +498,12 @@ impl BuddyBones {
             BuddySpecies::Ghost,
             BuddySpecies::Robot,
             BuddySpecies::Duck,
+            BuddySpecies::Goose,
             BuddySpecies::Blob,
             BuddySpecies::Octopus,
             BuddySpecies::Penguin,
             BuddySpecies::Turtle,
+            BuddySpecies::Snail,
             BuddySpecies::Axolotl,
             BuddySpecies::Capybara,
             BuddySpecies::Cactus,
@@ -582,11 +609,13 @@ impl BuddyReaction {
 #[derive(Clone, Debug)]
 pub(crate) struct BuddyState {
     pub(crate) visible: bool,
+    pub(crate) full_layout: bool,
     pub(crate) pet_count: u32,
     pub(crate) last_action: Option<BuddyLastAction>,
     pub(crate) reaction: Option<BuddyReaction>,
     pub(crate) pet_started_at: Option<Instant>,
     pub(crate) pet_until: Option<Instant>,
+    pub(crate) full_layout_until: Option<Instant>,
     tick_origin: Instant,
 }
 
@@ -594,17 +623,28 @@ impl Default for BuddyState {
     fn default() -> Self {
         Self {
             visible: false,
+            full_layout: false,
             pet_count: 0,
             last_action: None,
             reaction: None,
             pet_started_at: None,
             pet_until: None,
+            full_layout_until: None,
             tick_origin: Instant::now(),
         }
     }
 }
 
 impl BuddyState {
+    pub(crate) fn full_layout_active(&self) -> bool {
+        self.full_layout_active_at(Instant::now())
+    }
+
+    pub(crate) fn full_layout_active_at(&self, now: Instant) -> bool {
+        self.visible
+            && (self.full_layout || self.full_layout_until.is_some_and(|until| now < until))
+    }
+
     pub(crate) fn frame(&self) -> BuddyFrame {
         self.frame_at(Instant::now())
     }
@@ -687,6 +727,7 @@ impl BuddyState {
             [
                 self.active_reaction_at(now).map(|reaction| reaction.until),
                 self.pet_until.filter(|until| now < *until),
+                self.full_layout_until.filter(|until| now < *until),
             ]
             .into_iter()
             .flatten(),

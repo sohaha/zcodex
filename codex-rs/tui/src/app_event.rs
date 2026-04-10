@@ -464,6 +464,9 @@ pub(crate) enum AppEvent {
     /// Persist the buddy visibility preference and sync the live widget state.
     PersistBuddyVisibility(bool),
 
+    /// Persist buddy visibility and switch the live widget into full-layout mode.
+    PersistBuddyFullVisibility,
+
     /// Persist the Plan-mode-specific reasoning effort.
     PersistPlanModeReasoningEffort(Option<ReasoningEffort>),
 

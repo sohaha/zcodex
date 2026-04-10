@@ -1,6 +1,6 @@
 ---
 source: tui/src/buddy/mod.rs
-assertion_line: 519
+assertion_line: 474
 expression: snapshot_buffer(&buf)
 ---
-(o_o) "软 软 滚 了 过 来 。 "
+(o_o) Gloop ★

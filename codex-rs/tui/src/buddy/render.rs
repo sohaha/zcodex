@@ -31,8 +31,8 @@ const PET_HEARTS: [&str; 5] = [
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum BuddyRenderMode {
-    InlineBubble,
-    NoBubble,
+    Compact,
+    Full,
 }
 
 pub(crate) fn full_layout_width() -> u16 {
@@ -50,24 +50,15 @@ pub(crate) fn render_lines(
         return Vec::new();
     }
 
-    if width < FULL_LAYOUT_WIDTH {
+    if mode == BuddyRenderMode::Compact || width < FULL_LAYOUT_WIDTH {
         return vec![render_narrow_line(bones, name, state, width)];
     }
 
-    render_wide_lines(bones, name, state, width, mode)
+    render_wide_lines(bones, name, state)
 }
 
-fn render_wide_lines(
-    bones: &BuddyBones,
-    name: &str,
-    state: &BuddyState,
-    width: u16,
-    mode: BuddyRenderMode,
-) -> Vec<Line<'static>> {
+fn render_wide_lines(bones: &BuddyBones, name: &str, state: &BuddyState) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    if mode == BuddyRenderMode::InlineBubble {
-        lines.extend(render_bubble_lines(bones, state, width));
-    }
     if let Some(frame) = state.pet_burst_frame() {
         lines.push(Line::from(vec![
             "  ".into(),
@@ -249,10 +240,12 @@ fn sprite_lines(bones: &BuddyBones, frame: BuddyFrame) -> Vec<String> {
         BuddySpecies::Ghost => ghost_lines(bones.eye, frame),
         BuddySpecies::Robot => robot_lines(bones.eye, frame),
         BuddySpecies::Duck => duck_lines(bones.eye, frame),
+        BuddySpecies::Goose => goose_lines(bones.eye, frame),
         BuddySpecies::Blob => blob_lines(bones.eye, frame),
         BuddySpecies::Octopus => octopus_lines(bones.eye, frame),
         BuddySpecies::Penguin => penguin_lines(bones.eye, frame),
         BuddySpecies::Turtle => turtle_lines(bones.eye, frame),
+        BuddySpecies::Snail => snail_lines(bones.eye, frame),
         BuddySpecies::Axolotl => axolotl_lines(bones.eye, frame),
         BuddySpecies::Capybara => capybara_lines(bones.eye, frame),
         BuddySpecies::Cactus => cactus_lines(bones.eye, frame),
@@ -383,6 +376,15 @@ fn duck_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
     ]
 }
 
+fn goose_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset(format!("  ({eye}>>)  "), frame),
+        apply_offset("   ||     ".to_string(), frame),
+        apply_offset(" _(__)_   ".to_string(), frame),
+    ]
+}
+
 fn blob_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
     let eye = eye_glyph(eye, frame);
     [
@@ -416,6 +418,15 @@ fn turtle_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
         apply_offset("  _--_   ".to_string(), frame),
         apply_offset(format!(" ( {eye}_{eye} ) "), frame),
         apply_offset(" /____\\ ".to_string(), frame),
+    ]
+}
+
+fn snail_lines(eye: BuddyEye, frame: BuddyFrame) -> [String; 3] {
+    let eye = eye_glyph(eye, frame);
+    [
+        apply_offset(format!(" {eye}  .--.  "), frame),
+        apply_offset("  \\ ( @ ) ".to_string(), frame),
+        apply_offset("   ~~~~~  ".to_string(), frame),
     ]
 }
 
@@ -494,6 +505,9 @@ fn mini_face(species: BuddySpecies, frame: BuddyFrame) -> &'static str {
         (BuddySpecies::Duck, BuddyFrame::Blink) => "(->)",
         (BuddySpecies::Duck, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^>)",
         (BuddySpecies::Duck, _) => "(o>)",
+        (BuddySpecies::Goose, BuddyFrame::Blink) => "(->>)",
+        (BuddySpecies::Goose, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^>>)",
+        (BuddySpecies::Goose, _) => "(o>>)",
         (BuddySpecies::Blob, BuddyFrame::Blink) => "(-_-)",
         (BuddySpecies::Blob, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "(^_^)",
         (BuddySpecies::Blob, _) => "(o_o)",
@@ -506,6 +520,9 @@ fn mini_face(species: BuddySpecies, frame: BuddyFrame) -> &'static str {
         (BuddySpecies::Turtle, BuddyFrame::Blink) => "[-_-]",
         (BuddySpecies::Turtle, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "[^_^]",
         (BuddySpecies::Turtle, _) => "[o_o]",
+        (BuddySpecies::Snail, BuddyFrame::Blink) => "-(@)",
+        (BuddySpecies::Snail, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "^(@)",
+        (BuddySpecies::Snail, _) => "o(@)",
         (BuddySpecies::Axolotl, BuddyFrame::Blink) => "} -.- {",
         (BuddySpecies::Axolotl, BuddyFrame::ExcitedA | BuddyFrame::ExcitedB) => "}^.^{",
         (BuddySpecies::Axolotl, _) => "}o.o{",

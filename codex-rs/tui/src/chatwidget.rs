@@ -5470,7 +5470,7 @@ impl ChatWidget {
 
     fn show_buddy_help(&mut self) {
         self.add_info_message(
-            "小伙伴命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
+            "小伙伴命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
             Some("小伙伴会根据当前 Codex home 与项目路径稳定生成。".to_string()),
         );
     }
@@ -5488,12 +5488,20 @@ impl ChatWidget {
                     .send(AppEvent::PersistBuddyVisibility(/*visible*/ true));
                 return;
             }
+            "full" => {
+                self.last_buddy_status_message = None;
+                self.app_event_tx.send(AppEvent::PersistBuddyFullVisibility);
+                return;
+            }
             "pet" => {
                 if !self.config.tui_show_buddy {
                     self.last_buddy_status_message = None;
                     self.add_info_message(
                         "小伙伴现在藏起来了。".to_string(),
-                        Some("先用 `/buddy show` 让它回来。".to_string()),
+                        Some(
+                            "先用 `/buddy show` 让它回来，或用 `/buddy full` 进入全形象常驻。"
+                                .to_string(),
+                        ),
                     );
                     return;
                 }
@@ -5511,7 +5519,7 @@ impl ChatWidget {
                 self.bottom_pane.buddy_status(&seed)
             }
             _ => {
-                self.add_error_message("用法：/buddy [show|pet|hide|status]".to_string());
+                self.add_error_message("用法：/buddy [show|full|pet|hide|status]".to_string());
                 return;
             }
         };
@@ -9504,6 +9512,14 @@ impl ChatWidget {
         }
         let result = self.bottom_pane.hide_buddy();
         self.config.tui_show_buddy = false;
+        result
+    }
+
+    pub(crate) fn sync_buddy_full_visibility(&mut self) -> crate::buddy::BuddyCommandResult {
+        self.last_buddy_status_message = None;
+        let seed = self.buddy_seed();
+        let result = self.bottom_pane.show_full_buddy(&seed);
+        self.config.tui_show_buddy = true;
         result
     }
 

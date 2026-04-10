@@ -16,6 +16,7 @@ use model::BuddyLastAction;
 use model::BuddyReaction;
 use model::BuddyReactionKind;
 use model::BuddyState;
+use model::FULL_LAYOUT_INTRO_DURATION;
 use model::PET_FEEDBACK_DURATION;
 use model::REACTION_DURATION;
 
@@ -45,9 +46,9 @@ impl BuddyWidget {
     pub(crate) fn ensure_visible(&mut self, seed: &str) {
         let was_hatched = self.bones.is_some();
         let bones = self.ensure_bones(seed).clone();
-        self.state.visible = true;
+        let now = Instant::now();
+        self.show_temporary_full(now);
         if !was_hatched && self.state.reaction.is_none() {
-            let now = Instant::now();
             self.state.reaction = Some(BuddyReaction {
                 kind: BuddyReactionKind::Teaser,
                 text: reaction_text(&bones, BuddyReactionKind::Teaser, /*index*/ 0).to_string(),
@@ -61,7 +62,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
-        self.state.visible = true;
+        self.show_temporary_full(now);
         let reaction_kind = if was_hatched {
             BuddyReactionKind::Return
         } else {
@@ -98,6 +99,42 @@ impl BuddyWidget {
         }
     }
 
+    pub(crate) fn show_full(&mut self, seed: &str) -> BuddyCommandResult {
+        let was_hatched = self.bones.is_some();
+        let bones = self.ensure_bones(seed).clone();
+        let name = self.display_name(&bones).to_string();
+        let now = Instant::now();
+        self.state.visible = true;
+        self.state.full_layout = true;
+        self.state.full_layout_until = None;
+        let reaction_kind = if was_hatched {
+            BuddyReactionKind::Return
+        } else {
+            BuddyReactionKind::Hatch
+        };
+        let reaction_text = reaction_text(&bones, reaction_kind, self.state.pet_count);
+        self.state.reaction = Some(BuddyReaction {
+            kind: reaction_kind,
+            text: reaction_text.to_string(),
+            until: now + REACTION_DURATION,
+        });
+        self.state.last_action = Some(if was_hatched {
+            BuddyLastAction::Reappeared
+        } else {
+            BuddyLastAction::Hatched
+        });
+
+        BuddyCommandResult {
+            message: format!(
+                "小伙伴进入全形象常驻：{}。",
+                short_summary_with_name(&bones, &name)
+            ),
+            hint: Some(
+                "使用 `/buddy hide` 完全隐藏，或用 `/buddy status` 查看当前状态。".to_string(),
+            ),
+        }
+    }
+
     pub(crate) fn hide(&mut self) -> BuddyCommandResult {
         let Some(bones) = self.bones.as_ref() else {
             return BuddyCommandResult {
@@ -107,6 +144,8 @@ impl BuddyWidget {
         };
         let name = self.display_name(bones).to_string();
         self.state.visible = false;
+        self.state.full_layout = false;
+        self.state.full_layout_until = None;
         self.state.pet_started_at = None;
         self.state.pet_until = None;
         self.state.reaction = None;
@@ -121,7 +160,7 @@ impl BuddyWidget {
         let bones = self.ensure_bones(seed).clone();
         let name = self.display_name(&bones).to_string();
         let now = Instant::now();
-        self.state.visible = true;
+        self.show_temporary_full(now);
         self.state.pet_count += 1;
         self.state.pet_started_at = Some(now);
         self.state.pet_until = Some(now + PET_FEEDBACK_DURATION);
@@ -169,6 +208,11 @@ impl BuddyWidget {
         } else {
             "隐藏"
         };
+        let display_mode = if self.state.full_layout_active() {
+            "全形象"
+        } else {
+            "紧凑"
+        };
         let shiny = if bones.shiny { "，闪亮" } else { "" };
         let personality = self
             .soul
@@ -176,7 +220,7 @@ impl BuddyWidget {
             .map(|soul| format!(" 性格：{}。", soul.personality))
             .unwrap_or_default();
         let message = format!(
-            "小伙伴状态：{} {}（{visibility}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
+            "小伙伴状态：{} {}（{visibility}，{display_mode}{shiny}，{}，{}眼，心情{mood}，抚摸 {}）。峰值属性：{} {}。{personality}",
             short_summary_with_name(bones, name),
             bones.rarity.stars(),
             bones.hat.label(),
@@ -188,7 +232,7 @@ impl BuddyWidget {
         BuddyCommandResult {
             message,
             hint: Some(
-                "命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
+                "命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string(),
             ),
         }
     }
@@ -206,10 +250,11 @@ impl BuddyWidget {
             return Vec::new();
         }
         let name = self.display_name(bones);
-        let render_mode = if width < render::full_layout_width() {
-            render::BuddyRenderMode::InlineBubble
+        let render_mode = if self.state.full_layout_active() && width >= render::full_layout_width()
+        {
+            render::BuddyRenderMode::Full
         } else {
-            render::BuddyRenderMode::NoBubble
+            render::BuddyRenderMode::Compact
         };
         render::render_lines(bones, name, &self.state, width, render_mode)
     }
@@ -218,7 +263,10 @@ impl BuddyWidget {
         let Some(bones) = self.bones.as_ref() else {
             return Vec::new();
         };
-        if !self.is_visible() || width < render::full_layout_width() {
+        if !self.is_visible()
+            || !self.state.full_layout_active()
+            || width < render::full_layout_width()
+        {
             return Vec::new();
         }
         render::render_bubble_lines(bones, &self.state, width)
@@ -256,6 +304,16 @@ impl BuddyWidget {
             .as_ref()
             .map(|soul| soul.name.as_str())
             .unwrap_or(bones.name.as_str())
+    }
+
+    fn show_temporary_full(&mut self, now: Instant) {
+        self.state.visible = true;
+        if self.state.full_layout {
+            self.state.full_layout_until = None;
+            return;
+        }
+        self.state.full_layout = false;
+        self.state.full_layout_until = Some(now + FULL_LAYOUT_INTRO_DURATION);
     }
 }
 
@@ -363,7 +421,10 @@ mod tests {
         assert!(status.message.contains("可见"));
         assert_eq!(
             status.hint,
-            Some("命令：`/buddy show`、`/buddy pet`、`/buddy hide`、`/buddy status`。".to_string())
+            Some(
+                "命令：`/buddy show`、`/buddy full`、`/buddy pet`、`/buddy hide`、`/buddy status`。"
+                    .to_string()
+            )
         );
     }
 
@@ -399,6 +460,60 @@ mod tests {
         let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
         buddy.render(Rect::new(0, 0, width, height), &mut buf);
         assert_snapshot!("buddy_widget_startup_teaser", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn wide_buddy_compacts_after_intro_expires() {
+        let mut buddy = BuddyWidget::new();
+        buddy.ensure_visible("codex-home::project");
+        buddy.state.full_layout_until = Some(Instant::now() - model::TICK_DURATION);
+        buddy.state.reaction = None;
+
+        let width = 60;
+        let height = buddy.desired_height(width);
+        assert_eq!(height, 1);
+        assert_eq!(BuddyBubble::new(&buddy).desired_height(width), 0);
+
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!(
+            "buddy_widget_compact_after_intro_wide",
+            snapshot_buffer(&buf)
+        );
+    }
+
+    #[test]
+    fn goose_buddy_full_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let mut bones = BuddyBones::from_seed("codex-goose::project");
+        bones.species = model::BuddySpecies::Goose;
+        bones.name = "Honk".to_string();
+        buddy.bones = Some(bones);
+        buddy.state.visible = true;
+        buddy.state.full_layout = true;
+
+        let width = 60;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_goose_full", snapshot_buffer(&buf));
+    }
+
+    #[test]
+    fn snail_buddy_full_snapshot() {
+        let mut buddy = BuddyWidget::new();
+        let mut bones = BuddyBones::from_seed("codex-snail::project");
+        bones.species = model::BuddySpecies::Snail;
+        bones.name = "Shelly".to_string();
+        buddy.bones = Some(bones);
+        buddy.state.visible = true;
+        buddy.state.full_layout = true;
+
+        let width = 60;
+        let height = buddy.desired_height(width);
+        let mut buf = Buffer::empty(Rect::new(0, 0, width, height));
+        buddy.render(Rect::new(0, 0, width, height), &mut buf);
+        assert_snapshot!("buddy_widget_snail_full", snapshot_buffer(&buf));
     }
 
     #[test]

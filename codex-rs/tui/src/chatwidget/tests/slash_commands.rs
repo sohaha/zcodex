@@ -9,6 +9,17 @@ async fn buddy_is_visible_by_default() {
 }
 
 #[tokio::test]
+async fn buddy_stays_hidden_when_config_disables_visibility() {
+    let mut config = test_config().await;
+    config.tui_show_buddy = false;
+
+    let (chat, _rx, _op_rx) =
+        make_chatwidget_manual_with_config(config, /*model_override*/ None).await;
+
+    assert!(!chat.bottom_pane.buddy_visible());
+}
+
+#[tokio::test]
 async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -266,6 +277,16 @@ async fn slash_buddy_show_requests_persistent_visibility_update() {
 }
 
 #[tokio::test]
+async fn slash_buddy_full_requests_persistent_full_visibility_update() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::Buddy, "full".to_string(), Vec::new());
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::PersistBuddyFullVisibility));
+    assert_matches!(rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
 async fn slash_buddy_hide_requests_persistent_visibility_update() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
@@ -292,7 +313,7 @@ async fn slash_buddy_pet_requires_show_when_hidden() {
         "unexpected hidden buddy message: {rendered:?}"
     );
     assert!(
-        rendered.contains("先用 `/buddy show` 让它回来。"),
+        rendered.contains("先用 `/buddy show` 让它回来，或用 `/buddy full` 进入全形象常驻。"),
         "unexpected hidden buddy hint: {rendered:?}"
     );
 }
@@ -326,7 +347,7 @@ async fn slash_buddy_rejects_unknown_subcommand() {
     assert_eq!(cells.len(), 1, "expected one error message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("用法：/buddy [show|pet|hide|status]"),
+        rendered.contains("用法：/buddy [show|full|pet|hide|status]"),
         "unexpected error message: {rendered:?}"
     );
 }
