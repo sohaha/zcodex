@@ -1,8 +1,7 @@
 <#
 Usage:
   irm https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.ps1 | iex
-  & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.ps1'))) -Version latest
-  $env:CODEX_INSTALL_DIR = "C:\path\to\bin"; & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.ps1'))) -Version latest
+  $env:CODEX_INSTALL_DIR = "C:\path\to\bin"; irm https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.ps1 | iex
 Script source:
   https://github.com/sohaha/zcodex/scripts/install
 #>
