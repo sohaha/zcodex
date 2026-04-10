@@ -33,8 +33,8 @@ pub enum SlashCommand {
     Collab,
     Agent,
     // Undo,
-    Diff,
     Copy,
+    Diff,
     Mention,
     Status,
     DebugConfig,
@@ -82,8 +82,8 @@ impl SlashCommand {
             SlashCommand::Fork => "复制当前聊天",
             // SlashCommand::Undo => "ask Codex to undo a turn",
             SlashCommand::Quit | SlashCommand::Exit => "退出 Codex",
-            SlashCommand::Diff => "显示 git diff（包括未跟踪文件）",
             SlashCommand::Copy => "将最新 Codex 输出复制到剪贴板",
+            SlashCommand::Diff => "显示 git diff（包括未跟踪文件）",
             SlashCommand::Mention => "提及一个文件",
             SlashCommand::Skills => "使用技能来提升 Codex 执行特定任务的能力",
             SlashCommand::Status => "显示当前会话配置和 Token 用量",
@@ -132,6 +132,7 @@ impl SlashCommand {
                 | SlashCommand::Rename
                 | SlashCommand::Plan
                 | SlashCommand::Fast
+                | SlashCommand::Resume
                 | SlashCommand::SandboxReadRoot
                 | SlashCommand::Buddy
         )

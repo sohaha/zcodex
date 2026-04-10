@@ -1956,6 +1956,7 @@ core_memory_uris = [
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
+            responsesapi_client_metadata: None,
         })
         .await?;
 
@@ -2114,6 +2115,7 @@ async fn zmemory_function_workspace_view_uses_project_path_after_turn_cwd_overri
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
+            responsesapi_client_metadata: None,
         })
         .await?;
 
@@ -2437,6 +2439,7 @@ async fn zmemory_proactive_capture_uses_project_path_after_turn_cwd_override() -
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
+            responsesapi_client_metadata: None,
         })
         .await?;
 

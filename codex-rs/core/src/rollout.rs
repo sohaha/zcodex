@@ -9,9 +9,9 @@ pub use codex_rollout::append_thread_name;
 pub use codex_rollout::find_archived_thread_path_by_id_str;
 #[deprecated(note = "use find_thread_path_by_id_str")]
 pub use codex_rollout::find_conversation_path_by_id_str;
+pub use codex_rollout::find_thread_meta_by_name_str;
 pub use codex_rollout::find_thread_name_by_id;
 pub use codex_rollout::find_thread_path_by_id_str;
-pub use codex_rollout::find_thread_path_by_name_str;
 pub use codex_rollout::rollout_date_parts;
 
 impl codex_rollout::RolloutConfigView for Config {
@@ -55,11 +55,6 @@ pub(crate) mod policy {
 
 pub(crate) mod recorder {
     pub use codex_rollout::RolloutRecorder;
-}
-
-pub(crate) mod session_index {
-    pub use codex_rollout::append_thread_name;
-    pub use codex_rollout::find_thread_name_by_id;
 }
 
 pub(crate) use crate::session_rollout_init_error::map_session_init_error;

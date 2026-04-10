@@ -12,65 +12,57 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
     let option_props = BTreeMap::from([
         (
             "label".to_string(),
-            JsonSchema::String {
-                description: Some("展示给用户的标签（1 到 5 个词）。".to_string()),
-            },
+            JsonSchema::string(Some("展示给用户的标签（1 到 5 个词）。".to_string())),
         ),
         (
             "description".to_string(),
-            JsonSchema::String {
-                description: Some("一句话说明选中该项时的影响或取舍。".to_string()),
-            },
+            JsonSchema::string(Some("一句话说明选中该项时的影响或取舍。".to_string())),
         ),
     ]);
 
-    let options_schema = JsonSchema::Array {
-        description: Some(
+    let options_schema = JsonSchema::array(
+        JsonSchema::object(
+            option_props,
+            Some(vec!["label".to_string(), "description".to_string()]),
+            Some(false.into()),
+        ),
+        Some(
             "提供 2 到 3 个互斥选项。把推荐选项放在最前面，并在标签后加上“（推荐）”。不要在这里加入“其他”选项；客户端会自动补一个可自由填写的“其他”。"
                 .to_string(),
         ),
-        items: Box::new(JsonSchema::Object {
-            properties: option_props,
-            required: Some(vec!["label".to_string(), "description".to_string()]),
-            additional_properties: Some(false.into()),
-        }),
-    };
+    );
 
     let question_props = BTreeMap::from([
         (
             "id".to_string(),
-            JsonSchema::String {
-                description: Some("用于映射答案的稳定标识（snake_case）。".to_string()),
-            },
+            JsonSchema::string(Some("用于映射答案的稳定标识（snake_case）。".to_string())),
         ),
         (
             "header".to_string(),
-            JsonSchema::String {
-                description: Some("显示在界面里的简短标题（不超过 12 个字符）。".to_string()),
-            },
+            JsonSchema::string(Some(
+                "显示在界面里的简短标题（不超过 12 个字符）。".to_string(),
+            )),
         ),
         (
             "question".to_string(),
-            JsonSchema::String {
-                description: Some("展示给用户的单句提问。".to_string()),
-            },
+            JsonSchema::string(Some("展示给用户的单句提问。".to_string())),
         ),
         ("options".to_string(), options_schema),
     ]);
 
-    let questions_schema = JsonSchema::Array {
-        description: Some("展示给用户的问题列表。建议 1 个，最多不超过 3 个。".to_string()),
-        items: Box::new(JsonSchema::Object {
-            properties: question_props,
-            required: Some(vec![
+    let questions_schema = JsonSchema::array(
+        JsonSchema::object(
+            question_props,
+            Some(vec![
                 "id".to_string(),
                 "header".to_string(),
                 "question".to_string(),
                 "options".to_string(),
             ]),
-            additional_properties: Some(false.into()),
-        }),
-    };
+            Some(false.into()),
+        ),
+        Some("展示给用户的问题列表。建议 1 个，最多不超过 3 个。".to_string()),
+    );
 
     let properties = BTreeMap::from([("questions".to_string(), questions_schema)]);
 
@@ -79,11 +71,11 @@ pub fn create_request_user_input_tool(description: String) -> ToolSpec {
         description,
         strict: false,
         defer_loading: None,
-        parameters: JsonSchema::Object {
+        parameters: JsonSchema::object(
             properties,
-            required: Some(vec!["questions".to_string()]),
-            additional_properties: Some(false.into()),
-        },
+            Some(vec!["questions".to_string()]),
+            Some(false.into()),
+        ),
         output_schema: None,
     })
 }

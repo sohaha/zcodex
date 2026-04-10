@@ -5,6 +5,7 @@
 // the TUI or the tracing stack).
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 
+mod account;
 mod apply_patch;
 mod apps;
 mod arc_monitor;
@@ -14,6 +15,7 @@ mod client_common;
 pub mod codex;
 mod realtime_context;
 mod realtime_conversation;
+mod realtime_prompt;
 pub use codex::SteerInputError;
 mod codex_thread;
 mod compact_remote;
@@ -45,12 +47,14 @@ pub mod landlock;
 pub mod mcp;
 mod mcp_skill_dependencies;
 mod mcp_tool_approval_templates;
+mod mcp_tool_exposure;
 mod network_policy_decision;
 pub mod network_proxy_loader;
 mod original_image_detail;
 pub use codex_mcp::MCP_SANDBOX_STATE_CAPABILITY;
 pub use codex_mcp::MCP_SANDBOX_STATE_METHOD;
 pub use codex_mcp::SandboxState;
+mod mcp_openai_file;
 mod mcp_tool_call;
 mod memories;
 pub mod mention_syntax;
@@ -96,7 +100,13 @@ mod stream_events_utils;
 pub mod test_support;
 mod unified_exec;
 pub mod windows_sandbox;
+pub use account::resolve_workspace_role_and_owner_for_auth;
+pub use account::send_add_credits_nudge_email;
 pub use client::X_RESPONSESAPI_INCLUDE_TIMING_METRICS_HEADER;
+pub use codex_account::AddCreditsNudgeEmailStatus;
+pub use codex_account::SendAddCreditsNudgeEmailError;
+pub use codex_account::WorkspaceOwnership;
+pub use codex_account::WorkspaceRole;
 pub use codex_model_provider_info as model_provider_info;
 pub use codex_model_provider_info::DEFAULT_OPENAI_BASE_URL;
 pub use codex_model_provider_info::ModelProviderInfo;
@@ -157,9 +167,9 @@ pub use rollout::append_thread_name;
 pub use rollout::find_archived_thread_path_by_id_str;
 #[deprecated(note = "use find_thread_path_by_id_str")]
 pub use rollout::find_conversation_path_by_id_str;
+pub use rollout::find_thread_meta_by_name_str;
 pub use rollout::find_thread_name_by_id;
 pub use rollout::find_thread_path_by_id_str;
-pub use rollout::find_thread_path_by_name_str;
 pub use rollout::policy::EventPersistenceMode;
 pub use rollout::rollout_date_parts;
 mod function_tool;

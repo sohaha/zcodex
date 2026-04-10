@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::Prompt;
+use crate::buddy::maybe_inject_companion_intro;
 use crate::client::ModelClientSession;
 use crate::client_common::ResponseEvent;
 #[cfg(test)]
@@ -121,9 +122,11 @@ async fn run_compact_task_inner(
             .clone()
             .for_prompt(&turn_context.model_info.input_modalities);
         let turn_input_len = turn_input.len();
+        let mut base_instructions = sess.get_base_instructions().await;
+        maybe_inject_companion_intro(&turn_context.config, &mut base_instructions);
         let prompt = Prompt {
             input: turn_input,
-            base_instructions: sess.get_base_instructions().await,
+            base_instructions,
             personality: turn_context.personality,
             ..Default::default()
         };

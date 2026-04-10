@@ -1,4 +1,5 @@
 use super::*;
+use crate::JsonSchema;
 use codex_protocol::config_types::ModeKind;
 use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
@@ -12,91 +13,76 @@ fn request_user_input_tool_includes_questions_schema() {
             description: "Ask the user to choose.".to_string(),
             strict: false,
             defer_loading: None,
-            parameters: JsonSchema::Object {
-                properties: BTreeMap::from([(
+            parameters: JsonSchema::object(BTreeMap::from([(
                     "questions".to_string(),
-                    JsonSchema::Array {
-                        description: Some(
-                            "展示给用户的问题列表。建议 1 个，最多不超过 3 个。".to_string(),
-                        ),
-                        items: Box::new(JsonSchema::Object {
-                            properties: BTreeMap::from([
+                    JsonSchema::array(
+                        JsonSchema::object(
+                            BTreeMap::from([
                                 (
                                     "header".to_string(),
-                                    JsonSchema::String {
-                                        description: Some(
-                                            "显示在界面里的简短标题（不超过 12 个字符）。"
-                                                .to_string(),
-                                        ),
-                                    },
+                                    JsonSchema::string(Some(
+                                        "显示在界面里的简短标题（不超过 12 个字符）。"
+                                            .to_string(),
+                                    )),
                                 ),
                                 (
                                     "id".to_string(),
-                                    JsonSchema::String {
-                                        description: Some(
-                                            "用于映射答案的稳定标识（snake_case）。"
-                                                .to_string(),
-                                        ),
-                                    },
+                                    JsonSchema::string(Some(
+                                        "用于映射答案的稳定标识（snake_case）。".to_string(),
+                                    )),
                                 ),
                                 (
                                     "options".to_string(),
-                                    JsonSchema::Array {
-                                        description: Some(
-                                            "提供 2 到 3 个互斥选项。把推荐选项放在最前面，并在标签后加上“（推荐）”。不要在这里加入“其他”选项；客户端会自动补一个可自由填写的“其他”。"
-                                                .to_string(),
-                                        ),
-                                        items: Box::new(JsonSchema::Object {
-                                            properties: BTreeMap::from([
+                                    JsonSchema::array(
+                                        JsonSchema::object(
+                                            BTreeMap::from([
                                                 (
                                                     "description".to_string(),
-                                                    JsonSchema::String {
-                                                        description: Some(
-                                                            "一句话说明选中该项时的影响或取舍。"
-                                                                .to_string(),
-                                                        ),
-                                                    },
+                                                    JsonSchema::string(Some(
+                                                        "一句话说明选中该项时的影响或取舍。"
+                                                            .to_string(),
+                                                    )),
                                                 ),
                                                 (
                                                     "label".to_string(),
-                                                    JsonSchema::String {
-                                                        description: Some(
-                                                            "展示给用户的标签（1 到 5 个词）。"
-                                                                .to_string(),
-                                                        ),
-                                                    },
+                                                    JsonSchema::string(Some(
+                                                        "展示给用户的标签（1 到 5 个词）。"
+                                                            .to_string(),
+                                                    )),
                                                 ),
                                             ]),
-                                            required: Some(vec![
+                                            Some(vec![
                                                 "label".to_string(),
                                                 "description".to_string(),
                                             ]),
-                                            additional_properties: Some(false.into()),
-                                        }),
-                                    },
+                                            Some(false.into()),
+                                        ),
+                                        Some(
+                                            "提供 2 到 3 个互斥选项。把推荐选项放在最前面，并在标签后加上“（推荐）”。不要在这里加入“其他”选项；客户端会自动补一个可自由填写的“其他”。"
+                                                .to_string(),
+                                        ),
+                                    ),
                                 ),
                                 (
                                     "question".to_string(),
-                                    JsonSchema::String {
-                                        description: Some(
-                                            "展示给用户的单句提问。".to_string(),
-                                        ),
-                                    },
+                                    JsonSchema::string(Some(
+                                        "展示给用户的单句提问。".to_string(),
+                                    )),
                                 ),
                             ]),
-                            required: Some(vec![
+                            Some(vec![
                                 "id".to_string(),
                                 "header".to_string(),
                                 "question".to_string(),
                                 "options".to_string(),
                             ]),
-                            additional_properties: Some(false.into()),
-                        }),
-                    },
-                )]),
-                required: Some(vec!["questions".to_string()]),
-                additional_properties: Some(false.into()),
-            },
+                            Some(false.into()),
+                        ),
+                        Some(
+                            "展示给用户的问题列表。建议 1 个，最多不超过 3 个。".to_string(),
+                        ),
+                    ),
+                )]), Some(vec!["questions".to_string()]), Some(false.into())),
             output_schema: None,
         })
     );

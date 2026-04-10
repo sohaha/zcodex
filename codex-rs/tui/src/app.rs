@@ -47,6 +47,7 @@ use crate::read_session_model;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
+use crate::resume_picker::SessionTarget;
 #[cfg(test)]
 use crate::test_support::PathBufExt;
 use crate::tui;
@@ -96,6 +97,7 @@ use codex_core::message_history::append_entry as append_message_history_entry;
 use codex_core::message_history::lookup as lookup_message_history_entry;
 #[cfg(target_os = "windows")]
 use codex_core::windows_sandbox::WindowsSandboxLevelExt;
+use codex_exec_server::EnvironmentManager;
 use codex_features::Feature;
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use codex_models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
@@ -535,6 +537,9 @@ impl ThreadEventStore {
             ThreadBufferedEvent::Request(_)
                 | ThreadBufferedEvent::Notification(ServerNotification::HookStarted(_))
                 | ThreadBufferedEvent::Notification(ServerNotification::HookCompleted(_))
+                | ThreadBufferedEvent::Notification(
+                    ServerNotification::AddCreditsNudgeEmailCompleted(_),
+                )
                 | ThreadBufferedEvent::FeedbackSubmission(_)
         )
     }
@@ -979,6 +984,7 @@ pub(crate) struct App {
     pub(crate) backtrack_render_pending: bool,
     pub(crate) feedback: codex_feedback::CodexFeedback,
     feedback_audience: FeedbackAudience,
+    environment_manager: Arc<EnvironmentManager>,
     remote_app_server_url: Option<String>,
     remote_app_server_auth_token: Option<String>,
     /// Set when the user confirms an update; propagated on exit.
@@ -1093,6 +1099,8 @@ impl App {
             feedback: self.feedback.clone(),
             is_first_run: false,
             status_account_display: self.chat_widget.status_account_display().cloned(),
+            initial_workspace_role: self.chat_widget.current_workspace_role(),
+            initial_is_workspace_owner: self.chat_widget.current_is_workspace_owner(),
             initial_plan_type: self.chat_widget.current_plan_type(),
             model: Some(self.chat_widget.current_model().to_string()),
             startup_tooltip_override: None,
@@ -1733,6 +1741,21 @@ impl App {
     /// recently began switching.
     fn current_displayed_thread_id(&self) -> Option<ThreadId> {
         self.active_thread_id.or(self.chat_widget.thread_id())
+    }
+
+    fn ignore_same_thread_resume(
+        &mut self,
+        target_session: &crate::resume_picker::SessionTarget,
+    ) -> bool {
+        if self.active_thread_id != Some(target_session.thread_id) {
+            return false;
+        };
+
+        self.chat_widget.add_info_message(
+            format!("Already viewing {}.", target_session.display_label()),
+            /*hint*/ None,
+        );
+        true
     }
 
     /// Mirrors the visible thread into the contextual footer row.
@@ -2446,6 +2469,10 @@ impl App {
                 app_server
                     .thread_shell_command(thread_id, command.to_string())
                     .await?;
+                Ok(true)
+            }
+            AppCommandView::SendAddCreditsNudgeEmail => {
+                app_server.thread_add_credits_nudge_email(thread_id).await?;
                 Ok(true)
             }
             AppCommandView::ReloadUserConfig => {
@@ -3615,13 +3642,17 @@ impl App {
         should_prompt_windows_sandbox_nux_at_startup: bool,
         remote_app_server_url: Option<String>,
         remote_app_server_auth_token: Option<String>,
+        environment_manager: Arc<EnvironmentManager>,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
         let app_event_tx = AppEventSender::new(app_event_tx);
         emit_project_config_warnings(&app_event_tx, &config);
         emit_system_bwrap_warning(&app_event_tx, &config);
-        tui.set_notification_method(config.tui_notification_method);
+        tui.set_notification_settings(
+            config.tui_notifications.method,
+            config.tui_notifications.condition,
+        );
 
         let harness_overrides =
             normalize_harness_overrides_for_cwd(harness_overrides, &config.cwd)?;
@@ -3662,6 +3693,8 @@ impl App {
         let has_chatgpt_account = bootstrap.has_chatgpt_account;
         let requires_openai_auth = bootstrap.requires_openai_auth;
         let status_account_display = bootstrap.status_account_display.clone();
+        let initial_workspace_role = bootstrap.workspace_role;
+        let initial_is_workspace_owner = bootstrap.is_workspace_owner;
         let initial_plan_type = bootstrap.plan_type;
         let session_telemetry = SessionTelemetry::new(
             ThreadId::new(),
@@ -3711,6 +3744,8 @@ impl App {
                     feedback: feedback.clone(),
                     is_first_run,
                     status_account_display: status_account_display.clone(),
+                    initial_workspace_role,
+                    initial_is_workspace_owner,
                     initial_plan_type,
                     model: Some(model.clone()),
                     startup_tooltip_override,
@@ -3745,6 +3780,8 @@ impl App {
                     feedback: feedback.clone(),
                     is_first_run,
                     status_account_display: status_account_display.clone(),
+                    initial_workspace_role,
+                    initial_is_workspace_owner,
                     initial_plan_type,
                     model: config.model.clone(),
                     startup_tooltip_override: None,
@@ -3784,6 +3821,8 @@ impl App {
                     feedback: feedback.clone(),
                     is_first_run,
                     status_account_display: status_account_display.clone(),
+                    initial_workspace_role,
+                    initial_is_workspace_owner,
                     initial_plan_type,
                     model: config.model.clone(),
                     startup_tooltip_override: None,
@@ -3827,6 +3866,7 @@ impl App {
             backtrack_render_pending: false,
             feedback: feedback.clone(),
             feedback_audience,
+            environment_manager,
             remote_app_server_url,
             remote_app_server_auth_token,
             pending_update_action: None,
@@ -4060,6 +4100,107 @@ impl App {
         Ok(AppRunControl::Continue)
     }
 
+    async fn resume_target_session(
+        &mut self,
+        tui: &mut tui::Tui,
+        app_server: &mut AppServerSession,
+        target_session: SessionTarget,
+    ) -> Result<AppRunControl> {
+        if self.ignore_same_thread_resume(&target_session) {
+            tui.frame_requester().schedule_frame();
+            return Ok(AppRunControl::Continue);
+        }
+
+        let current_cwd = self.config.cwd.to_path_buf();
+        let resume_cwd = if self.remote_app_server_url.is_some() {
+            current_cwd.clone()
+        } else {
+            match crate::resolve_cwd_for_resume_or_fork(
+                tui,
+                &self.config,
+                &current_cwd,
+                target_session.thread_id,
+                target_session.path.as_deref(),
+                CwdPromptAction::Resume,
+                /*allow_prompt*/ true,
+            )
+            .await?
+            {
+                crate::ResolveCwdOutcome::Continue(Some(cwd)) => cwd,
+                crate::ResolveCwdOutcome::Continue(None) => current_cwd.clone(),
+                crate::ResolveCwdOutcome::Exit => {
+                    return Ok(AppRunControl::Exit(ExitReason::UserRequested));
+                }
+            }
+        };
+
+        let mut resume_config = match self
+            .rebuild_config_for_resume_or_fallback(&current_cwd, resume_cwd)
+            .await
+        {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                self.chat_widget.add_error_message(format!(
+                    "Failed to rebuild configuration for resume: {err}"
+                ));
+                return Ok(AppRunControl::Continue);
+            }
+        };
+        self.apply_runtime_policy_overrides(&mut resume_config);
+
+        let summary = session_summary(
+            self.chat_widget.token_usage(),
+            self.chat_widget.thread_id(),
+            self.chat_widget.thread_name(),
+        );
+        match app_server
+            .resume_thread(resume_config.clone(), target_session.thread_id)
+            .await
+        {
+            Ok(resumed) => {
+                self.shutdown_current_thread(app_server).await;
+                self.config = resume_config;
+                tui.set_notification_settings(
+                    self.config.tui_notifications.method,
+                    self.config.tui_notifications.condition,
+                );
+                self.file_search
+                    .update_search_dir(self.config.cwd.to_path_buf());
+                match self
+                    .replace_chat_widget_with_app_server_thread(tui, app_server, resumed)
+                    .await
+                {
+                    Ok(()) => {
+                        if let Some(summary) = summary {
+                            let mut lines: Vec<Line<'static>> = Vec::new();
+                            if let Some(usage_line) = summary.usage_line {
+                                lines.push(usage_line.into());
+                            }
+                            if let Some(command) = summary.resume_command {
+                                let spans = vec!["若要继续此会话，请运行 ".into(), command.cyan()];
+                                lines.push(spans.into());
+                            }
+                            self.chat_widget.add_plain_history_lines(lines);
+                        }
+                    }
+                    Err(err) => {
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to attach to resumed app-server thread: {err}"
+                        ));
+                    }
+                }
+            }
+            Err(err) => {
+                let path_display = target_session.display_label();
+                self.chat_widget.add_error_message(format!(
+                    "Failed to resume session from {path_display}: {err}"
+                ));
+            }
+        }
+
+        Ok(AppRunControl::Continue)
+    }
+
     async fn handle_event(
         &mut self,
         tui: &mut tui::Tui,
@@ -4088,6 +4229,7 @@ impl App {
                         },
                         None => crate::AppServerTarget::Embedded,
                     },
+                    self.environment_manager.clone(),
                 )
                 .await
                 {
@@ -4108,89 +4250,13 @@ impl App {
                 .await?
                 {
                     SessionSelection::Resume(target_session) => {
-                        let current_cwd = self.config.cwd.to_path_buf();
-                        let resume_cwd = if self.remote_app_server_url.is_some() {
-                            current_cwd.clone()
-                        } else {
-                            match crate::resolve_cwd_for_resume_or_fork(
-                                tui,
-                                &self.config,
-                                &current_cwd,
-                                target_session.thread_id,
-                                target_session.path.as_deref(),
-                                CwdPromptAction::Resume,
-                                /*allow_prompt*/ true,
-                            )
+                        match self
+                            .resume_target_session(tui, app_server, target_session)
                             .await?
-                            {
-                                crate::ResolveCwdOutcome::Continue(Some(cwd)) => cwd,
-                                crate::ResolveCwdOutcome::Continue(None) => current_cwd.clone(),
-                                crate::ResolveCwdOutcome::Exit => {
-                                    return Ok(AppRunControl::Exit(ExitReason::UserRequested));
-                                }
-                            }
-                        };
-                        let mut resume_config = match self
-                            .rebuild_config_for_resume_or_fallback(&current_cwd, resume_cwd)
-                            .await
                         {
-                            Ok(cfg) => cfg,
-                            Err(err) => {
-                                self.chat_widget
-                                    .add_error_message(format!("为恢复会话重建配置失败：{err}"));
-                                return Ok(AppRunControl::Continue);
-                            }
-                        };
-                        self.apply_runtime_policy_overrides(&mut resume_config);
-                        let summary = session_summary(
-                            self.chat_widget.token_usage(),
-                            self.chat_widget.thread_id(),
-                            self.chat_widget.thread_name(),
-                        );
-                        match app_server
-                            .resume_thread(resume_config.clone(), target_session.thread_id)
-                            .await
-                        {
-                            Ok(resumed) => {
-                                self.shutdown_current_thread(app_server).await;
-                                self.config = resume_config;
-                                tui.set_notification_method(self.config.tui_notification_method);
-                                self.file_search
-                                    .update_search_dir(self.config.cwd.to_path_buf());
-                                match self
-                                    .replace_chat_widget_with_app_server_thread(
-                                        tui, app_server, resumed,
-                                    )
-                                    .await
-                                {
-                                    Ok(()) => {
-                                        if let Some(summary) = summary {
-                                            let mut lines: Vec<Line<'static>> = Vec::new();
-                                            if let Some(usage_line) = summary.usage_line {
-                                                lines.push(usage_line.into());
-                                            }
-                                            if let Some(command) = summary.resume_command {
-                                                let spans = vec![
-                                                    "若要继续此会话，请运行 ".into(),
-                                                    command.cyan(),
-                                                ];
-                                                lines.push(spans.into());
-                                            }
-                                            self.chat_widget.add_plain_history_lines(lines);
-                                        }
-                                    }
-                                    Err(err) => {
-                                        self.chat_widget.add_error_message(format!(
-                                            "附着到恢复后的 app-server 线程失败：{err}"
-                                        ));
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                let path_display = target_session.display_label();
-                                self.chat_widget.add_error_message(format!(
-                                    "从 {path_display} 恢复会话失败：{err}"
-                                ));
+                            AppRunControl::Continue => {}
+                            AppRunControl::Exit(reason) => {
+                                return Ok(AppRunControl::Exit(reason));
                             }
                         }
                     }
@@ -4201,6 +4267,26 @@ impl App {
 
                 // Leaving alt-screen may blank the inline viewport; force a redraw either way.
                 tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ResumeSessionByIdOrName(id_or_name) => {
+                match crate::lookup_session_target_with_app_server(
+                    app_server,
+                    self.config.codex_home.as_path(),
+                    &id_or_name,
+                )
+                .await?
+                {
+                    Some(target_session) => {
+                        return self
+                            .resume_target_session(tui, app_server, target_session)
+                            .await;
+                    }
+                    None => {
+                        self.chat_widget.add_error_message(format!(
+                            "No saved chat found matching '{id_or_name}'."
+                        ));
+                    }
+                }
             }
             AppEvent::ForkCurrentSession => {
                 self.session_telemetry.counter(
@@ -4511,6 +4597,23 @@ impl App {
                     }
                 }
             },
+            AppEvent::NotifyWorkspaceOwner => {
+                if self.active_thread_id.is_some() {
+                    self.chat_widget.start_notify_workspace_owner();
+                    if let Err(err) = self
+                        .submit_active_thread_op(app_server, Op::SendAddCreditsNudgeEmail.into())
+                        .await
+                    {
+                        self.chat_widget
+                            .finish_notify_workspace_owner(Err(err.to_string()));
+                        return Err(err);
+                    }
+                } else {
+                    self.chat_widget.finish_notify_workspace_owner(Err(
+                        "no active thread is available".to_string(),
+                    ));
+                }
+            }
             AppEvent::ConnectorsLoaded { result, is_final } => {
                 self.chat_widget.on_connectors_loaded(result, is_final);
             }
@@ -4528,6 +4631,15 @@ impl App {
             }
             AppEvent::OpenRealtimeAudioDeviceSelection { kind } => {
                 self.chat_widget.open_realtime_audio_device_selection(kind);
+            }
+            AppEvent::RealtimeWebrtcOfferCreated { result } => {
+                self.chat_widget.on_realtime_webrtc_offer_created(result);
+            }
+            AppEvent::RealtimeWebrtcEvent(event) => {
+                self.chat_widget.on_realtime_webrtc_event(event);
+            }
+            AppEvent::RealtimeWebrtcLocalAudioLevel(peak) => {
+                self.chat_widget.on_realtime_webrtc_local_audio_level(peak);
             }
             AppEvent::OpenReasoningPopup { model } => {
                 self.chat_widget.open_reasoning_popup(model);
@@ -5644,7 +5756,6 @@ impl App {
             }
         }
         self.handle_backtrack_rollback_succeeded(num_turns);
-        self.chat_widget.handle_thread_rolled_back();
     }
 
     fn handle_thread_event_now(&mut self, event: ThreadBufferedEvent) {
@@ -6271,6 +6382,8 @@ mod tests {
     use crate::multi_agents::AgentPickerThreadEntry;
     use assert_matches::assert_matches;
 
+    use codex_app_server_protocol::AddCreditsNudgeEmailNotification;
+    use codex_app_server_protocol::AddCreditsNudgeEmailResult;
     use codex_app_server_protocol::AdditionalFileSystemPermissions;
     use codex_app_server_protocol::AdditionalNetworkPermissions;
     use codex_app_server_protocol::AdditionalPermissionProfile;
@@ -6540,6 +6653,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ignore_same_thread_resume_reports_noop_for_current_thread() {
+        let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
+        let thread_id = ThreadId::new();
+        let session = test_thread_session(thread_id, PathBuf::from("/tmp/project"));
+        app.chat_widget.handle_thread_session(session.clone());
+        app.thread_event_channels.insert(
+            thread_id,
+            ThreadEventChannel::new_with_session(
+                THREAD_EVENT_CHANNEL_CAPACITY,
+                session,
+                Vec::new(),
+            ),
+        );
+        app.activate_thread_channel(thread_id).await;
+        while app_event_rx.try_recv().is_ok() {}
+
+        let ignored = app.ignore_same_thread_resume(&crate::resume_picker::SessionTarget {
+            path: Some(PathBuf::from("/tmp/project")),
+            thread_id,
+        });
+
+        assert!(ignored);
+        let cell = match app_event_rx.try_recv() {
+            Ok(AppEvent::InsertHistoryCell(cell)) => cell,
+            other => panic!("expected info message after same-thread resume, saw {other:?}"),
+        };
+        let rendered = lines_to_single_string(&cell.display_lines(/*width*/ 80));
+        assert!(rendered.contains("Already viewing /tmp/project."));
+    }
+
+    #[tokio::test]
+    async fn ignore_same_thread_resume_allows_reattaching_displayed_inactive_thread() {
+        let mut app = make_test_app().await;
+        let thread_id = ThreadId::new();
+        let session = test_thread_session(thread_id, PathBuf::from("/tmp/project"));
+        app.chat_widget.handle_thread_session(session);
+
+        let ignored = app.ignore_same_thread_resume(&crate::resume_picker::SessionTarget {
+            path: Some(PathBuf::from("/tmp/project")),
+            thread_id,
+        });
+
+        assert!(!ignored);
+        assert!(app.transcript_cells.is_empty());
+    }
+
+    #[tokio::test]
     async fn enqueue_primary_thread_session_replays_buffered_approval_after_attach() -> Result<()> {
         let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
         let thread_id = ThreadId::new();
@@ -6611,6 +6771,8 @@ mod tests {
             feedback: codex_feedback::CodexFeedback::new(),
             is_first_run: false,
             status_account_display: None,
+            initial_workspace_role: None,
+            initial_is_workspace_owner: None,
             initial_plan_type: None,
             model: Some(model),
             startup_tooltip_override: None,
@@ -9253,6 +9415,7 @@ guardian_approval = true
             backtrack_render_pending: false,
             feedback: codex_feedback::CodexFeedback::new(),
             feedback_audience: FeedbackAudience::External,
+            environment_manager: Arc::new(EnvironmentManager::new(/*exec_server_url*/ None)),
             remote_app_server_url: None,
             remote_app_server_auth_token: None,
             pending_update_action: None,
@@ -9307,6 +9470,9 @@ guardian_approval = true
                 backtrack_render_pending: false,
                 feedback: codex_feedback::CodexFeedback::new(),
                 feedback_audience: FeedbackAudience::External,
+                environment_manager: Arc::new(EnvironmentManager::new(
+                    /*exec_server_url*/ None,
+                )),
                 remote_app_server_url: None,
                 remote_app_server_auth_token: None,
                 pending_update_action: None,
@@ -9617,6 +9783,29 @@ guardian_approval = true
                 serde_json::to_value(hook_completed_notification(thread_id, "turn-hook"))
                     .expect("hook notification should serialize"),
             ]
+        );
+    }
+
+    #[test]
+    fn thread_event_store_rebase_preserves_add_credits_nudge_email_completion() {
+        let thread_id = ThreadId::new();
+        let mut store = ThreadEventStore::new(/*capacity*/ 8);
+        let notification =
+            ServerNotification::AddCreditsNudgeEmailCompleted(AddCreditsNudgeEmailNotification {
+                thread_id: thread_id.to_string(),
+                result: AddCreditsNudgeEmailResult::Sent,
+            });
+        store.push_notification(notification.clone());
+
+        store.rebase_buffer_after_session_refresh();
+
+        let snapshot = store.snapshot();
+        let [ThreadBufferedEvent::Notification(actual)] = snapshot.events.as_slice() else {
+            panic!("expected add-credits nudge email completion notification");
+        };
+        assert_eq!(
+            serde_json::to_value(actual).expect("notification should serialize"),
+            serde_json::to_value(notification).expect("notification should serialize"),
         );
     }
 
@@ -10681,6 +10870,8 @@ guardian_approval = true
             feedback: app.feedback.clone(),
             is_first_run: false,
             status_account_display: app.chat_widget.status_account_display().cloned(),
+            initial_workspace_role: app.chat_widget.current_workspace_role(),
+            initial_is_workspace_owner: app.chat_widget.current_is_workspace_owner(),
             initial_plan_type: app.chat_widget.current_plan_type(),
             model: Some(app.chat_widget.current_model().to_string()),
             startup_tooltip_override: None,
