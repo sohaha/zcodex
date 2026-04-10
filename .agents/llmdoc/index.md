@@ -42,6 +42,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-10-build-self-heals-missing-sccache-wrapper.md`：构建脚本在 Clouddev 预设 `RUSTC_WRAPPER=sccache` 但二进制缺失时主动自愈的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-buddy-snapshot-accept-scope.md`：在 dirty monorepo 中只接收目标 snapshot，避免 `cargo insta accept` 扩大变更边界的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-core-tests-network-sandbox-split.md`：在 sandbox 环境下拆分 `codex-core` 测试以兼顾禁网与环境变量断言的回路反思。
+- `.agents/llmdoc/memory/reflections/2026-04-10-upstream-sync-code-mode-output-schema-local-preservation.md`：同步上游 code-mode `output_schema` 时，先验本地单工具描述行为再决定是否接收上游测试断言的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
 
 ## 路由规则
