@@ -41,6 +41,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-10-clouddev-mise-copy-on-write-mask.md`：Clouddev 把 `/root/.local/bin` 与 mise 数据目录挂成 copy-on-write 后遮住镜像预装工具的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-build-self-heals-missing-sccache-wrapper.md`：构建脚本在 Clouddev 预设 `RUSTC_WRAPPER=sccache` 但二进制缺失时主动自愈的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-buddy-snapshot-accept-scope.md`：在 dirty monorepo 中只接收目标 snapshot，避免 `cargo insta accept` 扩大变更边界的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-10-core-tests-network-sandbox-split.md`：在 sandbox 环境下拆分 `codex-core` 测试以兼顾禁网与环境变量断言的回路反思。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
 
 ## 路由规则
