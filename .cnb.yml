@@ -70,9 +70,7 @@ $:
           BRANCHS: main
   vscode:
       clouddev:
-          imports: https://cnb.cool/zls-tools/env/-/blob/main/envs.yml
           docker:
-              image: docker.cnb.cool/zls-tools/vm/rust:latest
               volumes:
                 - /root/.cargo/registry:copy-on-write
                 - /root/.cargo/git:copy-on-write
