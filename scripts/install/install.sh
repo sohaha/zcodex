@@ -1,8 +1,9 @@
 #!/bin/sh
 
 # Usage:
-#   sh install.sh [version]
-#   CODEX_INSTALL_DIR=/path/to/bin sh install.sh [version]
+#   curl -fsSL https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.sh | sh -s -- latest
+#   CODEX_INSTALL_DIR=/path/to/bin curl -fsSL https://raw.githubusercontent.com/sohaha/zcodex/main/scripts/install/install.sh | sh -s -- latest
 # Script source:
 #   https://github.com/sohaha/zcodex/scripts/install
 
