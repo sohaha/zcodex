@@ -1,6 +1,43 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ensure_optional_sccache_wrapper() {
+  local wrapper="${RUSTC_WRAPPER:-}"
+
+  if [ -z "$wrapper" ]; then
+    if command -v sccache >/dev/null 2>&1; then
+      export RUSTC_WRAPPER
+      RUSTC_WRAPPER="$(command -v sccache)"
+    fi
+    return
+  fi
+
+  case "${wrapper##*/}" in
+    sccache)
+      if [ "$wrapper" = "sccache" ]; then
+        if command -v sccache >/dev/null 2>&1; then
+          export RUSTC_WRAPPER
+          RUSTC_WRAPPER="$(command -v sccache)"
+        else
+          echo "[build] RUSTC_WRAPPER=sccache but sccache is not on PATH; continuing without sccache" >&2
+          unset RUSTC_WRAPPER
+        fi
+        return
+      fi
+
+      if [ ! -x "$wrapper" ]; then
+        if command -v sccache >/dev/null 2>&1; then
+          export RUSTC_WRAPPER
+          RUSTC_WRAPPER="$(command -v sccache)"
+        else
+          echo "[build] RUSTC_WRAPPER=$wrapper but that sccache binary is missing; continuing without sccache" >&2
+          unset RUSTC_WRAPPER
+        fi
+      fi
+      ;;
+  esac
+}
+
 ram_build_root_is_usable() {
   local ram_root="${CODEX_BUILD_RAM_ROOT:-/dev/shm}"
   local min_free_kib="${CODEX_BUILD_RAM_TARGET_MIN_FREE_KIB:-12582912}"
@@ -72,6 +109,7 @@ configure_speed_first_build_defaults() {
   export SCCACHE_DIR="${SCCACHE_DIR:-$repo_root/.cache/sccache}"
   export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-50G}"
   export TMPDIR="$(resolve_speed_first_tmpdir "$repo_root")"
+  ensure_optional_sccache_wrapper
 
   mkdir -p "$CARGO_TARGET_DIR" "$SCCACHE_DIR" "$TMPDIR"
 }

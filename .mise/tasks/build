@@ -415,10 +415,6 @@ EOF
   configure_speed_first_build_defaults "$repo_root" "$repo_root/.cargo-target" "prefer-ram"
   print_speed_first_build_summary
 
-  if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
-    export RUSTC_WRAPPER="$(command -v sccache)"
-  fi
-
   if command -v mold >/dev/null 2>&1; then
     export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-fuse-ld=mold"
   elif command -v ld.lld >/dev/null 2>&1; then

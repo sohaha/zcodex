@@ -498,10 +498,6 @@ EOF
 
 ensure_cross_deps "$@"
 
-if [ -z "${RUSTC_WRAPPER:-}" ] && command -v sccache >/dev/null 2>&1; then
-  export RUSTC_WRAPPER="$(command -v sccache)"
-fi
-
 if [ -z "${LIBCLANG_PATH:-}" ] && command -v ldconfig >/dev/null 2>&1; then
   libclang_path="$(ldconfig -p | grep -m1 'libclang\.so' | sed -E 's/.*=> (.*)$/\1/' || true)"
   if [ -n "$libclang_path" ]; then
