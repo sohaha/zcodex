@@ -45,9 +45,10 @@ if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" != "1" ]; then
   mkdir -p "$CARGO_TARGET_DIR"
 fi
 
-# sccache rejects incremental compilation in this environment; keep the rust
-# entrypoint deterministic so wrappers and direct cargo runs behave the same.
-export CARGO_INCREMENTAL=0
+# sccache rejects any explicit CARGO_INCREMENTAL setting in this environment;
+# keep the rust entrypoint deterministic so wrappers and direct cargo runs
+# behave the same.
+unset CARGO_INCREMENTAL
 
 cd "$codex_rs_dir"
 exec "$@"

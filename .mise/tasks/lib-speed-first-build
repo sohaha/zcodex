@@ -2,6 +2,11 @@
 set -euo pipefail
 
 ensure_optional_sccache_wrapper() {
+  if [ "${CODEX_DISABLE_SCCACHE:-0}" = "1" ]; then
+    unset RUSTC_WRAPPER
+    return
+  fi
+
   local wrapper="${RUSTC_WRAPPER:-}"
 
   if [ -z "$wrapper" ]; then
@@ -34,6 +39,48 @@ ensure_optional_sccache_wrapper() {
           unset RUSTC_WRAPPER
         fi
       fi
+      ;;
+  esac
+}
+
+probe_sccache_usable() {
+  if [ "${CODEX_DISABLE_SCCACHE:-0}" = "1" ]; then
+    unset RUSTC_WRAPPER
+    return
+  fi
+
+  if [ "${CODEX_SCCACHE_PROBED:-0}" = "1" ]; then
+    return
+  fi
+  export CODEX_SCCACHE_PROBED=1
+
+  if ! command -v sccache >/dev/null 2>&1; then
+    return
+  fi
+  if ! command -v rustc >/dev/null 2>&1; then
+    return
+  fi
+
+  local output
+  if ! output="$(env -u CARGO_INCREMENTAL sccache "$(command -v rustc)" -vV 2>&1)"; then
+    if printf '%s' "$output" | grep -q "incremental compilation is prohibited"; then
+      echo "[build] sccache rejects incremental compilation in this environment; disabling sccache" >&2
+      export CODEX_DISABLE_SCCACHE=1
+      unset RUSTC_WRAPPER
+    fi
+  fi
+}
+
+normalize_incremental_for_active_wrapper() {
+  case "${RUSTC_WRAPPER:-}" in
+    "" )
+      return
+      ;;
+    */sccache|sccache)
+      if [ -n "${CARGO_INCREMENTAL:-}" ]; then
+        echo "[build] sccache 不支持设置 CARGO_INCREMENTAL; unsetting it before build" >&2
+      fi
+      unset CARGO_INCREMENTAL
       ;;
   esac
 }
@@ -110,6 +157,8 @@ configure_speed_first_build_defaults() {
   export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-50G}"
   export TMPDIR="$(resolve_speed_first_tmpdir "$repo_root")"
   ensure_optional_sccache_wrapper
+  probe_sccache_usable
+  normalize_incremental_for_active_wrapper
 
   mkdir -p "$CARGO_TARGET_DIR" "$SCCACHE_DIR" "$TMPDIR"
 }

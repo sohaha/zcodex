@@ -4,6 +4,7 @@ set -euo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+source "$script_dir/lib-speed-first-build"
 source "$script_dir/lib-ubuntu-macos-arm64"
 
 sdk_archive="${MACOS_SDK_TARBALL:-}"
@@ -80,6 +81,10 @@ fi
 if ! command -v rustup >/dev/null 2>&1; then
   die "[mise] 未找到 rustup，请先安装 Rust 工具链"
 fi
+
+ensure_optional_sccache_wrapper
+probe_sccache_usable
+normalize_incremental_for_active_wrapper
 
 zig_bin="$(ensure_zig_binary)"
 echo "[mise] Zig 已就绪: $zig_bin" >&2

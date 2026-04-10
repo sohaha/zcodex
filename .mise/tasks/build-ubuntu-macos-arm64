@@ -180,7 +180,7 @@ MSG
 prepare_cross_wrappers() {
   local zig_cache_root wrapper_dir zig_cc_wrapper zig_cxx_wrapper zig_ar_wrapper zig_ranlib_wrapper
   local clang_link_wrapper runtime_marker runtime_dir runtime_source runtime_bin
-  local latest_ubsan latest_compiler_rt
+  local latest_ubsan latest_compiler_rt xcrun_wrapper
 
   zig_cache_root="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/zig}"
   wrapper_dir="$repo_root/.cache/ubuntu-macos-arm64-toolchain"
@@ -188,6 +188,7 @@ prepare_cross_wrappers() {
   zig_cxx_wrapper="$wrapper_dir/zig-cxx"
   zig_ar_wrapper="$wrapper_dir/zig-ar"
   zig_ranlib_wrapper="$wrapper_dir/zig-ranlib"
+  xcrun_wrapper="$wrapper_dir/xcrun"
   clang_link_wrapper="$wrapper_dir/clang-link"
   mkdir -p "$wrapper_dir"
 
@@ -341,11 +342,50 @@ set -euo pipefail
 exec "${ZIG_BIN:?}" ranlib "$@"
 EOF
 
+  cat > "$xcrun_wrapper" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+sdk=""
+show_sdk_path=0
+args=("$@")
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --sdk)
+      shift
+      if [ "$#" -eq 0 ]; then
+        echo "xcrun: missing value for --sdk" >&2
+        exit 1
+      fi
+      sdk="$1"
+      ;;
+    --show-sdk-path)
+      show_sdk_path=1
+      ;;
+  esac
+  shift
+done
+
+if [ "$show_sdk_path" -eq 1 ]; then
+  if [ -z "${SDKROOT:-}" ]; then
+    echo "xcrun: SDKROOT is not set" >&2
+    exit 1
+  fi
+  printf '%s\n' "$SDKROOT"
+  exit 0
+fi
+
+echo "xcrun: unsupported args: ${args[*]}" >&2
+exit 1
+EOF
+
   chmod +x \
     "$zig_cc_wrapper" \
     "$zig_cxx_wrapper" \
     "$zig_ar_wrapper" \
-    "$zig_ranlib_wrapper"
+    "$zig_ranlib_wrapper" \
+    "$xcrun_wrapper"
 
   runtime_marker="$(mktemp)"
   runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/macos-runtime.XXXXXX")"
@@ -445,6 +485,8 @@ EOF
   export RANLIB_aarch64_apple_darwin="$zig_ranlib_wrapper"
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER="$clang_link_wrapper"
   export CARGO_TARGET_AARCH64_APPLE_DARWIN_AR="$zig_ar_wrapper"
+  export PATH
+  PATH="$wrapper_dir:$PATH"
 }
 
 ensure_data_const_read_only_flag() {
