@@ -105,3 +105,4 @@ __pycache__/
 .target-app-fork/
 .target-app-protocol/
 .target-app-start/
+backup/codex/codex.tar.gz
