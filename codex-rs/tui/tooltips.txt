@@ -22,3 +22,4 @@
 任务运行时按 Tab 排队消息；否则立即发送（`!` 除外）。
 使用 Ctrl+V 粘贴图片，附加到下一条消息。
 运行 `codex resume` 可恢复之前的对话
+使用 /copy 或按 Ctrl+O 可将最新的 Agent 回复复制为 Markdown。

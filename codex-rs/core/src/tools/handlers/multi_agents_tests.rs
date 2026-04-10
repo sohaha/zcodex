@@ -2182,6 +2182,7 @@ async fn send_input_accepts_structured_items() {
             },
         ],
         final_output_json_schema: None,
+        responsesapi_client_metadata: None,
     };
     let captured = manager
         .captured_ops()
@@ -3194,8 +3195,33 @@ async fn close_agent_submits_shutdown_and_returns_previous_status() {
     assert_eq!(status_after, AgentStatus::NotFound);
 }
 
-#[tokio::test]
-async fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtrees_closed() {
+#[test]
+fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtrees_closed() {
+    const TEST_STACK_SIZE_BYTES: usize = 8 * 1024 * 1024;
+
+    let handle = std::thread::Builder::new()
+        .name(
+            "tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtrees_closed"
+                .to_string(),
+        )
+        .stack_size(TEST_STACK_SIZE_BYTES)
+        .spawn(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime should build");
+            runtime.block_on(
+                tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtrees_closed_impl(),
+            );
+        })
+        .expect("test thread should spawn");
+
+    handle
+        .join()
+        .expect("tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtrees_closed thread panicked");
+}
+
+async fn tool_handlers_cascade_close_and_resume_and_keep_explicitly_closed_subtrees_closed_impl() {
     let (_session, turn) = make_session_and_context().await;
     let manager = thread_manager();
     let mut config = turn.config.as_ref().clone();

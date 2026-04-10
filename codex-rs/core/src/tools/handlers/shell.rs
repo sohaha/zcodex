@@ -41,7 +41,6 @@ use codex_protocol::protocol::ExecCommandSource;
 use codex_shell_command::is_safe_command::is_known_safe_command;
 use codex_shell_command::parse_command::shlex_join;
 use codex_tools::ShellCommandBackendConfig;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_ztok::ShellCommandRewriteKind;
 use codex_ztok::analyze_shell_command;
 use std::path::Path;
@@ -399,9 +398,8 @@ impl ToolHandler for ShellHandler {
 
         match payload {
             ToolPayload::Function { arguments } => {
-                let cwd = resolve_workdir_base_path(&arguments, turn.cwd.as_path())?;
-                let params: ShellToolCallParams =
-                    parse_arguments_with_base_path(&arguments, cwd.as_path())?;
+                let cwd = resolve_workdir_base_path(&arguments, &turn.cwd)?;
+                let params: ShellToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
                 let prefix_rule = params.prefix_rule.clone();
                 let exec_params =
                     Self::to_exec_params(&params, turn.as_ref(), session.conversation_id);
@@ -518,9 +516,8 @@ impl ToolHandler for ShellCommandHandler {
             )));
         };
 
-        let cwd = resolve_workdir_base_path(&arguments, turn.cwd.as_path())?;
-        let params: ShellCommandToolCallParams =
-            parse_arguments_with_base_path(&arguments, cwd.as_path())?;
+        let cwd = resolve_workdir_base_path(&arguments, &turn.cwd)?;
+        let params: ShellCommandToolCallParams = parse_arguments_with_base_path(&arguments, &cwd)?;
         let workdir = turn.resolve_path(params.workdir.clone());
         let prepared = Self::to_exec_params(
             &params,
@@ -659,15 +656,9 @@ impl ShellHandler {
         }
 
         // Intercept apply_patch if present.
-        let apply_patch_cwd =
-            AbsolutePathBuf::from_absolute_path(&exec_params.cwd).map_err(|err| {
-                FunctionCallError::RespondToModel(format!(
-                    "apply_patch verification failed: failed to resolve cwd: {err}"
-                ))
-            })?;
         if let Some(output) = intercept_apply_patch(
             &exec_params.command,
-            &apply_patch_cwd,
+            &exec_params.cwd,
             fs.as_ref(),
             exec_params.expiration.timeout_ms(),
             session.clone(),
@@ -685,7 +676,7 @@ impl ShellHandler {
         let emitter = ToolEmitter::shell(
             exec_params.command.clone(),
             display_command,
-            exec_params.cwd.clone(),
+            exec_params.cwd.to_path_buf(),
             source,
             freeform,
             interaction_input,
