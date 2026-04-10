@@ -8,7 +8,6 @@
       - /root/.cargo/git:copy-on-write
       - /root/.rustup:copy-on-write
       - /root/.cache:copy-on-write
-      - /root/.local/share/mise:copy-on-write
   runner:
     tags: cnb:arch:amd64
     cpus: 30
@@ -76,8 +75,6 @@ $:
                 - /root/.cargo/git:copy-on-write
                 - /root/.rustup:copy-on-write
                 - /root/.cache:copy-on-write
-                - /root/.local/bin:copy-on-write
-                - /root/.local/share/mise:copy-on-write
           env:
               CARGO_TARGET_DIR: /workspace/.cargo-target
               CARGO_INCREMENTAL: "1"
