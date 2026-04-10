@@ -17,10 +17,15 @@
 3. 若是 TUI 用户可见改动，补 snapshot 并审阅 pending snapshots。
 4. 触及共享区域时，再决定是否扩到全量测试。
 
+## Snapshot 边界
+- 在 dirty monorepo 里，不要从 `codex-rs/` 根目录直接执行 `cargo insta accept`，除非你已经确认整个工作区的 pending snapshots 都属于当前任务。
+- 先把 pending snapshot 的范围收紧到目标目录；如果工具不能按路径安全收敛，就手动只接收目标 `*.snap.new`。
+
 ## 常见失败点
 - 忽略 `justfile` 已经封装的独立 `CARGO_HOME`/`CARGO_TARGET_DIR`，导致并发锁竞争。
 - 把项目范围配置问题误判为默认值问题，没有先看 `system://workspace`。
 - 在 `codex-core` 继续叠加实现，导致边界进一步模糊。
+- 在 dirty worktree 中直接 `cargo insta accept`，误把其他模块的 pending snapshots 一并接收。
 
 ## 相关文档
 - `.agents/llmdoc/architecture/rust-workspace-map.md`

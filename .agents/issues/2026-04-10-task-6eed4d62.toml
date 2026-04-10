@@ -1,0 +1,71 @@
+plan = ".agents/plan/2026-04-10-task-6eed4d62.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "收敛 buddy 四态显示模型与自动回落渲染"
+scope = """
+本 issue 负责把当前 buddy 的显示逻辑收敛为四种明确状态：启动开场全形象、普通常驻、全形象常驻、完全隐藏，并实现“启动短暂显示全形象后自动回落”的核心状态转移与渲染接线。
+
+包括 `codex-rs/tui/src/buddy/*` 中的运行态字段、自动回落时机、宽屏完整形态与回落后常驻形态的渲染边界，以及 `bottom_pane` 对 buddy 主体与 bubble 的插槽条件。包含必要的 buddy 定向测试与 snapshot 更新。
+
+不包括 `/buddy` 帮助文案、命令分发语义调整和隐藏状态的持久化写回入口；这些由后续 issue 负责。
+"""
+touch_points = ["module:codex-tui", "codex-rs/tui/src/buddy/mod.rs", "codex-rs/tui/src/buddy/model.rs", "codex-rs/tui/src/buddy/render.rs", "codex-rs/tui/src/bottom_pane/mod.rs", "codex-rs/tui/src/buddy/snapshots/*"]
+depends_on = []
+done_when = "Buddy 在默认启动时会先进入全形象开场态，并在预期时间后自动回落到更省空间的常驻形态；显式全形象常驻与完全隐藏两种状态在渲染层也有清晰边界，且相关 snapshot 与 buddy 定向测试可复现这些状态转移。"
+validate_by = "cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy"
+regress_by = "cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy"
+regress_timing = "before_fanout"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = """
+主代理本地完成实现，并在本地执行 spec-reviewer / code-reviewer：
+- PASS：显示模型已收敛为 启动短暂全形象 -> 紧凑常驻 / 显式全形象常驻 / 完全隐藏 四态。
+- PASS：`BuddyState` 新增 `full_layout` 与 `full_layout_until`，`next_redraw_in()` 已把自动回落纳入重绘 deadline。
+- PASS：宽屏主体与 bubble 仅在全形象态展示；回落后恢复单行紧凑常驻。
+- PASS：新增并接受 buddy snapshots：`buddy_widget_compact_after_intro_wide`、`buddy_widget_goose_full`、`buddy_widget_snail_full`，并同步更新受影响旧快照。
+
+验证：
+- `cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy`
+- 结果：26 passed, 0 failed。
+"""
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "对齐 `/buddy full|show|hide|pet|status` 命令与隐藏持久化语义"
+scope = """
+本 issue 负责把 `/buddy` 命令语义对齐到新的显示模型：新增 `/buddy full` 作为显式进入全形象常驻的入口；保留 `/buddy show` 作为普通显示；保留 `/buddy hide` 作为彻底隐藏并持久化关闭的入口；同时让 `/buddy pet`、`/buddy status` 与新的显示边界兼容。
+
+包括 `chatwidget` 的帮助/用法文案、命令分发、`sync_buddy_visibility` 相关行为、`app.rs` 中的显隐持久化链路，以及相应的 slash command / app 级测试。包含“用户 hide 后重启不再自动显示”和“用户 full 后能稳定进入全形象常驻”的验证。
+
+不包括 buddy 反应文案生成策略调整，不包括新增额外配置项或协议面改动。
+"""
+touch_points = ["module:codex-tui", "command:/buddy", "codex-rs/tui/src/chatwidget.rs", "codex-rs/tui/src/bottom_pane/mod.rs", "codex-rs/tui/src/app.rs", "codex-rs/tui/src/app_event.rs", "codex-rs/tui/src/chatwidget/tests/slash_commands.rs", "codex-rs/tui/src/buddy/snapshots/*"]
+depends_on = ["a1"]
+done_when = "`/buddy full|show|hide|pet|status` 的语义与四态显示模型一致：默认启动先开场后回落，执行 `hide` 后会持久化为完全不显示，执行 `full` 后能显式进入全形象常驻，相关命令与持久化行为都有自动化测试覆盖。"
+validate_by = "cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy"
+regress_by = "cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "passed"
+notes = """
+主代理本地完成命令与持久化链路，并在本地执行 spec-reviewer / code-reviewer：
+- PASS：新增 `/buddy full`，通过 `AppEvent::PersistBuddyFullVisibility` 进入全形象常驻。
+- PASS：`/buddy show` 保持普通显示语义，启动后仍会先走短暂全形象再自动回落。
+- PASS：`/buddy hide` 继续只持久化 `show_buddy = false`；隐藏后重建 chatwidget 不再显示。
+- PASS：`/buddy pet` / `/buddy status` / 帮助与 usage 文案已与新显示模型对齐。
+- PASS：`persist_buddy_full_visibility_updates_runtime_and_config` 覆盖了 full 命令的运行态与 config 写回。
+
+验证：
+- `cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy`
+- `cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui buddy_stays_hidden_when_config_disables_visibility`
+- `cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui persist_buddy_full_visibility_updates_runtime_and_config`
+- 结果：相关 buddy / slash command / app tests 全部通过。
+
+补充说明：
+- `cd /workspace/codex-rs && RUSTC_WRAPPER= cargo nextest run -p codex-tui` 仍会命中仓库现有无关 snapshot 漂移：`zellij_empty_composer_snapshot`、`approval_form_tool_approval_snapshot`、`approval_form_tool_approval_with_persist_options_snapshot`；与本次 buddy 改动无关，未纳入本 issue 回归结论。
+"""
