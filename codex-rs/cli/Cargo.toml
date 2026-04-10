@@ -16,6 +16,9 @@ path = "src/lib.rs"
 [lints]
 workspace = true
 
+[features]
+realtime-webrtc-stub = ["codex-tui/realtime-webrtc-stub"]
+
 [dependencies]
 anyhow = { workspace = true }
 axum = { workspace = true, default-features = false, features = ["http1", "json", "tokio"] }

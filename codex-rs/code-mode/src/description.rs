@@ -309,6 +309,14 @@ pub fn build_exec_tool_description(
     sections.join("\n\n")
 }
 
+pub fn build_exec_tool_description_from_definitions(
+    enabled_tools: &[ToolDefinition],
+    namespace_descriptions: &BTreeMap<String, ToolNamespaceDescription>,
+    code_mode_only: bool,
+) -> String {
+    build_exec_tool_description(enabled_tools, namespace_descriptions, code_mode_only)
+}
+
 pub fn build_wait_tool_description() -> &'static str {
     WAIT_DESCRIPTION_TEMPLATE
 }

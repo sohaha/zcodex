@@ -124,7 +124,7 @@ SOURCE: /[\s\S]+/
 
     ToolSpec::Freeform(FreeformTool {
         name: codex_code_mode::PUBLIC_TOOL_NAME.to_string(),
-        description: codex_code_mode::build_exec_tool_description(
+        description: codex_code_mode::build_exec_tool_description_from_definitions(
             enabled_tools,
             namespace_descriptions,
             code_mode_only_enabled,

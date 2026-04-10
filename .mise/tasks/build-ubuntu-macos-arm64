@@ -439,6 +439,7 @@ sdk_path="${SDKROOT:?}"
 out=(
   clang
   -fuse-ld=lld
+  -Wl,-multiply_defined,suppress
   -isysroot "$sdk_path"
   -iframework "$sdk_path/System/Library/Frameworks"
   -F"$sdk_path/System/Library/Frameworks"
@@ -573,6 +574,9 @@ prepare_cross_wrappers
 
 profile_dir="$(resolve_build_profile_dir "$@")"
 mapfile -d '' -t build_args < <(ensure_default_release_args "$@")
+if [ "${CODEX_UBUNTU_MACOS_ARM64_FORCE_WEBRTC_STUB:-0}" = "1" ]; then
+  build_args+=(--features realtime-webrtc-stub)
+fi
 target_dir="$(resolve_rs_ext_target_dir "${build_args[@]}")"
 output_bin="$target_dir/$target/$profile_dir/codex"
 
