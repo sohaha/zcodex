@@ -1,5 +1,11 @@
 #!/bin/sh
 
+# Usage:
+#   sh install.sh [version]
+#   CODEX_INSTALL_DIR=/path/to/bin sh install.sh [version]
+# Script source:
+#   https://github.com/sohaha/zcodex/scripts/install
+
 set -eu
 
 VERSION="${1:-latest}"

@@ -1,3 +1,11 @@
+<#
+Usage:
+  pwsh -File .\install.ps1 [-Version latest]
+  $env:CODEX_INSTALL_DIR = "C:\path\to\bin"; pwsh -File .\install.ps1 [-Version latest]
+Script source:
+  https://github.com/sohaha/zcodex/scripts/install
+#>
+
 param(
     [Parameter(Position=0)]
     [string]$Version = "latest"
