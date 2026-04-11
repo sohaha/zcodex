@@ -107,8 +107,6 @@ pub(crate) fn doctor_tools(request: DoctorRequest) -> DoctorResponse {
         "swift",
         "swiftlint",
         "cppcheck",
-        "elixir",
-        "mix",
     ]
     .into_iter()
     .map(|tool| DiagnosticToolStatus {

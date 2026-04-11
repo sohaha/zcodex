@@ -178,7 +178,7 @@ The `ztldr` tool exposes native code-context analysis with daemon-first executio
 Typical inputs:
 
 - `project` - absolute or relative project root
-- `language` - optional language, one of `rust|c|cpp|csharp|elixir|java|typescript|javascript|lua|luau|python|go|php|ruby|scala|swift|zig`; `extract` and `imports` can infer from file extension when omitted
+- `language` - optional language, one of `rust|c|cpp|csharp|java|kotlin|typescript|javascript|lua|luau|python|go|php|ruby|swift|zig`; `extract` and `imports` can infer from file extension when omitted
 - `symbol` - optional symbol name for `structure|context|impact|calls|dead|arch|cfg|dfg`; required symbol-like target for `slice`
 - `query` - query string for `search` or `semantic`
 - `module` - required module path for `importers`
