@@ -998,7 +998,6 @@ fn definition_for_line(language: SupportedLanguage, line: &str) -> Option<(Strin
             ("public void ", "method"),
             ("void ", "method"),
         ],
-        SupportedLanguage::Elixir => &[("defmodule ", "module"), ("def ", "function")],
         SupportedLanguage::Java => &[
             ("public class ", "class"),
             ("class ", "class"),
@@ -1044,7 +1043,6 @@ fn definition_for_line(language: SupportedLanguage, line: &str) -> Option<(Strin
             ("interface ", "interface"),
         ],
         SupportedLanguage::Ruby => &[("def ", "function"), ("class ", "class")],
-        SupportedLanguage::Scala => &[("def ", "function"), ("class ", "class")],
         SupportedLanguage::Swift => &[("func ", "function"), ("class ", "class")],
         SupportedLanguage::Zig => &[("pub fn ", "function"), ("fn ", "function")],
     };
@@ -1262,7 +1260,6 @@ fn extension_for(language: SupportedLanguage) -> &'static str {
         SupportedLanguage::C => "c",
         SupportedLanguage::Cpp => "cpp",
         SupportedLanguage::CSharp => "cs",
-        SupportedLanguage::Elixir => "ex",
         SupportedLanguage::Java => "java",
         SupportedLanguage::Kotlin => "kt",
         SupportedLanguage::Rust => "rs",
@@ -1274,7 +1271,6 @@ fn extension_for(language: SupportedLanguage) -> &'static str {
         SupportedLanguage::Go => "go",
         SupportedLanguage::Php => "php",
         SupportedLanguage::Ruby => "rb",
-        SupportedLanguage::Scala => "scala",
         SupportedLanguage::Swift => "swift",
         SupportedLanguage::Zig => "zig",
     }

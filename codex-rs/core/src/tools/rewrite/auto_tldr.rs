@@ -152,7 +152,7 @@ fn infer_language_from_path(path: &Path) -> Option<TldrToolLanguage> {
 }
 
 fn infer_language_from_include(include: &str) -> Option<TldrToolLanguage> {
-    const GLOB_LANGUAGE_HINTS: [(&str, TldrToolLanguage); 20] = [
+    const GLOB_LANGUAGE_HINTS: [(&str, TldrToolLanguage); 17] = [
         (".tsx", TldrToolLanguage::Typescript),
         (".ts", TldrToolLanguage::Typescript),
         (".jsx", TldrToolLanguage::Javascript),
@@ -166,12 +166,9 @@ fn infer_language_from_include(include: &str) -> Option<TldrToolLanguage> {
         (".zig", TldrToolLanguage::Zig),
         (".java", TldrToolLanguage::Java),
         (".rb", TldrToolLanguage::Ruby),
-        (".scala", TldrToolLanguage::Scala),
         (".swift", TldrToolLanguage::Swift),
         (".lua", TldrToolLanguage::Lua),
         (".luau", TldrToolLanguage::Luau),
-        (".ex", TldrToolLanguage::Elixir),
-        (".exs", TldrToolLanguage::Elixir),
         (".cs", TldrToolLanguage::Csharp),
     ];
 

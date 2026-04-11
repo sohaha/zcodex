@@ -671,7 +671,6 @@ pub enum TldrToolLanguage {
     C,
     Cpp,
     Csharp,
-    Elixir,
     Java,
     Kotlin,
     Typescript,
@@ -682,7 +681,6 @@ pub enum TldrToolLanguage {
     Go,
     Php,
     Ruby,
-    Scala,
     Swift,
     Zig,
 }
@@ -694,7 +692,6 @@ impl From<TldrToolLanguage> for SupportedLanguage {
             TldrToolLanguage::C => SupportedLanguage::C,
             TldrToolLanguage::Cpp => SupportedLanguage::Cpp,
             TldrToolLanguage::Csharp => SupportedLanguage::CSharp,
-            TldrToolLanguage::Elixir => SupportedLanguage::Elixir,
             TldrToolLanguage::Java => SupportedLanguage::Java,
             TldrToolLanguage::Kotlin => SupportedLanguage::Kotlin,
             TldrToolLanguage::Typescript => SupportedLanguage::TypeScript,
@@ -705,7 +702,6 @@ impl From<TldrToolLanguage> for SupportedLanguage {
             TldrToolLanguage::Go => SupportedLanguage::Go,
             TldrToolLanguage::Php => SupportedLanguage::Php,
             TldrToolLanguage::Ruby => SupportedLanguage::Ruby,
-            TldrToolLanguage::Scala => SupportedLanguage::Scala,
             TldrToolLanguage::Swift => SupportedLanguage::Swift,
             TldrToolLanguage::Zig => SupportedLanguage::Zig,
         }

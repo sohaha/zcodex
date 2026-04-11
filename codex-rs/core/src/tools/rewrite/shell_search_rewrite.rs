@@ -218,7 +218,7 @@ fn infer_language_from_token(token: &str) -> Option<TldrToolLanguage> {
         return Some(language);
     }
 
-    const GLOB_LANGUAGE_HINTS: [(&str, TldrToolLanguage); 20] = [
+    const GLOB_LANGUAGE_HINTS: [(&str, TldrToolLanguage); 17] = [
         (".tsx", TldrToolLanguage::Typescript),
         (".ts", TldrToolLanguage::Typescript),
         (".jsx", TldrToolLanguage::Javascript),
@@ -232,12 +232,9 @@ fn infer_language_from_token(token: &str) -> Option<TldrToolLanguage> {
         (".zig", TldrToolLanguage::Zig),
         (".java", TldrToolLanguage::Java),
         (".rb", TldrToolLanguage::Ruby),
-        (".scala", TldrToolLanguage::Scala),
         (".swift", TldrToolLanguage::Swift),
         (".lua", TldrToolLanguage::Lua),
         (".luau", TldrToolLanguage::Luau),
-        (".ex", TldrToolLanguage::Elixir),
-        (".exs", TldrToolLanguage::Elixir),
         (".cs", TldrToolLanguage::Csharp),
     ];
 

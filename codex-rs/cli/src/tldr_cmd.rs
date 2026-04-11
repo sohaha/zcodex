@@ -130,7 +130,6 @@ pub enum CliLanguage {
     C,
     Cpp,
     Csharp,
-    Elixir,
     Java,
     Rust,
     Typescript,
@@ -141,7 +140,6 @@ pub enum CliLanguage {
     Go,
     Php,
     Ruby,
-    Scala,
     Swift,
     Zig,
 }
@@ -152,7 +150,6 @@ impl From<CliLanguage> for SupportedLanguage {
             CliLanguage::C => SupportedLanguage::C,
             CliLanguage::Cpp => SupportedLanguage::Cpp,
             CliLanguage::Csharp => SupportedLanguage::CSharp,
-            CliLanguage::Elixir => SupportedLanguage::Elixir,
             CliLanguage::Java => SupportedLanguage::Java,
             CliLanguage::Rust => SupportedLanguage::Rust,
             CliLanguage::Typescript => SupportedLanguage::TypeScript,
@@ -163,7 +160,6 @@ impl From<CliLanguage> for SupportedLanguage {
             CliLanguage::Go => SupportedLanguage::Go,
             CliLanguage::Php => SupportedLanguage::Php,
             CliLanguage::Ruby => SupportedLanguage::Ruby,
-            CliLanguage::Scala => SupportedLanguage::Scala,
             CliLanguage::Swift => SupportedLanguage::Swift,
             CliLanguage::Zig => SupportedLanguage::Zig,
         }

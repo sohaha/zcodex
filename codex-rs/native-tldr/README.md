@@ -5,7 +5,7 @@
 当前已落地能力：
 
 - 统一引擎入口 `TldrEngine`
-- 17 种语言注册：C、C++、C#、Elixir、Go、Java、JavaScript、Lua、Luau、PHP、Python、Ruby、Rust、Scala、Swift、TypeScript、Zig
+- 16 种语言注册：C、C++、C#、Go、Java、JavaScript、Kotlin、Lua、Luau、PHP、Python、Ruby、Rust、Swift、TypeScript、Zig
 - `structure` / `search` / `extract` / `imports` / `importers` / `context` / `impact` / `calls` / `dead` / `arch` / `change-impact` / `cfg` / `dfg` / `slice` / `diagnostics` / `doctor` 分析入口
 - semantic phase-2：真实 dense embedding、系统运行时目录/临时目录下 `codex-native-tldr/<scope>/<project-hash>/cache/semantic/<language>/` 本地持久化、brute-force 向量检索、`warm` 触发 reindex
 - daemon / session / health / status 生命周期闭环

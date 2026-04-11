@@ -98,7 +98,7 @@ pub fn create_tldr_tool() -> ToolSpec {
             "language".to_string(),
             JsonSchema::String {
                 description: Some(
-                    "Optional language. Supported: rust, c, cpp, csharp, elixir, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, scala, swift, zig."
+                    "Optional language. Supported: rust, c, cpp, csharp, java, kotlin, typescript, javascript, lua, luau, python, go, php, ruby, swift, zig."
                         .to_string(),
                 ),
             },
