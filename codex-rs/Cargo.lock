@@ -2246,6 +2246,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -3111,6 +3112,7 @@ name = "codex-utils-absolute-path"
 version = "0.0.0"
 dependencies = [
  "dirs",
+ "dunce",
  "pretty_assertions",
  "schemars 0.8.22",
  "serde",

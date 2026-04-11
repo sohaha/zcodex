@@ -3,7 +3,6 @@ pub(crate) mod types;
 
 pub use client::Client;
 pub use client::RequestError;
-pub use types::AccountsCheckV4Response;
 pub use types::CodeTaskDetailsResponse;
 pub use types::CodeTaskDetailsResponseExt;
 pub use types::ConfigFileResponse;

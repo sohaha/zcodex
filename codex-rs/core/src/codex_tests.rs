@@ -1314,7 +1314,11 @@ async fn fork_startup_context_then_first_turn_diff_snapshot() -> anyhow::Result<
     // Forking reads the persisted rollout JSONL, so force the completed source turn to disk
     // before snapshotting from it.
     initial.codex.ensure_rollout_materialized().await;
-    initial.codex.flush_rollout().await;
+    initial
+        .codex
+        .flush_rollout()
+        .await
+        .expect("source rollout should flush before fork");
 
     let mut fork_config = initial.config.clone();
     fork_config.permissions.approval_policy =
@@ -2006,7 +2010,6 @@ async fn set_rate_limits_retains_previous_credits() {
             unlimited: false,
             balance: Some("10.00".to_string()),
         }),
-        spend_control: None,
         plan_type: Some(codex_protocol::account::PlanType::Plus),
     };
     state.set_rate_limits(initial.clone());
@@ -2025,7 +2028,6 @@ async fn set_rate_limits_retains_previous_credits() {
             resets_at: Some(1_900),
         }),
         credits: None,
-        spend_control: None,
         plan_type: None,
     };
     state.set_rate_limits(update.clone());
@@ -2038,7 +2040,6 @@ async fn set_rate_limits_retains_previous_credits() {
             primary: update.primary.clone(),
             secondary: update.secondary,
             credits: initial.credits,
-            spend_control: None,
             plan_type: initial.plan_type,
         })
     );
@@ -2115,7 +2116,6 @@ async fn set_rate_limits_updates_plan_type_when_present() {
             unlimited: false,
             balance: Some("15.00".to_string()),
         }),
-        spend_control: None,
         plan_type: Some(codex_protocol::account::PlanType::Plus),
     };
     state.set_rate_limits(initial.clone());
@@ -2130,7 +2130,6 @@ async fn set_rate_limits_updates_plan_type_when_present() {
         }),
         secondary: None,
         credits: None,
-        spend_control: None,
         plan_type: Some(codex_protocol::account::PlanType::Pro),
     };
     state.set_rate_limits(update.clone());
@@ -2143,7 +2142,6 @@ async fn set_rate_limits_updates_plan_type_when_present() {
             primary: update.primary,
             secondary: update.secondary,
             credits: initial.credits,
-            spend_control: None,
             plan_type: update.plan_type,
         })
     );
@@ -2372,7 +2370,10 @@ async fn attach_rollout_recorder(session: &Arc<Session>) -> PathBuf {
         *rollout = Some(recorder);
     }
     session.ensure_rollout_materialized().await;
-    session.flush_rollout().await;
+    session
+        .flush_rollout()
+        .await
+        .expect("attached rollout should flush");
     rollout_path
 }
 
@@ -2754,6 +2755,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_zsh_path() {
                 .await
                 .expect("create environment"),
         )),
+        /*analytics_events_client*/ None,
     )
     .await;
 
@@ -2884,7 +2886,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         tool_approvals: Mutex::new(ApprovalStore::default()),
-        guardian_rejection_rationales: Mutex::new(std::collections::HashMap::new()),
+        guardian_rejections: Mutex::new(std::collections::HashMap::new()),
         skills_manager,
         plugins_manager,
         mcp_manager,
@@ -3730,7 +3732,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         session_telemetry: session_telemetry.clone(),
         models_manager: Arc::clone(&models_manager),
         tool_approvals: Mutex::new(ApprovalStore::default()),
-        guardian_rejection_rationales: Mutex::new(std::collections::HashMap::new()),
+        guardian_rejections: Mutex::new(std::collections::HashMap::new()),
         skills_manager,
         plugins_manager,
         mcp_manager,
@@ -4540,7 +4542,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
             .expect("serialize expected context item")
     );
     session.ensure_rollout_materialized().await;
-    session.flush_rollout().await;
+    session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
         .await
@@ -4642,7 +4644,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
         .record_context_updates_and_set_reference_context_item(&turn_context)
         .await;
     session.ensure_rollout_materialized().await;
-    session.flush_rollout().await;
+    session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
         .await

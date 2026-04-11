@@ -47,6 +47,7 @@ use supports_color::Stream;
 mod app_cmd;
 #[cfg(target_os = "macos")]
 mod desktop_app;
+mod marketplace_cmd;
 mod mcp_cmd;
 mod tldr_cmd;
 #[cfg(not(windows))]
@@ -54,6 +55,7 @@ mod wsl_paths;
 mod zmemory_cmd;
 mod zmemory_compat_server;
 
+use crate::marketplace_cmd::MarketplaceCli;
 use crate::mcp_cmd::McpCli;
 use crate::tldr_cmd::TldrCli;
 use crate::zmemory_cmd::ZmemoryCli;
@@ -123,6 +125,9 @@ enum Subcommand {
 
     /// 管理 Codex 的外部 MCP 服务器。
     Mcp(McpCli),
+
+    /// 管理 Codex 的插件市场。
+    Marketplace(MarketplaceCli),
 
     /// 运行 Token 优化的命令包装器。
     Ztok(ZtokArgs),
@@ -817,6 +822,18 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             // Propagate any root-level config overrides (e.g. `-c key=value`).
             prepend_config_flags(&mut mcp_cli.config_overrides, root_config_overrides.clone());
             mcp_cli.run().await?;
+        }
+        Some(Subcommand::Marketplace(mut marketplace_cli)) => {
+            reject_remote_mode_for_subcommand(
+                root_remote.as_deref(),
+                root_remote_auth_token_env.as_deref(),
+                "marketplace",
+            )?;
+            prepend_config_flags(
+                &mut marketplace_cli.config_overrides,
+                root_config_overrides.clone(),
+            );
+            marketplace_cli.run().await?;
         }
         Some(Subcommand::Ztok(ztok_cli)) => {
             codex_ztok::run_from_os_args(ztok_cli.args)?;

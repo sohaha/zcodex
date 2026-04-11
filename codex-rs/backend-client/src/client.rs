@@ -13,7 +13,6 @@ use codex_protocol::account::PlanType as AccountPlanType;
 use codex_protocol::protocol::CreditsSnapshot;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::RateLimitWindow;
-use codex_protocol::protocol::SpendControlSnapshot;
 use reqwest::StatusCode;
 use reqwest::header::AUTHORIZATION;
 use reqwest::header::CONTENT_TYPE;
@@ -447,13 +446,11 @@ impl Client {
         payload: RateLimitStatusPayload,
     ) -> Vec<RateLimitSnapshot> {
         let plan_type = Some(Self::map_plan_type(payload.plan_type));
-        let spend_control = payload.spend_control.map(|details| *details);
         let mut snapshots = vec![Self::make_rate_limit_snapshot(
             Some("codex".to_string()),
             /*limit_name*/ None,
             payload.rate_limit.map(|details| *details),
             payload.credits.map(|details| *details),
-            spend_control,
             plan_type,
         )];
         if let Some(additional) = payload.additional_rate_limits {
@@ -463,7 +460,6 @@ impl Client {
                     Some(details.limit_name),
                     details.rate_limit.flatten().map(|rate_limit| *rate_limit),
                     /*credits*/ None,
-                    /*spend_control*/ None,
                     plan_type,
                 )
             }));
@@ -476,7 +472,6 @@ impl Client {
         limit_name: Option<String>,
         rate_limit: Option<crate::types::RateLimitStatusDetails>,
         credits: Option<crate::types::CreditStatusDetails>,
-        spend_control: Option<crate::types::SpendControlStatusDetails>,
         plan_type: Option<AccountPlanType>,
     ) -> RateLimitSnapshot {
         let (primary, secondary) = match rate_limit {
@@ -492,7 +487,6 @@ impl Client {
             primary,
             secondary,
             credits: Self::map_credits(credits),
-            spend_control: Self::map_spend_control(spend_control),
             plan_type,
         }
     }
@@ -519,15 +513,6 @@ impl Client {
             has_credits: details.has_credits,
             unlimited: details.unlimited,
             balance: details.balance.flatten(),
-        })
-    }
-
-    fn map_spend_control(
-        spend_control: Option<crate::types::SpendControlStatusDetails>,
-    ) -> Option<SpendControlSnapshot> {
-        let details = spend_control?;
-        Some(SpendControlSnapshot {
-            reached: details.reached,
         })
     }
 
@@ -567,6 +552,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codex_backend_openapi_models::models::AdditionalRateLimitDetails;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -600,7 +586,7 @@ mod tests {
                 }))),
                 ..Default::default()
             })),
-            additional_rate_limits: Some(vec![crate::types::AdditionalRateLimitDetails {
+            additional_rate_limits: Some(vec![AdditionalRateLimitDetails {
                 limit_name: "codex_other".to_string(),
                 metered_feature: "codex_other".to_string(),
                 rate_limit: Some(Some(Box::new(crate::types::RateLimitStatusDetails {
@@ -620,9 +606,7 @@ mod tests {
                 balance: Some(Some("9.99".to_string())),
                 ..Default::default()
             })),
-            spend_control: Some(Box::new(crate::types::SpendControlStatusDetails {
-                reached: true,
-            })),
+            spend_control: None,
         };
 
         let snapshots = Client::rate_limit_snapshots_from_payload(payload);
@@ -646,10 +630,6 @@ mod tests {
                 balance: Some("9.99".to_string()),
             })
         );
-        assert_eq!(
-            snapshots[0].spend_control,
-            Some(SpendControlSnapshot { reached: true })
-        );
         assert_eq!(snapshots[0].plan_type, Some(AccountPlanType::Pro));
 
         assert_eq!(snapshots[1].limit_id.as_deref(), Some("codex_other"));
@@ -659,7 +639,6 @@ mod tests {
             Some(70.0)
         );
         assert_eq!(snapshots[1].credits, None);
-        assert_eq!(snapshots[1].spend_control, None);
         assert_eq!(snapshots[1].plan_type, Some(AccountPlanType::Pro));
     }
 
@@ -668,7 +647,7 @@ mod tests {
         let payload = RateLimitStatusPayload {
             plan_type: crate::types::PlanType::Plus,
             rate_limit: None,
-            additional_rate_limits: Some(vec![crate::types::AdditionalRateLimitDetails {
+            additional_rate_limits: Some(vec![AdditionalRateLimitDetails {
                 limit_name: "codex_other".to_string(),
                 metered_feature: "codex_other".to_string(),
                 rate_limit: None,
@@ -682,7 +661,6 @@ mod tests {
         assert_eq!(snapshots[0].limit_id.as_deref(), Some("codex"));
         assert_eq!(snapshots[0].limit_name, None);
         assert_eq!(snapshots[0].primary, None);
-        assert_eq!(snapshots[0].spend_control, None);
         assert_eq!(snapshots[1].limit_id.as_deref(), Some("codex_other"));
         assert_eq!(snapshots[1].limit_name.as_deref(), Some("codex_other"));
     }
@@ -700,7 +678,6 @@ mod tests {
                 }),
                 secondary: None,
                 credits: None,
-                spend_control: None,
                 plan_type: Some(AccountPlanType::Pro),
             },
             RateLimitSnapshot {
@@ -713,7 +690,6 @@ mod tests {
                 }),
                 secondary: None,
                 credits: None,
-                spend_control: None,
                 plan_type: Some(AccountPlanType::Pro),
             },
         ];
@@ -724,47 +700,5 @@ mod tests {
             .cloned()
             .unwrap_or_else(|| snapshots[0].clone());
         assert_eq!(preferred.limit_id.as_deref(), Some("codex"));
-    }
-
-    #[test]
-    fn add_credits_nudge_email_uses_expected_paths() {
-        let codex_api = Client::new("https://example.com").expect("codex api client");
-        assert_eq!(
-            match codex_api.path_style {
-                PathStyle::CodexApi => format!(
-                    "{}/api/codex/accounts/send_add_credits_nudge_email",
-                    codex_api.base_url
-                ),
-                PathStyle::ChatGptApi => unreachable!("plain host should use codex api paths"),
-            },
-            "https://example.com/api/codex/accounts/send_add_credits_nudge_email"
-        );
-
-        let chatgpt_api = Client::new("https://chatgpt.com").expect("chatgpt backend api client");
-        assert_eq!(
-            match chatgpt_api.path_style {
-                PathStyle::CodexApi => unreachable!("chatgpt host should use backend-api paths"),
-                PathStyle::ChatGptApi => format!(
-                    "{}/accounts/send_add_credits_nudge_email",
-                    chatgpt_api.base_url
-                ),
-            },
-            "https://chatgpt.com/backend-api/accounts/send_add_credits_nudge_email"
-        );
-    }
-
-    #[test]
-    fn current_workspace_role_uses_expected_path() {
-        let chatgpt_api = Client::new("https://chatgpt.com").expect("chatgpt backend api client");
-        assert_eq!(
-            match chatgpt_api.path_style {
-                PathStyle::CodexApi => unreachable!("chatgpt host should use backend-api paths"),
-                PathStyle::ChatGptApi => format!(
-                    "{}/accounts/check/{ACCOUNTS_CHECK_V4_VERSION}",
-                    chatgpt_api.base_url
-                ),
-            },
-            "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27"
-        );
     }
 }
