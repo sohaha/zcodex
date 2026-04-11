@@ -235,8 +235,8 @@ resolve_version() {
     return
   fi
 
-  release_json="$(download_text "https://api.github.com/repos/sohaha/zcodex/releases/latest")"
-  resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"\(rust-\)\{0,1\}v\([^"]*\)".*/\2/p' | head -n 1)"
+  release_url="$(download_text "https://github.com/sohaha/zcodex/releases/latest" | sed -n 's#.*href="\([^"]*/releases/tag/\(rust-\)\{0,1\}v[^"]*\)".*#\1#p' | head -n 1)"
+  resolved="$(printf '%s\n' "$release_url" | sed -n 's#.*/releases/tag/\(rust-\)\{0,1\}v\([^/?#"]*\).*#\2#p' | head -n 1)"
 
   if [ -z "$resolved" ]; then
     echo "Failed to resolve the latest Codex release version." >&2
