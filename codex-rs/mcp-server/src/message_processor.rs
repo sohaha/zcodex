@@ -74,6 +74,7 @@ impl MessageProcessor {
                     .enabled(Feature::DefaultModeRequestUserInput),
             },
             environment_manager,
+            /*analytics_events_client*/ None,
         ));
         Self {
             outgoing,

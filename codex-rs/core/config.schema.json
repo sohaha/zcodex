@@ -292,14 +292,6 @@
         }
       ]
     },
-    "AutoTldrRoutingMode": {
-      "enum": [
-        "off",
-        "safe",
-        "aggressive"
-      ],
-      "type": "string"
-    },
     "BuddySoul": {
       "additionalProperties": false,
       "properties": {
@@ -642,23 +634,6 @@
       },
       "type": "object"
     },
-    "FallbackProviderToml": {
-      "additionalProperties": false,
-      "properties": {
-        "model": {
-          "description": "Optional model slug to use with this fallback provider.",
-          "type": "string"
-        },
-        "provider": {
-          "description": "Provider to use from the model_providers map.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "provider"
-      ],
-      "type": "object"
-    },
     "FeatureToml_for_MultiAgentV2ConfigToml": {
       "anyOf": [
         {
@@ -804,6 +779,50 @@
           "type": "string"
         }
       ]
+    },
+    "MarketplaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "last_updated": {
+          "default": null,
+          "description": "Last time Codex successfully added or refreshed this marketplace.",
+          "type": "string"
+        },
+        "ref": {
+          "default": null,
+          "description": "Git ref to check out when `source_type` is `git`.",
+          "type": "string"
+        },
+        "source": {
+          "default": null,
+          "description": "Source location used when the marketplace was added.",
+          "type": "string"
+        },
+        "source_type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/MarketplaceSourceType"
+            }
+          ],
+          "default": null,
+          "description": "Source kind used to install this marketplace."
+        },
+        "sparse_paths": {
+          "default": null,
+          "description": "Sparse checkout paths used when `source_type` is `git`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "MarketplaceSourceType": {
+      "enum": [
+        "git"
+      ],
+      "type": "string"
     },
     "McpServerToolConfig": {
       "additionalProperties": false,
@@ -2117,39 +2136,6 @@
           "type": "string"
         }
       ]
-    },
-    "ZmemoryToml": {
-      "additionalProperties": false,
-      "description": "Zmemory settings loaded from config.toml.",
-      "properties": {
-        "core_memory_uris": {
-          "description": "Optional boot anchor URIs for the current runtime profile.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "namespace": {
-          "description": "Optional namespace override for the current runtime profile.",
-          "type": "string"
-        },
-        "path": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AbsolutePathBuf"
-            }
-          ],
-          "description": "Optional override for the `zmemory` database path."
-        },
-        "valid_domains": {
-          "description": "Optional writable memory domains for the current runtime profile.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "type": "object"
     }
   },
   "description": "Base config deserialized from ~/.codex/config.toml.",
@@ -2207,14 +2193,6 @@
       ],
       "default": null,
       "description": "Machine-local realtime audio device preferences used by realtime voice."
-    },
-    "auto_tldr_routing": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/AutoTldrRoutingMode"
-        }
-      ],
-      "description": "Runtime policy for automatically rewriting code-search tool calls to native tldr."
     },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
@@ -2288,22 +2266,6 @@
     },
     "experimental_use_unified_exec_tool": {
       "type": "boolean"
-    },
-    "fallback_model": {
-      "description": "Optional model slug to use with the fallback provider.",
-      "type": "string"
-    },
-    "fallback_provider": {
-      "description": "Optional provider to use when the primary provider request fails.",
-      "type": "string"
-    },
-    "fallback_providers": {
-      "default": [],
-      "description": "Ordered list of fallback providers to try for the current request.",
-      "items": {
-        "$ref": "#/definitions/FallbackProviderToml"
-      },
-      "type": "array"
     },
     "features": {
       "additionalProperties": false,
@@ -2395,7 +2357,7 @@
           "type": "boolean"
         },
         "multi_agent_v2": {
-          "type": "boolean"
+          "$ref": "#/definitions/FeatureToml_for_MultiAgentV2ConfigToml"
         },
         "native_memories": {
           "type": "boolean"
@@ -2589,6 +2551,14 @@
         }
       ],
       "description": "Directory where Codex writes log files, for example `codex-tui.log`. Defaults to `$CODEX_HOME/log`."
+    },
+    "marketplaces": {
+      "additionalProperties": {
+        "$ref": "#/definitions/MarketplaceConfig"
+      },
+      "default": {},
+      "description": "User-level marketplace entries keyed by marketplace name.",
+      "type": "object"
     },
     "mcp_oauth_callback_port": {
       "description": "Optional fixed port for the local HTTP callback server used during MCP OAuth login. When unset, Codex will bind to an ephemeral port chosen by the OS.",
@@ -2910,14 +2880,6 @@
     "windows_wsl_setup_acknowledged": {
       "description": "Tracks whether the Windows onboarding screen has been acknowledged.",
       "type": "boolean"
-    },
-    "zmemory": {
-      "allOf": [
-        {
-          "$ref": "#/definitions/ZmemoryToml"
-        }
-      ],
-      "description": "Zmemory subsystem settings."
     },
     "zsh_path": {
       "allOf": [
