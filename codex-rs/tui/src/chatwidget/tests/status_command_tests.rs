@@ -126,10 +126,10 @@ async fn status_command_overlapping_refreshes_update_matching_cells_only() {
 
     chat.on_rate_limit_snapshot(Some(snapshot(/*percent*/ 92.0)));
     chat.finish_status_rate_limit_refresh(second_request_id);
-
     let second_after_success = lines_to_single_string(&second_cell.display_lines(/*width*/ 80));
     assert!(
         !second_after_success.contains("正在刷新限额"),
         "expected second status cell to refresh once its own request completed, got: {second_after_success}"
     );
+    assert!(chat.refreshing_status_outputs.is_empty());
 }

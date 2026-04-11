@@ -1476,16 +1476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "codex-account"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "codex-backend-client",
- "codex-login",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "codex-analytics"
 version = "0.0.0"
 dependencies = [
@@ -2026,7 +2016,6 @@ dependencies = [
  "bm25",
  "chrono",
  "clap",
- "codex-account",
  "codex-analytics",
  "codex-api",
  "codex-app-server-protocol",
