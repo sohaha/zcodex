@@ -179,8 +179,9 @@ MSG
 
 prepare_cross_wrappers() {
   local zig_cache_root wrapper_dir zig_cc_wrapper zig_cxx_wrapper zig_ar_wrapper zig_ranlib_wrapper
-  local clang_link_wrapper runtime_marker runtime_dir runtime_source runtime_bin
+  local clang_link_wrapper lld_wrapper runtime_marker runtime_dir runtime_source runtime_bin
   local latest_ubsan latest_compiler_rt xcrun_wrapper
+  local rust_lld
 
   zig_cache_root="${ZIG_GLOBAL_CACHE_DIR:-$HOME/.cache/zig}"
   wrapper_dir="$repo_root/.cache/ubuntu-macos-arm64-toolchain"
@@ -190,7 +191,14 @@ prepare_cross_wrappers() {
   zig_ranlib_wrapper="$wrapper_dir/zig-ranlib"
   xcrun_wrapper="$wrapper_dir/xcrun"
   clang_link_wrapper="$wrapper_dir/clang-link"
+  lld_wrapper="$wrapper_dir/ld64.lld"
   mkdir -p "$wrapper_dir"
+
+  rust_lld="$HOME/.rustup/toolchains/$(rustup show active-toolchain 2>/dev/null | awk 'NR == 1 { print $1 }')/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld/ld64.lld"
+  if [ ! -x "$rust_lld" ]; then
+    echo "[build-ubuntu-macos-arm64] 缺少 Rust toolchain 自带的 ld64.lld: $rust_lld" >&2
+    exit 1
+  fi
 
   cat > "$zig_cc_wrapper" <<'EOF'
 #!/usr/bin/env bash
@@ -435,48 +443,21 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
-sdk_path="${SDKROOT:?}"
-out=(
-  clang
-  -fuse-ld=lld
-  -Wl,-multiply_defined,suppress
-  -isysroot "$sdk_path"
-  -iframework "$sdk_path/System/Library/Frameworks"
-  -F"$sdk_path/System/Library/Frameworks"
-  -L"$sdk_path/usr/lib"
-)
 ubsan_rt="${CODEX_MACOS_UBSAN_RT:?}"
 compiler_rt="${CODEX_MACOS_COMPILER_RT:?}"
-needs_default_target=1
+exec "__WRAPPER_DIR__/zig-cxx" "$@" "$ubsan_rt" "$compiler_rt"
+EOF
+  perl -0pi -e 's|__WRAPPER_DIR__|\Q'"$wrapper_dir"'\E|g' "$clang_link_wrapper"
 
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --target=*|-target)
-      out+=( "$1" )
-      shift
-      if [ "${out[-1]}" = "-target" ] && [ "$#" -gt 0 ]; then
-        out+=( "$1" )
-        shift
-      fi
-      needs_default_target=0
-      ;;
-    *)
-      out+=( "$1" )
-      shift
-      ;;
-  esac
-done
-
-if [ "$needs_default_target" -eq 1 ]; then
-  out+=( --target=arm64-apple-darwin )
-fi
-
-out+=( "$ubsan_rt" "$compiler_rt" )
-exec "${out[@]}"
+  cat > "$lld_wrapper" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "$rust_lld" "\$@"
 EOF
 
   chmod +x \
-    "$clang_link_wrapper"
+    "$clang_link_wrapper" \
+    "$lld_wrapper"
 
   export CODEX_MACOS_UBSAN_RT="$latest_ubsan"
   export CODEX_MACOS_COMPILER_RT="$latest_compiler_rt"
