@@ -163,5 +163,5 @@ enabled = false
 
 - 继续补 daemon 崩溃/残留 artifact/权限异常的压力回归
 - 继续收紧 semantic payload 上限与截断策略
-- 评估 Kotlin 支持（当前受 `tree-sitter-kotlin` 与 workspace `tree-sitter` 版本冲突阻塞）
+- 继续评估 Kotlin 支持下的语义/关系精度
 - 按职责拆分 `daemon.rs` / `semantic.rs` / `tldr_cmd.rs`

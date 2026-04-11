@@ -5,6 +5,7 @@ mod elixir;
 mod go;
 mod java;
 mod javascript;
+mod kotlin;
 mod lua;
 mod luau;
 mod php;
@@ -34,6 +35,7 @@ pub enum SupportedLanguage {
     Go,
     Java,
     JavaScript,
+    Kotlin,
     Lua,
     Luau,
     Php,
@@ -56,6 +58,7 @@ impl SupportedLanguage {
             Self::Go => "go",
             Self::Java => "java",
             Self::JavaScript => "javascript",
+            Self::Kotlin => "kotlin",
             Self::Lua => "lua",
             Self::Luau => "luau",
             Self::Php => "php",
@@ -88,6 +91,7 @@ impl SupportedLanguage {
             Some("lua") => Some(Self::Lua),
             Some("luau") => Some(Self::Luau),
             Some("java") => Some(Self::Java),
+            Some("kt") | Some("kts") => Some(Self::Kotlin),
             Some("rb") => Some(Self::Ruby),
             Some("zig") => Some(Self::Zig),
             _ => None,
@@ -193,6 +197,13 @@ static LANGUAGE_SUPPORT: Lazy<BTreeMap<&'static str, LanguageSupport>> = Lazy::n
         },
         LanguageSupport {
             language: SupportedLanguage::JavaScript,
+            support_level: SupportLevel::ControlFlow,
+            symbol_extractor: SymbolExtractorKind::Heuristic,
+            symbol_relationship_support: SymbolRelationshipSupport::Heuristic,
+            fallback_strategy: "structure + imports + search",
+        },
+        LanguageSupport {
+            language: SupportedLanguage::Kotlin,
             support_level: SupportLevel::ControlFlow,
             symbol_extractor: SymbolExtractorKind::Heuristic,
             symbol_relationship_support: SymbolRelationshipSupport::Heuristic,
@@ -307,6 +318,7 @@ impl LanguageRegistry {
             SupportedLanguage::Python => python::parser(),
             SupportedLanguage::Go => go::parser(),
             SupportedLanguage::Java => java::parser(),
+            SupportedLanguage::Kotlin => kotlin::parser(),
             SupportedLanguage::Lua => lua::parser(),
             SupportedLanguage::Luau => luau::parser(),
             SupportedLanguage::Ruby => ruby::parser(),
@@ -336,6 +348,7 @@ impl LanguageRegistry {
             SupportedLanguage::Python => python::sample(),
             SupportedLanguage::Go => go::sample(),
             SupportedLanguage::Java => java::sample(),
+            SupportedLanguage::Kotlin => kotlin::sample(),
             SupportedLanguage::Lua => lua::sample(),
             SupportedLanguage::Luau => luau::sample(),
             SupportedLanguage::Ruby => ruby::sample(),

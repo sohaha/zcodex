@@ -1005,6 +1005,12 @@ fn definition_for_line(language: SupportedLanguage, line: &str) -> Option<(Strin
             ("public interface ", "interface"),
             ("interface ", "interface"),
         ],
+        SupportedLanguage::Kotlin => &[
+            ("fun ", "function"),
+            ("class ", "class"),
+            ("interface ", "interface"),
+            ("object ", "object"),
+        ],
         SupportedLanguage::Rust => &[
             ("pub async fn ", "function"),
             ("async fn ", "function"),
@@ -1258,6 +1264,7 @@ fn extension_for(language: SupportedLanguage) -> &'static str {
         SupportedLanguage::CSharp => "cs",
         SupportedLanguage::Elixir => "ex",
         SupportedLanguage::Java => "java",
+        SupportedLanguage::Kotlin => "kt",
         SupportedLanguage::Rust => "rs",
         SupportedLanguage::TypeScript => "ts",
         SupportedLanguage::JavaScript => "js",

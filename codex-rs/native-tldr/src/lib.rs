@@ -347,6 +347,7 @@ mod tests {
                 SupportedLanguage::Go,
                 SupportedLanguage::Java,
                 SupportedLanguage::JavaScript,
+                SupportedLanguage::Kotlin,
                 SupportedLanguage::Lua,
                 SupportedLanguage::Luau,
                 SupportedLanguage::Php,
