@@ -19,6 +19,7 @@
 - `.agents/llmdoc/architecture/rust-workspace-map.md`：Rust workspace 高价值 crate 地图。
 - `.agents/llmdoc/architecture/memory-and-doc-systems.md`：`.ai`、`llmdoc`、`zmemory` 与 `.agents/*` 产物的分工。
 - `.agents/llmdoc/guides/rust-change-loop.md`：在 `codex-rs` 做常规改动时的最小闭环。
+- `.agents/llmdoc/guides/upstream-sync-preservation-rules.md`：同步 `openai/codex` 时区分本地分叉功能与 upstream 原生功能删除的判断顺序。
 - `.agents/llmdoc/guides/ztldr-prompt-optimization.md`：优化 `ztldr` 工具描述、路由提示与相关文档时的事实源、触点与最小验证闭环。
 - `.agents/llmdoc/reference/build-and-test-commands.md`：常用 `just`、`mise`、schema 和测试命令。
 - `.agents/llmdoc/memory/doc-gaps.md`：后续应补强的文档空白。
@@ -43,6 +44,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-10-buddy-snapshot-accept-scope.md`：在 dirty monorepo 中只接收目标 snapshot，避免 `cargo insta accept` 扩大变更边界的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-core-tests-network-sandbox-split.md`：在 sandbox 环境下拆分 `codex-core` 测试以兼顾禁网与环境变量断言的回路反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-upstream-sync-code-mode-output-schema-local-preservation.md`：同步上游 code-mode `output_schema` 时，先验本地单工具描述行为再决定是否接收上游测试断言的反思。
+- `.agents/llmdoc/memory/reflections/2026-04-11-upstream-sync-native-feature-revert-triage.md`：同步时先确认功能来源，避免把 upstream 已回滚的原生功能误保留成本地分叉。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
 
 ## 路由规则

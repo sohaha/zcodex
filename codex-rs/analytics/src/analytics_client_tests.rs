@@ -610,6 +610,7 @@ async fn compaction_event_ingests_custom_fact() {
                     AppServerSessionSource::SubAgent(SubAgentSource::ThreadSpawn {
                         parent_thread_id,
                         depth: 1,
+                        parent_model: None,
                         agent_path: None,
                         agent_nickname: None,
                         agent_role: None,
