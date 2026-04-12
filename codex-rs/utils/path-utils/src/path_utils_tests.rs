@@ -123,7 +123,6 @@ mod windows_atomic_writes {
         Ok(())
     }
 }
-
 mod path_comparison {
     use super::super::paths_match_after_normalization;
     use std::path::PathBuf;

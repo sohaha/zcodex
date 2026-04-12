@@ -22,8 +22,7 @@ async fn runtime_seam_rewrites_grep_files_to_tldr_before_dispatch() {
     let rewritten = ToolCallRuntime::rewrite_call_for_dispatch(
         &turn,
         ToolCall {
-            tool_name: "grep_files".to_string(),
-            tool_namespace: None,
+            tool_name: "grep_files".into(),
             call_id: "call-runtime-rewrite".to_string(),
             payload: ToolPayload::Function {
                 arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
@@ -33,7 +32,7 @@ async fn runtime_seam_rewrites_grep_files_to_tldr_before_dispatch() {
     )
     .await;
 
-    assert_eq!(rewritten.tool_name, "ztldr");
+    assert_eq!(rewritten.tool_name, "ztldr".into());
     let ToolPayload::Function { arguments } = rewritten.payload else {
         panic!("expected function payload");
     };
@@ -49,8 +48,7 @@ async fn runtime_seam_keeps_grep_files_raw_when_mode_is_off() {
     turn.tools_config.auto_tldr_routing = AutoTldrRoutingMode::Off;
 
     let original = ToolCall {
-        tool_name: "grep_files".to_string(),
-        tool_namespace: None,
+        tool_name: "grep_files".into(),
         call_id: "call-mode-off".to_string(),
         payload: ToolPayload::Function {
             arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
@@ -74,8 +72,7 @@ async fn runtime_seam_keeps_grep_files_raw_when_directive_forces_raw_grep() {
     };
 
     let original = ToolCall {
-        tool_name: "grep_files".to_string(),
-        tool_namespace: None,
+        tool_name: "grep_files".into(),
         call_id: "call-force-raw".to_string(),
         payload: ToolPayload::Function {
             arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),
@@ -99,8 +96,7 @@ async fn runtime_seam_does_not_rewrite_grep_files_for_code_mode_source() {
     };
 
     let original = ToolCall {
-        tool_name: "grep_files".to_string(),
-        tool_namespace: None,
+        tool_name: "grep_files".into(),
         call_id: "call-code-mode".to_string(),
         payload: ToolPayload::Function {
             arguments: r#"{"pattern":"create_tldr_tool","include":"*.rs"}"#.to_string(),

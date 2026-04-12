@@ -119,8 +119,7 @@ pub(crate) async fn rewrite_read_file_to_tldr(
     ToolRewriteDecision::Rewrite {
         signal: None,
         call: ToolCall {
-            tool_name: "ztldr".to_string(),
-            tool_namespace: None,
+            tool_name: "ztldr".into(),
             call_id: call.call_id,
             payload: ToolPayload::Function { arguments },
         },
@@ -168,8 +167,7 @@ mod tests {
                 .display()
                 .to_string();
         let call = ToolCall {
-            tool_name: "read_file".to_string(),
-            tool_namespace: None,
+            tool_name: "read_file".into(),
             call_id: "call-read-1".to_string(),
             payload: ToolPayload::Function {
                 arguments: r#"{"path":"src/tools/spec.rs","offset":12}"#.to_string(),
@@ -211,8 +209,7 @@ mod tests {
     async fn factual_reads_stay_on_raw_handler_path() {
         let (_, turn) = make_session_and_context().await;
         let call = ToolCall {
-            tool_name: "read_file".to_string(),
-            tool_namespace: None,
+            tool_name: "read_file".into(),
             call_id: "call-read-2".to_string(),
             payload: ToolPayload::Function {
                 arguments: r#"{"path":"Cargo.toml","offset":1}"#.to_string(),
@@ -255,8 +252,7 @@ mod tests {
             ..Default::default()
         };
         let call = ToolCall {
-            tool_name: "read_file".to_string(),
-            tool_namespace: None,
+            tool_name: "read_file".into(),
             call_id: "call-read-3".to_string(),
             payload: ToolPayload::Function {
                 arguments: r#"{"path":"Makefile","anchor_line":3}"#.to_string(),

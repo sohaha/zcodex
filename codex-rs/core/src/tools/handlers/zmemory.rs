@@ -45,7 +45,7 @@ impl ToolHandler for ZmemoryHandler {
                 ));
             }
         };
-        let args = parse_zmemory_tool_args(&tool_name, &arguments)?;
+        let args = parse_zmemory_tool_args(tool_name.as_str(), &arguments)?;
         let codex_home = match args
             .codex_home
             .as_deref()

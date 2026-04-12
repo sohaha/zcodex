@@ -835,8 +835,7 @@ mod tests {
             turn,
             tracker: Arc::new(Mutex::new(TurnDiffTracker::default())),
             call_id: "call-1".to_string(),
-            tool_name: "ztldr".to_string(),
-            tool_namespace: None,
+            tool_name: "ztldr".into(),
             payload: ToolPayload::Function {
                 arguments: arguments.to_string(),
             },

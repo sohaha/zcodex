@@ -89,19 +89,13 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     }
     let (override_captures, override_exports) = build_override_exports(&override_env);
     let ripgrep_cleanup = invalid_ripgrep_config_unset();
-    let snapshot = session_shell
-        .shell_snapshot()
-        .filter(|snapshot| snapshot.path.exists());
+    let snapshot = session_shell.shell_snapshot();
     if let Some(snapshot) = snapshot.as_ref() {
-        let cwd_matches = if let (Ok(snapshot_cwd), Ok(command_cwd)) = (
-            path_utils::normalize_for_path_comparison(snapshot.cwd.as_path()),
-            path_utils::normalize_for_path_comparison(cwd),
-        ) {
-            snapshot_cwd == command_cwd
-        } else {
-            snapshot.cwd == cwd
-        };
-        if !cwd_matches {
+        if !snapshot.path.exists() {
+            return command.to_vec();
+        }
+
+        if !path_utils::paths_match_after_normalization(snapshot.cwd.as_path(), cwd) {
             return command.to_vec();
         }
     }

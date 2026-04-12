@@ -111,8 +111,7 @@ pub(crate) fn grep_tool_call(call_id: &str, pattern: &str, include: Option<&str>
 
 pub(crate) fn grep_tool_call_from_arguments(call_id: &str, arguments: String) -> ToolCall {
     ToolCall {
-        tool_name: "grep_files".to_string(),
-        tool_namespace: None,
+        tool_name: "grep_files".into(),
         call_id: call_id.to_string(),
         payload: ToolPayload::Function { arguments },
     }

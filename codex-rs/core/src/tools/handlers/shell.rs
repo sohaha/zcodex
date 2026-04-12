@@ -404,7 +404,7 @@ impl ToolHandler for ShellHandler {
                 let exec_params =
                     Self::to_exec_params(&params, turn.as_ref(), session.conversation_id);
                 Self::run_exec_like(RunExecLikeArgs {
-                    tool_name: tool_name.clone(),
+                    tool_name: tool_name.display(),
                     exec_params,
                     approval_command: None,
                     display_command: None,
@@ -425,7 +425,7 @@ impl ToolHandler for ShellHandler {
                 let exec_params =
                     Self::to_exec_params(&params, turn.as_ref(), session.conversation_id);
                 Self::run_exec_like(RunExecLikeArgs {
-                    tool_name: tool_name.clone(),
+                    tool_name: tool_name.display(),
                     exec_params,
                     approval_command: None,
                     display_command: None,
@@ -443,7 +443,8 @@ impl ToolHandler for ShellHandler {
                 .await
             }
             _ => Err(FunctionCallError::RespondToModel(format!(
-                "unsupported payload for shell handler: {tool_name}"
+                "unsupported payload for shell handler: {}",
+                tool_name.display()
             ))),
         }
     }
@@ -512,7 +513,8 @@ impl ToolHandler for ShellCommandHandler {
 
         let ToolPayload::Function { arguments } = payload else {
             return Err(FunctionCallError::RespondToModel(format!(
-                "unsupported payload for shell_command handler: {tool_name}"
+                "unsupported payload for shell_command handler: {}",
+                tool_name.display()
             )));
         };
 
@@ -547,7 +549,7 @@ impl ToolHandler for ShellCommandHandler {
         .await;
         let prefix_rule = params.prefix_rule.clone();
         ShellHandler::run_exec_like(RunExecLikeArgs {
-            tool_name,
+            tool_name: tool_name.display(),
             exec_params: prepared.exec_params,
             approval_command: Some(prepared.approval_command),
             display_command: prepared.display_command,

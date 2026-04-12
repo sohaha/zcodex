@@ -17,7 +17,7 @@ pub(crate) async fn rewrite_tool_call(
     source: ToolCallSource,
 ) -> ToolRewriteDecision {
     let mode = turn.tools_config.auto_tldr_routing;
-    let from_tool = call.tool_name.clone();
+    let from_tool = call.tool_name.display();
     let call_id = call.call_id.clone();
 
     let decision = if matches!(source, ToolCallSource::JsRepl | ToolCallSource::CodeMode) {
@@ -37,13 +37,19 @@ pub(crate) async fn rewrite_tool_call(
         route_auto_tldr(turn, call, directives, mode).await
     };
 
-    log_tool_route(mode.as_str(), source, &from_tool, &call_id, &decision);
+    log_tool_route(
+        mode.as_str(),
+        source,
+        from_tool.as_str(),
+        &call_id,
+        &decision,
+    );
     emit_tool_route_metric(
         &turn.session_telemetry,
         mode.as_str(),
         source,
         &decision,
-        &from_tool,
+        from_tool.as_str(),
     );
     decision
 }
@@ -271,8 +277,7 @@ mod tests {
         let session_telemetry = test_session_telemetry();
         let decision = ToolRewriteDecision::Rewrite {
             call: ToolCall {
-                tool_name: "ztldr".to_string(),
-                tool_namespace: None,
+                tool_name: "ztldr".into(),
                 call_id: "call-1".to_string(),
                 payload: crate::tools::context::ToolPayload::Function {
                     arguments: "{}".to_string(),
@@ -320,8 +325,7 @@ mod tests {
         let session_telemetry = test_session_telemetry();
         let decision = ToolRewriteDecision::Passthrough {
             call: ToolCall {
-                tool_name: "grep_files".to_string(),
-                tool_namespace: None,
+                tool_name: "grep_files".into(),
                 call_id: "call-2".to_string(),
                 payload: crate::tools::context::ToolPayload::Function {
                     arguments: "{}".to_string(),

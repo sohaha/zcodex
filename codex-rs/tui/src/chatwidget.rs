@@ -5274,7 +5274,6 @@ impl ChatWidget {
         }
         self.add_info_message(result.message, result.hint);
     }
-
     fn show_rename_prompt(&mut self) {
         let tx = self.app_event_tx.clone();
         let has_name = self
@@ -7345,6 +7344,8 @@ impl ChatWidget {
 
     fn clean_background_terminals(&mut self) {
         self.submit_op(AppCommand::clean_background_terminals());
+        self.unified_exec_processes.clear();
+        self.sync_unified_exec_footer();
         self.add_info_message("正在停止所有后台终端。".to_string(), /*hint*/ None);
     }
 
