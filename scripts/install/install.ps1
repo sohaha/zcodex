@@ -99,6 +99,7 @@ switch ($arch) {
 
 $resolvedVersion = Resolve-Version
 $baseUrl = "https://github.com/sohaha/zcodex/releases/download/v$resolvedVersion"
+$PathInstallDir = Join-Path $env:LOCALAPPDATA 'Programs\zcodex\bin'
 $assets = @(
     @{ Name = "codex-$target.exe"; Destination = 'codex.exe' },
     @{ Name = "codex-command-runner-$target.exe"; Destination = 'codex-command-runner.exe' },
@@ -108,8 +109,10 @@ $assets = @(
 Write-Step "Installing zcodex v$resolvedVersion"
 Write-Step "Detected platform: $platformLabel"
 Write-Step "Install directory: $InstallDir"
+Write-Step "PATH directory: $PathInstallDir"
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
+New-Item -ItemType Directory -Force -Path $PathInstallDir | Out-Null
 
 foreach ($asset in $assets) {
     $url = "$baseUrl/$($asset.Name)"
@@ -118,19 +121,24 @@ foreach ($asset in $assets) {
     if ($PSCmdlet.ShouldProcess($destination, "Download $url")) {
         Invoke-WebRequest -Uri $url -OutFile $destination
     }
+
+    $pathDestination = Join-Path $PathInstallDir $asset.Destination
+    if ($PSCmdlet.ShouldProcess($pathDestination, "Copy $destination")) {
+        Copy-Item -Force $destination $pathDestination
+    }
 }
 
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if (-not (Path-Contains -PathValue $userPath -Entry $InstallDir)) {
-    $newUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $InstallDir } else { "$InstallDir;$userPath" }
-    if ($PSCmdlet.ShouldProcess('User PATH', "Add $InstallDir")) {
+if (-not (Path-Contains -PathValue $userPath -Entry $PathInstallDir)) {
+    $newUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) { $PathInstallDir } else { "$PathInstallDir;$userPath" }
+    if ($PSCmdlet.ShouldProcess('User PATH', "Add $PathInstallDir")) {
         [Environment]::SetEnvironmentVariable('Path', $newUserPath, 'User')
     }
-    $env:Path = "$InstallDir;$env:Path"
-    Write-Step 'Added install directory to user PATH. Open a new shell if needed.'
+    $env:Path = "$PathInstallDir;$env:Path"
+    Write-Step 'Added PATH directory to user PATH. Open a new shell if needed.'
 }
 
-$codexPath = Join-Path $InstallDir 'codex.exe'
+$codexPath = Join-Path $PathInstallDir 'codex.exe'
 Write-Step "Verifying $codexPath"
 if ($PSCmdlet.ShouldProcess($codexPath, 'codex --version')) {
     & $codexPath --version
