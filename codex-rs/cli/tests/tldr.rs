@@ -620,6 +620,83 @@ async fn tldr_daemon_status_json_preserves_status_contract() -> Result<()> {
 }
 
 #[tokio::test]
+async fn tldr_daemon_start_then_stop_json_cleans_up_process() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let project = TempDir::new()?;
+    std::fs::create_dir_all(project.path().join("src"))?;
+    std::fs::write(project.path().join("src/lib.rs"), "fn helper() {}\n")?;
+    let project_arg = project
+        .path()
+        .to_str()
+        .expect("project path should be utf-8");
+
+    let mut start_cmd = codex_command(codex_home.path())?;
+    let start_output = start_cmd
+        .args([
+            "ztldr",
+            "daemon",
+            "--project",
+            project_arg,
+            "--json",
+            "start",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let start_payload: serde_json::Value = serde_json::from_slice(&start_output)?;
+    assert_eq!(start_payload["action"], "start");
+    assert_eq!(start_payload["status"], "ok");
+    assert_eq!(start_payload["daemonStatus"]["healthy"], true);
+
+    let mut stop_cmd = codex_command(codex_home.path())?;
+    let stop_output = stop_cmd
+        .args([
+            "ztldr",
+            "daemon",
+            "--project",
+            project_arg,
+            "--json",
+            "stop",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stop_payload: serde_json::Value = serde_json::from_slice(&stop_output)?;
+    assert_eq!(stop_payload["action"], "stop");
+    assert_eq!(stop_payload["stopped"], true);
+    assert!(
+        stop_payload["message"]
+            .as_str()
+            .is_some_and(|message| !message.is_empty())
+    );
+
+    let mut stop_again_cmd = codex_command(codex_home.path())?;
+    let stop_again_output = stop_again_cmd
+        .args([
+            "ztldr",
+            "daemon",
+            "--project",
+            project_arg,
+            "--json",
+            "stop",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let stop_again_payload: serde_json::Value = serde_json::from_slice(&stop_again_output)?;
+    assert_eq!(stop_again_payload["action"], "stop");
+    assert_eq!(stop_again_payload["stopped"], false);
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn tldr_daemon_notify_then_snapshot_reflects_dirty_file_count() -> Result<()> {
     let codex_home = TempDir::new()?;
     let project = TempDir::new()?;

@@ -2065,6 +2065,59 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    #[serial]
+    async fn daemon_shutdown_command_stops_server_and_cleans_artifacts() {
+        let project = tempfile::tempdir().expect("tempdir should exist");
+        let project_root = project.path().to_path_buf();
+        let socket_path = socket_path_for_project(&project_root);
+        let pid_path = pid_path_for_project(&project_root);
+        let mut config = crate::TldrConfig::for_project(project_root.clone());
+        config.session = crate::session::SessionConfig {
+            idle_timeout: Duration::from_secs(30),
+            dirty_file_threshold: 20,
+        };
+        config.semantic = crate::semantic::SemanticConfig::default().with_enabled(false);
+        let daemon = TldrDaemon::from_config(config);
+
+        let daemon_task = tokio::spawn(async move { daemon.run_until_shutdown().await });
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !socket_path.exists() || !pid_path.exists() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("daemon should create socket and pid files");
+
+        let response = query_daemon(&project_root, &TldrDaemonCommand::Shutdown)
+            .await
+            .expect("shutdown should succeed")
+            .expect("daemon should respond");
+        assert_eq!(response, TldrDaemonResponse::ok("shutdown requested"));
+
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while socket_path.exists() || pid_path.exists() {
+                sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .expect("shutdown should clean daemon artifacts");
+
+        daemon_task
+            .await
+            .expect("daemon task should join")
+            .expect("daemon should exit cleanly");
+
+        assert_eq!(
+            query_daemon(&project_root, &TldrDaemonCommand::Ping)
+                .await
+                .expect("post-shutdown query should not error"),
+            None
+        );
+    }
+
     #[tokio::test]
     async fn notify_invalidates_cached_analyses_when_threshold_is_reached() {
         let project = tempfile::tempdir().expect("tempdir should exist");
