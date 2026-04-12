@@ -120,7 +120,7 @@ pub fn write_atomically(write_path: &Path, contents: &str) -> io::Result<()> {
     #[cfg(windows)]
     {
         match tmp.persist(write_path) {
-            Ok(()) => Ok(()),
+            Ok(_file) => Ok(()),
             Err(err)
                 if write_path.exists() && err.error.kind() == io::ErrorKind::PermissionDenied =>
             {
