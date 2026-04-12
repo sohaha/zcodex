@@ -7,6 +7,7 @@ pub use env::is_wsl;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashSet;
 use std::io;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
@@ -116,8 +117,30 @@ pub fn write_atomically(write_path: &Path, contents: &str) -> io::Result<()> {
     std::fs::create_dir_all(parent)?;
     let tmp = NamedTempFile::new_in(parent)?;
     std::fs::write(tmp.path(), contents)?;
-    tmp.persist(write_path)?;
-    Ok(())
+    #[cfg(windows)]
+    {
+        match tmp.persist(write_path) {
+            Ok(()) => Ok(()),
+            Err(err)
+                if write_path.exists() && err.error.kind() == io::ErrorKind::PermissionDenied =>
+            {
+                // Some Windows readers open files without FILE_SHARE_DELETE, which blocks the
+                // final replace step even though an in-place rewrite is still allowed.
+                let mut file = std::fs::OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(write_path)?;
+                file.write_all(contents.as_bytes())?;
+                file.sync_all()
+            }
+            Err(err) => Err(err.error),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        tmp.persist(write_path)?;
+        Ok(())
+    }
 }
 
 fn normalize_for_wsl(path: PathBuf) -> PathBuf {

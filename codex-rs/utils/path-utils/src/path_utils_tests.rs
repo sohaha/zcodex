@@ -21,6 +21,23 @@ mod symlinks {
     }
 }
 
+mod atomic_writes {
+    use super::super::write_atomically;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn overwrites_existing_file_contents() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "model = \"old\"\n")?;
+
+        write_atomically(&path, "model = \"new\"\n")?;
+
+        assert_eq!(std::fs::read_to_string(path)?, "model = \"new\"\n");
+        Ok(())
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod wsl {
     use super::super::normalize_for_wsl_with_flag;
@@ -76,5 +93,33 @@ mod native_workdir {
             normalize_for_native_workdir_with_flag(path.clone(), /*is_windows*/ false);
 
         assert_eq!(normalized, path);
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows_atomic_writes {
+    use super::super::write_atomically;
+    use pretty_assertions::assert_eq;
+    use std::fs::OpenOptions;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const FILE_SHARE_READ: u32 = 0x00000001;
+    const FILE_SHARE_WRITE: u32 = 0x00000002;
+
+    #[test]
+    fn falls_back_to_in_place_overwrite_when_replace_is_blocked() -> std::io::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "model = \"old\"\n")?;
+
+        let _reader = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&path)?;
+
+        write_atomically(&path, "model = \"new\"\n")?;
+
+        assert_eq!(std::fs::read_to_string(path)?, "model = \"new\"\n");
+        Ok(())
     }
 }
