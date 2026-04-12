@@ -1,0 +1,58 @@
+plan = ".agents/plan/2026-04-11-codex-cli-interactive-startup-slow.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "建立 codex-cli 交互慢启动的代码路径与观测基线"
+scope = """
+围绕 `codex` 默认交互模式，确认 `cli -> tui -> terminal init/app-server/config/state` 的真实启动链，并补齐当前会话下可复现的最小观测证据，包括“非交互命令很快、交互模式明显更慢”的对照结果。
+本 issue 只建立事实基线与入口映射，不在此阶段给出最终归因排序，也不修改生产代码。
+"""
+touch_points = ["module:cli", "module:tui", "command:codex", "codex-rs/cli/src/main.rs", "codex-rs/tui/src/lib.rs", "codex-rs/tui/src/tui.rs", "codex-rs/tui/src/custom_terminal.rs", "codex-rs/tui/src/terminal_palette.rs"]
+depends_on = []
+done_when = "已确认交互模式的主启动链与关键入口函数，且已形成当前环境下可复现的对照证据，证明非交互命令快而交互模式在首屏前存在明显等待。"
+validate_by = "在仓库中复核 `codex-rs/cli/src/main.rs`、`codex-rs/tui/src/lib.rs`、`codex-rs/tui/src/tui.rs`、`codex-rs/tui/src/custom_terminal.rs`、`codex-rs/tui/src/terminal_palette.rs` 的启动路径，并执行最小观测命令：`TIMEFORMAT='%3R'; time codex --version`、`TIMEFORMAT='%3R'; time codex features list`、`timeout 5s script -q -c 'codex --no-alt-screen' /tmp/codex_interactive_capture.txt`"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "拆解交互启动阶段的同步阻塞点并落实到模块"
+scope = """
+基于已确认的启动链，逐段拆解交互模式首屏前的同步初始化成本，至少覆盖终端探测、配置层加载、project doc 发现、embedded app-server 初始化、state db 和认证/日志初始化等路径，并把每个阻塞点落实到具体模块与函数。
+本 issue 负责代码级归因，不在此阶段给出产品级优化排序结论，也不新增埋点或改动实现。
+"""
+touch_points = ["module:cli", "module:tui", "module:core", "module:app-server-client", "module:app-server", "module:rollout", "codex-rs/core/src/config/mod.rs", "codex-rs/core/src/config_loader/mod.rs", "codex-rs/core/src/project_doc.rs", "codex-rs/app-server-client/src/lib.rs", "codex-rs/app-server/src/in_process.rs", "codex-rs/rollout/src/state_db.rs"]
+depends_on = ["a1"]
+done_when = "每个主要同步步骤都有明确的代码位置、作用说明和其为何可能阻塞交互首屏的证据描述，且已区分主路径上的必经步骤与次级影响项。"
+validate_by = "基于 `a1` 的观测结果继续核对 `codex-rs/core/src/config/mod.rs`、`codex-rs/core/src/config_loader/mod.rs`、`codex-rs/core/src/project_doc.rs`、`codex-rs/app-server-client/src/lib.rs`、`codex-rs/app-server/src/in_process.rs`、`codex-rs/rollout/src/state_db.rs`、`codex-rs/core/src/tasks/mod.rs` 的启动相关实现，并确保每个阻塞点都能映射回已确认的启动链"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "输出 codex-cli 交互慢启动的主因排序与优化优先级"
+scope = """
+汇总前两项的代码与观测证据，形成可直接回答“为什么慢、主要慢在哪里、不是哪些原因、下一步最值得优化哪里”的分析结论，并按主因、次因、排除项和后续优化优先级整理成可审阅结果。
+本 issue 只交付分析结论与建议，不承诺在本轮直接修复启动性能。
+"""
+touch_points = ["command:codex", "module:cli", "module:tui", "module:core", "module:app-server-client", "module:app-server", "module:rollout"]
+depends_on = ["a1", "a2"]
+done_when = "已形成一份基于仓库事实与当前环境观测的结论，明确交互模式慢启动的主因、次因、排除项和建议优化顺序，且结论可直接支撑后续实现或进一步埋点。"
+validate_by = "复核最终分析结论是否同时满足四点：1）能解释非交互快而交互慢；2）每条结论都能回溯到具体代码或观测证据；3）已明确哪些只是环境相关推断；4）后续优化建议与已确认阻塞点一一对应"
+regress_by = "none"
+regress_timing = "after_done"
+status = "todo"
+validate_status = "not_run"
+regress_status = "not_needed"
+notes = "none"
