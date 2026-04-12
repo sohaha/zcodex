@@ -45,6 +45,7 @@
 - `.agents/llmdoc/memory/reflections/2026-04-10-core-tests-network-sandbox-split.md`：在 sandbox 环境下拆分 `codex-core` 测试以兼顾禁网与环境变量断言的回路反思。
 - `.agents/llmdoc/memory/reflections/2026-04-10-upstream-sync-code-mode-output-schema-local-preservation.md`：同步上游 code-mode `output_schema` 时，先验本地单工具描述行为再决定是否接收上游测试断言的反思。
 - `.agents/llmdoc/memory/reflections/2026-04-11-upstream-sync-native-feature-revert-triage.md`：同步时先确认功能来源，避免把 upstream 已回滚的原生功能误保留成本地分叉。
+- `.agents/llmdoc/memory/reflections/2026-04-12-upstream-sync-state-auditability.md`：同步提交若不是 merge-parent 型，必须靠提交正文与 `STATE.md` 保持 upstream 基线可审计。
 - `.agents/llmdoc/memory/reflections/2026-04-12-remote-compaction-nonblocking-connectors.md`：远程 compaction 仍卡住时，要继续检查 `build_initial_context()` 和 connector 指令链路是否还在走阻塞版 MCP tools。
 - `.agents/llmdoc/memory/reflections/2026-04-12-core-nextest-mcp-timeout-triage.md`：`codex-core` 中依赖 MCP tool ready 的测试若只在 nextest 30 秒 case timeout 下失败，先用定向 `cargo test --exact` 区分 runner 时限和真实回归。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。

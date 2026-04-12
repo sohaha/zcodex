@@ -20,6 +20,14 @@
   - 继续作为本地分叉保留
 - 用户未明确保留前，不能把“当前仓库里还留着旧实现”当作默认答案。
 
+## 同步记录的可审计性规则
+- 优先保留标准 merge 结构，让 upstream commit 直接成为父提交之一。
+- 若最终只能用 squash、cherry-pick 或人工整理式提交，提交正文必须显式写出：
+  - `Previous upstream baseline`
+  - `Upstream target sha`
+  - `Actual upstream range`
+- `STATE.md` 只记录最近一次**可准确审计**的已落地基线；若代码已经吸收了更晚同步内容，但 target SHA 仍无法精确确认，不要伪造 `last_synced_sha`，而是在 `notes` 中明确说明原因。
+
 ## 本次同步验证到的例子
 - `codex-rs/account` 属于上游原生功能，不是本地分叉独有能力。
 - 它由 `9f2a58515` 引入，又被 `930e5adb7` 回滚，因此本地应先按“是否跟随 upstream 删除”来处理，而不是直接保留。
