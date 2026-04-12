@@ -34,6 +34,16 @@ use crate::history_cell;
 use crate::history_cell::HistoryCell;
 #[cfg(not(debug_assertions))]
 use crate::history_cell::UpdateAvailableHistoryCell;
+use crate::legacy_core::append_message_history_entry;
+use crate::legacy_core::config::Config;
+use crate::legacy_core::config::ConfigBuilder;
+use crate::legacy_core::config::ConfigOverrides;
+use crate::legacy_core::config::edit::ConfigEdit;
+use crate::legacy_core::config::edit::ConfigEditsBuilder;
+use crate::legacy_core::config_loader::ConfigLayerStackOrdering;
+use crate::legacy_core::lookup_message_history_entry;
+#[cfg(target_os = "windows")]
+use crate::legacy_core::windows_sandbox::WindowsSandboxLevelExt;
 use crate::model_catalog::ModelCatalog;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_models;
@@ -88,16 +98,6 @@ use codex_app_server_protocol::TurnError as AppServerTurnError;
 use codex_app_server_protocol::TurnStatus;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::ModelAvailabilityNuxConfig;
-use codex_core::config::Config;
-use codex_core::config::ConfigBuilder;
-use codex_core::config::ConfigOverrides;
-use codex_core::config::edit::ConfigEdit;
-use codex_core::config::edit::ConfigEditsBuilder;
-use codex_core::config_loader::ConfigLayerStackOrdering;
-use codex_core::message_history::append_entry as append_message_history_entry;
-use codex_core::message_history::lookup as lookup_message_history_entry;
-#[cfg(target_os = "windows")]
-use codex_core::windows_sandbox::WindowsSandboxLevelExt;
 use codex_exec_server::EnvironmentManager;
 use codex_features::Feature;
 use codex_models_manager::collaboration_mode_presets::CollaborationModesConfig;

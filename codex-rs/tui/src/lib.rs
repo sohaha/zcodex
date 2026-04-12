@@ -3,6 +3,22 @@
 // alternate‑screen mode starts; that file opts‑out locally via `allow`.
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
+use crate::legacy_core::check_execpolicy_for_warnings;
+use crate::legacy_core::config::Config;
+use crate::legacy_core::config::ConfigBuilder;
+use crate::legacy_core::config::ConfigOverrides;
+use crate::legacy_core::config::find_codex_home;
+use crate::legacy_core::config::load_config_as_toml_with_cli_overrides;
+use crate::legacy_core::config::resolve_oss_provider;
+use crate::legacy_core::config_loader::CloudRequirementsLoader;
+use crate::legacy_core::config_loader::ConfigLoadError;
+use crate::legacy_core::config_loader::LoaderOverrides;
+use crate::legacy_core::config_loader::format_config_error_with_source;
+use crate::legacy_core::find_thread_meta_by_name_str;
+use crate::legacy_core::format_exec_policy_error_with_source;
+use crate::legacy_core::path_utils;
+use crate::legacy_core::read_session_meta_line;
+use crate::legacy_core::windows_sandbox::WindowsSandboxLevelExt;
 use additional_dirs::add_dir_warning_message;
 use app::App;
 pub use app::AppExitInfo;
@@ -14,6 +30,7 @@ use codex_app_server_client::InProcessAppServerClient;
 use codex_app_server_client::InProcessClientStartArgs;
 use codex_app_server_client::RemoteAppServerClient;
 use codex_app_server_client::RemoteAppServerConnectArgs;
+pub(crate) use codex_app_server_client::legacy_core;
 use codex_app_server_protocol::Account as AppServerAccount;
 use codex_app_server_protocol::AuthMode as AppServerAuthMode;
 use codex_app_server_protocol::ConfigWarningNotification;
