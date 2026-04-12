@@ -2,8 +2,8 @@
 
 - upstream_repo: https://github.com/openai/codex.git
 - upstream_branch: main
-- last_synced_sha: 824ec94eab098375dcbb9cf2da1d666fb68ad40f
-- last_synced_at_utc: 2026-04-11T03:26:57Z
+- last_synced_sha: 3895ddd6b1caf80cd77d6fd44e3ce55bd290ef18
+- last_synced_at_utc: 2026-04-12T21:09:09Z
 - last_synced_base_branch: web
-- last_sync_commit: cbffb8c32
-- notes: 最近一次“可准确审计 upstream SHA”的落地同步仍是 cbffb8c32（7bbe3b6..824ec94）。其后 web 已落地 e08014806 / ea467a787 这一轮更晚同步，并已按用户决定跟随 upstream 删除 account；经文件级核对，当前代码至少吸收了 0bdeab330 及之前的多项 upstream 变更，但由于 ea467a787 不是 merge-parent 型同步提交，且提交正文未记录 target SHA，当前仍需重新核定这轮同步的精确 upstream 上界，故暂不更新 last_synced_sha 以避免写入虚假基线。
+- last_sync_commit: 02959687a
+- notes: 已在独立 worktree `sync/openai-codex-20260412-210909` 完成对 `openai/main@3895ddd6b1caf80cd77d6fd44e3ce55bd290ef18` 的 merge-parent 型同步，并保留本地中文化、buddy 命令与分叉能力；同步中补齐了 upstream 的 ToolName / namespaced MCP tools / guardian timeout / slash dispatch 等更新。验证上，受影响 crate 已分别通过 nextest；组合跑 core+tui+app-server 等包时有 9 个 codex-core 用例触发 nextest 默认 30 秒超时，但逐包串行与定向复测均通过，确认属于并发压测下的 runner 超时而非功能回归。
