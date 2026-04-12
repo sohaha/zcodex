@@ -47,6 +47,8 @@
 - `.agents/llmdoc/memory/reflections/2026-04-11-upstream-sync-native-feature-revert-triage.md`：同步时先确认功能来源，避免把 upstream 已回滚的原生功能误保留成本地分叉。
 - `.agents/llmdoc/memory/reflections/2026-04-09-ztldr-semantic-cache-runtime-dir.md`：ztldr semantic cache 迁出项目根 `.tldr/` 的排查与落地反思。
 
+- `.agents/llmdoc/memory/reflections/2026-04-12-cli-startup-error-chain-visibility.md`：CLI 入口只打印最外层 anyhow 错误会隐藏 TUI bootstrap 根因，需显式展开 error chain。
+
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。
 - 触及 Rust 子系统前，先读 `architecture/rust-workspace-map.md`，再按具体运行面补读相关架构文档。

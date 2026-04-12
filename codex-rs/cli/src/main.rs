@@ -694,11 +694,34 @@ fn stage_str(stage: Stage) -> &'static str {
     }
 }
 
-fn main() -> anyhow::Result<()> {
-    arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
+fn main() {
+    let result = arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         cli_main(arg0_paths).await?;
         Ok(())
-    })
+    });
+    if let Err(err) = result {
+        eprintln!("{}", format_error_chain(&err));
+        std::process::exit(1);
+    }
+}
+
+fn format_error_chain(err: &anyhow::Error) -> String {
+    let mut chain = err.chain();
+    let Some(first) = chain.next() else {
+        return "Error".to_string();
+    };
+
+    let mut rendered = format!("Error: {first}");
+    let mut cause_index = 0;
+    for cause in chain {
+        if cause_index == 0 {
+            rendered.push_str("\nCaused by:");
+        }
+        rendered.push_str(&format!("\n  {cause_index}: {cause}"));
+        cause_index += 1;
+    }
+
+    rendered
 }
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
@@ -2039,6 +2062,30 @@ mod tests {
         assert_eq!(
             lines,
             vec!["Token 使用量：总计=0 输入=0 输出=0".to_string()]
+        );
+    }
+
+    #[test]
+    fn format_error_chain_shows_single_error() {
+        let err = anyhow::anyhow!("thread/start failed during TUI bootstrap");
+
+        assert_eq!(
+            format_error_chain(&err),
+            "Error: thread/start failed during TUI bootstrap"
+        );
+    }
+
+    #[test]
+    fn format_error_chain_includes_causes() {
+        use anyhow::Context as _;
+
+        let err = anyhow::anyhow!("required MCP servers failed to initialize")
+            .context("thread/start failed")
+            .context("thread/start failed during TUI bootstrap");
+
+        assert_eq!(
+            format_error_chain(&err),
+            "Error: thread/start failed during TUI bootstrap\nCaused by:\n  0: thread/start failed\n  1: required MCP servers failed to initialize"
         );
     }
 
