@@ -180,6 +180,26 @@ native-tldr-test-fast *args:
       cargo test -p codex-native-tldr "$@"; \
     fi
 
+# Cross-check the Windows build for the native-tldr/cli chain from Linux/macOS.
+# Override CODEX_WINDOWS_TARGET if you need a different triple.
+windows-cross-check *args:
+    target="${CODEX_WINDOWS_TARGET:-x86_64-pc-windows-msvc}"; \
+    if command -v sccache >/dev/null 2>&1; then \
+      export RUSTC_WRAPPER="sccache"; \
+      export SCCACHE_DIR="${SCCACHE_DIR:-/workspace/.cache/sccache}"; \
+    else \
+      unset RUSTC_WRAPPER; \
+    fi; \
+    export CARGO_INCREMENTAL=0; \
+    export CARGO_HOME="$(just cargo-home check-windows)"; \
+    export CARGO_TARGET_DIR="$(just target-dir check-windows)"; \
+    case "$target" in \
+      *-windows-gnu) command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || { echo "missing x86_64-w64-mingw32-gcc for $target"; exit 2; } ;; \
+      *-windows-msvc) command -v lib.exe >/dev/null 2>&1 || { echo "missing lib.exe for $target"; exit 2; } ;; \
+    esac; \
+    rustup target list --installed | grep -qx "$target" || rustup target add "$target"; \
+    cargo check -p codex-native-tldr -p codex-cli --target "$target" "$@"
+
 # Build and run Codex from source using Bazel.
 # Note we have to use the combination of `[no-cd]` and `--run_under="cd $PWD &&"`
 # to ensure that Bazel runs the command in the current working directory.

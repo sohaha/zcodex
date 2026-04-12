@@ -25,3 +25,7 @@ log_file="${CODEX_WATCH_LOG_FILE:-$HOME/.codex/log/codex-tui.log}"
 RIPGREP_CONFIG_PATH=/dev/null tail -F "$log_file" \
 | RIPGREP_CONFIG_PATH=/dev/null rg --line-buffered 'shell_command routed via embedded ZTOK|rewritten: .*codex ztok|command is not in the embedded ZTOK allowlist|embedded ZTOK rewriter'
 '''
+
+[tasks.windows-cross-check]
+description = "在当前环境做 Windows target 交叉编译检查（native-tldr + cli）"
+run = "just windows-cross-check"
