@@ -376,6 +376,7 @@ impl NetworkProxyState {
         }
 
         let is_allowlisted = allow_set.is_match(host_str);
+        let is_explicit_allowlisted = is_explicit_allowlisted_host(&allowed_domains, &host);
         if !allow_local_binding {
             // If the intent is "prevent access to local/internal networks", we must not rely solely
             // on string checks like `localhost` / `127.0.0.1`. Attackers can use DNS rebinding or
@@ -403,7 +404,9 @@ impl NetworkProxyState {
                 if !is_explicit_local_allowlisted(&allowed_domains, &host) {
                     return Ok(HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal));
                 }
-            } else if host_resolves_to_non_public_ip(host_str, port).await {
+            } else if (!is_allowlisted || is_explicit_allowlisted)
+                && host_resolves_to_non_public_ip(host_str, port).await
+            {
                 return Ok(HostBlockDecision::Blocked(HostBlockReason::NotAllowedLocal));
             }
         }
@@ -794,7 +797,7 @@ fn log_domain_list_changes(list_name: &str, previous: &[String], next: &[String]
     }
 }
 
-fn is_explicit_local_allowlisted(allowed_domains: &[String], host: &Host) -> bool {
+fn is_explicit_allowlisted_host(allowed_domains: &[String], host: &Host) -> bool {
     let normalized_host = host.as_str();
     allowed_domains.iter().any(|pattern| {
         let pattern = pattern.trim();
@@ -806,6 +809,10 @@ fn is_explicit_local_allowlisted(allowed_domains: &[String], host: &Host) -> boo
         }
         normalize_host(pattern) == normalized_host
     })
+}
+
+fn is_explicit_local_allowlisted(allowed_domains: &[String], host: &Host) -> bool {
+    is_explicit_allowlisted_host(allowed_domains, host)
 }
 
 fn unix_timestamp() -> i64 {

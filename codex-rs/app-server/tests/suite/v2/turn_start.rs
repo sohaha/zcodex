@@ -301,7 +301,7 @@ async fn thread_start_omits_empty_instruction_overrides_from_model_request() -> 
     .await??;
 
     let request_body = response_mock.single_request().body_json();
-    let empty_developer_input_texts = request_body["input"]
+    let has_empty_developer_input_text = request_body["input"]
         .as_array()
         .expect("input array")
         .iter()
@@ -312,17 +312,12 @@ async fn thread_start_omits_empty_instruction_overrides_from_model_request() -> 
             content.get("type").and_then(serde_json::Value::as_str) == Some("input_text")
         })
         .filter_map(|content| content.get("text").and_then(serde_json::Value::as_str))
-        .filter(|text| text.is_empty())
-        .collect::<Vec<_>>();
-    assert_eq!(
-        json!({
-            "hasInstructions": request_body.get("instructions").is_some(),
-            "emptyDeveloperInputTexts": empty_developer_input_texts,
-        }),
-        json!({
-            "hasInstructions": false,
-            "emptyDeveloperInputTexts": [],
-        })
+        .any(str::is_empty);
+    assert!(!has_empty_developer_input_text);
+    assert!(
+        request_body["instructions"]
+            .as_str()
+            .is_some_and(|text| !text.is_empty())
     );
 
     Ok(())
@@ -676,7 +671,7 @@ async fn turn_start_accepts_collaboration_mode_override_v2() -> Result<()> {
     let payload = request.body_json();
     assert_eq!(payload["model"].as_str(), Some("mock-model-collab"));
     let payload_text = payload.to_string();
-    assert!(payload_text.contains("The `request_user_input` tool is available in Default mode."));
+    assert!(payload_text.contains("这个工具仅在 默认 或 计划 模式下可用。"));
 
     Ok(())
 }
@@ -761,7 +756,7 @@ async fn turn_start_uses_thread_feature_overrides_for_collaboration_mode_instruc
 
     let request = response_mock.single_request();
     let payload_text = request.body_json().to_string();
-    assert!(payload_text.contains("The `request_user_input` tool is available in Default mode."));
+    assert!(payload_text.contains("这个工具仅在 默认 或 计划 模式下可用。"));
 
     Ok(())
 }

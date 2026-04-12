@@ -150,6 +150,14 @@ async fn run_cmd_result_with_policies(
 
 fn is_bwrap_unavailable_output(output: &codex_protocol::exec_output::ExecToolCallOutput) -> bool {
     output.stderr.text.contains(BWRAP_UNAVAILABLE_ERR)
+        || output
+            .stderr
+            .text
+            .contains("No permissions to create a new namespace")
+        || output
+            .stderr
+            .text
+            .contains("kernel does not allow non-privileged user namespaces")
         || (output
             .stderr
             .text
@@ -196,6 +204,11 @@ fn expect_denied(
 
 #[tokio::test]
 async fn test_root_read() {
+    if should_skip_bwrap_tests().await {
+        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
+        return;
+    }
+
     run_cmd(&["ls", "-l", "/bin"], &[], SHORT_TIMEOUT_MS).await;
 }
 
@@ -302,6 +315,11 @@ async fn bwrap_preserves_writable_dev_shm_bind_mount() {
 
 #[tokio::test]
 async fn test_writable_root() {
+    if should_skip_bwrap_tests().await {
+        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
+        return;
+    }
+
     let tmpdir = tempfile::tempdir().unwrap();
     let file_path = tmpdir.path().join("test");
     run_cmd(
@@ -346,6 +364,11 @@ async fn sandbox_ignores_missing_writable_roots_under_bwrap() {
 
 #[tokio::test]
 async fn test_no_new_privs_is_enabled() {
+    if should_skip_bwrap_tests().await {
+        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
+        return;
+    }
+
     let output = run_cmd_output(
         &["bash", "-lc", "grep '^NoNewPrivs:' /proc/self/status"],
         &[],
@@ -364,9 +387,25 @@ async fn test_no_new_privs_is_enabled() {
 }
 
 #[tokio::test]
-#[should_panic(expected = "Sandbox(Timeout")]
 async fn test_timeout() {
-    run_cmd(&["sleep", "2"], &[], /*timeout_ms*/ 50).await;
+    if should_skip_bwrap_tests().await {
+        eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
+        return;
+    }
+
+    match run_cmd_result_with_writable_roots(
+        &["sleep", "2"],
+        &[],
+        /*timeout_ms*/ 50,
+        /*use_legacy_landlock*/ false,
+        /*network_access*/ false,
+    )
+    .await
+    {
+        Err(CodexErr::Sandbox(SandboxErr::Timeout { .. })) => {}
+        Ok(output) => panic!("expected timeout, got exit code: {}", output.exit_code),
+        Err(err) => panic!("expected timeout, got: {err:?}"),
+    }
 }
 
 /// Helper that runs `cmd` under the Linux sandbox and asserts that the command

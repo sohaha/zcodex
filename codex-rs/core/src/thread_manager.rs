@@ -231,7 +231,11 @@ impl ThreadManager {
     ) -> Self {
         let codex_home = config.codex_home.clone();
         let restriction_product = session_source.restriction_product();
-        let models_manager_provider = config.model_provider.clone();
+        let models_manager_provider = config
+            .model_providers
+            .get(&config.model_provider_id)
+            .cloned()
+            .unwrap_or_else(|| config.model_provider.clone());
         let models_manager_catalog = config.model_catalog.clone();
         let (thread_created_tx, _) = broadcast::channel(THREAD_CREATED_CHANNEL_CAPACITY);
         let plugins_manager = Arc::new(PluginsManager::new_with_restriction_product(

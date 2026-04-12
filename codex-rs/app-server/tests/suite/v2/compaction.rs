@@ -279,7 +279,7 @@ async fn thread_compact_start_rejects_invalid_thread_id() -> Result<()> {
     .await??;
 
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
-    assert!(error.error.message.contains("invalid thread id"));
+    assert!(error.error.message.contains("无效线程 ID"));
 
     Ok(())
 }
@@ -315,7 +315,7 @@ async fn thread_compact_start_rejects_unknown_thread_id() -> Result<()> {
     .await??;
 
     assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
-    assert!(error.error.message.contains("thread not found"));
+    assert!(error.error.message.contains("未找到线程"));
 
     Ok(())
 }

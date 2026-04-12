@@ -50,6 +50,7 @@ use codex_config::types::OtelConfig;
 use codex_config::types::OtelConfigToml;
 use codex_config::types::OtelExporterKind;
 use codex_config::types::PluginConfig;
+use codex_config::types::ResumeModelSource;
 use codex_config::types::SandboxWorkspaceWrite;
 use codex_config::types::ShellEnvironmentPolicy;
 use codex_config::types::ShellEnvironmentPolicyToml;
@@ -234,6 +235,9 @@ pub struct Config {
 
     /// Info needed to make an API request to the model.
     pub model_provider: ModelProviderInfo,
+
+    /// Controls whether thread resume should use persisted or current model metadata.
+    pub resume_model_source: ResumeModelSource,
 
     /// Optional fallback provider identifier used when the primary provider
     /// request fails for the current request.
@@ -1219,6 +1223,9 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
+
+    /// Controls whether thread resume should use persisted or current model metadata.
+    pub resume_model_source: Option<ResumeModelSource>,
 
     /// Optional provider to use when the primary provider request fails.
     pub fallback_provider: Option<String>,
@@ -2656,6 +2663,7 @@ impl Config {
             model_auto_compact_token_limit: cfg.model_auto_compact_token_limit,
             model_provider_id,
             model_provider,
+            resume_model_source: cfg.resume_model_source.unwrap_or_default(),
             fallback_provider_id,
             fallback_provider,
             fallback_model: cfg.fallback_model,

@@ -1645,6 +1645,32 @@
         }
       ]
     },
+    "ResumeModelSource": {
+      "description": "Controls how app-server `thread/resume` selects model metadata.",
+      "oneOf": [
+        {
+          "description": "Keep the existing default resume behavior, which uses persisted model metadata.",
+          "enum": [
+            "disabled"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Explicitly restore persisted model metadata from the thread record.",
+          "enum": [
+            "persisted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Ignore persisted model metadata and use the current effective config.",
+          "enum": [
+            "current"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "SandboxMode": {
       "enum": [
         "read-only",
@@ -2792,6 +2818,14 @@
       ],
       "default": null,
       "description": "Experimental / do not use. Realtime websocket session selection. `version` controls v1/v2 and `type` controls conversational/transcription."
+    },
+    "resume_model_source": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ResumeModelSource"
+        }
+      ],
+      "description": "Controls whether thread resume should use persisted or current model metadata."
     },
     "review_model": {
       "description": "Review model override used by the `/review` feature.",

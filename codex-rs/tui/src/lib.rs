@@ -75,8 +75,6 @@ use tracing_subscriber::prelude::*;
 use url::Url;
 use uuid::Uuid;
 
-pub(crate) use codex_app_server_client::legacy_core;
-
 mod additional_dirs;
 mod app;
 mod app_backtrack;

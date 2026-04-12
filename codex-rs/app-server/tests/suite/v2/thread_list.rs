@@ -1464,7 +1464,7 @@ async fn thread_list_invalid_cursor_returns_error() -> Result<()> {
     )
     .await??;
     assert_eq!(error.error.code, -32600);
-    assert_eq!(error.error.message, "invalid cursor: not-a-cursor");
+    assert_eq!(error.error.message, "无效的 cursor：not-a-cursor");
 
     Ok(())
 }

@@ -130,7 +130,7 @@ async fn spawn_agent_description_lists_visible_models_and_reasoning_efforts() ->
                 .features
                 .enable(Feature::Collab)
                 .expect("test config should allow feature update");
-            config.model_catalog = Some(model_catalog.clone());
+            config.model_catalog = Some(model_catalog);
         });
     let test = builder.build(&server).await?;
 

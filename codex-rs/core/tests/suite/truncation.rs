@@ -23,10 +23,45 @@ use core_test_support::skip_if_no_network;
 use core_test_support::stdio_server_bin;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_with_timeout;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
+
+async fn wait_for_mcp_tools(
+    codex: &Arc<codex_core::CodexThread>,
+    expected_tools: &[&str],
+) -> Result<()> {
+    let tools_ready_deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        codex.submit(Op::ListMcpTools).await?;
+        let list_event = wait_for_event_with_timeout(
+            codex,
+            |ev| matches!(ev, EventMsg::McpListToolsResponse(_)),
+            Duration::from_secs(10),
+        )
+        .await;
+        let EventMsg::McpListToolsResponse(tool_list) = list_event else {
+            unreachable!("event guard guarantees McpListToolsResponse");
+        };
+        if expected_tools
+            .iter()
+            .all(|tool| tool_list.tools.contains_key(*tool))
+        {
+            return Ok(());
+        }
+
+        let available_tools: Vec<&str> = tool_list.tools.keys().map(String::as_str).collect();
+        if std::time::Instant::now() >= tools_ready_deadline {
+            panic!(
+                "timed out waiting for MCP tools {expected_tools:?}; discovered tools: {available_tools:?}"
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
 
 // Verifies that a standard tool call (shell_command) exceeding the model formatting
 // limits is truncated before being sent back to the model.
@@ -381,6 +416,7 @@ async fn mcp_tool_call_output_exceeds_limit_truncated_for_model() -> Result<()> 
         config.tool_output_token_limit = Some(500);
     });
     let fixture = builder.build(&server).await?;
+    wait_for_mcp_tools(&fixture.codex, &["mcp__rmcp__echo"]).await?;
 
     fixture
         .submit_turn_with_policy(
@@ -477,6 +513,7 @@ async fn mcp_image_output_preserves_image_and_no_text_summary() -> Result<()> {
     });
     let fixture = builder.build(&server).await?;
     let session_model = fixture.session_configured.model.clone();
+    wait_for_mcp_tools(&fixture.codex, &["mcp__rmcp__image"]).await?;
 
     fixture
         .codex

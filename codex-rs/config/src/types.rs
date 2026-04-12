@@ -66,6 +66,19 @@ pub enum OAuthCredentialsStoreMode {
     Keyring,
 }
 
+/// Controls how app-server `thread/resume` selects model metadata.
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ResumeModelSource {
+    /// Keep the existing default resume behavior, which uses persisted model metadata.
+    #[default]
+    Disabled,
+    /// Explicitly restore persisted model metadata from the thread record.
+    Persisted,
+    /// Ignore persisted model metadata and use the current effective config.
+    Current,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum WindowsSandboxModeToml {

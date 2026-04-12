@@ -19,6 +19,7 @@ use crate::types::Notice;
 use crate::types::OAuthCredentialsStoreMode;
 use crate::types::OtelConfigToml;
 use crate::types::PluginConfig;
+use crate::types::ResumeModelSource;
 use crate::types::SandboxWorkspaceWrite;
 use crate::types::ShellEnvironmentPolicyToml;
 use crate::types::SkillsConfig;
@@ -73,6 +74,9 @@ pub struct ConfigToml {
 
     /// Provider to use from the model_providers map.
     pub model_provider: Option<String>,
+
+    /// Controls whether thread resume should use persisted or current model metadata.
+    pub resume_model_source: Option<ResumeModelSource>,
 
     /// Size of the context window for the model, in tokens.
     pub model_context_window: Option<i64>,

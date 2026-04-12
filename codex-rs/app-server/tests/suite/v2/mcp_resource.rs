@@ -166,7 +166,7 @@ async fn mcp_resource_read_returns_error_for_unknown_thread() -> Result<()> {
     .await??;
 
     assert!(
-        error.error.message.contains("thread not found"),
+        error.error.message.contains("未找到线程"),
         "expected thread-not-found error, got: {error:?}"
     );
 

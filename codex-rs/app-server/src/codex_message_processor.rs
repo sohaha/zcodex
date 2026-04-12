@@ -192,6 +192,7 @@ use codex_backend_client::Client as BackendClient;
 use codex_chatgpt::connectors;
 use codex_cloud_requirements::cloud_requirements_loader;
 use codex_config::types::McpServerTransportConfig;
+use codex_config::types::ResumeModelSource;
 use codex_core::CodexThread;
 use codex_core::Cursor as RolloutCursor;
 use codex_core::ForkSnapshot;
@@ -3936,7 +3937,13 @@ impl CodexMessageProcessor {
             .await
             .ok()
             .flatten()?;
-        merge_persisted_resume_metadata(request_overrides, typesafe_overrides, &persisted_metadata);
+        if self.config.resume_model_source != ResumeModelSource::Current {
+            merge_persisted_resume_metadata(
+                request_overrides,
+                typesafe_overrides,
+                &persisted_metadata,
+            );
+        }
         Some(persisted_metadata)
     }
 
@@ -6086,7 +6093,9 @@ impl CodexMessageProcessor {
             }
         };
 
-        let featured_plugin_ids = if data
+        let featured_plugin_ids = if remote_sync_error.is_some() {
+            Vec::new()
+        } else if data
             .iter()
             .any(|marketplace| marketplace.name == OPENAI_CURATED_MARKETPLACE_NAME)
         {
@@ -8147,6 +8156,7 @@ fn merge_persisted_resume_metadata(
         return;
     }
 
+    typesafe_overrides.model_provider = Some(persisted_metadata.model_provider.clone());
     typesafe_overrides.model = persisted_metadata.model.clone();
 
     if let Some(reasoning_effort) = persisted_metadata.reasoning_effort {

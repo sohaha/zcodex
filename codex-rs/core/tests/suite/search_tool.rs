@@ -30,10 +30,12 @@ use core_test_support::stdio_server_bin;
 use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_with_timeout;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 const SEARCH_TOOL_DESCRIPTION_SNIPPETS: [&str; 2] = [
@@ -45,6 +47,39 @@ const CALENDAR_CREATE_TOOL: &str = "mcp__codex_apps__calendar_create_event";
 const CALENDAR_LIST_TOOL: &str = "mcp__codex_apps__calendar_list_events";
 const SEARCH_CALENDAR_NAMESPACE: &str = "mcp__codex_apps__calendar";
 const SEARCH_CALENDAR_CREATE_TOOL: &str = "_create_event";
+
+async fn wait_for_mcp_tools(
+    codex: &Arc<codex_core::CodexThread>,
+    expected_tools: &[&str],
+) -> Result<()> {
+    let tools_ready_deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        codex.submit(Op::ListMcpTools).await?;
+        let list_event = wait_for_event_with_timeout(
+            codex,
+            |ev| matches!(ev, EventMsg::McpListToolsResponse(_)),
+            Duration::from_secs(10),
+        )
+        .await;
+        let EventMsg::McpListToolsResponse(tool_list) = list_event else {
+            unreachable!("event guard guarantees McpListToolsResponse");
+        };
+        if expected_tools
+            .iter()
+            .all(|tool| tool_list.tools.contains_key(*tool))
+        {
+            return Ok(());
+        }
+
+        let available_tools: Vec<&str> = tool_list.tools.keys().map(String::as_str).collect();
+        if std::time::Instant::now() >= tools_ready_deadline {
+            panic!(
+                "timed out waiting for MCP tools {expected_tools:?}; discovered tools: {available_tools:?}"
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
 
 fn tool_names(body: &Value) -> Vec<String> {
     body.get("tools")
@@ -425,6 +460,7 @@ async fn tool_search_returns_deferred_tools_without_follow_up_tool_injection() -
 
     let mut builder = configured_builder(apps_server.chatgpt_base_url.clone());
     let test = builder.build(&server).await?;
+    wait_for_mcp_tools(&test.codex, &[CALENDAR_CREATE_TOOL, CALENDAR_LIST_TOOL]).await?;
     test.codex
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
