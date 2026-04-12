@@ -25,7 +25,9 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fs::File;
 use std::fs::OpenOptions;
+#[cfg(not(unix))]
 use std::net::SocketAddr;
+#[cfg(not(unix))]
 use std::net::TcpStream as StdTcpStream;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -1266,12 +1268,14 @@ fn write_pid_file(pid_path: &Path) -> Result<()> {
         .with_context(|| format!("write pid file {}", pid_path.display()))
 }
 
+#[cfg(not(unix))]
 fn write_tcp_endpoint_file(endpoint_path: &Path, address: SocketAddr) -> Result<()> {
     ensure_daemon_artifact_parent(endpoint_path)?;
     std::fs::write(endpoint_path, address.to_string())
         .with_context(|| format!("write daemon endpoint {}", endpoint_path.display()))
 }
 
+#[cfg(not(unix))]
 fn read_tcp_endpoint(endpoint_path: &Path) -> Option<SocketAddr> {
     std::fs::read_to_string(endpoint_path)
         .ok()?
@@ -1441,6 +1445,7 @@ fn pid_is_alive(pid: i32) -> bool {
     false
 }
 
+#[cfg(not(unix))]
 fn tcp_endpoint_is_alive(endpoint_path: &Path) -> bool {
     let Some(address) = read_tcp_endpoint(endpoint_path) else {
         return false;
@@ -1718,15 +1723,19 @@ mod tests {
     use super::lock_path_for_project;
     use super::pid_is_alive;
     use super::query_daemon;
+    #[cfg(not(unix))]
     use super::read_tcp_endpoint;
+    #[cfg(not(unix))]
     use super::tcp_endpoint_is_alive;
     #[cfg(unix)]
     use super::unix_socket_path_fits;
     use super::write_pid_file;
+    #[cfg(not(unix))]
     use super::write_tcp_endpoint_file;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
     use std::fs::OpenOptions;
+    #[cfg(not(unix))]
     use std::net::SocketAddr;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -2915,6 +2924,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(unix))]
     #[test]
     fn tcp_endpoint_metadata_round_trips() {
         let tempdir = tempdir().expect("tempdir should exist");
@@ -2926,6 +2936,7 @@ mod tests {
         assert_eq!(read_tcp_endpoint(&endpoint_path), Some(address));
     }
 
+    #[cfg(not(unix))]
     #[test]
     fn tcp_endpoint_metadata_rejects_invalid_contents() {
         let tempdir = tempdir().expect("tempdir should exist");
@@ -2936,6 +2947,7 @@ mod tests {
         assert!(!tcp_endpoint_is_alive(&endpoint_path));
     }
 
+    #[cfg(not(unix))]
     #[test]
     fn tcp_endpoint_liveness_tracks_listener_state() {
         let tempdir = tempdir().expect("tempdir should exist");
