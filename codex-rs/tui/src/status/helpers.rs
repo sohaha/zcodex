@@ -1,10 +1,10 @@
 use crate::exec_command::relativize_to_home;
+use crate::legacy_core::config::Config;
+use crate::legacy_core::discover_project_doc_paths;
 use crate::status::StatusAccountDisplay;
 use crate::text_formatting;
 use chrono::DateTime;
 use chrono::Local;
-use codex_core::config::Config;
-use codex_core::project_doc::discover_project_doc_paths;
 use codex_exec_server::LOCAL_FS;
 use codex_protocol::account::PlanType;
 use std::path::Path;
@@ -55,58 +55,74 @@ pub(crate) fn compose_agents_summary(config: &Config) -> String {
         return "无".to_string();
     };
 
-    let paths = tokio::task::block_in_place(|| {
-        handle.block_on(discover_project_doc_paths(config, LOCAL_FS.as_ref()))
-    });
+    let paths = match handle.runtime_flavor() {
+        tokio::runtime::RuntimeFlavor::CurrentThread => std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("create current-thread runtime for agents summary")
+                        .block_on(discover_agents_summary(config))
+                })
+                .join()
+                .expect("agents summary worker thread panicked")
+        }),
+        _ => tokio::task::block_in_place(|| handle.block_on(discover_agents_summary(config))),
+    };
 
     match paths {
-        Ok(paths) => {
-            let mut rels: Vec<String> = Vec::new();
-            if let Some(path) = config.user_instructions_path.as_deref() {
-                rels.push(format_directory_display(path, /*max_width*/ None));
-            }
-            for p in paths {
-                let file_name = p
-                    .file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "<未知>".to_string());
-                let display = if let Some(parent) = p.parent() {
-                    if parent.as_path() == config.cwd.as_path() {
-                        file_name.clone()
-                    } else {
-                        let mut cur = config.cwd.as_path();
-                        let mut ups = 0usize;
-                        let mut reached = false;
-                        while let Some(c) = cur.parent() {
-                            if cur == parent.as_path() {
-                                reached = true;
-                                break;
-                            }
-                            cur = c;
-                            ups += 1;
-                        }
-                        if reached {
-                            let up = format!("..{}", std::path::MAIN_SEPARATOR);
-                            format!("{}{}", up.repeat(ups), file_name)
-                        } else if let Ok(stripped) = p.strip_prefix(config.cwd.as_path()) {
-                            normalize_agents_display_path(stripped)
-                        } else {
-                            normalize_agents_display_path(p.as_path())
-                        }
-                    }
-                } else {
-                    normalize_agents_display_path(p.as_path())
-                };
-                rels.push(display);
-            }
-            if rels.is_empty() {
-                "无".to_string()
-            } else {
-                rels.join(", ")
-            }
-        }
+        Ok(summary) => summary,
         Err(_) => "无".to_string(),
     }
+}
+
+pub(crate) async fn discover_agents_summary(config: &Config) -> std::io::Result<String> {
+    let paths = discover_project_doc_paths(config, LOCAL_FS.as_ref()).await?;
+    let mut rels: Vec<String> = Vec::new();
+    if let Some(path) = config.user_instructions_path.as_deref() {
+        rels.push(format_directory_display(path, /*max_width*/ None));
+    }
+    for p in paths {
+        let file_name = p
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| "<未知>".to_string());
+        let display = if let Some(parent) = p.parent() {
+            if parent.as_path() == config.cwd.as_path() {
+                file_name.clone()
+            } else {
+                let mut cur = config.cwd.as_path();
+                let mut ups = 0usize;
+                let mut reached = false;
+                while let Some(c) = cur.parent() {
+                    if cur == parent.as_path() {
+                        reached = true;
+                        break;
+                    }
+                    cur = c;
+                    ups += 1;
+                }
+                if reached {
+                    let up = format!("..{}", std::path::MAIN_SEPARATOR);
+                    format!("{}{}", up.repeat(ups), file_name)
+                } else if let Ok(stripped) = p.strip_prefix(config.cwd.as_path()) {
+                    normalize_agents_display_path(stripped)
+                } else {
+                    normalize_agents_display_path(p.as_path())
+                }
+            }
+        } else {
+            normalize_agents_display_path(p.as_path())
+        };
+        rels.push(display);
+    }
+
+    Ok(if rels.is_empty() {
+        "无".to_string()
+    } else {
+        rels.join(", ")
+    })
 }
 
 pub(crate) fn compose_account_display(
@@ -213,9 +229,9 @@ fn title_case(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_core::DEFAULT_PROJECT_DOC_FILENAME;
-    use codex_core::LOCAL_PROJECT_DOC_FILENAME;
-    use codex_core::config::ConfigBuilder;
+    use crate::legacy_core::DEFAULT_PROJECT_DOC_FILENAME;
+    use crate::legacy_core::LOCAL_PROJECT_DOC_FILENAME;
+    use crate::legacy_core::config::ConfigBuilder;
     use pretty_assertions::assert_eq;
     use std::fs;
     use tempfile::TempDir;

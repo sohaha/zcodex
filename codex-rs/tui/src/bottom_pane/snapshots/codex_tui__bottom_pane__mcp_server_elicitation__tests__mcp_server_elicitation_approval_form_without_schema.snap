@@ -1,11 +1,12 @@
 ---
 source: tui/src/bottom_pane/mcp_server_elicitation.rs
+assertion_line: 2419
 expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
 ---
                                                                                                                         
   字 段  1/1                                                                                                              
-  Allow this request?                                                                                                   
-  › 1. 允 许   运 行 工 具 并 继 续                                                                                              
+  允 许 这 个 请 求 吗 ？                                                                                                       
+  › 1. 允 许   运 行 工 具 并 继 续 。                                                                                            
     2. 取 消   取 消 此 工 具 调 用                                                                                              
                                                                                                                         
                                                                                                                         

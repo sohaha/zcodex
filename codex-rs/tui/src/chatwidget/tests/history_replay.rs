@@ -418,7 +418,7 @@ async fn forked_thread_history_line_includes_name_and_id_snapshot() {
     let combined = lines_to_single_string(&history_cell.display_lines(/*width*/ 80));
 
     assert!(
-        combined.contains("Thread forked from"),
+        combined.contains("线程分叉自"),
         "expected forked thread message in history"
     );
     assert_chatwidget_snapshot!("forked_thread_history_line", combined);

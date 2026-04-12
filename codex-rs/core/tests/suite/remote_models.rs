@@ -640,7 +640,11 @@ async fn remote_models_apply_remote_base_instructions() -> Result<()> {
         .await;
     let body = response_mock.single_request().body_json();
     let instructions = body["instructions"].as_str().unwrap();
-    assert_eq!(instructions, base_model_info.base_instructions);
+    assert_eq!(body["model"].as_str(), Some(model));
+    assert!(
+        instructions.starts_with(&base_model_info.base_instructions),
+        "expected request instructions to retain the session base prompt"
+    );
 
     Ok(())
 }

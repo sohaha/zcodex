@@ -1,5 +1,6 @@
 ---
 source: tui/src/bottom_pane/mcp_server_elicitation.rs
+assertion_line: 2553
 expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
 ---
                                                                                                                         
@@ -10,7 +11,7 @@ expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
   Title: Roadmap review                                                                                                 
   Notes: This is a deliberately long note that should truncate bef...                                                   
                                                                                                                         
-  › 1. 允 许   运 行 工 具 并 继 续                                                                                              
+  › 1. 允 许   运 行 工 具 并 继 续 。                                                                                            
     2. 取 消   取 消 此 工 具 调 用                                                                                              
                                                                                                                         
                                                                                                                         

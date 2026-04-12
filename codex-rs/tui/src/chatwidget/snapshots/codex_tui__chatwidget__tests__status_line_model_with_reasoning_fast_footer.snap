@@ -1,18 +1,18 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1120
 expression: normalized_backend_snapshot(terminal.backend())
 ---
 "                                                                                "
-"  .-----------------------------------.                                         "
-"  | 像在水里一样轻轻漂来。                       |                              " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " "), (15, " "), (17, " "), (19, " "), (21, " "), (23, " "), (25, " ")]
-"  '-----------------------------------.                                         "
+"  .------------.                                                                "
+"  | 轻轻漂来。 |                                                                " Hidden by multi-width symbols: [(5, " "), (7, " "), (9, " "), (11, " "), (13, " ")]
+"  '------------.                                                                "
 "    \                                                                           "
 "  }~   ~{                                                                       "
 "  ( ^..^ )                                                                      "
 "   \__/                                                                         "
 "  Ripple ★ 常见 美西螈 · 坐立不安                                               " Hidden by multi-width symbols: [(12, " "), (14, " "), (17, " "), (19, " "), (21, " "), (26, " "), (28, " "), (30, " "), (32, " ")]
 "                                                                                "
-"                                                                                "
 "› Ask Codex to do anything                                                      "
 "                                                                                "
-"  gpt-5.4 极高 快速 · 剩余 100% · /tmp/project                                  " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " ")]
+"  gpt-5.4 极高 快速 · 上下文 [     ] · /tmp/project                             " Hidden by multi-width symbols: [(11, " "), (13, " "), (16, " "), (18, " "), (23, " "), (25, " "), (27, " ")]

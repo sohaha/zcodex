@@ -1,38 +1,39 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1741
 expression: "format!(\"{first_running_snapshot}\\n\\n{second_running_snapshot}\\n\\n{older_completed_snapshot}\\n\\n{older_completed_expired_snapshot}\\n\\n{all_completed_lingering_snapshot}\\n\\n{all_completed_snapshot}\")"
 ---
 pre running
 live hooks:
-• Running PreToolUse hook: checking command policy
+• 正在运行 工具调用前 钩子：checking command policy
 history:
 <empty>
 
 post running
 live hooks:
-• Running PreToolUse hook: checking command policy
+• 正在运行 工具调用前 钩子：checking command policy
 
-• Running PostToolUse hook: checking output policy
+• 正在运行 工具调用后 钩子：checking output policy
 history:
 <empty>
 
 pre completed lingering
 live hooks:
-• Running PreToolUse hook: checking command policy
+• 正在运行 工具调用前 钩子：checking command policy
 
-• Running PostToolUse hook: checking output policy
+• 正在运行 工具调用后 钩子：checking output policy
 history:
 <empty>
 
 pre completed after linger
 live hooks:
-• Running PostToolUse hook: checking output policy
+• 正在运行 工具调用后 钩子：checking output policy
 history:
 <empty>
 
 all completed lingering
 live hooks:
-• Running PostToolUse hook: checking output policy
+• 正在运行 工具调用后 钩子：checking output policy
 history:
 <empty>
 

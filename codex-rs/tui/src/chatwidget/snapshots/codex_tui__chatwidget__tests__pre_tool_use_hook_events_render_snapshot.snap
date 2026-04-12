@@ -1,9 +1,8 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/helpers.rs
+assertion_line: 1079
 expression: combined
 ---
-• 正在运行 工具调用前 钩子：warming the shell
-
-工具调用前 钩子（已完成）
+• 工具调用前 钩子（已完成）
   警告：Heads up from the hook
   钩子上下文：Remember the startup checklist.

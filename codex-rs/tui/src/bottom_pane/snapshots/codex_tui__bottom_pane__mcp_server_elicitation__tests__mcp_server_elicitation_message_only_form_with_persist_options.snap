@@ -1,19 +1,20 @@
 ---
 source: tui/src/bottom_pane/mcp_server_elicitation.rs
+assertion_line: 2470
 expression: "render_snapshot(&overlay, Rect::new(0, 0, 120, 16))"
 ---
                                                                                                                         
-  Field 1/1                                                                                                             
+  字 段  1/1                                                                                                              
   Boolean elicit MCP example: do you confirm?                                                                           
-  › 1. Allow                   Allow this request and continue.                                                         
-    2. Allow for this session  Allow this request and remember this choice for this session.                            
-    3. Always allow            Allow this request and remember this choice for future requests.                         
-    4. Deny                    Decline this request and continue.                                                       
-    5. Cancel                  Cancel this request                                                                      
+  › 1. 允 许           允 许 此 请 求 并 继 续 。                                                                                  
+    2. 本 次 会 话 允 许   允 许 此 请 求 ， 并 在 本 次 会 话 中 记 住 此 选 择 。                                                              
+    3. 始 终 允 许       允 许 此 请 求 ， 并 在 后 续 请 求 中 记 住 此 选 择 。                                                              
+    4. 拒 绝           拒 绝 此 请 求 并 继 续 。                                                                                  
+    5. 取 消           取 消 此 请 求                                                                                          
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
                                                                                                                         
-  enter to submit | esc to cancel
+  回 车 提 交  | esc 取 消

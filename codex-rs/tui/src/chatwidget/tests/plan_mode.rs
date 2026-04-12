@@ -262,7 +262,7 @@ fn plan_mode_prompt_notification_uses_dedicated_type_name() {
     ])));
     assert_eq!(
         notification.display(),
-        format!("Plan 模式提示：{PLAN_IMPLEMENTATION_TITLE}")
+        format!("计划模式提示：{PLAN_IMPLEMENTATION_TITLE}")
     );
 }
 
@@ -955,7 +955,7 @@ async fn submit_user_message_emits_structured_plugin_mentions_from_bindings() {
     });
     chat.set_feature_enabled(Feature::Plugins, /*enabled*/ true);
     chat.bottom_pane.set_plugin_mentions(Some(vec![
-        codex_core::plugins::PluginCapabilitySummary {
+        crate::legacy_core::plugins::PluginCapabilitySummary {
             config_name: "sample@test".to_string(),
             display_name: "Sample Plugin".to_string(),
             description: None,
@@ -1231,7 +1231,7 @@ async fn collaboration_modes_defaults_to_code_on_startup() {
         .build()
         .await
         .expect("config");
-    let resolved_model = codex_core::test_support::get_model_offline(cfg.model.as_deref());
+    let resolved_model = crate::legacy_core::test_support::get_model_offline(cfg.model.as_deref());
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let init = ChatWidgetInit {
         config: cfg.clone(),

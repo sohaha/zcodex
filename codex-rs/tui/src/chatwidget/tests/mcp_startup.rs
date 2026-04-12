@@ -122,8 +122,8 @@ async fn app_server_mcp_startup_failure_renders_warning_history() {
 
     let width: u16 = 120;
     let ui_height: u16 = chat.desired_height(width);
-    let vt_height: u16 = 10;
-    let viewport = Rect::new(0, vt_height - ui_height - 1, width, ui_height);
+    let vt_height = ui_height.saturating_add(2);
+    let viewport = Rect::new(0, 1, width, ui_height);
 
     let backend = VT100Backend::new(width, vt_height);
     let mut term = crate::custom_terminal::Terminal::with_options(backend).expect("terminal");

@@ -497,7 +497,7 @@ async fn blocked_image_restore_preserves_mention_bindings() {
         .map(|lines| lines_to_single_string(lines))
         .expect("expected warning cell");
     assert!(
-        warning.contains("does not support image inputs"),
+        warning.contains("不支持图片输入"),
         "expected image warning, got: {warning:?}"
     );
 }

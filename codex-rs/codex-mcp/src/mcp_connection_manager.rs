@@ -572,6 +572,16 @@ impl AsyncManagedClient {
     }
 
     async fn listed_tools(&self) -> Option<Vec<ToolInfo>> {
+        self.listed_tools_inner(/*block_on_pending_startup*/ true)
+            .await
+    }
+
+    async fn listed_tools_nonblocking(&self) -> Option<Vec<ToolInfo>> {
+        self.listed_tools_inner(/*block_on_pending_startup*/ false)
+            .await
+    }
+
+    async fn listed_tools_inner(&self, block_on_pending_startup: bool) -> Option<Vec<ToolInfo>> {
         let annotate_tools = |tools: Vec<ToolInfo>| {
             let mut tools = tools;
             for tool in &mut tools {
@@ -626,10 +636,12 @@ impl AsyncManagedClient {
         // Keep cache payloads raw; plugin provenance is resolved per-session at read time.
         let tools = if let Some(startup_tools) = self.startup_snapshot_while_initializing() {
             Some(startup_tools)
+        } else if !block_on_pending_startup && !self.startup_complete.load(Ordering::Acquire) {
+            Some(Vec::new())
         } else {
             match self.client().await {
                 Ok(client) => Some(client.listed_tools()),
-                Err(_) => self.startup_snapshot.clone(),
+                Err(_) => self.startup_snapshot.clone().or(Some(Vec::new())),
             }
         };
         tools.map(annotate_tools)
@@ -907,9 +919,33 @@ impl McpConnectionManager {
     /// fully-qualified name for the tool.
     #[instrument(level = "trace", skip_all)]
     pub async fn list_all_tools(&self) -> HashMap<String, ToolInfo> {
+        self.list_all_tools_inner(/*block_on_pending_startup*/ true)
+            .await
+    }
+
+    /// Returns the currently known tool set without waiting for still-starting MCP servers.
+    ///
+    /// Servers that are still initializing contribute their startup snapshot when available,
+    /// otherwise they are treated as temporarily empty so turn construction does not block on MCP
+    /// startup.
+    #[instrument(level = "trace", skip_all)]
+    pub async fn list_all_tools_nonblocking(&self) -> HashMap<String, ToolInfo> {
+        self.list_all_tools_inner(/*block_on_pending_startup*/ false)
+            .await
+    }
+
+    async fn list_all_tools_inner(
+        &self,
+        block_on_pending_startup: bool,
+    ) -> HashMap<String, ToolInfo> {
         let mut tools = Vec::new();
         for managed_client in self.clients.values() {
-            let Some(server_tools) = managed_client.listed_tools().await else {
+            let server_tools = if block_on_pending_startup {
+                managed_client.listed_tools().await
+            } else {
+                managed_client.listed_tools_nonblocking().await
+            };
+            let Some(server_tools) = server_tools else {
                 continue;
             };
             tools.extend(server_tools);

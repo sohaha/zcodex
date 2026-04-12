@@ -60,7 +60,7 @@ pub(crate) enum InitialContextInjection {
 }
 
 pub(crate) fn should_use_remote_compact_task(provider: &ModelProviderInfo) -> bool {
-    provider.uses_official_openai_responses_api()
+    (provider.wire_api == crate::model_provider_info::WireApi::Responses && provider.is_openai())
         || provider.wire_api == crate::model_provider_info::WireApi::Anthropic
 }
 

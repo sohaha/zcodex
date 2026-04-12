@@ -1948,7 +1948,7 @@ mod tests {
                         options: vec![
                             McpServerElicitationOption {
                                 label: "允许".to_string(),
-                                description: Some("运行工具并继续".to_string()),
+                                description: Some("运行工具并继续。".to_string()),
                                 value: Value::String(APPROVAL_ACCEPT_ONCE_VALUE.to_string()),
                             },
                             McpServerElicitationOption {

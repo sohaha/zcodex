@@ -1,7 +1,8 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/exec_flow.rs
+assertion_line: 663
 expression: combined
 ---
-• Waited for background terminal · cargo test -p codex-core
+• 已等待后台终端 · cargo test -p codex-core
 
 • Final response.

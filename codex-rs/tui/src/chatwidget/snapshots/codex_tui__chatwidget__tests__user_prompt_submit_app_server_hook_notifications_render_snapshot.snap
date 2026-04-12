@@ -1,10 +1,8 @@
 ---
-source: tui/src/chatwidget/tests.rs
-assertion_line: 12789
+source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1384
 expression: combined
 ---
-• 正在运行 用户消息提交 钩子：checking go-workflow input policy
-
-用户消息提交 钩子（已停止）
+• 用户消息提交 钩子（已停止）
   警告：go-workflow must start from PlanMode
   停止：prompt blocked

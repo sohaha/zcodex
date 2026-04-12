@@ -110,7 +110,7 @@ pub(super) fn snapshot(percent: f64) -> RateLimitSnapshot {
 }
 
 pub(super) fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {
-    let model_info = codex_core::test_support::construct_model_info_offline(model, config);
+    let model_info = crate::legacy_core::test_support::construct_model_info_offline(model, config);
     SessionTelemetry::new(
         ThreadId::new(),
         model,
@@ -132,7 +132,7 @@ pub(super) fn test_model_catalog(config: &Config) -> Arc<ModelCatalog> {
             .enabled(Feature::DefaultModeRequestUserInput),
     };
     Arc::new(ModelCatalog::new(
-        codex_core::test_support::all_model_presets().clone(),
+        crate::legacy_core::test_support::all_model_presets().clone(),
         collaboration_modes_config,
     ))
 }
@@ -160,9 +160,9 @@ pub(super) async fn make_chatwidget_manual_with_config(
     let (tx_raw, rx) = unbounded_channel::<AppEvent>();
     let app_event_tx = AppEventSender::new(tx_raw);
     let (op_tx, op_rx) = unbounded_channel::<Op>();
-    let resolved_model = model_override
-        .map(str::to_owned)
-        .unwrap_or_else(|| codex_core::test_support::get_model_offline(cfg.model.as_deref()));
+    let resolved_model = model_override.map(str::to_owned).unwrap_or_else(|| {
+        crate::legacy_core::test_support::get_model_offline(cfg.model.as_deref())
+    });
     if let Some(model) = model_override {
         cfg.model = Some(model.to_string());
     }
@@ -221,6 +221,7 @@ pub(super) async fn make_chatwidget_manual_with_config(
         terminal_title_status_kind: TerminalTitleStatusKind::Working,
         last_agent_markdown: None,
         saw_copy_source_this_turn: false,
+        service_tier_cleared_explicitly: false,
         running_commands: HashMap::new(),
         collab_agent_metadata: HashMap::new(),
         pending_collab_spawn_requests: HashMap::new(),
@@ -256,6 +257,7 @@ pub(super) async fn make_chatwidget_manual_with_config(
         pending_status_indicator_restore: false,
         suppress_queue_autosend: false,
         thread_id: None,
+        last_turn_id: None,
         thread_name: None,
         forked_from: None,
         frame_requester: FrameRequester::test_dummy(),
@@ -1032,7 +1034,7 @@ pub(super) async fn assert_hook_events_snapshot(
     reveal_running_hooks(&mut chat);
     assert!(
         active_hook_blob(&chat).contains(&format!(
-            "Running {} hook: {status_message}",
+            "正在运行 {} 钩子：{status_message}",
             hook_event_label(event_name)
         )),
         "hook start should render in the live hook cell"
@@ -1079,10 +1081,10 @@ pub(super) async fn assert_hook_events_snapshot(
 
 fn hook_event_label(event_name: codex_protocol::protocol::HookEventName) -> &'static str {
     match event_name {
-        codex_protocol::protocol::HookEventName::PreToolUse => "PreToolUse",
-        codex_protocol::protocol::HookEventName::PostToolUse => "PostToolUse",
-        codex_protocol::protocol::HookEventName::SessionStart => "SessionStart",
-        codex_protocol::protocol::HookEventName::UserPromptSubmit => "UserPromptSubmit",
-        codex_protocol::protocol::HookEventName::Stop => "Stop",
+        codex_protocol::protocol::HookEventName::PreToolUse => "工具调用前",
+        codex_protocol::protocol::HookEventName::PostToolUse => "工具调用后",
+        codex_protocol::protocol::HookEventName::SessionStart => "会话开始",
+        codex_protocol::protocol::HookEventName::UserPromptSubmit => "用户消息提交",
+        codex_protocol::protocol::HookEventName::Stop => "停止",
     }
 }

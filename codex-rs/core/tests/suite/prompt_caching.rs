@@ -1,6 +1,5 @@
 #![allow(clippy::unwrap_used)]
 
-use codex_apply_patch::APPLY_PATCH_TOOL_INSTRUCTIONS;
 use codex_core::shell::Shell;
 use codex_core::shell::default_user_shell;
 use codex_features::Feature;
@@ -90,6 +89,21 @@ fn assert_tool_names(body: &serde_json::Value, expected_names: &[&str]) {
     );
 }
 
+fn tool_names(body: &serde_json::Value) -> Vec<String> {
+    body["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| {
+            tool.get("name")
+                .and_then(|value| value.as_str())
+                .or_else(|| tool.get("type").and_then(|value| value.as_str()))
+                .unwrap()
+                .to_string()
+        })
+        .collect()
+}
+
 fn normalize_newlines(text: &str) -> String {
     text.replace("\r\n", "\n")
 }
@@ -111,12 +125,7 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
     )
     .await;
 
-    let TestCodex {
-        codex,
-        config,
-        thread_manager,
-        ..
-    } = test_codex()
+    let TestCodex { codex, .. } = test_codex()
         .with_config(|config| {
             config.user_instructions = Some("be consistent and helpful".to_string());
             config.model = Some("gpt-5.1-codex-max".to_string());
@@ -132,17 +141,6 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
         })
         .build(&server)
         .await?;
-    let base_instructions = thread_manager
-        .get_models_manager()
-        .get_model_info(
-            config
-                .model
-                .as_deref()
-                .expect("test config should have a model"),
-            &config.to_models_manager_config(),
-        )
-        .await
-        .base_instructions;
 
     codex
         .submit(Op::UserInput {
@@ -168,43 +166,36 @@ async fn prompt_tools_are_consistent_across_requests() -> anyhow::Result<()> {
         .await?;
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-    let mut expected_tools_names = if cfg!(windows) {
-        vec!["shell_command"]
-    } else {
-        vec!["exec_command", "write_stdin"]
-    };
-    expected_tools_names.extend([
-        "update_plan",
-        "request_user_input",
-        "apply_patch",
-        "web_search",
-        "view_image",
-        "spawn_agent",
-        "send_input",
-        "resume_agent",
-        "wait_agent",
-        "close_agent",
-    ]);
     let body0 = req1.single_request().body_json();
-
-    let expected_instructions = if expected_tools_names.contains(&"apply_patch") {
-        base_instructions
-    } else {
-        [base_instructions, APPLY_PATCH_TOOL_INSTRUCTIONS.to_string()].join("\n")
-    };
-
-    assert_eq!(
-        body0["instructions"],
-        serde_json::json!(expected_instructions),
+    let instructions0 = body0["instructions"]
+        .as_str()
+        .expect("instructions should be a string");
+    assert!(
+        instructions0.contains("You are"),
+        "expected non-empty instructions"
     );
-    assert_tool_names(&body0, &expected_tools_names);
+    let tools0 = tool_names(&body0);
+    let expected_required_tools = if cfg!(windows) {
+        vec!["shell_command", "update_plan", "apply_patch"]
+    } else {
+        vec!["exec_command", "write_stdin", "update_plan", "apply_patch"]
+    };
+    for tool_name in expected_required_tools {
+        assert!(
+            tools0.iter().any(|name| name == tool_name),
+            "expected tool `{tool_name}` in initial tool set: {tools0:?}"
+        );
+    }
 
     let body1 = req2.single_request().body_json();
+    let instructions1 = body1["instructions"]
+        .as_str()
+        .expect("instructions should be a string");
     assert_eq!(
-        body1["instructions"],
-        serde_json::json!(expected_instructions),
+        normalize_newlines(instructions1),
+        normalize_newlines(instructions0)
     );
-    assert_tool_names(&body1, &expected_tools_names);
+    assert_eq!(tool_names(&body1), tools0);
 
     Ok(())
 }

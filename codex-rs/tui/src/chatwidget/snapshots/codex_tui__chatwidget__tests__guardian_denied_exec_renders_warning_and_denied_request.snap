@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
-assertion_line: 65
+assertion_line: 69
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
@@ -25,4 +25,4 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 › Ask Codex to do anything
 
-  gpt-5.3-codex 默认 · 剩余 100% · /tmp/project
+  gpt-5.3-codex 默认 · 上下文 [     ] · /tmp/project

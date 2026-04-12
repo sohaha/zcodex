@@ -1,6 +1,6 @@
 ---
 source: tui/src/history_cell.rs
-assertion_line: 3343
+assertion_line: 3384
 expression: rendered
 ---
 /mcp
@@ -8,8 +8,7 @@ expression: rendered
 🔌  MCP 工具
 
   • plugin_docs
+    • 状态：已禁用
     • 授权：不支持
     • 命令：docs-server --stdio
     • 工具：lookup
-    • 资源：（无）
-    • 资源模板：（无）

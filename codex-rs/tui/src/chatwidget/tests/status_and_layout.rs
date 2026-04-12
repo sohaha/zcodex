@@ -117,7 +117,7 @@ async fn helpers_are_available_and_do_not_panic() {
     let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
     let tx = AppEventSender::new(tx_raw);
     let cfg = test_config().await;
-    let resolved_model = codex_core::test_support::get_model_offline(cfg.model.as_deref());
+    let resolved_model = crate::legacy_core::test_support::get_model_offline(cfg.model.as_deref());
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let init = ChatWidgetInit {
         config: cfg.clone(),
@@ -970,7 +970,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
 
     assert_eq!(
         status_line_text(&chat),
-        Some(format!("gpt-5.4 极高 快速 · 剩余 100% · {test_cwd}"))
+        Some(format!("gpt-5.4 极高 快速 · 上下文 [     ] · {test_cwd}"))
     );
 
     chat.set_model("gpt-5.3-codex");
@@ -978,7 +978,7 @@ async fn status_line_model_with_reasoning_includes_fast_for_fast_capable_models(
 
     assert_eq!(
         status_line_text(&chat),
-        Some(format!("gpt-5.3-codex 极高 · 剩余 100% · {test_cwd}"))
+        Some(format!("gpt-5.3-codex 极高 · 上下文 [     ] · {test_cwd}"))
     );
 }
 
@@ -1138,10 +1138,10 @@ async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()
     let first_log = drain_insert_history(&mut rx)
         .iter()
         .map(|lines| lines_to_single_string(lines))
-        .find(|line| line.contains("WebSocket timing:"))
+        .find(|line| line.contains("WebSocket 时序："))
         .expect("expected websocket timing log");
-    assert!(first_log.contains("TTFT: 120ms (iapi)"));
-    assert!(first_log.contains("TBT: 50ms (service)"));
+    assert!(first_log.contains("TTFT：120ms (iapi)"));
+    assert!(first_log.contains("TBT：50ms (service)"));
 
     chat.apply_runtime_metrics_delta(RuntimeMetricsSummary {
         responses_api_engine_iapi_ttft_ms: 80,
@@ -1151,9 +1151,9 @@ async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()
     let second_log = drain_insert_history(&mut rx)
         .iter()
         .map(|lines| lines_to_single_string(lines))
-        .find(|line| line.contains("WebSocket timing:"))
+        .find(|line| line.contains("WebSocket 时序："))
         .expect("expected websocket timing log");
-    assert!(second_log.contains("TTFT: 80ms (iapi)"));
+    assert!(second_log.contains("TTFT：80ms (iapi)"));
 
     chat.on_task_complete(/*last_agent_message*/ None, /*from_replay*/ false);
     let mut final_separator = None;
@@ -1163,8 +1163,8 @@ async fn runtime_metrics_websocket_timing_logs_and_final_separator_sums_totals()
         }
     }
     let final_separator = final_separator.expect("expected final separator with runtime metrics");
-    assert!(final_separator.contains("TTFT: 80ms (iapi)"));
-    assert!(final_separator.contains("TBT: 50ms (service)"));
+    assert!(final_separator.contains("TTFT：80ms (iapi)"));
+    assert!(final_separator.contains("TBT：50ms (service)"));
 }
 
 #[tokio::test]
@@ -1493,7 +1493,7 @@ async fn quiet_hook_linger_starts_when_delayed_redraw_reveals_hook() {
 
     assert!(drain_insert_history(&mut rx).is_empty());
     assert!(
-        active_hook_blob(&chat).contains("Running PostToolUse hook"),
+        active_hook_blob(&chat).contains("正在运行 工具调用后 钩子"),
         "quiet hook should linger after the row becomes visible"
     );
     expire_quiet_hook_linger(&mut chat);
@@ -1529,13 +1529,12 @@ async fn blocked_and_failed_hooks_render_feedback_and_errors() {
         .collect::<String>();
     assert_chatwidget_snapshot!("hook_blocked_failed_feedback_history_snapshot", rendered);
     assert!(
-        rendered.contains(
-            "PreToolUse hook (blocked)\n  feedback: run tests before touching the fixture"
-        ),
+        rendered
+            .contains("工具调用前 钩子（已拦截）\n  反馈：run tests before touching the fixture"),
         "expected blocked hook feedback: {rendered:?}"
     );
     assert!(
-        rendered.contains("PostToolUse hook (failed)\n  error: hook exited with code 7"),
+        rendered.contains("工具调用后 钩子（失败）\n  错误：hook exited with code 7"),
         "expected failed hook error: {rendered:?}"
     );
 }
@@ -1613,7 +1612,7 @@ async fn completed_hook_output_precedes_following_assistant_message() {
         )
     );
     let hook_index = history
-        .find("PreToolUse hook (blocked)")
+        .find("工具调用前 钩子（已拦截）")
         .expect("hook feedback should be in history");
     let assistant_index = history
         .find("The hook feedback was applied.")
@@ -1663,7 +1662,7 @@ async fn completed_same_id_hook_output_survives_restart() {
         )
     );
     assert!(
-        history.contains("Stop hook (stopped)\n  stop: continue with more context"),
+        history.contains("停止 钩子（已停止）\n  停止：continue with more context"),
         "first hook output should not be overwritten: {history:?}"
     );
 }
