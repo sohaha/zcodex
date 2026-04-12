@@ -2236,7 +2236,7 @@ impl CodexMessageProcessor {
             ) {
                 let error = JSONRPCErrorError {
                     code: INTERNAL_ERROR_CODE,
-                    message: format!("持久化受信任项目状态失败：{err}"),
+                    message: format!("持久化受信任项目状态失败：{err:#}"),
                     data: None,
                 };
                 listener_task_context
