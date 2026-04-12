@@ -9,6 +9,7 @@ set -euo pipefail
 : "${target_label:?}"
 : "${cross_build_description:?}"
 : "${bootstrap_guard_var:?}"
+: "${codex_rs_dir:?}"
 
 source "$script_dir/lib-ubuntu-macos-arm64"
 
@@ -163,6 +164,23 @@ resolve_build_profile_dir() {
   fi
 
   printf '%s\n' "$profile"
+}
+
+resolve_rs_ext_target_dir() {
+  local slot
+
+  if [ "${CODEX_CARGO_TARGET_EXACT:-0}" = "1" ] && [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    printf '%s\n' "$CARGO_TARGET_DIR"
+    return
+  fi
+
+  if [ "${CODEX_CARGO_TARGET_DISABLE:-0}" = "1" ] && [ -n "${CARGO_TARGET_DIR:-}" ]; then
+    printf '%s\n' "$CARGO_TARGET_DIR"
+    return
+  fi
+
+  slot="$(bash "$codex_rs_dir/scripts/resolve-cargo-slot.sh" "$@")"
+  bash "$codex_rs_dir/scripts/resolve-cargo-target-dir.sh" "$slot"
 }
 
 resolve_remote_ssh_target() {

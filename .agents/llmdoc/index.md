@@ -49,6 +49,7 @@
 
 - `.agents/llmdoc/memory/reflections/2026-04-12-cli-startup-error-chain-visibility.md`：CLI 入口只打印最外层 anyhow 错误会隐藏 TUI bootstrap 根因，需显式展开 error chain。
 - `.agents/llmdoc/memory/reflections/2026-04-12-windows-native-tldr-daemon-first.md`：Windows 并不需要独立 native-tldr 安装物，缺的是非 Unix daemon-first 的 TCP endpoint metadata 与生命周期接线。
+- `.agents/llmdoc/memory/reflections/2026-04-12-windows-installer-bundle-parity.md`：Windows `install.ps1` 收口到 npm bundle/vendor 分发语义，并补齐 `CODEX_BASE_URL` / `CODEX_INSTALL_DIR` 对齐点的反思。
 
 ## 路由规则
 - 每次进入仓库先读 `startup.md`。
