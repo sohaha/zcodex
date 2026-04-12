@@ -18,9 +18,9 @@ dependencies: [prd]
 
 - **架构模式**：本地单机「daemon-first」多进程架构（CLI/MCP 入口 → 可选 daemon 复用内存缓存 → 不可用则本地引擎 fallback），无数据库/无 HTTP 服务/无 UI。
 - **模块边界**：`codex-native-tldr`（核心引擎/协议/生命周期）｜`codex-cli`（命令行入口、hidden `tldr internal-daemon` 与 auto-start）｜`codex-mcp-server`（MCP tool 入口，不负责 auto-start）。
-- **生命周期与 artifacts**：Unix 优先使用 `$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`，否则回退到 `temp_dir()/codex-native-tldr/<uid>/`；非 Unix 使用 `temp_dir()/codex-native-tldr/`。其中 `socket/pid` 放在 `<project-hash>/` 子目录，`lock/launch.lock` 放在用户级 scope 根目录，避免项目 artifact 目录被外部删除时互斥语义一并丢失；status/health 字段对外可观测（healthy/stale_socket/stale_pid/lock_is_held + reason/hint）。
+- **生命周期与 artifacts**：Unix 优先使用 `$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`，否则回退到 `temp_dir()/codex-native-tldr/<uid>/`；非 Unix 使用 `temp_dir()/codex-native-tldr/`。其中 daemon endpoint metadata / `pid` 放在 `<project-hash>/` 子目录，`lock/launch.lock` 放在用户级 scope 根目录，避免项目 artifact 目录被外部删除时互斥语义一并丢失；status/health 字段对外可观测（healthy/stale_socket/stale_pid/lock_is_held + reason/hint）。
 - **Semantic I/O 与缓存/reindex**：semantic 以 `language+query` 为输入，对外通过 `TldrSemanticResponseView` / `TldrDaemonResponseView` 做显式投影，只暴露稳定字段（如 `path`、`line`、`snippet`、`embedding_score`），默认不透出 `unit`、`embedding_text` 等内部重字段；索引在 `TldrEngine` 内按语言缓存，daemon 复用同一 engine 缓存；reindex 由 `session.reindex_pending` 驱动，`Warm` 会触发 `engine.semantic_reindex()` 并记录 `SemanticReindexReport`。
-- **Unix 主路径与非 Unix fallback**：daemon 查询与 auto-start 当前为 Unix 主路径（Unix socket）；非 Unix 下 `query_daemon` 固定返回 `None`，CLI/MCP 走本地引擎；daemon 的 TCP 监听实现存在但当前未接入客户端查询链路。
+- **跨平台 daemon-first**：Unix 使用 Unix socket；非 Unix/Windows 使用 loopback TCP，并把实际 `127.0.0.1:<port>` endpoint 写入既有 `.sock` metadata 文件。CLI/MCP 仍维持单一 `codex` / `codex-mcp-server` 交付形态；分析命令在 daemon 不可用时回退本地引擎，daemon action 则返回显式失败。
 
 ---
 ---
@@ -42,8 +42,8 @@ graph TB
     end
 
     subgraph Daemon[daemon 层]
-        D[codex hidden internal-daemon<br/>Unix socket server]
-        Sock[(runtime-or-temp/codex-native-tldr/<uid>/<project-hash>/...sock)]
+        D[codex hidden internal-daemon<br/>Unix socket 或 loopback TCP server]
+        Sock[(runtime-or-temp/codex-native-tldr/<uid>/<project-hash>/...sock 或 endpoint metadata)]
         Pid[(runtime-or-temp/codex-native-tldr/<uid>/<project-hash>/...pid)]
         Lock[(runtime-or-temp/codex-native-tldr/<uid>/...lock)]
         LLock[(runtime-or-temp/codex-native-tldr/<uid>/...launch.lock)]
@@ -55,7 +55,7 @@ graph TB
     CLI --> LM
     MCP --> LM
 
-    LM -->|query_daemon (unix only)| D
+    LM -->|query_daemon| D
     D --> Sock
     D --> Pid
     D --> Lock
@@ -71,11 +71,11 @@ graph TB
 |------|------|------|------|
 | 入口形态 | CLI / MCP / HTTP | CLI + MCP | 目标是给 Codex CLI 与 MCP 客户端提供本地结构化分析能力，不引入网络服务形态。 |
 | 进程模型 | 单进程 / daemon 复用 | daemon-first + fallback | daemon 复用内存索引/缓存提升重复查询性能；不可用时本地引擎保证可用性与可调试性。 |
-| IPC 机制 | Unix socket / TCP / gRPC | Unix socket（主路径） | 低开销、易部署；跨进程通过按用户/项目隔离的本地 artifacts 做 liveness/stale 协调。 |
+| IPC 机制 | Unix socket / TCP / gRPC | Unix socket + loopback TCP | Unix 保持 Unix socket；非 Unix/Windows 复用同一 daemon-first 生命周期，但以 loopback TCP 传输并把 endpoint 写回 metadata 文件。 |
 | 生命周期互斥 | 仅靠 socket 存在 / pid / lock | socket+pid + file lock + launcher lock | 增强“全局唯一启动”与 stale 清理闭环，避免并发启动互相误伤。 |
 | 配置来源 | 环境变量 / 全局配置 / 项目配置 | 项目配置 `.codex/tldr.toml` | 面向项目语义：同一机器上不同项目可不同配置；便于仓库内落档与版本控制。 |
 | Semantic 输出 | 直接透传内部结构 / 显式 wire 投影 | 显式 wire 投影 | 已通过 `wire.rs` 固定 `semantic/status` 的公开字段，并用 contract tests 约束不再默认透出内部重字段。 |
-| 跨平台策略 | 全平台 daemon / Unix-only daemon | Unix-only daemon（当前） | query/auto-start 链路仅在 Unix 实现；非 Unix 走本地引擎，保持功能可用但不复用 daemon 缓存。 |
+| 跨平台策略 | 全平台 daemon / Unix-only daemon | 全平台 daemon-first | 产品仍只交付 `codex` / `codex-mcp-server`；Windows 不需要额外 native-tldr 安装物，只是 IPC 实现改用 loopback TCP。 |
 
 ---
 
@@ -85,7 +85,7 @@ graph TB
 |------|------|------|------|
 | 语言/运行时 | Rust + tokio | workspace 管理 | daemon/CLI/MCP 均为 Rust 实现；daemon 使用 tokio 异步 IO。 |
 | 序列化 | serde / serde_json / toml | workspace 管理 | daemon 协议为 JSONL（一行一个命令/响应）；配置为 TOML。 |
-| IPC | tokio::net::UnixListener/UnixStream | - | Unix 主路径；非 Unix `query_daemon` 当前固定返回 `None`。 |
+| IPC | tokio::net::UnixListener/UnixStream + tokio::net::TcpListener/TcpStream | - | Unix 使用 Unix socket；非 Unix/Windows 使用 loopback TCP，并通过 metadata 文件发现 endpoint。 |
 | 互斥/锁 | 文件锁（`File::try_lock`） | - | daemon lock：`*.lock`；launcher lock：`*.launch.lock`。 |
 | 语义索引 | `SemanticIndexer/SemanticIndex` | phase-1 | 按语言扫描源码构建 embedding-unit 风格 metadata；引擎内存缓存每种语言索引。 |
 | “embedding”可观测 | token-hash 向量 + dot product | phase-1 | 非真实 embedding：对 token 做 hashing 计数向量（可配置 dims），提供 `embeddingUsed/embedding_score` 可测试字段。 |

@@ -40,7 +40,8 @@ mise run test --slot tldr-semantic tldr-semantic
 
 说明：
 
-- `codex ztldr daemon ...` 在 Unix 下会走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起内部 daemon 模式
+- `codex ztldr daemon ...` 在所有平台都走 daemon-first，并在允许时通过当前 `codex` 进程自动拉起 hidden internal-daemon；不需要额外单独安装 native-tldr
+- Unix 使用 Unix socket；非 Unix/Windows 使用本机 loopback TCP，并把实际 endpoint 写入既有 artifact 路径供 `codex` / `codex-mcp-server` 查询
 - daemon 在空闲超出 `session.idle_timeout_secs` 后会自动退出，默认 1800 秒；`status` 会返回当前阈值
 - 上面的 `just` / `mise` 入口会给 tldr 链路拆分独立的 `CARGO_HOME` / `CARGO_TARGET_DIR`，并固定 `CARGO_INCREMENTAL=0`，减少多会话并发时的 Cargo 锁与 `sccache` 冲突
 - CLI 分析命令目前对应为：`structure -> structure`、`search -> search`、`extract -> extract`、`imports -> imports`、`importers -> importers`、`context -> context`、`impact -> impact`、`calls -> calls`、`dead -> dead`、`arch -> arch`、`diagnostics -> diagnostics`、`doctor -> doctor`
@@ -59,31 +60,33 @@ idle_timeout_secs = 1800
 
 ## daemon artifacts
 
-Unix 下 daemon artifacts 现在按“运行时目录 / 用户 / 项目”隔离：
+daemon artifacts 按“运行时目录 / 用户 / 项目”隔离：
 
 - scope 根目录优先：`$XDG_RUNTIME_DIR/codex-native-tldr/<uid>/`
 - 否则回退：`$TMPDIR/codex-native-tldr/<uid>/`
-- `socket/pid` 位于：`.../<project-hash>/`
+- daemon endpoint metadata / `pid` 位于：`.../<project-hash>/`
 - `lock/launch.lock` 位于 scope 根目录，避免项目 artifact 目录被删时一并丢失互斥语义
 - semantic cache 位于：`.../<project-hash>/cache/semantic/<language>/`
 
 非 Unix 下回退到：
 
 - scope 根目录：`$TMPDIR/codex-native-tldr/`
-- `socket/pid` 位于：`.../<project-hash>/`
+- daemon endpoint metadata / `pid` 位于：`.../<project-hash>/`
 - `lock/launch.lock` 位于 scope 根目录
 - semantic cache 位于：`.../<project-hash>/cache/semantic/<language>/`
 
 文件名保持稳定：
 
-- `codex-native-tldr-<hash>.sock`
+- Unix：`codex-native-tldr-<hash>.sock`
+- 非 Unix/Windows：`codex-native-tldr-<hash>.sock` 文件内保存 `127.0.0.1:<port>` endpoint metadata，供客户端查询；实际传输走 TCP
 - `codex-native-tldr-<hash>.pid`
 - `codex-native-tldr-<hash>.lock`
 - `codex-native-tldr-<hash>.launch.lock`
 
 ## 当前边界
 
-- daemon-first 是 Unix 主路径；分析类与 semantic 在 daemon 不可用时可回退本地引擎，但 daemon action（`ping/warm/snapshot/status/notify`）仍要求 daemon 可用
+- daemon-first 现在同时覆盖 Unix 与非 Unix/Windows；分析类与 semantic 在 daemon 不可用时可回退本地引擎，但 daemon action（`ping/warm/snapshot/status/notify/stop`）仍要求 daemon 可用
+- 非 Unix/Windows 的 `stop` 会向 daemon 发送 `Shutdown` 命令，等待 endpoint metadata/pid 清理完成；若 daemon 已不可达则会显式清理遗留 metadata
 - `status` 的配置摘要会暴露 `session_idle_timeout_secs`，便于观察当前空闲自退阈值
 - `structure` 当前对应代码结构分析；`tree` 仍保留给未来的真实 file-tree contract，当前不会再作为 AST 别名
 - semantic 默认开启，并在首次查询时按语言 lazy 建索引；首次 fresh build 会把 units/vector/manifest 落到系统运行时目录或系统临时目录下的 `codex-native-tldr/<scope>/<project-hash>/cache/semantic/<language>/`
@@ -158,6 +161,13 @@ enabled = false
 - `semantic` 在 `source = "local"` 时，会额外返回 `degradedMode`
 - daemon 结果中只要带有 `daemonStatus` 且其处于不健康状态，就会额外返回 `structuredFailure` 与 `degradedMode`
 - 这些字段属于稳定 wire contract，对 MCP/CLI JSON 消费方开放
+
+## 平台差异与诊断
+
+- macOS / Linux：`codex` 通过 Unix socket 连接内部 daemon
+- Windows / 其他非 Unix：`codex` 通过 loopback TCP 连接内部 daemon；endpoint 从 `codex-native-tldr-<hash>.sock` metadata 文件读取
+- 两条路径的产品形态一致：都只交付 `codex` / `codex-mcp-server`，不存在“Windows 需要单独 native-tldr 安装包”的要求
+- 若 daemon metadata 存在但 endpoint 已不可达，CLI 会把它判为 stale artifact 并清理；分析命令随后回退本地引擎，daemon action 会返回显式失败
 
 ## 后续方向
 

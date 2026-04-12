@@ -25,11 +25,16 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fs::File;
 use std::fs::OpenOptions;
+#[cfg(not(unix))]
+use std::net::SocketAddr;
+#[cfg(not(unix))]
+use std::net::TcpStream as StdTcpStream;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -43,16 +48,15 @@ use tokio::time::timeout;
 
 #[cfg(not(unix))]
 use tokio::net::TcpListener;
+#[cfg(not(unix))]
+use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixListener;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 
-#[cfg(unix)]
 const DAEMON_CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
-#[cfg(unix)]
 const DAEMON_IO_TIMEOUT: Duration = Duration::from_secs(1);
-#[cfg(unix)]
 const DAEMON_HEAVY_IO_TIMEOUT: Duration = Duration::from_secs(180);
 #[cfg(unix)]
 const UNIX_SOCKET_PATH_MAX_BYTES: usize = 103;
@@ -105,6 +109,7 @@ pub enum TldrDaemonCommand {
     },
     Snapshot,
     Status,
+    Shutdown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -415,6 +420,7 @@ impl TldrDaemon {
                     ..TldrDaemonResponse::ok("status")
                 })
             }
+            TldrDaemonCommand::Shutdown => Ok(TldrDaemonResponse::ok("shutdown requested")),
             TldrDaemonCommand::Semantic { request } => {
                 let response = self.engine.semantic_search(request)?;
                 Ok(TldrDaemonResponse {
@@ -453,6 +459,7 @@ impl TldrDaemon {
         let idle_timeout = self.engine.config().session.idle_timeout;
         let last_activity = Arc::new(Mutex::new(Instant::now()));
         let active_connections = Arc::new(AtomicUsize::new(0));
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
         let Some(_daemon_lock) = acquire_daemon_lock(&self.project_root)? else {
             return Ok(());
         };
@@ -477,6 +484,7 @@ impl TldrDaemon {
                     let engine = self.engine.clone();
                     let last_activity = Arc::clone(&last_activity);
                     let active_connections = Arc::clone(&active_connections);
+                    let shutdown_requested = Arc::clone(&shutdown_requested);
                     tokio::spawn(async move {
                         let _ = serve_connection(
                             stream,
@@ -484,10 +492,14 @@ impl TldrDaemon {
                             engine,
                             last_activity,
                             active_connections,
+                            shutdown_requested,
                         ).await;
                     });
                 }
                 _ = tokio::time::sleep(idle_poll_interval(idle_timeout)) => {
+                    if shutdown_requested.load(Ordering::SeqCst) {
+                        break;
+                    }
                     if should_shutdown_for_idle_timeout(
                         &self.session,
                         &last_activity,
@@ -518,10 +530,20 @@ impl TldrDaemon {
 
     #[cfg(not(unix))]
     async fn run_tcp(&self) -> Result<()> {
+        let socket_path = self.socket_path();
+        let pid_path = pid_path_for_project(&self.project_root);
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let idle_timeout = self.engine.config().session.idle_timeout;
         let last_activity = Arc::new(Mutex::new(Instant::now()));
         let active_connections = Arc::new(AtomicUsize::new(0));
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
+        let Some(_daemon_lock) = acquire_daemon_lock(&self.project_root)? else {
+            return Ok(());
+        };
+        cleanup_stale_socket(&socket_path);
+        cleanup_stale_pid_file(&pid_path);
+        write_tcp_endpoint_file(&socket_path, listener.local_addr()?)?;
+        write_pid_file(&pid_path)?;
         loop {
             tokio::select! {
                 accept_result = listener.accept() => {
@@ -530,6 +552,7 @@ impl TldrDaemon {
                     let engine = self.engine.clone();
                     let last_activity = Arc::clone(&last_activity);
                     let active_connections = Arc::clone(&active_connections);
+                    let shutdown_requested = Arc::clone(&shutdown_requested);
                     tokio::spawn(async move {
                         let _ = serve_connection(
                             stream,
@@ -537,10 +560,14 @@ impl TldrDaemon {
                             engine,
                             last_activity,
                             active_connections,
+                            shutdown_requested,
                         ).await;
                     });
                 }
                 _ = tokio::time::sleep(idle_poll_interval(idle_timeout)) => {
+                    if shutdown_requested.load(Ordering::SeqCst) {
+                        break;
+                    }
                     if should_shutdown_for_idle_timeout(
                         &self.session,
                         &last_activity,
@@ -556,6 +583,8 @@ impl TldrDaemon {
                 }
             }
         }
+        cleanup_stale_socket(&socket_path);
+        cleanup_stale_pid_file(&pid_path);
         Ok(())
     }
 }
@@ -740,6 +769,7 @@ async fn handle_with_session(
                 ..TldrDaemonResponse::ok("status")
             })
         }
+        TldrDaemonCommand::Shutdown => Ok(TldrDaemonResponse::ok("shutdown requested")),
         TldrDaemonCommand::Semantic { request } => {
             let response = engine.semantic_search(request)?;
             Ok(TldrDaemonResponse {
@@ -1045,6 +1075,7 @@ async fn serve_connection<T>(
     engine: TldrEngine,
     last_activity: Arc<Mutex<Instant>>,
     active_connections: Arc<AtomicUsize>,
+    shutdown_requested: Arc<AtomicBool>,
 ) -> Result<()>
 where
     T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -1055,6 +1086,7 @@ where
 
     while let Some(line) = lines.next_line().await? {
         let command: TldrDaemonCommand = serde_json::from_str(&line)?;
+        let should_shutdown = matches!(command, TldrDaemonCommand::Shutdown);
         let response = handle_with_session(
             engine.config().project_root.as_path(),
             &session,
@@ -1066,6 +1098,10 @@ where
             .write_all(format!("{}\n", serde_json::to_string(&response)?).as_bytes())
             .await?;
         *last_activity.lock().await = Instant::now();
+        if should_shutdown {
+            shutdown_requested.store(true, Ordering::SeqCst);
+            break;
+        }
     }
 
     Ok(())
@@ -1232,6 +1268,22 @@ fn write_pid_file(pid_path: &Path) -> Result<()> {
         .with_context(|| format!("write pid file {}", pid_path.display()))
 }
 
+#[cfg(not(unix))]
+fn write_tcp_endpoint_file(endpoint_path: &Path, address: SocketAddr) -> Result<()> {
+    ensure_daemon_artifact_parent(endpoint_path)?;
+    std::fs::write(endpoint_path, address.to_string())
+        .with_context(|| format!("write daemon endpoint {}", endpoint_path.display()))
+}
+
+#[cfg(not(unix))]
+fn read_tcp_endpoint(endpoint_path: &Path) -> Option<SocketAddr> {
+    std::fs::read_to_string(endpoint_path)
+        .ok()?
+        .trim()
+        .parse::<SocketAddr>()
+        .ok()
+}
+
 fn acquire_daemon_lock(project_root: &Path) -> Result<Option<File>> {
     try_open_daemon_lock(project_root)
 }
@@ -1245,8 +1297,13 @@ pub fn launch_lock_is_held(project_root: &Path) -> Result<bool> {
 }
 
 pub fn daemon_health(project_root: &Path) -> Result<DaemonHealth> {
-    let socket_exists = socket_path_for_project(project_root).exists();
-    let pid_is_live = read_live_pid(&pid_path_for_project(project_root)).unwrap_or(false);
+    let socket_path = socket_path_for_project(project_root);
+    let pid_path = pid_path_for_project(project_root);
+    let socket_exists = socket_path.exists();
+    #[cfg(unix)]
+    let pid_is_live = read_live_pid(&pid_path).unwrap_or(false);
+    #[cfg(not(unix))]
+    let pid_is_live = pid_path.exists() && tcp_endpoint_is_alive(&socket_path);
     let lock_is_held = daemon_lock_is_held(project_root)?;
     let launch_lock_is_held = launch_lock_is_held(project_root)?;
     let healthy = socket_exists && pid_is_live;
@@ -1388,6 +1445,14 @@ fn pid_is_alive(pid: i32) -> bool {
     false
 }
 
+#[cfg(not(unix))]
+fn tcp_endpoint_is_alive(endpoint_path: &Path) -> bool {
+    let Some(address) = read_tcp_endpoint(endpoint_path) else {
+        return false;
+    };
+    StdTcpStream::connect_timeout(&address, DAEMON_CONNECT_TIMEOUT).is_ok()
+}
+
 #[cfg(unix)]
 fn pid_is_alive(pid: i32) -> bool {
     if pid <= 0 {
@@ -1487,13 +1552,13 @@ pub async fn query_daemon(
     .await
 }
 
-#[cfg(unix)]
 fn io_timeout_for_command(command: &TldrDaemonCommand) -> Duration {
     match command {
         TldrDaemonCommand::Ping
         | TldrDaemonCommand::Notify { .. }
         | TldrDaemonCommand::Snapshot
-        | TldrDaemonCommand::Status => DAEMON_IO_TIMEOUT,
+        | TldrDaemonCommand::Status
+        | TldrDaemonCommand::Shutdown => DAEMON_IO_TIMEOUT,
         TldrDaemonCommand::Warm
         | TldrDaemonCommand::Analyze { .. }
         | TldrDaemonCommand::Imports { .. }
@@ -1553,7 +1618,6 @@ async fn query_daemon_with_timeout(
     Ok(Some(response))
 }
 
-#[cfg(unix)]
 fn maybe_cleanup_unavailable_daemon(project_root: &Path, socket_path: &Path, pid_path: &Path) {
     if daemon_health(project_root)
         .map(|health| health.should_cleanup_artifacts())
@@ -1564,7 +1628,6 @@ fn maybe_cleanup_unavailable_daemon(project_root: &Path, socket_path: &Path, pid
     }
 }
 
-#[cfg(unix)]
 fn cleanup_stale_socket(socket_path: &Path) {
     if let Err(err) = std::fs::remove_file(socket_path)
         && err.kind() != std::io::ErrorKind::NotFound
@@ -1573,7 +1636,6 @@ fn cleanup_stale_socket(socket_path: &Path) {
     }
 }
 
-#[cfg(unix)]
 fn cleanup_stale_pid_file(pid_path: &Path) {
     if let Err(err) = std::fs::remove_file(pid_path)
         && err.kind() != std::io::ErrorKind::NotFound
@@ -1582,7 +1644,6 @@ fn cleanup_stale_pid_file(pid_path: &Path) {
     }
 }
 
-#[cfg(unix)]
 fn daemon_unavailable(err: &std::io::Error) -> bool {
     matches!(
         err.kind(),
@@ -1595,10 +1656,49 @@ fn daemon_unavailable(err: &std::io::Error) -> bool {
 
 #[cfg(not(unix))]
 pub async fn query_daemon(
-    _project_root: &Path,
-    _command: &TldrDaemonCommand,
+    project_root: &Path,
+    command: &TldrDaemonCommand,
 ) -> Result<Option<TldrDaemonResponse>> {
-    Ok(None)
+    let socket_path = socket_path_for_project(project_root);
+    let pid_path = pid_path_for_project(project_root);
+    let Some(address) = read_tcp_endpoint(&socket_path) else {
+        return Ok(None);
+    };
+
+    let stream = match timeout(DAEMON_CONNECT_TIMEOUT, TcpStream::connect(address)).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) if daemon_unavailable(&err) => {
+            maybe_cleanup_unavailable_daemon(project_root, &socket_path, &pid_path);
+            return Ok(None);
+        }
+        Ok(Err(err)) => {
+            return Err(err).with_context(|| format!("connect daemon {}", socket_path.display()));
+        }
+        Err(_) => anyhow::bail!("timed out connecting to daemon {}", socket_path.display()),
+    };
+
+    let (reader, mut writer) = tokio::io::split(stream);
+    timeout(
+        io_timeout_for_command(command),
+        writer.write_all(format!("{}\n", serde_json::to_string(command)?).as_bytes()),
+    )
+    .await
+    .with_context(|| format!("write timeout for {}", socket_path.display()))?
+    .with_context(|| format!("write daemon command to {}", socket_path.display()))?;
+
+    let mut lines = BufReader::new(reader).lines();
+    let Some(line) = timeout(io_timeout_for_command(command), lines.next_line())
+        .await
+        .with_context(|| format!("read timeout for {}", socket_path.display()))?
+        .with_context(|| format!("read daemon response from {}", socket_path.display()))?
+    else {
+        maybe_cleanup_unavailable_daemon(project_root, &socket_path, &pid_path);
+        return Ok(None);
+    };
+
+    let response = serde_json::from_str(&line)
+        .with_context(|| format!("decode daemon response from {}", socket_path.display()))?;
+    Ok(Some(response))
 }
 
 #[cfg(test)]

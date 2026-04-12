@@ -1723,8 +1723,23 @@ async fn stop_native_tldr_daemon(project_root: &Path) -> Result<(bool, String)> 
 }
 
 #[cfg(not(unix))]
-async fn stop_native_tldr_daemon(_project_root: &Path) -> Result<(bool, String)> {
-    bail!("当前构建仅在 Unix 平台支持停止 daemon")
+async fn stop_native_tldr_daemon(project_root: &Path) -> Result<(bool, String)> {
+    let response = query_daemon(project_root, &TldrDaemonCommand::Shutdown).await?;
+    let Some(response) = response else {
+        cleanup_stale_daemon_artifacts(project_root);
+        return Ok((false, "daemon 未运行；已清理遗留 metadata".to_string()));
+    };
+
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(3) {
+        if !daemon_metadata_looks_alive(project_root) {
+            cleanup_stale_daemon_artifacts(project_root);
+            return Ok((true, response.message));
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+
+    bail!("daemon 未在超时时间内完成 shutdown")
 }
 
 async fn query_daemon_with_autostart(
@@ -1800,13 +1815,6 @@ async fn ensure_daemon_running_detailed(
     project_root: &Path,
     auto_start_enabled: bool,
 ) -> Result<DaemonReadyResult> {
-    if !cfg!(unix) {
-        return Ok(DaemonReadyResult {
-            ready: false,
-            structured_failure: None,
-            degraded_mode: None,
-        });
-    }
     if !auto_start_enabled {
         return Ok(DaemonReadyResult {
             ready: false,
@@ -1882,7 +1890,6 @@ fn record_test_launcher_wait(_project_root: &Path) {
     }
 }
 
-#[cfg(unix)]
 async fn spawn_native_tldr_daemon(project_root: &Path) -> Result<bool> {
     if daemon_lock_is_held(project_root)? {
         return Ok(false);
@@ -1899,11 +1906,6 @@ async fn spawn_native_tldr_daemon(project_root: &Path) -> Result<bool> {
         let _ = child.wait().await;
     });
     Ok(true)
-}
-
-#[cfg(not(unix))]
-async fn spawn_native_tldr_daemon(_project_root: &Path) -> Result<bool> {
-    Ok(false)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -4211,6 +4213,7 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Importers { .. } => "importers",
                         TldrDaemonCommand::Search { .. } => "search",
                         TldrDaemonCommand::Diagnostics { .. } => "diagnostics",
+                        TldrDaemonCommand::Shutdown => "shutdown",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),
@@ -4314,6 +4317,7 @@ mod lifecycle_tests {
                         TldrDaemonCommand::Importers { .. } => "importers",
                         TldrDaemonCommand::Search { .. } => "search",
                         TldrDaemonCommand::Diagnostics { .. } => "diagnostics",
+                        TldrDaemonCommand::Shutdown => "shutdown",
                     };
                     let response = TldrDaemonResponse {
                         status: "ok".to_string(),

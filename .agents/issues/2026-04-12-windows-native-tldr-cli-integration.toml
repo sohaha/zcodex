@@ -1,0 +1,58 @@
+plan = ".agents/plan/2026-04-12-windows-native-tldr-cli-integration.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "收口 Windows native-tldr daemon 通信与生命周期契约"
+scope = """
+基于当前 `codex-cli` 与 `codex-native-tldr` 的非 Unix 实现，明确 Windows 端 daemon-first 需要补齐的最小契约：通信通道、寻址方式、artifact 布局、健康检查、auto-start/stop/status 语义，以及 fallback 与 daemon 成功路径的边界。
+本 issue 只负责把实现契约落到代码与文档约束层，不直接完成全部客户端/服务端接线，也不改动 Unix 已稳定工作的主路径。
+"""
+touch_points = ["module:cli", "module:native-tldr", "command:codex ztldr", "codex-rs/cli/src/tldr_cmd.rs", "codex-rs/native-tldr/src/daemon.rs", "codex-rs/native-tldr/README.md", ".agents/codex-cli-native-tldr/architecture.md"]
+depends_on = []
+done_when = "Windows 端 daemon-first 所需的通信/寻址/artifact/health/stop/status contract 已有明确结论，且结论能直接指导后续 CLI 与 native-tldr 实现拆分，不再依赖临场决策。"
+validate_by = "复核 `codex-rs/cli/src/tldr_cmd.rs`、`codex-rs/native-tldr/src/daemon.rs`、`codex-rs/native-tldr/README.md` 与 `.agents/codex-cli-native-tldr/architecture.md`，确认 issue 中定义的 contract 能解释当前非 Unix 为何只走 fallback，并能覆盖未来 Windows daemon-first 的查询、拉起、停止与状态面。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "spec-reviewer/code-reviewer: contract 已落到 daemon.rs、tldr_cmd.rs、README 与 architecture，Windows 非 Unix 现通过 endpoint metadata + loopback TCP 进入 daemon-first。"
+
+[[issue]]
+id = "a2"
+sequence = 20
+title = "实现 Windows 上 codex-cli 到 native-tldr 的 daemon-first 接线"
+scope = """
+在已确认契约基础上，让 Windows 继续保持“只交付 `codex-cli`”的产品形态，同时补齐 `codex` 自拉起 hidden internal-daemon、客户端查询、健康判定、stop/status 行为与 fallback 闭环。
+本 issue 包含 `codex-rs/cli` 与 `codex-rs/native-tldr` 的必要实现和相应局部测试，但不扩展为新的独立安装物、HTTP 服务或系统级常驻服务。
+"""
+touch_points = ["module:cli", "module:native-tldr", "command:codex ztldr", "codex-rs/cli/src/tldr_cmd.rs", "codex-rs/native-tldr/src/daemon.rs", "codex-rs/native-tldr/src/lifecycle.rs"]
+depends_on = ["a1"]
+done_when = "Windows 构建下 `codex ztldr` 已能走 daemon-first 路径并在 daemon 不可用时显式回退本地引擎，且 start/stop/ping/warm/snapshot/status/notify 的 Windows 行为与约定一致。"
+validate_by = "为 `codex-rs/cli` 与 `codex-rs/native-tldr` 补齐 Windows 分支的局部测试/条件编译测试，至少覆盖 query/autostart/stop/status/fallback 的关键路径，并执行受影响 crate 的最小可靠测试闭环。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "实现已补齐 query/autostart/stop/status/fallback；局部验证已通过 just native-tldr-test-fast daemon、cargo nextest run -p codex-cli --test tldr、cargo nextest run -p codex-cli tldr_cmd::。"
+
+[[issue]]
+id = "a3"
+sequence = 30
+title = "补齐 Windows 集成后的文档与验证矩阵"
+scope = """
+在 Windows daemon-first 接线完成后，更新对外与对内文档，明确“无需独立 native-tldr 安装”的产品事实、Windows 与 Unix 的行为差异、故障诊断方式与最小验证矩阵。
+本 issue 只负责文档、说明与必要的验证收口，不重新设计实现，也不引入额外功能范围。
+"""
+touch_points = ["module:cli", "module:native-tldr", "docs/", "codex-rs/native-tldr/README.md", ".agents/codex-cli-native-tldr/architecture.md"]
+depends_on = ["a2"]
+done_when = "面向开发者与使用者的相关文档已同步到 Windows daemon-first 新行为，且验证矩阵清楚说明已验证项、未验证项与剩余限制。"
+validate_by = "复核更新后的 README/架构文档/相关说明是否同时覆盖交付形态、Windows 与 Unix 差异、daemon 诊断入口与验证结果，并确保内容与最终实现一致。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "README 与 architecture 已同步 Windows/非 Unix daemon-first、单一交付形态、endpoint metadata、stop/shutdown 语义与验证边界。"
