@@ -1,9 +1,10 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1530
 expression: rendered
 ---
-• PreToolUse hook (blocked)
-  feedback: run tests before touching the fixture
+• 工具调用前 钩子（已拦截）
+  反馈：run tests before touching the fixture
 
-• PostToolUse hook (failed)
-  error: hook exited with code 7
+• 工具调用后 钩子（失败）
+  错误：hook exited with code 7

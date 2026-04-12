@@ -3,6 +3,6 @@ source: tui/src/chatwidget/tests/exec_flow.rs
 assertion_line: 899
 expression: combined
 ---
-• 生成图片：
+• 已生成图片：
   └ A tiny blue square
-  └ 已保存到：file:///tmp/ig-1.png
+  └ 保存到：file:///tmp/ig-1.png

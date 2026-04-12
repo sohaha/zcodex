@@ -102,13 +102,13 @@ async fn emits_deprecation_notice_for_experimental_instructions_file() -> anyhow
     let DeprecationNoticeEvent { summary, details } = notice;
     assert_eq!(
         summary,
-        "`experimental_instructions_file` is deprecated and ignored. Use `model_instructions_file` instead."
-            .to_string(),
+        "`experimental_instructions_file` 已弃用且会被忽略。请改用 `model_instructions_file`。"
+            .to_string()
     );
     assert_eq!(
         details.as_deref(),
         Some(
-            "Move the setting to `model_instructions_file` in config.toml (or under a profile) to load instructions from a file."
+            "请将该配置迁移到 config.toml 中的 `model_instructions_file`（或某个配置档下）以从文件加载说明。"
         ),
     );
 

@@ -844,7 +844,7 @@ async fn spawn_agent_fork_injects_output_for_parent_spawn_call() {
         .session
         .ensure_rollout_materialized()
         .await;
-    parent_thread.codex.session.flush_rollout().await;
+    let _ = parent_thread.codex.session.flush_rollout().await;
 
     let child_thread_id = harness
         .control

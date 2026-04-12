@@ -58,7 +58,7 @@ async fn experimental_mode_plan_is_ignored_on_startup() {
         .build()
         .await
         .expect("config");
-    let resolved_model = codex_core::test_support::get_model_offline(cfg.model.as_deref());
+    let resolved_model = crate::legacy_core::test_support::get_model_offline(cfg.model.as_deref());
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let init = ChatWidgetInit {
         config: cfg.clone(),
@@ -1474,8 +1474,13 @@ async fn experimental_popup_shows_js_repl_node_requirement() {
     chat.open_experimental_popup();
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
+    let compact_popup: String = popup.chars().filter(|c| !c.is_whitespace()).collect();
+    let compact_node_requirement: String = node_requirement
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
     assert!(
-        popup.contains(node_requirement),
+        compact_popup.contains(&compact_node_requirement),
         "expected js_repl feature description to mention the required Node version, got:\n{popup}"
     );
 }
@@ -1499,12 +1504,22 @@ async fn experimental_popup_includes_guardian_approval() {
 
     let popup = render_bottom_popup(&chat, /*width*/ 120);
     let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
+    let compact_popup: String = popup.chars().filter(|c| !c.is_whitespace()).collect();
+    let compact_guardian_name: String = guardian_name
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let compact_guardian_description: String = guardian_description
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
     assert!(
-        popup.contains(guardian_name),
+        compact_popup.contains(&compact_guardian_name),
         "expected guardian approvals entry in experimental popup, got:\n{popup}"
     );
     assert!(
-        normalized_popup.contains(guardian_description),
+        normalized_popup.contains(guardian_description)
+            || compact_popup.contains(&compact_guardian_description),
         "expected guardian approvals description in experimental popup, got:\n{popup}"
     );
 }

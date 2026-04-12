@@ -67,7 +67,6 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     if cfg!(windows) {
         return command.to_vec();
     }
-
     if command.len() < 3 {
         return command.to_vec();
     }

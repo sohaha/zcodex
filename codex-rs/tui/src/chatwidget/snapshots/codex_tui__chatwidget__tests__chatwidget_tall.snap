@@ -1,12 +1,13 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 2183
 expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 ---
 
 • 处理中 (0s • esc 中断)
-  .-----------------------------------.
-  | 像在水里一样轻轻漂来。                       |
-  '-----------------------------------.
+  .------------.
+  | 轻轻漂来。 |
+  '------------.
     \
   }~   ~{
   ( ^..^ )
@@ -25,4 +26,4 @@ expression: normalize_snapshot_paths(term.backend().vt100().screen().contents())
 
 › Ask Codex to do anything
 
-  gpt-5.3-codex 默认 · 剩余 100% · /tmp/project
+  gpt-5.3-codex 默认 · 上下文 [     ] · /tmp/project

@@ -29,6 +29,7 @@ use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_config::types::AuthCredentialsStoreMode;
+use codex_features::Feature;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use core_test_support::responses;
@@ -141,12 +142,13 @@ async fn auto_compaction_remote_emits_started_and_completed_items() -> Result<()
         serde_json::json!({ "output": compacted_history }),
     )
     .await;
+    let feature_flags = BTreeMap::from([(Feature::Plugins, false)]);
 
     let codex_home = TempDir::new()?;
     write_mock_responses_config_toml(
         codex_home.path(),
         &server.uri(),
-        &BTreeMap::default(),
+        &feature_flags,
         REMOTE_AUTO_COMPACT_LIMIT,
         Some(true),
         "mock_provider",

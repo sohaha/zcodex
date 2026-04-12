@@ -1,5 +1,6 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/approval_requests.rs
+assertion_line: 274
 expression: lines_to_single_string(&aborted_multi)
 ---
-✗ You canceled the request to run echo line1 ...
+✗ 你取消了 Codex 执行请求 echo line1 ...

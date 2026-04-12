@@ -1,10 +1,11 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1570
 expression: "format!(\"{running_snapshot}\\n\\n{completed_snapshot}\")"
 ---
 running
 live hooks:
-• Running PreToolUse hook: checking command
+• 正在运行 工具调用前 钩子：checking command
 history:
 <empty>
 
@@ -12,5 +13,5 @@ completed
 live hooks:
 <empty>
 history:
-• PreToolUse hook (blocked)
-  feedback: command blocked by policy
+• 工具调用前 钩子（已拦截）
+  反馈：command blocked by policy

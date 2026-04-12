@@ -1,11 +1,12 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1608
 expression: "format!(\"active hooks:\\n{}history:\\n{history}\", active_hook_blob(&chat))"
 ---
 active hooks:
 <empty>
 history:
-• PreToolUse hook (blocked)
-  feedback: command blocked by policy
+• 工具调用前 钩子（已拦截）
+  反馈：command blocked by policy
 
 • The hook feedback was applied.

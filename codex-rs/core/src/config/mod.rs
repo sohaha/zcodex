@@ -130,6 +130,7 @@ pub use managed_features::ManagedFeatures;
 pub use network_proxy_spec::NetworkProxySpec;
 pub use network_proxy_spec::StartedNetworkProxy;
 pub(crate) use permissions::resolve_permission_profile;
+pub use schema::write_config_schema;
 pub use service::ConfigService;
 pub use service::ConfigServiceError;
 

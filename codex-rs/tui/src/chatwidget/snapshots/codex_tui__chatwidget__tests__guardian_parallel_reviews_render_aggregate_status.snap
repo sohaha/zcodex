@@ -1,6 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/guardian.rs
-assertion_line: 257
+assertion_line: 269
 expression: normalize_snapshot_paths(rendered)
 ---
 • 正 在 审 查  2 个 批 准 请 求  (0s • esc 中 断 )
@@ -18,4 +18,4 @@ expression: normalize_snapshot_paths(rendered)
 
 › Ask Codex to do anything
 
-  gpt-5.3-codex 默 认  · 剩 余  100% · /tmp/project
+  gpt-5.3-codex 默 认  · 上 下 文  [     ] · /tmp/project

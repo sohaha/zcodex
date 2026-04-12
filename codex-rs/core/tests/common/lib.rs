@@ -3,6 +3,7 @@
 use anyhow::Context as _;
 use anyhow::ensure;
 use codex_arg0::Arg0PathEntryGuard;
+use codex_features::Feature;
 use codex_utils_cargo_bin::CargoBinError;
 use ctor::ctor;
 use std::process::Command;
@@ -174,12 +175,17 @@ pub fn fetch_dotslash_file(
 /// temporary directory. Using a per-test directory keeps tests hermetic and
 /// avoids clobbering a developer’s real `~/.codex`.
 pub async fn load_default_config_for_test(codex_home: &TempDir) -> Config {
-    ConfigBuilder::default()
+    let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .harness_overrides(default_test_overrides())
         .build()
         .await
-        .expect("defaults for test should always succeed")
+        .expect("defaults for test should always succeed");
+    config
+        .features
+        .disable(Feature::Apps)
+        .expect("test defaults should be able to disable apps");
+    config
 }
 
 #[cfg(target_os = "linux")]
@@ -429,8 +435,14 @@ fn resolve_stdio_server_bin() -> Result<String, String> {
         ));
     }
 
-    let binary = repo_root
-        .join("target")
+    if let Ok(path) = codex_utils_cargo_bin::cargo_bin("test_stdio_server") {
+        return Ok(path.to_string_lossy().to_string());
+    }
+
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root.join("target"));
+    let binary = target_dir
         .join("debug")
         .join(format!("test_stdio_server{}", std::env::consts::EXE_SUFFIX));
     if binary.exists() {

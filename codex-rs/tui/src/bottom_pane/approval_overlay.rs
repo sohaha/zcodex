@@ -275,7 +275,9 @@ impl ApprovalOverlay {
         };
         let granted_permissions = match decision {
             ReviewDecision::Approved | ReviewDecision::ApprovedForSession => permissions.clone(),
-            ReviewDecision::Denied | ReviewDecision::Abort => Default::default(),
+            ReviewDecision::Denied | ReviewDecision::TimedOut | ReviewDecision::Abort => {
+                Default::default()
+            }
             ReviewDecision::ApprovedExecpolicyAmendment { .. }
             | ReviewDecision::NetworkPolicyAmendment { .. } => Default::default(),
         };
@@ -707,6 +709,7 @@ fn exec_options(
                 display_shortcut: None,
                 additional_shortcuts: vec![key_hint::plain(KeyCode::Char('d'))],
             }),
+            ReviewDecision::TimedOut => None,
             ReviewDecision::Abort => Some(ApprovalOption {
                 label: "否，告诉 Codex 换个做法".to_string(),
                 decision: ApprovalDecision::Review(ReviewDecision::Abort),

@@ -3761,6 +3761,9 @@ impl Session {
             info!("server reported model {server_model} (matches requested model)");
             return false;
         }
+        if !turn_context.provider.is_openai() {
+            return false;
+        }
 
         warn!("server reported model {server_model} while requested model was {requested_model}");
 
@@ -6230,7 +6233,7 @@ pub(crate) async fn run_turn(
             .mcp_connection_manager
             .read()
             .await
-            .list_all_tools()
+            .list_all_tools_nonblocking()
             .or_cancel(&cancellation_token)
             .await
         {
@@ -7018,6 +7021,7 @@ async fn run_sampling_request(
         .await;
     let mut retries = 0;
     let mut sampling_turn_context = Arc::clone(&turn_context);
+    let primary_requested_model = turn_context.model_info.slug.clone();
     let mut next_fallback_index = 0usize;
     let mut fallback_client_session: Option<ModelClientSession> = None;
     loop {
@@ -7069,8 +7073,13 @@ async fn run_sampling_request(
         };
 
         if should_retry_with_fallback_provider(&err)
-            && let Some((fallback_turn_context, used_fallback_index)) =
-                next_fallback_turn_context(&sess, &sampling_turn_context, next_fallback_index).await
+            && let Some((fallback_turn_context, used_fallback_index)) = next_fallback_turn_context(
+                &sess,
+                &sampling_turn_context,
+                next_fallback_index,
+                primary_requested_model.as_str(),
+            )
+            .await
         {
             next_fallback_index = used_fallback_index + 1;
             let fallback_provider = fallback_turn_context.provider.name.clone();
@@ -7209,6 +7218,7 @@ async fn next_fallback_turn_context(
     sess: &Session,
     turn_context: &Arc<TurnContext>,
     start_index: usize,
+    primary_requested_model: &str,
 ) -> Option<(Arc<TurnContext>, usize)> {
     let fallback_candidates = if turn_context.config.fallback_providers.is_empty() {
         turn_context
@@ -7232,7 +7242,8 @@ async fn next_fallback_turn_context(
         let fallback_model = fallback
             .model
             .clone()
-            .unwrap_or_else(|| turn_context.model_info.slug.clone());
+            .or_else(|| fallback.provider.model.clone())
+            .unwrap_or_else(|| primary_requested_model.to_string());
         if fallback.provider_id == turn_context.config.model_provider_id
             && fallback_model == turn_context.model_info.slug
         {
@@ -7326,7 +7337,7 @@ pub(crate) async fn built_tools(
     let mcp_connection_manager = sess.services.mcp_connection_manager.read().await;
     let has_mcp_servers = mcp_connection_manager.has_servers();
     let all_mcp_tools = mcp_connection_manager
-        .list_all_tools()
+        .list_all_tools_nonblocking()
         .or_cancel(cancellation_token)
         .await?;
     drop(mcp_connection_manager);

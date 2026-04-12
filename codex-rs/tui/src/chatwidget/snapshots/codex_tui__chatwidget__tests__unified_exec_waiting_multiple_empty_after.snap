@@ -1,5 +1,6 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/exec_flow.rs
+assertion_line: 774
 expression: combined
 ---
-• Waited for background terminal · just fix
+• 已等待后台终端 · just fix

@@ -430,7 +430,7 @@ async fn chat_wire_api_rejects_unknown_named_required_tool_choice() {
     let body: Value = serde_json::from_slice(&body).expect("json body");
     assert_eq!(
         body["error"]["message"],
-        "failed to translate /v1/responses request into /v1/chat/completions: invalid_request: chat completions tool_choice requires unknown tool read_file"
+        "failed to translate /v1/responses request into /v1/chat/completions: invalid request: chat completions tool_choice requires unknown tool read_file"
     );
 }
 
@@ -470,7 +470,7 @@ async fn chat_wire_api_rejects_unsupported_tool_choice() {
     let body: Value = serde_json::from_slice(&body).expect("json body");
     assert_eq!(
         body["error"]["message"],
-        "failed to translate /v1/responses request into /v1/chat/completions: invalid_request: chat completions does not support tool_choice required_by_default"
+        "failed to translate /v1/responses request into /v1/chat/completions: invalid request: chat completions does not support tool_choice required_by_default"
     );
 }
 
@@ -510,7 +510,7 @@ async fn chat_wire_api_rejects_hosted_tools_when_translating_responses() {
     let body: Value = serde_json::from_slice(&body).expect("json body");
     assert_eq!(
         body["error"]["message"],
-        "failed to translate /v1/responses request into /v1/chat/completions: invalid_request: chat completions does not support tool type web_search; use wire_api = \"responses\" for hosted tools"
+        "failed to translate /v1/responses request into /v1/chat/completions: invalid request: chat completions does not support tool type web_search; use wire_api = \"responses\" for hosted tools"
     );
 }
 
@@ -525,6 +525,7 @@ async fn chat_wire_api_rejects_non_user_images_when_translating_responses() {
         Some(
             json!({
                 "model": "gpt-chat",
+                "instructions": "system",
                 "input": [{
                     "type": "message",
                     "role": "assistant",
@@ -552,7 +553,7 @@ async fn chat_wire_api_rejects_non_user_images_when_translating_responses() {
     let body: Value = serde_json::from_slice(&body).expect("json body");
     assert_eq!(
         body["error"]["message"],
-        "failed to translate /v1/responses request into /v1/chat/completions: invalid_request: chat completions only supports images in user messages; assistant messages must be text-only"
+        "failed to translate /v1/responses request into /v1/chat/completions: invalid request: chat completions only supports images in user messages; assistant messages must be text-only"
     );
 }
 
@@ -812,12 +813,14 @@ async fn chat_wire_api_translates_streaming_responses_endpoint_to_chat_upstream(
     assert!(translated_stream.contains("\"sequence_number\":2"));
     assert!(translated_stream.contains("event: response.output_item.done"));
     assert!(
-        translated_stream.contains("\"text\":\"Hello\",\"type\":\"output_text\""),
+        translated_stream.contains("\"type\":\"output_text\",\"text\":\"Hello\""),
         "{translated_stream}"
     );
     assert!(translated_stream.contains("event: response.completed"));
     assert!(translated_stream.contains("\"background\":false"));
-    assert!(translated_stream.contains("\"output\":[{\"content\":[{\"text\":\"Hello\""));
+    assert!(translated_stream.contains(
+        "\"output\":[{\"id\":\"chatcmpl-stream_message_0\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello\"}]}"
+    ));
     assert!(translated_stream.contains("\"input_tokens\":11"));
     assert!(translated_stream.contains("\"reasoning_tokens\":1"));
 
@@ -1133,7 +1136,19 @@ async fn chat_wire_api_translates_special_tool_calls_in_stream() {
     assert!(body.contains("\"type\":\"local_shell_call\""));
     assert!(body.contains("\"call_id\":\"call-shell\""));
     assert!(body.contains("\"working_directory\":\"/tmp\""));
-    assert!(body.contains("\"output\":[{\"call_id\":\"call-custom\""));
+    let output_pos = body.find("\"output\":[").expect("completed output");
+    let completed_output = &body[output_pos..];
+    let custom_pos = completed_output
+        .find("\"call_id\":\"call-custom\"")
+        .expect("custom tool output");
+    let search_pos = completed_output
+        .find("\"call_id\":\"call-search\"")
+        .expect("search tool output");
+    let shell_pos = completed_output
+        .find("\"call_id\":\"call-shell\"")
+        .expect("shell tool output");
+    assert!(custom_pos < search_pos);
+    assert!(search_pos < shell_pos);
     assert!(body.contains("\"output_index\":0"));
     assert!(body.contains("\"output_index\":1"));
     assert!(body.contains("\"output_index\":2"));
@@ -1335,7 +1350,15 @@ async fn chat_wire_api_completed_output_matches_stream_item_order() {
 
     assert!(body.contains("\"delta\":\"Hi \""));
     assert!(body.contains("\"delta\":\"there\""));
-    assert!(body.contains("\"output\":[{\"content\":[{\"text\":\"Hi there\",\"type\":\"output_text\"}],\"id\":\"chatcmpl-mixed_message_0\",\"role\":\"assistant\",\"type\":\"message\"},{\"call_id\":\"call-custom\""));
+    let output_pos = body.find("\"output\":[").expect("completed output");
+    let completed_output = &body[output_pos..];
+    let message_pos = completed_output
+        .find("\"id\":\"chatcmpl-mixed_message_0\"")
+        .expect("message output");
+    let custom_pos = completed_output
+        .find("\"call_id\":\"call-custom\"")
+        .expect("custom tool output");
+    assert!(message_pos < custom_pos);
     assert!(body.contains("\"output_index\":0"));
     assert!(body.contains("\"output_index\":1"));
 }

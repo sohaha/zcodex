@@ -1,5 +1,6 @@
 ---
-source: tui/src/chatwidget/tests.rs
+source: tui/src/chatwidget/tests/slash_commands.rs
+assertion_line: 285
 expression: rendered
 ---
-• `/copy` 在首次 Codex 输出之前或回滚后不可用。
+■ 当前没有可复制的 Agent 回复。

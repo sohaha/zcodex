@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/popups_and_settings.rs
+assertion_line: 1822
 expression: popup
 ---
   是 否 上 传 日 志 ？
@@ -9,8 +10,8 @@ expression: popup
     • codex-connectivity-diagnostics.txt
 
   连 接 诊 断
-    - OPENAI_BASE_URL is set and may affect connectivity.
-      - OPENAI_BASE_URL = hello
+    - Proxy environment variables are set and may affect connectivity.
+      - HTTPS_PROXY = hello
 
 › 1. 是   分 享 当 前  Codex 会 话 日 志 给 团 队 以 排 查 问 题
   2. 否

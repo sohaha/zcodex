@@ -356,6 +356,90 @@ async fn new_uses_configured_openai_provider_for_model_refresh() {
 }
 
 #[tokio::test]
+async fn new_uses_current_model_provider_for_model_refresh() {
+    let server = MockServer::start().await;
+    let models_mock = mount_models_once(&server, ModelsResponse { models: vec![] }).await;
+
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config();
+    config.codex_home = temp_dir.path().join("codex-home");
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+    config.model_catalog = None;
+    config.model_provider_id = "mock_provider".to_string();
+    config.model_provider = ModelProviderInfo {
+        name: "OpenAI".to_string(),
+        base_url: Some(server.uri()),
+        requires_openai_auth: true,
+        supports_websockets: false,
+        ..ModelProviderInfo::create_openai_provider(None)
+    };
+    config.model_providers.insert(
+        config.model_provider_id.clone(),
+        config.model_provider.clone(),
+    );
+
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        auth_manager,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
+        /*analytics_events_client*/ None,
+    );
+
+    let _ = manager.list_models(RefreshStrategy::Online).await;
+    assert_eq!(models_mock.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn start_thread_with_different_provider_builds_distinct_models_manager() {
+    let temp_dir = tempdir().expect("tempdir");
+    let mut config = test_config();
+    config.codex_home = temp_dir.path().join("codex-home");
+    config.cwd = config.codex_home.abs();
+    std::fs::create_dir_all(&config.codex_home).expect("create codex home");
+
+    let auth_manager =
+        AuthManager::from_auth_for_testing(CodexAuth::create_dummy_chatgpt_auth_for_testing());
+    let manager = ThreadManager::new(
+        &config,
+        auth_manager,
+        SessionSource::Exec,
+        CollaborationModesConfig::default(),
+        Arc::new(codex_exec_server::EnvironmentManager::new(
+            /*exec_server_url*/ None,
+        )),
+        /*analytics_events_client*/ None,
+    );
+
+    let mut child_config = config.clone();
+    child_config.model_provider_id = "custom-openai".to_string();
+    child_config.model_provider =
+        ModelProviderInfo::create_openai_provider(Some("https://example.invalid/v1".to_string()));
+    child_config.model_providers.insert(
+        child_config.model_provider_id.clone(),
+        child_config.model_provider.clone(),
+    );
+
+    let thread_id = manager
+        .start_thread(child_config)
+        .await
+        .expect("start thread")
+        .thread_id;
+    let thread = manager.get_thread(thread_id).await.expect("get thread");
+
+    assert!(!Arc::ptr_eq(
+        &manager.get_models_manager(),
+        &thread.codex.session.services.models_manager,
+    ));
+}
+
+#[tokio::test]
 async fn start_thread_reuses_shared_models_manager_when_spawn_context_matches() {
     let temp_dir = tempdir().expect("tempdir");
     let mut config = test_config();
@@ -373,6 +457,7 @@ async fn start_thread_reuses_shared_models_manager_when_spawn_context_matches() 
         Arc::new(codex_exec_server::EnvironmentManager::new(
             /*exec_server_url*/ None,
         )),
+        /*analytics_events_client*/ None,
     );
 
     let thread_id = manager
@@ -406,6 +491,7 @@ async fn resume_thread_with_different_auth_manager_builds_distinct_models_manage
         Arc::new(codex_exec_server::EnvironmentManager::new(
             /*exec_server_url*/ None,
         )),
+        /*analytics_events_client*/ None,
     );
     let resume_auth = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("other-key"));
 
@@ -446,6 +532,7 @@ async fn start_thread_with_different_codex_home_builds_distinct_models_manager()
         Arc::new(codex_exec_server::EnvironmentManager::new(
             /*exec_server_url*/ None,
         )),
+        /*analytics_events_client*/ None,
     );
 
     let mut child_config = config.clone();
@@ -492,6 +579,7 @@ async fn start_thread_with_non_default_provider_reuses_matching_shared_models_ma
         Arc::new(codex_exec_server::EnvironmentManager::new(
             /*exec_server_url*/ None,
         )),
+        /*analytics_events_client*/ None,
     );
 
     let thread_id = manager

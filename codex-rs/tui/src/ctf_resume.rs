@@ -1,11 +1,11 @@
+use crate::legacy_core::config::Config;
+use crate::legacy_core::read_session_meta_line;
 use crate::resume_picker::SessionSelection;
 use crate::resume_picker::SessionTarget;
-use codex_core::CTF_CLEAN_DEFAULT_REPLACEMENT;
-use codex_core::CtfCleanOptions;
-use codex_core::clean_ctf_rollout;
-use codex_core::config::Config;
-use codex_core::find_thread_path_by_id_str;
-use codex_core::read_session_meta_line;
+use codex_rollout::CTF_CLEAN_DEFAULT_REPLACEMENT;
+use codex_rollout::CtfCleanOptions;
+use codex_rollout::clean_ctf_rollout;
+use codex_rollout::find_thread_path_by_id_str;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use color_eyre::eyre::eyre;
@@ -78,7 +78,7 @@ async fn resolve_rollout_path(config: &Config, target_session: &SessionTarget) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_core::config::ConfigBuilder;
+    use crate::legacy_core::config::ConfigBuilder;
     use codex_protocol::ThreadId;
     use pretty_assertions::assert_eq;
     use tempfile::TempDir;

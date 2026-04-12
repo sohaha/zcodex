@@ -150,7 +150,7 @@ async fn assert_update_request_fails_for_missing_session(
     assert_eq!(err.error.code, -32600);
     assert_eq!(
         err.error.message,
-        format!("fuzzy file search session not found: {session_id}")
+        format!("未找到模糊文件搜索会话：{session_id}")
     );
     Ok(())
 }

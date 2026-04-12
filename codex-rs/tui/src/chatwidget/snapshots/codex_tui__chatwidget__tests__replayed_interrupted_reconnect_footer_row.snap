@@ -1,5 +1,6 @@
 ---
 source: tui/src/chatwidget/tests/history_replay.rs
+assertion_line: 918
 expression: header
 ---
-  .-----------------------------------.
+  .------------.

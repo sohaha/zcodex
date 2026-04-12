@@ -670,6 +670,33 @@ async fn list_all_tools_blocks_while_client_is_pending_without_startup_snapshot(
 }
 
 #[tokio::test]
+async fn list_all_tools_nonblocking_skips_pending_clients_without_startup_snapshot() {
+    let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
+        .boxed()
+        .shared();
+    let approval_policy = Constrained::allow_any(AskForApproval::OnFailure);
+    let sandbox_policy = Constrained::allow_any(SandboxPolicy::new_read_only_policy());
+    let mut manager = McpConnectionManager::new_uninitialized(&approval_policy, &sandbox_policy);
+    manager.clients.insert(
+        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        AsyncManagedClient {
+            client: pending_client,
+            startup_snapshot: None,
+            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+        },
+    );
+
+    let timeout_result = tokio::time::timeout(
+        Duration::from_millis(10),
+        manager.list_all_tools_nonblocking(),
+    )
+    .await;
+    let tools = timeout_result.expect("nonblocking tool list should not wait on startup");
+    assert!(tools.is_empty());
+}
+
+#[tokio::test]
 async fn list_all_tools_does_not_block_when_startup_snapshot_cache_hit_is_empty() {
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()

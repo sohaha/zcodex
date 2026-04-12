@@ -19,6 +19,20 @@ async fn buddy_stays_hidden_when_config_disables_visibility() {
     assert!(!chat.bottom_pane.buddy_visible());
 }
 
+fn submit_composer_text(chat: &mut ChatWidget, text: &str) {
+    chat.bottom_pane
+        .set_composer_text(text.to_string(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    chat.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+}
+
+fn recall_latest_after_clearing(chat: &mut ChatWidget) -> String {
+    chat.bottom_pane
+        .set_composer_text(String::new(), Vec::new(), Vec::new());
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    chat.bottom_pane.composer_text()
+}
+
 #[tokio::test]
 async fn slash_compact_eagerly_queues_follow_up_before_turn_start() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
@@ -73,7 +87,7 @@ async fn slash_init_skips_when_project_doc_exists() {
     std::fs::write(&existing_path, "existing instructions").unwrap();
     chat.config.cwd = tempdir.path().to_path_buf().abs();
 
-    chat.dispatch_command(SlashCommand::Init);
+    submit_composer_text(&mut chat, "/init");
 
     match op_rx.try_recv() {
         Err(TryRecvError::Empty) => {}
@@ -95,6 +109,110 @@ async fn slash_init_skips_when_project_doc_exists() {
         std::fs::read_to_string(existing_path).unwrap(),
         "existing instructions"
     );
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/init");
+}
+
+#[tokio::test]
+async fn bare_slash_command_is_available_from_local_recall_after_dispatch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/diff");
+
+    let _ = drain_insert_history(&mut rx);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(chat.bottom_pane.composer_text(), "/diff");
+}
+
+#[tokio::test]
+async fn inline_slash_command_is_available_from_local_recall_after_dispatch() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/rename Better title");
+
+    let _ = drain_insert_history(&mut rx);
+    chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+    assert_eq!(chat.bottom_pane.composer_text(), "/rename Better title");
+}
+
+#[tokio::test]
+async fn usage_error_slash_command_is_available_from_local_recall() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.3-codex")).await;
+    chat.set_feature_enabled(Feature::FastMode, /*enabled*/ true);
+
+    submit_composer_text(&mut chat, "/fast maybe");
+
+    assert_eq!(chat.bottom_pane.composer_text(), "");
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("用法：/fast [on|off|status]"),
+        "expected usage message, got: {rendered:?}"
+    );
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/fast maybe");
+}
+
+#[tokio::test]
+async fn unrecognized_slash_command_is_not_added_to_local_recall() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/does-not-exist");
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("无法识别命令 '/does-not-exist'"),
+        "expected unrecognized-command message, got: {rendered:?}"
+    );
+    assert_eq!(chat.bottom_pane.composer_text(), "/does-not-exist");
+    assert_eq!(recall_latest_after_clearing(&mut chat), "");
+}
+
+#[tokio::test]
+async fn unavailable_slash_command_is_available_from_local_recall() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.bottom_pane.set_task_running(/*running*/ true);
+
+    submit_composer_text(&mut chat, "/model");
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("'/model' 在任务进行中被禁用。"),
+        "expected disabled-command message, got: {rendered:?}"
+    );
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/model");
+}
+
+#[tokio::test]
+async fn no_op_stub_slash_command_is_available_from_local_recall() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    submit_composer_text(&mut chat, "/debug-m-drop");
+
+    let cells = drain_insert_history(&mut rx);
+    let rendered = cells
+        .iter()
+        .map(|cell| lines_to_single_string(cell))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        rendered.contains("记忆维护"),
+        "expected stub message, got: {rendered:?}"
+    );
+    assert_eq!(recall_latest_after_clearing(&mut chat), "/debug-m-drop");
 }
 
 #[tokio::test]
@@ -121,8 +239,8 @@ async fn slash_copy_state_tracks_turn_complete_final_reply() {
     });
 
     assert_eq!(
-        chat.last_copyable_output,
-        Some("Final reply **markdown**".to_string())
+        chat.last_agent_markdown_text(),
+        Some("Final reply **markdown**")
     );
 }
 
@@ -152,7 +270,7 @@ async fn slash_copy_state_tracks_plan_item_completion() {
         }),
     });
 
-    assert_eq!(chat.last_copyable_output, Some(plan_text));
+    assert_eq!(chat.last_agent_markdown_text(), Some(plan_text.as_str()));
 }
 
 #[tokio::test]
@@ -166,7 +284,7 @@ async fn slash_copy_reports_when_no_copyable_output_exists() {
     let rendered = lines_to_single_string(&cells[0]);
     assert_chatwidget_snapshot!("slash_copy_no_output_info_message", rendered);
     assert!(
-        rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
+        rendered.contains("当前没有可复制的 Agent 回复。"),
         "expected no-output message, got {rendered:?}"
     );
 }
@@ -206,8 +324,8 @@ async fn slash_copy_state_is_preserved_during_running_task() {
     chat.on_task_started();
 
     assert_eq!(
-        chat.last_copyable_output,
-        Some("Previous completed reply".to_string())
+        chat.last_agent_markdown_text(),
+        Some("Previous completed reply")
     );
 }
 
@@ -229,7 +347,7 @@ async fn slash_copy_state_clears_on_thread_rollback() {
         msg: EventMsg::ThreadRolledBack(ThreadRolledBackEvent { num_turns: 1 }),
     });
 
-    assert_eq!(chat.last_copyable_output, None);
+    assert_eq!(chat.last_agent_markdown_text(), None);
 }
 
 #[tokio::test]
@@ -262,7 +380,7 @@ async fn slash_copy_is_unavailable_when_legacy_agent_message_is_not_repeated_on_
     assert_eq!(cells.len(), 1, "expected one info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
+        rendered.contains("当前没有可复制的 Agent 回复。"),
         "expected unavailable message, got {rendered:?}"
     );
 }
@@ -393,8 +511,8 @@ async fn slash_copy_uses_agent_message_item_when_turn_complete_omits_final_text(
         "expected copy state to be available, got {rendered:?}"
     );
     assert_eq!(
-        chat.last_copyable_output,
-        Some("Legacy item final message".to_string())
+        chat.last_agent_markdown_text(),
+        Some("Legacy item final message")
     );
 }
 
@@ -441,7 +559,7 @@ async fn slash_copy_does_not_return_stale_output_after_thread_rollback() {
     assert_eq!(cells.len(), 1, "expected one info message");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("`/copy` 在首次 Codex 输出之前或回滚后不可用。"),
+        rendered.contains("当前没有可复制的 Agent 回复。"),
         "expected rollback-cleared copy state message, got {rendered:?}"
     );
 }
@@ -601,7 +719,7 @@ async fn slash_rollout_handles_missing_path() {
     );
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("not available"),
+        rendered.contains("暂不可用"),
         "expected missing rollout path message: {rendered}"
     );
 }
@@ -638,7 +756,7 @@ async fn undo_success_events_render_info_messages() {
 
     let completed = lines_to_single_string(&cells[0]);
     assert!(
-        completed.contains("Undo completed successfully."),
+        completed.contains("撤销已成功完成。"),
         "expected default success message, got {completed:?}"
     );
 }

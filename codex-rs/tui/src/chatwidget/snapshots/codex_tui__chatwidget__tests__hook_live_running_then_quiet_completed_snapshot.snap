@@ -1,16 +1,17 @@
 ---
 source: tui/src/chatwidget/tests/status_and_layout.rs
+assertion_line: 1469
 expression: "format!(\"{running_snapshot}\\n\\n{completed_lingering_snapshot}\\n\\n{completed_snapshot}\")"
 ---
 running
 live hooks:
-• Running PostToolUse hook
+• 正在运行 工具调用后 钩子
 history:
 <empty>
 
 completed lingering
 live hooks:
-• Running PostToolUse hook
+• 正在运行 工具调用后 钩子
 history:
 <empty>
 
