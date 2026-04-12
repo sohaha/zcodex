@@ -26,6 +26,7 @@
 - 把项目范围配置问题误判为默认值问题，没有先看 `system://workspace`。
 - 在 `codex-core` 继续叠加实现，导致边界进一步模糊。
 - 在 dirty worktree 中直接 `cargo insta accept`，误把其他模块的 pending snapshots 一并接收。
+- `codex-core` 里依赖 MCP tool ready 的测试如果只在 `nextest` 30 秒单 case timeout 下失败，先用 `cargo test -p codex-core --test all suite::... -- --exact --nocapture` 复跑，区分 runner 超时和真实回归。
 
 ## 相关文档
 - `.agents/llmdoc/architecture/rust-workspace-map.md`
