@@ -7,6 +7,7 @@ pub use env::is_wsl;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashSet;
 use std::io;
+#[cfg(windows)]
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
