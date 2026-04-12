@@ -24,6 +24,8 @@
 - 根目录 `justfile` 默认 `working-directory := "codex-rs"`，所以多数命令会自动在 Rust workspace 内运行。
 - `justfile` 为多个 cargo 流程分配独立 `CARGO_HOME` 和 `CARGO_TARGET_DIR`，是仓库官方避免锁竞争的做法。
 - 常规本地开发优先局部测试；只有确实需要时再跑 `just test` 或 Bazel 全量。
+- 若直接手写 `cargo build` / `cargo nextest run`，在当前镜像环境优先加 `env -u CARGO_INCREMENTAL -u RUSTC_WRAPPER`，避免 `sccache: incremental compilation is prohibited` 这类环境噪音。
+- 包级运行 `cargo nextest run -p codex-core` 时，如果 `cli_stream` 集成测试报 `codex_utils_cargo_bin::cargo_bin("codex")` 找不到二进制，先补 `cargo build -p codex-cli --bin codex` 再复跑。
 - Clouddev 使用 Rust 工具链镜像时，不要把 `/root/.local/bin` 或 `/root/.local/share/mise` 挂成 `copy-on-write`；这会遮住镜像里预装的 `mise`、`lnk` 和对应工具链。
 - `mise run build` 共享的 speed-first 构建脚本会在 `RUSTC_WRAPPER` 指向可选 `sccache` 但二进制缺失时显式取消 wrapper，避免半初始化环境直接卡死在 `sccache ... rustc -vV`。
 
