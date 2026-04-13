@@ -20,6 +20,7 @@ use ratatui::layout::Size;
 /// - getting the cursor position
 pub struct VT100Backend {
     crossterm_backend: CrosstermBackend<vt100::Parser>,
+    fail_cursor_position_queries: bool,
 }
 
 impl VT100Backend {
@@ -28,6 +29,7 @@ impl VT100Backend {
         crossterm::style::force_color_output(true);
         Self {
             crossterm_backend: CrosstermBackend::new(vt100::Parser::new(height, width, 0)),
+            fail_cursor_position_queries: false,
         }
     }
 
@@ -50,6 +52,11 @@ impl VT100Backend {
         self.crossterm_backend
             .writer_mut()
             .process(format!("\x1b[{row};{col}H").as_bytes());
+    }
+
+    #[allow(dead_code)]
+    pub fn fail_cursor_position_queries(&mut self) {
+        self.fail_cursor_position_queries = true;
     }
 }
 
@@ -89,6 +96,9 @@ impl Backend for VT100Backend {
     }
 
     fn get_cursor_position(&mut self) -> io::Result<Position> {
+        if self.fail_cursor_position_queries {
+            return Err(io::Error::other("simulated cursor position failure"));
+        }
         let (row, col) = self.vt100().screen().cursor_position();
         Ok(Position { x: col, y: row })
     }

@@ -338,6 +338,82 @@ mod tests {
     }
 
     #[test]
+    fn resize_uses_screen_delta_when_cursor_query_fails_for_bottom_aligned_viewport() {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 6, 24, 2));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "old viewport", Style::default());
+            })
+            .expect("initial draw");
+        terminal.last_known_cursor_pos = Position { x: 0, y: 6 };
+
+        terminal.backend_mut().resize_screen(24, 10);
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 8 })
+            .expect("move parser cursor");
+        terminal
+            .backend_mut()
+            .write_all(b"old viewport")
+            .expect("write shifted stale viewport");
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 6 })
+            .expect("restore parser cursor");
+        terminal.backend_mut().fail_cursor_position_queries();
+
+        let new_area = pending_viewport_area_for_terminal(&mut terminal)
+            .expect("pending viewport area")
+            .expect("resize should still move viewport");
+        assert_eq!(new_area, Rect::new(0, 8, 24, 2));
+        apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "new viewport", Style::default());
+            })
+            .expect("redraw after move");
+
+        let screen = terminal.backend().vt100().screen().contents();
+        assert!(
+            !screen.contains("old viewport"),
+            "expected CPR failure fallback to clear stale viewport rows:\n{screen}"
+        );
+        assert!(
+            screen.contains("new viewport"),
+            "expected the viewport to redraw when CPR is unavailable:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn resize_without_cursor_query_keeps_non_bottom_aligned_viewport_in_place() {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 1, 24, 2));
+        terminal.last_known_cursor_pos = Position { x: 0, y: 1 };
+
+        terminal.backend_mut().resize_screen(24, 10);
+        terminal.backend_mut().fail_cursor_position_queries();
+
+        assert_eq!(
+            pending_viewport_area_for_terminal(&mut terminal).expect("pending viewport area"),
+            None,
+            "non-bottom-aligned viewports should not move on screen delta when CPR fails"
+        );
+    }
+
+    #[test]
     fn resize_without_cursor_delta_keeps_non_bottom_aligned_viewport_in_place() {
         let mut terminal =
             CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))

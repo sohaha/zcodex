@@ -18,9 +18,11 @@
   - `moving_viewport_up_clears_rows_between_new_and_old_origins`
   - `resize_uses_screen_delta_when_cursor_row_is_unchanged_for_bottom_aligned_viewport`
   - `resize_uses_negative_screen_delta_when_cursor_row_is_unchanged_for_bottom_aligned_viewport`
+  - `resize_uses_screen_delta_when_cursor_query_fails_for_bottom_aligned_viewport`
+  - `resize_without_cursor_query_keeps_non_bottom_aligned_viewport_in_place`
   - `resize_without_cursor_delta_keeps_non_bottom_aligned_viewport_in_place`
-- 测试基建：`codex-rs/tui/src/test_backend.rs` 里 `VT100Backend::get_cursor_position()` 需要把 `vt100` 返回的 `(row, col)` 映射成 `Position { x: col, y: row }`；如果直接 `.into()`，测试会把列误当成 y，导致所有依赖 cursor row 的 resize 回归都失真。
-- 验证：`env -u RUSTC_WRAPPER cargo test -p codex-tui moving_viewport -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_uses_screen_delta_when_cursor_row_is_unchanged -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_uses_negative_screen_delta_when_cursor_row_is_unchanged_for_bottom_aligned_viewport -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_without_cursor_delta_keeps_non_bottom_aligned_viewport_in_place -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui` 均通过。
+- 测试基建：`codex-rs/tui/src/test_backend.rs` 里 `VT100Backend::get_cursor_position()` 需要把 `vt100` 返回的 `(row, col)` 映射成 `Position { x: col, y: row }`；同时新增 `fail_cursor_position_queries()` 以显式覆盖 CPR 不可用时的 fallback 分支；如果直接 `.into()` 或无法模拟 query failure，依赖 cursor row 的 resize 回归都会失真或漏测。
+- 验证：`env -u RUSTC_WRAPPER cargo test -p codex-tui moving_viewport -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_uses_screen_delta_when_cursor_row_is_unchanged -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_uses_negative_screen_delta_when_cursor_row_is_unchanged_for_bottom_aligned_viewport -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_uses_screen_delta_when_cursor_query_fails_for_bottom_aligned_viewport -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_without_cursor_query_keeps_non_bottom_aligned_viewport_in_place -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui resize_without_cursor_delta_keeps_non_bottom_aligned_viewport_in_place -- --nocapture`、`env -u RUSTC_WRAPPER cargo test -p codex-tui` 均通过。
 
 ## 下次遇到类似问题时
 - 如果 resize bug 依赖 cursor row，先核对测试 backend 暴露的 cursor 坐标轴是否和真实 terminal API 一致，再相信测试结论。
