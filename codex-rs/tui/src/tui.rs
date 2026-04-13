@@ -71,12 +71,15 @@ fn should_emit_notification(condition: NotificationCondition, terminal_focused: 
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write as _;
+
     use super::apply_pending_viewport_area;
     use super::pending_viewport_area_for_terminal;
     use super::should_emit_notification;
     use crate::custom_terminal::Terminal as CustomTerminal;
     use crate::test_backend::VT100Backend;
     use codex_config::types::NotificationCondition;
+    use ratatui::backend::Backend;
     use ratatui::layout::Position;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
@@ -120,15 +123,18 @@ mod tests {
                     .set_string(area.x, area.y, "old viewport", Style::default());
             })
             .expect("initial draw");
+        terminal.last_known_cursor_pos = Position { x: 0, y: 1 };
 
         terminal.backend_mut().resize_screen(24, 10);
         terminal
             .backend_mut()
-            .move_parser_cursor(Position { x: 0, y: 4 });
+            .set_cursor_position(Position { x: 0, y: 4 })
+            .expect("move parser cursor");
 
         let new_area = pending_viewport_area_for_terminal(&mut terminal)
             .expect("pending viewport area")
             .expect("resize should move viewport");
+        assert_eq!(new_area, Rect::new(0, 4, 24, 2));
         apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
 
         terminal
@@ -148,6 +154,126 @@ mod tests {
         assert!(
             screen.contains("new viewport"),
             "expected the new viewport content to be visible:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn moving_viewport_up_clears_rows_between_new_and_old_origins() {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 4, 24, 1));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "old viewport", Style::default());
+            })
+            .expect("initial draw");
+        terminal.last_known_cursor_pos = Position { x: 0, y: 4 };
+
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 3 })
+            .expect("move parser cursor");
+        terminal
+            .backend_mut()
+            .write_all(b"stale gap")
+            .expect("write stale gap");
+        terminal.backend_mut().resize_screen(24, 7);
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 2 })
+            .expect("move parser cursor");
+
+        let new_area = pending_viewport_area_for_terminal(&mut terminal)
+            .expect("pending viewport area")
+            .expect("resize should move viewport");
+        assert_eq!(new_area, Rect::new(0, 2, 24, 1));
+        apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "new viewport", Style::default());
+            })
+            .expect("redraw after move");
+
+        let screen = terminal.backend().vt100().screen().contents();
+        assert!(
+            !screen.contains("stale gap"),
+            "expected rows between the new and old origins to be cleared:\n{screen}"
+        );
+        assert!(
+            !screen.contains("old viewport"),
+            "expected stale rows below the new viewport origin to be cleared:\n{screen}"
+        );
+        assert!(
+            screen.contains("new viewport"),
+            "expected the new viewport content to be visible:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn resize_uses_screen_delta_when_cursor_row_is_unchanged() {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 1, 24, 2));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "old viewport", Style::default());
+            })
+            .expect("initial draw");
+        terminal.last_known_cursor_pos = Position { x: 0, y: 1 };
+
+        // Simulate a terminal that bottom-anchors the old viewport during resize, but leaves the
+        // reported cursor row unchanged (e.g. unreliable CPR feedback under tmux).
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 3 })
+            .expect("move parser cursor");
+        terminal
+            .backend_mut()
+            .write_all(b"old viewport")
+            .expect("write shifted stale viewport");
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 1 })
+            .expect("restore parser cursor");
+        terminal.backend_mut().resize_screen(24, 10);
+
+        let new_area = pending_viewport_area_for_terminal(&mut terminal)
+            .expect("pending viewport area")
+            .expect("resize should still move viewport");
+        assert_eq!(new_area, Rect::new(0, 3, 24, 2));
+        apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "new viewport", Style::default());
+            })
+            .expect("redraw after move");
+
+        let screen = terminal.backend().vt100().screen().contents();
+        assert!(
+            !screen.contains("old viewport"),
+            "expected resize fallback to clear stale viewport rows:\n{screen}"
+        );
+        assert!(
+            screen.contains("new viewport"),
+            "expected the viewport to redraw at the screen-delta position:\n{screen}"
         );
     }
 }
@@ -237,21 +363,27 @@ where
 {
     let screen_size = terminal.size()?;
     let last_known_screen_size = terminal.last_known_screen_size;
-    if screen_size != last_known_screen_size
-        && let Ok(cursor_pos) = terminal.get_cursor_position()
-    {
-        let last_known_cursor_pos = terminal.last_known_cursor_pos;
-        // If we resized AND the cursor moved, keep the viewport anchored to the cursor.
-        // This is still a heuristic, but it matches how the inline viewport behaves in iTerm2.
-        if cursor_pos.y != last_known_cursor_pos.y {
-            let offset = Offset {
-                x: 0,
-                y: cursor_pos.y as i32 - last_known_cursor_pos.y as i32,
-            };
-            return Ok(Some(terminal.viewport_area.offset(offset)));
-        }
+    if screen_size == last_known_screen_size {
+        return Ok(None);
     }
-    Ok(None)
+
+    let screen_delta_y = screen_size.height as i32 - last_known_screen_size.height as i32;
+    let cursor_delta_y = terminal
+        .get_cursor_position()
+        .ok()
+        .map(|cursor_pos| cursor_pos.y as i32 - terminal.last_known_cursor_pos.y as i32)
+        .filter(|delta_y| *delta_y != 0);
+    // Prefer the real cursor delta when the terminal reports one. If CPR is unavailable or the
+    // cursor row stays unchanged during resize, fall back to the screen-height delta so the inline
+    // viewport still tracks bottom-anchored terminal content.
+    let offset_y = cursor_delta_y.unwrap_or(screen_delta_y);
+    if offset_y == 0 {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        terminal.viewport_area.offset(Offset { x: 0, y: offset_y }),
+    ))
 }
 
 fn apply_pending_viewport_area<B>(
