@@ -219,11 +219,11 @@ mod tests {
     }
 
     #[test]
-    fn resize_uses_screen_delta_when_cursor_row_is_unchanged() {
+    fn resize_uses_screen_delta_when_cursor_row_is_unchanged_for_bottom_aligned_viewport() {
         let mut terminal =
             CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
                 .expect("terminal");
-        terminal.set_viewport_area(Rect::new(0, 1, 24, 2));
+        terminal.set_viewport_area(Rect::new(0, 6, 24, 2));
 
         terminal
             .draw(|frame| {
@@ -233,13 +233,14 @@ mod tests {
                     .set_string(area.x, area.y, "old viewport", Style::default());
             })
             .expect("initial draw");
-        terminal.last_known_cursor_pos = Position { x: 0, y: 1 };
+        terminal.last_known_cursor_pos = Position { x: 0, y: 6 };
 
-        // Simulate a terminal that bottom-anchors the old viewport during resize, but leaves the
-        // reported cursor row unchanged (e.g. unreliable CPR feedback under tmux).
+        terminal.backend_mut().resize_screen(24, 10);
+        // Simulate a terminal that keeps the old viewport bottom-aligned after resize, but leaves
+        // the reported cursor row unchanged (e.g. unreliable CPR feedback under tmux).
         terminal
             .backend_mut()
-            .set_cursor_position(Position { x: 0, y: 3 })
+            .set_cursor_position(Position { x: 0, y: 8 })
             .expect("move parser cursor");
         terminal
             .backend_mut()
@@ -247,14 +248,13 @@ mod tests {
             .expect("write shifted stale viewport");
         terminal
             .backend_mut()
-            .set_cursor_position(Position { x: 0, y: 1 })
+            .set_cursor_position(Position { x: 0, y: 6 })
             .expect("restore parser cursor");
-        terminal.backend_mut().resize_screen(24, 10);
 
         let new_area = pending_viewport_area_for_terminal(&mut terminal)
             .expect("pending viewport area")
             .expect("resize should still move viewport");
-        assert_eq!(new_area, Rect::new(0, 3, 24, 2));
+        assert_eq!(new_area, Rect::new(0, 8, 24, 2));
         apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
 
         terminal
@@ -274,6 +274,87 @@ mod tests {
         assert!(
             screen.contains("new viewport"),
             "expected the viewport to redraw at the screen-delta position:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn resize_uses_negative_screen_delta_when_cursor_row_is_unchanged_for_bottom_aligned_viewport()
+    {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 6, 24, 2));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "old viewport", Style::default());
+            })
+            .expect("initial draw");
+        terminal.last_known_cursor_pos = Position { x: 0, y: 6 };
+
+        terminal.backend_mut().resize_screen(24, 7);
+        // Simulate a terminal that keeps the old viewport bottom-aligned after resize, but leaves
+        // the reported cursor row unchanged (e.g. unreliable CPR feedback under tmux).
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 5 })
+            .expect("move parser cursor");
+        terminal
+            .backend_mut()
+            .write_all(b"old viewport")
+            .expect("write shifted stale viewport");
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 6 })
+            .expect("restore parser cursor");
+
+        let new_area = pending_viewport_area_for_terminal(&mut terminal)
+            .expect("pending viewport area")
+            .expect("resize should still move viewport");
+        assert_eq!(new_area, Rect::new(0, 5, 24, 2));
+        apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "new viewport", Style::default());
+            })
+            .expect("redraw after move");
+
+        let screen = terminal.backend().vt100().screen().contents();
+        assert!(
+            !screen.contains("old viewport"),
+            "expected resize fallback to clear stale viewport rows after shrink:\n{screen}"
+        );
+        assert!(
+            screen.contains("new viewport"),
+            "expected the viewport to redraw at the negative screen-delta position:\n{screen}"
+        );
+    }
+
+    #[test]
+    fn resize_without_cursor_delta_keeps_non_bottom_aligned_viewport_in_place() {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 1, 24, 2));
+        terminal.last_known_cursor_pos = Position { x: 0, y: 1 };
+
+        terminal.backend_mut().resize_screen(24, 10);
+        terminal
+            .backend_mut()
+            .set_cursor_position(Position { x: 0, y: 1 })
+            .expect("keep parser cursor");
+
+        assert_eq!(
+            pending_viewport_area_for_terminal(&mut terminal).expect("pending viewport area"),
+            None,
+            "non-bottom-aligned viewports should not move on screen delta alone"
         );
     }
 }
@@ -374,9 +455,15 @@ where
         .map(|cursor_pos| cursor_pos.y as i32 - terminal.last_known_cursor_pos.y as i32)
         .filter(|delta_y| *delta_y != 0);
     // Prefer the real cursor delta when the terminal reports one. If CPR is unavailable or the
-    // cursor row stays unchanged during resize, fall back to the screen-height delta so the inline
-    // viewport still tracks bottom-anchored terminal content.
-    let offset_y = cursor_delta_y.unwrap_or(screen_delta_y);
+    // cursor row stays unchanged during resize, only fall back to the screen-height delta when the
+    // old viewport was already bottom-aligned and the terminal may have moved it with the screen.
+    let offset_y = cursor_delta_y.unwrap_or_else(|| {
+        if terminal.viewport_area.bottom() == last_known_screen_size.height {
+            screen_delta_y
+        } else {
+            0
+        }
+    });
     if offset_y == 0 {
         return Ok(None);
     }
