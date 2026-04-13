@@ -3,6 +3,7 @@ use std::future::Future;
 use std::io::IsTerminal;
 use std::io::Result;
 use std::io::Stdout;
+use std::io::Write;
 use std::io::stdin;
 use std::io::stdout;
 use std::panic;
@@ -70,8 +71,13 @@ fn should_emit_notification(condition: NotificationCondition, terminal_focused: 
 
 #[cfg(test)]
 mod tests {
+    use super::apply_pending_viewport_area;
     use super::should_emit_notification;
+    use crate::custom_terminal::Terminal as CustomTerminal;
+    use crate::test_backend::VT100Backend;
     use codex_config::types::NotificationCondition;
+    use ratatui::layout::Rect;
+    use ratatui::style::Style;
 
     #[test]
     fn unfocused_notification_condition_is_suppressed_when_focused() {
@@ -95,6 +101,44 @@ mod tests {
             NotificationCondition::Unfocused,
             /*terminal_focused*/ false
         ));
+    }
+
+    #[test]
+    fn moving_viewport_down_clears_stale_rows_above_new_origin() {
+        let mut terminal =
+            CustomTerminal::with_options(VT100Backend::new(/*width*/ 24, /*height*/ 8))
+                .expect("terminal");
+        terminal.set_viewport_area(Rect::new(0, 1, 24, 2));
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "old viewport", Style::default());
+            })
+            .expect("initial draw");
+
+        apply_pending_viewport_area(&mut terminal, Rect::new(0, 4, 24, 2)).expect("move viewport");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                frame
+                    .buffer_mut()
+                    .set_string(area.x, area.y, "new viewport", Style::default());
+            })
+            .expect("redraw after move");
+
+        let screen = terminal.backend().vt100().screen().contents();
+        assert!(
+            !screen.contains("old viewport"),
+            "expected stale rows above the new viewport origin to be cleared:\n{screen}"
+        );
+        assert!(
+            screen.contains("new viewport"),
+            "expected the new viewport content to be visible:\n{screen}"
+        );
     }
 }
 
@@ -172,6 +216,25 @@ fn restore_common(should_disable_raw_mode: bool) -> Result<()> {
         disable_raw_mode()?;
     }
     let _ = execute!(stdout(), crossterm::cursor::Show);
+    Ok(())
+}
+
+fn apply_pending_viewport_area<B>(
+    terminal: &mut custom_terminal::Terminal<B>,
+    new_area: Rect,
+) -> Result<()>
+where
+    B: Backend + Write,
+{
+    let previous_area = terminal.viewport_area;
+    if new_area.top() > previous_area.top() {
+        // Clearing from the old origin removes rows that the viewport leaves behind.
+        terminal.clear()?;
+        terminal.set_viewport_area(new_area);
+    } else {
+        terminal.set_viewport_area(new_area);
+        terminal.clear()?;
+    }
     Ok(())
 }
 
@@ -602,8 +665,7 @@ impl Tui {
 
             let terminal = &mut self.terminal;
             if let Some(new_area) = pending_viewport_area.take() {
-                terminal.set_viewport_area(new_area);
-                terminal.clear()?;
+                apply_pending_viewport_area(terminal, new_area)?;
             }
 
             let mut needs_full_repaint =

@@ -1,0 +1,21 @@
+plan = ".agents/plan/2026-04-13-codex-cli-terminal-resize-render.md"
+
+[[issue]]
+id = "a1"
+sequence = 10
+title = "修复终端 resize 后的 TUI 残留与错位渲染"
+scope = """
+定位并修复 `codex-rs/tui` 在终端尺寸变化后出现的旧 frame 残留、重复卡片或 viewport/header/history 错位问题；实现应落在 resize 事件后的通用重绘链路上，并补充能够稳定覆盖该异常的自动化回归测试。必要时可调整 `tui.rs`、`custom_terminal.rs`、测试 backend 或相邻 TUI 测试。
+
+不包括与 resize 无关的渲染问题，不包括 `core`/`cli`/`app-server` 逻辑变更，也不包括仅针对单一终端新增长期兼容分支。
+"""
+touch_points = ["module:tui", "codex-rs/tui/src/tui.rs", "codex-rs/tui/src/custom_terminal.rs", "codex-rs/tui/src/test_backend.rs", "codex-rs/tui/tests"]
+depends_on = []
+done_when = "终端尺寸变化后，`codex-cli` 的 inline TUI 不再出现旧内容残留、重复卡片或明显错位；相关修复落在通用 resize 重绘链路；仓库中新增或更新了覆盖该异常的自动化测试，并通过 `codex-tui` 对应验证。"
+validate_by = "在 `codex-rs` 目录运行 `cargo nextest run -p codex-tui`；若本地缺少 `cargo-nextest`，则运行 `cargo test -p codex-tui`。"
+regress_by = "none"
+regress_timing = "after_done"
+status = "done"
+validate_status = "passed"
+regress_status = "not_needed"
+notes = "根因收敛到 resize 触发的 pending viewport 重定位分支：当 viewport 向下移动时，代码先 `set_viewport_area()` 再 `clear()`，导致旧 viewport 上方残留行没有被清掉。已改为按位移方向决定 clear 顺序，并补充 `moving_viewport_down_clears_stale_rows_above_new_origin` 回归测试。验证：`env -u RUSTC_WRAPPER cargo test -p codex-tui moving_viewport_down_clears_stale_rows_above_new_origin -- --exact --nocapture` 通过；本机缺少独立 `cargo-nextest`，因此按 issue 合同回退执行 `env -u RUSTC_WRAPPER cargo test -p codex-tui`，结果通过。"
