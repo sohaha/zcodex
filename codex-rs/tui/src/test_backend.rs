@@ -34,6 +34,23 @@ impl VT100Backend {
     pub fn vt100(&self) -> &vt100::Parser {
         self.crossterm_backend.writer()
     }
+
+    #[allow(dead_code)]
+    pub fn resize_screen(&mut self, width: u16, height: u16) {
+        self.crossterm_backend
+            .writer_mut()
+            .screen_mut()
+            .set_size(height, width);
+    }
+
+    #[allow(dead_code)]
+    pub fn move_parser_cursor(&mut self, position: Position) {
+        let row = position.y.saturating_add(1);
+        let col = position.x.saturating_add(1);
+        self.crossterm_backend
+            .writer_mut()
+            .process(format!("\x1b[{row};{col}H").as_bytes());
+    }
 }
 
 impl Write for VT100Backend {

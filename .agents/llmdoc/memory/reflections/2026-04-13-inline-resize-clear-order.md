@@ -14,8 +14,9 @@
 
 ## 证据
 - 代码路径：`codex-rs/tui/src/tui.rs` 中 resize draw 分支会先处理 `pending_viewport_area()`，然后才进入正常 `update_inline_viewport()`。
+- 测试策略：若故障发生在 `pending_viewport_area()` 与清屏顺序的交界处，回归测试要驱动真实的 backend resize + cursor 状态变化；只直接调用清屏 helper 不足以覆盖整条链路。
 - 回归测试：`moving_viewport_down_clears_stale_rows_above_new_origin` 直接覆盖“viewport 下移后旧行必须被清掉”的场景。
-- 验证：`env -u RUSTC_WRAPPER cargo test -p codex-tui moving_viewport_down_clears_stale_rows_above_new_origin -- --exact --nocapture` 与 `env -u RUSTC_WRAPPER cargo test -p codex-tui` 均通过。
+- 验证：`env -u RUSTC_WRAPPER cargo test -p codex-tui moving_viewport_down_clears_stale_rows_above_new_origin -- --nocapture` 与 `env -u RUSTC_WRAPPER cargo test -p codex-tui` 均通过。
 
 ## 下次遇到类似问题时
 - 先判断是“新 frame 没画出来”还是“旧 frame 没被清掉”；截图里同时出现旧布局和新布局时，优先怀疑 clear origin 与 viewport 位移顺序。

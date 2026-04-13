@@ -72,10 +72,12 @@ fn should_emit_notification(condition: NotificationCondition, terminal_focused: 
 #[cfg(test)]
 mod tests {
     use super::apply_pending_viewport_area;
+    use super::pending_viewport_area_for_terminal;
     use super::should_emit_notification;
     use crate::custom_terminal::Terminal as CustomTerminal;
     use crate::test_backend::VT100Backend;
     use codex_config::types::NotificationCondition;
+    use ratatui::layout::Position;
     use ratatui::layout::Rect;
     use ratatui::style::Style;
 
@@ -119,7 +121,15 @@ mod tests {
             })
             .expect("initial draw");
 
-        apply_pending_viewport_area(&mut terminal, Rect::new(0, 4, 24, 2)).expect("move viewport");
+        terminal.backend_mut().resize_screen(24, 10);
+        terminal
+            .backend_mut()
+            .move_parser_cursor(Position { x: 0, y: 4 });
+
+        let new_area = pending_viewport_area_for_terminal(&mut terminal)
+            .expect("pending viewport area")
+            .expect("resize should move viewport");
+        apply_pending_viewport_area(&mut terminal, new_area).expect("move viewport");
 
         terminal
             .draw(|frame| {
@@ -217,6 +227,31 @@ fn restore_common(should_disable_raw_mode: bool) -> Result<()> {
     }
     let _ = execute!(stdout(), crossterm::cursor::Show);
     Ok(())
+}
+
+fn pending_viewport_area_for_terminal<B>(
+    terminal: &mut custom_terminal::Terminal<B>,
+) -> Result<Option<Rect>>
+where
+    B: Backend + Write,
+{
+    let screen_size = terminal.size()?;
+    let last_known_screen_size = terminal.last_known_screen_size;
+    if screen_size != last_known_screen_size
+        && let Ok(cursor_pos) = terminal.get_cursor_position()
+    {
+        let last_known_cursor_pos = terminal.last_known_cursor_pos;
+        // If we resized AND the cursor moved, keep the viewport anchored to the cursor.
+        // This is still a heuristic, but it matches how the inline viewport behaves in iTerm2.
+        if cursor_pos.y != last_known_cursor_pos.y {
+            let offset = Offset {
+                x: 0,
+                y: cursor_pos.y as i32 - last_known_cursor_pos.y as i32,
+            };
+            return Ok(Some(terminal.viewport_area.offset(offset)));
+        }
+    }
+    Ok(None)
 }
 
 fn apply_pending_viewport_area<B>(
@@ -701,24 +736,6 @@ impl Tui {
     }
 
     fn pending_viewport_area(&mut self) -> Result<Option<Rect>> {
-        let terminal = &mut self.terminal;
-        let screen_size = terminal.size()?;
-        let last_known_screen_size = terminal.last_known_screen_size;
-        if screen_size != last_known_screen_size
-            && let Ok(cursor_pos) = terminal.get_cursor_position()
-        {
-            let last_known_cursor_pos = terminal.last_known_cursor_pos;
-            // If we resized AND the cursor moved, we adjust the viewport area to keep the
-            // cursor in the same position. This is a heuristic that seems to work well
-            // at least in iTerm2.
-            if cursor_pos.y != last_known_cursor_pos.y {
-                let offset = Offset {
-                    x: 0,
-                    y: cursor_pos.y as i32 - last_known_cursor_pos.y as i32,
-                };
-                return Ok(Some(terminal.viewport_area.offset(offset)));
-            }
-        }
-        Ok(None)
+        pending_viewport_area_for_terminal(&mut self.terminal)
     }
 }
